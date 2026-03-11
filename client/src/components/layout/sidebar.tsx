@@ -54,9 +54,9 @@ export default function Sidebar() {
   const filteredItems = navItems.filter((item) => item.roles.includes(role));
 
   return (
-    <aside className="hidden md:flex flex-col w-64 border-r border-sidebar-border bg-sidebar h-screen sticky top-0" data-testid="sidebar">
+    <aside className="hidden md:flex flex-col w-64 border-r border-sidebar-border bg-gradient-to-b from-sidebar via-sidebar to-[hsl(168,55%,16%)] h-screen sticky top-0" data-testid="sidebar">
       <div className="relative flex items-center gap-3 px-6 py-5 border-b border-sidebar-border overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-r from-sidebar-primary/10 via-sidebar-primary/5 to-transparent pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-r from-sidebar-primary/15 via-sidebar-primary/8 to-transparent pointer-events-none" />
         <motion.div
           whileHover={{ rotate: 15, scale: 1.1 }}
           transition={{ type: "spring", stiffness: 300, damping: 15 }}
