@@ -67,7 +67,6 @@ export const tenants = pgTable("tenants", {
   taxRate: decimal("tax_rate", { precision: 5, scale: 2 }).default("0"),
   serviceCharge: decimal("service_charge", { precision: 5, scale: 2 }).default("0"),
   plan: text("plan").default("basic"),
-  businessType: text("business_type").default("casual_dining"),
   active: boolean("active").default(true),
 });
 

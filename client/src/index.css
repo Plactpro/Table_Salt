@@ -48,67 +48,63 @@
   --font-heading: 'Outfit', sans-serif;
 }
 
-/* LIGHT MODE — Tropical Beach */
+/* LIGHT MODE — Tropical Paradise */
 :root {
-  --button-outline: rgba(0,0,0, .06);
+  --button-outline: rgba(0,0,0, .08);
   --badge-outline: rgba(0,0,0, .04);
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0,0,0, .02);
-  --elevate-2: rgba(0,0,0, .05);
+  --elevate-2: rgba(0,0,0, .06);
 
-  --background: 180 20% 97%;
-  --foreground: 200 25% 12%;
+  --background: 170 25% 96%;
+  --foreground: 185 30% 10%;
 
-  --card: 0 0% 100%;
-  --card-foreground: 200 25% 12%;
-  --card-border: 180 12% 90%;
+  --card: 170 15% 100%;
+  --card-foreground: 185 30% 10%;
+  --card-border: 170 15% 90%;
 
-  --popover: 0 0% 100%;
-  --popover-foreground: 200 25% 12%;
-  --popover-border: 180 12% 90%;
+  --popover: 170 15% 100%;
+  --popover-foreground: 185 30% 10%;
+  --popover-border: 170 15% 90%;
 
-  --primary: 176 60% 34%;
+  --primary: 174 65% 32%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 180 15% 94%;
-  --secondary-foreground: 200 25% 12%;
+  --secondary: 170 18% 93%;
+  --secondary-foreground: 185 30% 10%;
 
-  --muted: 180 10% 94%;
-  --muted-foreground: 200 8% 44%;
+  --muted: 170 12% 94%;
+  --muted-foreground: 185 10% 42%;
 
-  --accent: 36 70% 92%;
-  --accent-foreground: 28 55% 28%;
+  --accent: 36 85% 92%;
+  --accent-foreground: 28 60% 28%;
 
   --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 180 10% 90%;
-  --input: 180 10% 90%;
-  --ring: 176 60% 34%;
+  --border: 170 12% 89%;
+  --input: 170 12% 89%;
+  --ring: 174 65% 32%;
 
-  --sidebar-water-start: 182 68% 50%;
-  --sidebar-water-mid: 176 55% 40%;
-  --sidebar-sand: 36 45% 72%;
+  --sidebar: 185 45% 12%;
+  --sidebar-foreground: 170 20% 94%;
+  --sidebar-border: 185 30% 18%;
+  --sidebar-primary: 36 90% 58%;
+  --sidebar-primary-foreground: 185 45% 10%;
+  --sidebar-accent: 185 30% 18%;
+  --sidebar-accent-foreground: 170 20% 94%;
+  --sidebar-ring: 36 90% 58%;
 
-  --sidebar: 176 55% 40%;
-  --sidebar-foreground: 0 0% 100%;
-  --sidebar-border: 176 40% 35%;
-  --sidebar-primary: 0 0% 100%;
-  --sidebar-primary-foreground: 176 60% 30%;
-  --sidebar-accent: 176 30% 45%;
-  --sidebar-accent-foreground: 0 0% 100%;
-  --sidebar-ring: 0 0% 100%;
-
-  --chart-1: 176 60% 36%;
-  --chart-2: 12 70% 58%;
-  --chart-3: 36 85% 52%;
-  --chart-4: 145 50% 42%;
-  --chart-5: 280 45% 50%;
+  --chart-1: 174 65% 35%;
+  --chart-2: 12 75% 58%;
+  --chart-3: 36 90% 55%;
+  --chart-4: 145 55% 42%;
+  --chart-5: 280 50% 55%;
 
   --radius: 0.75rem;
 }
 
-/* DARK MODE — Tropical Beach */
+/* DARK MODE — Tropical Paradise */
 .dark {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
@@ -116,54 +112,50 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 195 18% 7%;
-  --foreground: 180 15% 94%;
+  --background: 185 20% 6%;
+  --foreground: 170 15% 94%;
 
-  --card: 195 12% 10%;
-  --card-foreground: 180 15% 94%;
-  --card-border: 195 8% 16%;
+  --card: 185 15% 9%;
+  --card-foreground: 170 15% 94%;
+  --card-border: 185 10% 15%;
 
-  --popover: 195 12% 10%;
-  --popover-foreground: 180 15% 94%;
-  --popover-border: 195 8% 16%;
+  --popover: 185 15% 9%;
+  --popover-foreground: 170 15% 94%;
+  --popover-border: 185 10% 15%;
 
-  --primary: 176 55% 40%;
+  --primary: 174 60% 38%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 195 8% 16%;
-  --secondary-foreground: 180 15% 94%;
+  --secondary: 185 10% 15%;
+  --secondary-foreground: 170 15% 94%;
 
-  --muted: 195 8% 16%;
-  --muted-foreground: 195 6% 55%;
+  --muted: 185 10% 15%;
+  --muted-foreground: 185 8% 55%;
 
-  --accent: 36 35% 18%;
-  --accent-foreground: 36 45% 80%;
+  --accent: 36 40% 18%;
+  --accent-foreground: 36 50% 80%;
 
   --destructive: 0 55% 35%;
-  --destructive-foreground: 180 15% 94%;
+  --destructive-foreground: 170 15% 94%;
 
-  --border: 195 8% 16%;
-  --input: 195 8% 16%;
-  --ring: 176 45% 50%;
+  --border: 185 10% 15%;
+  --input: 185 10% 15%;
+  --ring: 174 50% 50%;
 
-  --sidebar-water-start: 182 55% 25%;
-  --sidebar-water-mid: 176 45% 18%;
-  --sidebar-sand: 36 25% 22%;
+  --sidebar: 185 30% 7%;
+  --sidebar-foreground: 170 15% 93%;
+  --sidebar-border: 185 20% 12%;
+  --sidebar-primary: 36 80% 55%;
+  --sidebar-primary-foreground: 185 30% 7%;
+  --sidebar-accent: 185 20% 12%;
+  --sidebar-accent-foreground: 170 15% 93%;
+  --sidebar-ring: 36 70% 55%;
 
-  --sidebar: 176 45% 18%;
-  --sidebar-foreground: 180 15% 92%;
-  --sidebar-border: 176 30% 22%;
-  --sidebar-primary: 36 70% 60%;
-  --sidebar-primary-foreground: 176 45% 10%;
-  --sidebar-accent: 176 25% 22%;
-  --sidebar-accent-foreground: 180 15% 92%;
-  --sidebar-ring: 36 60% 55%;
-
-  --chart-1: 176 55% 42%;
-  --chart-2: 12 65% 55%;
-  --chart-3: 36 75% 52%;
-  --chart-4: 145 45% 48%;
-  --chart-5: 280 40% 55%;
+  --chart-1: 174 60% 40%;
+  --chart-2: 12 70% 55%;
+  --chart-3: 36 80% 52%;
+  --chart-4: 145 50% 48%;
+  --chart-5: 280 45% 55%;
 }
 
 @layer base {

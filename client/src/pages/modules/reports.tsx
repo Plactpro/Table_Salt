@@ -162,8 +162,8 @@ export default function ReportsPage() {
                   <BarChart data={chartData}>
                     <defs>
                       <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(176, 60%, 34%)" stopOpacity={1} />
-                        <stop offset="100%" stopColor="hsl(176, 60%, 34%)" stopOpacity={0.6} />
+                        <stop offset="0%" stopColor="hsl(174, 65%, 32%)" stopOpacity={1} />
+                        <stop offset="100%" stopColor="hsl(174, 65%, 32%)" stopOpacity={0.6} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -222,9 +222,9 @@ export default function ReportsPage() {
                     <Line
                       type="monotone"
                       dataKey="orders"
-                      stroke="hsl(12, 70%, 58%)"
+                      stroke="hsl(12, 75%, 58%)"
                       strokeWidth={2.5}
-                      dot={{ r: 4, fill: "hsl(12, 70%, 58%)" }}
+                      dot={{ r: 4, fill: "hsl(12, 75%, 58%)" }}
                       activeDot={{ r: 6 }}
                       animationDuration={1500}
                     />
