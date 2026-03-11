@@ -121,7 +121,7 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { title: "Total Revenue", value: `$${Number(totals.revenue || 0).toFixed(2)}`, icon: DollarSign, color: "text-green-600", bg: "bg-green-100", testId: "stat-total-revenue", delay: 0 },
-          { title: "Total Orders", value: Number(totals.orderCount || 0), icon: ShoppingCart, color: "text-blue-600", bg: "bg-blue-100", testId: "stat-total-orders", delay: 0.1 },
+          { title: "Total Orders", value: Number(totals.orderCount || 0), icon: ShoppingCart, color: "text-amber-700", bg: "bg-amber-100", testId: "stat-total-orders", delay: 0.1 },
           { title: "Avg Order Value", value: `$${avgOrderValue}`, icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-100", testId: "stat-avg-order", delay: 0.2 },
           { title: "Tax Collected", value: `$${Number(totals.tax || 0).toFixed(2)}`, icon: Percent, color: "text-orange-600", bg: "bg-orange-100", testId: "stat-tax-collected", delay: 0.3 },
         ].map((stat) => (
@@ -162,8 +162,8 @@ export default function ReportsPage() {
                   <BarChart data={chartData}>
                     <defs>
                       <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="hsl(221.2, 83.2%, 53.3%)" stopOpacity={1} />
-                        <stop offset="100%" stopColor="hsl(221.2, 83.2%, 53.3%)" stopOpacity={0.6} />
+                        <stop offset="0%" stopColor="hsl(16, 65%, 50%)" stopOpacity={1} />
+                        <stop offset="100%" stopColor="hsl(16, 65%, 50%)" stopOpacity={0.6} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />

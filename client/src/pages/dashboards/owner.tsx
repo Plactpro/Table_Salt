@@ -108,8 +108,8 @@ export default function OwnerDashboard() {
             value={stats?.totalOrders || 0}
             subtitle={`Today: ${stats?.todayOrders || 0}`}
             icon={ShoppingCart}
-            iconColor="text-blue-600"
-            iconBg="bg-blue-100"
+            iconColor="text-amber-700"
+            iconBg="bg-amber-100"
             testId="stat-orders"
             index={1}
           />
@@ -206,7 +206,7 @@ export default function OwnerDashboard() {
                 label: "Status",
                 render: (v: string) => {
                   const colors: Record<string, string> = {
-                    new: "bg-blue-100 text-blue-700",
+                    new: "bg-amber-100 text-amber-700",
                     in_progress: "bg-orange-100 text-orange-700",
                     ready: "bg-green-100 text-green-700",
                     paid: "bg-emerald-100 text-emerald-700",

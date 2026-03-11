@@ -36,11 +36,11 @@ const roleLabels: Record<Role, string> = {
 
 const roleBadgeColors: Record<Role, string> = {
   owner: "bg-purple-100 text-purple-800 border-purple-200",
-  manager: "bg-blue-100 text-blue-800 border-blue-200",
+  manager: "bg-amber-100 text-amber-800 border-amber-200",
   waiter: "bg-green-100 text-green-800 border-green-200",
   kitchen: "bg-orange-100 text-orange-800 border-orange-200",
   accountant: "bg-gray-100 text-gray-800 border-gray-200",
-  customer: "bg-teal-100 text-teal-800 border-teal-200",
+  customer: "bg-stone-100 text-stone-800 border-stone-200",
 };
 
 const roleIcons: Record<Role, LucideIcon> = {
