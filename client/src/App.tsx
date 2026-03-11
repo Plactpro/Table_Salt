@@ -23,6 +23,7 @@ import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
 import { ReactNode } from "react";
 import { Loader2 } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
@@ -79,66 +80,116 @@ function PublicOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function Router() {
+const pageTransition = {
+  initial: { opacity: 0, y: 8 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: -8 },
+  transition: { duration: 0.25, ease: "easeInOut" as const },
+};
+
+function PageWrapper({ children }: { children: ReactNode }) {
   return (
-    <Switch>
-      <Route path="/login">
-        <PublicOnly>
-          <LoginPage />
-        </PublicOnly>
-      </Route>
-      <Route path="/register">
-        <PublicOnly>
-          <RegisterPage />
-        </PublicOnly>
-      </Route>
-      <Route path="/">
-        <ProtectedRoute>
-          <RoleDashboard />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/pos">
-        <ProtectedRoute>
-          <PosPage />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/orders">
-        <ProtectedRoute>
-          <OrdersPage />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/tables">
-        <ProtectedRoute>
-          <TablesPage />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/menu">
-        <ProtectedRoute>
-          <MenuPage />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/inventory">
-        <ProtectedRoute>
-          <InventoryPage />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/staff">
-        <ProtectedRoute>
-          <StaffPage />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/reports">
-        <ProtectedRoute>
-          <ReportsPage />
-        </ProtectedRoute>
-      </Route>
-      <Route path="/settings">
-        <ProtectedRoute>
-          <SettingsPage />
-        </ProtectedRoute>
-      </Route>
-      <Route component={NotFound} />
-    </Switch>
+    <motion.div
+      initial={pageTransition.initial}
+      animate={pageTransition.animate}
+      exit={pageTransition.exit}
+      transition={pageTransition.transition}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
+function Router() {
+  const [location] = useLocation();
+
+  return (
+    <AnimatePresence mode="wait">
+      <Switch location={location} key={location}>
+        <Route path="/login">
+          <PublicOnly>
+            <PageWrapper>
+              <LoginPage />
+            </PageWrapper>
+          </PublicOnly>
+        </Route>
+        <Route path="/register">
+          <PublicOnly>
+            <PageWrapper>
+              <RegisterPage />
+            </PageWrapper>
+          </PublicOnly>
+        </Route>
+        <Route path="/">
+          <ProtectedRoute>
+            <PageWrapper>
+              <RoleDashboard />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/pos">
+          <ProtectedRoute>
+            <PageWrapper>
+              <PosPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/orders">
+          <ProtectedRoute>
+            <PageWrapper>
+              <OrdersPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/tables">
+          <ProtectedRoute>
+            <PageWrapper>
+              <TablesPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/menu">
+          <ProtectedRoute>
+            <PageWrapper>
+              <MenuPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/inventory">
+          <ProtectedRoute>
+            <PageWrapper>
+              <InventoryPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/staff">
+          <ProtectedRoute>
+            <PageWrapper>
+              <StaffPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/reports">
+          <ProtectedRoute>
+            <PageWrapper>
+              <ReportsPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route path="/settings">
+          <ProtectedRoute>
+            <PageWrapper>
+              <SettingsPage />
+            </PageWrapper>
+          </ProtectedRoute>
+        </Route>
+        <Route>
+          <PageWrapper>
+            <NotFound />
+          </PageWrapper>
+        </Route>
+      </Switch>
+    </AnimatePresence>
   );
 }
 

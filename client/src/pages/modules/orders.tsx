@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +28,13 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  CircleDot,
+  Send,
+  ChefHat,
+  Bell,
+  UtensilsCrossed,
+  CreditCard,
+  Ban,
 } from "lucide-react";
 import type { Order, OrderItem } from "@shared/schema";
 
@@ -71,6 +79,17 @@ const statusLabels: Record<string, string> = {
   paid: "Paid",
   cancelled: "Cancelled",
   voided: "Voided",
+};
+
+const statusIcons: Record<string, React.ElementType> = {
+  new: CircleDot,
+  sent_to_kitchen: Send,
+  in_progress: ChefHat,
+  ready: Bell,
+  served: UtensilsCrossed,
+  paid: CreditCard,
+  cancelled: XCircle,
+  voided: Ban,
 };
 
 const typeLabels: Record<string, string> = {
@@ -227,7 +246,11 @@ export default function OrdersPage() {
   }, [filteredOrders]);
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="p-6 space-y-6 max-w-7xl mx-auto"
+    >
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">Orders</h1>
@@ -236,55 +259,39 @@ export default function OrdersPage() {
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card data-testid="stat-total-orders">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="rounded-lg bg-blue-100 dark:bg-blue-900 p-2">
-              <ClipboardList className="h-5 w-5 text-blue-600 dark:text-blue-300" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Total</p>
-              <p className="text-xl font-bold" data-testid="text-total-orders">{summaryStats.total}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card data-testid="stat-active-orders">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="rounded-lg bg-yellow-100 dark:bg-yellow-900 p-2">
-              <Clock className="h-5 w-5 text-yellow-600 dark:text-yellow-300" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Active</p>
-              <p className="text-xl font-bold" data-testid="text-active-orders">{summaryStats.active}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card data-testid="stat-completed-orders">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="rounded-lg bg-green-100 dark:bg-green-900 p-2">
-              <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-300" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Completed</p>
-              <p className="text-xl font-bold" data-testid="text-completed-orders">{summaryStats.completed}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card data-testid="stat-cancelled-orders">
-          <CardContent className="p-4 flex items-center gap-3">
-            <div className="rounded-lg bg-red-100 dark:bg-red-900 p-2">
-              <XCircle className="h-5 w-5 text-red-600 dark:text-red-300" />
-            </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Cancelled</p>
-              <p className="text-xl font-bold" data-testid="text-cancelled-orders">{summaryStats.cancelled}</p>
-            </div>
-          </CardContent>
-        </Card>
+        {[
+          { key: "total", icon: ClipboardList, color: "blue", label: "Total", value: summaryStats.total, testId: "stat-total-orders", valueTestId: "text-total-orders" },
+          { key: "active", icon: Clock, color: "yellow", label: "Active", value: summaryStats.active, testId: "stat-active-orders", valueTestId: "text-active-orders" },
+          { key: "completed", icon: CheckCircle2, color: "green", label: "Completed", value: summaryStats.completed, testId: "stat-completed-orders", valueTestId: "text-completed-orders" },
+          { key: "cancelled", icon: XCircle, color: "red", label: "Cancelled", value: summaryStats.cancelled, testId: "stat-cancelled-orders", valueTestId: "text-cancelled-orders" },
+        ].map((stat, i) => (
+          <motion.div
+            key={stat.key}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: i * 0.1 }}
+          >
+            <Card data-testid={stat.testId} className="transition-all duration-200 hover:shadow-md">
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className={`rounded-lg bg-${stat.color}-100 dark:bg-${stat.color}-900 p-2.5`}>
+                  <stat.icon className={`h-5 w-5 text-${stat.color}-600 dark:text-${stat.color}-300`} />
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">{stat.label}</p>
+                  <p className="text-xl font-bold" data-testid={stat.valueTestId}>{stat.value}</p>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
       </div>
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg">Filters</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Search className="h-4 w-4 text-muted-foreground" />
+            Filters
+          </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
@@ -358,14 +365,14 @@ export default function OrdersPage() {
                     <TableHead>Table</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead
-                      className="cursor-pointer select-none"
+                      className="cursor-pointer select-none hover:text-foreground transition-colors"
                       onClick={() => toggleSort("total")}
                     >
                       Total <SortIcon field="total" />
                     </TableHead>
                     <TableHead>Payment</TableHead>
                     <TableHead
-                      className="cursor-pointer select-none"
+                      className="cursor-pointer select-none hover:text-foreground transition-colors"
                       onClick={() => toggleSort("createdAt")}
                     >
                       Date <SortIcon field="createdAt" />
@@ -374,66 +381,79 @@ export default function OrdersPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredOrders.map((order) => (
-                    <TableRow key={order.id} data-testid={`row-order-${order.id}`}>
-                      <TableCell className="font-mono text-xs" data-testid={`text-order-id-${order.id}`}>
-                        #{order.id.slice(-6).toUpperCase()}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="outline" data-testid={`badge-type-${order.id}`}>
-                          {typeLabels[order.orderType || "dine_in"]}
-                        </Badge>
-                      </TableCell>
-                      <TableCell data-testid={`text-table-${order.id}`}>
-                        {order.tableId ? tableMap[order.tableId] || "—" : "—"}
-                      </TableCell>
-                      <TableCell>
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[order.status || "new"]}`}
-                          data-testid={`badge-status-${order.id}`}
-                        >
-                          {statusLabels[order.status || "new"]}
-                        </span>
-                      </TableCell>
-                      <TableCell className="font-medium" data-testid={`text-total-${order.id}`}>
-                        {formatCurrency(order.total)}
-                      </TableCell>
-                      <TableCell className="text-sm" data-testid={`text-payment-${order.id}`}>
-                        {order.paymentMethod || "—"}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground" data-testid={`text-date-${order.id}`}>
-                        {formatDate(order.createdAt)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setSelectedOrderId(order.id)}
-                            data-testid={`button-view-order-${order.id}`}
+                  {filteredOrders.map((order, index) => {
+                    const StatusIcon = statusIcons[order.status || "new"] || CircleDot;
+                    return (
+                      <motion.tr
+                        key={order.id}
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: index * 0.02 }}
+                        className="border-b transition-colors hover:bg-muted/50"
+                        data-testid={`row-order-${order.id}`}
+                      >
+                        <TableCell className="font-mono text-xs" data-testid={`text-order-id-${order.id}`}>
+                          #{order.id.slice(-6).toUpperCase()}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" data-testid={`badge-type-${order.id}`}>
+                            {typeLabels[order.orderType || "dine_in"]}
+                          </Badge>
+                        </TableCell>
+                        <TableCell data-testid={`text-table-${order.id}`}>
+                          {order.tableId ? tableMap[order.tableId] || "—" : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium transition-all duration-300 ${statusColors[order.status || "new"]}`}
+                            data-testid={`badge-status-${order.id}`}
                           >
-                            <Eye className="h-4 w-4" />
-                          </Button>
-                          {canUpdateStatus && NEXT_STATUS[order.status || "new"] && (
+                            <StatusIcon className="h-3 w-3" />
+                            {statusLabels[order.status || "new"]}
+                          </span>
+                        </TableCell>
+                        <TableCell className="font-medium" data-testid={`text-total-${order.id}`}>
+                          {formatCurrency(order.total)}
+                        </TableCell>
+                        <TableCell className="text-sm" data-testid={`text-payment-${order.id}`}>
+                          {order.paymentMethod || "—"}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground" data-testid={`text-date-${order.id}`}>
+                          {formatDate(order.createdAt)}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              onClick={() =>
-                                updateStatusMutation.mutate({
-                                  id: order.id,
-                                  status: NEXT_STATUS[order.status || "new"]!,
-                                })
-                              }
-                              disabled={updateStatusMutation.isPending}
-                              data-testid={`button-advance-status-${order.id}`}
+                              onClick={() => setSelectedOrderId(order.id)}
+                              data-testid={`button-view-order-${order.id}`}
+                              className="hover:scale-110 transition-transform"
                             >
-                              →
+                              <Eye className="h-4 w-4" />
                             </Button>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                            {canUpdateStatus && NEXT_STATUS[order.status || "new"] && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  updateStatusMutation.mutate({
+                                    id: order.id,
+                                    status: NEXT_STATUS[order.status || "new"]!,
+                                  })
+                                }
+                                disabled={updateStatusMutation.isPending}
+                                data-testid={`button-advance-status-${order.id}`}
+                                className="hover:scale-110 transition-transform"
+                              >
+                                →
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </motion.tr>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -454,9 +474,10 @@ export default function OrdersPage() {
                 <div>
                   <p className="text-muted-foreground">Status</p>
                   <span
-                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedOrderDetail.status || "new"]}`}
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedOrderDetail.status || "new"]}`}
                     data-testid="badge-detail-status"
                   >
+                    {(() => { const SI = statusIcons[selectedOrderDetail.status || "new"] || CircleDot; return <SI className="h-3 w-3" />; })()}
                     {statusLabels[selectedOrderDetail.status || "new"]}
                   </span>
                 </div>
@@ -567,34 +588,29 @@ export default function OrdersPage() {
                         })
                       }
                       disabled={updateStatusMutation.isPending}
-                      data-testid="button-detail-advance-status"
+                      data-testid="button-advance-detail-status"
                     >
-                      Mark as {statusLabels[NEXT_STATUS[selectedOrderDetail.status || "new"]!]}
+                      Advance to {statusLabels[NEXT_STATUS[selectedOrderDetail.status || "new"]!]}
                     </Button>
                   )}
-                  {selectedOrderDetail.status !== "cancelled" &&
-                    selectedOrderDetail.status !== "voided" &&
-                    selectedOrderDetail.status !== "paid" && (
-                      <Button
-                        variant="destructive"
-                        onClick={() =>
-                          updateStatusMutation.mutate({
-                            id: selectedOrderDetail.id,
-                            status: "cancelled",
-                          })
-                        }
-                        disabled={updateStatusMutation.isPending}
-                        data-testid="button-detail-cancel"
-                      >
-                        Cancel Order
-                      </Button>
-                    )}
+                  {selectedOrderDetail.status !== "cancelled" && selectedOrderDetail.status !== "voided" && selectedOrderDetail.status !== "paid" && (
+                    <Button
+                      variant="destructive"
+                      onClick={() =>
+                        updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled" })
+                      }
+                      disabled={updateStatusMutation.isPending}
+                      data-testid="button-cancel-order"
+                    >
+                      Cancel Order
+                    </Button>
+                  )}
                 </div>
               )}
             </div>
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }

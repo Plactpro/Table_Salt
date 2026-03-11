@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -18,8 +19,48 @@ import {
   UtensilsCrossed,
   Leaf,
   Drumstick,
+  Coffee,
+  Beef,
+  IceCream,
+  Wine,
+  Soup,
+  Pizza,
+  Salad,
+  Sandwich,
 } from "lucide-react";
 import type { MenuCategory, MenuItem } from "@shared/schema";
+
+const categoryIcons: Record<string, React.ElementType> = {
+  appetizers: Soup,
+  starters: Soup,
+  mains: Beef,
+  main: Beef,
+  desserts: IceCream,
+  dessert: IceCream,
+  drinks: Coffee,
+  beverages: Wine,
+  salads: Salad,
+  pizza: Pizza,
+  sandwiches: Sandwich,
+};
+
+function getCategoryIcon(name: string) {
+  const lower = name.toLowerCase();
+  for (const [key, Icon] of Object.entries(categoryIcons)) {
+    if (lower.includes(key)) return Icon;
+  }
+  return UtensilsCrossed;
+}
+
+const containerVariants = {
+  hidden: {},
+  show: { transition: { staggerChildren: 0.04 } },
+};
+
+const itemVariants = {
+  hidden: { opacity: 0, y: 20 },
+  show: { opacity: 1, y: 0 },
+};
 
 export default function MenuPage() {
   const { toast } = useToast();
@@ -223,7 +264,12 @@ export default function MenuPage() {
   };
 
   return (
-    <div className="flex h-full gap-6 p-6" data-testid="menu-page">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="flex h-full gap-6 p-6"
+      data-testid="menu-page"
+    >
       <div className="w-72 shrink-0 space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-heading font-semibold" data-testid="text-categories-heading">Categories</h2>
@@ -232,32 +278,41 @@ export default function MenuPage() {
           </Button>
         </div>
 
-        <div
-          className={`cursor-pointer rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+        <motion.div
+          className={`cursor-pointer rounded-lg border px-4 py-2.5 text-sm font-medium transition-all duration-200 ${
             selectedCategoryId === null
-              ? "bg-primary text-primary-foreground"
-              : "hover:bg-accent"
+              ? "bg-primary text-primary-foreground shadow-md"
+              : "hover:bg-accent hover:shadow-sm"
           }`}
           onClick={() => setSelectedCategoryId(null)}
           data-testid="button-category-all"
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
         >
-          All Items ({allItems.length})
-        </div>
+          <div className="flex items-center gap-2">
+            <UtensilsCrossed className="h-4 w-4" />
+            All Items ({allItems.length})
+          </div>
+        </motion.div>
 
         {categories.map((cat) => {
           const count = allItems.filter((i) => i.categoryId === cat.id).length;
+          const CatIcon = getCategoryIcon(cat.name);
           return (
-            <div
+            <motion.div
               key={cat.id}
-              className={`group flex items-center justify-between rounded-lg border px-4 py-2.5 text-sm font-medium cursor-pointer transition-colors ${
+              className={`group flex items-center justify-between rounded-lg border px-4 py-2.5 text-sm font-medium cursor-pointer transition-all duration-200 ${
                 selectedCategoryId === cat.id
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-accent"
+                  ? "bg-primary text-primary-foreground shadow-md"
+                  : "hover:bg-accent hover:shadow-sm"
               }`}
               onClick={() => setSelectedCategoryId(cat.id)}
               data-testid={`button-category-${cat.id}`}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
-              <span>
+              <span className="flex items-center gap-2">
+                <CatIcon className="h-4 w-4" />
                 {cat.name} ({count})
               </span>
               <span className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -282,7 +337,7 @@ export default function MenuPage() {
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </span>
-            </div>
+            </motion.div>
           );
         })}
       </div>
@@ -304,83 +359,101 @@ export default function MenuPage() {
             <p className="text-sm">No menu items yet. Add your first item!</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {filteredItems.map((item) => (
-              <Card key={item.id} className="relative group" data-testid={`card-menu-item-${item.id}`}>
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-sm leading-tight truncate" data-testid={`text-item-name-${item.id}`}>
-                        {item.name}
-                      </h3>
-                      {item.description && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2" data-testid={`text-item-desc-${item.id}`}>
-                          {item.description}
-                        </p>
-                      )}
-                    </div>
-                    <Badge
-                      variant="outline"
-                      className={`shrink-0 ml-2 ${
-                        item.isVeg
-                          ? "border-green-500 text-green-600"
-                          : "border-red-500 text-red-600"
-                      }`}
-                      data-testid={`badge-veg-${item.id}`}
-                    >
-                      {item.isVeg ? <Leaf className="h-3 w-3 mr-1" /> : <Drumstick className="h-3 w-3 mr-1" />}
-                      {item.isVeg ? "Veg" : "Non-Veg"}
-                    </Badge>
-                  </div>
+          <motion.div
+            className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4"
+            variants={containerVariants}
+            initial="hidden"
+            animate="show"
+          >
+            <AnimatePresence>
+              {filteredItems.map((item) => (
+                <motion.div
+                  key={item.id}
+                  variants={itemVariants}
+                  layout
+                >
+                  <Card
+                    className="relative group transition-all duration-200 hover:shadow-lg hover:scale-[1.02]"
+                    data-testid={`card-menu-item-${item.id}`}
+                  >
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-medium text-sm leading-tight truncate" data-testid={`text-item-name-${item.id}`}>
+                            {item.name}
+                          </h3>
+                          {item.description && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2" data-testid={`text-item-desc-${item.id}`}>
+                              {item.description}
+                            </p>
+                          )}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={`shrink-0 ml-2 transition-colors duration-200 ${
+                            item.isVeg
+                              ? "border-green-500 text-green-600"
+                              : "border-red-500 text-red-600"
+                          }`}
+                          data-testid={`badge-veg-${item.id}`}
+                        >
+                          {item.isVeg ? <Leaf className="h-3 w-3 mr-1" /> : <Drumstick className="h-3 w-3 mr-1" />}
+                          {item.isVeg ? "Veg" : "Non-Veg"}
+                        </Badge>
+                      </div>
 
-                  <div className="flex items-center justify-between">
-                    <span className="text-base font-semibold" data-testid={`text-item-price-${item.id}`}>
-                      ${Number(item.price).toFixed(2)}
-                    </span>
-                    <Badge variant={item.categoryId ? "secondary" : "outline"} className="text-xs">
-                      {getCategoryName(item.categoryId)}
-                    </Badge>
-                  </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-base font-semibold" data-testid={`text-item-price-${item.id}`}>
+                          ${Number(item.price).toFixed(2)}
+                        </span>
+                        <Badge variant={item.categoryId ? "secondary" : "outline"} className="text-xs">
+                          {getCategoryName(item.categoryId)}
+                        </Badge>
+                      </div>
 
-                  <div className="flex items-center justify-between pt-1 border-t">
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={item.available ?? true}
-                        onCheckedChange={(checked) =>
-                          toggleAvailability.mutate({ id: item.id, available: checked })
-                        }
-                        data-testid={`switch-available-${item.id}`}
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {item.available ? "Available" : "Unavailable"}
-                      </span>
-                    </div>
-                    <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => openEditItem(item)}
-                        data-testid={`button-edit-item-${item.id}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive"
-                        onClick={() => {
-                          if (confirm("Delete this item?")) deleteItem.mutate(item.id);
-                        }}
-                        data-testid={`button-delete-item-${item.id}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                      <div className="flex items-center justify-between pt-1 border-t">
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={item.available ?? true}
+                            onCheckedChange={(checked) =>
+                              toggleAvailability.mutate({ id: item.id, available: checked })
+                            }
+                            data-testid={`switch-available-${item.id}`}
+                          />
+                          <span className={`text-xs transition-colors duration-200 ${
+                            item.available ? "text-green-600" : "text-muted-foreground"
+                          }`}>
+                            {item.available ? "Available" : "Unavailable"}
+                          </span>
+                        </div>
+                        <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openEditItem(item)}
+                            data-testid={`button-edit-item-${item.id}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => {
+                              if (confirm("Delete this item?")) deleteItem.mutate(item.id);
+                            }}
+                            data-testid={`button-delete-item-${item.id}`}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </AnimatePresence>
+          </motion.div>
         )}
       </div>
 
@@ -519,6 +592,6 @@ export default function MenuPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }

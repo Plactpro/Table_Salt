@@ -1,7 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { OrderTicket } from "@/components/widgets/order-ticket";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
+import { Utensils, Flame, CheckCircle2, ChefHat } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 interface OrderWithItems {
   id: string;
@@ -11,6 +13,39 @@ interface OrderWithItems {
   items: Array<{ name: string; quantity: number | null; notes: string | null; status: string | null }>;
   tableNumber?: number;
 }
+
+const columnConfig = [
+  {
+    key: "new",
+    title: "New",
+    icon: Utensils,
+    borderColor: "border-t-blue-500",
+    headerBg: "bg-blue-50 dark:bg-blue-950/40",
+    headerText: "text-blue-700 dark:text-blue-300",
+    badgeBg: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300",
+    dotColor: "bg-blue-500",
+  },
+  {
+    key: "in_progress",
+    title: "In Progress",
+    icon: Flame,
+    borderColor: "border-t-orange-500",
+    headerBg: "bg-orange-50 dark:bg-orange-950/40",
+    headerText: "text-orange-700 dark:text-orange-300",
+    badgeBg: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300",
+    dotColor: "bg-orange-500",
+  },
+  {
+    key: "ready",
+    title: "Ready",
+    icon: CheckCircle2,
+    borderColor: "border-t-green-500",
+    headerBg: "bg-green-50 dark:bg-green-950/40",
+    headerText: "text-green-700 dark:text-green-300",
+    badgeBg: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300",
+    dotColor: "bg-green-500",
+  },
+];
 
 export default function KitchenDashboard() {
   const queryClient = useQueryClient();
@@ -55,57 +90,90 @@ export default function KitchenDashboard() {
   const readyOrders = kitchenOrders.filter((o) => o.status === "ready");
 
   const columns = [
-    { title: "New", orders: newOrders, color: "border-blue-500" },
-    { title: "In Progress", orders: inProgressOrders, color: "border-orange-500" },
-    { title: "Ready", orders: readyOrders, color: "border-green-500" },
+    { ...columnConfig[0], orders: newOrders },
+    { ...columnConfig[1], orders: inProgressOrders },
+    { ...columnConfig[2], orders: readyOrders },
   ];
 
   return (
     <div className="space-y-6" data-testid="dashboard-kitchen">
-      <div>
-        <h1 className="text-2xl font-heading font-bold" data-testid="text-dashboard-title">Kitchen Display</h1>
-        <p className="text-muted-foreground">
-          {kitchenOrders.length} active ticket{kitchenOrders.length !== 1 ? "s" : ""}
-        </p>
-      </div>
+      <motion.div
+        className="flex items-center justify-between"
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+      >
+        <div className="flex items-center gap-3">
+          <motion.div
+            className="p-2.5 rounded-xl bg-gradient-to-br from-primary/20 to-primary/5 ring-1 ring-primary/10"
+            animate={{ rotate: [0, 5, -5, 0] }}
+            transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+          >
+            <ChefHat className="h-5 w-5 text-primary" />
+          </motion.div>
+          <div>
+            <h1 className="text-2xl font-heading font-bold" data-testid="text-dashboard-title">Kitchen Display</h1>
+            <p className="text-muted-foreground">
+              {kitchenOrders.length} active ticket{kitchenOrders.length !== 1 ? "s" : ""}
+            </p>
+          </div>
+        </div>
+      </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {columns.map((col) => (
-          <motion.div
-            key={col.title}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className={`space-y-3 border-t-4 ${col.color} pt-4`}
-          >
-            <div className="flex items-center justify-between">
-              <h2 className="font-heading font-semibold text-sm uppercase tracking-wide">
-                {col.title}
-              </h2>
-              <span className="text-sm text-muted-foreground">{col.orders.length}</span>
-            </div>
-            <div className="space-y-3">
-              {col.orders.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-8">No tickets</p>
-              ) : (
-                col.orders.map((order) => (
-                  <OrderTicket
-                    key={order.id}
-                    orderId={order.id}
-                    tableNumber={order.tableNumber}
-                    items={order.items.length > 0 ? order.items : [{ name: "Order items", quantity: 1, notes: null, status: null }]}
-                    status={order.status}
-                    createdAt={order.createdAt}
-                    onStatusChange={(newStatus) => {
-                      updateOrderMutation.mutate({ id: order.id, status: newStatus });
-                    }}
-                    testId={`ticket-${order.id.slice(-4)}`}
-                  />
-                ))
-              )}
-            </div>
-          </motion.div>
-        ))}
+        {columns.map((col, colIdx) => {
+          const ColIcon = col.icon;
+          return (
+            <motion.div
+              key={col.key}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: colIdx * 0.08 }}
+              className={`space-y-3 border-t-4 ${col.borderColor} pt-0 rounded-xl overflow-hidden`}
+            >
+              <div className={`flex items-center justify-between p-3 ${col.headerBg} rounded-b-lg`}>
+                <div className="flex items-center gap-2">
+                  <ColIcon className={`h-4 w-4 ${col.headerText}`} />
+                  <h2 className={`font-heading font-semibold text-sm uppercase tracking-wide ${col.headerText}`}>
+                    {col.title}
+                  </h2>
+                </div>
+                <Badge className={`${col.badgeBg} font-mono text-xs`}>
+                  {col.orders.length}
+                </Badge>
+              </div>
+              <div className="space-y-3 px-1">
+                <AnimatePresence mode="popLayout">
+                  {col.orders.length === 0 ? (
+                    <motion.p
+                      key="empty"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      className="text-sm text-muted-foreground text-center py-8"
+                    >
+                      No tickets
+                    </motion.p>
+                  ) : (
+                    col.orders.map((order) => (
+                      <OrderTicket
+                        key={order.id}
+                        orderId={order.id}
+                        tableNumber={order.tableNumber}
+                        items={order.items.length > 0 ? order.items : [{ name: "Order items", quantity: 1, notes: null, status: null }]}
+                        status={order.status}
+                        createdAt={order.createdAt}
+                        onStatusChange={(newStatus) => {
+                          updateOrderMutation.mutate({ id: order.id, status: newStatus });
+                        }}
+                        testId={`ticket-${order.id.slice(-4)}`}
+                      />
+                    ))
+                  )}
+                </AnimatePresence>
+              </div>
+            </motion.div>
+          );
+        })}
       </div>
     </div>
   );

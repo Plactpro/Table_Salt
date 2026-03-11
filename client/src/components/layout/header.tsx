@@ -1,6 +1,7 @@
 import { useAuth, Role } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
+import { motion } from "framer-motion";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,7 +11,19 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { LogOut, ChevronDown, User } from "lucide-react";
+import {
+  LogOut,
+  ChevronDown,
+  User,
+  Bell,
+  Crown,
+  Briefcase,
+  Coffee,
+  ChefHat,
+  Calculator,
+  UserCircle,
+  type LucideIcon,
+} from "lucide-react";
 
 const roleLabels: Record<Role, string> = {
   owner: "Owner",
@@ -22,12 +35,21 @@ const roleLabels: Record<Role, string> = {
 };
 
 const roleBadgeColors: Record<Role, string> = {
-  owner: "bg-purple-100 text-purple-800",
-  manager: "bg-blue-100 text-blue-800",
-  waiter: "bg-green-100 text-green-800",
-  kitchen: "bg-orange-100 text-orange-800",
-  accountant: "bg-gray-100 text-gray-800",
-  customer: "bg-teal-100 text-teal-800",
+  owner: "bg-purple-100 text-purple-800 border-purple-200",
+  manager: "bg-blue-100 text-blue-800 border-blue-200",
+  waiter: "bg-green-100 text-green-800 border-green-200",
+  kitchen: "bg-orange-100 text-orange-800 border-orange-200",
+  accountant: "bg-gray-100 text-gray-800 border-gray-200",
+  customer: "bg-teal-100 text-teal-800 border-teal-200",
+};
+
+const roleIcons: Record<Role, LucideIcon> = {
+  owner: Crown,
+  manager: Briefcase,
+  waiter: Coffee,
+  kitchen: ChefHat,
+  accountant: Calculator,
+  customer: UserCircle,
 };
 
 export default function Header() {
@@ -48,23 +70,39 @@ export default function Header() {
     navigate("/login");
   };
 
+  const RoleIcon = roleIcons[user.role];
+
   return (
     <header className="h-14 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-10" data-testid="header">
       <div className="flex items-center gap-3">
-        <span
-          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${roleBadgeColors[user.role]}`}
+        <motion.span
+          initial={{ opacity: 0, scale: 0.8 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${roleBadgeColors[user.role]}`}
           data-testid="badge-role"
         >
+          <RoleIcon className="h-3.5 w-3.5" />
           {roleLabels[user.role]}
-        </span>
+        </motion.span>
       </div>
 
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
+        <motion.div
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <Button variant="ghost" size="icon" className="relative h-9 w-9 text-muted-foreground hover:text-foreground" data-testid="button-notifications">
+            <Bell className="h-4 w-4" />
+            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive ring-2 ring-card" />
+          </Button>
+        </motion.div>
+
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="flex items-center gap-2" data-testid="button-user-menu">
               <Avatar className="h-8 w-8">
-                <AvatarFallback className="text-xs bg-primary/10 text-primary">{initials}</AvatarFallback>
+                <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
               </Avatar>
               <span className="text-sm font-medium hidden sm:inline" data-testid="text-user-name">{user.name}</span>
               <ChevronDown className="h-4 w-4 text-muted-foreground" />

@@ -1,7 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -36,6 +37,15 @@ import {
   Banknote,
   Wallet,
   Leaf,
+  Coffee,
+  Beef,
+  IceCream,
+  Wine,
+  Soup,
+  Pizza,
+  Salad,
+  Sandwich,
+  CheckCircle2,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table } from "@shared/schema";
 
@@ -50,6 +60,28 @@ interface CartItem {
 
 type OrderType = "dine_in" | "takeaway" | "delivery";
 type PaymentMethod = "cash" | "card" | "upi";
+
+const categoryIcons: Record<string, React.ElementType> = {
+  appetizers: Soup,
+  starters: Soup,
+  mains: Beef,
+  main: Beef,
+  desserts: IceCream,
+  dessert: IceCream,
+  drinks: Coffee,
+  beverages: Wine,
+  salads: Salad,
+  pizza: Pizza,
+  sandwiches: Sandwich,
+};
+
+function getCategoryIcon(name: string) {
+  const lower = name.toLowerCase();
+  for (const [key, Icon] of Object.entries(categoryIcons)) {
+    if (lower.includes(key)) return Icon;
+  }
+  return UtensilsCrossed;
+}
 
 export default function POSPage() {
   const { user } = useAuth();
@@ -66,6 +98,7 @@ export default function POSPage() {
   const [orderNotes, setOrderNotes] = useState("");
   const [noteDialogItem, setNoteDialogItem] = useState<string | null>(null);
   const [itemNoteText, setItemNoteText] = useState("");
+  const [addedItemId, setAddedItemId] = useState<string | null>(null);
 
   const { data: categories = [] } = useQuery<MenuCategory[]>({
     queryKey: ["/api/menu-categories"],
@@ -114,7 +147,10 @@ export default function POSPage() {
   const taxAmount = (subtotal - discountAmount) * taxRate;
   const total = subtotal - discountAmount + taxAmount;
 
-  const addToCart = (item: MenuItem) => {
+  const addToCart = useCallback((item: MenuItem) => {
+    setAddedItemId(item.id);
+    setTimeout(() => setAddedItemId(null), 600);
+
     setCart((prev) => {
       const existing = prev.find((c) => c.menuItemId === item.id);
       if (existing) {
@@ -134,7 +170,7 @@ export default function POSPage() {
         },
       ];
     });
-  };
+  }, []);
 
   const updateQuantity = (menuItemId: string, delta: number) => {
     setCart((prev) =>
@@ -244,23 +280,29 @@ export default function POSPage() {
               variant={selectedCategory === null ? "default" : "outline"}
               size="sm"
               onClick={() => setSelectedCategory(null)}
+              className="transition-all duration-200 hover:scale-105"
             >
+              <UtensilsCrossed className="h-3.5 w-3.5 mr-1" />
               All
             </Button>
             {categories
               .filter((c) => c.active !== false)
-              .map((cat) => (
-                <Button
-                  key={cat.id}
-                  data-testid={`button-category-${cat.id}`}
-                  variant={selectedCategory === cat.id ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setSelectedCategory(cat.id)}
-                  className="whitespace-nowrap"
-                >
-                  {cat.name}
-                </Button>
-              ))}
+              .map((cat) => {
+                const CatIcon = getCategoryIcon(cat.name);
+                return (
+                  <Button
+                    key={cat.id}
+                    data-testid={`button-category-${cat.id}`}
+                    variant={selectedCategory === cat.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className="whitespace-nowrap transition-all duration-200 hover:scale-105"
+                  >
+                    <CatIcon className="h-3.5 w-3.5 mr-1" />
+                    {cat.name}
+                  </Button>
+                );
+              })}
           </div>
         </div>
 
@@ -272,41 +314,72 @@ export default function POSPage() {
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-              {filteredItems.map((item) => {
+              {filteredItems.map((item, index) => {
                 const inCart = cart.find((c) => c.menuItemId === item.id);
+                const justAdded = addedItemId === item.id;
                 return (
-                  <Card
+                  <motion.div
                     key={item.id}
-                    data-testid={`card-menu-item-${item.id}`}
-                    className="cursor-pointer hover:shadow-md transition-shadow relative"
-                    onClick={() => addToCart(item)}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.03, duration: 0.3 }}
                   >
-                    <CardContent className="p-3">
-                      <div className="flex items-start justify-between mb-1">
-                        <h4 className="font-medium text-sm leading-tight line-clamp-2">
-                          {item.name}
-                        </h4>
-                        {item.isVeg && (
-                          <Leaf className="h-4 w-4 text-green-600 shrink-0 ml-1" />
+                    <Card
+                      data-testid={`card-menu-item-${item.id}`}
+                      className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.03] relative overflow-hidden"
+                      onClick={() => addToCart(item)}
+                    >
+                      <AnimatePresence>
+                        {justAdded && (
+                          <motion.div
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            className="absolute inset-0 z-10 flex items-center justify-center bg-primary/20 backdrop-blur-sm rounded-lg"
+                          >
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: [0, 1.3, 1] }}
+                              transition={{ duration: 0.4 }}
+                            >
+                              <CheckCircle2 className="h-8 w-8 text-primary" />
+                            </motion.div>
+                          </motion.div>
                         )}
-                      </div>
-                      {item.description && (
-                        <p className="text-xs text-muted-foreground line-clamp-1 mb-2">
-                          {item.description}
-                        </p>
-                      )}
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-sm" data-testid={`text-price-${item.id}`}>
-                          ${parseFloat(item.price).toFixed(2)}
-                        </span>
-                        {inCart && (
-                          <Badge variant="default" className="text-xs" data-testid={`badge-qty-${item.id}`}>
-                            {inCart.quantity}
-                          </Badge>
+                      </AnimatePresence>
+                      <CardContent className="p-3">
+                        <div className="flex items-start justify-between mb-1">
+                          <h4 className="font-medium text-sm leading-tight line-clamp-2">
+                            {item.name}
+                          </h4>
+                          {item.isVeg && (
+                            <Leaf className="h-4 w-4 text-green-600 shrink-0 ml-1" />
+                          )}
+                        </div>
+                        {item.description && (
+                          <p className="text-xs text-muted-foreground line-clamp-1 mb-2">
+                            {item.description}
+                          </p>
                         )}
-                      </div>
-                    </CardContent>
-                  </Card>
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold text-sm" data-testid={`text-price-${item.id}`}>
+                            ${parseFloat(item.price).toFixed(2)}
+                          </span>
+                          {inCart && (
+                            <motion.div
+                              initial={{ scale: 0 }}
+                              animate={{ scale: 1 }}
+                              key={inCart.quantity}
+                            >
+                              <Badge variant="default" className="text-xs" data-testid={`badge-qty-${item.id}`}>
+                                {inCart.quantity}
+                              </Badge>
+                            </motion.div>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
                 );
               })}
             </div>
@@ -317,12 +390,20 @@ export default function POSPage() {
       <div className="w-[380px] flex flex-col bg-card">
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
-            <ShoppingCart className="h-5 w-5" />
+            <div className="p-1.5 rounded-lg bg-primary/10">
+              <ShoppingCart className="h-5 w-5 text-primary" />
+            </div>
             <h2 className="font-heading font-semibold text-lg">Current Order</h2>
             {cart.length > 0 && (
-              <Badge variant="secondary" data-testid="badge-cart-count">
-                {cart.reduce((s, c) => s + c.quantity, 0)}
-              </Badge>
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                key={cart.reduce((s, c) => s + c.quantity, 0)}
+              >
+                <Badge variant="secondary" data-testid="badge-cart-count">
+                  {cart.reduce((s, c) => s + c.quantity, 0)}
+                </Badge>
+              </motion.div>
             )}
           </div>
 
@@ -331,7 +412,7 @@ export default function POSPage() {
               data-testid="button-order-type-dine-in"
               variant={orderType === "dine_in" ? "default" : "outline"}
               size="sm"
-              className="flex-1"
+              className="flex-1 transition-all duration-200"
               onClick={() => setOrderType("dine_in")}
             >
               <UtensilsCrossed className="h-3.5 w-3.5 mr-1" />
@@ -341,7 +422,7 @@ export default function POSPage() {
               data-testid="button-order-type-takeaway"
               variant={orderType === "takeaway" ? "default" : "outline"}
               size="sm"
-              className="flex-1"
+              className="flex-1 transition-all duration-200"
               onClick={() => setOrderType("takeaway")}
             >
               <Package className="h-3.5 w-3.5 mr-1" />
@@ -351,7 +432,7 @@ export default function POSPage() {
               data-testid="button-order-type-delivery"
               variant={orderType === "delivery" ? "default" : "outline"}
               size="sm"
-              className="flex-1"
+              className="flex-1 transition-all duration-200"
               onClick={() => setOrderType("delivery")}
             >
               <Truck className="h-3.5 w-3.5 mr-1" />
@@ -360,7 +441,12 @@ export default function POSPage() {
           </div>
 
           {orderType === "dine_in" && (
-            <div className="mt-3">
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              className="mt-3"
+            >
               <Select value={selectedTable} onValueChange={setSelectedTable}>
                 <SelectTrigger data-testid="select-table">
                   <SelectValue placeholder="Select table..." />
@@ -378,7 +464,7 @@ export default function POSPage() {
                   )}
                 </SelectContent>
               </Select>
-            </div>
+            </motion.div>
           )}
         </div>
 
@@ -391,78 +477,90 @@ export default function POSPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {cart.map((item) => (
-                <div
-                  key={item.menuItemId}
-                  data-testid={`cart-item-${item.menuItemId}`}
-                  className="flex flex-col gap-1.5 p-2 rounded-lg border bg-background"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1">
-                        {item.isVeg && <Leaf className="h-3 w-3 text-green-600 shrink-0" />}
-                        <span className="font-medium text-sm truncate">{item.name}</span>
+              <AnimatePresence>
+                {cart.map((item) => (
+                  <motion.div
+                    key={item.menuItemId}
+                    data-testid={`cart-item-${item.menuItemId}`}
+                    initial={{ opacity: 0, x: 40 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -40, height: 0 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                    className="flex flex-col gap-1.5 p-2 rounded-lg border bg-background"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1">
+                          {item.isVeg && <Leaf className="h-3 w-3 text-green-600 shrink-0" />}
+                          <span className="font-medium text-sm truncate">{item.name}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground">
+                          ${item.price.toFixed(2)} each
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground">
-                        ${item.price.toFixed(2)} each
+                      <span className="font-semibold text-sm">
+                        ${(item.price * item.quantity).toFixed(2)}
                       </span>
                     </div>
-                    <span className="font-semibold text-sm">
-                      ${(item.price * item.quantity).toFixed(2)}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1">
-                      <Button
-                        data-testid={`button-decrease-${item.menuItemId}`}
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => updateQuantity(item.menuItemId, -1)}
-                      >
-                        <Minus className="h-3 w-3" />
-                      </Button>
-                      <span className="w-8 text-center text-sm font-medium" data-testid={`text-qty-${item.menuItemId}`}>
-                        {item.quantity}
-                      </span>
-                      <Button
-                        data-testid={`button-increase-${item.menuItemId}`}
-                        variant="outline"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => updateQuantity(item.menuItemId, 1)}
-                      >
-                        <Plus className="h-3 w-3" />
-                      </Button>
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <Button
+                          data-testid={`button-decrease-${item.menuItemId}`}
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => updateQuantity(item.menuItemId, -1)}
+                        >
+                          <Minus className="h-3 w-3" />
+                        </Button>
+                        <motion.span
+                          key={item.quantity}
+                          initial={{ scale: 1.3 }}
+                          animate={{ scale: 1 }}
+                          className="w-8 text-center text-sm font-medium"
+                          data-testid={`text-qty-${item.menuItemId}`}
+                        >
+                          {item.quantity}
+                        </motion.span>
+                        <Button
+                          data-testid={`button-increase-${item.menuItemId}`}
+                          variant="outline"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => updateQuantity(item.menuItemId, 1)}
+                        >
+                          <Plus className="h-3 w-3" />
+                        </Button>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          data-testid={`button-note-${item.menuItemId}`}
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => openNoteDialog(item.menuItemId)}
+                        >
+                          <StickyNote className="h-3 w-3" />
+                        </Button>
+                        <Button
+                          data-testid={`button-remove-${item.menuItemId}`}
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => removeFromCart(item.menuItemId)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        data-testid={`button-note-${item.menuItemId}`}
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => openNoteDialog(item.menuItemId)}
-                      >
-                        <StickyNote className="h-3 w-3" />
-                      </Button>
-                      <Button
-                        data-testid={`button-remove-${item.menuItemId}`}
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 text-destructive"
-                        onClick={() => removeFromCart(item.menuItemId)}
-                      >
-                        <Trash2 className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                  {item.notes && (
-                    <p className="text-xs text-muted-foreground italic pl-1">
-                      Note: {item.notes}
-                    </p>
-                  )}
-                </div>
-              ))}
+                    {item.notes && (
+                      <p className="text-xs text-muted-foreground italic pl-1">
+                        Note: {item.notes}
+                      </p>
+                    )}
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
           )}
         </div>
@@ -493,7 +591,7 @@ export default function POSPage() {
               data-testid="button-payment-cash"
               variant={paymentMethod === "cash" ? "default" : "outline"}
               size="sm"
-              className="flex-1"
+              className="flex-1 transition-all duration-200"
               onClick={() => setPaymentMethod("cash")}
             >
               <Banknote className="h-3.5 w-3.5 mr-1" />
@@ -503,7 +601,7 @@ export default function POSPage() {
               data-testid="button-payment-card"
               variant={paymentMethod === "card" ? "default" : "outline"}
               size="sm"
-              className="flex-1"
+              className="flex-1 transition-all duration-200"
               onClick={() => setPaymentMethod("card")}
             >
               <CreditCard className="h-3.5 w-3.5 mr-1" />
@@ -513,7 +611,7 @@ export default function POSPage() {
               data-testid="button-payment-upi"
               variant={paymentMethod === "upi" ? "default" : "outline"}
               size="sm"
-              className="flex-1"
+              className="flex-1 transition-all duration-200"
               onClick={() => setPaymentMethod("upi")}
             >
               <Wallet className="h-3.5 w-3.5 mr-1" />
@@ -547,7 +645,7 @@ export default function POSPage() {
 
           <Button
             data-testid="button-place-order"
-            className="w-full"
+            className="w-full transition-all duration-200 hover:scale-[1.02]"
             size="lg"
             onClick={handlePlaceOrder}
             disabled={cart.length === 0 || placeOrderMutation.isPending}

@@ -6,6 +6,7 @@ import type { InventoryItem } from "@shared/schema";
 import { motion } from "framer-motion";
 import {
   Package, Plus, Search, AlertTriangle, Edit, Trash2, ArrowUpDown,
+  Warehouse, BoxIcon, TrendingDown,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,25 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
+
+function StockBar({ current, reorder }: { current: number; reorder: number }) {
+  const max = Math.max(current, reorder * 2, 1);
+  const pct = Math.min((current / max) * 100, 100);
+  const isLow = current <= reorder;
+
+  return (
+    <div className="w-24 h-2 rounded-full bg-muted overflow-hidden">
+      <motion.div
+        initial={{ width: 0 }}
+        animate={{ width: `${pct}%` }}
+        transition={{ duration: 0.8, ease: "easeOut" }}
+        className={`h-full rounded-full ${
+          isLow ? "bg-red-500" : pct > 60 ? "bg-green-500" : "bg-yellow-500"
+        }`}
+      />
+    </div>
+  );
+}
 
 export default function InventoryPage() {
   const { user } = useAuth();
@@ -184,11 +204,21 @@ export default function InventoryPage() {
   const canEdit = user?.role === "owner" || user?.role === "manager";
 
   return (
-    <div className="p-6 space-y-6" data-testid="page-inventory">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="p-6 space-y-6"
+      data-testid="page-inventory"
+    >
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold font-heading" data-testid="text-inventory-title">Inventory</h1>
-          <p className="text-muted-foreground">Track stock levels and manage inventory items</p>
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-primary/10">
+            <Warehouse className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold font-heading" data-testid="text-inventory-title">Inventory</h1>
+            <p className="text-muted-foreground">Track stock levels and manage inventory items</p>
+          </div>
         </div>
         {canEdit && (
           <Button onClick={openAddDialog} data-testid="button-add-inventory">
@@ -199,36 +229,45 @@ export default function InventoryPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard
-          title="Total Items"
-          value={inventory.length}
-          icon={Package}
-          iconColor="text-blue-600"
-          iconBg="bg-blue-100"
-          testId="stat-total-items"
-        />
-        <StatCard
-          title="Low Stock Items"
-          value={lowStockItems.length}
-          icon={AlertTriangle}
-          iconColor="text-red-600"
-          iconBg="bg-red-100"
-          testId="stat-low-stock"
-        />
-        <StatCard
-          title="Total Stock Value"
-          value={`$${totalValue.toFixed(2)}`}
-          icon={Package}
-          iconColor="text-green-600"
-          iconBg="bg-green-100"
-          testId="stat-stock-value"
-        />
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
+          <StatCard
+            title="Total Items"
+            value={inventory.length}
+            icon={BoxIcon}
+            iconColor="text-blue-600"
+            iconBg="bg-blue-100"
+            testId="stat-total-items"
+          />
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+          <StatCard
+            title="Low Stock Items"
+            value={lowStockItems.length}
+            icon={TrendingDown}
+            iconColor="text-red-600"
+            iconBg="bg-red-100"
+            testId="stat-low-stock"
+          />
+        </motion.div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <StatCard
+            title="Total Stock Value"
+            value={`$${totalValue.toFixed(2)}`}
+            icon={Package}
+            iconColor="text-green-600"
+            iconBg="bg-green-100"
+            testId="stat-stock-value"
+          />
+        </motion.div>
       </div>
 
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-lg">Inventory Items</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Package className="h-4 w-4 text-muted-foreground" />
+              Inventory Items
+            </CardTitle>
             <div className="relative w-64">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -255,8 +294,9 @@ export default function InventoryPage() {
                   <TableHead>Name</TableHead>
                   <TableHead>SKU</TableHead>
                   <TableHead>Category</TableHead>
-                  <TableHead>Current Stock</TableHead>
-                  <TableHead>Reorder Level</TableHead>
+                  <TableHead>Stock Level</TableHead>
+                  <TableHead>Current</TableHead>
+                  <TableHead>Reorder</TableHead>
                   <TableHead>Unit</TableHead>
                   <TableHead>Cost Price</TableHead>
                   <TableHead>Supplier</TableHead>
@@ -265,21 +305,38 @@ export default function InventoryPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((item) => (
+                {filtered.map((item, index) => (
                   <motion.tr
                     key={item.id}
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
+                    transition={{ delay: index * 0.02 }}
                     className={`border-b transition-colors hover:bg-muted/50 ${
                       isLowStock(item) ? "bg-red-50 dark:bg-red-950/20" : ""
                     }`}
                     data-testid={`row-inventory-${item.id}`}
                   >
                     <TableCell className="font-medium" data-testid={`text-name-${item.id}`}>
-                      {item.name}
+                      <div className="flex items-center gap-2">
+                        {isLowStock(item) && (
+                          <motion.div
+                            animate={{ scale: [1, 1.2, 1] }}
+                            transition={{ repeat: Infinity, duration: 2 }}
+                          >
+                            <AlertTriangle className="h-4 w-4 text-red-500" />
+                          </motion.div>
+                        )}
+                        {item.name}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{item.sku || "—"}</TableCell>
                     <TableCell>{item.category || "—"}</TableCell>
+                    <TableCell>
+                      <StockBar
+                        current={Number(item.currentStock)}
+                        reorder={Number(item.reorderLevel)}
+                      />
+                    </TableCell>
                     <TableCell
                       className={isLowStock(item) ? "text-red-600 font-semibold" : ""}
                       data-testid={`text-stock-${item.id}`}
@@ -292,9 +349,14 @@ export default function InventoryPage() {
                     <TableCell>{item.supplier || "—"}</TableCell>
                     <TableCell>
                       {isLowStock(item) ? (
-                        <Badge variant="destructive" data-testid={`badge-low-stock-${item.id}`}>
-                          Low Stock
-                        </Badge>
+                        <motion.div
+                          animate={{ scale: [1, 1.05, 1] }}
+                          transition={{ repeat: Infinity, duration: 1.5 }}
+                        >
+                          <Badge variant="destructive" data-testid={`badge-low-stock-${item.id}`}>
+                            Low Stock
+                          </Badge>
+                        </motion.div>
                       ) : (
                         <Badge variant="secondary" data-testid={`badge-in-stock-${item.id}`}>
                           In Stock
@@ -309,6 +371,7 @@ export default function InventoryPage() {
                             size="sm"
                             onClick={() => openAdjustDialog(item)}
                             data-testid={`button-adjust-${item.id}`}
+                            className="hover:scale-110 transition-transform"
                           >
                             <ArrowUpDown className="h-4 w-4" />
                           </Button>
@@ -317,6 +380,7 @@ export default function InventoryPage() {
                             size="sm"
                             onClick={() => openEditDialog(item)}
                             data-testid={`button-edit-${item.id}`}
+                            className="hover:scale-110 transition-transform"
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
@@ -325,6 +389,7 @@ export default function InventoryPage() {
                             size="sm"
                             onClick={() => deleteMutation.mutate(item.id)}
                             data-testid={`button-delete-${item.id}`}
+                            className="hover:scale-110 transition-transform"
                           >
                             <Trash2 className="h-4 w-4 text-destructive" />
                           </Button>
@@ -516,6 +581,6 @@ export default function InventoryPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }

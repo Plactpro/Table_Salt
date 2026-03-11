@@ -12,17 +12,29 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { motion } from "framer-motion";
-import { Plus, UserCog, Search, Edit } from "lucide-react";
+import {
+  Plus, UserCog, Search, Edit,
+  Crown, ShieldCheck, ConciergeBell, ChefHat, Calculator, Users,
+} from "lucide-react";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant"] as const;
 
 const roleBadgeColors: Record<string, string> = {
-  owner: "bg-purple-100 text-purple-800",
-  manager: "bg-blue-100 text-blue-800",
-  waiter: "bg-green-100 text-green-800",
-  kitchen: "bg-orange-100 text-orange-800",
-  accountant: "bg-cyan-100 text-cyan-800",
-  customer: "bg-gray-100 text-gray-800",
+  owner: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200",
+  manager: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  waiter: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  kitchen: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
+  accountant: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
+  customer: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+};
+
+const roleIcons: Record<string, React.ElementType> = {
+  owner: Crown,
+  manager: ShieldCheck,
+  waiter: ConciergeBell,
+  kitchen: ChefHat,
+  accountant: Calculator,
+  customer: Users,
 };
 
 export default function StaffPage() {
@@ -116,9 +128,14 @@ export default function StaffPage() {
       className="p-6 space-y-6"
     >
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold font-heading" data-testid="text-staff-title">Staff Management</h1>
-          <p className="text-muted-foreground">Manage your team members and their roles</p>
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-primary/10">
+            <UserCog className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold font-heading" data-testid="text-staff-title">Staff Management</h1>
+            <p className="text-muted-foreground">Manage your team members and their roles</p>
+          </div>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
@@ -166,9 +183,17 @@ export default function StaffPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ROLES.map((r) => (
-                      <SelectItem key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
-                    ))}
+                    {ROLES.map((r) => {
+                      const RoleIcon = roleIcons[r] || Users;
+                      return (
+                        <SelectItem key={r} value={r}>
+                          <span className="flex items-center gap-2">
+                            <RoleIcon className="h-3.5 w-3.5" />
+                            {r.charAt(0).toUpperCase() + r.slice(1)}
+                          </span>
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -234,29 +259,56 @@ export default function StaffPage() {
                   <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No staff found</TableCell>
                 </TableRow>
               ) : (
-                filteredStaff.map((staff: any) => (
-                  <TableRow key={staff.id} data-testid={`row-staff-${staff.id}`}>
-                    <TableCell className="font-medium" data-testid={`text-staff-name-${staff.id}`}>{staff.name}</TableCell>
-                    <TableCell data-testid={`text-staff-username-${staff.id}`}>{staff.username}</TableCell>
-                    <TableCell>
-                      <Badge className={roleBadgeColors[staff.role] || ""} data-testid={`badge-staff-role-${staff.id}`}>
-                        {staff.role}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{staff.email || "—"}</TableCell>
-                    <TableCell>{staff.phone || "—"}</TableCell>
-                    <TableCell>
-                      <Badge variant={staff.active !== false ? "default" : "secondary"} data-testid={`badge-staff-status-${staff.id}`}>
-                        {staff.active !== false ? "Active" : "Inactive"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(staff)} data-testid={`button-edit-staff-${staff.id}`}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))
+                filteredStaff.map((staff: any, index: number) => {
+                  const RoleIcon = roleIcons[staff.role] || Users;
+                  return (
+                    <motion.tr
+                      key={staff.id}
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.03 }}
+                      className="border-b transition-colors hover:bg-muted/50"
+                      data-testid={`row-staff-${staff.id}`}
+                    >
+                      <TableCell className="font-medium" data-testid={`text-staff-name-${staff.id}`}>
+                        <div className="flex items-center gap-2.5">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${roleBadgeColors[staff.role] || "bg-gray-100"}`}>
+                            <RoleIcon className="h-4 w-4" />
+                          </div>
+                          {staff.name}
+                        </div>
+                      </TableCell>
+                      <TableCell data-testid={`text-staff-username-${staff.id}`}>{staff.username}</TableCell>
+                      <TableCell>
+                        <Badge className={`${roleBadgeColors[staff.role] || ""} gap-1`} data-testid={`badge-staff-role-${staff.id}`}>
+                          <RoleIcon className="h-3 w-3" />
+                          {staff.role}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{staff.email || "—"}</TableCell>
+                      <TableCell>{staff.phone || "—"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${staff.active !== false ? "bg-green-500" : "bg-gray-400"}`} />
+                          <Badge variant={staff.active !== false ? "default" : "secondary"} data-testid={`badge-staff-status-${staff.id}`}>
+                            {staff.active !== false ? "Active" : "Inactive"}
+                          </Badge>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEdit(staff)}
+                          data-testid={`button-edit-staff-${staff.id}`}
+                          className="hover:scale-110 transition-transform"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </motion.tr>
+                  );
+                })
               )}
             </TableBody>
           </Table>

@@ -13,6 +13,12 @@ import {
   CalendarDays,
   Filter,
   ChevronDown,
+  CircleCheck,
+  CircleX,
+  Timer,
+  Sparkles,
+  ShieldBan,
+  Armchair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +79,14 @@ const statusDotColor: Record<TableStatus, string> = {
   reserved: "bg-yellow-500",
   cleaning: "bg-blue-500",
   blocked: "bg-gray-500",
+};
+
+const statusIcon: Record<TableStatus, React.ElementType> = {
+  free: CircleCheck,
+  occupied: CircleX,
+  reserved: Timer,
+  cleaning: Sparkles,
+  blocked: ShieldBan,
 };
 
 export default function TablesPage() {
@@ -226,11 +240,20 @@ export default function TablesPage() {
   }, {});
 
   return (
-    <div className="p-6 space-y-6">
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="p-6 space-y-6"
+    >
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold" data-testid="text-page-title">Tables & Floor Plan</h1>
-          <p className="text-muted-foreground text-sm mt-1">Manage your restaurant tables and reservations</p>
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-primary/10">
+            <Armchair className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold" data-testid="text-page-title">Tables & Floor Plan</h1>
+            <p className="text-muted-foreground text-sm mt-1">Manage your restaurant tables and reservations</p>
+          </div>
         </div>
         <Button data-testid="button-add-table" onClick={() => { resetForm(); setShowAddDialog(true); }}>
           <Plus className="w-4 h-4 mr-2" />
@@ -315,8 +338,14 @@ export default function TablesPage() {
             </Card>
           ) : (
             Object.entries(groupedByZone).map(([zone, zoneTables]) => (
-              <div key={zone} className="space-y-3">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider" data-testid={`text-zone-${zone}`}>
+              <motion.div
+                key={zone}
+                className="space-y-3"
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+              >
+                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-2" data-testid={`text-zone-${zone}`}>
+                  <MapPin className="h-4 w-4" />
                   {zone} ({zoneTables.length} tables)
                 </h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
@@ -337,10 +366,24 @@ export default function TablesPage() {
                           >
                             <Card
                               data-testid={`card-table-${table.id}`}
-                              className={`cursor-pointer border-2 transition-all hover:shadow-md ${cfg.bg}`}
+                              className={`cursor-pointer border-2 transition-all duration-200 hover:shadow-lg hover:scale-[1.03] ${cfg.bg}`}
                               onClick={() => handleTableClick(table)}
                             >
                               <CardContent className="p-4 text-center space-y-2">
+                                {(() => {
+                                  const StIcon = statusIcon[st];
+                                  return (
+                                    <motion.div
+                                      key={st}
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: 1 }}
+                                      transition={{ type: "spring", stiffness: 300 }}
+                                      className="flex justify-center"
+                                    >
+                                      <StIcon className={`h-6 w-6 ${cfg.color}`} />
+                                    </motion.div>
+                                  );
+                                })()}
                                 <div className="text-2xl font-bold" data-testid={`text-table-number-${table.id}`}>
                                   T{table.number}
                                 </div>
@@ -362,7 +405,7 @@ export default function TablesPage() {
                       })}
                   </AnimatePresence>
                 </div>
-              </div>
+              </motion.div>
             ))
           )}
         </>
@@ -657,6 +700,6 @@ export default function TablesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
   );
 }
