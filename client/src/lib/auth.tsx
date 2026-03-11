@@ -1,8 +1,16 @@
 import { createContext, useContext, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./queryClient";
+import { SubscriptionTier, BusinessType, hasFeatureAccess, getBusinessBadges, FeatureKey } from "./subscription";
 
 export type Role = "owner" | "manager" | "waiter" | "kitchen" | "accountant" | "customer";
+
+export interface TenantInfo {
+  id: string;
+  name: string;
+  plan: SubscriptionTier;
+  businessType: BusinessType;
+}
 
 export interface AuthUser {
   id: string;
@@ -13,10 +21,12 @@ export interface AuthUser {
   phone: string | null;
   role: Role;
   active: boolean | null;
+  tenant?: TenantInfo;
 }
 
 interface AuthContextType {
   user: AuthUser | null;
+  tenant: TenantInfo | null;
   isLoading: boolean;
   login: (username: string, password: string) => Promise<AuthUser>;
   register: (data: { restaurantName: string; name: string; username: string; password: string }) => Promise<AuthUser>;
@@ -25,6 +35,7 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
+  tenant: null,
   isLoading: true,
   login: async () => { throw new Error("Not initialized"); },
   register: async () => { throw new Error("Not initialized"); },
@@ -49,6 +60,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: Infinity,
   });
 
+  const { data: tenantData } = useQuery<TenantInfo | null>({
+    queryKey: ["/api/tenant", user?.tenantId],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/tenant", { credentials: "include" });
+        if (!res.ok) return null;
+        const data = await res.json();
+        return {
+          id: data.id,
+          name: data.name,
+          plan: (data.plan || "basic") as SubscriptionTier,
+          businessType: (data.businessType || "casual_dining") as BusinessType,
+        };
+      } catch {
+        return null;
+      }
+    },
+    enabled: !!user,
+    retry: false,
+    staleTime: 30000,
+  });
+
   const loginMutation = useMutation({
     mutationFn: async ({ username, password }: { username: string; password: string }) => {
       const res = await apiRequest("POST", "/api/auth/login", { username, password });
@@ -66,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
     },
   });
 
@@ -75,6 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
     },
   });
 
@@ -90,11 +125,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await logoutMutation.mutateAsync();
   };
 
+  const tenant = tenantData ?? null;
+
   return (
-    <AuthContext.Provider value={{ user: user ?? null, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user: user ?? null, tenant, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
 export const useAuth = () => useContext(AuthContext);
+
+export function useSubscription() {
+  const { tenant } = useAuth();
+  const tier: SubscriptionTier = tenant?.plan ?? "basic";
+  const businessType: BusinessType = tenant?.businessType ?? "casual_dining";
+
+  const checkFeatureAccess = (feature: FeatureKey) => hasFeatureAccess(tier, feature);
+  const badges = getBusinessBadges(businessType, tier);
+
+  return {
+    tier,
+    businessType,
+    tenant,
+    hasFeatureAccess: checkFeatureAccess,
+    badges,
+  };
+}

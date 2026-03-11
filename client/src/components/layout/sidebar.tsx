@@ -1,5 +1,6 @@
 import { useLocation } from "wouter";
 import { useAuth, Role } from "@/lib/auth";
+import { useSubscription } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import {
@@ -21,8 +22,13 @@ import {
   BarChart3,
   Settings,
   UtensilsCrossed,
+  Lock,
+  Store,
+  CreditCard,
+  Puzzle,
   type LucideIcon,
 } from "lucide-react";
+import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
 
 interface NavItem {
   id: string;
@@ -30,20 +36,24 @@ interface NavItem {
   icon: LucideIcon;
   path: string;
   roles: Role[];
+  featureKey?: FeatureKey;
 }
 
 const navItems: NavItem[] = [
   { id: "m-1", name: "Dashboard", icon: LayoutDashboard, path: "/", roles: ["owner", "manager", "accountant"] },
   { id: "m-2", name: "My Shift", icon: Clock, path: "/", roles: ["waiter"] },
   { id: "m-3", name: "KDS", icon: ChefHat, path: "/", roles: ["kitchen"] },
-  { id: "m-4", name: "POS", icon: MonitorSmartphone, path: "/pos", roles: ["owner", "manager", "waiter"] },
-  { id: "m-5", name: "Orders", icon: Receipt, path: "/orders", roles: ["owner", "manager", "waiter", "kitchen"] },
-  { id: "m-6", name: "Tables", icon: Utensils, path: "/tables", roles: ["owner", "manager", "waiter"] },
-  { id: "m-7", name: "Menu", icon: MenuSquare, path: "/menu", roles: ["owner", "manager"] },
-  { id: "m-8", name: "Inventory", icon: Package2, path: "/inventory", roles: ["owner", "manager"] },
-  { id: "m-9", name: "Staff", icon: Users, path: "/staff", roles: ["owner", "manager"] },
-  { id: "m-10", name: "Reports", icon: BarChart3, path: "/reports", roles: ["owner", "manager", "accountant"] },
-  { id: "m-11", name: "Settings", icon: Settings, path: "/settings", roles: ["owner"] },
+  { id: "m-4", name: "POS", icon: MonitorSmartphone, path: "/pos", roles: ["owner", "manager", "waiter"], featureKey: "pos" },
+  { id: "m-5", name: "Orders", icon: Receipt, path: "/orders", roles: ["owner", "manager", "waiter", "kitchen"], featureKey: "orders" },
+  { id: "m-6", name: "Tables", icon: Utensils, path: "/tables", roles: ["owner", "manager", "waiter"], featureKey: "tables" },
+  { id: "m-7", name: "Menu", icon: MenuSquare, path: "/menu", roles: ["owner", "manager"], featureKey: "menu" },
+  { id: "m-8", name: "Inventory", icon: Package2, path: "/inventory", roles: ["owner", "manager"], featureKey: "inventory" },
+  { id: "m-9", name: "Staff", icon: Users, path: "/staff", roles: ["owner", "manager"], featureKey: "staff" },
+  { id: "m-10", name: "Reports", icon: BarChart3, path: "/reports", roles: ["owner", "manager", "accountant"], featureKey: "reports" },
+  { id: "m-11", name: "Outlets", icon: Store, path: "/outlets", roles: ["owner", "manager"], featureKey: "outlets" },
+  { id: "m-12", name: "Integrations", icon: Puzzle, path: "/integrations", roles: ["owner", "manager"], featureKey: "integrations" },
+  { id: "m-13", name: "Billing", icon: CreditCard, path: "/billing", roles: ["owner"], featureKey: "billing" },
+  { id: "m-14", name: "Settings", icon: Settings, path: "/settings", roles: ["owner"], featureKey: "settings" },
 ];
 
 function SandDecoration() {
@@ -90,8 +100,34 @@ function WaterShimmer() {
   );
 }
 
+function BusinessBadges({ badges }: { badges: string[] }) {
+  if (badges.length === 0) return null;
+  return (
+    <div className="relative z-10 px-4 pb-4 pt-2" data-testid="sidebar-business-badges">
+      <div className="flex flex-wrap gap-1.5">
+        {badges.map((badge, i) => (
+          <span
+            key={i}
+            data-testid={`badge-business-${i}`}
+            className="inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold tracking-wide"
+            style={{
+              background: "linear-gradient(135deg, rgba(0,128,128,0.25), rgba(0,128,128,0.15))",
+              color: "hsl(185, 45%, 12%)",
+              border: "1px solid rgba(0,128,128,0.2)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            {badge}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Sidebar() {
   const { user } = useAuth();
+  const { tier, badges, hasFeatureAccess } = useSubscription();
   const [location, navigate] = useLocation();
 
   const role = user?.role ?? "owner";
@@ -141,6 +177,10 @@ export default function Sidebar() {
             {filteredItems.map((item, index) => {
               const isActive = location === item.path;
               const Icon = item.icon;
+              const isLocked = item.featureKey ? !hasFeatureAccess(item.featureKey) : false;
+              const requiredTier = isLocked && item.featureKey ? getMinimumTierForFeature(item.featureKey) : null;
+              const upgradeTierLabel = requiredTier ? tierPricing[requiredTier]?.label : null;
+
               return (
                 <motion.li
                   key={item.id}
@@ -152,15 +192,17 @@ export default function Sidebar() {
                     <TooltipTrigger asChild>
                       <button
                         data-testid={`nav-${item.name.toLowerCase().replace(/\s+/g, "-")}`}
-                        onClick={() => navigate(item.path)}
+                        onClick={() => !isLocked && navigate(item.path)}
                         className={cn(
                           "group relative flex items-center gap-3 w-full rounded-xl px-3 py-3 text-base font-medium transition-all duration-200",
-                          isActive
-                            ? "text-[hsl(185,45%,12%)] font-semibold"
-                            : "text-[hsl(185,35%,18%)] hover:text-[hsl(185,45%,10%)]"
+                          isLocked
+                            ? "text-[hsl(185,35%,18%)] opacity-50 cursor-not-allowed"
+                            : isActive
+                              ? "text-[hsl(185,45%,12%)] font-semibold"
+                              : "text-[hsl(185,35%,18%)] hover:text-[hsl(185,45%,10%)]"
                         )}
                       >
-                        {isActive && (
+                        {isActive && !isLocked && (
                           <motion.div
                             layoutId="sidebar-active-bg"
                             className="absolute inset-0 rounded-xl"
@@ -173,7 +215,7 @@ export default function Sidebar() {
                             transition={{ type: "spring", stiffness: 350, damping: 30 }}
                           />
                         )}
-                        {isActive && (
+                        {isActive && !isLocked && (
                           <motion.div
                             layoutId="sidebar-active-indicator"
                             className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full"
@@ -181,7 +223,7 @@ export default function Sidebar() {
                             transition={{ type: "spring", stiffness: 350, damping: 30 }}
                           />
                         )}
-                        {!isActive && (
+                        {!isActive && !isLocked && (
                           <div
                             className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                             style={{
@@ -191,21 +233,33 @@ export default function Sidebar() {
                           />
                         )}
                         <motion.div
-                          whileHover={{ scale: 1.15 }}
-                          whileTap={{ scale: 0.95 }}
+                          whileHover={isLocked ? {} : { scale: 1.15 }}
+                          whileTap={isLocked ? {} : { scale: 0.95 }}
                           transition={{ type: "spring", stiffness: 400, damping: 17 }}
                           className="relative z-10"
                         >
                           <Icon className={cn(
                             "h-5 w-5 transition-colors duration-200",
-                            isActive ? "text-[hsl(176,60%,30%)]" : "text-[hsl(185,30%,28%)] group-hover:text-[hsl(176,55%,22%)]"
+                            isLocked
+                              ? "text-[hsl(185,20%,40%)]"
+                              : isActive
+                                ? "text-[hsl(176,60%,30%)]"
+                                : "text-[hsl(185,30%,28%)] group-hover:text-[hsl(176,55%,22%)]"
                           )} />
                         </motion.div>
-                        <span className="relative z-10">{item.name}</span>
+                        <span className="relative z-10 flex-1 text-left">{item.name}</span>
+                        {isLocked && (
+                          <Lock
+                            className="relative z-10 h-3.5 w-3.5 text-[hsl(185,20%,40%)]"
+                            data-testid={`lock-${item.name.toLowerCase().replace(/\s+/g, "-")}`}
+                          />
+                        )}
                       </button>
                     </TooltipTrigger>
-                    <TooltipContent side="right" className="md:hidden">
-                      {item.name}
+                    <TooltipContent side="right">
+                      {isLocked && upgradeTierLabel
+                        ? `Upgrade to ${upgradeTierLabel} to access`
+                        : item.name}
                     </TooltipContent>
                   </Tooltip>
                 </motion.li>
@@ -214,6 +268,8 @@ export default function Sidebar() {
           </ul>
         </TooltipProvider>
       </nav>
+
+      <BusinessBadges badges={badges} />
     </aside>
   );
 }

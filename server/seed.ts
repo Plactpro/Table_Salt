@@ -16,6 +16,7 @@ export async function seedDatabase() {
     taxRate: "8.5",
     serviceCharge: "5",
     plan: "premium",
+    businessType: "fine_dining",
   });
 
   const outlet = await storage.createOutlet({
