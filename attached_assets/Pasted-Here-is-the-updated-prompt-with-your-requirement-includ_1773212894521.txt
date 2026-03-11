@@ -1,0 +1,52 @@
+Here is the updated prompt with your requirement included:
+
+***
+
+Create a responsive web app layout with a left vertical side menu that visually resembles a tropical beach scene. The final theme should feel rich, premium, and high‑end in terms of color, gradients, and overall polish.
+
+Overall style:
+- Fresh, calm, tropical atmosphere with a luxurious, rich look.
+- Primary colors: soft aqua / turquoise water, light sea‑green, and warm beach‑sand beige.
+- Accent colors: white for cards and surfaces, a small amount of coral‑orange only as a generic highlight (not text from the image), and teal for buttons and links.
+- Use smooth gradients, subtle glass‑morphism or soft shadows, rounded corners, and refined spacing to enhance the rich feel.
+
+Layout:
+- Full‑width layout with a left side menu and a main content area on the right.
+- Left side menu background:
+  - Top: aqua / turquoise gradient suggesting clear water.
+  - Bottom: sand‑colored area with a subtle, slightly textured sand effect.
+  - Optionally add small abstract shell or pebble shapes near the sand area (no text, icons only), with soft highlights and shadows for a premium look.
+- Main content area:
+  - Very light aqua or off‑white background.
+  - White content cards with rounded corners, soft yet crisp shadows, and elegant spacing.
+
+Side menu requirements:
+- Width around 260–300px on desktop, collapsible on mobile.
+- Top area: placeholder for a generic logo (simple rounded rectangle or circle without any specific wording), styled to look premium (e.g., gradient fill, subtle border, inner shadow).
+- Vertical navigation list with minimalist line icons in teal.
+- Hover/active state: semi‑transparent white pill behind the nav item, slightly bolder text, and maybe a thin glowing border to reinforce the rich feel.
+
+Typography:
+- Use a clean sans‑serif font like “Inter”, “Poppins”, or “Nunito”.
+- Headings in bold, body text regular/medium.
+- Neutral, generic text labels (e.g., “Dashboard”, “Reports”, “Settings”) not related to any packaging text.
+- Ensure typography and spacing feel modern and upscale.
+
+Buttons and tags:
+- Primary button: teal background, white text, medium‑rounded corners, with a subtle gradient and shadow for a premium effect.
+- Secondary button: teal outline, transparent background, slight shadow or hover glow.
+- Small pill‑shaped tags or badges using teal background and white text, placed in the sand‑area section of the side menu, with generic wording like “Eco Friendly” or “Safe”.
+
+Main content examples:
+- Top header bar with page title on the left and a primary action button on the right.
+- A few content cards arranged in a grid or column, using white backgrounds and aqua/teal accents (thin borders, small gradients, or icons) to keep the interface rich yet clean.
+
+Technical requirements:
+- Use modern HTML and CSS (preferably CSS variables for colors).
+- Make the layout fully responsive: side menu collapses into a top bar or off‑canvas drawer on smaller screens.
+- Ensure good contrast and readable font sizes for accessibility.
+- Organize CSS with clear class names for the water area, sand area, side menu, nav list, logo placeholder, buttons, cards, and tags.
+- Pay special attention to spacing, shadows, and gradients so that the final theme looks rich and premium, not flat.
+
+Goal:
+Mimic the beach‑sand and turquoise‑water aesthetic from the image only in terms of colors, gradients, and textures, without copying or referencing any of the text or branding that appears on the packaging, and ensure the final theme feels rich and high‑end.
