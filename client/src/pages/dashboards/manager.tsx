@@ -21,7 +21,7 @@ const fadeUp = {
 };
 
 const quickActions = [
-  { label: "Open POS", path: "/pos", icon: Monitor, color: "from-blue-500/15 to-blue-600/5", iconColor: "text-blue-600", border: "ring-blue-200 dark:ring-blue-800" },
+  { label: "Open POS", path: "/pos", icon: Monitor, color: "from-teal-500/15 to-teal-600/5", iconColor: "text-teal-600", border: "ring-teal-200 dark:ring-teal-800" },
   { label: "View Tables", path: "/tables", icon: LayoutGrid, color: "from-purple-500/15 to-purple-600/5", iconColor: "text-purple-600", border: "ring-purple-200 dark:ring-purple-800" },
   { label: "Check Inventory", path: "/inventory", icon: Package, color: "from-orange-500/15 to-orange-600/5", iconColor: "text-orange-600", border: "ring-orange-200 dark:ring-orange-800" },
   { label: "All Orders", path: "/orders", icon: ClipboardList, color: "from-green-500/15 to-green-600/5", iconColor: "text-green-600", border: "ring-green-200 dark:ring-green-800" },
@@ -89,8 +89,8 @@ export default function ManagerDashboard() {
           value={`${occupancyPct}%`}
           subtitle={`${occupiedTables} of ${totalTables} tables`}
           icon={Armchair}
-          iconColor="text-blue-600"
-          iconBg="bg-blue-100"
+          iconColor="text-cyan-600"
+          iconBg="bg-cyan-100"
           testId="stat-occupancy"
           index={2}
         />

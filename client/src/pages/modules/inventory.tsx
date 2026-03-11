@@ -234,8 +234,8 @@ export default function InventoryPage() {
             title="Total Items"
             value={inventory.length}
             icon={BoxIcon}
-            iconColor="text-blue-600"
-            iconBg="bg-blue-100"
+            iconColor="text-teal-600"
+            iconBg="bg-teal-100"
             testId="stat-total-items"
           />
         </motion.div>

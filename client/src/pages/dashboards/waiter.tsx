@@ -62,7 +62,7 @@ function ShiftClock() {
 const tableStatusConfig: Record<string, { icon: any; color: string; bg: string; border: string }> = {
   available: { icon: Armchair, color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/30", border: "border-green-200 dark:border-green-800" },
   occupied: { icon: UtensilsCrossed, color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-950/30", border: "border-orange-200 dark:border-orange-800" },
-  reserved: { icon: Users, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800" },
+  reserved: { icon: Users, color: "text-amber-600", bg: "bg-amber-50 dark:bg-amber-950/30", border: "border-amber-200 dark:border-amber-800" },
   cleaning: { icon: Coffee, color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30", border: "border-purple-200 dark:border-purple-800" },
 };
 
@@ -126,8 +126,8 @@ export default function WaiterDashboard() {
           title="My Open Tables"
           value={myOpenTables.length}
           icon={Armchair}
-          iconColor="text-blue-600"
-          iconBg="bg-blue-100"
+          iconColor="text-teal-600"
+          iconBg="bg-teal-100"
           testId="stat-my-tables"
           index={0}
         />
@@ -222,8 +222,8 @@ export default function WaiterDashboard() {
               ) : (
                 myOpenOrders.map((order: any, i: number) => {
                   const statusColors: Record<string, string> = {
-                    new: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
-                    sent_to_kitchen: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+                    new: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
+                    sent_to_kitchen: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
                     in_progress: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
                     ready: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
                     served: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
