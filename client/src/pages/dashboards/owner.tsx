@@ -108,8 +108,8 @@ export default function OwnerDashboard() {
             value={stats?.totalOrders || 0}
             subtitle={`Today: ${stats?.todayOrders || 0}`}
             icon={ShoppingCart}
-            iconColor="text-yellow-700"
-            iconBg="bg-yellow-100"
+            iconColor="text-blue-600"
+            iconBg="bg-blue-100"
             testId="stat-orders"
             index={1}
           />

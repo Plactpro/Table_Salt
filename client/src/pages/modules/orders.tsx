@@ -62,7 +62,7 @@ const ORDER_TYPE_OPTIONS = [
 const statusColors: Record<string, string> = {
   new: "bg-rose-100 text-rose-800 dark:bg-rose-900 dark:text-rose-200",
   sent_to_kitchen: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
-  in_progress: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
+  in_progress: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   ready: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
   served: "bg-stone-100 text-stone-800 dark:bg-stone-900 dark:text-stone-200",
   paid: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
