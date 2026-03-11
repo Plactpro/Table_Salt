@@ -94,6 +94,9 @@
   --sidebar-accent: 185 30% 18%;
   --sidebar-accent-foreground: 170 20% 94%;
   --sidebar-ring: 36 90% 58%;
+  --sidebar-water-start: 185 55% 55%;
+  --sidebar-water-mid: 176 50% 48%;
+  --sidebar-sand: 36 55% 72%;
 
   --chart-1: 174 65% 35%;
   --chart-2: 12 75% 58%;
@@ -150,6 +153,9 @@
   --sidebar-accent: 185 20% 12%;
   --sidebar-accent-foreground: 170 15% 93%;
   --sidebar-ring: 36 70% 55%;
+  --sidebar-water-start: 185 40% 35%;
+  --sidebar-water-mid: 176 35% 30%;
+  --sidebar-sand: 36 40% 45%;
 
   --chart-1: 174 60% 40%;
   --chart-2: 12 70% 55%;

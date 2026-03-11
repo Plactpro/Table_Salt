@@ -5,14 +5,24 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
-import { Save, Building2, Receipt, Settings, CheckCircle2 } from "lucide-react";
+import { Save, Building2, Receipt, Settings, CheckCircle2, Crown, Store } from "lucide-react";
+import {
+  SubscriptionTier,
+  BusinessType,
+  businessConfig,
+  tierPricing,
+} from "@/lib/subscription";
+import { useSubscription } from "@/lib/auth";
 
 export default function SettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [savedSection, setSavedSection] = useState<string | null>(null);
+  const { tier: currentTier, businessType: currentBusinessType } = useSubscription();
 
   const { data: tenant, isLoading } = useQuery<any>({
     queryKey: ["/api/tenant"],
@@ -24,6 +34,8 @@ export default function SettingsPage() {
   const [timezone, setTimezone] = useState("UTC");
   const [taxRate, setTaxRate] = useState("0");
   const [serviceCharge, setServiceCharge] = useState("0");
+  const [businessType, setBusinessType] = useState<BusinessType>("casual_dining");
+  const [plan, setPlan] = useState<SubscriptionTier>("basic");
 
   useEffect(() => {
     if (tenant) {
@@ -33,6 +45,8 @@ export default function SettingsPage() {
       setTimezone(tenant.timezone || "UTC");
       setTaxRate(tenant.taxRate || "0");
       setServiceCharge(tenant.serviceCharge || "0");
+      setBusinessType((tenant.businessType as BusinessType) || "casual_dining");
+      setPlan((tenant.plan as SubscriptionTier) || "basic");
     }
   }, [tenant]);
 
@@ -48,9 +62,17 @@ export default function SettingsPage() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
-      toast({ title: "Settings saved successfully" });
-      if (variables.name !== undefined) showSaveAnimation("profile");
-      else showSaveAnimation("tax");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      if (variables.name !== undefined) {
+        toast({ title: "Profile saved successfully" });
+        showSaveAnimation("profile");
+      } else if (variables.taxRate !== undefined) {
+        toast({ title: "Tax settings saved successfully" });
+        showSaveAnimation("tax");
+      } else if (variables.businessType !== undefined || variables.plan !== undefined) {
+        toast({ title: "Business configuration updated" });
+        showSaveAnimation("business");
+      }
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -67,6 +89,11 @@ export default function SettingsPage() {
     updateMutation.mutate({ taxRate, serviceCharge });
   };
 
+  const handleBusinessConfigSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateMutation.mutate({ businessType, plan });
+  };
+
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center">
@@ -74,6 +101,23 @@ export default function SettingsPage() {
       </div>
     );
   }
+
+  const businessTypes: { value: BusinessType; label: string; description: string }[] = Object.entries(businessConfig).map(
+    ([key, config]) => ({
+      value: key as BusinessType,
+      label: config.label,
+      description: config.description,
+    })
+  );
+
+  const plans: { value: SubscriptionTier; label: string; price: number; description: string }[] = Object.entries(tierPricing).map(
+    ([key, config]) => ({
+      value: key as SubscriptionTier,
+      label: config.label,
+      price: config.price,
+      description: config.description,
+    })
+  );
 
   return (
     <motion.div
@@ -90,6 +134,106 @@ export default function SettingsPage() {
           <p className="text-muted-foreground">Manage your restaurant configuration</p>
         </div>
       </div>
+
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.05 }}
+      >
+        <Card className="relative overflow-hidden">
+          <AnimatePresence>
+            {savedSection === "business" && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+              >
+                <motion.div
+                  initial={{ scale: 0 }}
+                  animate={{ scale: [0, 1.2, 1] }}
+                  className="flex flex-col items-center gap-2"
+                >
+                  <CheckCircle2 className="h-12 w-12 text-green-500" />
+                  <span className="text-sm font-medium text-green-600">Saved!</span>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <CardHeader>
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-purple-100 dark:bg-purple-900">
+                <Store className="h-5 w-5 text-purple-700 dark:text-purple-300" />
+              </div>
+              <CardTitle>Business Configuration</CardTitle>
+            </div>
+            <CardDescription>Set your business type and subscription plan</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleBusinessConfigSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label>Business Type</Label>
+                <Select value={businessType} onValueChange={(val) => setBusinessType(val as BusinessType)}>
+                  <SelectTrigger data-testid="select-business-type">
+                    <SelectValue placeholder="Select business type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {businessTypes.map((bt) => (
+                      <SelectItem key={bt.value} value={bt.value} data-testid={`option-business-type-${bt.value}`}>
+                        <div className="flex flex-col">
+                          <span>{bt.label}</span>
+                          <span className="text-xs text-muted-foreground">{bt.description}</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {businessType && businessConfig[businessType] && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {businessConfig[businessType].badges.map((badge) => (
+                      <Badge key={badge} variant="secondary" className="bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200">
+                        {badge}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label>Subscription Plan</Label>
+                <Select value={plan} onValueChange={(val) => setPlan(val as SubscriptionTier)}>
+                  <SelectTrigger data-testid="select-plan">
+                    <SelectValue placeholder="Select plan" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {plans.map((p) => (
+                      <SelectItem key={p.value} value={p.value} data-testid={`option-plan-${p.value}`}>
+                        <div className="flex items-center gap-2">
+                          <span>{p.label}</span>
+                          <span className="text-xs text-muted-foreground">${p.price}/mo</span>
+                        </div>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {plan && tierPricing[plan] && (
+                  <div className="flex items-center gap-2 mt-2">
+                    <Badge variant="outline" className="border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300">
+                      <Crown className="h-3 w-3 mr-1" />
+                      {tierPricing[plan].label} — ${tierPricing[plan].price}/mo
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">{tierPricing[plan].description}</span>
+                  </div>
+                )}
+              </div>
+
+              <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-business-config" className="transition-all duration-200 hover:scale-[1.02]">
+                <Save className="h-4 w-4 mr-2" /> Save Business Config
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}

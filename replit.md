@@ -17,8 +17,12 @@ A multi-tenant SaaS Restaurant Management System with role-based dashboards, POS
 - `server/auth.ts` - Passport setup, password hashing, auth middleware
 - `server/routes.ts` - All API routes (prefixed /api)
 - `server/seed.ts` - Demo data seeder
-- `client/src/lib/auth.tsx` - AuthProvider with login/register/logout via TanStack Query
+- `client/src/lib/auth.tsx` - AuthProvider with login/register/logout via TanStack Query, useSubscription hook
+- `client/src/lib/subscription.ts` - Subscription tiers, business types, feature gating matrix
 - `client/src/App.tsx` - Router with role-based dashboard routing
+- `client/src/pages/modules/outlets.tsx` - Multi-location outlet management
+- `client/src/pages/modules/billing.tsx` - Subscription plan management
+- `client/src/pages/modules/integrations.tsx` - Third-party integration management
 
 ## User Roles
 - **Owner**: Full access, all dashboards and settings

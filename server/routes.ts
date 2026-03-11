@@ -66,10 +66,11 @@ export async function registerRoutes(
     });
   });
 
-  app.get("/api/auth/me", (req, res) => {
+  app.get("/api/auth/me", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const { password: _, ...safeUser } = req.user as any;
-    res.json(safeUser);
+    const tenant = await storage.getTenant(safeUser.tenantId);
+    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType } : null });
   });
 
   app.get("/api/users", requireAuth, async (req, res) => {
@@ -116,10 +117,20 @@ export async function registerRoutes(
     res.json(outletList);
   });
 
-  app.post("/api/outlets", requireRole("owner"), async (req, res) => {
+  app.post("/api/outlets", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
     const outlet = await storage.createOutlet({ ...req.body, tenantId: user.tenantId });
     res.json(outlet);
+  });
+
+  app.patch("/api/outlets/:id", requireRole("owner", "manager"), async (req, res) => {
+    const outlet = await storage.updateOutlet(req.params.id, req.body);
+    res.json(outlet);
+  });
+
+  app.delete("/api/outlets/:id", requireRole("owner", "manager"), async (req, res) => {
+    await storage.deleteOutlet(req.params.id);
+    res.json({ success: true });
   });
 
   app.get("/api/menu-categories", requireAuth, async (req, res) => {
