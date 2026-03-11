@@ -60,7 +60,7 @@ const ORDER_TYPE_OPTIONS = [
 ];
 
 const statusColors: Record<string, string> = {
-  new: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
+  new: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   sent_to_kitchen: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
   in_progress: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200",
   ready: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
@@ -260,7 +260,7 @@ export default function OrdersPage() {
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { key: "total", icon: ClipboardList, color: "amber", label: "Total", value: summaryStats.total, testId: "stat-total-orders", valueTestId: "text-total-orders" },
+          { key: "total", icon: ClipboardList, color: "red", label: "Total", value: summaryStats.total, testId: "stat-total-orders", valueTestId: "text-total-orders" },
           { key: "active", icon: Clock, color: "yellow", label: "Active", value: summaryStats.active, testId: "stat-active-orders", valueTestId: "text-active-orders" },
           { key: "completed", icon: CheckCircle2, color: "green", label: "Completed", value: summaryStats.completed, testId: "stat-completed-orders", valueTestId: "text-completed-orders" },
           { key: "cancelled", icon: XCircle, color: "red", label: "Cancelled", value: summaryStats.cancelled, testId: "stat-cancelled-orders", valueTestId: "text-cancelled-orders" },

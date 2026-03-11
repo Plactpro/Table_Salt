@@ -36,7 +36,7 @@ const roleLabels: Record<Role, string> = {
 
 const roleBadgeColors: Record<Role, string> = {
   owner: "bg-purple-100 text-purple-800 border-purple-200",
-  manager: "bg-amber-100 text-amber-800 border-amber-200",
+  manager: "bg-rose-100 text-rose-800 border-rose-200",
   waiter: "bg-green-100 text-green-800 border-green-200",
   kitchen: "bg-orange-100 text-orange-800 border-orange-200",
   accountant: "bg-gray-100 text-gray-800 border-gray-200",

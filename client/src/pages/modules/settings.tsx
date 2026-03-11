@@ -118,8 +118,8 @@ export default function SettingsPage() {
           </AnimatePresence>
           <CardHeader>
             <div className="flex items-center gap-2">
-              <div className="p-1.5 rounded-lg bg-amber-100 dark:bg-amber-900">
-                <Building2 className="h-5 w-5 text-amber-700 dark:text-amber-300" />
+              <div className="p-1.5 rounded-lg bg-red-100 dark:bg-red-900">
+                <Building2 className="h-5 w-5 text-red-700 dark:text-red-300" />
               </div>
               <CardTitle>Restaurant Profile</CardTitle>
             </div>

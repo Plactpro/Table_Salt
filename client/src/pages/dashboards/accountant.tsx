@@ -166,8 +166,8 @@ export default function AccountantDashboard() {
             title="Orders"
             value={orderCount}
             icon={Receipt}
-            iconColor="text-amber-700"
-            iconBg="bg-amber-100"
+            iconColor="text-red-700"
+            iconBg="bg-red-100"
             testId="stat-total-orders"
             index={1}
           />

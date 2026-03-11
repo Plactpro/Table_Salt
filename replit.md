@@ -5,7 +5,7 @@ A multi-tenant SaaS Restaurant Management System with role-based dashboards, POS
 
 ## Architecture
 - **Frontend**: React + TypeScript + Tailwind CSS v4 + shadcn/ui + wouter routing + framer-motion
-- **Theme**: Warm & earthy (terracotta primary, cream backgrounds, olive accents, dark walnut sidebar)
+- **Theme**: Crimson & charcoal (red primary, clean gray backgrounds, green accents, dark charcoal sidebar)
 - **Backend**: Express.js + TypeScript
 - **Database**: PostgreSQL + Drizzle ORM
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)

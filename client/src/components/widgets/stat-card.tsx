@@ -53,16 +53,15 @@ function AnimatedCounter({ value }: { value: string | number }) {
 }
 
 const gradientIconStyles: Record<string, string> = {
-  "text-primary": "from-amber-600/20 to-orange-700/10",
-  "text-amber-700": "from-amber-600/20 to-orange-700/10",
+  "text-primary": "from-red-600/20 to-red-700/10",
+  "text-red-700": "from-red-600/20 to-red-700/10",
   "text-green-600": "from-green-500/20 to-emerald-600/10",
   "text-emerald-600": "from-emerald-500/20 to-green-600/10",
-  "text-olive-600": "from-lime-600/20 to-green-700/10",
-  "text-orange-600": "from-orange-500/20 to-amber-600/10",
+  "text-orange-600": "from-orange-500/20 to-orange-600/10",
   "text-red-600": "from-red-500/20 to-rose-600/10",
   "text-purple-600": "from-purple-500/20 to-violet-600/10",
-  "text-yellow-600": "from-yellow-500/20 to-amber-600/10",
-  "text-pink-600": "from-pink-500/20 to-rose-600/10",
+  "text-yellow-600": "from-yellow-500/20 to-orange-600/10",
+  "text-slate-600": "from-slate-500/20 to-slate-600/10",
   "text-stone-600": "from-stone-500/20 to-stone-600/10",
 };
 
