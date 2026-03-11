@@ -154,7 +154,7 @@ export default function Sidebar() {
                         data-testid={`nav-${item.name.toLowerCase().replace(/\s+/g, "-")}`}
                         onClick={() => navigate(item.path)}
                         className={cn(
-                          "group relative flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                          "group relative flex items-center gap-3 w-full rounded-xl px-3 py-3 text-base font-medium transition-all duration-200",
                           isActive
                             ? "text-[hsl(185,45%,12%)] font-semibold"
                             : "text-[hsl(185,35%,18%)] hover:text-[hsl(185,45%,10%)]"
@@ -197,7 +197,7 @@ export default function Sidebar() {
                           className="relative z-10"
                         >
                           <Icon className={cn(
-                            "h-4 w-4 transition-colors duration-200",
+                            "h-5 w-5 transition-colors duration-200",
                             isActive ? "text-[hsl(176,60%,30%)]" : "text-[hsl(185,30%,28%)] group-hover:text-[hsl(176,55%,22%)]"
                           )} />
                         </motion.div>
