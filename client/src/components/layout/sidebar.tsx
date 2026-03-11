@@ -48,15 +48,18 @@ const navItems: NavItem[] = [
 
 function SandDecoration() {
   return (
-    <div className="absolute bottom-0 left-0 right-0 pointer-events-none overflow-hidden" style={{ height: "120px" }}>
-      <svg viewBox="0 0 260 120" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full" preserveAspectRatio="none">
-        <path d="M0 40 Q30 25 60 35 Q90 45 130 30 Q170 15 200 28 Q230 40 260 32 L260 120 L0 120Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.35" />
-        <path d="M0 60 Q40 48 80 55 Q120 62 160 50 Q200 38 240 48 Q250 52 260 50 L260 120 L0 120Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.55" />
-        <path d="M0 80 Q50 70 100 76 Q150 82 200 72 Q230 68 260 74 L260 120 L0 120Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.75" />
-        <ellipse cx="45" cy="100" rx="6" ry="3.5" fill="hsl(var(--sidebar-sand))" fillOpacity="0.9" />
-        <ellipse cx="180" cy="95" rx="5" ry="3" fill="hsl(var(--sidebar-sand))" fillOpacity="0.85" />
-        <circle cx="120" cy="105" r="3" fill="hsl(var(--sidebar-sand))" fillOpacity="0.7" />
-        <ellipse cx="210" cy="108" rx="4" ry="2.5" fill="hsl(var(--sidebar-sand))" fillOpacity="0.6" />
+    <div className="absolute bottom-0 left-0 right-0 pointer-events-none overflow-hidden" style={{ height: "75%" }}>
+      <svg viewBox="0 0 260 400" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full" preserveAspectRatio="none">
+        <path d="M0 60 Q30 40 70 55 Q110 70 150 45 Q190 20 230 40 Q250 50 260 45 L260 400 L0 400Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.2" />
+        <path d="M0 120 Q40 100 90 115 Q140 130 180 105 Q220 80 250 100 Q256 104 260 100 L260 400 L0 400Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.35" />
+        <path d="M0 190 Q50 170 100 185 Q150 200 200 175 Q235 160 260 172 L260 400 L0 400Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.5" />
+        <path d="M0 260 Q60 245 110 255 Q160 268 210 248 Q240 238 260 245 L260 400 L0 400Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.65" />
+        <path d="M0 320 Q45 308 100 318 Q155 328 200 312 Q230 302 260 310 L260 400 L0 400Z" fill="hsl(var(--sidebar-sand))" fillOpacity="0.8" />
+        <ellipse cx="50" cy="360" rx="7" ry="4" fill="hsl(var(--sidebar-sand))" fillOpacity="0.9" />
+        <ellipse cx="190" cy="345" rx="5.5" ry="3.5" fill="hsl(var(--sidebar-sand))" fillOpacity="0.85" />
+        <circle cx="130" cy="370" r="3.5" fill="hsl(var(--sidebar-sand))" fillOpacity="0.75" />
+        <ellipse cx="220" cy="380" rx="4.5" ry="3" fill="hsl(var(--sidebar-sand))" fillOpacity="0.7" />
+        <circle cx="80" cy="385" r="2.5" fill="hsl(var(--sidebar-sand))" fillOpacity="0.65" />
       </svg>
     </div>
   );
@@ -100,9 +103,9 @@ export default function Sidebar() {
       style={{
         background: `linear-gradient(180deg, 
           hsl(var(--sidebar-water-start)) 0%, 
-          hsl(var(--sidebar-water-mid)) 50%, 
-          hsl(var(--sidebar-water-mid)) 70%, 
-          hsl(var(--sidebar-sand) / 0.3) 100%)`,
+          hsl(var(--sidebar-water-mid)) 30%, 
+          hsl(var(--sidebar-sand) / 0.6) 65%, 
+          hsl(var(--sidebar-sand) / 0.85) 100%)`,
       }}
       data-testid="sidebar"
     >
@@ -124,10 +127,10 @@ export default function Sidebar() {
               boxShadow: "inset 0 1px 2px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.1)",
             }}
           >
-            <UtensilsCrossed className="h-5 w-5 text-white" />
+            <UtensilsCrossed className="h-5 w-5 text-[hsl(176,60%,28%)]" />
           </div>
         </motion.div>
-        <span className="relative text-lg font-heading font-bold text-white drop-shadow-sm" data-testid="text-sidebar-brand">
+        <span className="relative text-lg font-heading font-bold text-[hsl(185,45%,12%)] drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" data-testid="text-sidebar-brand">
           ServeOS
         </span>
       </div>
@@ -153,8 +156,8 @@ export default function Sidebar() {
                         className={cn(
                           "group relative flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
                           isActive
-                            ? "text-white font-semibold"
-                            : "text-white/75 hover:text-white"
+                            ? "text-[hsl(185,45%,12%)] font-semibold"
+                            : "text-[hsl(185,35%,18%)] hover:text-[hsl(185,45%,10%)]"
                         )}
                       >
                         {isActive && (
@@ -162,10 +165,10 @@ export default function Sidebar() {
                             layoutId="sidebar-active-bg"
                             className="absolute inset-0 rounded-xl"
                             style={{
-                              background: "linear-gradient(135deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08))",
-                              backdropFilter: "blur(12px)",
-                              border: "1px solid rgba(255,255,255,0.2)",
-                              boxShadow: "0 2px 12px rgba(0,0,0,0.08), inset 0 1px 1px rgba(255,255,255,0.1)",
+                              background: "linear-gradient(135deg, rgba(255,255,255,0.55), rgba(255,255,255,0.35))",
+                              backdropFilter: "blur(16px)",
+                              border: "1px solid rgba(255,255,255,0.5)",
+                              boxShadow: "0 2px 12px rgba(0,0,0,0.06), inset 0 1px 2px rgba(255,255,255,0.3)",
                             }}
                             transition={{ type: "spring", stiffness: 350, damping: 30 }}
                           />
@@ -173,8 +176,8 @@ export default function Sidebar() {
                         {isActive && (
                           <motion.div
                             layoutId="sidebar-active-indicator"
-                            className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-white"
-                            style={{ boxShadow: "0 0 8px rgba(255,255,255,0.4)" }}
+                            className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full"
+                            style={{ background: "hsl(176, 60%, 28%)", boxShadow: "0 0 6px rgba(0,128,128,0.3)" }}
                             transition={{ type: "spring", stiffness: 350, damping: 30 }}
                           />
                         )}
@@ -182,7 +185,8 @@ export default function Sidebar() {
                           <div
                             className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                             style={{
-                              background: "rgba(255,255,255,0.08)",
+                              background: "rgba(255,255,255,0.25)",
+                              backdropFilter: "blur(6px)",
                             }}
                           />
                         )}
@@ -194,7 +198,7 @@ export default function Sidebar() {
                         >
                           <Icon className={cn(
                             "h-4 w-4 transition-colors duration-200",
-                            isActive ? "text-white" : "text-white/55 group-hover:text-white/85"
+                            isActive ? "text-[hsl(176,60%,30%)]" : "text-[hsl(185,30%,28%)] group-hover:text-[hsl(176,55%,22%)]"
                           )} />
                         </motion.div>
                         <span className="relative z-10">{item.name}</span>
