@@ -48,51 +48,51 @@
   --font-heading: 'Outfit', sans-serif;
 }
 
-/* LIGHT MODE — Crimson & Charcoal */
+/* LIGHT MODE — Soft Cream & White with Red Pops */
 :root {
-  --button-outline: rgba(0,0,0, .10);
-  --badge-outline: rgba(0,0,0, .05);
+  --button-outline: rgba(0,0,0, .08);
+  --badge-outline: rgba(0,0,0, .04);
   --opaque-button-border-intensity: -8;
-  --elevate-1: rgba(0,0,0, .03);
-  --elevate-2: rgba(0,0,0, .08);
+  --elevate-1: rgba(0,0,0, .02);
+  --elevate-2: rgba(0,0,0, .06);
 
-  --background: 0 0% 97%;
-  --foreground: 0 0% 13%;
+  --background: 30 30% 98%;
+  --foreground: 20 15% 15%;
 
-  --card: 0 0% 100%;
-  --card-foreground: 0 0% 13%;
-  --card-border: 0 0% 90%;
+  --card: 30 20% 100%;
+  --card-foreground: 20 15% 15%;
+  --card-border: 30 15% 91%;
 
-  --popover: 0 0% 100%;
-  --popover-foreground: 0 0% 13%;
-  --popover-border: 0 0% 90%;
+  --popover: 30 20% 100%;
+  --popover-foreground: 20 15% 15%;
+  --popover-border: 30 15% 91%;
 
   --primary: 0 72% 45%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 0 5% 93%;
-  --secondary-foreground: 0 0% 13%;
+  --secondary: 30 15% 94%;
+  --secondary-foreground: 20 15% 15%;
 
-  --muted: 0 3% 94%;
-  --muted-foreground: 0 0% 42%;
+  --muted: 30 12% 95%;
+  --muted-foreground: 20 5% 45%;
 
-  --accent: 142 35% 90%;
-  --accent-foreground: 142 40% 22%;
+  --accent: 30 20% 92%;
+  --accent-foreground: 20 15% 20%;
 
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
 
-  --border: 0 0% 89%;
-  --input: 0 0% 89%;
+  --border: 30 12% 90%;
+  --input: 30 12% 90%;
   --ring: 0 72% 45%;
 
-  --sidebar: 0 0% 11%;
-  --sidebar-foreground: 0 0% 92%;
-  --sidebar-border: 0 0% 16%;
-  --sidebar-primary: 0 72% 50%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 20 15% 20%;
+  --sidebar-border: 30 12% 91%;
+  --sidebar-primary: 0 72% 45%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 17%;
-  --sidebar-accent-foreground: 0 0% 92%;
+  --sidebar-accent: 30 18% 96%;
+  --sidebar-accent-foreground: 20 15% 20%;
   --sidebar-ring: 0 72% 45%;
 
   --chart-1: 0 72% 45%;
@@ -104,7 +104,7 @@
   --radius: 0.75rem;
 }
 
-/* DARK MODE — Crimson & Charcoal */
+/* DARK MODE — Soft Cream & Red (Dark Variant) */
 .dark {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
@@ -112,43 +112,43 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 0 0% 6%;
-  --foreground: 0 0% 93%;
+  --background: 20 10% 7%;
+  --foreground: 30 15% 93%;
 
-  --card: 0 0% 9%;
-  --card-foreground: 0 0% 93%;
-  --card-border: 0 0% 15%;
+  --card: 20 8% 10%;
+  --card-foreground: 30 15% 93%;
+  --card-border: 20 8% 16%;
 
-  --popover: 0 0% 9%;
-  --popover-foreground: 0 0% 93%;
-  --popover-border: 0 0% 15%;
+  --popover: 20 8% 10%;
+  --popover-foreground: 30 15% 93%;
+  --popover-border: 20 8% 16%;
 
   --primary: 0 72% 50%;
   --primary-foreground: 0 0% 100%;
 
-  --secondary: 0 0% 15%;
-  --secondary-foreground: 0 0% 93%;
+  --secondary: 20 8% 16%;
+  --secondary-foreground: 30 15% 93%;
 
-  --muted: 0 0% 15%;
-  --muted-foreground: 0 0% 58%;
+  --muted: 20 8% 16%;
+  --muted-foreground: 20 8% 58%;
 
-  --accent: 142 25% 18%;
-  --accent-foreground: 142 30% 82%;
+  --accent: 20 10% 18%;
+  --accent-foreground: 30 12% 85%;
 
   --destructive: 0 62% 35%;
-  --destructive-foreground: 0 0% 93%;
+  --destructive-foreground: 30 15% 93%;
 
-  --border: 0 0% 15%;
-  --input: 0 0% 15%;
+  --border: 20 8% 16%;
+  --input: 20 8% 16%;
   --ring: 0 50% 70%;
 
-  --sidebar: 0 0% 7%;
-  --sidebar-foreground: 0 0% 92%;
-  --sidebar-border: 0 0% 13%;
+  --sidebar: 20 10% 8%;
+  --sidebar-foreground: 30 15% 92%;
+  --sidebar-border: 20 8% 14%;
   --sidebar-primary: 0 72% 50%;
   --sidebar-primary-foreground: 0 0% 100%;
-  --sidebar-accent: 0 0% 13%;
-  --sidebar-accent-foreground: 0 0% 92%;
+  --sidebar-accent: 20 8% 14%;
+  --sidebar-accent-foreground: 30 15% 92%;
   --sidebar-ring: 0 50% 70%;
 
   --chart-1: 0 72% 50%;
@@ -296,9 +296,9 @@
 }
 
 @keyframes ticket-pulse {
-  0% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0.3); }
-  50% { box-shadow: 0 0 0 6px rgba(185, 28, 28, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(185, 28, 28, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(180, 30, 30, 0.25); }
+  50% { box-shadow: 0 0 0 6px rgba(180, 30, 30, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(180, 30, 30, 0); }
 }
 
 @keyframes skeleton-pulse {
