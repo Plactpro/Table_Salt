@@ -1,0 +1,189 @@
+
+Prompt for Replit AI – SaaS Restaurant Management System with Role Wise Dashboards
+You are an expert SaaS architect and full stack engineer.
+Design and implement a multi tenant Restaurant Management System (RMS) as a SaaS product, targeting at least 2,000 active restaurant tenants. The system must cover end to end restaurant operations with a strong, scalable architecture, role wise dashboards, and a modern, user friendly UI that uses animations and icons effectively within Replit.
+1. Architecture and tech stack
+•	Build a cloud ready, production grade web app.
+•	Stack (keep consistent end to end):
+o	Frontend: React + TypeScript with a modern UI framework (Material UI or Tailwind + Headless UI).
+o	Backend: Node.js + TypeScript using Express or NestJS with layered architecture (routes/controllers → services → repositories).
+o	Database: PostgreSQL with migrations and seed data.
+o	ORM: Prisma (or similar) for type safe DB access.
+o	Auth: JWT + refresh tokens; optional Google OAuth.
+•	Multi tenant SaaS design:
+o	Each restaurant/brand is a tenant.
+o	Maintain a tenants table and include tenant_id in all tenant scoped tables (users, outlets, menus, orders, inventory, etc.).
+o	Enforce tenant isolation at API and database query layers.
+•	Non functional:
+o	Designed to support ~2,000 tenants with multiple users each.
+o	Stateless backend suitable for horizontal scaling; use environment variables for DB and secrets.
+o	Implement rate limiting, input validation, and logging.
+2. User roles and permissions
+Implement robust role based access control:
+•	Tenant Owner / Admin
+•	Restaurant Manager
+•	Waiter / Cashier
+•	Kitchen / Bar Staff
+•	Accountant / Finance
+•	Customer (for optional portal/QR ordering)
+Every API and page must check both role and tenant before granting access.
+3. Role wise multiple dashboards
+Implement separate dashboards for each main role, using a shared widget system:
+•	Common approach:
+o	Create reusable dashboard widgets (cards, charts, tables).
+o	Each role’s dashboard is composed of a specific set of widgets defined in configuration.
+o	On login, detect the user’s role(s) and route to the appropriate dashboard.
+o	Protect routes so a user cannot access other roles’ dashboards via URL.
+•	Tenant Owner / Admin Dashboard
+o	Metrics: total revenue across outlets, outlet wise sales comparison, total orders, average order value, active subscriptions/plan usage, staff count, low stock summary, recent activity log.
+o	Actions: manage outlets, manage subscription/plan, configure taxes and global settings, access global reports.
+•	Restaurant Manager Dashboard
+o	Scope: assigned outlet(s) only.
+o	Metrics: today’s sales, number of orders in progress, table occupancy overview, upcoming reservations, staff on duty, low stock and expiring items, top 5 menu items.
+o	Quick actions: open POS, manage tables, reservations, staff roster, and inventory.
+•	Waiter / Cashier Dashboard
+o	Operational focus: my open tables, my open orders, quick “New Order” button, shortcut to KOT history, shift summary (orders handled, total amount).
+o	No access to configuration or sensitive financial widgets.
+•	Kitchen / Bar Staff Dashboard (KDS Home)
+o	Ticket queue grouped by status: new, in progress, ready.
+o	Basic stats: tickets today, average prep time.
+o	Visual and/or sound alerts for new tickets.
+o	No access to POS or financial data.
+•	Accountant / Finance Dashboard
+o	Financial widgets only: sales by date range, taxes collected, discounts/voids summary, payout snapshots, quick export buttons.
+•	Access control behavior:
+o	Navigation updates based on role; hide links to modules the role cannot access.
+o	If a user has multiple roles (e.g., Owner and Manager), allow switcher between dashboards.
+•	UX for dashboards:
+o	Use consistent sidebar icons for each main module.
+o	Add subtle entrance animations for widgets on load and hover effects for interactive cards (using Replit friendly animation utilities).
+o	Keep animations smooth and non distracting.
+4. Tenant onboarding and subscription
+•	Sign up flow for restaurant owners:
+o	Register tenant, choose plan (basic/standard/premium) with configurable limits (outlets, staff, storage).
+o	Capture restaurant details (name, logo upload, address, timezone, currency).
+o	Create first admin user.
+•	Implement subscription metadata and stub integration points for payment gateways (e.g., Stripe) for later.
+5. Core modules – end to end restaurant flow
+5.1 Menu Management
+•	CRUD for categories and items:
+o	Category: name, order, active flag.
+o	Item: name, description, image, base price, tax group, veg/non veg, spicy level, tags, available flag.
+•	Features:
+o	Modifiers/add ons with price adjustments.
+o	Combos/meal deals.
+o	Time based menus (breakfast/lunch/dinner) and outlet specific availability.
+•	Link menu items to recipe components (inventory items + quantity) for automatic stock deduction.
+5.2 Tables & Reservations
+•	Table master:
+o	Table number, capacity, section/zone, status (free, occupied, reserved, cleaning, blocked).
+•	Visual floor plan:
+o	Grid/zone layout with colored table icons; show tooltips on hover.
+o	Animate table state changes (e.g., small scale/opacity animation when status updates).
+•	Reservations:
+o	Capture date/time, guests, customer details, special notes.
+o	Status: requested, confirmed, seated, completed, no show.
+o	Calendar view (day/week/month) and list with search/filter.
+o	Waitlist with estimated wait times and quick seating action.
+5.3 POS & Order Management
+•	POS UI:
+o	Fast item search, category tabs, and order cart panel.
+o	Create orders for dine in (linked to table), takeaway, or delivery (with customer data).
+o	Multiple simultaneous open orders per table.
+•	Features:
+o	Quantity change, modifiers, notes on line items.
+o	Split bills (by guest count or selected items).
+o	Discounts (flat/percentage), service charge, tips.
+o	Payment methods: cash, card, UPI/QR; use abstract payment interface for future gateway integrations.
+o	Order lifecycle: new → sent to kitchen → in progress → ready → served → paid → cancelled/voided.
+•	Outputs:
+o	Printable/previewable receipts.
+o	Kitchen Order Tickets (grouped by section: kitchen, bar, dessert).
+5.4 Kitchen / Bar Display (KDS)
+•	Live order board:
+o	Tickets as cards with table/order type, items, notes, elapsed time.
+o	Actions per ticket: mark in progress, ready, completed.
+o	Filters by section and by status.
+•	Real time updates using WebSockets or similar; animate tickets as they appear, move, or complete.
+5.5 Inventory & Procurement
+•	Inventory items:
+o	Name, SKU, category, unit, opening stock, current stock, reorder level, cost price, preferred supplier.
+•	Stock movements:
+o	Stock in: purchases, returns.
+o	Stock out: wastage, manual adjustment, outlet transfers.
+o	Auto deduct on order completion based on recipe usage.
+•	Purchase orders:
+o	Create PO, add items and quantities, record receiving and costs.
+•	Reports:
+o	Low stock, stock valuation, consumption by period, wastage summary.
+5.6 Customers & Loyalty
+•	Customer profiles per tenant:
+o	Name, phone, email, preferences, last visit, notes.
+o	Order history and total lifetime value.
+•	Simple loyalty program:
+o	Points earned per currency amount, redeemable at POS.
+•	Feedback:
+o	Rating (1–5) and comments attached to orders or reservations.
+5.7 Staff Management & Scheduling
+•	Staff records:
+o	Name, role(s), contact, outlet assignments, active/inactive.
+•	Scheduling:
+o	Shifts (date, time range, role, outlet) and weekly schedule views.
+•	Attendance:
+o	Clock in/out function, recording timestamps and generating work hours summaries by period.
+5.8 Finance & Reporting
+•	Reports:
+o	Sales by date range, outlet, order type, payment method.
+o	Top/least selling items.
+o	Discounts and voids summary.
+o	Basic P&L style overview (revenue vs major estimated costs).
+•	Exports:
+o	CSV and PDF exports for all main reports.
+•	All reports must support filtering, sorting, and pagination.
+5.9 Settings
+•	Tenant settings:
+o	Restaurant profile, logo upload, brand colors.
+o	Taxes, service charge, rounding rules.
+o	Timezone, currency, locale.
+o	Role permissions configuration (which menu items and actions are enabled per role).
+•	Outlet settings:
+o	Opening hours, printer and KDS preferences, local tax overrides.
+6. UI/UX, icons, and animations
+•	Layout:
+o	Main layout with left sidebar navigation and top header (user info, outlet selector, notifications).
+o	Icons for each main module and dashboard widget.
+•	Animation usage:
+o	Smooth page transitions (fade/slide).
+o	Hover effects on buttons and cards.
+o	Loading skeletons or spinners for data tables and charts.
+o	Micro animations for critical actions (adding an item to order, table status changes, successful save notifications).
+•	Ensure mobile first responsiveness, especially for POS and KDS on tablets.
+7. Security, performance, and operations
+•	Security:
+o	Password hashing, JWT with refresh tokens, token blacklist/rotation.
+o	Input validation and sanitization.
+o	Authorization middleware checking both tenant_id and role.
+•	Performance:
+o	Index key columns (tenant_id, created_at, status, etc.).
+o	Server side pagination and filtering on all lists.
+o	Optional caching for heavy dashboard queries.
+•	Operations:
+o	Structured logging including tenant_id and user_id.
+o	Health check endpoint for monitoring.
+o	Error handling with user friendly messages on the frontend.
+8. Project structure and DevOps
+•	Organize repository clearly (e.g., frontend and backend folders or monorepo with apps).
+•	Provide:
+o	Environment config with .env.example.
+o	Database migration scripts.
+o	Seed data for a demo tenant with outlets, menu, inventory, staff, and sample orders.
+o	README with step by step setup instructions for running in Replit and on a production server.
+o	Optional Dockerfile and docker compose for local + cloud deployment.
+9. Demo scenario
+Seed demo data so a reviewer can:
+1.	Sign in as Tenant Owner → see Owner Dashboard.
+2.	Switch to Manager view → open POS, create an order, send to kitchen, mark ready, settle bill.
+3.	Observe inventory deduction and updated sales/inventory reports.
+4.	Log in as Waiter, Kitchen Staff, and Accountant to see each role’s dedicated dashboard and limited navigation.
+Focus on robust multi tenant SaaS architecture, clean role wise dashboard design, and a polished, animated, user friendly experience suitable for real restaurants using the product at scale.
+
