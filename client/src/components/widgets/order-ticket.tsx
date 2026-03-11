@@ -39,7 +39,7 @@ function useElapsedTime(createdAt: string | Date | null): string {
 }
 
 const statusConfig: Record<string, { color: string; border: string; icon: any; label: string }> = {
-  new: { color: "bg-red-700", border: "border-l-red-700", icon: Utensils, label: "New" },
+  new: { color: "bg-rose-800", border: "border-l-rose-800", icon: Utensils, label: "New" },
   sent_to_kitchen: { color: "bg-yellow-500", border: "border-l-yellow-500", icon: ChefHat, label: "Sent" },
   in_progress: { color: "bg-orange-500", border: "border-l-orange-500", icon: Flame, label: "Cooking" },
   ready: { color: "bg-green-500", border: "border-l-green-500", icon: CheckCircle2, label: "Ready" },

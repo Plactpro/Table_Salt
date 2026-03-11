@@ -62,7 +62,7 @@ function ShiftClock() {
 const tableStatusConfig: Record<string, { icon: any; color: string; bg: string; border: string }> = {
   available: { icon: Armchair, color: "text-green-600", bg: "bg-green-50 dark:bg-green-950/30", border: "border-green-200 dark:border-green-800" },
   occupied: { icon: UtensilsCrossed, color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-950/30", border: "border-orange-200 dark:border-orange-800" },
-  reserved: { icon: Users, color: "text-red-700", bg: "bg-red-50 dark:bg-red-950/30", border: "border-red-200 dark:border-red-800" },
+  reserved: { icon: Users, color: "text-yellow-700", bg: "bg-yellow-50 dark:bg-yellow-950/30", border: "border-yellow-200 dark:border-yellow-800" },
   cleaning: { icon: Coffee, color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30", border: "border-purple-200 dark:border-purple-800" },
 };
 
@@ -126,8 +126,8 @@ export default function WaiterDashboard() {
           title="My Open Tables"
           value={myOpenTables.length}
           icon={Armchair}
-          iconColor="text-red-700"
-          iconBg="bg-red-100"
+          iconColor="text-yellow-700"
+          iconBg="bg-yellow-100"
           testId="stat-my-tables"
           index={0}
         />
@@ -222,7 +222,7 @@ export default function WaiterDashboard() {
               ) : (
                 myOpenOrders.map((order: any, i: number) => {
                   const statusColors: Record<string, string> = {
-                    new: "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300",
+                    new: "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300",
                     sent_to_kitchen: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300",
                     in_progress: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
                     ready: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
