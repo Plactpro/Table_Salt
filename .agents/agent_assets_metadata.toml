@@ -1,0 +1,8 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "BqKz_EfIv127usmgpOYEt"
+uri = "file://serveos_database_backup.txt"
+type = "text"
+title = "ServeOS Database Backup"
