@@ -6,3 +6,9 @@ id = "BqKz_EfIv127usmgpOYEt"
 uri = "file://serveos_database_backup.txt"
 type = "text"
 title = "ServeOS Database Backup"
+
+[[outputs]]
+id = "FEBZjAtTl-ADbYIa5J7tx"
+uri = "file://serveos_full_project.tar.gz"
+type = "unspecified"
+title = "ServeOS Complete Project (Frontend + Backend + Database)"
