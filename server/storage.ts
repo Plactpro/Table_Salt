@@ -59,17 +59,22 @@ export interface IStorage {
   getTable(id: string): Promise<Table | undefined>;
   createTable(data: InsertTable): Promise<Table>;
   updateTable(id: string, data: Partial<InsertTable>): Promise<Table | undefined>;
+  updateTableByTenant(id: string, tenantId: string, data: Partial<InsertTable>): Promise<Table | undefined>;
   deleteTable(id: string): Promise<void>;
+  deleteTableByTenant(id: string, tenantId: string): Promise<void>;
 
   getReservationsByTenant(tenantId: string): Promise<Reservation[]>;
   createReservation(data: InsertReservation): Promise<Reservation>;
   updateReservation(id: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
+  updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
+  deleteReservationByTenant(id: string, tenantId: string): Promise<void>;
 
   getOrdersByTenant(tenantId: string): Promise<Order[]>;
   getOrder(id: string): Promise<Order | undefined>;
   createOrder(data: InsertOrder): Promise<Order>;
   updateOrder(id: string, data: Partial<InsertOrder>): Promise<Order | undefined>;
   getOrderItemsByOrder(orderId: string): Promise<OrderItem[]>;
+  getOrderItemsByTenant(tenantId: string): Promise<any[]>;
   createOrderItem(data: InsertOrderItem): Promise<OrderItem>;
   updateOrderItem(id: string, data: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
 
@@ -240,8 +245,15 @@ export class DatabaseStorage implements IStorage {
     const [t] = await db.update(tables).set(data).where(eq(tables.id, id)).returning();
     return t;
   }
+  async updateTableByTenant(id: string, tenantId: string, data: Partial<InsertTable>) {
+    const [t] = await db.update(tables).set(data).where(and(eq(tables.id, id), eq(tables.tenantId, tenantId))).returning();
+    return t;
+  }
   async deleteTable(id: string) {
     await db.delete(tables).where(eq(tables.id, id));
+  }
+  async deleteTableByTenant(id: string, tenantId: string) {
+    await db.delete(tables).where(and(eq(tables.id, id), eq(tables.tenantId, tenantId)));
   }
 
   async getReservationsByTenant(tenantId: string) {
@@ -254,6 +266,13 @@ export class DatabaseStorage implements IStorage {
   async updateReservation(id: string, data: Partial<InsertReservation>) {
     const [r] = await db.update(reservations).set(data).where(eq(reservations.id, id)).returning();
     return r;
+  }
+  async updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>) {
+    const [r] = await db.update(reservations).set(data).where(and(eq(reservations.id, id), eq(reservations.tenantId, tenantId))).returning();
+    return r;
+  }
+  async deleteReservationByTenant(id: string, tenantId: string) {
+    await db.delete(reservations).where(and(eq(reservations.id, id), eq(reservations.tenantId, tenantId)));
   }
 
   async getOrdersByTenant(tenantId: string) {
@@ -273,6 +292,16 @@ export class DatabaseStorage implements IStorage {
   }
   async getOrderItemsByOrder(orderId: string) {
     return db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  }
+  async getOrderItemsByTenant(tenantId: string) {
+    return db.select({
+      id: orderItems.id,
+      orderId: orderItems.orderId,
+      name: orderItems.name,
+      quantity: orderItems.quantity,
+    }).from(orderItems)
+      .innerJoin(orders, eq(orderItems.orderId, orders.id))
+      .where(eq(orders.tenantId, tenantId));
   }
   async createOrderItem(data: InsertOrderItem) {
     const [i] = await db.insert(orderItems).values(data).returning();
