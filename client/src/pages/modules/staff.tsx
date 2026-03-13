@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -16,6 +16,7 @@ import {
   Plus, UserCog, Search, Edit, ChevronLeft, ChevronRight,
   Crown, ShieldCheck, ConciergeBell, ChefHat, Calculator, Users,
   Calendar, Clock, CheckCircle, XCircle, AlertCircle, Trash2,
+  LayoutGrid, CalendarDays,
 } from "lucide-react";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant"] as const;
@@ -60,6 +61,11 @@ interface ScheduleEntry {
   attendance: string | null;
 }
 
+interface Outlet {
+  id: string;
+  name: string;
+}
+
 const attendanceConfig: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
   scheduled: { label: "Scheduled", color: "bg-gray-100 text-gray-700", icon: Clock },
   present: { label: "Present", color: "bg-green-100 text-green-700", icon: CheckCircle },
@@ -75,6 +81,7 @@ export default function StaffPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<StaffMember | null>(null);
   const [activeTab, setActiveTab] = useState<"roster" | "schedule">("roster");
+  const [scheduleView, setScheduleView] = useState<"weekly" | "monthly">("weekly");
   const [showAddShift, setShowAddShift] = useState(false);
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date();
@@ -82,9 +89,10 @@ export default function StaffPage() {
     d.setHours(0, 0, 0, 0);
     return d;
   });
+  const [monthDate, setMonthDate] = useState(() => new Date());
 
   const [shiftForm, setShiftForm] = useState({
-    userId: "", date: "", startTime: "09:00", endTime: "17:00", role: "",
+    userId: "", date: "", startTime: "09:00", endTime: "17:00", role: "", outletId: "",
   });
 
   const { data: staffList = [], isLoading } = useQuery<StaffMember[]>({
@@ -93,6 +101,10 @@ export default function StaffPage() {
 
   const { data: schedules = [] } = useQuery<ScheduleEntry[]>({
     queryKey: ["/api/staff-schedules"],
+  });
+
+  const { data: outlets = [] } = useQuery<Outlet[]>({
+    queryKey: ["/api/outlets"],
   });
 
   const createMutation = useMutation({
@@ -175,6 +187,7 @@ export default function StaffPage() {
   );
 
   const activeStaff = staffList.filter((s) => s.active !== false);
+  const outletMap = new Map(outlets.map((o) => [o.id, o.name]));
 
   const weekDays = Array.from({ length: 7 }, (_, i) => {
     const d = new Date(weekStart);
@@ -182,11 +195,33 @@ export default function StaffPage() {
     return d;
   });
 
+  const monthDays = useMemo(() => {
+    const year = monthDate.getFullYear();
+    const month = monthDate.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startPad = firstDay.getDay();
+    const days: (Date | null)[] = [];
+    for (let i = 0; i < startPad; i++) days.push(null);
+    for (let d = 1; d <= lastDay.getDate(); d++) {
+      days.push(new Date(year, month, d));
+    }
+    return days;
+  }, [monthDate]);
+
   const getShiftsForDayAndUser = (date: Date, userId: string) => {
     const dateStr = date.toISOString().split("T")[0];
     return schedules.filter((s) => {
       const sDate = new Date(s.date).toISOString().split("T")[0];
       return sDate === dateStr && s.userId === userId;
+    });
+  };
+
+  const getShiftsForDay = (date: Date) => {
+    const dateStr = date.toISOString().split("T")[0];
+    return schedules.filter((s) => {
+      const sDate = new Date(s.date).toISOString().split("T")[0];
+      return sDate === dateStr;
     });
   };
 
@@ -218,6 +253,7 @@ export default function StaffPage() {
       startTime: shiftForm.startTime,
       endTime: shiftForm.endTime,
       role: shiftForm.role || null,
+      outletId: shiftForm.outletId || null,
       attendance: "scheduled",
     });
   };
@@ -247,7 +283,7 @@ export default function StaffPage() {
         <div className="flex gap-2">
           {activeTab === "schedule" && (
             <Button variant="outline" onClick={() => {
-              setShiftForm({ userId: activeStaff[0]?.id || "", date: new Date().toISOString().split("T")[0], startTime: "09:00", endTime: "17:00", role: "" });
+              setShiftForm({ userId: activeStaff[0]?.id || "", date: new Date().toISOString().split("T")[0], startTime: "09:00", endTime: "17:00", role: "", outletId: "" });
               setShowAddShift(true);
             }} data-testid="button-add-shift">
               <Calendar className="h-4 w-4 mr-2" /> Add Shift
@@ -406,24 +442,56 @@ export default function StaffPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <Button variant="outline" size="sm" onClick={() => {
-                const d = new Date(weekStart);
-                d.setDate(d.getDate() - 7);
-                setWeekStart(d);
-              }} data-testid="button-prev-week">
-                <ChevronLeft className="w-4 h-4" />
-              </Button>
-              <span className="text-sm font-medium">
-                {weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })} —{" "}
-                {new Date(weekStart.getTime() + 6 * 86400000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-              </span>
-              <Button variant="outline" size="sm" onClick={() => {
-                const d = new Date(weekStart);
-                d.setDate(d.getDate() + 7);
-                setWeekStart(d);
-              }} data-testid="button-next-week">
-                <ChevronRight className="w-4 h-4" />
-              </Button>
+              <div className="flex gap-1 border rounded-lg p-0.5">
+                <Button variant={scheduleView === "weekly" ? "default" : "ghost"} size="sm" onClick={() => setScheduleView("weekly")} data-testid="button-view-weekly">
+                  <LayoutGrid className="w-3.5 h-3.5 mr-1" /> Week
+                </Button>
+                <Button variant={scheduleView === "monthly" ? "default" : "ghost"} size="sm" onClick={() => setScheduleView("monthly")} data-testid="button-view-monthly">
+                  <CalendarDays className="w-3.5 h-3.5 mr-1" /> Month
+                </Button>
+              </div>
+              {scheduleView === "weekly" ? (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const d = new Date(weekStart);
+                    d.setDate(d.getDate() - 7);
+                    setWeekStart(d);
+                  }} data-testid="button-prev-week">
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <span className="text-sm font-medium">
+                    {weekStart.toLocaleDateString(undefined, { month: "short", day: "numeric" })} —{" "}
+                    {new Date(weekStart.getTime() + 6 * 86400000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const d = new Date(weekStart);
+                    d.setDate(d.getDate() + 7);
+                    setWeekStart(d);
+                  }} data-testid="button-next-week">
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const d = new Date(monthDate);
+                    d.setMonth(d.getMonth() - 1);
+                    setMonthDate(d);
+                  }} data-testid="button-prev-month">
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <span className="text-sm font-medium">
+                    {monthDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
+                  </span>
+                  <Button variant="outline" size="sm" onClick={() => {
+                    const d = new Date(monthDate);
+                    d.setMonth(d.getMonth() + 1);
+                    setMonthDate(d);
+                  }} data-testid="button-next-month">
+                    <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </>
+              )}
             </div>
             <div className="flex flex-wrap gap-2 text-xs">
               {Object.entries(attendanceConfig).map(([key, cfg]) => (
@@ -434,83 +502,129 @@ export default function StaffPage() {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr>
-                  <th className="border p-2 text-left text-sm font-medium bg-muted/50 w-40">Staff</th>
-                  {weekDays.map((day) => {
-                    const isToday = day.toISOString().split("T")[0] === new Date().toISOString().split("T")[0];
-                    return (
-                      <th key={day.toISOString()} className={`border p-2 text-center text-xs font-medium ${isToday ? "bg-primary/10" : "bg-muted/50"}`}>
-                        <div>{day.toLocaleDateString(undefined, { weekday: "short" })}</div>
-                        <div className={`text-base font-bold ${isToday ? "text-primary" : ""}`}>{day.getDate()}</div>
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {activeStaff.map((member) => (
-                  <tr key={member.id}>
-                    <td className="border p-2">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${roleBadgeColors[member.role] || "bg-gray-100"}`}>
-                          {member.name.charAt(0)}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium truncate max-w-[100px]">{member.name}</p>
-                          <p className="text-xs text-muted-foreground">{member.role}</p>
-                        </div>
-                      </div>
-                    </td>
+          {scheduleView === "weekly" && (
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr>
+                    <th className="border p-2 text-left text-sm font-medium bg-muted/50 w-40">Staff</th>
                     {weekDays.map((day) => {
-                      const shifts = getShiftsForDayAndUser(day, member.id);
+                      const isToday = day.toISOString().split("T")[0] === new Date().toISOString().split("T")[0];
                       return (
-                        <td key={day.toISOString()} className="border p-1 align-top min-w-[100px]">
-                          {shifts.length === 0 ? (
-                            <div className="text-xs text-muted-foreground text-center py-2">—</div>
-                          ) : (
-                            shifts.map((shift) => {
-                              const att = (shift.attendance || "scheduled") as keyof typeof attendanceConfig;
-                              const attCfg = attendanceConfig[att] || attendanceConfig.scheduled;
-                              return (
-                                <div key={shift.id} className={`text-xs p-1.5 rounded mb-1 ${attCfg.color} group relative`} data-testid={`shift-${shift.id}`}>
-                                  <div className="font-medium">{shift.startTime}–{shift.endTime}</div>
-                                  <div className="flex items-center gap-1 mt-0.5">
-                                    <Badge variant="outline" className="text-[10px] px-1 py-0">{attCfg.label}</Badge>
-                                  </div>
-                                  <div className="hidden group-hover:flex absolute top-0 right-0 gap-0.5 p-0.5">
-                                    {Object.entries(attendanceConfig).filter(([k]) => k !== att).map(([k, v]) => (
-                                      <button
-                                        key={k}
-                                        className={`text-[10px] px-1 rounded ${v.color}`}
-                                        onClick={() => updateShiftMutation.mutate({ id: shift.id, data: { attendance: k } })}
-                                        data-testid={`button-attendance-${shift.id}-${k}`}
-                                      >
-                                        {v.label.charAt(0)}
-                                      </button>
-                                    ))}
-                                    <button
-                                      className="text-[10px] px-1 rounded bg-red-100 text-red-700"
-                                      onClick={() => deleteShiftMutation.mutate(shift.id)}
-                                      data-testid={`button-delete-shift-${shift.id}`}
-                                    >
-                                      <Trash2 className="w-2.5 h-2.5" />
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </td>
+                        <th key={day.toISOString()} className={`border p-2 text-center text-xs font-medium ${isToday ? "bg-primary/10" : "bg-muted/50"}`}>
+                          <div>{day.toLocaleDateString(undefined, { weekday: "short" })}</div>
+                          <div className={`text-base font-bold ${isToday ? "text-primary" : ""}`}>{day.getDate()}</div>
+                        </th>
                       );
                     })}
                   </tr>
+                </thead>
+                <tbody>
+                  {activeStaff.map((member) => (
+                    <tr key={member.id}>
+                      <td className="border p-2">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${roleBadgeColors[member.role] || "bg-gray-100"}`}>
+                            {member.name.charAt(0)}
+                          </div>
+                          <div>
+                            <p className="text-sm font-medium truncate max-w-[100px]">{member.name}</p>
+                            <p className="text-xs text-muted-foreground">{member.role}</p>
+                          </div>
+                        </div>
+                      </td>
+                      {weekDays.map((day) => {
+                        const shifts = getShiftsForDayAndUser(day, member.id);
+                        return (
+                          <td key={day.toISOString()} className="border p-1 align-top min-w-[100px]">
+                            {shifts.length === 0 ? (
+                              <div className="text-xs text-muted-foreground text-center py-2">—</div>
+                            ) : (
+                              shifts.map((shift) => {
+                                const att = (shift.attendance || "scheduled") as keyof typeof attendanceConfig;
+                                const attCfg = attendanceConfig[att] || attendanceConfig.scheduled;
+                                return (
+                                  <div key={shift.id} className={`text-xs p-1.5 rounded mb-1 ${attCfg.color} group relative`} data-testid={`shift-${shift.id}`}>
+                                    <div className="font-medium">{shift.startTime}–{shift.endTime}</div>
+                                    <div className="flex items-center gap-1 mt-0.5">
+                                      <Badge variant="outline" className="text-[10px] px-1 py-0">{attCfg.label}</Badge>
+                                      {shift.outletId && outletMap.get(shift.outletId) && (
+                                        <span className="text-[10px] text-muted-foreground truncate">{outletMap.get(shift.outletId)}</span>
+                                      )}
+                                    </div>
+                                    <div className="hidden group-hover:flex absolute top-0 right-0 gap-0.5 p-0.5">
+                                      {Object.entries(attendanceConfig).filter(([k]) => k !== att).map(([k, v]) => (
+                                        <button
+                                          key={k}
+                                          className={`text-[10px] px-1 rounded ${v.color}`}
+                                          onClick={() => updateShiftMutation.mutate({ id: shift.id, data: { attendance: k } })}
+                                          data-testid={`button-attendance-${shift.id}-${k}`}
+                                        >
+                                          {v.label.charAt(0)}
+                                        </button>
+                                      ))}
+                                      <button
+                                        className="text-[10px] px-1 rounded bg-red-100 text-red-700"
+                                        onClick={() => deleteShiftMutation.mutate(shift.id)}
+                                        data-testid={`button-delete-shift-${shift.id}`}
+                                      >
+                                        <Trash2 className="w-2.5 h-2.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })
+                            )}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {scheduleView === "monthly" && (
+            <div className="overflow-x-auto">
+              <div className="grid grid-cols-7 gap-px bg-border rounded-lg overflow-hidden" data-testid="monthly-calendar">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+                  <div key={day} className="p-2 text-center text-xs font-medium bg-muted/50">{day}</div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+                {monthDays.map((day, idx) => {
+                  if (!day) return <div key={`pad-${idx}`} className="bg-background p-1 min-h-[80px]" />;
+                  const isToday = day.toISOString().split("T")[0] === new Date().toISOString().split("T")[0];
+                  const dayShifts = getShiftsForDay(day);
+                  return (
+                    <div
+                      key={day.toISOString()}
+                      className={`bg-background p-1 min-h-[80px] ${isToday ? "ring-2 ring-primary/30 ring-inset" : ""}`}
+                      data-testid={`month-day-${day.getDate()}`}
+                    >
+                      <div className={`text-xs font-medium mb-0.5 ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>
+                        {day.getDate()}
+                      </div>
+                      <div className="space-y-0.5">
+                        {dayShifts.slice(0, 3).map((shift) => {
+                          const member = activeStaff.find((s) => s.id === shift.userId);
+                          const att = (shift.attendance || "scheduled") as keyof typeof attendanceConfig;
+                          const attCfg = attendanceConfig[att] || attendanceConfig.scheduled;
+                          return (
+                            <div key={shift.id} className={`text-[10px] px-1 py-0.5 rounded truncate ${attCfg.color}`} title={`${member?.name || "?"} ${shift.startTime}-${shift.endTime}`}>
+                              {member?.name?.split(" ")[0] || "?"} {shift.startTime}
+                            </div>
+                          );
+                        })}
+                        {dayShifts.length > 3 && (
+                          <div className="text-[10px] text-muted-foreground px-1">+{dayShifts.length - 3} more</div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -527,6 +641,18 @@ export default function StaffPage() {
                 </SelectContent>
               </Select>
             </div>
+            {outlets.length > 0 && (
+              <div>
+                <Label>Outlet</Label>
+                <Select value={shiftForm.outletId || "none"} onValueChange={(v) => setShiftForm({ ...shiftForm, outletId: v === "none" ? "" : v })}>
+                  <SelectTrigger data-testid="select-shift-outlet"><SelectValue placeholder="Select outlet (optional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No specific outlet</SelectItem>
+                    {outlets.map((o) => (<SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label>Date</Label>
               <Input type="date" value={shiftForm.date} onChange={(e) => setShiftForm({ ...shiftForm, date: e.target.value })} data-testid="input-shift-date" />

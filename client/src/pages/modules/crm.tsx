@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Search, Plus, Edit, Trash2, Phone, Mail, Star,
   Tag, Award, DollarSign, ShoppingBag, ChevronRight, X,
-  UserPlus, Filter,
+  UserPlus, Filter, Megaphone, MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -46,6 +46,25 @@ interface OrderData {
   createdAt: string | null;
 }
 
+interface FeedbackData {
+  id: string;
+  orderId: string | null;
+  customerId: string | null;
+  rating: number | null;
+  comment: string | null;
+  createdAt: string | null;
+}
+
+interface OfferData {
+  id: string;
+  name: string;
+  type: string | null;
+  value: string | null;
+  scope: string | null;
+  active: boolean | null;
+  description: string | null;
+}
+
 const tierColors: Record<string, string> = {
   bronze: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
   silver: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
@@ -76,6 +95,14 @@ export default function CrmPage() {
 
   const { data: orders = [] } = useQuery<OrderData[]>({
     queryKey: ["/api/orders"],
+  });
+
+  const { data: feedback = [] } = useQuery<FeedbackData[]>({
+    queryKey: ["/api/feedback"],
+  });
+
+  const { data: offers = [] } = useQuery<OfferData[]>({
+    queryKey: ["/api/offers"],
   });
 
   const createMutation = useMutation({
@@ -355,6 +382,93 @@ export default function CrmPage() {
           </AnimatePresence>
         </div>
       )}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card data-testid="card-targeted-promotions">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Megaphone className="w-4 h-4 text-primary" />
+              Targeted Promotions
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {["platinum", "gold", "silver", "bronze"].map((tier) => {
+              const tierCustomers = customers.filter((c) => c.loyaltyTier === tier);
+              if (tierCustomers.length === 0) return null;
+              const activeOffers = offers.filter((o) => o.active);
+              return (
+                <div key={tier} className="p-3 rounded-lg bg-muted/50" data-testid={`promo-tier-${tier}`}>
+                  <div className="flex items-center justify-between mb-2">
+                    <Badge className={tierColors[tier]}>{tier} ({tierCustomers.length})</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      Avg spend: {formatCurrency(
+                        tierCustomers.reduce((s, c) => s + Number(c.totalSpent || 0), 0) / tierCustomers.length,
+                        currency
+                      )}
+                    </span>
+                  </div>
+                  {activeOffers.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {activeOffers.slice(0, 3).map((offer) => (
+                        <Badge key={offer.id} variant="outline" className="text-xs">
+                          {offer.name}
+                          {offer.type === "percentage" && offer.value ? ` (${offer.value}%)` : ""}
+                        </Badge>
+                      ))}
+                      {activeOffers.length > 3 && (
+                        <Badge variant="outline" className="text-xs">+{activeOffers.length - 3} more</Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">No active offers to target</p>
+                  )}
+                </div>
+              );
+            })}
+            {customers.length === 0 && (
+              <p className="text-sm text-muted-foreground text-center py-4">No customers to target</p>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-customer-feedback">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-primary" />
+              Customer Feedback
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {feedback.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No feedback received yet</p>
+            ) : (
+              <div className="space-y-3 max-h-[300px] overflow-y-auto">
+                {feedback.slice(0, 10).map((fb) => (
+                  <div key={fb.id} className="p-3 rounded-lg bg-muted/50" data-testid={`feedback-${fb.id}`}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-sm">{(fb.customerId && customers.find(c => c.id === fb.customerId)?.name) || "Anonymous"}</span>
+                      {fb.rating && (
+                        <div className="flex items-center gap-1">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <Star key={i} className={`w-3 h-3 ${i < fb.rating! ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    {fb.comment && <p className="text-xs text-muted-foreground">{fb.comment}</p>}
+                    {fb.createdAt && (
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        {new Date(fb.createdAt).toLocaleDateString()}
+                        {fb.orderId && ` · Order #${fb.orderId.slice(-6).toUpperCase()}`}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
         <DialogContent className="max-w-lg">

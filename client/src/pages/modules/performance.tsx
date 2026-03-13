@@ -1,11 +1,12 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { formatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart3, TrendingUp, Clock, Star, Award, Users,
-  Plus, Edit, Trash2, Filter, ChevronRight,
+  Plus, Trash2, Filter, Calendar, ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,8 +14,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Separator } from "@/components/ui/separator";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -39,6 +41,25 @@ interface StaffMember {
   active: boolean | null;
 }
 
+interface OrderData {
+  id: string;
+  waiterId: string | null;
+  status: string | null;
+  total: string | null;
+  orderType: string | null;
+  tableId: string | null;
+  createdAt: string | null;
+}
+
+interface ScheduleEntry {
+  id: string;
+  userId: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  attendance: string | null;
+}
+
 const metricTypes = [
   { value: "orders_served", label: "Orders Served", icon: BarChart3, unit: "" },
   { value: "avg_rating", label: "Avg Rating", icon: Star, unit: "/5" },
@@ -58,12 +79,22 @@ const metricConfig: Record<string, { label: string; icon: typeof BarChart3; colo
   tables_served: { label: "Tables", icon: Users, color: "text-teal-600 bg-teal-100" },
 };
 
+function parseHoursFromTimeRange(start: string, end: string): number {
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return Math.max(0, (eh * 60 + em - sh * 60 - sm) / 60);
+}
+
 export default function PerformancePage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const currency = user?.tenant?.currency || "USD";
 
   const [selectedStaffId, setSelectedStaffId] = useState("all");
+  const [filterRole, setFilterRole] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [formData, setFormData] = useState({
     userId: "", metricType: "orders_served", metricValue: "", period: "", notes: "",
@@ -75,6 +106,14 @@ export default function PerformancePage() {
 
   const { data: staff = [] } = useQuery<StaffMember[]>({
     queryKey: ["/api/users"],
+  });
+
+  const { data: orders = [] } = useQuery<OrderData[]>({
+    queryKey: ["/api/orders"],
+  });
+
+  const { data: schedules = [] } = useQuery<ScheduleEntry[]>({
+    queryKey: ["/api/staff-schedules"],
   });
 
   const createMutation = useMutation({
@@ -108,18 +147,68 @@ export default function PerformancePage() {
   const activeStaff = staff.filter((s) => s.active !== false);
   const staffMap = new Map(staff.map((s) => [s.id, s]));
 
-  const filteredLogs = selectedStaffId === "all"
-    ? logs
-    : logs.filter((l) => l.userId === selectedStaffId);
+  const computedKPIs = useMemo(() => {
+    const now = new Date();
+    const fromDate = dateFrom ? new Date(dateFrom) : null;
+    const toDate = dateTo ? new Date(dateTo) : null;
 
-  const staffSummaries = activeStaff.map((s) => {
-    const staffLogs = logs.filter((l) => l.userId === s.id);
-    const metrics: Record<string, number> = {};
-    staffLogs.forEach((l) => {
-      if (!metrics[l.metricType]) metrics[l.metricType] = 0;
-      metrics[l.metricType] += Number(l.metricValue);
+    return activeStaff.map((s) => {
+      const staffOrders = orders.filter((o) => {
+        if (o.waiterId !== s.id) return false;
+        if (!o.createdAt) return true;
+        const oDate = new Date(o.createdAt);
+        if (fromDate && oDate < fromDate) return false;
+        if (toDate && oDate > toDate) return false;
+        return true;
+      });
+
+      const staffSchedules = schedules.filter((sc) => {
+        if (sc.userId !== s.id) return false;
+        if (!sc.date) return true;
+        const scDate = new Date(sc.date);
+        if (fromDate && scDate < fromDate) return false;
+        if (toDate && scDate > toDate) return false;
+        return true;
+      });
+
+      const totalOrders = staffOrders.filter((o) => o.status === "paid").length;
+      const totalRevenue = staffOrders
+        .filter((o) => o.status === "paid")
+        .reduce((sum, o) => sum + Number(o.total || 0), 0);
+      const uniqueTables = new Set(staffOrders.filter((o) => o.tableId).map((o) => o.tableId)).size;
+      const totalShifts = staffSchedules.length;
+      const presentShifts = staffSchedules.filter((sc) => sc.attendance === "present" || sc.attendance === "late").length;
+      const attendanceRate = totalShifts > 0 ? (presentShifts / totalShifts) * 100 : 0;
+      const totalHours = staffSchedules.reduce((sum, sc) => sum + parseHoursFromTimeRange(sc.startTime, sc.endTime), 0);
+      const avgRevenuePerShift = totalShifts > 0 ? totalRevenue / totalShifts : 0;
+
+      return {
+        staff: s,
+        totalOrders,
+        totalRevenue,
+        uniqueTables,
+        totalShifts,
+        presentShifts,
+        attendanceRate,
+        totalHours,
+        avgRevenuePerShift,
+      };
     });
-    return { staff: s, logCount: staffLogs.length, metrics };
+  }, [activeStaff, orders, schedules, dateFrom, dateTo]);
+
+  const filteredKPIs = computedKPIs.filter((k) => {
+    if (filterRole !== "all" && k.staff.role !== filterRole) return false;
+    if (selectedStaffId !== "all" && k.staff.id !== selectedStaffId) return false;
+    return true;
+  });
+
+  const filteredLogs = logs.filter((l) => {
+    if (selectedStaffId !== "all" && l.userId !== selectedStaffId) return false;
+    if (filterRole !== "all") {
+      const member = staffMap.get(l.userId);
+      if (member && member.role !== filterRole) return false;
+    }
+    return true;
   });
 
   const handleSubmit = () => {
@@ -132,8 +221,12 @@ export default function PerformancePage() {
     });
   };
 
-  const totalLogs = logs.length;
-  const uniqueStaffTracked = new Set(logs.map((l) => l.userId)).size;
+  const totalOrdersAll = computedKPIs.reduce((s, k) => s + k.totalOrders, 0);
+  const totalRevenueAll = computedKPIs.reduce((s, k) => s + k.totalRevenue, 0);
+  const avgAttendance = computedKPIs.length > 0
+    ? computedKPIs.reduce((s, k) => s + k.attendanceRate, 0) / computedKPIs.length : 0;
+
+  const roles = [...new Set(activeStaff.map((s) => s.role))];
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
@@ -146,7 +239,7 @@ export default function PerformancePage() {
             <h1 className="text-2xl font-bold font-heading" data-testid="text-performance-title">
               Employee Performance
             </h1>
-            <p className="text-muted-foreground text-sm">Track and manage staff performance metrics</p>
+            <p className="text-muted-foreground text-sm">Computed KPIs from orders, schedules & manual logs</p>
           </div>
         </div>
         <Button data-testid="button-add-log" onClick={() => {
@@ -157,33 +250,44 @@ export default function PerformancePage() {
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/40">
               <BarChart3 className="h-5 w-5 text-blue-600" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Total Logs</p>
-              <p className="text-2xl font-bold" data-testid="text-total-logs">{totalLogs}</p>
+              <p className="text-sm text-muted-foreground">Total Orders</p>
+              <p className="text-2xl font-bold" data-testid="text-total-orders">{totalOrdersAll}</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="p-3 rounded-xl bg-green-100 dark:bg-green-900/40">
-              <Users className="h-5 w-5 text-green-600" />
+              <TrendingUp className="h-5 w-5 text-green-600" />
             </div>
             <div>
-              <p className="text-sm text-muted-foreground">Staff Tracked</p>
-              <p className="text-2xl font-bold" data-testid="text-staff-tracked">{uniqueStaffTracked}</p>
+              <p className="text-sm text-muted-foreground">Total Revenue</p>
+              <p className="text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenueAll, currency)}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-amber-100 dark:bg-amber-900/40">
+              <Clock className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Avg Attendance</p>
+              <p className="text-2xl font-bold" data-testid="text-avg-attendance">{avgAttendance.toFixed(0)}%</p>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 flex items-center gap-4">
             <div className="p-3 rounded-xl bg-purple-100 dark:bg-purple-900/40">
-              <Award className="h-5 w-5 text-purple-600" />
+              <Users className="h-5 w-5 text-purple-600" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Active Staff</p>
@@ -193,14 +297,62 @@ export default function PerformancePage() {
         </Card>
       </div>
 
-      <h2 className="text-lg font-semibold">Staff Overview</h2>
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex flex-wrap items-end gap-4">
+            <div>
+              <Label className="text-xs text-muted-foreground">Date From</Label>
+              <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-[160px]" data-testid="input-date-from" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Date To</Label>
+              <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-[160px]" data-testid="input-date-to" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Role</Label>
+              <Select value={filterRole} onValueChange={setFilterRole}>
+                <SelectTrigger className="w-[140px]" data-testid="select-filter-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Roles</SelectItem>
+                  {roles.map((r) => (
+                    <SelectItem key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground">Staff</Label>
+              <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
+                <SelectTrigger className="w-[180px]" data-testid="select-filter-staff">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Staff</SelectItem>
+                  {activeStaff.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {(dateFrom || dateTo || filterRole !== "all" || selectedStaffId !== "all") && (
+              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setFilterRole("all"); setSelectedStaffId("all"); }} data-testid="button-clear-filters">
+                Clear filters
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      <h2 className="text-lg font-semibold">Staff KPIs (Computed)</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {staffSummaries.map(({ staff: s, logCount, metrics }) => (
+        {filteredKPIs.map(({ staff: s, totalOrders, totalRevenue, uniqueTables, totalShifts, attendanceRate, totalHours, avgRevenuePerShift }) => (
           <motion.div key={s.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <Card
               className={`cursor-pointer hover:shadow-md transition-shadow ${selectedStaffId === s.id ? "ring-2 ring-primary" : ""}`}
               onClick={() => setSelectedStaffId(selectedStaffId === s.id ? "all" : s.id)}
-              data-testid={`card-staff-summary-${s.id}`}
+              data-testid={`card-staff-kpi-${s.id}`}
             >
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
@@ -213,31 +365,47 @@ export default function PerformancePage() {
                       <Badge variant="outline" className="text-xs">{s.role}</Badge>
                     </div>
                   </div>
-                  <span className="text-sm text-muted-foreground">{logCount} logs</span>
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(metrics).slice(0, 4).map(([type, value]) => {
-                    const cfg = metricConfig[type] || { label: type, icon: BarChart3, color: "text-gray-600 bg-gray-100" };
-                    const Icon = cfg.icon;
-                    return (
-                      <div key={type} className="flex items-center gap-1.5 text-xs">
-                        <div className={`w-5 h-5 rounded flex items-center justify-center ${cfg.color}`}>
-                          <Icon className="w-3 h-3" />
-                        </div>
-                        <span className="truncate">{cfg.label}: <strong>{Number(value).toFixed(1)}</strong></span>
-                      </div>
-                    );
-                  })}
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-blue-100 text-blue-600"><BarChart3 className="w-3 h-3" /></div>
+                    <span>Orders: <strong>{totalOrders}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-green-100 text-green-600"><TrendingUp className="w-3 h-3" /></div>
+                    <span>Revenue: <strong>{formatCurrency(totalRevenue, currency)}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-teal-100 text-teal-600"><Users className="w-3 h-3" /></div>
+                    <span>Tables: <strong>{uniqueTables}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-amber-100 text-amber-600"><Calendar className="w-3 h-3" /></div>
+                    <span>Shifts: <strong>{totalShifts}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-purple-100 text-purple-600"><Clock className="w-3 h-3" /></div>
+                    <span>Hours: <strong>{totalHours.toFixed(1)}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-orange-100 text-orange-600"><Award className="w-3 h-3" /></div>
+                    <span>Attendance: <strong>{attendanceRate.toFixed(0)}%</strong></span>
+                  </div>
                 </div>
+                {avgRevenuePerShift > 0 && (
+                  <p className="text-xs text-muted-foreground">Avg {formatCurrency(avgRevenuePerShift, currency)}/shift</p>
+                )}
               </CardContent>
             </Card>
           </motion.div>
         ))}
       </div>
 
+      <Separator />
+
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">
-          Performance Logs {selectedStaffId !== "all" && staffMap.get(selectedStaffId) ? `— ${staffMap.get(selectedStaffId)!.name}` : ""}
+          Manual Performance Logs {selectedStaffId !== "all" && staffMap.get(selectedStaffId) ? `— ${staffMap.get(selectedStaffId)!.name}` : ""}
         </h2>
         {selectedStaffId !== "all" && (
           <Button variant="ghost" size="sm" onClick={() => setSelectedStaffId("all")} data-testid="button-clear-filter">

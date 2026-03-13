@@ -474,6 +474,12 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
+  app.get("/api/feedback", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const items = await storage.getFeedbackByTenant(user.tenantId);
+    res.json(items);
+  });
+
   // Employee Performance Logs CRUD (tenant-scoped)
   app.get("/api/performance-logs", requireAuth, async (req, res) => {
     const user = req.user as any;
