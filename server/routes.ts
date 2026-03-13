@@ -257,7 +257,22 @@ export async function registerRoutes(
     const existing = await storage.getOrder(req.params.id);
     if (!existing) return res.status(404).json({ message: "Order not found" });
     if (existing.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
-    const order = await storage.updateOrder(req.params.id, req.body);
+
+    const updateData = { ...req.body };
+
+    if (req.body.status === "paid" && existing.orderType === "dine_in") {
+      const tenant = await storage.getTenant(user.tenantId);
+      const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
+      if (serviceChargeRate > 0) {
+        const subtotal = Number(existing.subtotal || 0);
+        const serviceChargeAmount = subtotal * serviceChargeRate;
+        const existingTotal = Number(existing.total || 0);
+        updateData.total = (existingTotal + serviceChargeAmount).toFixed(2);
+        updateData.notes = [existing.notes, `Service charge (${tenant?.serviceCharge}%): ${serviceChargeAmount.toFixed(2)}`].filter(Boolean).join(" | ");
+      }
+    }
+
+    const order = await storage.updateOrder(req.params.id, updateData);
     if (req.body.status === "paid" || req.body.status === "cancelled") {
       if (existing.tableId) {
         await storage.updateTable(existing.tableId, { status: "free" });

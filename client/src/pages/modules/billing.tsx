@@ -701,6 +701,11 @@ export default function BillingPage() {
                   <span className="text-muted-foreground">Tax</span>
                   <span>{fmt(selectedInvoice.tax)}</span>
                 </div>
+                {selectedInvoice.notes && selectedInvoice.notes.includes("Service charge") && (
+                  <div className="flex justify-between text-muted-foreground text-xs">
+                    <span>{selectedInvoice.notes.split(" | ").find((n: string) => n.includes("Service charge"))}</span>
+                  </div>
+                )}
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
