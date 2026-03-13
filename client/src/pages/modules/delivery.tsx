@@ -140,32 +140,46 @@ export default function DeliveryPage() {
 
         <Card className="max-w-lg mx-auto">
           <CardContent className="py-12 text-center space-y-6">
-            <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
-              <Truck className="w-10 h-10 text-primary" />
+            <div className="w-20 h-20 rounded-2xl bg-amber-100 flex items-center justify-center mx-auto">
+              <Truck className="w-10 h-10 text-amber-600" />
             </div>
+            <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200" data-testid="badge-under-review">
+              Under Review
+            </Badge>
             <div>
-              <h2 className="text-xl font-bold font-heading mb-2">Delivery Module</h2>
+              <h2 className="text-xl font-bold font-heading mb-2">Delivery Management</h2>
               <p className="text-muted-foreground text-sm max-w-sm mx-auto">
-                Enable delivery management to track orders, assign drivers, and manage delivery logistics for your restaurant.
+                This module is currently under review and will be available in a future update.
+                Delivery management features including order tracking, driver dispatch, real-time status updates, and third-party delivery partner integrations are being finalized.
               </p>
             </div>
-            <div className="flex flex-col items-center gap-4">
-              <div className="flex items-center gap-3 text-sm">
-                <Settings className="w-4 h-4 text-muted-foreground" />
-                <span className="text-muted-foreground">Module is currently disabled</span>
-              </div>
+            <div className="text-left max-w-xs mx-auto space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Planned Features</p>
+              {[
+                "Real-time order tracking & driver dispatch",
+                "Delivery partner integrations (Uber Eats, DoorDash)",
+                "Automated delivery fee calculation",
+                "Driver performance analytics",
+                "Customer delivery notifications",
+              ].map((feature, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                  {feature}
+                </div>
+              ))}
+            </div>
+            <div className="border-t pt-4 mt-4">
               <Button
                 onClick={() => setDeliveryEnabled(true)}
+                variant="outline"
                 className="gap-2"
                 data-testid="button-enable-delivery"
               >
                 <ToggleRight className="w-4 h-4" />
-                Enable Delivery Management
+                Preview Module (Demo Mode)
               </Button>
-            </div>
-            <div className="border-t pt-4 mt-4">
-              <p className="text-xs text-muted-foreground">
-                Features include: order tracking, driver assignment, delivery status flow, fee management, and delivery partner integration.
+              <p className="text-xs text-muted-foreground mt-2">
+                Preview the delivery interface with sample data
               </p>
             </div>
           </CardContent>
@@ -188,9 +202,12 @@ export default function DeliveryPage() {
             <p className="text-muted-foreground text-sm">Track and manage delivery orders</p>
           </div>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setDeliveryEnabled(false)} data-testid="button-disable-delivery">
-          <ToggleLeft className="w-4 h-4 mr-1" /> Disable
-        </Button>
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Demo Preview</Badge>
+          <Button variant="outline" size="sm" onClick={() => setDeliveryEnabled(false)} data-testid="button-disable-delivery">
+            <ToggleLeft className="w-4 h-4 mr-1" /> Exit Preview
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -191,12 +191,15 @@ export async function registerRoutes(
   });
 
   app.patch("/api/tables/:id", requireAuth, async (req, res) => {
-    const tbl = await storage.updateTable(req.params.id, req.body);
+    const user = req.user as any;
+    const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, req.body);
+    if (!tbl) return res.status(404).json({ message: "Table not found" });
     res.json(tbl);
   });
 
   app.delete("/api/tables/:id", requireRole("owner", "manager"), async (req, res) => {
-    await storage.deleteTable(req.params.id);
+    const user = req.user as any;
+    await storage.deleteTableByTenant(req.params.id, user.tenantId);
     res.json({ message: "Deleted" });
   });
 
@@ -213,8 +216,16 @@ export async function registerRoutes(
   });
 
   app.patch("/api/reservations/:id", requireAuth, async (req, res) => {
-    const reservation = await storage.updateReservation(req.params.id, req.body);
+    const user = req.user as any;
+    const reservation = await storage.updateReservationByTenant(req.params.id, user.tenantId, req.body);
+    if (!reservation) return res.status(404).json({ message: "Reservation not found" });
     res.json(reservation);
+  });
+
+  app.delete("/api/reservations/:id", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    await storage.deleteReservationByTenant(req.params.id, user.tenantId);
+    res.json({ message: "Deleted" });
   });
 
   app.get("/api/orders", requireAuth, async (req, res) => {
@@ -281,13 +292,30 @@ export async function registerRoutes(
     res.json(order);
   });
 
+  app.get("/api/order-items", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const items = await storage.getOrderItemsByTenant(user.tenantId);
+    res.json(items);
+  });
+
   app.get("/api/order-items/:orderId", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const order = await storage.getOrder(req.params.orderId);
+    if (!order || order.tenantId !== user.tenantId) {
+      return res.status(404).json({ message: "Order not found" });
+    }
     const items = await storage.getOrderItemsByOrder(req.params.orderId);
     res.json(items);
   });
 
   app.patch("/api/order-items/:id", requireAuth, async (req, res) => {
+    const user = req.user as any;
     const item = await storage.updateOrderItem(req.params.id, req.body);
+    if (!item) return res.status(404).json({ message: "Item not found" });
+    const order = await storage.getOrder(item.orderId);
+    if (!order || order.tenantId !== user.tenantId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     res.json(item);
   });
 

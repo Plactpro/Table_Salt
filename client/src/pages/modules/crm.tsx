@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -55,6 +55,13 @@ interface FeedbackData {
   createdAt: string | null;
 }
 
+interface OrderItemData {
+  id: string;
+  orderId: string;
+  name: string;
+  quantity: number | null;
+}
+
 interface OfferData {
   id: string;
   name: string;
@@ -104,6 +111,38 @@ export default function CrmPage() {
   const { data: offers = [] } = useQuery<OfferData[]>({
     queryKey: ["/api/offers"],
   });
+
+  const { data: orderItemsList = [] } = useQuery<OrderItemData[]>({
+    queryKey: ["/api/order-items"],
+  });
+
+  const favoriteDishes = useMemo(() => {
+    const orderCustomerMap = new Map<string, string>();
+    orders.forEach((o) => {
+      if (o.customerId && o.status === "paid") {
+        orderCustomerMap.set(o.id, o.customerId);
+      }
+    });
+
+    const dishCounts = new Map<string, Map<string, number>>();
+    orderItemsList.forEach((item) => {
+      const custId = orderCustomerMap.get(item.orderId);
+      if (!custId) return;
+      if (!dishCounts.has(custId)) dishCounts.set(custId, new Map());
+      const custDishes = dishCounts.get(custId)!;
+      custDishes.set(item.name, (custDishes.get(item.name) || 0) + (item.quantity || 1));
+    });
+
+    const result = new Map<string, { name: string; count: number }[]>();
+    dishCounts.forEach((dishes, custId) => {
+      const sorted = [...dishes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([name, count]) => ({ name, count }));
+      result.set(custId, sorted);
+    });
+    return result;
+  }, [orders, orderItemsList]);
 
   const createMutation = useMutation({
     mutationFn: async (data: Record<string, unknown>) => {
@@ -528,6 +567,25 @@ export default function CrmPage() {
                   <p>{selectedCustomer.notes}</p>
                 </div>
               )}
+
+              <div data-testid="section-favorite-dishes">
+                <h4 className="text-sm font-semibold mb-2">Favorite Dishes</h4>
+                {(() => {
+                  const dishes = favoriteDishes.get(selectedCustomer.id);
+                  if (!dishes || dishes.length === 0) {
+                    return <p className="text-sm text-muted-foreground">No order history to compute favorites</p>;
+                  }
+                  return (
+                    <div className="flex flex-wrap gap-2">
+                      {dishes.map((d, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-xs" data-testid={`badge-fav-dish-${idx}`}>
+                          {d.name} <span className="ml-1 text-muted-foreground">×{d.count}</span>
+                        </Badge>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
 
               <div>
                 <h4 className="text-sm font-semibold mb-2">Recent Orders</h4>

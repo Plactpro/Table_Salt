@@ -48,16 +48,37 @@ interface OrderData {
   total: string | null;
   orderType: string | null;
   tableId: string | null;
+  outletId: string | null;
   createdAt: string | null;
 }
 
 interface ScheduleEntry {
   id: string;
   userId: string;
+  outletId: string | null;
   date: string;
   startTime: string;
   endTime: string;
   attendance: string | null;
+}
+
+interface FeedbackData {
+  id: string;
+  customerId: string | null;
+  orderId: string | null;
+  rating: number | null;
+}
+
+interface OutletData {
+  id: string;
+  name: string;
+}
+
+interface OrderItemData {
+  id: string;
+  orderId: string;
+  name: string;
+  quantity: number | null;
 }
 
 const metricTypes = [
@@ -93,6 +114,7 @@ export default function PerformancePage() {
 
   const [selectedStaffId, setSelectedStaffId] = useState("all");
   const [filterRole, setFilterRole] = useState("all");
+  const [filterOutlet, setFilterOutlet] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showAddDialog, setShowAddDialog] = useState(false);
@@ -114,6 +136,14 @@ export default function PerformancePage() {
 
   const { data: schedules = [] } = useQuery<ScheduleEntry[]>({
     queryKey: ["/api/staff-schedules"],
+  });
+
+  const { data: feedbackList = [] } = useQuery<FeedbackData[]>({
+    queryKey: ["/api/feedback"],
+  });
+
+  const { data: outlets = [] } = useQuery<OutletData[]>({
+    queryKey: ["/api/outlets"],
   });
 
   const createMutation = useMutation({
@@ -148,13 +178,13 @@ export default function PerformancePage() {
   const staffMap = new Map(staff.map((s) => [s.id, s]));
 
   const computedKPIs = useMemo(() => {
-    const now = new Date();
     const fromDate = dateFrom ? new Date(dateFrom) : null;
     const toDate = dateTo ? new Date(dateTo) : null;
 
     return activeStaff.map((s) => {
       const staffOrders = orders.filter((o) => {
         if (o.waiterId !== s.id) return false;
+        if (filterOutlet !== "all" && o.outletId !== filterOutlet) return false;
         if (!o.createdAt) return true;
         const oDate = new Date(o.createdAt);
         if (fromDate && oDate < fromDate) return false;
@@ -164,6 +194,7 @@ export default function PerformancePage() {
 
       const staffSchedules = schedules.filter((sc) => {
         if (sc.userId !== s.id) return false;
+        if (filterOutlet !== "all" && sc.outletId !== filterOutlet) return false;
         if (!sc.date) return true;
         const scDate = new Date(sc.date);
         if (fromDate && scDate < fromDate) return false;
@@ -171,10 +202,10 @@ export default function PerformancePage() {
         return true;
       });
 
-      const totalOrders = staffOrders.filter((o) => o.status === "paid").length;
-      const totalRevenue = staffOrders
-        .filter((o) => o.status === "paid")
-        .reduce((sum, o) => sum + Number(o.total || 0), 0);
+      const paidOrders = staffOrders.filter((o) => o.status === "paid");
+      const totalOrders = paidOrders.length;
+      const totalRevenue = paidOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+      const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
       const uniqueTables = new Set(staffOrders.filter((o) => o.tableId).map((o) => o.tableId)).size;
       const totalShifts = staffSchedules.length;
       const presentShifts = staffSchedules.filter((sc) => sc.attendance === "present" || sc.attendance === "late").length;
@@ -182,19 +213,27 @@ export default function PerformancePage() {
       const totalHours = staffSchedules.reduce((sum, sc) => sum + parseHoursFromTimeRange(sc.startTime, sc.endTime), 0);
       const avgRevenuePerShift = totalShifts > 0 ? totalRevenue / totalShifts : 0;
 
+      const staffOrderIds = new Set(paidOrders.map((o) => o.id));
+      const staffFeedback = feedbackList.filter((fb) => fb.orderId && staffOrderIds.has(fb.orderId));
+      const avgCustomerRating = staffFeedback.length > 0
+        ? staffFeedback.reduce((sum, fb) => sum + (fb.rating || 0), 0) / staffFeedback.length : null;
+
       return {
         staff: s,
         totalOrders,
         totalRevenue,
+        avgOrderValue,
         uniqueTables,
         totalShifts,
         presentShifts,
         attendanceRate,
         totalHours,
         avgRevenuePerShift,
+        avgCustomerRating,
+        feedbackCount: staffFeedback.length,
       };
     });
-  }, [activeStaff, orders, schedules, dateFrom, dateTo]);
+  }, [activeStaff, orders, schedules, feedbackList, dateFrom, dateTo, filterOutlet]);
 
   const filteredKPIs = computedKPIs.filter((k) => {
     if (filterRole !== "all" && k.staff.role !== filterRole) return false;
@@ -322,6 +361,22 @@ export default function PerformancePage() {
                 </SelectContent>
               </Select>
             </div>
+            {outlets.length > 0 && (
+              <div>
+                <Label className="text-xs text-muted-foreground">Outlet</Label>
+                <Select value={filterOutlet} onValueChange={setFilterOutlet}>
+                  <SelectTrigger className="w-[160px]" data-testid="select-filter-outlet">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Outlets</SelectItem>
+                    {outlets.map((o) => (
+                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div>
               <Label className="text-xs text-muted-foreground">Staff</Label>
               <Select value={selectedStaffId} onValueChange={setSelectedStaffId}>
@@ -336,8 +391,8 @@ export default function PerformancePage() {
                 </SelectContent>
               </Select>
             </div>
-            {(dateFrom || dateTo || filterRole !== "all" || selectedStaffId !== "all") && (
-              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setFilterRole("all"); setSelectedStaffId("all"); }} data-testid="button-clear-filters">
+            {(dateFrom || dateTo || filterRole !== "all" || selectedStaffId !== "all" || filterOutlet !== "all") && (
+              <Button variant="ghost" size="sm" onClick={() => { setDateFrom(""); setDateTo(""); setFilterRole("all"); setSelectedStaffId("all"); setFilterOutlet("all"); }} data-testid="button-clear-filters">
                 Clear filters
               </Button>
             )}
@@ -347,7 +402,7 @@ export default function PerformancePage() {
 
       <h2 className="text-lg font-semibold">Staff KPIs (Computed)</h2>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredKPIs.map(({ staff: s, totalOrders, totalRevenue, uniqueTables, totalShifts, attendanceRate, totalHours, avgRevenuePerShift }) => (
+        {filteredKPIs.map(({ staff: s, totalOrders, totalRevenue, avgOrderValue, uniqueTables, totalShifts, attendanceRate, totalHours, avgRevenuePerShift, avgCustomerRating, feedbackCount }) => (
           <motion.div key={s.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
             <Card
               className={`cursor-pointer hover:shadow-md transition-shadow ${selectedStaffId === s.id ? "ring-2 ring-primary" : ""}`}
@@ -392,8 +447,18 @@ export default function PerformancePage() {
                     <span>Attendance: <strong>{attendanceRate.toFixed(0)}%</strong></span>
                   </div>
                 </div>
+                <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-indigo-100 text-indigo-600"><TrendingUp className="w-3 h-3" /></div>
+                    <span>AOV: <strong>{formatCurrency(avgOrderValue, currency)}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-5 h-5 rounded flex items-center justify-center bg-yellow-100 text-yellow-600"><Star className="w-3 h-3" /></div>
+                    <span>Rating: <strong>{avgCustomerRating !== null ? `${avgCustomerRating.toFixed(1)}/5` : "N/A"}</strong></span>
+                  </div>
+                </div>
                 {avgRevenuePerShift > 0 && (
-                  <p className="text-xs text-muted-foreground">Avg {formatCurrency(avgRevenuePerShift, currency)}/shift</p>
+                  <p className="text-xs text-muted-foreground">Avg {formatCurrency(avgRevenuePerShift, currency)}/shift · {feedbackCount} review{feedbackCount !== 1 ? "s" : ""}</p>
                 )}
               </CardContent>
             </Card>
