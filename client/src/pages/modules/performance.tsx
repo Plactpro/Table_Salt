@@ -265,7 +265,7 @@ export default function PerformancePage() {
   const avgAttendance = computedKPIs.length > 0
     ? computedKPIs.reduce((s, k) => s + k.attendanceRate, 0) / computedKPIs.length : 0;
 
-  const roles = [...new Set(activeStaff.map((s) => s.role))];
+  const roles = Array.from(new Set(activeStaff.map((s) => s.role)));
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">

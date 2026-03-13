@@ -91,9 +91,14 @@ export default function CrmPage() {
   const [showProfileDialog, setShowProfileDialog] = useState(false);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
 
   const [formData, setFormData] = useState({
     name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "",
+  });
+
+  const [feedbackForm, setFeedbackForm] = useState({
+    customerId: "", orderId: "", rating: "5", comment: "",
   });
 
   const { data: customers = [], isLoading } = useQuery<CustomerData[]>({
@@ -135,7 +140,7 @@ export default function CrmPage() {
 
     const result = new Map<string, { name: string; count: number }[]>();
     dishCounts.forEach((dishes, custId) => {
-      const sorted = [...dishes.entries()]
+      const sorted = Array.from(dishes.entries())
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3)
         .map(([name, count]) => ({ name, count }));
@@ -168,6 +173,22 @@ export default function CrmPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setShowEditDialog(false);
       toast({ title: "Customer updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const feedbackMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/feedback", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feedback"] });
+      setShowFeedbackDialog(false);
+      setFeedbackForm({ customerId: "", orderId: "", rating: "5", comment: "" });
+      toast({ title: "Feedback recorded" });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -472,10 +493,15 @@ export default function CrmPage() {
 
         <Card data-testid="card-customer-feedback">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-primary" />
-              Customer Feedback
-            </CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-primary" />
+                Customer Feedback
+              </CardTitle>
+              <Button size="sm" variant="outline" onClick={() => setShowFeedbackDialog(true)} data-testid="button-add-feedback">
+                <Plus className="w-3 h-3 mr-1" /> Record
+              </Button>
+            </div>
           </CardHeader>
           <CardContent>
             {feedback.length === 0 ? (
@@ -726,6 +752,97 @@ export default function CrmPage() {
             </div>
             <Button className="w-full" onClick={handleSubmitEdit} disabled={!formData.name || updateMutation.isPending} data-testid="button-update-customer">
               Update Customer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showFeedbackDialog} onOpenChange={setShowFeedbackDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Record Customer Feedback</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Customer</Label>
+              <Select value={feedbackForm.customerId} onValueChange={(v) => {
+                setFeedbackForm({ ...feedbackForm, customerId: v, orderId: "" });
+              }}>
+                <SelectTrigger data-testid="select-feedback-customer">
+                  <SelectValue placeholder="Select customer" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {feedbackForm.customerId && (
+              <div>
+                <Label>Linked Order</Label>
+                <Select value={feedbackForm.orderId || "no_order"} onValueChange={(v) => setFeedbackForm({ ...feedbackForm, orderId: v === "no_order" ? "" : v })}>
+                  <SelectTrigger data-testid="select-feedback-order">
+                    <SelectValue placeholder="Select order (optional)" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="no_order">No specific order</SelectItem>
+                    {orders
+                      .filter((o) => o.customerId === feedbackForm.customerId && o.status === "paid")
+                      .slice(0, 10)
+                      .map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          #{o.id.slice(-6).toUpperCase()} · {formatCurrency(Number(o.total || 0), currency)} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ""}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div>
+              <Label>Rating</Label>
+              <div className="flex items-center gap-1 mt-1">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setFeedbackForm({ ...feedbackForm, rating: String(star) })}
+                    className="focus:outline-none"
+                    data-testid={`button-star-${star}`}
+                  >
+                    <Star className={`w-6 h-6 ${star <= parseInt(feedbackForm.rating) ? "text-yellow-500 fill-yellow-500" : "text-gray-300"}`} />
+                  </button>
+                ))}
+                <span className="text-sm text-muted-foreground ml-2">{feedbackForm.rating}/5</span>
+              </div>
+            </div>
+            <div>
+              <Label>Comment</Label>
+              <Textarea
+                value={feedbackForm.comment}
+                onChange={(e) => setFeedbackForm({ ...feedbackForm, comment: e.target.value })}
+                placeholder="Customer feedback or comments..."
+                data-testid="input-feedback-comment"
+              />
+            </div>
+            <Button
+              className="w-full"
+              onClick={() => {
+                if (!feedbackForm.customerId) {
+                  toast({ title: "Please select a customer", variant: "destructive" });
+                  return;
+                }
+                feedbackMutation.mutate({
+                  customerId: feedbackForm.customerId,
+                  orderId: feedbackForm.orderId || null,
+                  rating: parseInt(feedbackForm.rating),
+                  comment: feedbackForm.comment || null,
+                });
+              }}
+              disabled={!feedbackForm.customerId || feedbackMutation.isPending}
+              data-testid="button-submit-feedback"
+            >
+              Submit Feedback
             </Button>
           </div>
         </DialogContent>
