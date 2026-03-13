@@ -508,6 +508,12 @@ export async function registerRoutes(
     res.json(items);
   });
 
+  app.post("/api/feedback", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const fb = await storage.createFeedback({ ...req.body, tenantId: user.tenantId });
+    res.json(fb);
+  });
+
   // Employee Performance Logs CRUD (tenant-scoped)
   app.get("/api/performance-logs", requireAuth, async (req, res) => {
     const user = req.user as any;

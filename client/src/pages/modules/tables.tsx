@@ -188,7 +188,7 @@ export default function TablesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
-      if (resFormData.tableId) {
+      if (resFormData.tableId && resFormData.tableId !== "none") {
         updateTableMutation.mutate({ id: resFormData.tableId, status: "reserved" });
       }
       setShowAddReservation(false);
@@ -302,8 +302,8 @@ export default function TablesPage() {
     createReservationMutation.mutate({
       customerName: customer ? customer.name : resFormData.customerName,
       customerPhone: customer ? customer.phone : resFormData.customerPhone || null,
-      customerId: resFormData.customerId || null,
-      tableId: resFormData.tableId || null,
+      customerId: resFormData.customerId && resFormData.customerId !== "none" ? resFormData.customerId : null,
+      tableId: resFormData.tableId && resFormData.tableId !== "none" ? resFormData.tableId : null,
       guests: parseInt(resFormData.guests) || 2,
       dateTime: new Date(resFormData.dateTime).toISOString(),
       notes: resFormData.notes || null,
