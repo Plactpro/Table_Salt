@@ -7,14 +7,14 @@ import { motion } from "framer-motion";
 import {
   Truck, Package, MapPin, Phone, Clock, User, Plus,
   ChevronRight, CheckCircle, AlertCircle, XCircle,
+  Settings, ToggleLeft, ToggleRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -66,16 +66,19 @@ export default function DeliveryPage() {
   const queryClient = useQueryClient();
   const currency = user?.tenant?.currency || "USD";
 
+  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryOrder | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
 
   const { data: deliveries = [], isLoading } = useQuery<DeliveryOrder[]>({
     queryKey: ["/api/delivery-orders"],
+    enabled: deliveryEnabled,
   });
 
   const { data: customers = [] } = useQuery<CustomerData[]>({
     queryKey: ["/api/customers"],
+    enabled: deliveryEnabled,
   });
 
   const updateMutation = useMutation({
@@ -120,6 +123,57 @@ export default function DeliveryPage() {
     d.status && !["delivered", "cancelled", "returned"].includes(d.status)
   ).length;
 
+  if (!deliveryEnabled) {
+    return (
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-primary/10">
+            <Truck className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold font-heading" data-testid="text-delivery-title">
+              Delivery Management
+            </h1>
+            <p className="text-muted-foreground text-sm">Track and manage delivery orders</p>
+          </div>
+        </div>
+
+        <Card className="max-w-lg mx-auto">
+          <CardContent className="py-12 text-center space-y-6">
+            <div className="w-20 h-20 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto">
+              <Truck className="w-10 h-10 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold font-heading mb-2">Delivery Module</h2>
+              <p className="text-muted-foreground text-sm max-w-sm mx-auto">
+                Enable delivery management to track orders, assign drivers, and manage delivery logistics for your restaurant.
+              </p>
+            </div>
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex items-center gap-3 text-sm">
+                <Settings className="w-4 h-4 text-muted-foreground" />
+                <span className="text-muted-foreground">Module is currently disabled</span>
+              </div>
+              <Button
+                onClick={() => setDeliveryEnabled(true)}
+                className="gap-2"
+                data-testid="button-enable-delivery"
+              >
+                <ToggleRight className="w-4 h-4" />
+                Enable Delivery Management
+              </Button>
+            </div>
+            <div className="border-t pt-4 mt-4">
+              <p className="text-xs text-muted-foreground">
+                Features include: order tracking, driver assignment, delivery status flow, fee management, and delivery partner integration.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
       <div className="flex items-center justify-between">
@@ -134,6 +188,9 @@ export default function DeliveryPage() {
             <p className="text-muted-foreground text-sm">Track and manage delivery orders</p>
           </div>
         </div>
+        <Button variant="outline" size="sm" onClick={() => setDeliveryEnabled(false)} data-testid="button-disable-delivery">
+          <ToggleLeft className="w-4 h-4 mr-1" /> Disable
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -234,7 +291,9 @@ export default function DeliveryPage() {
                         <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
                           <span className="flex items-center gap-1">
                             <MapPin className="w-3 h-3" />
-                            {delivery.customerAddress.substring(0, 40)}...
+                            {delivery.customerAddress.length > 40
+                              ? delivery.customerAddress.substring(0, 40) + "..."
+                              : delivery.customerAddress}
                           </span>
                           {delivery.deliveryPartner && (
                             <span className="flex items-center gap-1">

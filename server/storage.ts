@@ -87,6 +87,7 @@ export interface IStorage {
   getStaffSchedulesByTenant(tenantId: string): Promise<StaffSchedule[]>;
   createStaffSchedule(data: InsertStaffSchedule): Promise<StaffSchedule>;
 
+  getFeedbackByTenant(tenantId: string): Promise<Feedback[]>;
   createFeedback(data: InsertFeedback): Promise<Feedback>;
 
   getOffersByTenant(tenantId: string): Promise<Offer[]>;
@@ -331,6 +332,10 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteStaffScheduleByTenant(id: string, tenantId: string) {
     await db.delete(staffSchedules).where(and(eq(staffSchedules.id, id), eq(staffSchedules.tenantId, tenantId)));
+  }
+
+  async getFeedbackByTenant(tenantId: string) {
+    return db.select().from(feedback).where(eq(feedback.tenantId, tenantId)).orderBy(feedback.createdAt);
   }
 
   async createFeedback(data: InsertFeedback) {
