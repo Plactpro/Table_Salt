@@ -1,10 +1,12 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion } from "framer-motion";
 import {
   CreditCard, Check, Crown, Zap, Star, Shield, ArrowRight,
   Building2, Users, BarChart3, Globe, Receipt, Search, Calendar,
-  DollarSign, TrendingUp, FileText,
+  DollarSign, TrendingUp, FileText, LayoutGrid, Table2, CalendarDays,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -16,7 +18,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import type { Order, OrderItem } from "@shared/schema";
+import type { Order, OrderItem, Table as TableType } from "@shared/schema";
+
+interface TenantData {
+  id: string;
+  name: string;
+  plan: string;
+  businessType?: string;
+  currency?: string;
+}
 
 type OrderWithItems = Order & { items?: OrderItem[] };
 
@@ -49,11 +59,6 @@ const plans = [
 
 function getPlanIndex(planId: string) { return plans.findIndex((p) => p.id === planId); }
 
-function formatCurrency(value: string | number | null) {
-  if (value == null) return "$0.00";
-  return `$${Number(value).toFixed(2)}`;
-}
-
 function formatDate(date: string | Date | null) {
   if (!date) return "—";
   return new Date(date).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
@@ -64,16 +69,31 @@ function formatShortDate(date: string | Date | null) {
   return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+function getDateKey(date: string | Date | null): string {
+  if (!date) return "unknown";
+  return new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "2-digit", day: "2-digit" });
+}
+
+type InvoiceView = "list" | "by_table" | "by_day";
+
 export default function BillingPage() {
-  const { data: tenant } = useQuery<any>({ queryKey: ["/api/tenant"] });
+  const { user } = useAuth();
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const fmt = (val: string | number | null) => {
+    if (val == null) return sharedFormatCurrency(0, tenantCurrency);
+    return sharedFormatCurrency(val, tenantCurrency);
+  };
+
+  const { data: tenant } = useQuery<TenantData>({ queryKey: ["/api/tenant"] });
   const { data: orders = [] } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
-  const { data: tables = [] } = useQuery<any[]>({ queryKey: ["/api/tables"] });
+  const { data: tables = [] } = useQuery<TableType[]>({ queryKey: ["/api/tables"] });
 
   const [activeTab, setActiveTab] = useState<"subscription" | "invoices">("subscription");
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceDateFrom, setInvoiceDateFrom] = useState("");
   const [invoiceDateTo, setInvoiceDateTo] = useState("");
   const [invoiceTypeFilter, setInvoiceTypeFilter] = useState("all");
+  const [invoiceView, setInvoiceView] = useState<InvoiceView>("list");
   const [selectedInvoice, setSelectedInvoice] = useState<OrderWithItems | null>(null);
 
   const currentPlan = tenant?.plan || "basic";
@@ -83,7 +103,7 @@ export default function BillingPage() {
 
   const tableMap = useMemo(() => {
     const map: Record<string, string> = {};
-    tables.forEach((t: any) => { map[t.id] = `Table ${t.number}`; });
+    tables.forEach((t) => { map[t.id] = `Table ${t.number}`; });
     return map;
   }, [tables]);
 
@@ -117,13 +137,45 @@ export default function BillingPage() {
     return { totalRevenue, totalTax, totalDiscount, avgOrderValue, count: filteredInvoices.length };
   }, [filteredInvoices]);
 
+  const byTableData = useMemo(() => {
+    const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
+    filteredInvoices.forEach((o) => {
+      const key = o.tableId || "no_table";
+      const label = o.tableId ? (tableMap[o.tableId] || "Unknown Table") : "Takeaway / Delivery";
+      if (!groups[key]) groups[key] = { label, orders: [], revenue: 0 };
+      groups[key].orders.push(o);
+      groups[key].revenue += Number(o.total);
+    });
+    return Object.entries(groups).sort((a, b) => b[1].revenue - a[1].revenue);
+  }, [filteredInvoices, tableMap]);
+
+  const byDayData = useMemo(() => {
+    const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
+    filteredInvoices.forEach((o) => {
+      const key = getDateKey(o.createdAt);
+      const label = formatShortDate(o.createdAt);
+      if (!groups[key]) groups[key] = { label, orders: [], revenue: 0 };
+      groups[key].orders.push(o);
+      groups[key].revenue += Number(o.total);
+    });
+    return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
+  }, [filteredInvoices]);
+
   const handleViewInvoice = async (orderId: string) => {
     try {
       const res = await fetch(`/api/orders/${orderId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed");
-      const order = await res.json();
+      const order: OrderWithItems = await res.json();
       setSelectedInvoice(order);
-    } catch {}
+    } catch {
+      /* handled */
+    }
+  };
+
+  const typeLabels: Record<string, string> = {
+    dine_in: "Dine In",
+    takeaway: "Takeaway",
+    delivery: "Delivery",
   };
 
   return (
@@ -293,10 +345,10 @@ export default function BillingPage() {
         <>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             {[
-              { label: "Total Revenue", value: formatCurrency(invoiceStats.totalRevenue), icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-900/30" },
-              { label: "Invoices", value: invoiceStats.count, icon: FileText, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/30" },
-              { label: "Avg Order", value: formatCurrency(invoiceStats.avgOrderValue), icon: TrendingUp, color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-900/30" },
-              { label: "Total Tax", value: formatCurrency(invoiceStats.totalTax), icon: Receipt, color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/30" },
+              { label: "Total Revenue", value: fmt(invoiceStats.totalRevenue), icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-900/30" },
+              { label: "Invoices", value: String(invoiceStats.count), icon: FileText, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/30" },
+              { label: "Avg Order", value: fmt(invoiceStats.avgOrderValue), icon: TrendingUp, color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-900/30" },
+              { label: "Total Tax", value: fmt(invoiceStats.totalTax), icon: Receipt, color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/30" },
             ].map((stat, i) => (
               <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
                 <Card className="transition-all duration-200 hover:shadow-md">
@@ -314,7 +366,20 @@ export default function BillingPage() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2"><Search className="h-4 w-4" /> Invoice Filters</CardTitle>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <CardTitle className="text-lg flex items-center gap-2"><Search className="h-4 w-4" /> Invoice Filters</CardTitle>
+                <div className="flex gap-1">
+                  <Button variant={invoiceView === "list" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("list")} data-testid="button-view-list">
+                    <LayoutGrid className="h-3.5 w-3.5 mr-1" /> List
+                  </Button>
+                  <Button variant={invoiceView === "by_table" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_table")} data-testid="button-view-by-table">
+                    <Table2 className="h-3.5 w-3.5 mr-1" /> By Table
+                  </Button>
+                  <Button variant={invoiceView === "by_day" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_day")} data-testid="button-view-by-day">
+                    <CalendarDays className="h-3.5 w-3.5 mr-1" /> By Day
+                  </Button>
+                </div>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -337,55 +402,173 @@ export default function BillingPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardContent className="p-0">
-              {filteredInvoices.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground" data-testid="text-no-invoices">
-                  <Receipt className="h-12 w-12 mx-auto mb-3 opacity-40" />
-                  <p>No invoices found.</p>
-                </div>
+          {invoiceView === "list" && (
+            <Card>
+              <CardContent className="p-0">
+                {filteredInvoices.length === 0 ? (
+                  <div className="p-8 text-center text-muted-foreground" data-testid="text-no-invoices">
+                    <Receipt className="h-12 w-12 mx-auto mb-3 opacity-40" />
+                    <p>No invoices found.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Invoice #</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Type</TableHead>
+                          <TableHead>Table</TableHead>
+                          <TableHead>Payment</TableHead>
+                          <TableHead>Subtotal</TableHead>
+                          <TableHead>Tax</TableHead>
+                          <TableHead>Discount</TableHead>
+                          <TableHead>Total</TableHead>
+                          <TableHead className="w-[80px]">View</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {filteredInvoices.map((order, index) => (
+                          <motion.tr key={order.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.02 }} className="border-b hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
+                            <TableCell className="font-mono text-xs" data-testid={`text-invoice-id-${order.id}`}>#{order.id.slice(-6).toUpperCase()}</TableCell>
+                            <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
+                            <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
+                            <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>
+                            <TableCell className="text-sm capitalize">{order.paymentMethod || "—"}</TableCell>
+                            <TableCell className="text-sm">{fmt(order.subtotal)}</TableCell>
+                            <TableCell className="text-sm">{fmt(order.tax)}</TableCell>
+                            <TableCell className="text-sm">{Number(order.discount) > 0 ? <span className="text-red-500">-{fmt(order.discount)}</span> : "—"}</TableCell>
+                            <TableCell className="font-medium">{fmt(order.total)}</TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="sm" onClick={() => handleViewInvoice(order.id)} data-testid={`button-view-invoice-${order.id}`}>
+                                <FileText className="h-4 w-4" />
+                              </Button>
+                            </TableCell>
+                          </motion.tr>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {invoiceView === "by_table" && (
+            <div className="space-y-4" data-testid="view-by-table">
+              {byTableData.length === 0 ? (
+                <Card><CardContent className="p-8 text-center text-muted-foreground">No invoices found.</CardContent></Card>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Invoice #</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Type</TableHead>
-                        <TableHead>Table</TableHead>
-                        <TableHead>Payment</TableHead>
-                        <TableHead>Subtotal</TableHead>
-                        <TableHead>Tax</TableHead>
-                        <TableHead>Discount</TableHead>
-                        <TableHead>Total</TableHead>
-                        <TableHead className="w-[80px]">View</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {filteredInvoices.map((order, index) => (
-                        <motion.tr key={order.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.02 }} className="border-b hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
-                          <TableCell className="font-mono text-xs" data-testid={`text-invoice-id-${order.id}`}>#{order.id.slice(-6).toUpperCase()}</TableCell>
-                          <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
-                          <TableCell><Badge variant="outline" className="text-xs">{order.orderType === "dine_in" ? "Dine In" : order.orderType === "takeaway" ? "Takeaway" : "Delivery"}</Badge></TableCell>
-                          <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>
-                          <TableCell className="text-sm capitalize">{order.paymentMethod || "—"}</TableCell>
-                          <TableCell className="text-sm">{formatCurrency(order.subtotal)}</TableCell>
-                          <TableCell className="text-sm">{formatCurrency(order.tax)}</TableCell>
-                          <TableCell className="text-sm">{Number(order.discount) > 0 ? <span className="text-red-500">-{formatCurrency(order.discount)}</span> : "—"}</TableCell>
-                          <TableCell className="font-medium">{formatCurrency(order.total)}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="sm" onClick={() => handleViewInvoice(order.id)} data-testid={`button-view-invoice-${order.id}`}>
-                              <FileText className="h-4 w-4" />
-                            </Button>
-                          </TableCell>
-                        </motion.tr>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
+                byTableData.map(([key, group]) => (
+                  <Card key={key} data-testid={`table-group-${key}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <Table2 className="h-4 w-4 text-primary" />
+                          {group.label}
+                        </CardTitle>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-muted-foreground">{group.orders.length} orders</span>
+                          <span className="font-bold" data-testid={`text-table-revenue-${key}`}>{fmt(group.revenue)}</span>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Invoice #</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Payment</TableHead>
+                              <TableHead>Total</TableHead>
+                              <TableHead className="w-[80px]">View</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {group.orders.map((order) => (
+                              <TableRow key={order.id} className="hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
+                                <TableCell className="font-mono text-xs">#{order.id.slice(-6).toUpperCase()}</TableCell>
+                                <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
+                                <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
+                                <TableCell className="text-sm capitalize">{order.paymentMethod || "—"}</TableCell>
+                                <TableCell className="font-medium">{fmt(order.total)}</TableCell>
+                                <TableCell>
+                                  <Button variant="ghost" size="sm" onClick={() => handleViewInvoice(order.id)} data-testid={`button-view-invoice-${order.id}`}>
+                                    <FileText className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
               )}
-            </CardContent>
-          </Card>
+            </div>
+          )}
+
+          {invoiceView === "by_day" && (
+            <div className="space-y-4" data-testid="view-by-day">
+              {byDayData.length === 0 ? (
+                <Card><CardContent className="p-8 text-center text-muted-foreground">No invoices found.</CardContent></Card>
+              ) : (
+                byDayData.map(([key, group]) => (
+                  <Card key={key} data-testid={`day-group-${key}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <CalendarDays className="h-4 w-4 text-primary" />
+                          {group.label}
+                        </CardTitle>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-muted-foreground">{group.orders.length} orders</span>
+                          <span className="font-bold" data-testid={`text-day-revenue-${key}`}>{fmt(group.revenue)}</span>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Invoice #</TableHead>
+                              <TableHead>Time</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Table</TableHead>
+                              <TableHead>Payment</TableHead>
+                              <TableHead>Total</TableHead>
+                              <TableHead className="w-[80px]">View</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {group.orders.map((order) => (
+                              <TableRow key={order.id} className="hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
+                                <TableCell className="font-mono text-xs">#{order.id.slice(-6).toUpperCase()}</TableCell>
+                                <TableCell className="text-sm">{formatDate(order.createdAt)}</TableCell>
+                                <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
+                                <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>
+                                <TableCell className="text-sm capitalize">{order.paymentMethod || "—"}</TableCell>
+                                <TableCell className="font-medium">{fmt(order.total)}</TableCell>
+                                <TableCell>
+                                  <Button variant="ghost" size="sm" onClick={() => handleViewInvoice(order.id)} data-testid={`button-view-invoice-${order.id}`}>
+                                    <FileText className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          )}
         </>
       )}
 
@@ -400,11 +583,11 @@ export default function BillingPage() {
           {selectedInvoice && (
             <div className="space-y-4">
               <div className="text-center border-b pb-3">
-                <h3 className="font-heading font-bold text-lg">The Grand Kitchen</h3>
+                <h3 className="font-heading font-bold text-lg">{tenant?.name || "Restaurant"}</h3>
                 <p className="text-xs text-muted-foreground">{formatDate(selectedInvoice.createdAt)}</p>
                 <div className="flex items-center justify-center gap-2 mt-1">
                   {selectedInvoice.tableId && <Badge variant="outline">{tableMap[selectedInvoice.tableId]}</Badge>}
-                  <Badge variant="outline" className="capitalize">{selectedInvoice.paymentMethod}</Badge>
+                  {selectedInvoice.paymentMethod && <Badge variant="outline" className="capitalize">{selectedInvoice.paymentMethod}</Badge>}
                 </div>
               </div>
 
@@ -415,7 +598,7 @@ export default function BillingPage() {
                       <span>{item.name}</span>
                       <span className="text-muted-foreground ml-1">x{item.quantity}</span>
                     </div>
-                    <span className="font-medium">{formatCurrency(Number(item.price) * (item.quantity || 1))}</span>
+                    <span className="font-medium">{fmt(Number(item.price) * (item.quantity || 1))}</span>
                   </div>
                 ))}
               </div>
@@ -425,22 +608,22 @@ export default function BillingPage() {
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span>{formatCurrency(selectedInvoice.subtotal)}</span>
+                  <span>{fmt(selectedInvoice.subtotal)}</span>
                 </div>
                 {Number(selectedInvoice.discount) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
-                    <span>-{formatCurrency(selectedInvoice.discount)}</span>
+                    <span>-{fmt(selectedInvoice.discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Tax</span>
-                  <span>{formatCurrency(selectedInvoice.tax)}</span>
+                  <span>{fmt(selectedInvoice.tax)}</span>
                 </div>
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
-                  <span>{formatCurrency(selectedInvoice.total)}</span>
+                  <span>{fmt(selectedInvoice.total)}</span>
                 </div>
               </div>
 

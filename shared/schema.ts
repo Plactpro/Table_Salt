@@ -260,6 +260,7 @@ export const offerTypeEnum = pgEnum("offer_type", [
   "buy_one_get_one",
   "combo_deal",
   "free_item",
+  "happy_hour",
 ]);
 
 export const offerScopeEnum = pgEnum("offer_scope", [
