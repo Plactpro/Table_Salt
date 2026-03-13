@@ -530,6 +530,19 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.patch("/api/staff-schedules/:id", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    const schedule = await storage.updateStaffScheduleByTenant(req.params.id, user.tenantId, req.body);
+    if (!schedule) return res.status(404).json({ message: "Schedule not found" });
+    res.json(schedule);
+  });
+
+  app.delete("/api/staff-schedules/:id", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    await storage.deleteStaffScheduleByTenant(req.params.id, user.tenantId);
+    res.json({ message: "Deleted" });
+  });
+
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });

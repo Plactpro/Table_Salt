@@ -187,7 +187,7 @@ export default function BillingPage() {
       const order: OrderWithItems = await res.json();
       setSelectedInvoice(order);
     } catch {
-      /* handled */
+      setSelectedInvoice(null);
     }
   };
 
@@ -701,11 +701,22 @@ export default function BillingPage() {
                   <span className="text-muted-foreground">Tax</span>
                   <span>{fmt(selectedInvoice.tax)}</span>
                 </div>
-                {selectedInvoice.notes && selectedInvoice.notes.includes("Service charge") && (
-                  <div className="flex justify-between text-muted-foreground text-xs">
-                    <span>{selectedInvoice.notes.split(" | ").find((n: string) => n.includes("Service charge"))}</span>
-                  </div>
-                )}
+                {selectedInvoice.orderType === "dine_in" && selectedInvoice.notes && selectedInvoice.notes.includes("Service charge") && (() => {
+                  const scNote = selectedInvoice.notes!.split(" | ").find((n: string) => n.includes("Service charge"));
+                  const scMatch = scNote?.match(/Service charge\s*\((\d+(?:\.\d+)?)%\)/);
+                  const scPercent = scMatch ? scMatch[1] : null;
+                  const subtotalNum = Number(selectedInvoice.subtotal) || 0;
+                  const discountNum = Number(selectedInvoice.discount) || 0;
+                  const taxNum = Number(selectedInvoice.tax) || 0;
+                  const totalNum = Number(selectedInvoice.total) || 0;
+                  const scAmount = totalNum - (subtotalNum - discountNum + taxNum);
+                  return (
+                    <div className="flex justify-between" data-testid="invoice-service-charge">
+                      <span className="text-muted-foreground">Service Charge{scPercent ? ` (${scPercent}%)` : ""}</span>
+                      <span>{fmt(scAmount > 0 ? scAmount : 0)}</span>
+                    </div>
+                  );
+                })()}
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>

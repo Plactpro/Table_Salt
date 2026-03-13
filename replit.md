@@ -33,9 +33,15 @@ A multi-tenant SaaS Restaurant Management System with role-based dashboards, POS
 ## Demo Accounts (password: demo123)
 - owner / manager / waiter / kitchen / accountant
 
+## Reservation Status Flow
+requested → confirmed → seated → completed/no_show (auto-syncs table status)
+
 ## Order Status Flow
 new → sent_to_kitchen → in_progress → ready → served → ready_to_pay → paid
 (Also: cancelled, voided as terminal states)
+
+## Staff Schedule Attendance States
+scheduled / present / absent / late
 
 ## API Routes
 All prefixed with `/api`:
@@ -57,8 +63,11 @@ All prefixed with `/api`:
 - `/inventory` - Inventory management
 - `/staff` - Staff management
 - `/reports` - Sales reports
-- `/offers` - Offers & Discounts management (premium+ tier)
-- `/billing` - Subscription plans + Invoice history
+- `/offers` - Offers & Discounts management (premium+ tier, combo/BOGO/free_item marked as POS N/A)
+- `/billing` - Subscription plans + Invoice history (service charge line in dine-in invoices)
+- `/crm` - Customer Relationship Management (profiles, loyalty tiers, tags, order history)
+- `/performance` - Employee performance tracking (metrics logs, staff overview)
+- `/delivery` - Delivery order management (status flow, driver info, fee display)
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
 
