@@ -20,7 +20,8 @@ export type FeatureKey =
   | "reservations"
   | "delivery_management"
   | "loyalty_program"
-  | "crm";
+  | "crm"
+  | "offers";
 
 export const subscriptionMatrix: Record<SubscriptionTier, FeatureKey[]> = {
   basic: ["orders", "menu", "settings"],
@@ -28,13 +29,13 @@ export const subscriptionMatrix: Record<SubscriptionTier, FeatureKey[]> = {
   premium: [
     "orders", "menu", "tables", "pos", "inventory", "staff", "outlets", "settings",
     "reports", "billing", "advanced_analytics", "reservations",
-    "delivery_management", "loyalty_program", "crm",
+    "delivery_management", "loyalty_program", "crm", "offers",
   ],
   enterprise: [
     "orders", "menu", "tables", "pos", "inventory", "staff", "outlets", "settings",
     "reports", "billing", "integrations", "advanced_analytics", "multi_location",
     "api_access", "custom_branding", "reservations", "delivery_management",
-    "loyalty_program", "crm",
+    "loyalty_program", "crm", "offers",
   ],
 };
 
