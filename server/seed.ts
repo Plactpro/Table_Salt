@@ -357,7 +357,7 @@ export async function seedDatabase() {
     guests: 6,
     dateTime: new Date(tomorrow.setHours(20, 30, 0, 0)),
     notes: "Birthday celebration",
-    status: "requested",
+    status: "pending",
   });
 
   const todayEvening = new Date(today);

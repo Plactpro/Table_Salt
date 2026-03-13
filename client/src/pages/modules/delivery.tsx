@@ -60,16 +60,44 @@ const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon:
 
 const statusFlow: DeliveryStatus[] = ["pending", "assigned", "picked_up", "in_transit", "delivered"];
 
+interface TenantConfig {
+  moduleConfig?: {
+    deliveryEnabled?: boolean;
+  };
+}
+
 export default function DeliveryPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const currency = user?.tenant?.currency || "USD";
 
-  const [deliveryEnabled, setDeliveryEnabled] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryOrder | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+
+  const { data: tenantConfig } = useQuery<TenantConfig>({
+    queryKey: ["/api/tenant"],
+  });
+
+  const deliveryEnabled = tenantConfig?.moduleConfig?.deliveryEnabled === true;
+
+  const toggleDeliveryMutation = useMutation({
+    mutationFn: async (enabled: boolean) => {
+      const currentConfig = (tenantConfig?.moduleConfig || {}) as Record<string, unknown>;
+      const res = await apiRequest("PATCH", "/api/tenant", {
+        moduleConfig: { ...currentConfig, deliveryEnabled: enabled },
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
 
   const { data: deliveries = [], isLoading } = useQuery<DeliveryOrder[]>({
     queryKey: ["/api/delivery-orders"],
@@ -107,6 +135,8 @@ export default function DeliveryPage() {
     return acc;
   }, {});
 
+  /* EXTENSION POINT: Integrate with third-party delivery APIs (Uber Eats, DoorDash, etc.)
+     to automatically advance status based on webhook callbacks from delivery partners. */
   const advanceStatus = (delivery: DeliveryOrder) => {
     const currentIdx = statusFlow.indexOf(delivery.status as DeliveryStatus);
     if (currentIdx >= 0 && currentIdx < statusFlow.length - 1) {
@@ -115,6 +145,7 @@ export default function DeliveryPage() {
       if (nextStatus === "delivered") {
         updateData.deliveredAt = new Date().toISOString();
       }
+      /* EXTENSION POINT: Send delivery notification to customer via SMS/push when status changes */
       updateMutation.mutate({ id: delivery.id, data: updateData });
     }
   };
@@ -123,6 +154,9 @@ export default function DeliveryPage() {
     d.status && !["delivered", "cancelled", "returned"].includes(d.status)
   ).length;
 
+  /* EXTENSION POINT: When delivery module goes live, replace this placeholder with full
+     operational view. The deliveryEnabled flag is persisted in tenant.moduleConfig and
+     can be extended to include partner API keys, default delivery radius, fee structure, etc. */
   if (!deliveryEnabled) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
@@ -169,17 +203,19 @@ export default function DeliveryPage() {
               ))}
             </div>
             <div className="border-t pt-4 mt-4">
+              {/* EXTENSION POINT: Replace with subscription-gated activation when delivery goes live */}
               <Button
-                onClick={() => setDeliveryEnabled(true)}
+                onClick={() => toggleDeliveryMutation.mutate(true)}
                 variant="outline"
                 className="gap-2"
+                disabled={toggleDeliveryMutation.isPending}
                 data-testid="button-enable-delivery"
               >
                 <ToggleRight className="w-4 h-4" />
-                Preview Module (Demo Mode)
+                Enable Delivery Module
               </Button>
               <p className="text-xs text-muted-foreground mt-2">
-                Preview the delivery interface with sample data
+                Enable to start managing deliveries
               </p>
             </div>
           </CardContent>
@@ -202,12 +238,10 @@ export default function DeliveryPage() {
             <p className="text-muted-foreground text-sm">Track and manage delivery orders</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Demo Preview</Badge>
-          <Button variant="outline" size="sm" onClick={() => setDeliveryEnabled(false)} data-testid="button-disable-delivery">
-            <ToggleLeft className="w-4 h-4 mr-1" /> Exit Preview
-          </Button>
-        </div>
+        {/* EXTENSION POINT: Add delivery partner integration controls here */}
+        <Button variant="outline" size="sm" onClick={() => toggleDeliveryMutation.mutate(false)} disabled={toggleDeliveryMutation.isPending} data-testid="button-disable-delivery">
+          <ToggleLeft className="w-4 h-4 mr-1" /> Disable Module
+        </Button>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

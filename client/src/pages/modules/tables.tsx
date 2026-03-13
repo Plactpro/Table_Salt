@@ -24,7 +24,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 
 type TableStatus = "free" | "occupied" | "reserved" | "cleaning" | "blocked";
-type ReservationStatus = "requested" | "confirmed" | "seated" | "completed" | "no_show";
+type ReservationStatus = "pending" | "requested" | "confirmed" | "seated" | "completed" | "no_show";
 
 interface TableData {
   id: string;
@@ -80,7 +80,8 @@ const statusIcon: Record<TableStatus, React.ElementType> = {
 };
 
 const reservationStatusConfig: Record<ReservationStatus, { label: string; color: string; nextStatus: ReservationStatus | null }> = {
-  requested: { label: "Requested", color: "bg-gray-100 text-gray-700", nextStatus: "confirmed" },
+  pending: { label: "Pending", color: "bg-gray-100 text-gray-700", nextStatus: "confirmed" },
+  requested: { label: "Pending", color: "bg-gray-100 text-gray-700", nextStatus: "confirmed" },
   confirmed: { label: "Confirmed", color: "bg-blue-100 text-blue-700", nextStatus: "seated" },
   seated: { label: "Seated", color: "bg-green-100 text-green-700", nextStatus: "completed" },
   completed: { label: "Completed", color: "bg-purple-100 text-purple-700", nextStatus: null },
@@ -188,9 +189,6 @@ export default function TablesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
-      if (resFormData.tableId && resFormData.tableId !== "none") {
-        updateTableMutation.mutate({ id: resFormData.tableId, status: "reserved" });
-      }
       setShowAddReservation(false);
       toast({ title: "Reservation created" });
     },
@@ -208,7 +206,9 @@ export default function TablesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
       const newStatus = variables.data.status as ReservationStatus;
       if (selectedReservation?.tableId) {
-        if (newStatus === "seated") {
+        if (newStatus === "confirmed") {
+          updateTableMutation.mutate({ id: selectedReservation.tableId, status: "reserved" });
+        } else if (newStatus === "seated") {
           updateTableMutation.mutate({ id: selectedReservation.tableId, status: "occupied" });
         } else if (newStatus === "completed" || newStatus === "no_show") {
           updateTableMutation.mutate({ id: selectedReservation.tableId, status: "free" });
@@ -307,7 +307,7 @@ export default function TablesPage() {
       guests: parseInt(resFormData.guests) || 2,
       dateTime: new Date(resFormData.dateTime).toISOString(),
       notes: resFormData.notes || null,
-      status: "requested",
+      status: "pending",
     });
   };
 
@@ -491,7 +491,7 @@ export default function TablesPage() {
                   </div>
                   <div className="space-y-1">
                     {dayReservations.slice(0, 3).map((r) => {
-                      const rStatus = (r.status || "requested") as ReservationStatus;
+                      const rStatus = (r.status || "pending") as ReservationStatus;
                       const rCfg = reservationStatusConfig[rStatus];
                       return (
                         <button
@@ -533,7 +533,7 @@ export default function TablesPage() {
               {filteredReservations.map((res) => {
                 const table = tables.find((t) => t.id === res.tableId);
                 const dt = new Date(res.dateTime);
-                const rStatus = (res.status || "requested") as ReservationStatus;
+                const rStatus = (res.status || "pending") as ReservationStatus;
                 const rCfg = reservationStatusConfig[rStatus];
                 return (
                   <motion.div key={res.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
@@ -753,7 +753,7 @@ export default function TablesPage() {
         <DialogContent>
           <DialogHeader><DialogTitle>Reservation Details</DialogTitle></DialogHeader>
           {selectedReservation && (() => {
-            const rStatus = (selectedReservation.status || "requested") as ReservationStatus;
+            const rStatus = (selectedReservation.status || "pending") as ReservationStatus;
             const rCfg = reservationStatusConfig[rStatus];
             const table = tables.find((t) => t.id === selectedReservation.tableId);
             const dt = new Date(selectedReservation.dateTime);
@@ -801,24 +801,35 @@ export default function TablesPage() {
                 <div>
                   <Label className="text-xs text-muted-foreground mb-2 block">Update Status</Label>
                   <div className="flex flex-wrap gap-2">
-                    {(Object.keys(reservationStatusConfig) as ReservationStatus[]).map((s) => {
-                      const sCfg = reservationStatusConfig[s];
-                      return (
-                        <Button
-                          key={s}
-                          size="sm"
-                          variant={rStatus === s ? "default" : "outline"}
-                          onClick={() => {
-                            updateReservationMutation.mutate({ id: selectedReservation.id, data: { status: s } });
-                            setSelectedReservation({ ...selectedReservation, status: s });
-                          }}
-                          disabled={updateReservationMutation.isPending}
-                          data-testid={`button-res-status-${s}`}
-                        >
-                          {sCfg.label}
-                        </Button>
-                      );
-                    })}
+                    {(() => {
+                      const nextStatus = reservationStatusConfig[rStatus]?.nextStatus;
+                      const allowedTransitions: ReservationStatus[] = [];
+                      if (nextStatus) allowedTransitions.push(nextStatus);
+                      if (rStatus === "pending" || rStatus === "confirmed") {
+                        allowedTransitions.push("no_show");
+                      }
+                      return allowedTransitions.map((s) => {
+                        const sCfg = reservationStatusConfig[s];
+                        return (
+                          <Button
+                            key={s}
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              updateReservationMutation.mutate({ id: selectedReservation.id, data: { status: s } });
+                              setSelectedReservation({ ...selectedReservation, status: s });
+                            }}
+                            disabled={updateReservationMutation.isPending}
+                            data-testid={`button-res-status-${s}`}
+                          >
+                            {sCfg.label}
+                          </Button>
+                        );
+                      });
+                    })()}
+                    {!reservationStatusConfig[rStatus]?.nextStatus && (
+                      <Badge variant="outline" className="text-xs">Final status</Badge>
+                    )}
                   </div>
                 </div>
               </div>

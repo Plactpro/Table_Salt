@@ -49,6 +49,7 @@ export const tableStatusEnum = pgEnum("table_status", [
 ]);
 
 export const reservationStatusEnum = pgEnum("reservation_status", [
+  "pending",
   "requested",
   "confirmed",
   "seated",
@@ -71,6 +72,7 @@ export const tenants = pgTable("tenants", {
   plan: text("plan").default("basic"),
   businessType: text("business_type").default("casual_dining"),
   active: boolean("active").default(true),
+  moduleConfig: jsonb("module_config").default({}),
 });
 
 export const users = pgTable("users", {
@@ -149,7 +151,7 @@ export const reservations = pgTable("reservations", {
   guests: integer("guests").default(2),
   dateTime: timestamp("date_time").notNull(),
   notes: text("notes"),
-  status: reservationStatusEnum("status").default("requested"),
+  status: reservationStatusEnum("status").default("pending"),
 });
 
 export const orders = pgTable("orders", {
