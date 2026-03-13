@@ -129,6 +129,7 @@ export default function OrdersPage() {
 
   const { data: orders = [], isLoading } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
+  const { data: tenantData } = useQuery<{ serviceCharge?: string; name?: string }>({ queryKey: ["/api/tenant"] });
 
   const { data: selectedOrderDetail } = useQuery<OrderWithItems>({
     queryKey: ["/api/orders", selectedOrderId],
@@ -220,7 +221,7 @@ export default function OrdersPage() {
     }
   };
 
-  const SERVICE_CHARGE_RATE = 0.05;
+  const SERVICE_CHARGE_RATE = Number(tenantData?.serviceCharge || 0) / 100;
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6 max-w-7xl mx-auto">
@@ -491,7 +492,7 @@ export default function OrdersPage() {
           {billPreviewOrder && (
             <div className="space-y-4">
               <div className="text-center border-b pb-3">
-                <h3 className="font-heading font-bold text-lg" data-testid="text-bill-restaurant">The Grand Kitchen</h3>
+                <h3 className="font-heading font-bold text-lg" data-testid="text-bill-restaurant">{tenantData?.name || "Restaurant"}</h3>
                 <p className="text-xs text-muted-foreground">Invoice #{billPreviewOrder.id.slice(-6).toUpperCase()}</p>
                 <p className="text-xs text-muted-foreground">{formatDate(billPreviewOrder.createdAt)}</p>
                 {billPreviewOrder.tableId && (
@@ -528,9 +529,9 @@ export default function OrdersPage() {
                   <span className="text-muted-foreground">Tax (5%)</span>
                   <span data-testid="text-bill-tax">{fmt(billPreviewOrder.tax)}</span>
                 </div>
-                {billPreviewOrder.orderType === "dine_in" && (
+                {billPreviewOrder.orderType === "dine_in" && SERVICE_CHARGE_RATE > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Service Charge (5%)</span>
+                    <span className="text-muted-foreground">Service Charge ({tenantData?.serviceCharge || 0}%)</span>
                     <span data-testid="text-bill-service">{fmt(Number(billPreviewOrder.subtotal) * SERVICE_CHARGE_RATE)}</span>
                   </div>
                 )}
