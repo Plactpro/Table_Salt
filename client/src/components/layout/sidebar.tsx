@@ -26,6 +26,7 @@ import {
   Store,
   CreditCard,
   Puzzle,
+  Tag,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
@@ -51,9 +52,10 @@ const navItems: NavItem[] = [
   { id: "m-9", name: "Staff", icon: Users, path: "/staff", roles: ["owner", "manager"], featureKey: "staff" },
   { id: "m-10", name: "Reports", icon: BarChart3, path: "/reports", roles: ["owner", "manager", "accountant"], featureKey: "reports" },
   { id: "m-11", name: "Outlets", icon: Store, path: "/outlets", roles: ["owner", "manager"], featureKey: "outlets" },
-  { id: "m-12", name: "Integrations", icon: Puzzle, path: "/integrations", roles: ["owner", "manager"], featureKey: "integrations" },
-  { id: "m-13", name: "Billing", icon: CreditCard, path: "/billing", roles: ["owner"], featureKey: "billing" },
-  { id: "m-14", name: "Settings", icon: Settings, path: "/settings", roles: ["owner"], featureKey: "settings" },
+  { id: "m-12", name: "Offers", icon: Tag, path: "/offers", roles: ["owner", "manager"], featureKey: "offers" },
+  { id: "m-13", name: "Integrations", icon: Puzzle, path: "/integrations", roles: ["owner", "manager"], featureKey: "integrations" },
+  { id: "m-14", name: "Billing", icon: CreditCard, path: "/billing", roles: ["owner"], featureKey: "billing" },
+  { id: "m-15", name: "Settings", icon: Settings, path: "/settings", roles: ["owner"], featureKey: "settings" },
 ];
 
 function SandDecoration() {

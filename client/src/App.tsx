@@ -19,6 +19,7 @@ import InventoryPage from "@/pages/modules/inventory";
 import OutletsPage from "@/pages/modules/outlets";
 import BillingPage from "@/pages/modules/billing";
 import IntegrationsPage from "@/pages/modules/integrations";
+import OffersPage from "@/pages/modules/offers";
 import OwnerDashboard from "@/pages/dashboards/owner";
 import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
@@ -93,6 +94,7 @@ function ProtectedPages() {
         <Route path="/inventory" component={InventoryPage} />
         <Route path="/outlets" component={OutletsPage} />
         <Route path="/billing" component={BillingPage} />
+        <Route path="/offers" component={OffersPage} />
         <Route path="/integrations" component={IntegrationsPage} />
         <Route path="/staff" component={StaffPage} />
         <Route path="/reports" component={ReportsPage} />
