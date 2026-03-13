@@ -293,6 +293,85 @@ export async function seedDatabase() {
     period: "2026-03-W1",
   });
 
+  const today = new Date();
+  for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
+    const date = new Date(today);
+    date.setDate(date.getDate() - date.getDay() + dayOffset);
+    date.setHours(0, 0, 0, 0);
+
+    if (dayOffset < 6) {
+      await storage.createStaffSchedule({
+        tenantId: tenant.id,
+        userId: waiter.id,
+        date: date,
+        startTime: "10:00",
+        endTime: "18:00",
+        role: "waiter",
+        attendance: dayOffset < new Date().getDay() ? "present" : "scheduled",
+      });
+    }
+
+    if (dayOffset < 5) {
+      await storage.createStaffSchedule({
+        tenantId: tenant.id,
+        userId: kitchen.id,
+        date: date,
+        startTime: "08:00",
+        endTime: "16:00",
+        role: "kitchen",
+        attendance: dayOffset < new Date().getDay() ? "present" : "scheduled",
+      });
+    }
+
+    if (dayOffset % 2 === 0) {
+      await storage.createStaffSchedule({
+        tenantId: tenant.id,
+        userId: manager.id,
+        date: date,
+        startTime: "09:00",
+        endTime: "17:00",
+        role: "manager",
+        attendance: dayOffset < new Date().getDay() ? "present" : "scheduled",
+      });
+    }
+  }
+
+  const tomorrow = new Date(today);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  await storage.createReservation({
+    tenantId: tenant.id,
+    tableId: tableIds[3],
+    customerName: "Sarah Johnson",
+    customerPhone: "555-0101",
+    guests: 4,
+    dateTime: new Date(tomorrow.setHours(19, 0, 0, 0)),
+    notes: "Anniversary dinner",
+    status: "confirmed",
+  });
+
+  await storage.createReservation({
+    tenantId: tenant.id,
+    tableId: tableIds[4],
+    customerName: "Mike Thompson",
+    customerPhone: "555-0102",
+    guests: 6,
+    dateTime: new Date(tomorrow.setHours(20, 30, 0, 0)),
+    notes: "Birthday celebration",
+    status: "requested",
+  });
+
+  const todayEvening = new Date(today);
+  todayEvening.setHours(19, 30, 0, 0);
+  await storage.createReservation({
+    tenantId: tenant.id,
+    tableId: tableIds[5],
+    customerName: "Emily Davis",
+    customerPhone: "555-0103",
+    guests: 2,
+    dateTime: todayEvening,
+    status: "confirmed",
+  });
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

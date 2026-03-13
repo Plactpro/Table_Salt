@@ -143,6 +143,7 @@ export const reservations = pgTable("reservations", {
     .default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
   tableId: varchar("table_id", { length: 36 }).references(() => tables.id),
+  customerId: varchar("customer_id", { length: 36 }).references(() => customers.id),
   customerName: text("customer_name").notNull(),
   customerPhone: text("customer_phone"),
   guests: integer("guests").default(2),
@@ -240,6 +241,7 @@ export const staffSchedules = pgTable("staff_schedules", {
   startTime: text("start_time").notNull(),
   endTime: text("end_time").notNull(),
   role: text("role"),
+  attendance: text("attendance").default("scheduled"),
 });
 
 export const feedback = pgTable("feedback", {

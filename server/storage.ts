@@ -114,6 +114,9 @@ export interface IStorage {
 
   updatePerformanceLogByTenant(id: string, tenantId: string, data: Partial<InsertEmployeePerformanceLog>): Promise<EmployeePerformanceLog | undefined>;
 
+  updateStaffScheduleByTenant(id: string, tenantId: string, data: Partial<InsertStaffSchedule>): Promise<StaffSchedule | undefined>;
+  deleteStaffScheduleByTenant(id: string, tenantId: string): Promise<void>;
+
   getOrdersWithOfferDetails(tenantId: string): Promise<any[]>;
 
   getDashboardStats(tenantId: string): Promise<any>;
@@ -320,6 +323,14 @@ export class DatabaseStorage implements IStorage {
   async createStaffSchedule(data: InsertStaffSchedule) {
     const [s] = await db.insert(staffSchedules).values(data).returning();
     return s;
+  }
+
+  async updateStaffScheduleByTenant(id: string, tenantId: string, data: Partial<InsertStaffSchedule>) {
+    const [s] = await db.update(staffSchedules).set(data).where(and(eq(staffSchedules.id, id), eq(staffSchedules.tenantId, tenantId))).returning();
+    return s;
+  }
+  async deleteStaffScheduleByTenant(id: string, tenantId: string) {
+    await db.delete(staffSchedules).where(and(eq(staffSchedules.id, id), eq(staffSchedules.tenantId, tenantId)));
   }
 
   async createFeedback(data: InsertFeedback) {

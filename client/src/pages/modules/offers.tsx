@@ -21,7 +21,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Tag, Percent, DollarSign, Gift, ShoppingBag,
-  Calendar, Clock, CheckCircle2, XCircle, Zap,
+  Calendar, Clock, CheckCircle2, XCircle, Zap, AlertCircle,
 } from "lucide-react";
 import type { Offer } from "@shared/schema";
 
@@ -371,6 +371,13 @@ export default function OffersPage() {
                           {offer.endDate && (
                             <span>{new Date(offer.endDate).toLocaleDateString()}</span>
                           )}
+                        </div>
+                      )}
+
+                      {["combo_deal", "buy_one_get_one", "free_item"].includes(offer.type || "") && (
+                        <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded px-2 py-1" data-testid={`badge-pos-na-${offer.id}`}>
+                          <AlertCircle className="h-3 w-3" />
+                          <span>Not applicable at POS — manual application only</span>
                         </div>
                       )}
 

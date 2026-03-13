@@ -1,0 +1,563 @@
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency } from "@shared/currency";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Users, Search, Plus, Edit, Trash2, Phone, Mail, Star,
+  Tag, Award, DollarSign, ShoppingBag, ChevronRight, X,
+  UserPlus, Filter,
+} from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
+import { useToast } from "@/hooks/use-toast";
+
+interface CustomerData {
+  id: string;
+  tenantId: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  loyaltyPoints: number | null;
+  totalSpent: string | null;
+  loyaltyTier: string | null;
+  tags: string[] | null;
+  averageSpend: string | null;
+}
+
+interface OrderData {
+  id: string;
+  customerId: string | null;
+  orderType: string | null;
+  status: string | null;
+  total: string | null;
+  createdAt: string | null;
+}
+
+const tierColors: Record<string, string> = {
+  bronze: "bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300",
+  silver: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
+  gold: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+  platinum: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
+};
+
+export default function CrmPage() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const currency = user?.tenant?.currency || "USD";
+
+  const [search, setSearch] = useState("");
+  const [filterTier, setFilterTier] = useState("all");
+  const [selectedCustomer, setSelectedCustomer] = useState<CustomerData | null>(null);
+  const [showProfileDialog, setShowProfileDialog] = useState(false);
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+
+  const [formData, setFormData] = useState({
+    name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "",
+  });
+
+  const { data: customers = [], isLoading } = useQuery<CustomerData[]>({
+    queryKey: ["/api/customers"],
+  });
+
+  const { data: orders = [] } = useQuery<OrderData[]>({
+    queryKey: ["/api/orders"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const res = await apiRequest("POST", "/api/customers", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setShowAddDialog(false);
+      toast({ title: "Customer added" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      const res = await apiRequest("PATCH", `/api/customers/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setShowEditDialog(false);
+      toast({ title: "Customer updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/customers/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+      setShowProfileDialog(false);
+      setSelectedCustomer(null);
+      toast({ title: "Customer deleted" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const filteredCustomers = customers.filter((c) => {
+    const matchesSearch =
+      c.name.toLowerCase().includes(search.toLowerCase()) ||
+      (c.phone && c.phone.includes(search)) ||
+      (c.email && c.email.toLowerCase().includes(search.toLowerCase()));
+    const matchesTier = filterTier === "all" || c.loyaltyTier === filterTier;
+    return matchesSearch && matchesTier;
+  });
+
+  const getCustomerOrders = (customerId: string) =>
+    orders.filter((o) => o.customerId === customerId);
+
+  const openProfile = (customer: CustomerData) => {
+    setSelectedCustomer(customer);
+    setShowProfileDialog(true);
+  };
+
+  const openEdit = (customer: CustomerData) => {
+    setFormData({
+      name: customer.name,
+      phone: customer.phone || "",
+      email: customer.email || "",
+      notes: customer.notes || "",
+      loyaltyTier: customer.loyaltyTier || "bronze",
+      tags: (customer.tags || []).join(", "),
+    });
+    setSelectedCustomer(customer);
+    setShowEditDialog(true);
+  };
+
+  const openAdd = () => {
+    setFormData({ name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "" });
+    setShowAddDialog(true);
+  };
+
+  const handleSubmitAdd = () => {
+    const tags = formData.tags ? formData.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+    createMutation.mutate({
+      name: formData.name,
+      phone: formData.phone || null,
+      email: formData.email || null,
+      notes: formData.notes || null,
+      loyaltyTier: formData.loyaltyTier,
+      tags: tags.length > 0 ? tags : null,
+    });
+  };
+
+  const handleSubmitEdit = () => {
+    if (!selectedCustomer) return;
+    const tags = formData.tags ? formData.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+    updateMutation.mutate({
+      id: selectedCustomer.id,
+      data: {
+        name: formData.name,
+        phone: formData.phone || null,
+        email: formData.email || null,
+        notes: formData.notes || null,
+        loyaltyTier: formData.loyaltyTier,
+        tags: tags.length > 0 ? tags : null,
+      },
+    });
+  };
+
+  const totalCustomers = customers.length;
+  const totalRevenue = customers.reduce((sum, c) => sum + Number(c.totalSpent || 0), 0);
+  const avgSpend = totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-primary/10">
+            <Users className="h-6 w-6 text-primary" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold font-heading" data-testid="text-crm-title">
+              Customer Relations
+            </h1>
+            <p className="text-muted-foreground text-sm">Manage customers, loyalty, and engagement</p>
+          </div>
+        </div>
+        <Button data-testid="button-add-customer" onClick={openAdd}>
+          <UserPlus className="w-4 h-4 mr-2" /> Add Customer
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-blue-100 dark:bg-blue-900/40">
+              <Users className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Customers</p>
+              <p className="text-2xl font-bold" data-testid="text-total-customers">{totalCustomers}</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-green-100 dark:bg-green-900/40">
+              <DollarSign className="h-5 w-5 text-green-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Total Revenue</p>
+              <p className="text-2xl font-bold" data-testid="text-total-revenue">
+                {formatCurrency(totalRevenue, currency)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 flex items-center gap-4">
+            <div className="p-3 rounded-xl bg-amber-100 dark:bg-amber-900/40">
+              <ShoppingBag className="h-5 w-5 text-amber-600" />
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Avg Spend</p>
+              <p className="text-2xl font-bold" data-testid="text-avg-spend">
+                {formatCurrency(avgSpend, currency)}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <div className="relative flex-1 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Search customers..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-10"
+            data-testid="input-search-customers"
+          />
+        </div>
+        <Select value={filterTier} onValueChange={setFilterTier}>
+          <SelectTrigger className="w-[140px]" data-testid="select-filter-tier">
+            <Filter className="w-3 h-3 mr-1" />
+            <SelectValue placeholder="Tier" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Tiers</SelectItem>
+            <SelectItem value="bronze">Bronze</SelectItem>
+            <SelectItem value="silver">Silver</SelectItem>
+            <SelectItem value="gold">Gold</SelectItem>
+            <SelectItem value="platinum">Platinum</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="h-40 rounded-lg bg-muted animate-pulse" />
+          ))}
+        </div>
+      ) : filteredCustomers.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Users className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+            <p className="text-muted-foreground" data-testid="text-no-customers">No customers found.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <AnimatePresence>
+            {filteredCustomers.map((customer, idx) => (
+              <motion.div
+                key={customer.id}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.03 }}
+              >
+                <Card
+                  className="cursor-pointer hover:shadow-md transition-shadow"
+                  onClick={() => openProfile(customer)}
+                  data-testid={`card-customer-${customer.id}`}
+                >
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+                          {customer.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold" data-testid={`text-customer-name-${customer.id}`}>
+                            {customer.name}
+                          </p>
+                          {customer.phone && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Phone className="w-3 h-3" /> {customer.phone}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <Badge className={tierColors[customer.loyaltyTier || "bronze"]} data-testid={`badge-tier-${customer.id}`}>
+                        {customer.loyaltyTier || "bronze"}
+                      </Badge>
+                    </div>
+
+                    <div className="flex items-center justify-between text-sm">
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Star className="w-3 h-3" />
+                        <span data-testid={`text-points-${customer.id}`}>{customer.loyaltyPoints || 0} pts</span>
+                      </div>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <DollarSign className="w-3 h-3" />
+                        <span data-testid={`text-spent-${customer.id}`}>
+                          {formatCurrency(Number(customer.totalSpent || 0), currency)}
+                        </span>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
+                    </div>
+
+                    {customer.tags && customer.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {customer.tags.map((tag, i) => (
+                          <Badge key={i} variant="outline" className="text-xs" data-testid={`tag-${customer.id}-${i}`}>
+                            <Tag className="w-2.5 h-2.5 mr-1" /> {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+
+      <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Customer Profile</DialogTitle>
+          </DialogHeader>
+          {selectedCustomer && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-xl">
+                  {selectedCustomer.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold" data-testid="text-profile-name">{selectedCustomer.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <Badge className={tierColors[selectedCustomer.loyaltyTier || "bronze"]}>
+                      <Award className="w-3 h-3 mr-1" /> {selectedCustomer.loyaltyTier || "bronze"}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      {selectedCustomer.loyaltyPoints || 0} points
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground">Total Spent</p>
+                  <p className="font-bold" data-testid="text-profile-spent">
+                    {formatCurrency(Number(selectedCustomer.totalSpent || 0), currency)}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-muted/50">
+                  <p className="text-xs text-muted-foreground">Avg Spend</p>
+                  <p className="font-bold" data-testid="text-profile-avg">
+                    {formatCurrency(Number(selectedCustomer.averageSpend || 0), currency)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {selectedCustomer.phone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone className="w-4 h-4 text-muted-foreground" /> {selectedCustomer.phone}
+                  </div>
+                )}
+                {selectedCustomer.email && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Mail className="w-4 h-4 text-muted-foreground" /> {selectedCustomer.email}
+                  </div>
+                )}
+              </div>
+
+              {selectedCustomer.notes && (
+                <div className="p-3 rounded-lg bg-muted/50 text-sm">
+                  <p className="text-xs text-muted-foreground mb-1">Notes</p>
+                  <p>{selectedCustomer.notes}</p>
+                </div>
+              )}
+
+              <div>
+                <h4 className="text-sm font-semibold mb-2">Recent Orders</h4>
+                {(() => {
+                  const custOrders = getCustomerOrders(selectedCustomer.id);
+                  if (custOrders.length === 0) {
+                    return <p className="text-sm text-muted-foreground">No orders found</p>;
+                  }
+                  return (
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {custOrders.slice(0, 5).map((order) => (
+                        <div key={order.id} className="flex items-center justify-between p-2 rounded bg-muted/30 text-sm">
+                          <div>
+                            <span className="font-medium">{order.orderType}</span>
+                            <span className="text-muted-foreground ml-2">
+                              {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : ""}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs">{order.status}</Badge>
+                            <span className="font-medium">{formatCurrency(Number(order.total || 0), currency)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              <DialogFooter className="gap-2">
+                <Button variant="outline" onClick={() => { setShowProfileDialog(false); openEdit(selectedCustomer); }} data-testid="button-edit-customer">
+                  <Edit className="w-4 h-4 mr-1" /> Edit
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => deleteMutation.mutate(selectedCustomer.id)}
+                  disabled={deleteMutation.isPending}
+                  data-testid="button-delete-customer"
+                >
+                  <Trash2 className="w-4 h-4 mr-1" /> Delete
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Customer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Name *</Label>
+              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} data-testid="input-customer-name" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Phone</Label>
+                <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} data-testid="input-customer-phone" />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} data-testid="input-customer-email" />
+              </div>
+            </div>
+            <div>
+              <Label>Loyalty Tier</Label>
+              <Select value={formData.loyaltyTier} onValueChange={(v) => setFormData({ ...formData, loyaltyTier: v })}>
+                <SelectTrigger data-testid="select-customer-tier">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bronze">Bronze</SelectItem>
+                  <SelectItem value="silver">Silver</SelectItem>
+                  <SelectItem value="gold">Gold</SelectItem>
+                  <SelectItem value="platinum">Platinum</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Tags (comma-separated)</Label>
+              <Input value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} placeholder="vip, regular, birthday" data-testid="input-customer-tags" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-customer-notes" />
+            </div>
+            <Button className="w-full" onClick={handleSubmitAdd} disabled={!formData.name || createMutation.isPending} data-testid="button-submit-customer">
+              Add Customer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Customer</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Name *</Label>
+              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} data-testid="input-edit-customer-name" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Phone</Label>
+                <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} data-testid="input-edit-customer-phone" />
+              </div>
+              <div>
+                <Label>Email</Label>
+                <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} data-testid="input-edit-customer-email" />
+              </div>
+            </div>
+            <div>
+              <Label>Loyalty Tier</Label>
+              <Select value={formData.loyaltyTier} onValueChange={(v) => setFormData({ ...formData, loyaltyTier: v })}>
+                <SelectTrigger data-testid="select-edit-customer-tier">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bronze">Bronze</SelectItem>
+                  <SelectItem value="silver">Silver</SelectItem>
+                  <SelectItem value="gold">Gold</SelectItem>
+                  <SelectItem value="platinum">Platinum</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Tags (comma-separated)</Label>
+              <Input value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} data-testid="input-edit-customer-tags" />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-edit-customer-notes" />
+            </div>
+            <Button className="w-full" onClick={handleSubmitEdit} disabled={!formData.name || updateMutation.isPending} data-testid="button-update-customer">
+              Update Customer
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </motion.div>
+  );
+}
