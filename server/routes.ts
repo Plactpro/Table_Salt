@@ -224,8 +224,10 @@ export async function registerRoutes(
   });
 
   app.get("/api/orders/:id", requireAuth, async (req, res) => {
+    const user = req.user as Express.User & { tenantId: string };
     const order = await storage.getOrder(req.params.id);
     if (!order) return res.status(404).json({ message: "Order not found" });
+    if (order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
     const items = await storage.getOrderItemsByOrder(order.id);
     res.json({ ...order, items });
   });
@@ -251,11 +253,14 @@ export async function registerRoutes(
   });
 
   app.patch("/api/orders/:id", requireAuth, async (req, res) => {
+    const user = req.user as Express.User & { tenantId: string };
+    const existing = await storage.getOrder(req.params.id);
+    if (!existing) return res.status(404).json({ message: "Order not found" });
+    if (existing.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
     const order = await storage.updateOrder(req.params.id, req.body);
     if (req.body.status === "paid" || req.body.status === "cancelled") {
-      const fullOrder = await storage.getOrder(req.params.id);
-      if (fullOrder?.tableId) {
-        await storage.updateTable(fullOrder.tableId, { status: "free" });
+      if (existing.tableId) {
+        await storage.updateTable(existing.tableId, { status: "free" });
       }
     }
     res.json(order);

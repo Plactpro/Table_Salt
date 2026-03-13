@@ -124,8 +124,10 @@ export default function POSPage() {
 
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
 
+  const SUPPORTED_OFFER_TYPES = ["percentage", "fixed_amount", "happy_hour"];
+
   const applicableOffers = useMemo(
-    () => offers.filter((offer) => isOfferApplicable(offer, cart, subtotal)),
+    () => offers.filter((offer) => SUPPORTED_OFFER_TYPES.includes(offer.type) && isOfferApplicable(offer, cart, subtotal)),
     [offers, cart, subtotal]
   );
 

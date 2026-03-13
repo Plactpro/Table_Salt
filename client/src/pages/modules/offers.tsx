@@ -115,7 +115,8 @@ export default function OffersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
   const [form, setForm] = useState<OfferForm>(emptyForm);
-  const [filterStatus, setFilterStatus] = useState<"all" | "active" | "expired">("all");
+  type FilterStatus = "all" | "active" | "expired";
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
 
   const { data: offers = [] } = useQuery<Offer[]>({
     queryKey: ["/api/offers"],
@@ -253,11 +254,11 @@ export default function OffersPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-4">
-        {[
-          { key: "all", label: "Total Offers", value: offers.length, icon: Tag, color: "text-primary", bg: "bg-primary/10" },
-          { key: "active", label: "Active", value: activeCount, icon: CheckCircle2, color: "text-green-600", bg: "bg-green-100" },
-          { key: "expired", label: "Expired", value: expiredCount, icon: XCircle, color: "text-red-600", bg: "bg-red-100" },
-        ].map((stat, i) => (
+        {([
+          { key: "all" as FilterStatus, label: "Total Offers", value: offers.length, icon: Tag, color: "text-primary", bg: "bg-primary/10" },
+          { key: "active" as FilterStatus, label: "Active", value: activeCount, icon: CheckCircle2, color: "text-green-600", bg: "bg-green-100" },
+          { key: "expired" as FilterStatus, label: "Expired", value: expiredCount, icon: XCircle, color: "text-red-600", bg: "bg-red-100" },
+        ]).map((stat, i) => (
           <motion.div
             key={stat.key}
             initial={{ opacity: 0, y: 20 }}
@@ -266,7 +267,7 @@ export default function OffersPage() {
           >
             <Card
               className={`cursor-pointer transition-all duration-200 hover:shadow-md ${filterStatus === stat.key ? "ring-2 ring-primary" : ""}`}
-              onClick={() => setFilterStatus(stat.key as any)}
+              onClick={() => setFilterStatus(stat.key)}
               data-testid={`stat-${stat.key}-offers`}
             >
               <CardContent className="p-4 flex items-center gap-3">
