@@ -120,7 +120,7 @@ export const menuItems = pgTable("menu_items", {
   isVeg: boolean("is_veg").default(false),
   spicyLevel: integer("spicy_level").default(0),
   available: boolean("available").default(true),
-  tags: text("tags"),
+  tags: text("tags").array(),
   ingredients: jsonb("ingredients"),
 });
 
@@ -224,7 +224,7 @@ export const customers = pgTable("customers", {
   loyaltyPoints: integer("loyalty_points").default(0),
   totalSpent: decimal("total_spent", { precision: 10, scale: 2 }).default("0"),
   loyaltyTier: text("loyalty_tier").default("bronze"),
-  customerTags: text("customer_tags"),
+  tags: text("tags").array(),
   averageSpend: decimal("average_spend", { precision: 10, scale: 2 }).default("0"),
 });
 
