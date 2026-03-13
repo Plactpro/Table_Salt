@@ -185,6 +185,114 @@ export async function seedDatabase() {
     await storage.createCustomer({ ...c, tenantId: tenant.id });
   }
 
+  // Seed sample offers
+  const happyHour = await storage.createOffer({
+    tenantId: tenant.id,
+    name: "Happy Hour - 20% Off Cocktails",
+    description: "20% discount on all cocktails between 4-7 PM",
+    type: "percentage",
+    value: "20",
+    scope: "category",
+    scopeRef: "Cocktails",
+    active: true,
+    startDate: new Date("2026-01-01"),
+    endDate: new Date("2026-12-31"),
+  });
+
+  await storage.createOffer({
+    tenantId: tenant.id,
+    name: "Combo Meal Deal",
+    description: "Get a free dessert with any Main Course order over $25",
+    type: "free_item",
+    value: "0",
+    scope: "order_total",
+    minOrderAmount: "25",
+    active: true,
+    conditions: { freeCategory: "Desserts", requireCategory: "Main Course" },
+  });
+
+  await storage.createOffer({
+    tenantId: tenant.id,
+    name: "First-Time Customer 10% Off",
+    description: "10% off for first-time customers, max $15 discount",
+    type: "percentage",
+    value: "10",
+    scope: "all_items",
+    maxDiscount: "15",
+    active: true,
+    usageLimit: 1,
+  });
+
+  // Seed sample delivery orders
+  const allCustomers = await storage.getCustomersByTenant(tenant.id);
+  const allOrders = await storage.getOrdersByTenant(tenant.id);
+
+  if (allCustomers.length > 0 && allOrders.length > 0) {
+    await storage.createDeliveryOrder({
+      tenantId: tenant.id,
+      orderId: allOrders[0].id,
+      customerId: allCustomers[0].id,
+      customerAddress: "456 Oak Street, Apt 2B, Food City",
+      customerPhone: allCustomers[0].phone || "555-0101",
+      deliveryPartner: "DoorDash",
+      driverName: "Carlos Mendez",
+      driverPhone: "555-0200",
+      status: "delivered",
+      estimatedTime: 35,
+      actualTime: 32,
+      deliveryFee: "4.99",
+    });
+
+    await storage.createDeliveryOrder({
+      tenantId: tenant.id,
+      orderId: allOrders[1]?.id || allOrders[0].id,
+      customerId: allCustomers[1]?.id || allCustomers[0].id,
+      customerAddress: "789 Elm Avenue, Suite 5, Food City",
+      customerPhone: "555-0102",
+      deliveryPartner: "UberEats",
+      driverName: "Jamie Park",
+      driverPhone: "555-0201",
+      status: "in_transit",
+      estimatedTime: 40,
+      deliveryFee: "5.99",
+    });
+  }
+
+  // Seed sample employee performance logs
+  await storage.createPerformanceLog({
+    tenantId: tenant.id,
+    userId: waiter.id,
+    metricType: "orders_served",
+    metricValue: "47",
+    period: "2026-03-W1",
+    notes: "Strong week, handled busy Saturday dinner service",
+  });
+
+  await storage.createPerformanceLog({
+    tenantId: tenant.id,
+    userId: waiter.id,
+    metricType: "avg_rating",
+    metricValue: "4.8",
+    period: "2026-03-W1",
+  });
+
+  await storage.createPerformanceLog({
+    tenantId: tenant.id,
+    userId: kitchen.id,
+    metricType: "avg_prep_time_minutes",
+    metricValue: "12.5",
+    period: "2026-03-W1",
+    notes: "Below target of 15 minutes — excellent performance",
+  });
+
+  await storage.createPerformanceLog({
+    tenantId: tenant.id,
+    userId: manager.id,
+    metricType: "revenue_managed",
+    metricValue: "8450.00",
+    period: "2026-03-W1",
+  });
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

@@ -8,6 +8,7 @@ import {
   insertTableSchema, insertReservationSchema, insertOrderSchema,
   insertOrderItemSchema, insertInventoryItemSchema, insertStockMovementSchema,
   insertCustomerSchema, insertStaffScheduleSchema, insertUserSchema,
+  insertOfferSchema, insertDeliveryOrderSchema, insertEmployeePerformanceLogSchema,
 } from "@shared/schema";
 
 export async function registerRoutes(
@@ -70,7 +71,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const { password: _, ...safeUser } = req.user as any;
     const tenant = await storage.getTenant(safeUser.tenantId);
-    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType } : null });
+    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency } : null });
   });
 
   app.get("/api/users", requireAuth, async (req, res) => {
@@ -321,6 +322,23 @@ export async function registerRoutes(
     res.json(customer);
   });
 
+  app.get("/api/customers/:id", requireAuth, async (req, res) => {
+    const customer = await storage.getCustomer(req.params.id);
+    if (!customer) return res.status(404).json({ message: "Customer not found" });
+    res.json(customer);
+  });
+
+  app.patch("/api/customers/:id", requireAuth, async (req, res) => {
+    const customer = await storage.updateCustomer(req.params.id, req.body);
+    if (!customer) return res.status(404).json({ message: "Customer not found" });
+    res.json(customer);
+  });
+
+  app.delete("/api/customers/:id", requireRole("owner", "manager"), async (req, res) => {
+    await storage.deleteCustomer(req.params.id);
+    res.json({ message: "Deleted" });
+  });
+
   app.get("/api/staff-schedules", requireAuth, async (req, res) => {
     const user = req.user as any;
     const schedules = await storage.getStaffSchedulesByTenant(user.tenantId);
@@ -357,6 +375,96 @@ export async function registerRoutes(
     const user = req.user as any;
     const tenant = await storage.updateTenant(user.tenantId, req.body);
     res.json(tenant);
+  });
+
+  // Offers CRUD
+  app.get("/api/offers", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const offerList = await storage.getOffersByTenant(user.tenantId);
+    res.json(offerList);
+  });
+
+  app.get("/api/offers/:id", requireAuth, async (req, res) => {
+    const offer = await storage.getOffer(req.params.id);
+    if (!offer) return res.status(404).json({ message: "Offer not found" });
+    res.json(offer);
+  });
+
+  app.post("/api/offers", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const offer = await storage.createOffer({ ...req.body, tenantId: user.tenantId });
+      res.json(offer);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/offers/:id", requireRole("owner", "manager"), async (req, res) => {
+    const offer = await storage.updateOffer(req.params.id, req.body);
+    if (!offer) return res.status(404).json({ message: "Offer not found" });
+    res.json(offer);
+  });
+
+  app.delete("/api/offers/:id", requireRole("owner", "manager"), async (req, res) => {
+    await storage.deleteOffer(req.params.id);
+    res.json({ message: "Deleted" });
+  });
+
+  // Delivery Orders CRUD
+  app.get("/api/delivery-orders", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const deliveries = await storage.getDeliveryOrdersByTenant(user.tenantId);
+    res.json(deliveries);
+  });
+
+  app.get("/api/delivery-orders/:id", requireAuth, async (req, res) => {
+    const delivery = await storage.getDeliveryOrder(req.params.id);
+    if (!delivery) return res.status(404).json({ message: "Delivery order not found" });
+    res.json(delivery);
+  });
+
+  app.post("/api/delivery-orders", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const delivery = await storage.createDeliveryOrder({ ...req.body, tenantId: user.tenantId });
+      res.json(delivery);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/delivery-orders/:id", requireAuth, async (req, res) => {
+    const delivery = await storage.updateDeliveryOrder(req.params.id, req.body);
+    if (!delivery) return res.status(404).json({ message: "Delivery order not found" });
+    res.json(delivery);
+  });
+
+  // Employee Performance Logs CRUD
+  app.get("/api/performance-logs", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const logs = await storage.getPerformanceLogsByTenant(user.tenantId);
+    res.json(logs);
+  });
+
+  app.get("/api/performance-logs/user/:userId", requireRole("owner", "manager"), async (req, res) => {
+    const logs = await storage.getPerformanceLogsByUser(req.params.userId);
+    res.json(logs);
+  });
+
+  app.post("/api/performance-logs", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const log = await storage.createPerformanceLog({ ...req.body, tenantId: user.tenantId });
+      res.json(log);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/performance-logs/:id", requireRole("owner", "manager"), async (req, res) => {
+    await storage.deletePerformanceLog(req.params.id);
+    res.json({ message: "Deleted" });
   });
 
   app.get("/api/health", (_req, res) => {
