@@ -323,19 +323,22 @@ export async function registerRoutes(
   });
 
   app.get("/api/customers/:id", requireAuth, async (req, res) => {
-    const customer = await storage.getCustomer(req.params.id);
+    const user = req.user as any;
+    const customer = await storage.getCustomerByTenant(req.params.id, user.tenantId);
     if (!customer) return res.status(404).json({ message: "Customer not found" });
     res.json(customer);
   });
 
   app.patch("/api/customers/:id", requireAuth, async (req, res) => {
-    const customer = await storage.updateCustomer(req.params.id, req.body);
+    const user = req.user as any;
+    const customer = await storage.updateCustomerByTenant(req.params.id, user.tenantId, req.body);
     if (!customer) return res.status(404).json({ message: "Customer not found" });
     res.json(customer);
   });
 
   app.delete("/api/customers/:id", requireRole("owner", "manager"), async (req, res) => {
-    await storage.deleteCustomer(req.params.id);
+    const user = req.user as any;
+    await storage.deleteCustomerByTenant(req.params.id, user.tenantId);
     res.json({ message: "Deleted" });
   });
 
@@ -472,6 +475,13 @@ export async function registerRoutes(
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
+  });
+
+  app.patch("/api/performance-logs/:id", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    const log = await storage.updatePerformanceLogByTenant(req.params.id, user.tenantId, req.body);
+    if (!log) return res.status(404).json({ message: "Performance log not found" });
+    res.json(log);
   });
 
   app.delete("/api/performance-logs/:id", requireRole("owner", "manager"), async (req, res) => {
