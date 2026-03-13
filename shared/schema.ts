@@ -8,6 +8,7 @@ import {
   timestamp,
   decimal,
   pgEnum,
+  jsonb,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -120,6 +121,7 @@ export const menuItems = pgTable("menu_items", {
   spicyLevel: integer("spicy_level").default(0),
   available: boolean("available").default(true),
   tags: text("tags"),
+  ingredients: jsonb("ingredients"),
 });
 
 export const tables = pgTable("tables", {
@@ -165,6 +167,8 @@ export const orders = pgTable("orders", {
   total: decimal("total", { precision: 10, scale: 2 }).default("0"),
   paymentMethod: text("payment_method"),
   notes: text("notes"),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
+  offerId: varchar("offer_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -219,6 +223,9 @@ export const customers = pgTable("customers", {
   notes: text("notes"),
   loyaltyPoints: integer("loyalty_points").default(0),
   totalSpent: decimal("total_spent", { precision: 10, scale: 2 }).default("0"),
+  loyaltyTier: text("loyalty_tier").default("bronze"),
+  customerTags: text("customer_tags"),
+  averageSpend: decimal("average_spend", { precision: 10, scale: 2 }).default("0"),
 });
 
 export const staffSchedules = pgTable("staff_schedules", {
@@ -246,6 +253,87 @@ export const feedback = pgTable("feedback", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const offerTypeEnum = pgEnum("offer_type", [
+  "percentage",
+  "fixed_amount",
+  "buy_one_get_one",
+  "combo_deal",
+  "free_item",
+]);
+
+export const offerScopeEnum = pgEnum("offer_scope", [
+  "all_items",
+  "category",
+  "specific_items",
+  "order_total",
+]);
+
+export const deliveryStatusEnum = pgEnum("delivery_status", [
+  "pending",
+  "assigned",
+  "picked_up",
+  "in_transit",
+  "delivered",
+  "cancelled",
+  "returned",
+]);
+
+export const offers = pgTable("offers", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  type: offerTypeEnum("type").notNull().default("percentage"),
+  value: decimal("value", { precision: 10, scale: 2 }).notNull(),
+  scope: offerScopeEnum("scope").default("all_items"),
+  scopeRef: text("scope_ref"),
+  minOrderAmount: decimal("min_order_amount", { precision: 10, scale: 2 }),
+  maxDiscount: decimal("max_discount", { precision: 10, scale: 2 }),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  active: boolean("active").default(true),
+  usageLimit: integer("usage_limit"),
+  usageCount: integer("usage_count").default(0),
+  conditions: jsonb("conditions"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const deliveryOrders = pgTable("delivery_orders", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  orderId: varchar("order_id", { length: 36 }).references(() => orders.id),
+  customerId: varchar("customer_id", { length: 36 }).references(() => customers.id),
+  customerAddress: text("customer_address").notNull(),
+  customerPhone: text("customer_phone"),
+  deliveryPartner: text("delivery_partner"),
+  driverName: text("driver_name"),
+  driverPhone: text("driver_phone"),
+  status: deliveryStatusEnum("status").default("pending"),
+  estimatedTime: integer("estimated_time"),
+  actualTime: integer("actual_time"),
+  deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 }).default("0"),
+  trackingNotes: text("tracking_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  deliveredAt: timestamp("delivered_at"),
+});
+
+export const employeePerformanceLogs = pgTable("employee_performance_logs", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id),
+  metricType: text("metric_type").notNull(),
+  metricValue: decimal("metric_value", { precision: 10, scale: 2 }).notNull(),
+  period: text("period"),
+  notes: text("notes"),
+  recordedAt: timestamp("recorded_at").defaultNow(),
+});
+
 export const insertTenantSchema = createInsertSchema(tenants).omit({ id: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true });
@@ -260,6 +348,9 @@ export const insertStockMovementSchema = createInsertSchema(stockMovements).omit
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true });
 export const insertStaffScheduleSchema = createInsertSchema(staffSchedules).omit({ id: true });
 export const insertFeedbackSchema = createInsertSchema(feedback).omit({ id: true, createdAt: true });
+export const insertOfferSchema = createInsertSchema(offers).omit({ id: true, createdAt: true });
+export const insertDeliveryOrderSchema = createInsertSchema(deliveryOrders).omit({ id: true, createdAt: true });
+export const insertEmployeePerformanceLogSchema = createInsertSchema(employeePerformanceLogs).omit({ id: true, recordedAt: true });
 
 export type Tenant = typeof tenants.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -289,3 +380,9 @@ export type StaffSchedule = typeof staffSchedules.$inferSelect;
 export type InsertStaffSchedule = z.infer<typeof insertStaffScheduleSchema>;
 export type Feedback = typeof feedback.$inferSelect;
 export type InsertFeedback = z.infer<typeof insertFeedbackSchema>;
+export type Offer = typeof offers.$inferSelect;
+export type InsertOffer = z.infer<typeof insertOfferSchema>;
+export type DeliveryOrder = typeof deliveryOrders.$inferSelect;
+export type InsertDeliveryOrder = z.infer<typeof insertDeliveryOrderSchema>;
+export type EmployeePerformanceLog = typeof employeePerformanceLogs.$inferSelect;
+export type InsertEmployeePerformanceLog = z.infer<typeof insertEmployeePerformanceLogSchema>;

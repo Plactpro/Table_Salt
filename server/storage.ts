@@ -3,7 +3,7 @@ import { db } from "./db";
 import {
   tenants, users, outlets, menuCategories, menuItems, tables,
   reservations, orders, orderItems, inventoryItems, stockMovements,
-  customers, staffSchedules, feedback,
+  customers, staffSchedules, feedback, offers, deliveryOrders, employeePerformanceLogs,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -18,6 +18,9 @@ import {
   type Customer, type InsertCustomer,
   type StaffSchedule, type InsertStaffSchedule,
   type Feedback, type InsertFeedback,
+  type Offer, type InsertOffer,
+  type DeliveryOrder, type InsertDeliveryOrder,
+  type EmployeePerformanceLog, type InsertEmployeePerformanceLog,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -85,6 +88,25 @@ export interface IStorage {
   createStaffSchedule(data: InsertStaffSchedule): Promise<StaffSchedule>;
 
   createFeedback(data: InsertFeedback): Promise<Feedback>;
+
+  getOffersByTenant(tenantId: string): Promise<Offer[]>;
+  getOffer(id: string): Promise<Offer | undefined>;
+  createOffer(data: InsertOffer): Promise<Offer>;
+  updateOffer(id: string, data: Partial<InsertOffer>): Promise<Offer | undefined>;
+  deleteOffer(id: string): Promise<void>;
+
+  getDeliveryOrdersByTenant(tenantId: string): Promise<DeliveryOrder[]>;
+  getDeliveryOrder(id: string): Promise<DeliveryOrder | undefined>;
+  createDeliveryOrder(data: InsertDeliveryOrder): Promise<DeliveryOrder>;
+  updateDeliveryOrder(id: string, data: Partial<InsertDeliveryOrder>): Promise<DeliveryOrder | undefined>;
+
+  getPerformanceLogsByTenant(tenantId: string): Promise<EmployeePerformanceLog[]>;
+  getPerformanceLogsByUser(userId: string): Promise<EmployeePerformanceLog[]>;
+  createPerformanceLog(data: InsertEmployeePerformanceLog): Promise<EmployeePerformanceLog>;
+  deletePerformanceLog(id: string): Promise<void>;
+
+  getCustomer(id: string): Promise<Customer | undefined>;
+  deleteCustomer(id: string): Promise<void>;
 
   getDashboardStats(tenantId: string): Promise<any>;
   getSalesReport(tenantId: string, from: Date, to: Date): Promise<any>;
@@ -295,6 +317,63 @@ export class DatabaseStorage implements IStorage {
   async createFeedback(data: InsertFeedback) {
     const [f] = await db.insert(feedback).values(data).returning();
     return f;
+  }
+
+  async getOffersByTenant(tenantId: string) {
+    return db.select().from(offers).where(eq(offers.tenantId, tenantId)).orderBy(desc(offers.createdAt));
+  }
+  async getOffer(id: string) {
+    const [o] = await db.select().from(offers).where(eq(offers.id, id));
+    return o;
+  }
+  async createOffer(data: InsertOffer) {
+    const [o] = await db.insert(offers).values(data).returning();
+    return o;
+  }
+  async updateOffer(id: string, data: Partial<InsertOffer>) {
+    const [o] = await db.update(offers).set(data).where(eq(offers.id, id)).returning();
+    return o;
+  }
+  async deleteOffer(id: string) {
+    await db.delete(offers).where(eq(offers.id, id));
+  }
+
+  async getDeliveryOrdersByTenant(tenantId: string) {
+    return db.select().from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenantId)).orderBy(desc(deliveryOrders.createdAt));
+  }
+  async getDeliveryOrder(id: string) {
+    const [d] = await db.select().from(deliveryOrders).where(eq(deliveryOrders.id, id));
+    return d;
+  }
+  async createDeliveryOrder(data: InsertDeliveryOrder) {
+    const [d] = await db.insert(deliveryOrders).values(data).returning();
+    return d;
+  }
+  async updateDeliveryOrder(id: string, data: Partial<InsertDeliveryOrder>) {
+    const [d] = await db.update(deliveryOrders).set(data).where(eq(deliveryOrders.id, id)).returning();
+    return d;
+  }
+
+  async getPerformanceLogsByTenant(tenantId: string) {
+    return db.select().from(employeePerformanceLogs).where(eq(employeePerformanceLogs.tenantId, tenantId)).orderBy(desc(employeePerformanceLogs.recordedAt));
+  }
+  async getPerformanceLogsByUser(userId: string) {
+    return db.select().from(employeePerformanceLogs).where(eq(employeePerformanceLogs.userId, userId)).orderBy(desc(employeePerformanceLogs.recordedAt));
+  }
+  async createPerformanceLog(data: InsertEmployeePerformanceLog) {
+    const [p] = await db.insert(employeePerformanceLogs).values(data).returning();
+    return p;
+  }
+  async deletePerformanceLog(id: string) {
+    await db.delete(employeePerformanceLogs).where(eq(employeePerformanceLogs.id, id));
+  }
+
+  async getCustomer(id: string) {
+    const [c] = await db.select().from(customers).where(eq(customers.id, id));
+    return c;
+  }
+  async deleteCustomer(id: string) {
+    await db.delete(customers).where(eq(customers.id, id));
   }
 
   async getDashboardStats(tenantId: string) {
