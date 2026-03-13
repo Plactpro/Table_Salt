@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,7 @@ interface CartItem {
   quantity: number;
   notes: string;
   isVeg: boolean | null;
+  categoryId: string | null;
 }
 
 type OrderType = "dine_in" | "takeaway" | "delivery";
@@ -58,10 +60,37 @@ function isOfferActive(offer: Offer): boolean {
   return true;
 }
 
+function isHappyHourActive(offer: Offer): boolean {
+  if (offer.type !== "happy_hour") return true;
+  const now = new Date();
+  const hour = now.getHours();
+  return hour >= 16 && hour < 19;
+}
+
+function isOfferApplicable(offer: Offer, cart: CartItem[], subtotal: number): boolean {
+  if (!isOfferActive(offer)) return false;
+  if (!isHappyHourActive(offer)) return false;
+  if (offer.minOrderAmount && subtotal < Number(offer.minOrderAmount)) return false;
+
+  const scope = offer.scope || "all_items";
+  if (scope === "all_items" || scope === "order_total") return true;
+  if (scope === "category" && offer.scopeRef) {
+    return cart.some((item) => item.categoryId === offer.scopeRef);
+  }
+  if (scope === "specific_items" && offer.scopeRef) {
+    const itemIds = offer.scopeRef.split(",").map((s) => s.trim());
+    return cart.some((item) => itemIds.includes(item.menuItemId));
+  }
+  return true;
+}
+
 export default function POSPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const fmt = (val: number | string) => sharedFormatCurrency(val, tenantCurrency);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -81,8 +110,6 @@ export default function POSPage() {
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const { data: offers = [] } = useQuery<Offer[]>({ queryKey: ["/api/offers"] });
 
-  const activeOffers = useMemo(() => offers.filter(isOfferActive), [offers]);
-
   const freeTables = useMemo(() => tables.filter((t) => t.status === "free"), [tables]);
 
   const filteredItems = useMemo(() => {
@@ -97,11 +124,16 @@ export default function POSPage() {
 
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
 
+  const applicableOffers = useMemo(
+    () => offers.filter((offer) => isOfferApplicable(offer, cart, subtotal)),
+    [offers, cart, subtotal]
+  );
+
   const offerDiscount = useMemo(() => {
     if (!selectedOffer) return 0;
-    if (selectedOffer.minOrderAmount && subtotal < Number(selectedOffer.minOrderAmount)) return 0;
+    if (!isOfferApplicable(selectedOffer, cart, subtotal)) return 0;
     let disc = 0;
-    if (selectedOffer.type === "percentage") {
+    if (selectedOffer.type === "percentage" || selectedOffer.type === "happy_hour") {
       disc = subtotal * (Number(selectedOffer.value) / 100);
     } else if (selectedOffer.type === "fixed_amount") {
       disc = Number(selectedOffer.value);
@@ -110,7 +142,7 @@ export default function POSPage() {
       disc = Number(selectedOffer.maxDiscount);
     }
     return Math.min(disc, subtotal);
-  }, [selectedOffer, subtotal]);
+  }, [selectedOffer, subtotal, cart]);
 
   const manualDiscount = useMemo(() => {
     const d = parseFloat(discount);
@@ -122,6 +154,8 @@ export default function POSPage() {
   const taxAmount = Math.max(0, (subtotal - totalDiscount)) * taxRate;
   const total = Math.max(0, subtotal - totalDiscount + taxAmount);
 
+  const isDineIn = orderType === "dine_in";
+
   const addToCart = useCallback((item: MenuItem) => {
     setAddedItemId(item.id);
     setTimeout(() => setAddedItemId(null), 600);
@@ -130,7 +164,7 @@ export default function POSPage() {
       if (existing) {
         return prev.map((c) => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
       }
-      return [...prev, { menuItemId: item.id, name: item.name, price: parseFloat(item.price), quantity: 1, notes: "", isVeg: item.isVeg }];
+      return [...prev, { menuItemId: item.id, name: item.name, price: parseFloat(item.price), quantity: 1, notes: "", isVeg: item.isVeg, categoryId: item.categoryId }];
     });
   }, []);
 
@@ -158,16 +192,15 @@ export default function POSPage() {
 
   const placeOrderMutation = useMutation({
     mutationFn: async () => {
-      const orderData = {
+      const orderData: Record<string, unknown> = {
         orderType,
-        tableId: orderType === "dine_in" ? selectedTable || null : null,
+        tableId: isDineIn ? selectedTable || null : null,
         subtotal: subtotal.toFixed(2),
         tax: taxAmount.toFixed(2),
         discount: totalDiscount.toFixed(2),
         total: total.toFixed(2),
-        paymentMethod,
         notes: orderNotes || null,
-        status: "new",
+        status: isDineIn ? "in_progress" : "new",
         offerId: selectedOffer?.id || null,
         discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
         items: cart.map((c) => ({
@@ -175,6 +208,9 @@ export default function POSPage() {
           price: c.price.toFixed(2), notes: c.notes || null,
         })),
       };
+      if (!isDineIn) {
+        orderData.paymentMethod = paymentMethod;
+      }
       const res = await apiRequest("POST", "/api/orders", orderData);
       return res.json();
     },
@@ -199,7 +235,7 @@ export default function POSPage() {
       toast({ title: "Cart is empty", description: "Add items before placing an order", variant: "destructive" });
       return;
     }
-    if (orderType === "dine_in" && !selectedTable) {
+    if (isDineIn && !selectedTable) {
       toast({ title: "Select a table", description: "Choose a table for dine-in orders", variant: "destructive" });
       return;
     }
@@ -252,9 +288,13 @@ export default function POSPage() {
                           </motion.div>
                         )}
                       </AnimatePresence>
-                      {item.image && (
+                      {item.image ? (
                         <div className="h-20 overflow-hidden bg-muted">
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                        </div>
+                      ) : (
+                        <div className="h-20 bg-muted/50 flex items-center justify-center" data-testid={`placeholder-${item.id}`}>
+                          <UtensilsCrossed className="h-6 w-6 text-muted-foreground/40" />
                         </div>
                       )}
                       <CardContent className="p-3">
@@ -264,7 +304,7 @@ export default function POSPage() {
                         </div>
                         {item.description && <p className="text-xs text-muted-foreground line-clamp-1 mb-2">{item.description}</p>}
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-sm" data-testid={`text-price-${item.id}`}>${parseFloat(item.price).toFixed(2)}</span>
+                          <span className="font-semibold text-sm" data-testid={`text-price-${item.id}`}>{fmt(item.price)}</span>
                           {inCart && (
                             <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} key={inCart.quantity}>
                               <Badge variant="default" className="text-xs" data-testid={`badge-qty-${item.id}`}>{inCart.quantity}</Badge>
@@ -307,7 +347,7 @@ export default function POSPage() {
             </Button>
           </div>
 
-          {orderType === "dine_in" && (
+          {isDineIn && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-3">
               <Select value={selectedTable} onValueChange={setSelectedTable}>
                 <SelectTrigger data-testid="select-table"><SelectValue placeholder="Select table..." /></SelectTrigger>
@@ -340,9 +380,9 @@ export default function POSPage() {
                           {item.isVeg && <Leaf className="h-3 w-3 text-green-600 shrink-0" />}
                           <span className="font-medium text-sm truncate">{item.name}</span>
                         </div>
-                        <span className="text-xs text-muted-foreground">${item.price.toFixed(2)} each</span>
+                        <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>
                       </div>
-                      <span className="font-semibold text-sm">${(item.price * item.quantity).toFixed(2)}</span>
+                      <span className="font-semibold text-sm">{fmt(item.price * item.quantity)}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-1">
@@ -372,44 +412,35 @@ export default function POSPage() {
         </div>
 
         <div className="border-t p-4 space-y-3">
-          {activeOffers.length > 0 && (
+          {applicableOffers.length > 0 && (
             <div className="space-y-1.5" data-testid="offers-section">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 <Tag className="h-3 w-3" /> Available Offers
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {activeOffers.map((offer) => {
+                {applicableOffers.map((offer) => {
                   const isSelected = selectedOffer?.id === offer.id;
-                  const meetsMin = !offer.minOrderAmount || subtotal >= Number(offer.minOrderAmount);
                   return (
                     <Button
                       key={offer.id}
                       variant={isSelected ? "default" : "outline"}
                       size="sm"
-                      className={`text-xs h-7 transition-all duration-200 ${!meetsMin ? "opacity-50" : ""}`}
-                      onClick={() => {
-                        if (isSelected) {
-                          setSelectedOffer(null);
-                        } else if (meetsMin) {
-                          setSelectedOffer(offer);
-                        } else {
-                          toast({ title: "Minimum not met", description: `Min order: $${Number(offer.minOrderAmount).toFixed(0)}`, variant: "destructive" });
-                        }
-                      }}
+                      className="text-xs h-7 transition-all duration-200"
+                      onClick={() => setSelectedOffer(isSelected ? null : offer)}
                       data-testid={`button-offer-${offer.id}`}
                     >
                       {isSelected && <CheckCircle2 className="h-3 w-3 mr-1" />}
-                      {offer.type === "percentage" ? <Percent className="h-3 w-3 mr-0.5" /> : <Tag className="h-3 w-3 mr-0.5" />}
+                      {(offer.type === "percentage" || offer.type === "happy_hour") ? <Percent className="h-3 w-3 mr-0.5" /> : <Tag className="h-3 w-3 mr-0.5" />}
                       {offer.name}
-                      {offer.type === "percentage" ? ` (${offer.value}%)` : ` ($${Number(offer.value).toFixed(0)})`}
+                      {(offer.type === "percentage" || offer.type === "happy_hour") ? ` (${offer.value}%)` : offer.type === "fixed_amount" ? ` (${fmt(offer.value)})` : ""}
                     </Button>
                   );
                 })}
               </div>
-              {selectedOffer && (
+              {selectedOffer && offerDiscount > 0 && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="flex items-center justify-between bg-green-50 dark:bg-green-950/30 rounded-lg px-2.5 py-1.5 text-xs">
                   <span className="text-green-700 dark:text-green-300 font-medium">
-                    {selectedOffer.name} applied: -${offerDiscount.toFixed(2)}
+                    {selectedOffer.name}: -{fmt(offerDiscount)}
                   </span>
                   <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-green-600" onClick={() => setSelectedOffer(null)} data-testid="button-remove-offer">
                     <X className="h-3 w-3" />
@@ -420,56 +451,62 @@ export default function POSPage() {
           )}
 
           <div className="space-y-2">
-            <Input data-testid="input-discount" type="number" placeholder="Additional discount ($)" value={discount} onChange={(e) => setDiscount(e.target.value)} min="0" step="0.01" />
+            <Input data-testid="input-discount" type="number" placeholder="Additional discount" value={discount} onChange={(e) => setDiscount(e.target.value)} min="0" step="0.01" />
             <Textarea data-testid="input-order-notes" placeholder="Order notes..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} rows={2} className="resize-none" />
           </div>
 
-          <div className="flex gap-1">
-            <Button data-testid="button-payment-cash" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("cash")}>
-              <Banknote className="h-3.5 w-3.5 mr-1" /> Cash
-            </Button>
-            <Button data-testid="button-payment-card" variant={paymentMethod === "card" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("card")}>
-              <CreditCard className="h-3.5 w-3.5 mr-1" /> Card
-            </Button>
-            <Button data-testid="button-payment-upi" variant={paymentMethod === "upi" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("upi")}>
-              <Wallet className="h-3.5 w-3.5 mr-1" /> UPI
-            </Button>
-          </div>
+          {!isDineIn && (
+            <div className="flex gap-1">
+              <Button data-testid="button-payment-cash" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("cash")}>
+                <Banknote className="h-3.5 w-3.5 mr-1" /> Cash
+              </Button>
+              <Button data-testid="button-payment-card" variant={paymentMethod === "card" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("card")}>
+                <CreditCard className="h-3.5 w-3.5 mr-1" /> Card
+              </Button>
+              <Button data-testid="button-payment-upi" variant={paymentMethod === "upi" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("upi")}>
+                <Wallet className="h-3.5 w-3.5 mr-1" /> UPI
+              </Button>
+            </div>
+          )}
+
+          {isDineIn && (
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300" data-testid="text-dine-in-info">
+              Dine-in orders start as In Progress. Payment is collected when the guest is ready to pay.
+            </div>
+          )}
 
           <Separator />
 
           <div className="space-y-1 text-sm">
             <div className="flex justify-between" data-testid="text-subtotal">
               <span className="text-muted-foreground">Subtotal</span>
-              <span>${subtotal.toFixed(2)}</span>
+              <span>{fmt(subtotal)}</span>
             </div>
             {offerDiscount > 0 && (
               <div className="flex justify-between text-green-600" data-testid="text-offer-discount">
-                <span className="flex items-center gap-1">
-                  <Tag className="h-3 w-3" /> {selectedOffer?.name}
-                </span>
-                <span>-${offerDiscount.toFixed(2)}</span>
+                <span className="flex items-center gap-1"><Tag className="h-3 w-3" /> {selectedOffer?.name}</span>
+                <span>-{fmt(offerDiscount)}</span>
               </div>
             )}
             {manualDiscount > 0 && (
               <div className="flex justify-between text-green-600" data-testid="text-discount">
                 <span>Manual Discount</span>
-                <span>-${manualDiscount.toFixed(2)}</span>
+                <span>-{fmt(manualDiscount)}</span>
               </div>
             )}
             <div className="flex justify-between" data-testid="text-tax">
               <span className="text-muted-foreground">Tax (5%)</span>
-              <span>${taxAmount.toFixed(2)}</span>
+              <span>{fmt(taxAmount)}</span>
             </div>
             <Separator />
             <div className="flex justify-between font-semibold text-base" data-testid="text-total">
               <span>Total</span>
-              <span>${total.toFixed(2)}</span>
+              <span>{fmt(total)}</span>
             </div>
           </div>
 
           <Button data-testid="button-place-order" className="w-full transition-all duration-200 hover:scale-[1.02]" size="lg" onClick={handlePlaceOrder} disabled={cart.length === 0 || placeOrderMutation.isPending}>
-            {placeOrderMutation.isPending ? "Placing Order..." : "Place Order"}
+            {placeOrderMutation.isPending ? "Placing Order..." : isDineIn ? "Send to Kitchen" : "Place Order"}
           </Button>
         </div>
       </div>

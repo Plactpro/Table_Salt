@@ -7,7 +7,9 @@ import {
   Wheat,
   Info,
   Utensils,
+  ImageIcon,
 } from "lucide-react";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 
 interface Ingredient {
   name: string;
@@ -33,6 +35,7 @@ interface DishInfoPanelProps {
   tags?: string[] | null;
   ingredients?: DishIngredients | null;
   compact?: boolean;
+  currency?: string;
 }
 
 const spicyLabels = ["Mild", "Medium", "Hot", "Extra Hot", "Extreme"];
@@ -47,13 +50,16 @@ export function DishInfoPanel({
   tags,
   ingredients,
   compact = false,
+  currency = "USD",
 }: DishInfoPanelProps) {
   const parsedIngredients: DishIngredients | null =
     ingredients && typeof ingredients === "object" ? ingredients : null;
 
+  const fmt = (val: string | number) => sharedFormatCurrency(val, currency);
+
   return (
     <div className={compact ? "space-y-2" : "space-y-3"} data-testid="dish-info-panel">
-      {image && (
+      {image ? (
         <div className="rounded-lg overflow-hidden bg-muted" data-testid="dish-image-container">
           <img
             src={image}
@@ -64,6 +70,10 @@ export function DishInfoPanel({
               (e.target as HTMLImageElement).style.display = "none";
             }}
           />
+        </div>
+      ) : (
+        <div className="rounded-lg overflow-hidden bg-muted/50 h-40 flex items-center justify-center" data-testid="dish-image-placeholder">
+          <ImageIcon className="h-10 w-10 text-muted-foreground/30" />
         </div>
       )}
 
@@ -77,7 +87,7 @@ export function DishInfoPanel({
           )}
         </div>
         <span className="font-semibold text-sm shrink-0" data-testid="text-dish-price">
-          ${Number(price).toFixed(2)}
+          {fmt(price)}
         </span>
       </div>
 

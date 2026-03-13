@@ -3,23 +3,24 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+  Table as UITable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Search, Eye, ChevronUp, ChevronDown, ClipboardList, Clock, CheckCircle2,
   XCircle, CircleDot, Send, ChefHat, Bell, UtensilsCrossed, CreditCard, Ban,
-  Receipt, Banknote, Wallet, DollarSign, Printer,
+  Receipt, Banknote, Wallet, DollarSign,
 } from "lucide-react";
-import type { Order, OrderItem } from "@shared/schema";
+import type { Order, OrderItem, Table } from "@shared/schema";
 
 type OrderWithItems = Order & { items?: OrderItem[] };
 
@@ -102,15 +103,18 @@ function formatDate(date: string | Date | null) {
   return new Date(date).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-function formatCurrency(value: string | number | null) {
-  if (value == null) return "$0.00";
-  return `$${Number(value).toFixed(2)}`;
-}
+type PaymentMethod = "cash" | "card" | "upi";
 
 export default function OrdersPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const fmt = (val: string | number | null) => {
+    if (val == null) return sharedFormatCurrency(0, tenantCurrency);
+    return sharedFormatCurrency(val, tenantCurrency);
+  };
 
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -121,9 +125,10 @@ export default function OrdersPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [billPreviewOrder, setBillPreviewOrder] = useState<OrderWithItems | null>(null);
+  const [billPaymentMethod, setBillPaymentMethod] = useState<PaymentMethod>("cash");
 
   const { data: orders = [], isLoading } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
-  const { data: tables = [] } = useQuery<any[]>({ queryKey: ["/api/tables"] });
+  const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
 
   const { data: selectedOrderDetail } = useQuery<OrderWithItems>({
     queryKey: ["/api/orders", selectedOrderId],
@@ -136,22 +141,24 @@ export default function OrdersPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status }: { id: string; status: string }) => {
-      await apiRequest("PATCH", `/api/orders/${id}`, { status });
+    mutationFn: async ({ id, status, paymentMethod: pm }: { id: string; status: string; paymentMethod?: string }) => {
+      const body: Record<string, string> = { status };
+      if (pm) body.paymentMethod = pm;
+      await apiRequest("PATCH", `/api/orders/${id}`, body);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       if (selectedOrderId) queryClient.invalidateQueries({ queryKey: ["/api/orders", selectedOrderId] });
       toast({ title: "Order status updated" });
     },
-    onError: (err: any) => {
+    onError: (err: Error) => {
       toast({ variant: "destructive", title: "Failed to update", description: err.message });
     },
   });
 
   const tableMap = useMemo(() => {
     const map: Record<string, string> = {};
-    tables.forEach((t: any) => { map[t.id] = `Table ${t.number}`; });
+    tables.forEach((t) => { map[t.id] = `Table ${t.number}`; });
     return map;
   }, [tables]);
 
@@ -205,8 +212,9 @@ export default function OrdersPage() {
     try {
       const res = await fetch(`/api/orders/${orderId}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch order");
-      const order = await res.json();
+      const order: OrderWithItems = await res.json();
       setBillPreviewOrder(order);
+      setBillPaymentMethod("cash");
     } catch {
       toast({ variant: "destructive", title: "Error loading bill" });
     }
@@ -286,7 +294,7 @@ export default function OrdersPage() {
             <div className="p-8 text-center text-muted-foreground" data-testid="text-no-orders">No orders found matching your filters.</div>
           ) : (
             <div className="overflow-x-auto">
-              <Table>
+              <UITable>
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[120px]">Order ID</TableHead>
@@ -329,7 +337,7 @@ export default function OrdersPage() {
                             {statusLabels[order.status || "new"]}
                           </span>
                         </TableCell>
-                        <TableCell className="font-medium" data-testid={`text-total-${order.id}`}>{formatCurrency(order.total)}</TableCell>
+                        <TableCell className="font-medium" data-testid={`text-total-${order.id}`}>{fmt(order.total)}</TableCell>
                         <TableCell className="text-sm" data-testid={`text-payment-${order.id}`}>{order.paymentMethod || "—"}</TableCell>
                         <TableCell className="text-sm text-muted-foreground" data-testid={`text-date-${order.id}`}>{formatDate(order.createdAt)}</TableCell>
                         <TableCell>
@@ -342,7 +350,7 @@ export default function OrdersPage() {
                                 <Receipt className="h-4 w-4" />
                               </Button>
                             )}
-                            {canUpdateStatus && NEXT_STATUS[order.status || "new"] && (
+                            {canUpdateStatus && NEXT_STATUS[order.status || "new"] && !isReadyToPay && (
                               <Button variant="outline" size="sm" onClick={() => updateStatusMutation.mutate({ id: order.id, status: NEXT_STATUS[order.status || "new"]! })} disabled={updateStatusMutation.isPending} data-testid={`button-advance-status-${order.id}`} className="hover:scale-110 transition-transform">
                                 →
                               </Button>
@@ -353,7 +361,7 @@ export default function OrdersPage() {
                     );
                   })}
                 </TableBody>
-              </Table>
+              </UITable>
             </div>
           )}
         </CardContent>
@@ -363,6 +371,7 @@ export default function OrdersPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle data-testid="text-order-detail-title">Order #{selectedOrderDetail?.id?.slice(-6).toUpperCase() || ""}</DialogTitle>
+            <DialogDescription>View order details and manage status</DialogDescription>
           </DialogHeader>
           {selectedOrderDetail && (
             <div className="space-y-4">
@@ -411,7 +420,7 @@ export default function OrdersPage() {
                           <span className="text-muted-foreground ml-2" data-testid={`text-item-qty-${idx}`}>x{item.quantity}</span>
                           {item.notes && <p className="text-xs text-muted-foreground" data-testid={`text-item-notes-${idx}`}>{item.notes}</p>}
                         </div>
-                        <span className="font-medium" data-testid={`text-item-price-${idx}`}>{formatCurrency(Number(item.price) * (item.quantity || 1))}</span>
+                        <span className="font-medium" data-testid={`text-item-price-${idx}`}>{fmt(Number(item.price) * (item.quantity || 1))}</span>
                       </div>
                     ))}
                   </div>
@@ -423,22 +432,22 @@ export default function OrdersPage() {
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span data-testid="text-detail-subtotal">{formatCurrency(selectedOrderDetail.subtotal)}</span>
+                  <span data-testid="text-detail-subtotal">{fmt(selectedOrderDetail.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Tax</span>
-                  <span data-testid="text-detail-tax">{formatCurrency(selectedOrderDetail.tax)}</span>
+                  <span data-testid="text-detail-tax">{fmt(selectedOrderDetail.tax)}</span>
                 </div>
                 {Number(selectedOrderDetail.discount) > 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Discount</span>
-                    <span className="text-red-500" data-testid="text-detail-discount">-{formatCurrency(selectedOrderDetail.discount)}</span>
+                    <span className="text-red-500" data-testid="text-detail-discount">-{fmt(selectedOrderDetail.discount)}</span>
                   </div>
                 )}
                 <Separator />
                 <div className="flex justify-between font-bold text-base">
                   <span>Total</span>
-                  <span data-testid="text-detail-total">{formatCurrency(selectedOrderDetail.total)}</span>
+                  <span data-testid="text-detail-total">{fmt(selectedOrderDetail.total)}</span>
                 </div>
               </div>
               {canUpdateStatus && (
@@ -449,8 +458,8 @@ export default function OrdersPage() {
                     </Button>
                   )}
                   {selectedOrderDetail.status === "ready_to_pay" && (
-                    <Button className="bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => { handleBillPreview(selectedOrderDetail.id); }} data-testid="button-view-bill">
-                      <Receipt className="h-4 w-4 mr-1" /> View Bill
+                    <Button className="bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => handleBillPreview(selectedOrderDetail.id)} data-testid="button-view-bill">
+                      <Receipt className="h-4 w-4 mr-1" /> View Bill & Settle
                     </Button>
                   )}
                   {NEXT_STATUS[selectedOrderDetail.status || "new"] && selectedOrderDetail.status !== "served" && selectedOrderDetail.status !== "ready_to_pay" && (
@@ -477,6 +486,7 @@ export default function OrdersPage() {
               <Receipt className="h-5 w-5 text-amber-600" />
               Bill Preview
             </DialogTitle>
+            <DialogDescription>Review and settle the bill</DialogDescription>
           </DialogHeader>
           {billPreviewOrder && (
             <div className="space-y-4">
@@ -496,7 +506,7 @@ export default function OrdersPage() {
                       <span>{item.name}</span>
                       <span className="text-muted-foreground ml-1">x{item.quantity}</span>
                     </div>
-                    <span className="font-medium">{formatCurrency(Number(item.price) * (item.quantity || 1))}</span>
+                    <span className="font-medium">{fmt(Number(item.price) * (item.quantity || 1))}</span>
                   </div>
                 ))}
               </div>
@@ -506,29 +516,29 @@ export default function OrdersPage() {
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Subtotal</span>
-                  <span data-testid="text-bill-subtotal">{formatCurrency(billPreviewOrder.subtotal)}</span>
+                  <span data-testid="text-bill-subtotal">{fmt(billPreviewOrder.subtotal)}</span>
                 </div>
                 {Number(billPreviewOrder.discount) > 0 && (
                   <div className="flex justify-between text-green-600">
                     <span>Discount</span>
-                    <span data-testid="text-bill-discount">-{formatCurrency(billPreviewOrder.discount)}</span>
+                    <span data-testid="text-bill-discount">-{fmt(billPreviewOrder.discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Tax (5%)</span>
-                  <span data-testid="text-bill-tax">{formatCurrency(billPreviewOrder.tax)}</span>
+                  <span data-testid="text-bill-tax">{fmt(billPreviewOrder.tax)}</span>
                 </div>
                 {billPreviewOrder.orderType === "dine_in" && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Service Charge (5%)</span>
-                    <span data-testid="text-bill-service">{formatCurrency(Number(billPreviewOrder.subtotal) * SERVICE_CHARGE_RATE)}</span>
+                    <span data-testid="text-bill-service">{fmt(Number(billPreviewOrder.subtotal) * SERVICE_CHARGE_RATE)}</span>
                   </div>
                 )}
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
                   <span data-testid="text-bill-total">
-                    {formatCurrency(
+                    {fmt(
                       Number(billPreviewOrder.total) +
                       (billPreviewOrder.orderType === "dine_in" ? Number(billPreviewOrder.subtotal) * SERVICE_CHARGE_RATE : 0)
                     )}
@@ -536,16 +546,26 @@ export default function OrdersPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between pt-2 text-xs text-muted-foreground border-t">
-                <span>Payment: {billPreviewOrder.paymentMethod || "Pending"}</span>
-                <span>Order #{billPreviewOrder.id.slice(-6).toUpperCase()}</span>
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
+                <div className="flex gap-1">
+                  <Button variant={billPaymentMethod === "cash" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setBillPaymentMethod("cash")} data-testid="button-bill-cash">
+                    <Banknote className="h-3.5 w-3.5 mr-1" /> Cash
+                  </Button>
+                  <Button variant={billPaymentMethod === "card" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setBillPaymentMethod("card")} data-testid="button-bill-card">
+                    <CreditCard className="h-3.5 w-3.5 mr-1" /> Card
+                  </Button>
+                  <Button variant={billPaymentMethod === "upi" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setBillPaymentMethod("upi")} data-testid="button-bill-upi">
+                    <Wallet className="h-3.5 w-3.5 mr-1" /> UPI
+                  </Button>
+                </div>
               </div>
 
               <DialogFooter className="gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setBillPreviewOrder(null)} data-testid="button-close-bill">
                   Close
                 </Button>
-                <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => { updateStatusMutation.mutate({ id: billPreviewOrder.id, status: "paid" }); setBillPreviewOrder(null); }} disabled={updateStatusMutation.isPending} data-testid="button-mark-paid">
+                <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => { updateStatusMutation.mutate({ id: billPreviewOrder.id, status: "paid", paymentMethod: billPaymentMethod }); setBillPreviewOrder(null); }} disabled={updateStatusMutation.isPending} data-testid="button-mark-paid">
                   <DollarSign className="h-4 w-4 mr-1" /> Mark as Paid
                 </Button>
               </DialogFooter>

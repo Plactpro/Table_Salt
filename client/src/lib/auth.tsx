@@ -10,6 +10,7 @@ export interface TenantInfo {
   name: string;
   plan: SubscriptionTier;
   businessType: BusinessType;
+  currency?: string;
 }
 
 export interface AuthUser {

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +31,7 @@ const offerTypeLabels: Record<string, string> = {
   buy_one_get_one: "Buy One Get One",
   combo_deal: "Combo Deal",
   free_item: "Free Item",
+  happy_hour: "Happy Hour",
 };
 
 const offerTypeIcons: Record<string, React.ElementType> = {
@@ -37,6 +40,7 @@ const offerTypeIcons: Record<string, React.ElementType> = {
   buy_one_get_one: Gift,
   combo_deal: ShoppingBag,
   free_item: Zap,
+  happy_hour: Clock,
 };
 
 const offerScopeLabels: Record<string, string> = {
@@ -104,6 +108,9 @@ const emptyForm: OfferForm = {
 export default function OffersPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const fmt = (val: string | number) => sharedFormatCurrency(val, tenantCurrency);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
@@ -212,8 +219,8 @@ export default function OffersPage() {
   }
 
   function formatOfferValue(offer: Offer) {
-    if (offer.type === "percentage") return `${offer.value}%`;
-    if (offer.type === "fixed_amount") return `$${Number(offer.value).toFixed(2)}`;
+    if (offer.type === "percentage" || offer.type === "happy_hour") return `${offer.value}%`;
+    if (offer.type === "fixed_amount") return fmt(Number(offer.value));
     if (offer.type === "buy_one_get_one") return "BOGO";
     return String(offer.value);
   }
@@ -343,7 +350,7 @@ export default function OffersPage() {
                         </Badge>
                         {offer.minOrderAmount && Number(offer.minOrderAmount) > 0 && (
                           <Badge variant="outline" className="text-xs">
-                            Min: ${Number(offer.minOrderAmount).toFixed(0)}
+                            Min: {fmt(Number(offer.minOrderAmount))}
                           </Badge>
                         )}
                         {offer.usageLimit && (

@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -38,9 +40,25 @@ const itemVariants = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 }
 
 const COMMON_TAGS = ["Spicy", "Vegan", "Gluten-Free", "Dairy-Free", "Nut-Free", "Organic", "Chef's Special", "New", "Popular", "Seasonal"];
 
+interface IngredientItem {
+  name: string;
+  allergen?: boolean;
+}
+
+interface ParsedIngredients {
+  items?: IngredientItem[];
+  allergens?: string[];
+  nutritionalNotes?: string;
+  preparationNotes?: string;
+  calories?: number;
+}
+
 export default function MenuPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const fmt = (val: string | number) => sharedFormatCurrency(val, tenantCurrency);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
@@ -180,10 +198,10 @@ export default function MenuPage() {
     }
   }
 
-  function parseIngredients(item: MenuItem): any {
+  function parseIngredients(item: MenuItem): ParsedIngredients | null {
     if (!item.ingredients) return null;
-    if (typeof item.ingredients === "object") return item.ingredients;
-    try { return JSON.parse(String(item.ingredients)); } catch { return null; }
+    if (typeof item.ingredients === "object") return item.ingredients as ParsedIngredients;
+    try { return JSON.parse(String(item.ingredients)) as ParsedIngredients; } catch { return null; }
   }
 
   function openAddItem() {
@@ -211,7 +229,7 @@ export default function MenuPage() {
       spicyLevel: item.spicyLevel ?? 0,
       tags: (item.tags as string[]) || [],
       customTag: "",
-      ingredientsList: ing?.items?.map((i: any) => i.name).join(", ") || "",
+      ingredientsList: ing?.items?.map((i) => i.name).join(", ") || "",
       allergens: ing?.allergens?.join(", ") || "",
       nutritionalNotes: ing?.nutritionalNotes || "",
       preparationNotes: ing?.preparationNotes || "",
@@ -222,7 +240,7 @@ export default function MenuPage() {
 
   function handleItemSubmit() {
     if (!itemForm.name.trim() || !itemForm.price) return;
-    const ingredients: any = {};
+    const ingredients: ParsedIngredients = {};
     if (itemForm.ingredientsList.trim()) {
       ingredients.items = itemForm.ingredientsList.split(",").map((s) => {
         const name = s.trim();
@@ -357,15 +375,19 @@ export default function MenuPage() {
               {filteredItems.map((item) => (
                 <motion.div key={item.id} variants={itemVariants} layout>
                   <Card className="relative group transition-all duration-200 hover:shadow-lg hover:scale-[1.02]" data-testid={`card-menu-item-${item.id}`}>
-                    {item.image && (
+                    {item.image ? (
                       <div className="h-32 overflow-hidden rounded-t-lg bg-muted">
                         <img
                           src={item.image}
                           alt={item.name}
                           className="w-full h-full object-cover"
                           data-testid={`img-menu-item-${item.id}`}
-                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; (e.target as HTMLImageElement).parentElement!.innerHTML = '<div class="w-full h-full flex items-center justify-center"><svg class="h-8 w-8 text-muted-foreground/30" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7h5l2-3h4l2 3h5v12H3z"/><circle cx="12" cy="13" r="3"/></svg></div>'; }}
                         />
+                      </div>
+                    ) : (
+                      <div className="h-32 overflow-hidden rounded-t-lg bg-muted/50 flex items-center justify-center" data-testid={`placeholder-menu-item-${item.id}`}>
+                        <ImageIcon className="h-8 w-8 text-muted-foreground/30" />
                       </div>
                     )}
                     <CardContent className="p-4 space-y-3">
@@ -417,7 +439,7 @@ export default function MenuPage() {
 
                       <div className="flex items-center justify-between">
                         <span className="text-base font-semibold" data-testid={`text-item-price-${item.id}`}>
-                          ${Number(item.price).toFixed(2)}
+                          {fmt(item.price)}
                         </span>
                         <Badge variant={item.categoryId ? "secondary" : "outline"} className="text-xs">
                           {getCategoryName(item.categoryId)}
@@ -632,6 +654,7 @@ export default function MenuPage() {
               spicyLevel={detailItem.spicyLevel}
               tags={detailItem.tags as string[] | null}
               ingredients={parseIngredients(detailItem)}
+              currency={tenantCurrency}
             />
           )}
         </DialogContent>
