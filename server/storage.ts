@@ -106,10 +106,13 @@ export interface IStorage {
   createPerformanceLog(data: InsertEmployeePerformanceLog): Promise<EmployeePerformanceLog>;
   deletePerformanceLogByTenant(id: string, tenantId: string): Promise<void>;
 
-  getCustomer(id: string): Promise<Customer | undefined>;
-  deleteCustomer(id: string): Promise<void>;
+  getCustomerByTenant(id: string, tenantId: string): Promise<Customer | undefined>;
+  updateCustomerByTenant(id: string, tenantId: string, data: Partial<InsertCustomer>): Promise<Customer | undefined>;
+  deleteCustomerByTenant(id: string, tenantId: string): Promise<void>;
   getCustomersByLoyaltyTier(tenantId: string, tier: string): Promise<Customer[]>;
   getCustomersByTags(tenantId: string, tag: string): Promise<Customer[]>;
+
+  updatePerformanceLogByTenant(id: string, tenantId: string, data: Partial<InsertEmployeePerformanceLog>): Promise<EmployeePerformanceLog | undefined>;
 
   getOrdersWithOfferDetails(tenantId: string): Promise<any[]>;
 
@@ -372,16 +375,24 @@ export class DatabaseStorage implements IStorage {
     const [p] = await db.insert(employeePerformanceLogs).values(data).returning();
     return p;
   }
+  async updatePerformanceLogByTenant(id: string, tenantId: string, data: Partial<InsertEmployeePerformanceLog>) {
+    const [p] = await db.update(employeePerformanceLogs).set(data).where(and(eq(employeePerformanceLogs.id, id), eq(employeePerformanceLogs.tenantId, tenantId))).returning();
+    return p;
+  }
   async deletePerformanceLogByTenant(id: string, tenantId: string) {
     await db.delete(employeePerformanceLogs).where(and(eq(employeePerformanceLogs.id, id), eq(employeePerformanceLogs.tenantId, tenantId)));
   }
 
-  async getCustomer(id: string) {
-    const [c] = await db.select().from(customers).where(eq(customers.id, id));
+  async getCustomerByTenant(id: string, tenantId: string) {
+    const [c] = await db.select().from(customers).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId)));
     return c;
   }
-  async deleteCustomer(id: string) {
-    await db.delete(customers).where(eq(customers.id, id));
+  async updateCustomerByTenant(id: string, tenantId: string, data: Partial<InsertCustomer>) {
+    const [c] = await db.update(customers).set(data).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId))).returning();
+    return c;
+  }
+  async deleteCustomerByTenant(id: string, tenantId: string) {
+    await db.delete(customers).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId)));
   }
   async getCustomersByLoyaltyTier(tenantId: string, tier: string) {
     return db.select().from(customers).where(and(eq(customers.tenantId, tenantId), eq(customers.loyaltyTier, tier)));
