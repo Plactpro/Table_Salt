@@ -90,7 +90,7 @@ export async function seedDatabase() {
   ];
 
   for (const item of items) {
-    await storage.createMenuItem({ ...item, tenantId: tenant.id } as any);
+    await storage.createMenuItem({ ...item, tenantId: tenant.id });
   }
 
   const zones = ["Main Hall", "Patio", "Private"];
