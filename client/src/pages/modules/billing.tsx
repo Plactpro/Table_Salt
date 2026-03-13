@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import {
   CreditCard, Check, Crown, Zap, Star, Shield, ArrowRight,
   Building2, Users, BarChart3, Globe, Receipt, Search, Calendar,
-  DollarSign, TrendingUp, FileText, LayoutGrid, Table2, CalendarDays,
+  DollarSign, TrendingUp, FileText, LayoutGrid, Table2, CalendarDays, User,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import type { Order, OrderItem, Table as TableType } from "@shared/schema";
+import type { Order, OrderItem, Table as TableType, Customer } from "@shared/schema";
 
 interface TenantData {
   id: string;
@@ -74,7 +74,7 @@ function getDateKey(date: string | Date | null): string {
   return new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "2-digit", day: "2-digit" });
 }
 
-type InvoiceView = "list" | "by_table" | "by_day";
+type InvoiceView = "list" | "by_table" | "by_day" | "by_customer";
 
 export default function BillingPage() {
   const { user } = useAuth();
@@ -87,6 +87,7 @@ export default function BillingPage() {
   const { data: tenant } = useQuery<TenantData>({ queryKey: ["/api/tenant"] });
   const { data: orders = [] } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
   const { data: tables = [] } = useQuery<TableType[]>({ queryKey: ["/api/tables"] });
+  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
 
   const [activeTab, setActiveTab] = useState<"subscription" | "invoices">("subscription");
   const [invoiceSearch, setInvoiceSearch] = useState("");
@@ -106,6 +107,12 @@ export default function BillingPage() {
     tables.forEach((t) => { map[t.id] = `Table ${t.number}`; });
     return map;
   }, [tables]);
+
+  const customerMap = useMemo(() => {
+    const map: Record<string, string> = {};
+    customers.forEach((c) => { map[c.id] = c.name; });
+    return map;
+  }, [customers]);
 
   const paidOrders = useMemo(() => orders.filter((o) => o.status === "paid"), [orders]);
 
@@ -148,6 +155,18 @@ export default function BillingPage() {
     });
     return Object.entries(groups).sort((a, b) => b[1].revenue - a[1].revenue);
   }, [filteredInvoices, tableMap]);
+
+  const byCustomerData = useMemo(() => {
+    const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
+    filteredInvoices.forEach((o) => {
+      const key = o.customerId || "walk_in";
+      const label = o.customerId ? (customerMap[o.customerId] || "Unknown Customer") : "Walk-in";
+      if (!groups[key]) groups[key] = { label, orders: [], revenue: 0 };
+      groups[key].orders.push(o);
+      groups[key].revenue += Number(o.total);
+    });
+    return Object.entries(groups).sort((a, b) => b[1].revenue - a[1].revenue);
+  }, [filteredInvoices, customerMap]);
 
   const byDayData = useMemo(() => {
     const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
@@ -375,6 +394,9 @@ export default function BillingPage() {
                   <Button variant={invoiceView === "by_table" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_table")} data-testid="button-view-by-table">
                     <Table2 className="h-3.5 w-3.5 mr-1" /> By Table
                   </Button>
+                  <Button variant={invoiceView === "by_customer" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_customer")} data-testid="button-view-by-customer">
+                    <User className="h-3.5 w-3.5 mr-1" /> By Customer
+                  </Button>
                   <Button variant={invoiceView === "by_day" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_day")} data-testid="button-view-by-day">
                     <CalendarDays className="h-3.5 w-3.5 mr-1" /> By Day
                   </Button>
@@ -492,6 +514,65 @@ export default function BillingPage() {
                                 <TableCell className="font-mono text-xs">#{order.id.slice(-6).toUpperCase()}</TableCell>
                                 <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
                                 <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
+                                <TableCell className="text-sm capitalize">{order.paymentMethod || "—"}</TableCell>
+                                <TableCell className="font-medium">{fmt(order.total)}</TableCell>
+                                <TableCell>
+                                  <Button variant="ghost" size="sm" onClick={() => handleViewInvoice(order.id)} data-testid={`button-view-invoice-${order.id}`}>
+                                    <FileText className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))
+              )}
+            </div>
+          )}
+
+          {invoiceView === "by_customer" && (
+            <div className="space-y-4" data-testid="view-by-customer">
+              {byCustomerData.length === 0 ? (
+                <Card><CardContent className="p-8 text-center text-muted-foreground">No invoices found.</CardContent></Card>
+              ) : (
+                byCustomerData.map(([key, group]) => (
+                  <Card key={key} data-testid={`customer-group-${key}`}>
+                    <CardHeader className="pb-2">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <User className="h-4 w-4 text-primary" />
+                          {group.label}
+                        </CardTitle>
+                        <div className="flex items-center gap-3 text-sm">
+                          <span className="text-muted-foreground">{group.orders.length} orders</span>
+                          <span className="font-bold" data-testid={`text-customer-revenue-${key}`}>{fmt(group.revenue)}</span>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Invoice #</TableHead>
+                              <TableHead>Date</TableHead>
+                              <TableHead>Type</TableHead>
+                              <TableHead>Table</TableHead>
+                              <TableHead>Payment</TableHead>
+                              <TableHead>Total</TableHead>
+                              <TableHead className="w-[80px]">View</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {group.orders.map((order) => (
+                              <TableRow key={order.id} className="hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
+                                <TableCell className="font-mono text-xs">#{order.id.slice(-6).toUpperCase()}</TableCell>
+                                <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
+                                <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
+                                <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>
                                 <TableCell className="text-sm capitalize">{order.paymentMethod || "—"}</TableCell>
                                 <TableCell className="font-medium">{fmt(order.total)}</TableCell>
                                 <TableCell>
