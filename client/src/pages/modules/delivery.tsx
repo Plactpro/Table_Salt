@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { formatCurrency } from "@shared/currency";
+import { formatCurrency, type FormatCurrencyOptions } from "@shared/currency";
 import { motion } from "framer-motion";
 import {
   Truck, Package, MapPin, Phone, Clock, User, Plus,
@@ -71,6 +71,8 @@ export default function DeliveryPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const currency = user?.tenant?.currency || "USD";
+  const currencyOpts: FormatCurrencyOptions = { position: (user?.tenant?.currencyPosition || "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 };
+  const fmt = (val: string | number) => formatCurrency(val, currency, currencyOpts);
 
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryOrder | null>(null);
@@ -362,7 +364,7 @@ export default function DeliveryPage() {
                     <div className="flex items-center gap-3">
                       {delivery.deliveryFee && (
                         <span className="font-medium text-sm">
-                          Fee: {formatCurrency(Number(delivery.deliveryFee), currency)}
+                          Fee: {fmt(Number(delivery.deliveryFee))}
                         </span>
                       )}
                       {canAdvance && (
@@ -449,7 +451,7 @@ export default function DeliveryPage() {
                   </div>
                   <div className="p-3 rounded-lg bg-muted/50 text-center">
                     <p className="text-xs text-muted-foreground">Fee</p>
-                    <p className="font-bold">{formatCurrency(Number(selectedDelivery.deliveryFee || 0), currency)}</p>
+                    <p className="font-bold">{fmt(Number(selectedDelivery.deliveryFee || 0))}</p>
                   </div>
                 </div>
 

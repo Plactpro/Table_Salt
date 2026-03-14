@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { formatCurrency } from "@shared/currency";
+import { formatCurrency, type FormatCurrencyOptions } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Search, Plus, Edit, Trash2, Phone, Mail, Star,
@@ -84,6 +84,8 @@ export default function CrmPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const currency = user?.tenant?.currency || "USD";
+  const currencyOpts: FormatCurrencyOptions = { position: (user?.tenant?.currencyPosition || "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 };
+  const fmt = (val: string | number) => formatCurrency(val, currency, currencyOpts);
 
   const [search, setSearch] = useState("");
   const [filterTier, setFilterTier] = useState("all");
@@ -316,7 +318,7 @@ export default function CrmPage() {
             <div>
               <p className="text-sm text-muted-foreground">Total Revenue</p>
               <p className="text-2xl font-bold" data-testid="text-total-revenue">
-                {formatCurrency(totalRevenue, currency)}
+                {fmt(totalRevenue)}
               </p>
             </div>
           </CardContent>
@@ -329,7 +331,7 @@ export default function CrmPage() {
             <div>
               <p className="text-sm text-muted-foreground">Avg Spend</p>
               <p className="text-2xl font-bold" data-testid="text-avg-spend">
-                {formatCurrency(avgSpend, currency)}
+                {fmt(avgSpend)}
               </p>
             </div>
           </CardContent>
@@ -420,7 +422,7 @@ export default function CrmPage() {
                       <div className="flex items-center gap-1 text-muted-foreground">
                         <DollarSign className="w-3 h-3" />
                         <span data-testid={`text-spent-${customer.id}`}>
-                          {formatCurrency(Number(customer.totalSpent || 0), currency)}
+                          {fmt(Number(customer.totalSpent || 0))}
                         </span>
                       </div>
                       <ChevronRight className="w-4 h-4 text-muted-foreground" />
@@ -461,9 +463,8 @@ export default function CrmPage() {
                   <div className="flex items-center justify-between mb-2">
                     <Badge className={tierColors[tier]}>{tier} ({tierCustomers.length})</Badge>
                     <span className="text-xs text-muted-foreground">
-                      Avg spend: {formatCurrency(
-                        tierCustomers.reduce((s, c) => s + Number(c.totalSpent || 0), 0) / tierCustomers.length,
-                        currency
+                      Avg spend: {fmt(
+                        tierCustomers.reduce((s, c) => s + Number(c.totalSpent || 0), 0) / tierCustomers.length
                       )}
                     </span>
                   </div>
@@ -563,13 +564,13 @@ export default function CrmPage() {
                 <div className="p-3 rounded-lg bg-muted/50">
                   <p className="text-xs text-muted-foreground">Total Spent</p>
                   <p className="font-bold" data-testid="text-profile-spent">
-                    {formatCurrency(Number(selectedCustomer.totalSpent || 0), currency)}
+                    {fmt(Number(selectedCustomer.totalSpent || 0))}
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-muted/50">
                   <p className="text-xs text-muted-foreground">Avg Spend</p>
                   <p className="font-bold" data-testid="text-profile-avg">
-                    {formatCurrency(Number(selectedCustomer.averageSpend || 0), currency)}
+                    {fmt(Number(selectedCustomer.averageSpend || 0))}
                   </p>
                 </div>
               </div>
@@ -632,7 +633,7 @@ export default function CrmPage() {
                           </div>
                           <div className="flex items-center gap-2">
                             <Badge variant="outline" className="text-xs">{order.status}</Badge>
-                            <span className="font-medium">{formatCurrency(Number(order.total || 0), currency)}</span>
+                            <span className="font-medium">{fmt(Number(order.total || 0))}</span>
                           </div>
                         </div>
                       ))}
@@ -792,7 +793,7 @@ export default function CrmPage() {
                       .slice(0, 10)
                       .map((o) => (
                         <SelectItem key={o.id} value={o.id}>
-                          #{o.id.slice(-6).toUpperCase()} · {formatCurrency(Number(o.total || 0), currency)} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ""}
+                          #{o.id.slice(-6).toUpperCase()} · {fmt(Number(o.total || 0))} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ""}
                         </SelectItem>
                       ))}
                   </SelectContent>
