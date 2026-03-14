@@ -10,6 +10,7 @@ import {
   insertCustomerSchema, insertStaffScheduleSchema, insertUserSchema,
   insertOfferSchema, insertDeliveryOrderSchema, insertEmployeePerformanceLogSchema,
   insertSalesInquirySchema, insertSupportTicketSchema,
+  insertCleaningTemplateSchema, insertCleaningLogSchema,
 } from "@shared/schema";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
 
@@ -805,6 +806,82 @@ export async function registerRoutes(
       console.error("[Clock-Out Error]", err);
       res.status(500).json({ message: "Failed to clock out" });
     }
+  });
+
+  app.get("/api/cleaning/templates", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const templates = await storage.getCleaningTemplatesByTenant(user.tenantId);
+    res.json(templates);
+  });
+
+  app.post("/api/cleaning/templates", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { items, ...templateData } = req.body;
+      const template = await storage.createCleaningTemplate({ ...templateData, tenantId: user.tenantId });
+      if (items && Array.isArray(items)) {
+        for (let i = 0; i < items.length; i++) {
+          await storage.createCleaningTemplateItem({ templateId: template.id, task: items[i].task || items[i], sortOrder: i });
+        }
+      }
+      const templateItems = await storage.getCleaningTemplateItems(template.id);
+      res.json({ ...template, items: templateItems });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/cleaning/templates/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { items, ...templateData } = req.body;
+      const template = await storage.updateCleaningTemplate(req.params.id, user.tenantId, templateData);
+      if (!template) return res.status(404).json({ message: "Template not found" });
+      if (items && Array.isArray(items)) {
+        await storage.deleteCleaningTemplateItems(template.id);
+        for (let i = 0; i < items.length; i++) {
+          await storage.createCleaningTemplateItem({ templateId: template.id, task: items[i].task || items[i], sortOrder: i });
+        }
+      }
+      const templateItems = await storage.getCleaningTemplateItems(template.id);
+      res.json({ ...template, items: templateItems });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/cleaning/templates/:id", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    await storage.deleteCleaningTemplate(req.params.id, user.tenantId);
+    res.json({ message: "Deleted" });
+  });
+
+  app.get("/api/cleaning/templates/:id/items", requireAuth, async (req, res) => {
+    const items = await storage.getCleaningTemplateItems(req.params.id);
+    res.json(items);
+  });
+
+  app.get("/api/cleaning/logs", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const date = req.query.date ? new Date(req.query.date as string) : new Date();
+    const logs = await storage.getCleaningLogsByTenant(user.tenantId, date);
+    res.json(logs);
+  });
+
+  app.post("/api/cleaning/logs", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const log = await storage.createCleaningLog({ ...req.body, tenantId: user.tenantId, completedBy: user.id });
+      res.json(log);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/cleaning/logs/:id", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    await storage.deleteCleaningLog(req.params.id, user.tenantId);
+    res.json({ message: "Deleted" });
   });
 
   app.get("/api/health", (_req, res) => {
