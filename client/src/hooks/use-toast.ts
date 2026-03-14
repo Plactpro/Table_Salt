@@ -166,11 +166,7 @@ function toast({ ...props }: Toast) {
     emitChefEvent("error")
   } else if (props.title && typeof props.title === "string") {
     const t = props.title.toLowerCase()
-    if (t.includes("order") && (t.includes("success") || t.includes("placed"))) {
-      emitChefEvent("order-complete")
-    } else if (t.includes("reservation") && t.includes("created")) {
-      emitChefEvent("reservation-new")
-    } else if (t.includes("success") || t.includes("added") || t.includes("updated") || t.includes("created") || t.includes("saved")) {
+    if (t.includes("success") || t.includes("added") || t.includes("updated") || t.includes("created") || t.includes("saved")) {
       emitChefEvent("success")
     }
   }

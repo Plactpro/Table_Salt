@@ -19,7 +19,7 @@ type AnimState =
 const SPEECH: Record<string, string[]> = {
   idle: ["..."],
   greeting: ["Welcome, Chef! 👋", "Ready to cook!", "Let's cook something great!"],
-  hover: ["Hi there! 🍳", "Need help?", "What's cookin'?"],
+  hover: ["Hi Chef! 🍳", "Hi there!", "Need help?", "What's cookin'?"],
   click: ["Ready to cook! 🔥", "At your service!", "Let's go! 💪"],
   scroll: ["Looking good! 👍", "Keep going!", "Nice browsing!"],
   success: ["Perfetto! 🎉", "Magnifique!", "Bravo! 👏", "Excellent work!"],
