@@ -2,12 +2,12 @@ import type { InsertSalesInquiry, InsertSupportTicket } from "@shared/schema";
 
 export const emailConfig = {
   sales: {
-    email: process.env.SALES_EMAIL || "sales@serveos.com",
+    email: process.env.SALES_EMAIL || "sales@tablesalt.app",
     cc: process.env.SALES_CC_EMAILS?.split(",").filter(Boolean) || [],
     subjectPrefix: "Sales Inquiry",
   },
   support: {
-    email: process.env.SUPPORT_EMAIL || "support@serveos.com",
+    email: process.env.SUPPORT_EMAIL || "support@tablesalt.app",
     cc: process.env.SUPPORT_CC_EMAILS?.split(",").filter(Boolean) || [],
     subjectPrefix: "Support Request",
   },

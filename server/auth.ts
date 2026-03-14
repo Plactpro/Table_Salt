@@ -29,7 +29,7 @@ export function setupAuth(app: Express) {
   app.use(
     session({
       store: new PgSession({ pool, createTableIfMissing: true }),
-      secret: process.env.SESSION_SECRET || "serveos-secret-key-change-in-prod",
+      secret: process.env.SESSION_SECRET || "table-salt-secret-key-change-in-prod",
       resave: false,
       saveUninitialized: false,
       cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 },

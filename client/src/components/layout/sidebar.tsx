@@ -3,6 +3,7 @@ import { useAuth, Role } from "@/lib/auth";
 import { useSubscription } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
+import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import {
   Tooltip,
   TooltipContent,
@@ -21,7 +22,6 @@ import {
   Users,
   BarChart3,
   Settings,
-  UtensilsCrossed,
   Lock,
   Store,
   CreditCard,
@@ -157,26 +157,7 @@ export default function Sidebar() {
       <SandDecoration />
 
       <div className="relative flex items-center gap-3 px-6 py-5 overflow-hidden" style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
-        <motion.div
-          whileHover={{ rotate: 15, scale: 1.1 }}
-          transition={{ type: "spring", stiffness: 300, damping: 15 }}
-          className="relative"
-        >
-          <div
-            className="p-2 rounded-xl"
-            style={{
-              background: "linear-gradient(135deg, rgba(255,255,255,0.25), rgba(255,255,255,0.08))",
-              backdropFilter: "blur(8px)",
-              border: "1px solid rgba(255,255,255,0.2)",
-              boxShadow: "inset 0 1px 2px rgba(255,255,255,0.15), 0 2px 8px rgba(0,0,0,0.1)",
-            }}
-          >
-            <UtensilsCrossed className="h-5 w-5 text-[hsl(176,60%,28%)]" />
-          </div>
-        </motion.div>
-        <span className="relative text-lg font-heading font-bold text-[hsl(185,45%,12%)] drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" data-testid="text-sidebar-brand">
-          ServeOS
-        </span>
+        <TableSaltLogo variant="compact" animate textClassName="drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" />
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 relative z-10">

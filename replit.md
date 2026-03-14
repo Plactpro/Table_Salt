@@ -1,7 +1,7 @@
-# ServeOS - Restaurant Management System
+# Table Salt - Restaurant Management System
 
 ## Overview
-A multi-tenant SaaS Restaurant Management System with role-based dashboards, POS, KDS, menu/table/inventory/staff management, offers & discounts, dine-in payment flow, and reporting.
+A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (tagline: "Season Your Restaurant Success"). Features role-based dashboards, POS, KDS, menu/table/inventory/staff management, offers & discounts, dine-in payment flow, and reporting.
 
 ## Architecture
 - **Frontend**: React + TypeScript + Tailwind CSS v4 + shadcn/ui + wouter routing + framer-motion
@@ -22,6 +22,7 @@ A multi-tenant SaaS Restaurant Management System with role-based dashboards, POS
 - `client/src/lib/subscription.ts` - Subscription tiers, business types, feature gating matrix (includes "offers" feature)
 - `client/src/components/widgets/dish-info-panel.tsx` - Reusable DishInfoPanel (ingredients, allergens, nutrition, tags)
 - `client/src/App.tsx` - Router with role-based dashboard routing
+- `client/src/components/brand/table-salt-logo.tsx` - Reusable Table Salt logo component (full/compact/icon variants)
 
 ## User Roles
 - **Owner**: Full access, all dashboards and settings
