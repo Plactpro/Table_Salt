@@ -107,8 +107,39 @@ export default function StaffPage() {
     queryKey: ["/api/outlets"],
   });
 
+  const [attendanceDateFrom, setAttendanceDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0];
+  });
+  const [attendanceDateTo, setAttendanceDateTo] = useState(() => new Date().toISOString().split("T")[0]);
+
   const { data: attendanceLogs = [] } = useQuery<any[]>({
-    queryKey: ["/api/attendance"],
+    queryKey: ["/api/attendance", attendanceDateFrom, attendanceDateTo],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (attendanceDateFrom) params.set("from", attendanceDateFrom);
+      if (attendanceDateTo) { const to = new Date(attendanceDateTo); to.setDate(to.getDate() + 1); params.set("to", to.toISOString().split("T")[0]); }
+      const res = await fetch(`/api/attendance?${params}`, { credentials: "include" });
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: activeTab === "attendance",
+  });
+
+  const { data: attendanceSummary = [] } = useQuery<any[]>({
+    queryKey: ["/api/attendance/summary", attendanceDateFrom, attendanceDateTo],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (attendanceDateFrom) params.set("from", attendanceDateFrom);
+      if (attendanceDateTo) { const to = new Date(attendanceDateTo); to.setDate(to.getDate() + 1); params.set("to", to.toISOString().split("T")[0]); }
+      const res = await fetch(`/api/attendance/summary?${params}`, { credentials: "include" });
+      const data = await res.json();
+      return Array.isArray(data) ? data : [];
+    },
+    enabled: activeTab === "attendance",
+  });
+
+  const { data: attendanceSettings } = useQuery<{ lateThresholdMinutes: number }>({
+    queryKey: ["/api/attendance/settings"],
     enabled: activeTab === "attendance",
   });
 
@@ -651,12 +682,45 @@ export default function StaffPage() {
 
             return (
               <>
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div className="flex items-center gap-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">From</Label>
+                      <Input type="date" value={attendanceDateFrom} onChange={(e) => setAttendanceDateFrom(e.target.value)} className="w-40" data-testid="input-attendance-from" />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">To</Label>
+                      <Input type="date" value={attendanceDateTo} onChange={(e) => setAttendanceDateTo(e.target.value)} className="w-40" data-testid="input-attendance-to" />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Label className="text-xs text-muted-foreground whitespace-nowrap">Late Threshold</Label>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={120}
+                      className="w-20"
+                      defaultValue={attendanceSettings?.lateThresholdMinutes || 15}
+                      data-testid="input-late-threshold"
+                      onBlur={async (e) => {
+                        const val = parseInt(e.target.value);
+                        if (val > 0) {
+                          await apiRequest("PUT", "/api/attendance/settings", { lateThresholdMinutes: val });
+                          queryClient.invalidateQueries({ queryKey: ["/api/attendance/settings"] });
+                          toast({ title: "Updated", description: `Late threshold set to ${val} minutes` });
+                        }
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">min</span>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30"><LogIn className="h-5 w-5 text-green-600" /></div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Clocked In</p>
+                        <p className="text-xs text-muted-foreground">Clocked In Now</p>
                         <p className="text-2xl font-bold" data-testid="text-clocked-in-count">{clockedIn}</p>
                       </div>
                     </CardContent>
@@ -665,7 +729,7 @@ export default function StaffPage() {
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30"><CheckCircle className="h-5 w-5 text-blue-600" /></div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Completed</p>
+                        <p className="text-xs text-muted-foreground">Completed Today</p>
                         <p className="text-2xl font-bold" data-testid="text-completed-count">{completed}</p>
                       </div>
                     </CardContent>
@@ -683,21 +747,56 @@ export default function StaffPage() {
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30"><Timer className="h-5 w-5 text-purple-600" /></div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Total Hours</p>
+                        <p className="text-xs text-muted-foreground">Hours Today</p>
                         <p className="text-2xl font-bold" data-testid="text-total-hours">{totalHours.toFixed(1)}h</p>
                       </div>
                     </CardContent>
                   </Card>
                 </div>
 
+                {attendanceSummary.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5" /> Employee Summary</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {attendanceSummary.map((s: any) => (
+                          <Card key={s.userId} className="border" data-testid={`card-employee-summary-${s.userId}`}>
+                            <CardContent className="p-4">
+                              <p className="font-semibold text-sm mb-2">{staffMap.get(s.userId) || "Unknown"}</p>
+                              <div className="grid grid-cols-2 gap-2 text-xs">
+                                <div><span className="text-muted-foreground">Days Present</span><p className="font-medium">{s.totalDays}</p></div>
+                                <div><span className="text-muted-foreground">Late Days</span><p className="font-medium text-amber-600">{s.lateDays}</p></div>
+                                <div><span className="text-muted-foreground">Total Hours</span><p className="font-medium">{s.totalHours}h</p></div>
+                                <div><span className="text-muted-foreground">Avg Hours/Day</span><p className="font-medium">{s.avgHours}h</p></div>
+                              </div>
+                              <div className="mt-2">
+                                <div className="flex items-center justify-between text-xs mb-1">
+                                  <span className="text-muted-foreground">Attendance Rate</span>
+                                  <span className="font-medium">{s.attendanceRate}%</span>
+                                </div>
+                                <div className="w-full bg-muted rounded-full h-1.5">
+                                  <div className={`h-1.5 rounded-full ${s.attendanceRate >= 90 ? "bg-green-500" : s.attendanceRate >= 70 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${Math.min(100, s.attendanceRate)}%` }} />
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-lg flex items-center gap-2"><ClipboardCheck className="h-5 w-5" /> Today's Attendance</CardTitle>
+                    <CardTitle className="text-lg flex items-center gap-2"><ClipboardCheck className="h-5 w-5" /> Attendance Log</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          <TableHead>Date</TableHead>
                           <TableHead>Staff Member</TableHead>
                           <TableHead>Clock In</TableHead>
                           <TableHead>Clock Out</TableHead>
@@ -706,15 +805,16 @@ export default function StaffPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {todayLogs.length === 0 ? (
+                        {attendanceLogs.length === 0 ? (
                           <TableRow>
-                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
-                              No attendance records for today
+                            <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                              No attendance records found for selected date range
                             </TableCell>
                           </TableRow>
                         ) : (
-                          todayLogs.map((log: any) => (
+                          attendanceLogs.map((log: any) => (
                             <TableRow key={log.id} data-testid={`row-attendance-${log.id}`}>
+                              <TableCell>{log.date ? new Date(log.date).toLocaleDateString() : "—"}</TableCell>
                               <TableCell className="font-medium">{staffMap.get(log.userId) || "Unknown"}</TableCell>
                               <TableCell>{new Date(log.clockIn).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</TableCell>
                               <TableCell>{log.clockOut ? new Date(log.clockOut).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : <Badge variant="secondary" className="bg-green-100 text-green-700"><Clock className="h-3 w-3 mr-1" />Active</Badge>}</TableCell>
@@ -733,47 +833,6 @@ export default function StaffPage() {
                     </Table>
                   </CardContent>
                 </Card>
-
-                {attendanceLogs.length > todayLogs.length && (
-                  <Card>
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg flex items-center gap-2"><CalendarDays className="h-5 w-5" /> Recent History</CardTitle>
-                    </CardHeader>
-                    <CardContent className="p-0">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Staff Member</TableHead>
-                            <TableHead>Clock In</TableHead>
-                            <TableHead>Clock Out</TableHead>
-                            <TableHead>Hours</TableHead>
-                            <TableHead>Status</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {attendanceLogs
-                            .filter((l: any) => !l.date?.startsWith(today))
-                            .slice(0, 50)
-                            .map((log: any) => (
-                              <TableRow key={log.id} data-testid={`row-attendance-history-${log.id}`}>
-                                <TableCell>{log.date ? new Date(log.date).toLocaleDateString() : "—"}</TableCell>
-                                <TableCell className="font-medium">{staffMap.get(log.userId) || "Unknown"}</TableCell>
-                                <TableCell>{new Date(log.clockIn).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</TableCell>
-                                <TableCell>{log.clockOut ? new Date(log.clockOut).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—"}</TableCell>
-                                <TableCell>{log.hoursWorked ? `${parseFloat(log.hoursWorked).toFixed(1)}h` : "—"}</TableCell>
-                                <TableCell>
-                                  <Badge className={log.status === "late" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>
-                                    {log.status === "late" ? `Late (${log.lateMinutes}m)` : "On Time"}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                        </TableBody>
-                      </Table>
-                    </CardContent>
-                  </Card>
-                )}
               </>
             );
           })()}

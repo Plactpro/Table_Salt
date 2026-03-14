@@ -134,11 +134,12 @@ export interface IStorage {
   createSalesInquiry(data: InsertSalesInquiry): Promise<SalesInquiry>;
   createSupportTicket(data: InsertSupportTicket): Promise<SupportTicket>;
 
-  getAttendanceLogsByTenant(tenantId: string): Promise<AttendanceLog[]>;
-  getAttendanceLogsByUser(userId: string, tenantId: string): Promise<AttendanceLog[]>;
+  getAttendanceLogsByTenant(tenantId: string, from?: Date, to?: Date): Promise<AttendanceLog[]>;
+  getAttendanceLogsByUser(userId: string, tenantId: string, from?: Date, to?: Date): Promise<AttendanceLog[]>;
   getTodayAttendanceForUser(userId: string, tenantId: string): Promise<AttendanceLog | undefined>;
   createAttendanceLog(data: InsertAttendanceLog): Promise<AttendanceLog>;
   updateAttendanceLog(id: string, tenantId: string, data: Partial<InsertAttendanceLog>): Promise<AttendanceLog | undefined>;
+  getAttendanceSummary(tenantId: string, from: Date, to: Date): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -572,12 +573,43 @@ export class DatabaseStorage implements IStorage {
     return ticket;
   }
 
-  async getAttendanceLogsByTenant(tenantId: string) {
-    return db.select().from(attendanceLogs).where(eq(attendanceLogs.tenantId, tenantId)).orderBy(desc(attendanceLogs.date));
+  async getAttendanceLogsByTenant(tenantId: string, from?: Date, to?: Date) {
+    const conditions = [eq(attendanceLogs.tenantId, tenantId)];
+    if (from) conditions.push(gte(attendanceLogs.date, from));
+    if (to) conditions.push(lt(attendanceLogs.date, to));
+    return db.select().from(attendanceLogs).where(and(...conditions)).orderBy(desc(attendanceLogs.date));
   }
 
-  async getAttendanceLogsByUser(userId: string, tenantId: string) {
-    return db.select().from(attendanceLogs).where(and(eq(attendanceLogs.userId, userId), eq(attendanceLogs.tenantId, tenantId))).orderBy(desc(attendanceLogs.date));
+  async getAttendanceLogsByUser(userId: string, tenantId: string, from?: Date, to?: Date) {
+    const conditions = [eq(attendanceLogs.userId, userId), eq(attendanceLogs.tenantId, tenantId)];
+    if (from) conditions.push(gte(attendanceLogs.date, from));
+    if (to) conditions.push(lt(attendanceLogs.date, to));
+    return db.select().from(attendanceLogs).where(and(...conditions)).orderBy(desc(attendanceLogs.date));
+  }
+
+  async getAttendanceSummary(tenantId: string, from: Date, to: Date) {
+    const logs = await db.select().from(attendanceLogs).where(
+      and(eq(attendanceLogs.tenantId, tenantId), gte(attendanceLogs.date, from), lt(attendanceLogs.date, to))
+    );
+    const byUser = new Map<string, { totalDays: number; lateDays: number; totalHours: number; entries: number }>();
+    for (const log of logs) {
+      const uid = log.userId;
+      if (!byUser.has(uid)) byUser.set(uid, { totalDays: 0, lateDays: 0, totalHours: 0, entries: 0 });
+      const u = byUser.get(uid)!;
+      u.totalDays++;
+      u.entries++;
+      if (log.status === "late") u.lateDays++;
+      if (log.hoursWorked) u.totalHours += parseFloat(String(log.hoursWorked));
+    }
+    return Array.from(byUser.entries()).map(([userId, stats]) => ({
+      userId,
+      totalDays: stats.totalDays,
+      lateDays: stats.lateDays,
+      absentDays: 0,
+      totalHours: parseFloat(stats.totalHours.toFixed(2)),
+      avgHours: stats.totalDays > 0 ? parseFloat((stats.totalHours / stats.totalDays).toFixed(2)) : 0,
+      attendanceRate: 100,
+    }));
   }
 
   async getTodayAttendanceForUser(userId: string, tenantId: string) {
