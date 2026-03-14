@@ -570,3 +570,87 @@ export type CleaningLog = typeof cleaningLogs.$inferSelect;
 export type InsertCleaningLog = z.infer<typeof insertCleaningLogSchema>;
 export type CleaningSchedule = typeof cleaningSchedules.$inferSelect;
 export type InsertCleaningSchedule = z.infer<typeof insertCleaningScheduleSchema>;
+
+export const auditTemplates = pgTable("audit_templates", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  category: text("category").notNull(),
+  frequency: text("frequency").notNull(),
+  scheduledDay: text("scheduled_day"),
+  scheduledTime: text("scheduled_time"),
+  riskLevel: text("risk_level").default("medium"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const auditTemplateItems = pgTable("audit_template_items", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id", { length: 36 }).notNull().references(() => auditTemplates.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category"),
+  points: integer("points").default(5),
+  photoRequired: boolean("photo_required").default(false),
+  supervisorApproval: boolean("supervisor_approval").default(false),
+  sortOrder: integer("sort_order").default(0),
+});
+
+export const auditSchedules = pgTable("audit_schedules", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  templateId: varchar("template_id", { length: 36 }).notNull().references(() => auditTemplates.id),
+  scheduledDate: timestamp("scheduled_date").notNull(),
+  status: text("status").default("pending"),
+  assignedTo: varchar("assigned_to", { length: 36 }).references(() => users.id),
+  approvedBy: varchar("approved_by", { length: 36 }).references(() => users.id),
+  totalScore: integer("total_score"),
+  maxScore: integer("max_score"),
+  completedAt: timestamp("completed_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const auditResponses = pgTable("audit_responses", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id", { length: 36 }).notNull().references(() => auditSchedules.id),
+  itemId: varchar("item_id", { length: 36 }).notNull().references(() => auditTemplateItems.id),
+  status: text("status").default("pending"),
+  notes: text("notes"),
+  photoUrl: text("photo_url"),
+  completedBy: varchar("completed_by", { length: 36 }).references(() => users.id),
+  completedAt: timestamp("completed_at"),
+});
+
+export const auditIssues = pgTable("audit_issues", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  scheduleId: varchar("schedule_id", { length: 36 }).references(() => auditSchedules.id),
+  itemId: varchar("item_id", { length: 36 }).references(() => auditTemplateItems.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  severity: text("severity").default("medium"),
+  status: text("status").default("open"),
+  assignedTo: varchar("assigned_to", { length: 36 }).references(() => users.id),
+  dueDate: timestamp("due_date"),
+  resolvedAt: timestamp("resolved_at"),
+  resolvedBy: varchar("resolved_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAuditTemplateSchema = createInsertSchema(auditTemplates).omit({ id: true, createdAt: true });
+export const insertAuditTemplateItemSchema = createInsertSchema(auditTemplateItems).omit({ id: true });
+export const insertAuditScheduleSchema = createInsertSchema(auditSchedules).omit({ id: true, createdAt: true });
+export const insertAuditResponseSchema = createInsertSchema(auditResponses).omit({ id: true });
+export const insertAuditIssueSchema = createInsertSchema(auditIssues).omit({ id: true, createdAt: true });
+
+export type AuditTemplate = typeof auditTemplates.$inferSelect;
+export type InsertAuditTemplate = z.infer<typeof insertAuditTemplateSchema>;
+export type AuditTemplateItem = typeof auditTemplateItems.$inferSelect;
+export type InsertAuditTemplateItem = z.infer<typeof insertAuditTemplateItemSchema>;
+export type AuditSchedule = typeof auditSchedules.$inferSelect;
+export type InsertAuditSchedule = z.infer<typeof insertAuditScheduleSchema>;
+export type AuditResponse = typeof auditResponses.$inferSelect;
+export type InsertAuditResponse = z.infer<typeof insertAuditResponseSchema>;
+export type AuditIssue = typeof auditIssues.$inferSelect;
+export type InsertAuditIssue = z.infer<typeof insertAuditIssueSchema>;

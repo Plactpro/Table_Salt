@@ -6,6 +6,7 @@ import {
   customers, staffSchedules, feedback, offers, deliveryOrders, employeePerformanceLogs,
   salesInquiries, supportTickets, attendanceLogs,
   cleaningTemplates, cleaningTemplateItems, cleaningLogs, cleaningSchedules,
+  auditTemplates, auditTemplateItems, auditSchedules, auditResponses, auditIssues,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -30,6 +31,11 @@ import {
   type CleaningTemplateItem, type InsertCleaningTemplateItem,
   type CleaningLog, type InsertCleaningLog,
   type CleaningSchedule, type InsertCleaningSchedule,
+  type AuditTemplate, type InsertAuditTemplate,
+  type AuditTemplateItem, type InsertAuditTemplateItem,
+  type AuditSchedule, type InsertAuditSchedule,
+  type AuditResponse, type InsertAuditResponse,
+  type AuditIssue, type InsertAuditIssue,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -160,6 +166,25 @@ export interface IStorage {
   getCleaningSchedules(tenantId: string, date: string): Promise<CleaningSchedule[]>;
   createCleaningSchedule(data: InsertCleaningSchedule): Promise<CleaningSchedule>;
   updateCleaningSchedule(id: string, tenantId: string, data: Partial<InsertCleaningSchedule>): Promise<CleaningSchedule | undefined>;
+
+  getAuditTemplatesByTenant(tenantId: string): Promise<AuditTemplate[]>;
+  getAuditTemplate(id: string): Promise<AuditTemplate | undefined>;
+  createAuditTemplate(data: InsertAuditTemplate): Promise<AuditTemplate>;
+  updateAuditTemplate(id: string, tenantId: string, data: Partial<InsertAuditTemplate>): Promise<AuditTemplate | undefined>;
+  deleteAuditTemplate(id: string, tenantId: string): Promise<void>;
+  getAuditTemplateItems(templateId: string): Promise<AuditTemplateItem[]>;
+  createAuditTemplateItem(data: InsertAuditTemplateItem): Promise<AuditTemplateItem>;
+  deleteAuditTemplateItems(templateId: string): Promise<void>;
+  getAuditSchedulesByTenant(tenantId: string, status?: string, from?: Date, to?: Date): Promise<AuditSchedule[]>;
+  getAuditSchedule(id: string): Promise<AuditSchedule | undefined>;
+  createAuditSchedule(data: InsertAuditSchedule): Promise<AuditSchedule>;
+  updateAuditSchedule(id: string, tenantId: string, data: Partial<InsertAuditSchedule>): Promise<AuditSchedule | undefined>;
+  getAuditResponsesBySchedule(scheduleId: string): Promise<AuditResponse[]>;
+  createAuditResponse(data: InsertAuditResponse): Promise<AuditResponse>;
+  updateAuditResponse(id: string, data: Partial<InsertAuditResponse>): Promise<AuditResponse | undefined>;
+  getAuditIssuesByTenant(tenantId: string, status?: string): Promise<AuditIssue[]>;
+  createAuditIssue(data: InsertAuditIssue): Promise<AuditIssue>;
+  updateAuditIssue(id: string, tenantId: string, data: Partial<InsertAuditIssue>): Promise<AuditIssue | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -744,6 +769,80 @@ export class DatabaseStorage implements IStorage {
   async updateCleaningSchedule(id: string, tenantId: string, data: Partial<InsertCleaningSchedule>) {
     const [s] = await db.update(cleaningSchedules).set(data).where(and(eq(cleaningSchedules.id, id), eq(cleaningSchedules.tenantId, tenantId))).returning();
     return s;
+  }
+
+  async getAuditTemplatesByTenant(tenantId: string) {
+    return db.select().from(auditTemplates).where(eq(auditTemplates.tenantId, tenantId)).orderBy(auditTemplates.name);
+  }
+  async getAuditTemplate(id: string) {
+    const [t] = await db.select().from(auditTemplates).where(eq(auditTemplates.id, id));
+    return t;
+  }
+  async createAuditTemplate(data: InsertAuditTemplate) {
+    const [t] = await db.insert(auditTemplates).values(data).returning();
+    return t;
+  }
+  async updateAuditTemplate(id: string, tenantId: string, data: Partial<InsertAuditTemplate>) {
+    const [t] = await db.update(auditTemplates).set(data).where(and(eq(auditTemplates.id, id), eq(auditTemplates.tenantId, tenantId))).returning();
+    return t;
+  }
+  async deleteAuditTemplate(id: string, tenantId: string) {
+    const items = await this.getAuditTemplateItems(id);
+    if (items.length > 0) await this.deleteAuditTemplateItems(id);
+    await db.delete(auditTemplates).where(and(eq(auditTemplates.id, id), eq(auditTemplates.tenantId, tenantId)));
+  }
+  async getAuditTemplateItems(templateId: string) {
+    return db.select().from(auditTemplateItems).where(eq(auditTemplateItems.templateId, templateId)).orderBy(auditTemplateItems.sortOrder);
+  }
+  async createAuditTemplateItem(data: InsertAuditTemplateItem) {
+    const [item] = await db.insert(auditTemplateItems).values(data).returning();
+    return item;
+  }
+  async deleteAuditTemplateItems(templateId: string) {
+    await db.delete(auditTemplateItems).where(eq(auditTemplateItems.templateId, templateId));
+  }
+  async getAuditSchedulesByTenant(tenantId: string, status?: string, from?: Date, to?: Date) {
+    const conditions: any[] = [eq(auditSchedules.tenantId, tenantId)];
+    if (status) conditions.push(eq(auditSchedules.status, status));
+    if (from) conditions.push(gte(auditSchedules.scheduledDate, from));
+    if (to) conditions.push(lte(auditSchedules.scheduledDate, to));
+    return db.select().from(auditSchedules).where(and(...conditions)).orderBy(desc(auditSchedules.scheduledDate));
+  }
+  async getAuditSchedule(id: string) {
+    const [s] = await db.select().from(auditSchedules).where(eq(auditSchedules.id, id));
+    return s;
+  }
+  async createAuditSchedule(data: InsertAuditSchedule) {
+    const [s] = await db.insert(auditSchedules).values(data).returning();
+    return s;
+  }
+  async updateAuditSchedule(id: string, tenantId: string, data: Partial<InsertAuditSchedule>) {
+    const [s] = await db.update(auditSchedules).set(data).where(and(eq(auditSchedules.id, id), eq(auditSchedules.tenantId, tenantId))).returning();
+    return s;
+  }
+  async getAuditResponsesBySchedule(scheduleId: string) {
+    return db.select().from(auditResponses).where(eq(auditResponses.scheduleId, scheduleId));
+  }
+  async createAuditResponse(data: InsertAuditResponse) {
+    const [r] = await db.insert(auditResponses).values(data).returning();
+    return r;
+  }
+  async updateAuditResponse(id: string, data: Partial<InsertAuditResponse>) {
+    const [r] = await db.update(auditResponses).set(data).where(eq(auditResponses.id, id)).returning();
+    return r;
+  }
+  async getAuditIssuesByTenant(tenantId: string, status?: string) {
+    const conditions: any[] = [eq(auditIssues.tenantId, tenantId)];
+    if (status) conditions.push(eq(auditIssues.status, status));
+    return db.select().from(auditIssues).where(and(...conditions)).orderBy(desc(auditIssues.createdAt));
+  }
+  async createAuditIssue(data: InsertAuditIssue) {
+    const [issue] = await db.insert(auditIssues).values(data).returning();
+    return issue;
+  }
+  async updateAuditIssue(id: string, tenantId: string, data: Partial<InsertAuditIssue>) {
+    const [issue] = await db.update(auditIssues).set(data).where(and(eq(auditIssues.id, id), eq(auditIssues.tenantId, tenantId))).returning();
+    return issue;
   }
 }
 

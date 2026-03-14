@@ -488,6 +488,67 @@ export async function seedDatabase() {
     await storage.createCleaningTemplateItem({ templateId: deepMonthly.id, task, sortOrder: i + 1 });
   }
 
+  const auditKitchen = await storage.createAuditTemplate({ tenantId: tenant.id, name: "Daily Kitchen Safety Audit", category: "food_safety", frequency: "daily", scheduledTime: "06:00", riskLevel: "critical", isActive: true });
+  for (const [i, title] of [
+    "Fridge temperature within range (0-4°C)", "Freezer temperature within range (-18°C or below)",
+    "Raw and cooked food stored separately", "All food items properly labeled and dated",
+    "Hand wash stations stocked and accessible", "Cutting boards sanitized and color-coded",
+    "No expired products on shelves", "Kitchen surfaces clean and sanitized",
+    "Staff wearing proper protective equipment", "Pest control measures in place",
+  ].entries()) {
+    await storage.createAuditTemplateItem({ templateId: auditKitchen.id, title, category: "food_safety", points: i < 3 ? 10 : 8, photoRequired: i === 0 || i === 1, sortOrder: i + 1 });
+  }
+
+  const auditFinancial = await storage.createAuditTemplate({ tenantId: tenant.id, name: "Weekly Financial Review", category: "financial", frequency: "weekly", scheduledDay: "monday", scheduledTime: "10:00", riskLevel: "high", isActive: true });
+  for (const [i, title] of [
+    "Daily cash register reconciliation completed", "Credit card transactions verified",
+    "Expense receipts properly filed", "Supplier invoices matched to deliveries",
+    "Petty cash accounted for", "Void/comp transactions reviewed",
+  ].entries()) {
+    await storage.createAuditTemplateItem({ templateId: auditFinancial.id, title, category: "financial", points: i < 2 ? 10 : 8, photoRequired: false, sortOrder: i + 1 });
+  }
+
+  const auditOps = await storage.createAuditTemplate({ tenantId: tenant.id, name: "Monthly Operations Audit", category: "operations", frequency: "monthly", scheduledDay: "1", scheduledTime: "09:00", riskLevel: "medium", isActive: true });
+  for (const [i, title] of [
+    "Opening procedures followed correctly", "Closing procedures followed correctly",
+    "Average wait times within target", "Customer complaints logged and resolved",
+    "Equipment maintained and functional", "Inventory levels adequate", "Table turnover rate meets standard",
+  ].entries()) {
+    await storage.createAuditTemplateItem({ templateId: auditOps.id, title, category: "operations", points: i === 2 || i === 4 ? 10 : 8, photoRequired: i === 4, sortOrder: i + 1 });
+  }
+
+  const auditStaff = await storage.createAuditTemplate({ tenantId: tenant.id, name: "Staff Training Compliance", category: "staff", frequency: "monthly", scheduledTime: "14:00", riskLevel: "medium", isActive: true });
+  for (const [i, title] of [
+    "All staff completed food safety training", "New hire onboarding completed on time",
+    "Fire safety drill conducted this month", "Allergen awareness training up to date", "Service standards refresher completed",
+  ].entries()) {
+    await storage.createAuditTemplateItem({ templateId: auditStaff.id, title, category: "staff", points: i === 0 || i === 2 || i === 3 ? 10 : 7, photoRequired: i === 2, sortOrder: i + 1 });
+  }
+
+  const auditFacilities = await storage.createAuditTemplate({ tenantId: tenant.id, name: "Quarterly Facilities Inspection", category: "facilities", frequency: "quarterly", scheduledTime: "08:00", riskLevel: "high", isActive: true });
+  for (const [i, title] of [
+    "Fire exits clear and properly marked", "Fire extinguishers inspected and charged",
+    "Emergency lighting functional", "HVAC system serviced", "Plumbing in good working order",
+    "Electrical systems inspected", "Building exterior maintained", "Restrooms clean and stocked",
+  ].entries()) {
+    await storage.createAuditTemplateItem({ templateId: auditFacilities.id, title, category: "facilities", points: i < 2 || i === 5 ? 10 : 8, photoRequired: i === 0 || i === 1 || i === 4, sortOrder: i + 1 });
+  }
+
+  const auditCompliance = await storage.createAuditTemplate({ tenantId: tenant.id, name: "Health & Compliance Audit", category: "compliance", frequency: "monthly", scheduledTime: "11:00", riskLevel: "critical", isActive: true });
+  for (const [i, title] of [
+    "Health permits current and displayed", "Liquor license valid and displayed",
+    "Food handler certifications current", "HACCP plan followed and documented",
+    "Allergen information available to customers", "ADA accessibility requirements met", "Workers compensation insurance current",
+  ].entries()) {
+    await storage.createAuditTemplateItem({ templateId: auditCompliance.id, title, category: "compliance", points: i < 4 || i === 6 ? 10 : 8, photoRequired: i < 2, sortOrder: i + 1 });
+  }
+
+  await storage.createAuditSchedule({ tenantId: tenant.id, templateId: auditKitchen.id, scheduledDate: new Date(), status: "pending", assignedTo: manager.id, maxScore: 85 });
+  await storage.createAuditSchedule({ tenantId: tenant.id, templateId: auditOps.id, scheduledDate: new Date(Date.now() + 3 * 86400000), status: "pending", assignedTo: owner.id, maxScore: 59 });
+
+  await storage.createAuditIssue({ tenantId: tenant.id, title: "Walk-in cooler temperature fluctuation", description: "Temperature readings showing inconsistent values between 2-6°C.", severity: "high", status: "open", assignedTo: manager.id });
+  await storage.createAuditIssue({ tenantId: tenant.id, title: "Fire extinguisher expired in kitchen B", description: "Monthly inspection found expired fire extinguisher near station B.", severity: "critical", status: "open", assignedTo: owner.id });
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");
