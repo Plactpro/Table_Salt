@@ -654,13 +654,60 @@ export async function registerRoutes(
   });
 
   app.get("/api/attendance", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      let from: Date | undefined;
+      let to: Date | undefined;
+      if (req.query.from) { const d = new Date(req.query.from as string); if (!isNaN(d.getTime())) from = d; }
+      if (req.query.to) { const d = new Date(req.query.to as string); if (!isNaN(d.getTime())) to = d; }
+      if (!["owner", "manager"].includes(user.role)) {
+        const logs = await storage.getAttendanceLogsByUser(user.id, user.tenantId, from, to);
+        return res.json(logs);
+      }
+      const logs = await storage.getAttendanceLogsByTenant(user.tenantId, from, to);
+      res.json(logs);
+    } catch (err: any) {
+      console.error("[Attendance Error]", err);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/attendance/summary", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!["owner", "manager"].includes(user.role)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const now = new Date();
+      let from = new Date(now.getFullYear(), now.getMonth(), 1);
+      let to = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      if (req.query.from) { const d = new Date(req.query.from as string); if (!isNaN(d.getTime())) from = d; }
+      if (req.query.to) { const d = new Date(req.query.to as string); if (!isNaN(d.getTime())) to = d; }
+      const summary = await storage.getAttendanceSummary(user.tenantId, from, to);
+      res.json(summary);
+    } catch (err: any) {
+      console.error("[Summary Error]", err);
+      res.json([]);
+    }
+  });
+
+  app.get("/api/attendance/settings", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const tenant = await storage.getTenant(user.tenantId);
+    const config = (tenant?.moduleConfig as any) || {};
+    res.json({ lateThresholdMinutes: config.lateThresholdMinutes || 15 });
+  });
+
+  app.put("/api/attendance/settings", requireAuth, async (req, res) => {
     const user = req.user as any;
     if (!["owner", "manager"].includes(user.role)) {
-      const logs = await storage.getAttendanceLogsByUser(user.id, user.tenantId);
-      return res.json(logs);
+      return res.status(403).json({ message: "Access denied" });
     }
-    const logs = await storage.getAttendanceLogsByTenant(user.tenantId);
-    res.json(logs);
+    const { lateThresholdMinutes } = req.body;
+    const tenant = await storage.getTenant(user.tenantId);
+    const existingConfig = (tenant?.moduleConfig as any) || {};
+    await storage.updateTenant(user.tenantId, { moduleConfig: { ...existingConfig, lateThresholdMinutes: lateThresholdMinutes || 15 } } as any);
+    res.json({ lateThresholdMinutes: lateThresholdMinutes || 15 });
   });
 
   app.post("/api/attendance/clock-in", requireAuth, async (req, res) => {
@@ -689,6 +736,10 @@ export async function registerRoutes(
       let lateMinutes = 0;
       let scheduleId: string | undefined;
 
+      const tenant = await storage.getTenant(user.tenantId);
+      const tenantConfig = (tenant?.moduleConfig as any) || {};
+      const lateThreshold = tenantConfig.lateThresholdMinutes || 15;
+
       if (myShift) {
         scheduleId = myShift.id;
         const [shiftHour, shiftMin] = myShift.startTime.split(":").map(Number);
@@ -696,7 +747,7 @@ export async function registerRoutes(
         shiftStart.setHours(shiftHour, shiftMin, 0, 0);
         const diffMs = now.getTime() - shiftStart.getTime();
         lateMinutes = Math.max(0, Math.floor(diffMs / 60000));
-        if (lateMinutes > 15) {
+        if (lateMinutes > lateThreshold) {
           status = "late";
         }
       }
