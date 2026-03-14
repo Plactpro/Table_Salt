@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { StatCard } from "@/components/widgets/stat-card";
 import { ChartWidget } from "@/components/widgets/chart-widget";
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useAuth, useSubscription } from "@/lib/auth";
 import { BusinessType, tierPricing, businessConfig } from "@/lib/subscription";
+import { emitChefEvent } from "@/hooks/use-chef-events";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -207,6 +209,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any) {
 export default function OwnerDashboard() {
   const { user } = useAuth();
   const { tier, businessType, hasFeatureAccess } = useSubscription();
+  const busyEmittedRef = useRef(false);
 
   const { data: stats, isLoading } = useQuery<any>({
     queryKey: ["/api/dashboard"],
@@ -215,6 +218,17 @@ export default function OwnerDashboard() {
   const { data: salesReport } = useQuery<any>({
     queryKey: ["/api/reports/sales"],
   });
+
+  useEffect(() => {
+    if (!stats || busyEmittedRef.current) return;
+    const activeOrders = (stats.recentOrders || []).filter(
+      (o: any) => o.status === "new" || o.status === "in_progress"
+    ).length;
+    if (activeOrders >= 3) {
+      emitChefEvent("busy-hour");
+      busyEmittedRef.current = true;
+    }
+  }, [stats]);
 
   if (isLoading) {
     return (
