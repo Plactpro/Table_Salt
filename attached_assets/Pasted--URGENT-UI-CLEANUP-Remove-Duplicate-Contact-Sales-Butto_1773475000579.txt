@@ -1,0 +1,228 @@
+**URGENT UI CLEANUP: Remove Duplicate Contact Sales Button**
+
+**Problem Identified from Screenshot (file:34):**
+On **Billing & Subscription pages**, there are **TWO Contact Sales buttons** causing confusion:
+
+1. **Golden yellow floating button** (bottom-right) ← **DELETE THIS**
+2. **"Contact Sales" button inside the Enterprise plan box** ← **KEEP & MAKE FULLY FUNCTIONAL**
+
+## **Immediate Action Required:**
+
+### **Phase 1: DELETE Golden Yellow Button**
+
+**Target Elements to Remove:**
+```css
+/* DELETE THESE - Duplicate floating buttons */
+.btn-sales-floating,
+.contact-sales-fixed,
+.golden-sales-btn,
+.btn-contact-sales-bottom,
+.floating-sales-button {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* Specific selectors based on screenshot */
+.subscription-page .fixed-bottom-right,
+.billing-page .sales-cta-fixed,
+.gold-gradient-button,
+.btn-gold-sales {
+  display: none !important;
+}
+```
+
+**JavaScript Cleanup:**
+```javascript
+// Remove duplicate floating buttons entirely
+document.querySelectorAll('.btn-sales-floating, .contact-sales-fixed, .gold-sales-btn').forEach(btn => {
+  btn.remove();
+});
+
+// Prevent recreation
+const originalAppendChild = Node.prototype.appendChild;
+Node.prototype.appendChild = function(element) {
+  if (element.classList?.contains('sales-floating')) {
+    return element; // Don't append
+  }
+  return originalAppendChild.call(this, element);
+};
+```
+
+### **Phase 2: ENHANCE Enterprise Box Button**
+
+**Button Location (from screenshot):** Inside the **Enterprise plan card** (`$199` box)
+
+**Current State:** Static text/link
+**Target State:** Fully functional Contact Sales trigger
+
+**Button Enhancement:**
+```html
+<!-- Enterprise Plan Box - ENHANCED BUTTON -->
+<div class="plan-card enterprise">
+  <h3>Enterprise</h3>
+  <div class="price">$199</div>
+  <ul>
+    <li>Unlimited integrations</li>
+    <li>API access</li>
+    <li>Dedicated support</li>
+  </ul>
+  
+  <!-- THIS BUTTON - Make Fully Functional -->
+  <button class="btn-enterprise-sales" data-trigger="contact-sales">
+    <span>👥 Contact Sales</span>
+    <small>Get custom pricing for chains</small>
+  </button>
+</div>
+```
+
+**Visual Upgrade:**
+```css
+.btn-enterprise-sales {
+  background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+  color: #1a1a2e;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 16px 24px;
+  border-radius: 12px;
+  border: none;
+  box-shadow: 0 8px 24px rgba(255,215,0,0.4);
+  transition: all 0.3s ease;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-enterprise-sales:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(255,215,0,0.6);
+}
+
+.btn-enterprise-sales:active {
+  transform: translateY(0);
+}
+```
+
+### **Phase 3: Single Source of Truth Functionality**
+
+**Unified Contact Sales Handler:**
+```javascript
+class ContactSalesManager {
+  constructor() {
+    this.primaryButton = '.btn-enterprise-sales';
+    this.salesForm = '#contact-sales-modal';
+    this.init();
+  }
+  
+  init() {
+    // ONLY bind to Enterprise button
+    document.addEventListener('click', (e) => {
+      if (e.target.matches(this.primaryButton, '[data-trigger="contact-sales"]')) {
+        e.preventDefault();
+        this.openSalesModal();
+      }
+    });
+    
+    // Hide ALL floating duplicates
+    this.hideFloatingDuplicates();
+  }
+  
+  hideFloatingDuplicates() {
+    const duplicates = document.querySelectorAll(`
+      .btn-sales-floating,
+      .contact-sales-fixed,
+      .gold-sales-btn,
+      [class*="sales"][class*="float"],
+      [class*="contact"][class*="fixed"]
+    `);
+    duplicates.forEach(btn => btn.remove());
+  }
+  
+  openSalesModal() {
+    // Show enhanced modal with Enterprise context
+    const modalData = {
+      source: 'enterprise_button',
+      planInterest: 'Enterprise',
+      timestamp: new Date().toISOString()
+    };
+    showContactSalesForm(modalData);
+  }
+}
+```
+
+### **Phase 4: Page-Specific Logic**
+
+**Billing & Subscription Pages ONLY:**
+```javascript
+// Show Enterprise button ONLY on relevant pages
+const salesPages = ['billing', 'subscription'];
+if (salesPages.includes(currentPage)) {
+  ensureEnterpriseButtonVisible();
+  hideAllFloatingSalesButtons();
+} else {
+  hideEnterpriseButton();
+}
+
+// Enterprise button always functional when visible
+document.querySelector('.btn-enterprise-sales')?.addEventListener('click', openSalesModal);
+```
+
+### **Phase 5: Visual Confirmation**
+
+**Final State After Fix:**
+```
+Billing/Subscription Pages:
+✅ Enterprise box button: VISIBLE + FUNCTIONAL (gold, prominent)
+❌ Golden floating button: COMPLETELY GONE
+✅ Single CTA path: Clean UX
+
+Other Pages:
+✅ No Contact Sales buttons anywhere
+✅ Navigation clean
+```
+
+### **Phase 6: Testing Protocol**
+
+**Verification Checklist:**
+```
+✅ 1. Billing page → ONLY Enterprise button visible
+✅ 2. Subscription page → ONLY Enterprise button visible  
+✅ 3. Enterprise button click → Opens sales modal correctly
+✅ 4. Golden floating button → Completely removed
+✅ 5. Other pages → No sales buttons anywhere
+✅ 6. Mobile → Enterprise button full-width, functional
+✅ 7. Hover effects work smoothly
+```
+
+**Automated Cleanup Test:**
+```javascript
+function verifySingleSalesButton() {
+  const floatingBtns = document.querySelectorAll('.btn-sales-floating, .gold-sales-btn');
+  const enterpriseBtn = document.querySelector('.btn-enterprise-sales');
+  
+  console.assert(floatingBtns.length === 0, '❌ Floating buttons still exist');
+  console.assert(enterpriseBtn !== null, '❌ Enterprise button missing');
+  console.assert(enterpriseBtn.onclick !== null, '❌ Enterprise button not functional');
+  
+  console.log('🟢 SINGLE SALES BUTTON VERIFIED');
+}
+```
+
+## **Deliverables REQUIRED:**
+
+```
+1. ✅ CSS rules REMOVING golden floating button
+2. ✅ ENHANCED Enterprise button (functional)
+3. ✅ JavaScript SINGLE SOURCE handler
+4. ✅ Page detection logic (Billing/Subscription only)  
+5. ✅ BEFORE/AFTER screenshots
+6. ✅ MOBILE RESPONSIVE confirmation
+7. ✅ AUTOMATED verification test
+```
+
+**IMMEDIATE PRIORITY:** Clean, professional UX with **one prominent, functional Contact Sales button** in the Enterprise plan box only.
+
+***
+
+**Execute this cleanup now** – duplicate buttons confuse users and hurt conversion rates!
