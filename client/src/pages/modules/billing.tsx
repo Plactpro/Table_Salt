@@ -7,7 +7,9 @@ import {
   CreditCard, Check, Crown, Zap, Star, Shield, ArrowRight,
   Building2, Users, BarChart3, Globe, Receipt, Search, Calendar,
   DollarSign, TrendingUp, FileText, LayoutGrid, Table2, CalendarDays, User,
+  MessageSquare,
 } from "lucide-react";
+import ContactSalesModal from "@/components/widgets/contact-sales-modal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +92,7 @@ export default function BillingPage() {
   const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
 
   const [activeTab, setActiveTab] = useState<"subscription" | "invoices">("subscription");
+  const [showContactSales, setShowContactSales] = useState(false);
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceDateFrom, setInvoiceDateFrom] = useState("");
   const [invoiceDateTo, setInvoiceDateTo] = useState("");
@@ -353,7 +356,16 @@ export default function BillingPage() {
                   <h3 className="font-semibold font-heading text-lg" data-testid="text-enterprise-cta">Need a custom solution?</h3>
                   <p className="text-sm text-muted-foreground mt-1">Contact our sales team for Enterprise pricing, custom integrations, and dedicated support.</p>
                 </div>
-                <Button variant="outline" className="border-orange-300 dark:border-orange-700" data-testid="button-contact-sales">Contact Sales <ArrowRight className="h-4 w-4 ml-1" /></Button>
+                <Button
+                  onClick={() => setShowContactSales(true)}
+                  className="text-white font-bold shadow-lg hover:shadow-xl transition-all duration-200 hover:scale-[1.03]"
+                  style={{ background: "linear-gradient(135deg, #FFD700, #FFA500)" }}
+                  data-testid="button-contact-sales"
+                >
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  Contact Sales
+                  <ArrowRight className="h-4 w-4 ml-1" />
+                </Button>
               </CardContent>
             </Card>
           </motion.div>
@@ -732,6 +744,8 @@ export default function BillingPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <ContactSalesModal open={showContactSales} onOpenChange={setShowContactSales} />
     </motion.div>
   );
 }
