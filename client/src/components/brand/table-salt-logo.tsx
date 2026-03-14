@@ -15,11 +15,9 @@ function SaltShakerIcon({ size = 32, className = "", colorScheme = "light" }: { 
   const gradId = `tg-${uid}`;
   const darkId = `td-${uid}`;
 
-  const bodyFill = colorScheme === "dark" ? `url(#${gradId})` : `url(#${gradId})`;
-  const capFill = colorScheme === "dark" ? `url(#${darkId})` : `url(#${darkId})`;
+  const bodyFill = `url(#${gradId})`;
+  const capFill = `url(#${darkId})`;
   const topFill = colorScheme === "dark" ? "hsl(174,50%,85%)" : "hsl(174,65%,32%)";
-  const dotFill = "white";
-  const saltFill = "#FFD700";
 
   const gradStops = colorScheme === "dark"
     ? { from: "hsl(174,40%,80%)", to: "hsl(174,50%,70%)" }
@@ -40,14 +38,14 @@ function SaltShakerIcon({ size = 32, className = "", colorScheme = "light" }: { 
       <rect x="18" y="18" width="28" height="32" rx="6" fill={bodyFill} />
       <rect x="22" y="10" width="20" height="10" rx="3" fill={capFill} />
       <rect x="24" y="6" width="16" height="6" rx="2" fill={topFill} opacity="0.7" />
-      <circle cx="28" cy="14" r="1.2" fill={dotFill} opacity="0.6" />
-      <circle cx="32" cy="13" r="1.2" fill={dotFill} opacity="0.6" />
-      <circle cx="36" cy="14" r="1.2" fill={dotFill} opacity="0.6" />
-      <circle cx="26" cy="54" r="2" fill={saltFill} opacity="0.9" />
-      <circle cx="32" cy="58" r="1.8" fill={saltFill} opacity="0.7" />
-      <circle cx="38" cy="55" r="1.5" fill={saltFill} opacity="0.8" />
-      <circle cx="30" cy="61" r="1.2" fill={saltFill} opacity="0.5" />
-      <circle cx="35" cy="62" r="1" fill={saltFill} opacity="0.4" />
+      <circle cx="28" cy="14" r="1.2" fill="white" opacity="0.6" />
+      <circle cx="32" cy="13" r="1.2" fill="white" opacity="0.6" />
+      <circle cx="36" cy="14" r="1.2" fill="white" opacity="0.6" />
+      <circle cx="26" cy="54" r="2" fill="#FFD700" opacity="0.9" />
+      <circle cx="32" cy="58" r="1.8" fill="#FFD700" opacity="0.7" />
+      <circle cx="38" cy="55" r="1.5" fill="#FFD700" opacity="0.8" />
+      <circle cx="30" cy="61" r="1.2" fill="#FFD700" opacity="0.5" />
+      <circle cx="35" cy="62" r="1" fill="#FFD700" opacity="0.4" />
       <defs>
         <linearGradient id={gradId} x1="18" y1="18" x2="46" y2="50" gradientUnits="userSpaceOnUse">
           <stop stopColor={gradStops.from} />
