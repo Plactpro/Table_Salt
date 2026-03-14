@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { UtensilsCrossed, ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, Building2, UserCircle } from "lucide-react";
+import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, Building2, UserCircle } from "lucide-react";
+import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { motion } from "framer-motion";
 
 const floatingIcons = [
@@ -13,7 +14,7 @@ const floatingIcons = [
   { Icon: Flame, x: "75%", y: "15%", size: 28, delay: 1, duration: 5 },
   { Icon: Coffee, x: "25%", y: "70%", size: 24, delay: 2, duration: 7 },
   { Icon: Utensils, x: "70%", y: "65%", size: 30, delay: 0.5, duration: 5.5 },
-  { Icon: UtensilsCrossed, x: "50%", y: "40%", size: 36, delay: 1.5, duration: 6.5 },
+  { Icon: Utensils, x: "50%", y: "40%", size: 36, delay: 1.5, duration: 6.5 },
 ];
 
 export default function RegisterPage() {
@@ -83,9 +84,7 @@ export default function RegisterPage() {
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
-            <div className="p-3 rounded-2xl bg-white/15 backdrop-blur-sm border border-white/20">
-              <UtensilsCrossed className="h-10 w-10" />
-            </div>
+            <TableSaltLogo variant="full" animate iconSize={48} className="[&_span]:text-white [&_span]:!text-white" />
           </motion.div>
           <motion.h1
             className="text-4xl font-heading font-bold mb-4"
@@ -93,7 +92,7 @@ export default function RegisterPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.6 }}
           >
-            ServeOS
+            Table Salt
           </motion.h1>
           <motion.p
             className="text-lg text-white/80 max-w-sm mx-auto leading-relaxed"
@@ -101,7 +100,7 @@ export default function RegisterPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.8 }}
           >
-            Join thousands of restaurants already using ServeOS to streamline their operations.
+            Join thousands of restaurants already using Table Salt to season their success.
           </motion.p>
         </motion.div>
 
@@ -115,17 +114,14 @@ export default function RegisterPage() {
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6, delay: 0.3 }}
         >
-          <div className="lg:hidden flex items-center justify-center gap-2 mb-8">
+          <div className="lg:hidden flex items-center justify-center mb-8">
             <motion.div
               initial={{ scale: 0 }}
               animate={{ scale: 1 }}
               transition={{ type: "spring", stiffness: 200, delay: 0.1 }}
             >
-              <div className="p-2.5 rounded-xl bg-primary text-primary-foreground">
-                <UtensilsCrossed className="h-6 w-6" />
-              </div>
+              <TableSaltLogo variant="full" iconSize={32} />
             </motion.div>
-            <span className="text-2xl font-heading font-bold">ServeOS</span>
           </div>
 
           <motion.div
