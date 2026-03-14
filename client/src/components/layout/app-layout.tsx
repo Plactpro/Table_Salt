@@ -25,13 +25,14 @@ export default function AppLayout({ children }: AppLayoutProps) {
   });
 
   const isSalesPage = SALES_PAGES.includes(location);
+  const isPosPage = location === "/pos";
   const salesEnabled = contactConfig?.salesEnabled !== false;
   const supportEnabled = contactConfig?.supportEnabled !== false;
 
   return (
     <div className="flex min-h-screen" data-testid="app-layout">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-h-screen">
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
         <Header
           onOpenSupport={supportEnabled ? () => setShowContactSupport(true) : undefined}
         />
@@ -40,7 +41,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.2, ease: "easeOut" }}
-          className="flex-1 p-6 overflow-auto"
+          className={`flex-1 overflow-auto ${isPosPage ? "" : "p-6"}`}
           data-testid="main-content"
         >
           {children}
