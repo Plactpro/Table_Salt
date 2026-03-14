@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
 import { useAuth, useSubscription } from "@/lib/auth";
 import { BusinessType, tierPricing, businessConfig } from "@/lib/subscription";
+import { formatCurrency } from "@shared/currency";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -37,16 +38,16 @@ const businessTypeIcons: Record<BusinessType, typeof Utensils> = {
   cloud_kitchen: Cloud,
 };
 
-function getBusinessSpecificKPIs(businessType: BusinessType, stats: any) {
+function getBusinessSpecificKPIs(businessType: BusinessType, stats: any, fmt: (v: string | number | null) => string) {
   const avgOrderValue = stats?.totalOrders > 0
-    ? (stats.totalRevenue / stats.totalOrders).toFixed(2)
-    : "0.00";
+    ? (stats.totalRevenue / stats.totalOrders)
+    : 0;
 
   const baseKPIs = [
     {
       title: "Total Revenue",
-      value: `$${Number(stats?.totalRevenue || 0).toLocaleString("en-US", { minimumFractionDigits: 2 })}`,
-      subtitle: `Today: $${Number(stats?.todayRevenue || 0).toFixed(2)}`,
+      value: fmt(stats?.totalRevenue || 0),
+      subtitle: `Today: ${fmt(stats?.todayRevenue || 0)}`,
       icon: DollarSign,
       iconColor: "text-teal-600",
       iconBg: "bg-teal-100",
@@ -87,7 +88,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any) {
     fine_dining: [
       {
         title: "Avg Check Size",
-        value: `$${(Number(avgOrderValue) * 2.8).toFixed(2)}`,
+        value: fmt(Number(avgOrderValue) * 2.8),
         subtitle: "Per guest",
         icon: Wine,
         iconColor: "text-amber-600",
@@ -127,7 +128,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any) {
     cafe: [
       {
         title: "Avg Order Value",
-        value: `$${avgOrderValue}`,
+        value: fmt(avgOrderValue),
         icon: Coffee,
         iconColor: "text-amber-600",
         iconBg: "bg-amber-100",
@@ -146,7 +147,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any) {
     food_truck: [
       {
         title: "Avg Order Value",
-        value: `$${avgOrderValue}`,
+        value: fmt(avgOrderValue),
         icon: TrendingUp,
         iconColor: "text-amber-600",
         iconBg: "bg-amber-100",
@@ -165,7 +166,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any) {
     enterprise: [
       {
         title: "Avg Order Value",
-        value: `$${avgOrderValue}`,
+        value: fmt(avgOrderValue),
         icon: TrendingUp,
         iconColor: "text-amber-600",
         iconBg: "bg-amber-100",
@@ -184,7 +185,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any) {
     casual_dining: [
       {
         title: "Avg Order Value",
-        value: `$${avgOrderValue}`,
+        value: fmt(avgOrderValue),
         icon: TrendingUp,
         iconColor: "text-amber-600",
         iconBg: "bg-amber-100",
@@ -237,7 +238,11 @@ export default function OwnerDashboard() {
   const BusinessIcon = businessTypeIcons[businessType] || UtensilsCrossed;
   const config = businessConfig[businessType];
   const tierInfo = tierPricing[tier];
-  const kpis = getBusinessSpecificKPIs(businessType, stats);
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (val: string | number | null) => formatCurrency(val ?? 0, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
+  const kpis = getBusinessSpecificKPIs(businessType, stats, fmt);
   const canAccessAnalytics = hasFeatureAccess("advanced_analytics");
   const canAccessReports = hasFeatureAccess("reports");
 
@@ -478,7 +483,7 @@ export default function OwnerDashboard() {
                   return <Badge className={colors[v] || ""}>{v?.replace("_", " ")}</Badge>;
                 },
               },
-              { key: "total", label: "Total", render: (v: string) => `$${Number(v || 0).toFixed(2)}` },
+              { key: "total", label: "Total", render: (v: string) => fmt(Number(v || 0)) },
             ]}
             data={stats?.recentOrders || []}
             testId="table-recent-orders"

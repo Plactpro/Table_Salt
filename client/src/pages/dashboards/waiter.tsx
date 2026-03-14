@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency } from "@shared/currency";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -194,6 +195,11 @@ export default function WaiterDashboard() {
   const myOpenTableIds = new Set(myOpenOrders.map((o: any) => o.tableId).filter(Boolean));
   const myOpenTables = tables.filter((t: any) => myOpenTableIds.has(t.id));
 
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (val: string | number | null) => formatCurrency(val ?? 0, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
+
   const shiftRevenue = myOrders
     .filter((o: any) => o.status === "paid")
     .reduce((sum: number, o: any) => sum + Number(o.total || 0), 0);
@@ -253,7 +259,7 @@ export default function WaiterDashboard() {
         />
         <StatCard
           title="Shift Revenue"
-          value={`$${shiftRevenue.toFixed(2)}`}
+          value={fmt(shiftRevenue)}
           icon={DollarSign}
           iconColor="text-green-600"
           iconBg="bg-green-100"
@@ -351,7 +357,7 @@ export default function WaiterDashboard() {
                       <div>
                         <p className="font-medium text-sm">#{order.id.slice(-4)}</p>
                         <p className="text-xs text-muted-foreground">
-                          {order.orderType?.replace("_", " ")} · ${Number(order.total || 0).toFixed(2)}
+                          {order.orderType?.replace("_", " ")} · {fmt(Number(order.total || 0))}
                         </p>
                       </div>
                       <Badge className={statusColors[order.status] || ""}>{order.status?.replace("_", " ")}</Badge>
