@@ -100,7 +100,7 @@ export default function RegisterPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.8 }}
           >
-            Join thousands of restaurants already using Table Salt to season their success.
+            Season Your Restaurant Success
           </motion.p>
         </motion.div>
 
