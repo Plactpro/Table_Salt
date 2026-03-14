@@ -715,6 +715,47 @@ export default function StaffPage() {
                   </div>
                 </div>
 
+                {(() => {
+                  const todaySchedules = schedules.filter((s: any) => {
+                    const sDate = new Date(s.date).toISOString().split("T")[0];
+                    return sDate === today;
+                  });
+                  const clockedInIds = new Set(todayLogs.map((l: any) => l.userId));
+                  const notClockedIn = todaySchedules.filter((s: any) => !clockedInIds.has(s.userId));
+                  const lateStaff = todayLogs.filter((l: any) => l.status === "late" && !l.clockOut);
+
+                  if (todaySchedules.length > 0) {
+                    return (
+                      <Card className="border-2 border-dashed">
+                        <CardHeader className="pb-2">
+                          <CardTitle className="text-sm flex items-center gap-2"><CalendarDays className="h-4 w-4" /> Today's Scheduled Staff ({todaySchedules.length})</CardTitle>
+                        </CardHeader>
+                        <CardContent className="pt-0">
+                          <div className="flex flex-wrap gap-2">
+                            {todaySchedules.map((s: any) => {
+                              const name = staffMap.get(s.userId) || "Unknown";
+                              const hasClockedIn = clockedInIds.has(s.userId);
+                              const logEntry = todayLogs.find((l: any) => l.userId === s.userId);
+                              const isLate = logEntry?.status === "late";
+                              const isDone = logEntry?.clockOut;
+                              return (
+                                <Badge key={s.id} variant="outline" className={`text-xs py-1 px-2 ${isDone ? "bg-blue-50 border-blue-200 text-blue-700" : isLate ? "bg-amber-50 border-amber-200 text-amber-700" : hasClockedIn ? "bg-green-50 border-green-200 text-green-700" : "bg-red-50 border-red-200 text-red-700"}`} data-testid={`badge-scheduled-${s.userId}`}>
+                                  {isDone ? <CheckCircle className="h-3 w-3 mr-1" /> : isLate ? <AlertCircle className="h-3 w-3 mr-1" /> : hasClockedIn ? <Clock className="h-3 w-3 mr-1" /> : <XCircle className="h-3 w-3 mr-1" />}
+                                  {name}
+                                </Badge>
+                              );
+                            })}
+                          </div>
+                          {notClockedIn.length > 0 && (
+                            <p className="text-xs text-red-600 mt-2" data-testid="text-not-clocked-in">{notClockedIn.length} scheduled staff not clocked in</p>
+                          )}
+                        </CardContent>
+                      </Card>
+                    );
+                  }
+                  return null;
+                })()}
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                   <Card>
                     <CardContent className="p-4 flex items-center gap-3">
@@ -765,11 +806,13 @@ export default function StaffPage() {
                           <Card key={s.userId} className="border" data-testid={`card-employee-summary-${s.userId}`}>
                             <CardContent className="p-4">
                               <p className="font-semibold text-sm mb-2">{staffMap.get(s.userId) || "Unknown"}</p>
-                              <div className="grid grid-cols-2 gap-2 text-xs">
-                                <div><span className="text-muted-foreground">Days Present</span><p className="font-medium">{s.totalDays}</p></div>
-                                <div><span className="text-muted-foreground">Late Days</span><p className="font-medium text-amber-600">{s.lateDays}</p></div>
+                              <div className="grid grid-cols-3 gap-2 text-xs">
+                                <div><span className="text-muted-foreground">Scheduled</span><p className="font-medium">{s.scheduledDays || s.totalDays}</p></div>
+                                <div><span className="text-muted-foreground">Present</span><p className="font-medium text-green-600">{s.totalDays}</p></div>
+                                <div><span className="text-muted-foreground">Absent</span><p className="font-medium text-red-600">{s.absentDays}</p></div>
+                                <div><span className="text-muted-foreground">Late</span><p className="font-medium text-amber-600">{s.lateDays}</p></div>
                                 <div><span className="text-muted-foreground">Total Hours</span><p className="font-medium">{s.totalHours}h</p></div>
-                                <div><span className="text-muted-foreground">Avg Hours/Day</span><p className="font-medium">{s.avgHours}h</p></div>
+                                <div><span className="text-muted-foreground">Avg/Day</span><p className="font-medium">{s.avgHours}h</p></div>
                               </div>
                               <div className="mt-2">
                                 <div className="flex items-center justify-between text-xs mb-1">
