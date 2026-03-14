@@ -108,7 +108,7 @@ export default function StaffPage() {
   });
 
   const [attendanceDateFrom, setAttendanceDateFrom] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split("T")[0];
+    const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0];
   });
   const [attendanceDateTo, setAttendanceDateTo] = useState(() => new Date().toISOString().split("T")[0]);
 
