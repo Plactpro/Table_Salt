@@ -747,7 +747,7 @@ export async function registerRoutes(
         shiftStart.setHours(shiftHour, shiftMin, 0, 0);
         const diffMs = now.getTime() - shiftStart.getTime();
         lateMinutes = Math.max(0, Math.floor(diffMs / 60000));
-        if (lateMinutes > lateThreshold) {
+        if (lateMinutes >= lateThreshold) {
           status = "late";
         }
       }
