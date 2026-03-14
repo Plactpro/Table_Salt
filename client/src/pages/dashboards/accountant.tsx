@@ -8,6 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency } from "@shared/currency";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -23,6 +25,7 @@ const fadeUp = {
 };
 
 export default function AccountantDashboard() {
+  const { user } = useAuth();
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -51,6 +54,11 @@ export default function AccountantDashboard() {
       </div>
     );
   }
+
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (val: string | number | null) => formatCurrency(val ?? 0, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
 
   const totals = salesReport?.totals || {};
   const revenue = Number(totals.revenue || 0);
@@ -154,7 +162,7 @@ export default function AccountantDashboard() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <StatCard
             title="Total Revenue"
-            value={`$${revenue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+            value={fmt(revenue)}
             subtitle={`${orderCount} orders`}
             icon={DollarSign}
             iconColor="text-green-600"
@@ -173,7 +181,7 @@ export default function AccountantDashboard() {
           />
           <StatCard
             title="Taxes Collected"
-            value={`$${tax.toFixed(2)}`}
+            value={fmt(tax)}
             icon={PiggyBank}
             iconColor="text-purple-600"
             iconBg="bg-purple-100"
@@ -182,7 +190,7 @@ export default function AccountantDashboard() {
           />
           <StatCard
             title="Discounts Given"
-            value={`$${discount.toFixed(2)}`}
+            value={fmt(discount)}
             icon={Percent}
             iconColor="text-orange-600"
             iconBg="bg-orange-100"

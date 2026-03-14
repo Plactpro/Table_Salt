@@ -6,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency } from "@shared/currency";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -29,6 +31,7 @@ const quickActions = [
 
 export default function ManagerDashboard() {
   const [, navigate] = useLocation();
+  const { user } = useAuth();
 
   const { data: stats, isLoading } = useQuery<any>({
     queryKey: ["/api/dashboard"],
@@ -41,6 +44,11 @@ export default function ManagerDashboard() {
       </div>
     );
   }
+
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (val: string | number | null) => formatCurrency(val ?? 0, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
 
   const tableStats = stats?.tableStats || [];
   const totalTables = tableStats.reduce((sum: number, t: any) => sum + Number(t.count), 0);
@@ -67,7 +75,7 @@ export default function ManagerDashboard() {
       <motion.div variants={fadeUp} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard
           title="Today's Sales"
-          value={`$${Number(stats?.todayRevenue || 0).toFixed(2)}`}
+          value={fmt(stats?.todayRevenue || 0)}
           subtitle={`${stats?.todayOrders || 0} orders today`}
           icon={DollarSign}
           iconColor="text-green-600"
