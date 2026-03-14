@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates)
 - `server/db.ts` - Database connection (Pool + Drizzle)
 - `server/storage.ts` - IStorage interface + DatabaseStorage implementation
@@ -53,6 +53,7 @@ All prefixed with `/api`:
 - Performance: `/performance-logs` (CRUD)
 - CRM: `/customers/by-loyalty/:tier`, `/customers/by-tag/:tag`
 - Attendance: `/attendance` (GET, role-scoped), `/attendance/status` (GET), `/attendance/clock-in` (POST), `/attendance/clock-out` (POST)
+- Cleaning: `/cleaning/templates` (CRUD), `/cleaning/templates/:id/items` (GET), `/cleaning/logs` (GET/POST/DELETE)
 - Contact: `/contact-config` (GET, public), `/contact-sales` (POST, public), `/contact-support` (POST, public)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
@@ -71,13 +72,14 @@ All prefixed with `/api`:
 - `/crm` - Customer Relationship Management (profiles, loyalty tiers, tags, order history)
 - `/performance` - Employee performance tracking (metrics logs, staff overview)
 - `/delivery` - Delivery order management (status flow, driver info, fee display)
+- `/cleaning` - Cleaning & Maintenance schedules (Kitchen, Premises, Deep Clean tabs + Compliance reporting)
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
 
 ## Subscription Tiers & Feature Gating
 - **Basic**: orders, menu, settings
-- **Standard**: + tables, pos, inventory, staff, outlets, reservations
-- **Premium**: + reports, billing, analytics, delivery, loyalty, crm, offers
+- **Standard**: + tables, pos, inventory, staff, outlets, reservations, cleaning
+- **Premium**: + reports, billing, analytics, delivery, loyalty, crm, offers, cleaning
 - **Enterprise**: + integrations, multi-location, api_access, custom_branding
 
 

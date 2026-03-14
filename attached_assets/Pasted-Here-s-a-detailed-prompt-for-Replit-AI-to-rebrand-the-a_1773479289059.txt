@@ -1,0 +1,240 @@
+Here's a detailed prompt for Replit AI to **rebrand the application to "Table Salt"** with a custom logo:
+
+***
+
+**COMPLETE REBRANDING: Change App Name to "Table Salt" + Design & Implement Logo**
+
+**New Brand Identity:**
+```
+Application Name: "Table Salt"
+Tagline: "Season Your Restaurant Success"
+Target: Restaurant owners, managers, POS operators
+Tone: Professional yet approachable, modern restaurant tech
+```
+
+## **Phase 1: Global Name Replacement**
+
+**Replace ALL instances of current name:**
+```
+Find & Replace EVERYWHERE:
+"Restaurant Management" → "Table Salt"
+"Restaurant App" → "Table Salt" 
+Any hardcoded app names → "Table Salt"
+Document titles, favicons, meta tags
+```
+
+**Updated HTML Structure:**
+```html
+<title>Table Salt - Restaurant Management Made Delicious</title>
+<meta name="description" content="Table Salt: The modern POS, reservation, and management system for restaurants worldwide.">
+<link rel="icon" href="table-salt-logo.png">
+```
+
+## **Phase 2: Custom Logo Design Specifications**
+
+**Logo Requirements:**
+```
+Primary Logo: "Table Salt" text + icon
+Style: Modern, clean, restaurant-appropriate
+Colors: Primary teal (#00A8CC), gold accent (#FFD700), white/black
+Scalable: Works at 32px (favicon) to 300px (header)
+
+Components:
+1. ICON: Minimal salt shaker with table outline OR stylized salt crystals
+2. TEXT: "Table Salt" - Bold modern sans-serif
+3. Optional: Subtle fork/knife integrated into "T"
+
+Typography:
+- "Table": Light/modern (Inter Light or similar)
+- "Salt": Bold/strong (Inter Bold) 
+- Perfect kerning and letter spacing
+```
+
+**Logo Mockup Structure:**
+```
+Desktop Header: [Logo 200px] Table Salt [User Menu]
+Mobile Header: [Logo 120px Hamburger]
+Favicon: 32x32 simplified icon
+Sidebar: Logo 80px + "Table Salt"
+Loading Screen: Full logo animation
+```
+
+## **Phase 3: Logo Implementation**
+
+**SVG Logo Code (Vector, Scalable):**
+```svg
+<svg viewBox="0 0 300 80" xmlns="http://www.w3.org/2000/svg">
+  <!-- Salt Shaker Icon -->
+  <g fill="none" stroke="#00A8CC" stroke-width="2">
+    <rect x="20" y="10" width="24" height="40" rx="12"/>
+    <circle cx="32" cy="55" r="8"/>
+    <path d="M24 5 L36 5 L40 15 L20 15 Z"/>
+  </g>
+  
+  <!-- Salt crystals falling -->
+  <circle cx="28" cy="35" r="1.5" fill="#FFD700"/>
+  <circle cx="32" cy="42" r="1" fill="#FFD700"/>
+  
+  <!-- Table Salt Text -->
+  <text x="60" y="45" font-family="Inter, sans-serif" 
+        font-size="28" font-weight="300" fill="#1a1a2e">Table</text>
+  <text x="60" y="50" font-family="Inter, sans-serif" 
+        font-size="32" font-weight="800" fill="#00A8CC" letter-spacing="0.5">Salt</text>
+</svg>
+```
+
+**CSS Logo Styling:**
+```css
+.table-salt-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+.table-salt-logo svg {
+  width: 48px;
+  height: auto;
+}
+
+.logo-text {
+  font-size: clamp(20px, 4vw, 28px);
+}
+
+.logo-text .word-table {
+  font-weight: 300;
+  color: #64748b;
+  letter-spacing: 0.5px;
+}
+
+.logo-text .word-salt {
+  font-weight: 800;
+  background: linear-gradient(135deg, #00A8CC 0%, #00D4FF 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  letter-spacing: -0.5px;
+}
+```
+
+## **Phase 4: Strategic Logo Placement**
+
+### **1. App Header (Primary Logo - 200px)**
+```html
+<header class="app-header">
+  <div class="logo-container">
+    <svg class="table-salt-icon"><!-- SVG logo --></svg>
+    <div class="logo-text">
+      <span class="word-table">Table</span>
+      <span class="word-salt">Salt</span>
+    </div>
+  </div>
+  <div class="header-actions"><!-- User menu --></div>
+</header>
+```
+
+### **2. Sidebar (Compact Logo - 80px)**
+```html
+<nav class="sidebar">
+  <div class="sidebar-logo">
+    <svg class="table-salt-compact"><!-- 80px version --></svg>
+    <span>Table Salt</span>
+  </div>
+  <!-- Navigation items -->
+</nav>
+```
+
+### **3. Favicon & PWA Icons**
+```
+favicon.ico (16x16, 32x32)
+apple-touch-icon.png (180x180)
+manifest.json: "table-salt-logo-512.png"
+```
+
+### **4. Loading Screen Animation**
+```css
+.logo-loading {
+  animation: saltShake 2s ease-in-out infinite;
+}
+
+@keyframes saltShake {
+  0%, 100% { transform: rotate(-2deg); }
+  50% { transform: rotate(2deg); }
+}
+```
+
+## **Phase 5: Brand Consistency Audit**
+
+**Replace ALL branding elements:**
+```
+□ Page titles: "Table Salt Dashboard" 
+□ Sidebar brand name
+□ Email footers: "Powered by Table Salt"
+□ Modal headers
+□ Success toasts: "Table Salt team"
+□ Error messages
+□ Meta descriptions
+□ Print styles (invoices, reports)
+```
+
+**Color System Update:**
+```css
+:root {
+  --brand-primary: #00A8CC;     /* Table Salt Teal */
+  --brand-accent: #FFD700;      /* Gold Salt */
+  --brand-dark: #1a1a2e;        /* Dark Navy */
+  --brand-light: #f8fafc;       /* Off-white */
+}
+```
+
+## **Phase 6: Responsive Logo System**
+
+```
+Desktop (>1200px): Full logo + text (200px)
+Tablet (768-1200px): Logo + abbreviated text (150px)
+Mobile (<768px): Icon only + stacked text (120px)
+Very small: Icon only (48px)
+```
+
+## **Phase 7: Testing & Validation**
+
+**Visual Checklist:**
+```
+✅ Logo visible in header, sidebar, favicon
+✅ Scales correctly on all screen sizes  
+✅ Colors match brand palette
+✅ SVG renders crisp (no pixelation)
+✅ Animation smooth (loading screen)
+✅ Print styles correct (invoices)
+```
+
+**Automated Brand Check:**
+```javascript
+function verifyBranding() {
+  const brandElements = document.querySelectorAll('[class*="table-salt"], [id*="logo"]');
+  const oldNames = document.body.textContent.match(/Restaurant Management|Restaurant App/gi);
+  
+  console.assert(brandElements.length > 0, 'Missing Table Salt branding');
+  console.assert(oldNames === null, 'Old names still present');
+  console.log('✅ BRANDING VERIFIED');
+}
+```
+
+## **Deliverables REQUIRED:**
+
+```
+1. ✅ SVG LOGO FILES (multiple sizes)
+2. ✅ COMPLETE CSS styling system
+3. ✅ HTML integration across all pages
+4. ✅ RESPONSIVE behavior confirmed
+5. ✅ FAVICON & PWA icons
+6. ✅ LOADING ANIMATION
+7. ✅ GLOBAL NAME REPLACEMENT
+8. ✅ BEFORE/AFTER screenshots
+9. ✅ AUTOMATED verification test
+```
+
+**Final Result:** Professional "Table Salt" branding with custom SVG logo perfectly integrated across the entire restaurant management application.
+
+***
+
+**Execute full rebranding now** – consistent professional identity across all touchpoints!

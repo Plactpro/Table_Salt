@@ -857,6 +857,11 @@ export async function registerRoutes(
   });
 
   app.get("/api/cleaning/templates/:id/items", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const template = await storage.getCleaningTemplate(req.params.id);
+    if (!template || template.tenantId !== user.tenantId) {
+      return res.status(404).json({ message: "Template not found" });
+    }
     const items = await storage.getCleaningTemplateItems(req.params.id);
     res.json(items);
   });
@@ -871,7 +876,15 @@ export async function registerRoutes(
   app.post("/api/cleaning/logs", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const log = await storage.createCleaningLog({ ...req.body, tenantId: user.tenantId, completedBy: user.id });
+      const { templateId, templateItemId, date, notes } = req.body;
+      if (!templateId || !templateItemId || !date) {
+        return res.status(400).json({ message: "templateId, templateItemId, and date are required" });
+      }
+      const template = await storage.getCleaningTemplate(templateId);
+      if (!template || template.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Template not found" });
+      }
+      const log = await storage.createCleaningLog({ templateId, templateItemId, date: new Date(date), tenantId: user.tenantId, completedBy: user.id, notes: notes || null });
       res.json(log);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
