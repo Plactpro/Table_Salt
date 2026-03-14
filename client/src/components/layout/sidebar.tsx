@@ -277,7 +277,6 @@ export default function Sidebar() {
         </TooltipProvider>
       </nav>
 
-      <BusinessBadges badges={badges} />
     </aside>
   );
 }
