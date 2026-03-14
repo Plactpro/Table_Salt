@@ -4,6 +4,7 @@ import type {
   ToastActionElement,
   ToastProps,
 } from "@/components/ui/toast"
+import { emitChefEvent } from "@/hooks/use-chef-events"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -160,6 +161,19 @@ function toast({ ...props }: Toast) {
       },
     },
   })
+
+  if (props.variant === "destructive") {
+    emitChefEvent("error")
+  } else if (props.title && typeof props.title === "string") {
+    const t = props.title.toLowerCase()
+    if (t.includes("order") && (t.includes("success") || t.includes("placed"))) {
+      emitChefEvent("order-complete")
+    } else if (t.includes("reservation") && t.includes("created")) {
+      emitChefEvent("reservation-new")
+    } else if (t.includes("success") || t.includes("added") || t.includes("updated") || t.includes("created") || t.includes("saved")) {
+      emitChefEvent("success")
+    }
+  }
 
   return {
     id: id,
