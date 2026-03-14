@@ -375,7 +375,7 @@ export async function seedDatabase() {
   const kitchenMorning = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Kitchen Morning Prep", area: "kitchen", frequency: "daily", shift: "Morning", sortOrder: 1,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Sanitize all cutting boards and prep surfaces",
     "Check and record refrigerator temperatures",
     "Clean and sanitize sinks",
@@ -383,28 +383,28 @@ export async function seedDatabase() {
     "Wipe down all stainless steel surfaces",
     "Empty and clean grease traps",
     "Check hand-wash stations (soap, paper towels)",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: kitchenMorning.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: kitchenMorning.id, task, sortOrder: i + 1 });
   }
 
   const kitchenAfternoon = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Kitchen Afternoon Service", area: "kitchen", frequency: "daily", shift: "Afternoon", sortOrder: 2,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Re-sanitize all prep surfaces after lunch rush",
     "Restock cooking stations with fresh supplies",
     "Clean and organize walk-in cooler",
     "Wipe down all equipment exteriors",
     "Check and replenish cleaning supply stations",
     "Clean floor drains",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: kitchenAfternoon.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: kitchenAfternoon.id, task, sortOrder: i + 1 });
   }
 
   const kitchenClosing = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Kitchen Closing", area: "kitchen", frequency: "daily", shift: "Closing", sortOrder: 3,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Deep clean all cooking stations",
     "Clean and sanitize deep fryer",
     "Break down, clean, and sanitize slicer",
@@ -412,55 +412,55 @@ export async function seedDatabase() {
     "Empty all trash bins and replace liners",
     "Mop floors with sanitizer solution",
     "Turn off all equipment and check gas lines",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: kitchenClosing.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: kitchenClosing.id, task, sortOrder: i + 1 });
   }
 
   const restroomHourly = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Restroom Hourly Check", area: "restaurant_premises", frequency: "hourly", sortOrder: 1,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Check and restock toilet paper and hand towels",
     "Wipe down sinks, counters, and mirrors",
     "Empty waste bins and replace liners",
     "Mop floor and check for spills",
     "Refill soap dispensers",
     "Check air freshener levels",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: restroomHourly.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: restroomHourly.id, task, sortOrder: i + 1 });
   }
 
   const diningEvery2h = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Dining Area (Every 2 Hours)", area: "restaurant_premises", frequency: "every_2_hours", sortOrder: 2,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Wipe down all vacant tables and chairs",
     "Check and restock napkin dispensers",
     "Sweep visible floor debris",
     "Empty full waste bins in dining area",
     "Wipe down bar area and counter",
     "Sanitize all condiment containers",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: diningEvery2h.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: diningEvery2h.id, task, sortOrder: i + 1 });
   }
 
   const entryReception = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Entry & Reception Per-Shift", area: "restaurant_premises", frequency: "per_shift", sortOrder: 3,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Clean entrance glass doors and windows",
     "Polish hostess stand and reception area",
     "Sweep and mop entry foyer",
     "Wipe down waiting area seating",
     "Check exterior signage cleanliness",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: entryReception.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: entryReception.id, task, sortOrder: i + 1 });
   }
 
   const deepWeekly = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Weekly Deep Clean", area: "deep_cleaning", frequency: "weekly", sortOrder: 1,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Deep clean walk-in cooler/freezer",
     "Clean behind and under all kitchen equipment",
     "Descale dishwasher and coffee machines",
@@ -469,14 +469,14 @@ export async function seedDatabase() {
     "Deep clean exhaust hoods and ductwork",
     "Shampoo dining area carpets/rugs",
     "Clean light fixtures and ceiling fans",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: deepWeekly.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: deepWeekly.id, task, sortOrder: i + 1 });
   }
 
   const deepMonthly = await storage.createCleaningTemplate({
     tenantId: tenant.id, name: "Monthly Deep Clean", area: "deep_cleaning", frequency: "monthly", sortOrder: 2,
   });
-  for (const task of [
+  for (const [i, task] of [
     "Professional pest control inspection",
     "Deep clean all ventilation systems",
     "Power wash exterior areas and dumpster area",
@@ -484,8 +484,8 @@ export async function seedDatabase() {
     "Deep clean storage areas and shelving",
     "Inspect and clean all drains",
     "Polish and seal hardwood/tile floors",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: deepMonthly.id, task, sortOrder: 0 });
+  ].entries()) {
+    await storage.createCleaningTemplateItem({ templateId: deepMonthly.id, task, sortOrder: i + 1 });
   }
 
   console.log("Demo data seeded successfully!");
