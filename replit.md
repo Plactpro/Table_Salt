@@ -77,17 +77,6 @@ All prefixed with `/api`:
 - **Premium**: + reports, billing, analytics, delivery, loyalty, crm, offers
 - **Enterprise**: + integrations, multi-location, api_access, custom_branding
 
-## Chef Mascot
-- Component: `client/src/components/widgets/chef-mascot.tsx`
-- Events: `client/src/hooks/use-chef-events.ts` (emitChefEvent/onChefEvent)
-- Toast integration: `client/src/hooks/use-toast.ts` auto-emits chef events
-- States: idle, greeting, hover, click, scroll, success, error, sleeping, busy, tasting, setting-table
-- Event→State: order-complete→tasting, reservation-new→setting-table, busy-hour→busy, success→confetti
-- Design: Pixar-style chubby chef, light blue jacket, white apron, cutting board with vegetables
-- Size: 210x280px desktop, 150x200px mobile, fixed bottom-left 30px
-- Accessibility: useReducedMotion disables all animations (state transitions + speech still work)
-- Performance: Eye tracking via useMotionValue (no re-renders), RAF throttled at 50ms
-- Persistence: localStorage "chef-visible" for show/hide toggle
 
 ## Design System
 - Fonts: Outfit (headings), Plus Jakarta Sans (body)
