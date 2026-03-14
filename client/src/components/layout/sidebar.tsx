@@ -159,8 +159,8 @@ export default function Sidebar() {
       <WaterShimmer />
       <SandDecoration />
 
-      <div className="relative flex items-center justify-center px-6 py-5 overflow-hidden" style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
-        <span className="font-heading text-white text-[32px] font-medium text-center drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" data-testid="logo-table-salt">
+      <div className="relative flex items-center justify-center px-6 py-5 overflow-hidden" style={{ borderBottom: "1px solid rgba(255,255,255,0.22)" }}>
+        <span className="font-heading text-white text-[32px] font-semibold text-center drop-shadow-[0_1px_3px_rgba(0,0,0,0.25)]" data-testid="logo-table-salt">
           Table Salt
         </span>
       </div>
@@ -190,10 +190,10 @@ export default function Sidebar() {
                         className={cn(
                           "group relative flex items-center gap-3 w-full rounded-xl px-3 py-3 text-base font-medium transition-all duration-200",
                           isLocked
-                            ? "text-[hsl(185,35%,18%)] opacity-50 cursor-not-allowed"
+                            ? "text-[hsl(185,30%,25%)] opacity-50 cursor-not-allowed"
                             : isActive
-                              ? "text-[hsl(185,45%,12%)] font-semibold"
-                              : "text-[hsl(185,35%,18%)] hover:text-[hsl(185,45%,10%)]"
+                              ? "text-[hsl(185,50%,10%)] font-semibold"
+                              : "text-[hsl(185,40%,15%)] hover:text-[hsl(185,50%,8%)]"
                         )}
                       >
                         {isActive && !isLocked && (
@@ -201,10 +201,10 @@ export default function Sidebar() {
                             layoutId="sidebar-active-bg"
                             className="absolute inset-0 rounded-xl"
                             style={{
-                              background: "linear-gradient(135deg, rgba(255,255,255,0.55), rgba(255,255,255,0.35))",
-                              backdropFilter: "blur(16px)",
-                              border: "1px solid rgba(255,255,255,0.5)",
-                              boxShadow: "0 2px 12px rgba(0,0,0,0.06), inset 0 1px 2px rgba(255,255,255,0.3)",
+                              background: "linear-gradient(135deg, rgba(255,255,255,0.72), rgba(255,255,255,0.50))",
+                              backdropFilter: "blur(8px)",
+                              border: "1px solid rgba(255,255,255,0.6)",
+                              boxShadow: "0 2px 12px rgba(0,0,0,0.10), inset 0 1px 2px rgba(255,255,255,0.4)",
                             }}
                             transition={{ type: "spring", stiffness: 350, damping: 30 }}
                           />
@@ -221,8 +221,8 @@ export default function Sidebar() {
                           <div
                             className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                             style={{
-                              background: "rgba(255,255,255,0.25)",
-                              backdropFilter: "blur(6px)",
+                              background: "rgba(255,255,255,0.30)",
+                              backdropFilter: "blur(4px)",
                             }}
                           />
                         )}
@@ -237,8 +237,8 @@ export default function Sidebar() {
                             isLocked
                               ? "text-[hsl(185,20%,40%)]"
                               : isActive
-                                ? "text-[hsl(176,60%,30%)]"
-                                : "text-[hsl(185,30%,28%)] group-hover:text-[hsl(176,55%,22%)]"
+                                ? "text-[hsl(176,65%,25%)]"
+                                : "text-[hsl(185,35%,22%)] group-hover:text-[hsl(176,60%,18%)]"
                           )} />
                         </motion.div>
                         <span className="relative z-10 flex-1 text-left">{item.name}</span>

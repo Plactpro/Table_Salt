@@ -34,7 +34,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
           key={location}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ duration: 0.2, ease: "easeOut" }}
+          transition={{ duration: 0.15, ease: "easeOut" }}
+          style={{ willChange: "opacity" }}
           className={`flex-1 overflow-auto ${isPosPage ? "" : "p-6"}`}
           data-testid="main-content"
         >
