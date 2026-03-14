@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
+import { emitChefEvent } from "@/hooks/use-chef-events";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -217,6 +218,7 @@ export default function POSPage() {
       return res.json();
     },
     onSuccess: () => {
+      emitChefEvent("order-complete");
       toast({ title: "Order placed successfully!" });
       setCart([]);
       setDiscount("");

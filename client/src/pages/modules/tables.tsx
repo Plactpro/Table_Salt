@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { emitChefEvent } from "@/hooks/use-chef-events";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Edit2, Trash2, Users, MapPin, Clock, CalendarDays,
@@ -190,6 +191,7 @@ export default function TablesPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/reservations"] });
       setShowAddReservation(false);
+      emitChefEvent("reservation-new");
       toast({ title: "Reservation created" });
     },
     onError: (err: Error) => {
