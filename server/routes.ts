@@ -888,6 +888,10 @@ export async function registerRoutes(
       if (!items.some(i => i.id === templateItemId)) {
         return res.status(400).json({ message: "Invalid template item" });
       }
+      const existingLogs = await storage.getCleaningLogsByTenant(user.tenantId, new Date(date));
+      if (existingLogs.some(l => l.templateItemId === templateItemId)) {
+        return res.status(409).json({ message: "Task already completed for this date" });
+      }
       const log = await storage.createCleaningLog({ templateId, templateItemId, date: new Date(date), tenantId: user.tenantId, completedBy: user.id, notes: notes || null });
       res.json(log);
     } catch (err: any) {
