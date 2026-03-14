@@ -11,6 +11,14 @@ export interface TenantInfo {
   plan: SubscriptionTier;
   businessType: BusinessType;
   currency?: string;
+  timezone?: string;
+  timeFormat?: string;
+  currencyPosition?: string;
+  currencyDecimals?: number;
+  taxRate?: string;
+  taxType?: string;
+  compoundTax?: boolean;
+  serviceCharge?: string;
 }
 
 export interface AuthUser {
@@ -73,6 +81,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           name: data.name,
           plan: (data.plan || "basic") as SubscriptionTier,
           businessType: (data.businessType || "casual_dining") as BusinessType,
+          currency: data.currency || "USD",
+          timezone: data.timezone || "UTC",
+          timeFormat: data.timeFormat || "12hr",
+          currencyPosition: data.currencyPosition || "before",
+          currencyDecimals: data.currencyDecimals ?? 2,
+          taxRate: data.taxRate || "0",
+          taxType: data.taxType || "vat",
+          compoundTax: data.compoundTax ?? false,
+          serviceCharge: data.serviceCharge || "0",
         };
       } catch {
         return null;

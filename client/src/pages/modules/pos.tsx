@@ -90,7 +90,9 @@ export default function POSPage() {
   const queryClient = useQueryClient();
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
-  const fmt = (val: number | string) => sharedFormatCurrency(val, tenantCurrency);
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (val: number | string) => sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -152,9 +154,15 @@ export default function POSPage() {
   }, [discount]);
 
   const totalDiscount = offerDiscount + manualDiscount;
-  const taxRate = 0.05;
-  const taxAmount = Math.max(0, (subtotal - totalDiscount)) * taxRate;
-  const total = Math.max(0, subtotal - totalDiscount + taxAmount);
+  const tenantTaxType = user?.tenant?.taxType || "vat";
+  const tenantCompoundTax = user?.tenant?.compoundTax ?? false;
+  const tenantServiceChargePct = Number(user?.tenant?.serviceCharge || "0") / 100;
+  const taxRate = tenantTaxType === "none" ? 0 : Number(user?.tenant?.taxRate || "5") / 100;
+  const afterDiscount = Math.max(0, subtotal - totalDiscount);
+  const serviceChargeAmount = afterDiscount * tenantServiceChargePct;
+  const taxBase = tenantCompoundTax ? afterDiscount + serviceChargeAmount : afterDiscount;
+  const taxAmount = taxBase * taxRate;
+  const total = afterDiscount + serviceChargeAmount + taxAmount;
 
   const isDineIn = orderType === "dine_in";
 
@@ -201,7 +209,7 @@ export default function POSPage() {
         tax: taxAmount.toFixed(2),
         discount: totalDiscount.toFixed(2),
         total: total.toFixed(2),
-        notes: orderNotes || null,
+        notes: [orderNotes, serviceChargeAmount > 0 ? `Service Charge (${(tenantServiceChargePct * 100).toFixed(1)}%): ${serviceChargeAmount.toFixed(2)}` : null].filter(Boolean).join(" | ") || null,
         status: isDineIn ? "in_progress" : "new",
         offerId: selectedOffer?.id || null,
         discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
@@ -496,10 +504,18 @@ export default function POSPage() {
                 <span>-{fmt(manualDiscount)}</span>
               </div>
             )}
-            <div className="flex justify-between" data-testid="text-tax">
-              <span className="text-muted-foreground">Tax (5%)</span>
-              <span>{fmt(taxAmount)}</span>
-            </div>
+            {serviceChargeAmount > 0 && (
+              <div className="flex justify-between" data-testid="text-service-charge">
+                <span className="text-muted-foreground">Service Charge ({(tenantServiceChargePct * 100).toFixed(1)}%)</span>
+                <span>{fmt(serviceChargeAmount)}</span>
+              </div>
+            )}
+            {taxRate > 0 && (
+              <div className="flex justify-between" data-testid="text-tax">
+                <span className="text-muted-foreground">Tax ({(taxRate * 100).toFixed(1)}%)</span>
+                <span>{fmt(taxAmount)}</span>
+              </div>
+            )}
             <Separator />
             <div className="flex justify-between font-semibold text-base" data-testid="text-total">
               <span>Total</span>
