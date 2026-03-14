@@ -1,7 +1,7 @@
 import { ReactNode, useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import Sidebar from "./sidebar";
 import Header from "./header";
 import { MessageSquare, Headset } from "lucide-react";
@@ -35,19 +35,16 @@ export default function AppLayout({ children }: AppLayoutProps) {
         <Header
           onOpenSupport={supportEnabled ? () => setShowContactSupport(true) : undefined}
         />
-        <AnimatePresence mode="wait">
-          <motion.main
-            key={location}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.25, ease: "easeInOut" }}
-            className="flex-1 p-6 overflow-auto"
-            data-testid="main-content"
-          >
-            {children}
-          </motion.main>
-        </AnimatePresence>
+        <motion.main
+          key={location}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ duration: 0.2, ease: "easeOut" }}
+          className="flex-1 p-6 overflow-auto"
+          data-testid="main-content"
+        >
+          {children}
+        </motion.main>
       </div>
 
       <AnimatePresence>
