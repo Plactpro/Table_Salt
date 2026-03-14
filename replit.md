@@ -12,7 +12,8 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 
 ## Key Files
 - `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules)
-- `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates)
+- `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
+- `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
 - `server/storage.ts` - IStorage interface + DatabaseStorage implementation
 - `server/auth.ts` - Passport setup, password hashing, auth middleware
@@ -40,6 +41,13 @@ requested → confirmed → seated → completed/no_show (auto-syncs table statu
 ## Order Status Flow
 new → sent_to_kitchen → in_progress → ready → served → ready_to_pay → paid
 (Also: cancelled, voided as terminal states)
+
+## Tenant Configuration Fields
+- `timezone` (IANA zone, default "UTC"), `timeFormat` ("12hr" / "24hr")
+- `currency` (ISO code), `currencyPosition` ("before" / "after"), `currencyDecimals` (0-3)
+- `taxRate` (%), `taxType` ("vat" / "gst" / "sales_tax" / "service_tax" / "none"), `compoundTax` (bool)
+- `serviceCharge` (%)
+- POS uses tenant tax/service charge settings; compound tax applies tax on subtotal+service charge
 
 ## Staff Schedule Attendance States
 scheduled / present / absent / late
