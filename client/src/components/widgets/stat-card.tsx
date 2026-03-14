@@ -22,10 +22,19 @@ function AnimatedCounter({ value }: { value: string | number }) {
   const suffix = typeof value === "string" ? value.match(/[^0-9.-]*$/)?.[0] || "" : "";
   const isNumeric = !isNaN(numericValue) && isFinite(numericValue);
 
+  const decimalPlaces = (() => {
+    if (typeof value === "string") {
+      const numStr = value.replace(/[^0-9.-]/g, "");
+      const dotIndex = numStr.indexOf(".");
+      if (dotIndex >= 0) return numStr.length - dotIndex - 1;
+    }
+    return numericValue % 1 !== 0 ? 2 : 0;
+  })();
+
   const motionVal = useMotionValue(0);
   const rounded = useTransform(motionVal, (latest) => {
-    if (numericValue % 1 !== 0) {
-      return latest.toFixed(1);
+    if (decimalPlaces > 0) {
+      return latest.toFixed(decimalPlaces);
     }
     return Math.round(latest).toLocaleString();
   });

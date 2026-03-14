@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { formatCurrency } from "@shared/currency";
+import { formatCurrency, type FormatCurrencyOptions } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BarChart3, TrendingUp, Clock, Star, Award, Users,
@@ -111,6 +111,8 @@ export default function PerformancePage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const currency = user?.tenant?.currency || "USD";
+  const currencyOpts: FormatCurrencyOptions = { position: (user?.tenant?.currencyPosition || "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 };
+  const fmt = (val: string | number) => formatCurrency(val, currency, currencyOpts);
 
   const [selectedStaffId, setSelectedStaffId] = useState("all");
   const [filterRole, setFilterRole] = useState("all");
@@ -308,7 +310,7 @@ export default function PerformancePage() {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Revenue</p>
-              <p className="text-2xl font-bold" data-testid="text-total-revenue">{formatCurrency(totalRevenueAll, currency)}</p>
+              <p className="text-2xl font-bold" data-testid="text-total-revenue">{fmt(totalRevenueAll)}</p>
             </div>
           </CardContent>
         </Card>
@@ -428,7 +430,7 @@ export default function PerformancePage() {
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="w-5 h-5 rounded flex items-center justify-center bg-green-100 text-green-600"><TrendingUp className="w-3 h-3" /></div>
-                    <span>Revenue: <strong>{formatCurrency(totalRevenue, currency)}</strong></span>
+                    <span>Revenue: <strong>{fmt(totalRevenue)}</strong></span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="w-5 h-5 rounded flex items-center justify-center bg-teal-100 text-teal-600"><Users className="w-3 h-3" /></div>
@@ -450,7 +452,7 @@ export default function PerformancePage() {
                 <div className="grid grid-cols-2 gap-2 text-xs pt-1 border-t">
                   <div className="flex items-center gap-1.5">
                     <div className="w-5 h-5 rounded flex items-center justify-center bg-indigo-100 text-indigo-600"><TrendingUp className="w-3 h-3" /></div>
-                    <span>AOV: <strong>{formatCurrency(avgOrderValue, currency)}</strong></span>
+                    <span>AOV: <strong>{fmt(avgOrderValue)}</strong></span>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className="w-5 h-5 rounded flex items-center justify-center bg-yellow-100 text-yellow-600"><Star className="w-3 h-3" /></div>
@@ -458,7 +460,7 @@ export default function PerformancePage() {
                   </div>
                 </div>
                 {avgRevenuePerShift > 0 && (
-                  <p className="text-xs text-muted-foreground">Avg {formatCurrency(avgRevenuePerShift, currency)}/shift · {feedbackCount} review{feedbackCount !== 1 ? "s" : ""}</p>
+                  <p className="text-xs text-muted-foreground">Avg {fmt(avgRevenuePerShift)}/shift · {feedbackCount} review{feedbackCount !== 1 ? "s" : ""}</p>
                 )}
               </CardContent>
             </Card>

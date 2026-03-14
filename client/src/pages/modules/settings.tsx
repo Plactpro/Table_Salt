@@ -13,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Save, Building2, Receipt, Settings, CheckCircle2, Crown, Store,
-  Clock, Globe, DollarSign, Percent, Search, Eye,
+  Clock, Globe, DollarSign, Percent, Search, Eye, RotateCcw,
 } from "lucide-react";
 import {
   SubscriptionTier,
@@ -95,12 +95,16 @@ export default function SettingsPage() {
         currency: ["currency", "currencyPosition", "currencyDecimals"],
         business: ["businessType", "plan"],
       };
-      for (const [section, keys] of Object.entries(sectionKeys)) {
-        if (keys.some((k) => variables[k] !== undefined)) {
-          toast({ title: `${section.charAt(0).toUpperCase() + section.slice(1)} settings saved` });
-          showSaveAnimation(section);
-          break;
-        }
+      const matchedSections = Object.entries(sectionKeys).filter(([, keys]) =>
+        keys.some((k) => variables[k] !== undefined)
+      );
+      if (matchedSections.length > 1) {
+        toast({ title: "All settings saved" });
+        matchedSections.forEach(([section]) => showSaveAnimation(section));
+      } else if (matchedSections.length === 1) {
+        const [section] = matchedSections[0];
+        toast({ title: `${section.charAt(0).toUpperCase() + section.slice(1)} settings saved` });
+        showSaveAnimation(section);
       }
     },
     onError: (err: any) => {
@@ -131,6 +135,15 @@ export default function SettingsPage() {
   const handleBusinessConfigSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     updateMutation.mutate({ businessType, plan });
+  };
+
+  const handleSaveAll = () => {
+    updateMutation.mutate({
+      name, address, timezone, timeFormat,
+      taxRate, taxType, compoundTax, serviceCharge,
+      currency, currencyPosition, currencyDecimals,
+      businessType, plan,
+    });
   };
 
   const filteredTimezones = useMemo(() => {
@@ -210,6 +223,7 @@ export default function SettingsPage() {
     gst: "GST (Goods & Services Tax)",
     sales_tax: "Sales Tax",
     service_tax: "Service Tax",
+    custom: "Custom Tax",
     none: "No Tax",
   };
 
@@ -413,9 +427,22 @@ export default function SettingsPage() {
                     <p className="text-2xl font-bold font-heading text-blue-800 dark:text-blue-200" data-testid="text-live-clock">{currentTime}</p>
                     <p className="text-xs text-blue-600 dark:text-blue-400" data-testid="text-live-date">{currentDate}</p>
                   </div>
-                  <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-timezone" className="transition-all duration-200 hover:scale-[1.02]">
-                    <Save className="h-4 w-4 mr-2" /> Save Time Zone
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-timezone" className="transition-all duration-200 hover:scale-[1.02]">
+                      <Save className="h-4 w-4 mr-2" /> Save Time Zone
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      data-testid="button-reset-timezone-browser"
+                      onClick={() => {
+                        const browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                        setTimezone(browserTz);
+                      }}
+                    >
+                      <RotateCcw className="h-4 w-4 mr-2" /> Reset to Browser
+                    </Button>
+                  </div>
                 </form>
               </CardContent>
             </Card>
@@ -585,6 +612,18 @@ export default function SettingsPage() {
                 </form>
               </CardContent>
             </Card>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+            <Button
+              size="lg"
+              className="w-full transition-all duration-200 hover:scale-[1.01]"
+              onClick={handleSaveAll}
+              disabled={updateMutation.isPending}
+              data-testid="button-save-all"
+            >
+              <Save className="h-4 w-4 mr-2" /> Save All Changes
+            </Button>
           </motion.div>
         </div>
 

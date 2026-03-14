@@ -111,9 +111,11 @@ export default function OrdersPage() {
   const queryClient = useQueryClient();
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: string | number | null) => {
-    if (val == null) return sharedFormatCurrency(0, tenantCurrency);
-    return sharedFormatCurrency(val, tenantCurrency);
+    if (val == null) return sharedFormatCurrency(0, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
+    return sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
   };
 
   const [statusFilter, setStatusFilter] = useState("all");

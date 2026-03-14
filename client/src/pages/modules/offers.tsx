@@ -110,7 +110,9 @@ export default function OffersPage() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
-  const fmt = (val: string | number) => sharedFormatCurrency(val, tenantCurrency);
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (val: string | number) => sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);

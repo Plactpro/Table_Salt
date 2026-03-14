@@ -1,5 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,6 +14,11 @@ import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, Fil
 import { format, subDays } from "date-fns";
 
 export default function ReportsPage() {
+  const { user } = useAuth();
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (val: number | string) => sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
   const [fromDate, setFromDate] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
   const [toDate, setToDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [isExporting, setIsExporting] = useState(false);
@@ -120,10 +127,10 @@ export default function ReportsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: "Total Revenue", value: `$${Number(totals.revenue || 0).toFixed(2)}`, icon: DollarSign, color: "text-green-600", bg: "bg-green-100", testId: "stat-total-revenue", delay: 0 },
+          { title: "Total Revenue", value: fmt(Number(totals.revenue || 0)), icon: DollarSign, color: "text-green-600", bg: "bg-green-100", testId: "stat-total-revenue", delay: 0 },
           { title: "Total Orders", value: Number(totals.orderCount || 0), icon: ShoppingCart, color: "text-orange-500", bg: "bg-orange-100", testId: "stat-total-orders", delay: 0.1 },
-          { title: "Avg Order Value", value: `$${avgOrderValue}`, icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-100", testId: "stat-avg-order", delay: 0.2 },
-          { title: "Tax Collected", value: `$${Number(totals.tax || 0).toFixed(2)}`, icon: Percent, color: "text-orange-600", bg: "bg-orange-100", testId: "stat-tax-collected", delay: 0.3 },
+          { title: "Avg Order Value", value: fmt(Number(avgOrderValue)), icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-100", testId: "stat-avg-order", delay: 0.2 },
+          { title: "Tax Collected", value: fmt(Number(totals.tax || 0)), icon: Percent, color: "text-orange-600", bg: "bg-orange-100", testId: "stat-tax-collected", delay: 0.3 },
         ].map((stat) => (
           <motion.div
             key={stat.testId}
@@ -314,7 +321,7 @@ export default function ReportsPage() {
                     chartData.map((day: any, idx: number) => (
                       <TableRow key={idx} data-testid={`row-daily-sales-${idx}`} className="hover:bg-muted/50 transition-colors">
                         <TableCell>{day.date}</TableCell>
-                        <TableCell className="text-right">${day.revenue.toFixed(2)}</TableCell>
+                        <TableCell className="text-right">{fmt(day.revenue)}</TableCell>
                         <TableCell className="text-right">{day.orders}</TableCell>
                       </TableRow>
                     ))
@@ -340,7 +347,7 @@ export default function ReportsPage() {
                 </div>
                 <div>
                   <p className="text-sm text-muted-foreground">Discounts Given</p>
-                  <p className="text-xl font-bold" data-testid="text-discounts-total">${Number(totals.discount || 0).toFixed(2)}</p>
+                  <p className="text-xl font-bold" data-testid="text-discounts-total">{fmt(Number(totals.discount || 0))}</p>
                 </div>
               </div>
             </div>
