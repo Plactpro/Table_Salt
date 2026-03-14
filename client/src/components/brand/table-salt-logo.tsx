@@ -102,7 +102,7 @@ export function TableSaltLogo({
             </span>
           </>
         ) : (
-          <span className="font-heading text-white text-[28px] font-black text-right">
+          <span className={`text-lg font-heading font-bold ${isDark ? "text-white" : "bg-gradient-to-r from-[hsl(174,65%,32%)] to-[hsl(174,65%,42%)] bg-clip-text text-transparent"}`}>
             Table Salt
           </span>
         )}
