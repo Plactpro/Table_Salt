@@ -1,10 +1,10 @@
-import { eq, and, desc, sql, gte, lte, count, sum } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, lt, count, sum } from "drizzle-orm";
 import { db } from "./db";
 import {
   tenants, users, outlets, menuCategories, menuItems, tables,
   reservations, orders, orderItems, inventoryItems, stockMovements,
   customers, staffSchedules, feedback, offers, deliveryOrders, employeePerformanceLogs,
-  salesInquiries, supportTickets,
+  salesInquiries, supportTickets, attendanceLogs,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -24,6 +24,7 @@ import {
   type EmployeePerformanceLog, type InsertEmployeePerformanceLog,
   type SalesInquiry, type InsertSalesInquiry,
   type SupportTicket, type InsertSupportTicket,
+  type AttendanceLog, type InsertAttendanceLog,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -132,6 +133,12 @@ export interface IStorage {
   getSalesReport(tenantId: string, from: Date, to: Date): Promise<any>;
   createSalesInquiry(data: InsertSalesInquiry): Promise<SalesInquiry>;
   createSupportTicket(data: InsertSupportTicket): Promise<SupportTicket>;
+
+  getAttendanceLogsByTenant(tenantId: string): Promise<AttendanceLog[]>;
+  getAttendanceLogsByUser(userId: string, tenantId: string): Promise<AttendanceLog[]>;
+  getTodayAttendanceForUser(userId: string, tenantId: string): Promise<AttendanceLog | undefined>;
+  createAttendanceLog(data: InsertAttendanceLog): Promise<AttendanceLog>;
+  updateAttendanceLog(id: string, tenantId: string, data: Partial<InsertAttendanceLog>): Promise<AttendanceLog | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -563,6 +570,40 @@ export class DatabaseStorage implements IStorage {
     const referenceNumber = `SUP-${String(num).padStart(4, "0")}`;
     const [ticket] = await db.insert(supportTickets).values({ ...data, referenceNumber }).returning();
     return ticket;
+  }
+
+  async getAttendanceLogsByTenant(tenantId: string) {
+    return db.select().from(attendanceLogs).where(eq(attendanceLogs.tenantId, tenantId)).orderBy(desc(attendanceLogs.date));
+  }
+
+  async getAttendanceLogsByUser(userId: string, tenantId: string) {
+    return db.select().from(attendanceLogs).where(and(eq(attendanceLogs.userId, userId), eq(attendanceLogs.tenantId, tenantId))).orderBy(desc(attendanceLogs.date));
+  }
+
+  async getTodayAttendanceForUser(userId: string, tenantId: string) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const [log] = await db.select().from(attendanceLogs).where(
+      and(
+        eq(attendanceLogs.userId, userId),
+        eq(attendanceLogs.tenantId, tenantId),
+        gte(attendanceLogs.date, today),
+        lt(attendanceLogs.date, tomorrow),
+      )
+    ).orderBy(desc(attendanceLogs.clockIn)).limit(1);
+    return log;
+  }
+
+  async createAttendanceLog(data: InsertAttendanceLog) {
+    const [log] = await db.insert(attendanceLogs).values(data).returning();
+    return log;
+  }
+
+  async updateAttendanceLog(id: string, tenantId: string, data: Partial<InsertAttendanceLog>) {
+    const [log] = await db.update(attendanceLogs).set(data).where(and(eq(attendanceLogs.id, id), eq(attendanceLogs.tenantId, tenantId))).returning();
+    return log;
   }
 }
 
