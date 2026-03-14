@@ -1,13 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { StatCard } from "@/components/widgets/stat-card";
-import { Armchair, ClipboardList, DollarSign, Clock, Users, Coffee, UtensilsCrossed, CircleDot, Plus } from "lucide-react";
+import { Armchair, ClipboardList, DollarSign, Clock, Users, Coffee, UtensilsCrossed, CircleDot, Plus, LogIn, LogOut, CheckCircle, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { useState, useEffect } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -66,6 +68,113 @@ const tableStatusConfig: Record<string, { icon: any; color: string; bg: string; 
   cleaning: { icon: Coffee, color: "text-purple-600", bg: "bg-purple-50 dark:bg-purple-950/30", border: "border-purple-200 dark:border-purple-800" },
 };
 
+function ClockInOutCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [elapsed, setElapsed] = useState("");
+
+  const { data: attendanceStatus, isLoading: statusLoading } = useQuery<any>({
+    queryKey: ["/api/attendance/status"],
+    refetchInterval: 30000,
+  });
+
+  const isClockedIn = attendanceStatus && !attendanceStatus.clockOut;
+  const isClockedOut = attendanceStatus && attendanceStatus.clockOut;
+
+  useEffect(() => {
+    if (!isClockedIn) { setElapsed(""); return; }
+    const update = () => {
+      const diff = Date.now() - new Date(attendanceStatus.clockIn).getTime();
+      const h = Math.floor(diff / 3600000);
+      const m = Math.floor((diff % 3600000) / 60000);
+      setElapsed(`${h}h ${m}m`);
+    };
+    update();
+    const iv = setInterval(update, 60000);
+    return () => clearInterval(iv);
+  }, [isClockedIn, attendanceStatus?.clockIn]);
+
+  const clockInMutation = useMutation({
+    mutationFn: async () => { const res = await apiRequest("POST", "/api/attendance/clock-in", {}); return res.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/attendance/status"] }); toast({ title: "Clocked In", description: "Your shift has started" }); },
+    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+  });
+
+  const clockOutMutation = useMutation({
+    mutationFn: async () => { const res = await apiRequest("POST", "/api/attendance/clock-out", {}); return res.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/attendance/status"] }); toast({ title: "Clocked Out", description: "Your shift has ended" }); },
+    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+  });
+
+  if (statusLoading) return null;
+
+  return (
+    <motion.div variants={fadeUp}>
+      <Card data-testid="card-clock-in-out" className={`border-2 ${isClockedIn ? "border-green-300 dark:border-green-800 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30" : "border-orange-200 dark:border-orange-800 bg-gradient-to-r from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/30"}`}>
+        <CardContent className="p-5">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <div className="flex items-center gap-4">
+              <div className={`p-3 rounded-xl ${isClockedIn ? "bg-green-100 dark:bg-green-900/50" : "bg-orange-100 dark:bg-orange-900/50"}`}>
+                {isClockedIn ? <CheckCircle className="h-7 w-7 text-green-600" /> : <Clock className="h-7 w-7 text-orange-600" />}
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Attendance</p>
+                <h3 className="text-lg font-bold font-heading" data-testid="text-attendance-status">
+                  {isClockedIn ? "Clocked In" : isClockedOut ? "Shift Complete" : "Not Clocked In"}
+                </h3>
+                {isClockedIn && (
+                  <div className="flex items-center gap-3 mt-1">
+                    <span className="text-xs text-muted-foreground">
+                      Since {new Date(attendanceStatus.clockIn).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    {elapsed && <Badge variant="secondary" className="text-xs" data-testid="text-elapsed-time">{elapsed}</Badge>}
+                    {attendanceStatus.status === "late" && <Badge className="bg-amber-100 text-amber-700 text-xs"><AlertCircle className="h-3 w-3 mr-1" />Late ({attendanceStatus.lateMinutes}m)</Badge>}
+                  </div>
+                )}
+                {isClockedOut && (
+                  <span className="text-xs text-muted-foreground">
+                    Worked {attendanceStatus.hoursWorked}h today
+                  </span>
+                )}
+              </div>
+            </div>
+            <div>
+              {!isClockedIn && !isClockedOut && (
+                <Button
+                  onClick={() => clockInMutation.mutate()}
+                  disabled={clockInMutation.isPending}
+                  className="bg-green-600 hover:bg-green-700 text-white gap-2 px-6 h-11"
+                  data-testid="button-clock-in"
+                >
+                  <LogIn className="h-4 w-4" />
+                  {clockInMutation.isPending ? "Clocking In..." : "Clock In"}
+                </Button>
+              )}
+              {isClockedIn && (
+                <Button
+                  onClick={() => clockOutMutation.mutate()}
+                  disabled={clockOutMutation.isPending}
+                  variant="outline"
+                  className="border-red-300 text-red-600 hover:bg-red-50 gap-2 px-6 h-11"
+                  data-testid="button-clock-out"
+                >
+                  <LogOut className="h-4 w-4" />
+                  {clockOutMutation.isPending ? "Clocking Out..." : "Clock Out"}
+                </Button>
+              )}
+              {isClockedOut && (
+                <Badge className="bg-green-100 text-green-700 px-4 py-2 text-sm" data-testid="badge-shift-complete">
+                  <CheckCircle className="h-4 w-4 mr-1" /> Complete
+                </Badge>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
 export default function WaiterDashboard() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
@@ -120,6 +229,8 @@ export default function WaiterDashboard() {
           </motion.div>
         </div>
       </motion.div>
+
+      <ClockInOutCard />
 
       <motion.div variants={fadeUp} className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <StatCard

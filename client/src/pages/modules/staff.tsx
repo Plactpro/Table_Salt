@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,7 @@ import {
   Plus, UserCog, Search, Edit, ChevronLeft, ChevronRight,
   Crown, ShieldCheck, ConciergeBell, ChefHat, Calculator, Users,
   Calendar, Clock, CheckCircle, XCircle, AlertCircle, Trash2,
-  LayoutGrid, CalendarDays,
+  LayoutGrid, CalendarDays, ClipboardCheck, LogIn, LogOut, Timer,
 } from "lucide-react";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant"] as const;
@@ -80,7 +80,7 @@ export default function StaffPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<StaffMember | null>(null);
-  const [activeTab, setActiveTab] = useState<"roster" | "schedule">("roster");
+  const [activeTab, setActiveTab] = useState<"roster" | "schedule" | "attendance">("roster");
   const [scheduleView, setScheduleView] = useState<"weekly" | "monthly">("weekly");
   const [showAddShift, setShowAddShift] = useState(false);
   const [weekStart, setWeekStart] = useState(() => {
@@ -105,6 +105,11 @@ export default function StaffPage() {
 
   const { data: outlets = [] } = useQuery<Outlet[]>({
     queryKey: ["/api/outlets"],
+  });
+
+  const { data: attendanceLogs = [] } = useQuery<any[]>({
+    queryKey: ["/api/attendance"],
+    enabled: activeTab === "attendance",
   });
 
   const createMutation = useMutation({
@@ -351,6 +356,9 @@ export default function StaffPage() {
         </Button>
         <Button data-testid="button-tab-schedule" variant={activeTab === "schedule" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("schedule")}>
           <Calendar className="w-4 h-4 mr-1" /> Schedule
+        </Button>
+        <Button data-testid="button-tab-attendance" variant={activeTab === "attendance" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("attendance")}>
+          <ClipboardCheck className="w-4 h-4 mr-1" /> Attendance
         </Button>
       </div>
 
@@ -625,6 +633,150 @@ export default function StaffPage() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {activeTab === "attendance" && (
+        <div className="space-y-6">
+          {(() => {
+            const today = new Date().toISOString().split("T")[0];
+            const todayLogs = attendanceLogs.filter((l: any) => l.date && l.date.startsWith(today));
+            const clockedIn = todayLogs.filter((l: any) => l.clockIn && !l.clockOut).length;
+            const completed = todayLogs.filter((l: any) => l.clockOut).length;
+            const late = todayLogs.filter((l: any) => l.status === "late").length;
+            const totalHours = todayLogs.reduce((sum: number, l: any) => sum + (parseFloat(l.hoursWorked) || 0), 0);
+
+            const staffMap = new Map<string, string>();
+            activeStaff.forEach((s) => staffMap.set(s.id, s.name));
+
+            return (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  <Card>
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-green-100 dark:bg-green-900/30"><LogIn className="h-5 w-5 text-green-600" /></div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Clocked In</p>
+                        <p className="text-2xl font-bold" data-testid="text-clocked-in-count">{clockedIn}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30"><CheckCircle className="h-5 w-5 text-blue-600" /></div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Completed</p>
+                        <p className="text-2xl font-bold" data-testid="text-completed-count">{completed}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30"><AlertCircle className="h-5 w-5 text-amber-600" /></div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Late Today</p>
+                        <p className="text-2xl font-bold" data-testid="text-late-count">{late}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30"><Timer className="h-5 w-5 text-purple-600" /></div>
+                      <div>
+                        <p className="text-xs text-muted-foreground">Total Hours</p>
+                        <p className="text-2xl font-bold" data-testid="text-total-hours">{totalHours.toFixed(1)}h</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-lg flex items-center gap-2"><ClipboardCheck className="h-5 w-5" /> Today's Attendance</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Staff Member</TableHead>
+                          <TableHead>Clock In</TableHead>
+                          <TableHead>Clock Out</TableHead>
+                          <TableHead>Hours</TableHead>
+                          <TableHead>Status</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {todayLogs.length === 0 ? (
+                          <TableRow>
+                            <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                              No attendance records for today
+                            </TableCell>
+                          </TableRow>
+                        ) : (
+                          todayLogs.map((log: any) => (
+                            <TableRow key={log.id} data-testid={`row-attendance-${log.id}`}>
+                              <TableCell className="font-medium">{staffMap.get(log.userId) || "Unknown"}</TableCell>
+                              <TableCell>{new Date(log.clockIn).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</TableCell>
+                              <TableCell>{log.clockOut ? new Date(log.clockOut).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : <Badge variant="secondary" className="bg-green-100 text-green-700"><Clock className="h-3 w-3 mr-1" />Active</Badge>}</TableCell>
+                              <TableCell>{log.hoursWorked ? `${parseFloat(log.hoursWorked).toFixed(1)}h` : "—"}</TableCell>
+                              <TableCell>
+                                <Badge className={log.status === "late" ? "bg-amber-100 text-amber-700" : log.status === "on_time" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"} data-testid={`badge-attendance-status-${log.id}`}>
+                                  {log.status === "late" && <AlertCircle className="h-3 w-3 mr-1" />}
+                                  {log.status === "on_time" && <CheckCircle className="h-3 w-3 mr-1" />}
+                                  {log.status === "late" ? `Late (${log.lateMinutes}m)` : log.status === "on_time" ? "On Time" : log.status}
+                                </Badge>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        )}
+                      </TableBody>
+                    </Table>
+                  </CardContent>
+                </Card>
+
+                {attendanceLogs.length > todayLogs.length && (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg flex items-center gap-2"><CalendarDays className="h-5 w-5" /> Recent History</CardTitle>
+                    </CardHeader>
+                    <CardContent className="p-0">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Staff Member</TableHead>
+                            <TableHead>Clock In</TableHead>
+                            <TableHead>Clock Out</TableHead>
+                            <TableHead>Hours</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {attendanceLogs
+                            .filter((l: any) => !l.date?.startsWith(today))
+                            .slice(0, 50)
+                            .map((log: any) => (
+                              <TableRow key={log.id} data-testid={`row-attendance-history-${log.id}`}>
+                                <TableCell>{log.date ? new Date(log.date).toLocaleDateString() : "—"}</TableCell>
+                                <TableCell className="font-medium">{staffMap.get(log.userId) || "Unknown"}</TableCell>
+                                <TableCell>{new Date(log.clockIn).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</TableCell>
+                                <TableCell>{log.clockOut ? new Date(log.clockOut).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "—"}</TableCell>
+                                <TableCell>{log.hoursWorked ? `${parseFloat(log.hoursWorked).toFixed(1)}h` : "—"}</TableCell>
+                                <TableCell>
+                                  <Badge className={log.status === "late" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"}>
+                                    {log.status === "late" ? `Late (${log.lateMinutes}m)` : "On Time"}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            );
+          })()}
         </div>
       )}
 

@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System with role-based dashboards, POS
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates)
 - `server/db.ts` - Database connection (Pool + Drizzle)
 - `server/storage.ts` - IStorage interface + DatabaseStorage implementation
@@ -51,6 +51,7 @@ All prefixed with `/api`:
 - Delivery: `/delivery-orders` (CRUD)
 - Performance: `/performance-logs` (CRUD)
 - CRM: `/customers/by-loyalty/:tier`, `/customers/by-tag/:tag`
+- Attendance: `/attendance` (GET, role-scoped), `/attendance/status` (GET), `/attendance/clock-in` (POST), `/attendance/clock-out` (POST)
 - Contact: `/contact-config` (GET, public), `/contact-sales` (POST, public), `/contact-support` (POST, public)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
@@ -62,7 +63,7 @@ All prefixed with `/api`:
 - `/tables` - Table floor plan & reservations
 - `/menu` - Menu management (with image, tags, ingredients, DishInfoPanel)
 - `/inventory` - Inventory management
-- `/staff` - Staff management
+- `/staff` - Staff management (roster, schedule, attendance tabs with clock-in/out tracking)
 - `/reports` - Sales reports
 - `/offers` - Offers & Discounts management (premium+ tier, combo/BOGO/free_item marked as POS N/A)
 - `/billing` - Subscription plans + Invoice history (service charge line in dine-in invoices)

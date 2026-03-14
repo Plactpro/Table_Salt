@@ -372,7 +372,25 @@ export const insertOrderItemSchema = createInsertSchema(orderItems).omit({ id: t
 export const insertInventoryItemSchema = createInsertSchema(inventoryItems).omit({ id: true });
 export const insertStockMovementSchema = createInsertSchema(stockMovements).omit({ id: true, createdAt: true });
 export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true });
+export const attendanceLogs = pgTable("attendance_logs", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id),
+  scheduleId: varchar("schedule_id", { length: 36 }).references(() => staffSchedules.id),
+  date: timestamp("date").notNull(),
+  clockIn: timestamp("clock_in").notNull(),
+  clockOut: timestamp("clock_out"),
+  hoursWorked: decimal("hours_worked", { precision: 5, scale: 2 }),
+  status: text("status").notNull().default("on_time"),
+  lateMinutes: integer("late_minutes").default(0),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertStaffScheduleSchema = createInsertSchema(staffSchedules).omit({ id: true });
+export const insertAttendanceLogSchema = createInsertSchema(attendanceLogs).omit({ id: true, createdAt: true });
 export const insertFeedbackSchema = createInsertSchema(feedback).omit({ id: true, createdAt: true });
 export const insertOfferSchema = createInsertSchema(offers).omit({ id: true, createdAt: true });
 export const insertDeliveryOrderSchema = createInsertSchema(deliveryOrders).omit({ id: true, createdAt: true });
@@ -467,5 +485,7 @@ export type EmployeePerformanceLog = typeof employeePerformanceLogs.$inferSelect
 export type InsertEmployeePerformanceLog = z.infer<typeof insertEmployeePerformanceLogSchema>;
 export type SalesInquiry = typeof salesInquiries.$inferSelect;
 export type InsertSalesInquiry = z.infer<typeof insertSalesInquirySchema>;
+export type AttendanceLog = typeof attendanceLogs.$inferSelect;
+export type InsertAttendanceLog = z.infer<typeof insertAttendanceLogSchema>;
 export type SupportTicket = typeof supportTickets.$inferSelect;
 export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
