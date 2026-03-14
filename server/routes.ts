@@ -901,7 +901,7 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
-  app.get("/api/cleaning/schedules", async (req, res) => {
+  app.get("/api/cleaning/schedules", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
@@ -913,11 +913,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/cleaning/schedules", async (req, res) => {
+  app.post("/api/cleaning/schedules", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
-      if (user.role !== "owner" && user.role !== "manager") return res.status(403).json({ message: "Forbidden" });
       const { templateId, date, assignedTo } = req.body;
       if (!templateId || !date) return res.status(400).json({ message: "templateId and date are required" });
       const template = await storage.getCleaningTemplate(templateId);
@@ -933,11 +931,9 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/cleaning/schedules/:id", async (req, res) => {
+  app.patch("/api/cleaning/schedules/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      if (!user) return res.status(401).json({ message: "Unauthorized" });
-      if (user.role !== "owner" && user.role !== "manager") return res.status(403).json({ message: "Forbidden" });
       const allowed: Record<string, boolean> = { assignedTo: true, status: true };
       const updates: Record<string, any> = {};
       for (const key of Object.keys(req.body)) {
@@ -955,7 +951,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/cleaning/compliance-report", async (req, res) => {
+  app.get("/api/cleaning/compliance-report", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       if (!user) return res.status(401).json({ message: "Unauthorized" });
