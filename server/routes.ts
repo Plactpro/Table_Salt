@@ -9,7 +9,9 @@ import {
   insertOrderItemSchema, insertInventoryItemSchema, insertStockMovementSchema,
   insertCustomerSchema, insertStaffScheduleSchema, insertUserSchema,
   insertOfferSchema, insertDeliveryOrderSchema, insertEmployeePerformanceLogSchema,
+  insertSalesInquirySchema,
 } from "@shared/schema";
+import { sendContactSalesEmail, emailConfig } from "./email";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -581,6 +583,32 @@ export async function registerRoutes(
     const user = req.user as any;
     await storage.deleteStaffScheduleByTenant(req.params.id, user.tenantId);
     res.json({ message: "Deleted" });
+  });
+
+  app.get("/api/contact-sales/config", (_req, res) => {
+    res.json({ enabled: emailConfig.enableContactSales });
+  });
+
+  app.post("/api/contact-sales", async (req, res) => {
+    try {
+      if (!emailConfig.enableContactSales) {
+        return res.status(403).json({ message: "Contact sales is currently disabled" });
+      }
+      const parsed = insertSalesInquirySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten().fieldErrors });
+      }
+      const inquiry = await storage.createSalesInquiry(parsed.data);
+      try {
+        await sendContactSalesEmail(parsed.data);
+      } catch (emailErr) {
+        console.error("[Contact Sales] Email notification failed (inquiry saved):", emailErr);
+      }
+      res.json({ message: "Inquiry submitted successfully", id: inquiry.id });
+    } catch (err: any) {
+      console.error("[Contact Sales Error]", err);
+      res.status(500).json({ message: "Failed to submit inquiry. Please try again." });
+    }
   });
 
   app.get("/api/health", (_req, res) => {
