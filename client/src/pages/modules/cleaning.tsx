@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -138,11 +138,17 @@ export default function CleaningPage() {
 
   const [templateItems, setTemplateItems] = useState<Record<string, CleaningTemplateItem[]>>({});
 
-  const loadTemplateItems = async (templateId: string) => {
-    if (templateItems[templateId]) return;
-    const items = await fetchJson(`/api/cleaning/templates/${templateId}/items`);
-    setTemplateItems(prev => ({ ...prev, [templateId]: items }));
-  };
+  useEffect(() => {
+    const loadAll = async () => {
+      for (const t of templates) {
+        if (!templateItems[t.id]) {
+          const items = await fetchJson(`/api/cleaning/templates/${t.id}/items`);
+          setTemplateItems(prev => ({ ...prev, [t.id]: items }));
+        }
+      }
+    };
+    if (templates.length > 0) loadAll();
+  }, [templates]);
 
   const completeMutation = useMutation({
     mutationFn: async (data: { templateId: string; templateItemId: string; notes?: string }) => {
@@ -333,10 +339,6 @@ export default function CleaningPage() {
   const renderTemplateChecklist = (template: CleaningTemplate) => {
     const items = templateItems[template.id] || [];
     const progress = getTemplateProgress(template.id);
-
-    if (!templateItems[template.id]) {
-      loadTemplateItems(template.id);
-    }
 
     return (
       <Card key={template.id} className="mb-4" data-testid={`card-template-${template.id}`}>
