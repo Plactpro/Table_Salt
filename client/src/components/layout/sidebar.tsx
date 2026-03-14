@@ -3,7 +3,6 @@ import { useAuth, Role } from "@/lib/auth";
 import { useSubscription } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
-import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import {
   Tooltip,
   TooltipContent,
@@ -160,8 +159,10 @@ export default function Sidebar() {
       <WaterShimmer />
       <SandDecoration />
 
-      <div className="relative flex items-center gap-3 px-6 py-5 overflow-hidden" style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
-        <TableSaltLogo variant="compact" animate colorScheme="dark" textClassName="drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" />
+      <div className="relative flex items-center justify-center px-6 py-5 overflow-hidden" style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
+        <span className="font-heading text-white text-[32px] font-medium text-center drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" data-testid="logo-table-salt">
+          Table Salt
+        </span>
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 relative z-10">
