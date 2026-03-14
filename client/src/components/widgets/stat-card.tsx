@@ -62,19 +62,19 @@ function AnimatedCounter({ value }: { value: string | number }) {
 }
 
 const gradientIconStyles: Record<string, string> = {
-  "text-primary": "from-teal-600/15 to-teal-700/10",
-  "text-teal-600": "from-teal-500/20 to-teal-600/10",
-  "text-emerald-600": "from-emerald-500/20 to-green-600/10",
-  "text-green-600": "from-green-500/20 to-emerald-600/10",
-  "text-orange-500": "from-orange-400/20 to-orange-500/10",
-  "text-orange-600": "from-orange-500/20 to-orange-600/10",
-  "text-amber-600": "from-amber-500/20 to-amber-600/10",
-  "text-red-600": "from-red-500/20 to-rose-600/10",
-  "text-rose-600": "from-rose-500/20 to-rose-600/10",
-  "text-purple-600": "from-purple-500/20 to-violet-600/10",
-  "text-blue-600": "from-blue-500/20 to-blue-600/10",
-  "text-cyan-600": "from-cyan-500/20 to-cyan-600/10",
-  "text-stone-600": "from-stone-500/20 to-stone-600/10",
+  "text-primary": "from-teal-600/25 to-teal-700/15",
+  "text-teal-600": "from-teal-500/30 to-teal-600/15",
+  "text-emerald-600": "from-emerald-500/30 to-green-600/15",
+  "text-green-600": "from-green-500/30 to-emerald-600/15",
+  "text-orange-500": "from-orange-400/30 to-orange-500/15",
+  "text-orange-600": "from-orange-500/30 to-orange-600/15",
+  "text-amber-600": "from-amber-500/30 to-amber-600/15",
+  "text-red-600": "from-red-500/30 to-rose-600/15",
+  "text-rose-600": "from-rose-500/30 to-rose-600/15",
+  "text-purple-600": "from-purple-500/30 to-violet-600/15",
+  "text-blue-600": "from-blue-500/30 to-blue-600/15",
+  "text-cyan-600": "from-cyan-500/30 to-cyan-600/15",
+  "text-stone-600": "from-stone-500/30 to-stone-600/15",
 };
 
 export function StatCard({ title, value, subtitle, icon: Icon, iconColor = "text-primary", iconBg = "bg-primary/10", trend, testId, index = 0 }: StatCardProps) {
@@ -88,7 +88,7 @@ export function StatCard({ title, value, subtitle, icon: Icon, iconColor = "text
       whileHover={{ y: -4, transition: { duration: 0.2 } }}
       className="group"
     >
-      <Card data-testid={testId} className="transition-shadow duration-300 group-hover:shadow-lg group-hover:shadow-primary/5">
+      <Card data-testid={testId} className="transition-shadow duration-300 group-hover:shadow-card-hover">
         <CardContent className="p-6">
           <div className="flex items-start justify-between">
             <div className="space-y-1.5">
@@ -119,7 +119,7 @@ export function StatCard({ title, value, subtitle, icon: Icon, iconColor = "text
               whileHover={{ scale: 1.1, rotate: 5 }}
               transition={{ type: "spring", stiffness: 400, damping: 15 }}
             >
-              <Icon className={`h-5 w-5 ${iconColor}`} />
+              <Icon className={`h-5 w-5 ${iconColor} drop-shadow-sm`} />
             </motion.div>
           </div>
         </CardContent>

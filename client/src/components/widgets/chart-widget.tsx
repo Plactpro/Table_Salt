@@ -53,15 +53,15 @@ export function ChartWidget({ title, data, dataKey, xKey, type = "bar", color = 
                 <BarChart data={data} barCategoryGap="20%">
                   <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={color} stopOpacity={0.9} />
-                      <stop offset="100%" stopColor={color} stopOpacity={0.4} />
+                      <stop offset="0%" stopColor={color} stopOpacity={0.95} />
+                      <stop offset="100%" stopColor={color} stopOpacity={0.55} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.7} />
                   <XAxis dataKey={xKey} tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" tickLine={false} axisLine={false} />
                   <Tooltip
-                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.3 }}
+                    cursor={{ fill: "hsl(var(--muted))", opacity: 0.4 }}
                     contentStyle={{
                       background: "hsl(var(--card))",
                       border: "1px solid hsl(var(--border))",
@@ -85,11 +85,11 @@ export function ChartWidget({ title, data, dataKey, xKey, type = "bar", color = 
                 <AreaChart data={data}>
                   <defs>
                     <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={color} stopOpacity={0.3} />
-                      <stop offset="100%" stopColor={color} stopOpacity={0.02} />
+                      <stop offset="0%" stopColor={color} stopOpacity={0.4} />
+                      <stop offset="100%" stopColor={color} stopOpacity={0.05} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.5} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.7} />
                   <XAxis dataKey={xKey} tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 12, fill: "hsl(var(--muted-foreground))" }} stroke="hsl(var(--border))" tickLine={false} axisLine={false} />
                   <Tooltip
