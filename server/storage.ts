@@ -4,6 +4,7 @@ import {
   tenants, users, outlets, menuCategories, menuItems, tables,
   reservations, orders, orderItems, inventoryItems, stockMovements,
   customers, staffSchedules, feedback, offers, deliveryOrders, employeePerformanceLogs,
+  salesInquiries,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -21,6 +22,7 @@ import {
   type Offer, type InsertOffer,
   type DeliveryOrder, type InsertDeliveryOrder,
   type EmployeePerformanceLog, type InsertEmployeePerformanceLog,
+  type SalesInquiry, type InsertSalesInquiry,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -127,6 +129,7 @@ export interface IStorage {
 
   getDashboardStats(tenantId: string): Promise<any>;
   getSalesReport(tenantId: string, from: Date, to: Date): Promise<any>;
+  createSalesInquiry(data: InsertSalesInquiry): Promise<SalesInquiry>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -545,6 +548,11 @@ export class DatabaseStorage implements IStorage {
       ));
 
     return { salesByDay, totals };
+  }
+
+  async createSalesInquiry(data: InsertSalesInquiry) {
+    const [inquiry] = await db.insert(salesInquiries).values(data).returning();
+    return inquiry;
   }
 }
 

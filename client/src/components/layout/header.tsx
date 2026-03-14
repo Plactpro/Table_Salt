@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth, Role } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
@@ -22,8 +23,10 @@ import {
   ChefHat,
   Calculator,
   UserCircle,
+  MessageSquare,
   type LucideIcon,
 } from "lucide-react";
+import ContactSalesModal from "@/components/widgets/contact-sales-modal";
 
 const roleLabels: Record<Role, string> = {
   owner: "Owner",
@@ -55,6 +58,7 @@ const roleIcons: Record<Role, LucideIcon> = {
 export default function Header() {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
+  const [showContactSales, setShowContactSales] = useState(false);
 
   if (!user) return null;
 
@@ -88,6 +92,19 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="hidden sm:flex items-center gap-1.5 text-teal-700 border-teal-200 hover:bg-teal-50 dark:text-teal-400 dark:border-teal-800 dark:hover:bg-teal-950"
+            onClick={() => setShowContactSales(true)}
+            data-testid="button-contact-sales-header"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            Contact Sales
+          </Button>
+        </motion.div>
+
         <motion.div
           whileHover={{ scale: 1.05 }}
           whileTap={{ scale: 0.95 }}
@@ -128,6 +145,8 @@ export default function Header() {
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
+
+      <ContactSalesModal open={showContactSales} onOpenChange={setShowContactSales} />
     </header>
   );
 }

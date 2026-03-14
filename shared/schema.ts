@@ -340,6 +340,26 @@ export const employeePerformanceLogs = pgTable("employee_performance_logs", {
   recordedAt: timestamp("recorded_at").defaultNow(),
 });
 
+export const salesInquiries = pgTable("sales_inquiries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  fullName: varchar("full_name").notNull(),
+  businessName: varchar("business_name").notNull(),
+  businessType: varchar("business_type").notNull(),
+  numOutlets: varchar("num_outlets"),
+  location: varchar("location").notNull(),
+  email: varchar("email").notNull(),
+  phone: varchar("phone"),
+  preferredContact: varchar("preferred_contact").default("email"),
+  heardFrom: varchar("heard_from"),
+  subscriptionInterest: text("subscription_interest").array(),
+  message: text("message").notNull(),
+  wantsDemo: boolean("wants_demo").default(false),
+  wantsUpdates: boolean("wants_updates").default(false),
+  userAgent: text("user_agent"),
+  sourcePage: varchar("source_page"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertTenantSchema = createInsertSchema(tenants).omit({ id: true });
 export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true });
@@ -357,6 +377,23 @@ export const insertFeedbackSchema = createInsertSchema(feedback).omit({ id: true
 export const insertOfferSchema = createInsertSchema(offers).omit({ id: true, createdAt: true });
 export const insertDeliveryOrderSchema = createInsertSchema(deliveryOrders).omit({ id: true, createdAt: true });
 export const insertEmployeePerformanceLogSchema = createInsertSchema(employeePerformanceLogs).omit({ id: true, recordedAt: true });
+export const insertSalesInquirySchema = createInsertSchema(salesInquiries).omit({ id: true, createdAt: true }).extend({
+  fullName: z.string().trim().min(1, "Full name is required").max(200),
+  businessName: z.string().trim().min(1, "Business name is required").max(200),
+  businessType: z.enum(["Enterprise", "QSR", "Food Truck", "Cafe", "Fine Dining", "Casual Dining", "Cloud Kitchen", "Other"]),
+  numOutlets: z.string().max(20).optional().nullable(),
+  location: z.string().trim().min(1, "Location is required").max(200),
+  email: z.string().trim().email("Invalid email address").max(320),
+  phone: z.string().max(30).optional().nullable(),
+  preferredContact: z.string().max(20).optional().nullable(),
+  heardFrom: z.string().max(50).optional().nullable(),
+  subscriptionInterest: z.array(z.string().max(30)).max(10).optional().nullable(),
+  message: z.string().trim().min(20, "Message must be at least 20 characters").max(5000),
+  wantsDemo: z.boolean().optional().nullable(),
+  wantsUpdates: z.boolean().optional().nullable(),
+  userAgent: z.string().max(500).optional().nullable(),
+  sourcePage: z.string().max(200).optional().nullable(),
+});
 
 export type Tenant = typeof tenants.$inferSelect;
 export type InsertTenant = z.infer<typeof insertTenantSchema>;
@@ -392,3 +429,5 @@ export type DeliveryOrder = typeof deliveryOrders.$inferSelect;
 export type InsertDeliveryOrder = z.infer<typeof insertDeliveryOrderSchema>;
 export type EmployeePerformanceLog = typeof employeePerformanceLogs.$inferSelect;
 export type InsertEmployeePerformanceLog = z.infer<typeof insertEmployeePerformanceLogSchema>;
+export type SalesInquiry = typeof salesInquiries.$inferSelect;
+export type InsertSalesInquiry = z.infer<typeof insertSalesInquirySchema>;
