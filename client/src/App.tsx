@@ -25,6 +25,7 @@ import PerformancePage from "@/pages/modules/performance";
 import DeliveryPage from "@/pages/modules/delivery";
 import CleaningPage from "@/pages/modules/cleaning";
 import AuditsPage from "@/pages/modules/audits";
+import BillingPage from "@/pages/modules/billing";
 import OwnerDashboard from "@/pages/dashboards/owner";
 import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
@@ -59,6 +60,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/integrations": { roles: ["owner", "manager"], featureKey: "integrations" },
   "/staff": { roles: ["owner", "manager"], featureKey: "staff" },
   "/reports": { roles: ["owner", "manager", "accountant"], featureKey: "reports" },
+  "/billing": { roles: ["owner"], featureKey: "billing" },
   "/settings": { roles: ["owner"], featureKey: "settings" },
 };
 
@@ -178,6 +180,7 @@ function ProtectedPages() {
         <Route path="/integrations">{() => <GuardedRoute path="/integrations" component={IntegrationsPage} />}</Route>
         <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffPage} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsPage} />}</Route>
+        <Route path="/billing">{() => <GuardedRoute path="/billing" component={BillingPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsPage} />}</Route>
         <Route component={NotFound} />
       </Switch>
