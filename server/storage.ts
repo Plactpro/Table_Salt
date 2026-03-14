@@ -5,6 +5,7 @@ import {
   reservations, orders, orderItems, inventoryItems, stockMovements,
   customers, staffSchedules, feedback, offers, deliveryOrders, employeePerformanceLogs,
   salesInquiries, supportTickets, attendanceLogs,
+  cleaningTemplates, cleaningTemplateItems, cleaningLogs,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -25,6 +26,9 @@ import {
   type SalesInquiry, type InsertSalesInquiry,
   type SupportTicket, type InsertSupportTicket,
   type AttendanceLog, type InsertAttendanceLog,
+  type CleaningTemplate, type InsertCleaningTemplate,
+  type CleaningTemplateItem, type InsertCleaningTemplateItem,
+  type CleaningLog, type InsertCleaningLog,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -140,6 +144,18 @@ export interface IStorage {
   createAttendanceLog(data: InsertAttendanceLog): Promise<AttendanceLog>;
   updateAttendanceLog(id: string, tenantId: string, data: Partial<InsertAttendanceLog>): Promise<AttendanceLog | undefined>;
   getAttendanceSummary(tenantId: string, from: Date, to: Date): Promise<any[]>;
+
+  getCleaningTemplatesByTenant(tenantId: string): Promise<CleaningTemplate[]>;
+  getCleaningTemplate(id: string): Promise<CleaningTemplate | undefined>;
+  createCleaningTemplate(data: InsertCleaningTemplate): Promise<CleaningTemplate>;
+  updateCleaningTemplate(id: string, tenantId: string, data: Partial<InsertCleaningTemplate>): Promise<CleaningTemplate | undefined>;
+  deleteCleaningTemplate(id: string, tenantId: string): Promise<void>;
+  getCleaningTemplateItems(templateId: string): Promise<CleaningTemplateItem[]>;
+  createCleaningTemplateItem(data: InsertCleaningTemplateItem): Promise<CleaningTemplateItem>;
+  deleteCleaningTemplateItems(templateId: string): Promise<void>;
+  getCleaningLogsByTenant(tenantId: string, date?: Date): Promise<CleaningLog[]>;
+  createCleaningLog(data: InsertCleaningLog): Promise<CleaningLog>;
+  deleteCleaningLog(id: string, tenantId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -654,6 +670,60 @@ export class DatabaseStorage implements IStorage {
   async updateAttendanceLog(id: string, tenantId: string, data: Partial<InsertAttendanceLog>) {
     const [log] = await db.update(attendanceLogs).set(data).where(and(eq(attendanceLogs.id, id), eq(attendanceLogs.tenantId, tenantId))).returning();
     return log;
+  }
+
+  async getCleaningTemplatesByTenant(tenantId: string) {
+    return db.select().from(cleaningTemplates).where(eq(cleaningTemplates.tenantId, tenantId)).orderBy(cleaningTemplates.sortOrder);
+  }
+  async getCleaningTemplate(id: string) {
+    const [t] = await db.select().from(cleaningTemplates).where(eq(cleaningTemplates.id, id));
+    return t;
+  }
+  async createCleaningTemplate(data: InsertCleaningTemplate) {
+    const [t] = await db.insert(cleaningTemplates).values(data).returning();
+    return t;
+  }
+  async updateCleaningTemplate(id: string, tenantId: string, data: Partial<InsertCleaningTemplate>) {
+    const [t] = await db.update(cleaningTemplates).set(data).where(and(eq(cleaningTemplates.id, id), eq(cleaningTemplates.tenantId, tenantId))).returning();
+    return t;
+  }
+  async deleteCleaningTemplate(id: string, tenantId: string) {
+    await db.delete(cleaningTemplateItems).where(
+      sql`${cleaningTemplateItems.templateId} = ${id}`
+    );
+    await db.delete(cleaningLogs).where(
+      and(eq(cleaningLogs.templateId, id), eq(cleaningLogs.tenantId, tenantId))
+    );
+    await db.delete(cleaningTemplates).where(and(eq(cleaningTemplates.id, id), eq(cleaningTemplates.tenantId, tenantId)));
+  }
+  async getCleaningTemplateItems(templateId: string) {
+    return db.select().from(cleaningTemplateItems).where(eq(cleaningTemplateItems.templateId, templateId)).orderBy(cleaningTemplateItems.sortOrder);
+  }
+  async createCleaningTemplateItem(data: InsertCleaningTemplateItem) {
+    const [item] = await db.insert(cleaningTemplateItems).values(data).returning();
+    return item;
+  }
+  async deleteCleaningTemplateItems(templateId: string) {
+    await db.delete(cleaningTemplateItems).where(eq(cleaningTemplateItems.templateId, templateId));
+  }
+  async getCleaningLogsByTenant(tenantId: string, date?: Date) {
+    const conditions = [eq(cleaningLogs.tenantId, tenantId)];
+    if (date) {
+      const start = new Date(date);
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+      conditions.push(gte(cleaningLogs.date, start));
+      conditions.push(lt(cleaningLogs.date, end));
+    }
+    return db.select().from(cleaningLogs).where(and(...conditions)).orderBy(desc(cleaningLogs.completedAt));
+  }
+  async createCleaningLog(data: InsertCleaningLog) {
+    const [log] = await db.insert(cleaningLogs).values(data).returning();
+    return log;
+  }
+  async deleteCleaningLog(id: string, tenantId: string) {
+    await db.delete(cleaningLogs).where(and(eq(cleaningLogs.id, id), eq(cleaningLogs.tenantId, tenantId)));
   }
 }
 

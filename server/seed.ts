@@ -372,6 +372,94 @@ export async function seedDatabase() {
     status: "confirmed",
   });
 
+  const kitchenMorning = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Kitchen Morning Prep", area: "kitchen", frequency: "daily", shift: "Morning", sortOrder: 1,
+  });
+  for (const task of [
+    "Sanitize all cutting boards and prep surfaces",
+    "Check and record refrigerator temperatures",
+    "Clean and sanitize sinks",
+    "Sweep and mop kitchen floor",
+    "Wipe down all stainless steel surfaces",
+    "Empty and clean grease traps",
+    "Check hand-wash stations (soap, paper towels)",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: kitchenMorning.id, task, sortOrder: 0 });
+  }
+
+  const kitchenClosing = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Kitchen Closing", area: "kitchen", frequency: "daily", shift: "Closing", sortOrder: 2,
+  });
+  for (const task of [
+    "Deep clean all cooking stations",
+    "Clean and sanitize deep fryer",
+    "Break down, clean, and sanitize slicer",
+    "Clean hood vents and filters",
+    "Empty all trash bins and replace liners",
+    "Mop floors with sanitizer solution",
+    "Turn off all equipment and check gas lines",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: kitchenClosing.id, task, sortOrder: 0 });
+  }
+
+  const premisesHourly = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Dining Area Hourly Check", area: "restaurant_premises", frequency: "hourly", sortOrder: 1,
+  });
+  for (const task of [
+    "Wipe down all vacant tables and chairs",
+    "Check and restock napkin dispensers",
+    "Sweep visible floor debris",
+    "Check restroom cleanliness and supplies",
+    "Empty full waste bins in dining area",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: premisesHourly.id, task, sortOrder: 0 });
+  }
+
+  const premisesShift = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Premises Per-Shift Clean", area: "restaurant_premises", frequency: "per_shift", sortOrder: 2,
+  });
+  for (const task of [
+    "Deep clean all restrooms",
+    "Mop entire dining floor",
+    "Clean entrance glass doors and windows",
+    "Wipe down bar area and counter",
+    "Sanitize all condiment containers",
+    "Polish hostess stand and reception area",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: premisesShift.id, task, sortOrder: 0 });
+  }
+
+  const deepWeekly = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Weekly Deep Clean", area: "deep_cleaning", frequency: "weekly", sortOrder: 1,
+  });
+  for (const task of [
+    "Deep clean walk-in cooler/freezer",
+    "Clean behind and under all kitchen equipment",
+    "Descale dishwasher and coffee machines",
+    "Clean and sanitize ice machine",
+    "Wash walls and baseboards in kitchen",
+    "Deep clean exhaust hoods and ductwork",
+    "Shampoo dining area carpets/rugs",
+    "Clean light fixtures and ceiling fans",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: deepWeekly.id, task, sortOrder: 0 });
+  }
+
+  const deepMonthly = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Monthly Deep Clean", area: "deep_cleaning", frequency: "monthly", sortOrder: 2,
+  });
+  for (const task of [
+    "Professional pest control inspection",
+    "Deep clean all ventilation systems",
+    "Power wash exterior areas and dumpster area",
+    "Clean and service fire suppression system",
+    "Deep clean storage areas and shelving",
+    "Inspect and clean all drains",
+    "Polish and seal hardwood/tile floors",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: deepMonthly.id, task, sortOrder: 0 });
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

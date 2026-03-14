@@ -489,3 +489,64 @@ export type AttendanceLog = typeof attendanceLogs.$inferSelect;
 export type InsertAttendanceLog = z.infer<typeof insertAttendanceLogSchema>;
 export type SupportTicket = typeof supportTickets.$inferSelect;
 export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
+
+export const cleaningAreaEnum = pgEnum("cleaning_area", [
+  "kitchen",
+  "restaurant_premises",
+  "deep_cleaning",
+]);
+
+export const cleaningFrequencyEnum = pgEnum("cleaning_frequency", [
+  "hourly",
+  "every_2_hours",
+  "per_shift",
+  "daily",
+  "weekly",
+  "monthly",
+]);
+
+export const cleaningTemplates = pgTable("cleaning_templates", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  area: cleaningAreaEnum("area").notNull(),
+  frequency: cleaningFrequencyEnum("frequency").notNull(),
+  shift: text("shift"),
+  sortOrder: integer("sort_order").default(0),
+  active: boolean("active").default(true),
+});
+
+export const cleaningTemplateItems = pgTable("cleaning_template_items", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id", { length: 36 }).notNull().references(() => cleaningTemplates.id),
+  task: text("task").notNull(),
+  sortOrder: integer("sort_order").default(0),
+});
+
+export const cleaningLogs = pgTable("cleaning_logs", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  templateId: varchar("template_id", { length: 36 }).notNull().references(() => cleaningTemplates.id),
+  templateItemId: varchar("template_item_id", { length: 36 }).notNull().references(() => cleaningTemplateItems.id),
+  completedBy: varchar("completed_by", { length: 36 }).notNull().references(() => users.id),
+  completedAt: timestamp("completed_at").defaultNow(),
+  date: timestamp("date").notNull(),
+  notes: text("notes"),
+});
+
+export const insertCleaningTemplateSchema = createInsertSchema(cleaningTemplates).omit({ id: true });
+export const insertCleaningTemplateItemSchema = createInsertSchema(cleaningTemplateItems).omit({ id: true });
+export const insertCleaningLogSchema = createInsertSchema(cleaningLogs).omit({ id: true, completedAt: true });
+
+export type CleaningTemplate = typeof cleaningTemplates.$inferSelect;
+export type InsertCleaningTemplate = z.infer<typeof insertCleaningTemplateSchema>;
+export type CleaningTemplateItem = typeof cleaningTemplateItems.$inferSelect;
+export type InsertCleaningTemplateItem = z.infer<typeof insertCleaningTemplateItemSchema>;
+export type CleaningLog = typeof cleaningLogs.$inferSelect;
+export type InsertCleaningLog = z.infer<typeof insertCleaningLogSchema>;
