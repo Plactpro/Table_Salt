@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System with role-based dashboards, POS
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates)
 - `server/db.ts` - Database connection (Pool + Drizzle)
 - `server/storage.ts` - IStorage interface + DatabaseStorage implementation
@@ -51,6 +51,7 @@ All prefixed with `/api`:
 - Delivery: `/delivery-orders` (CRUD)
 - Performance: `/performance-logs` (CRUD)
 - CRM: `/customers/by-loyalty/:tier`, `/customers/by-tag/:tag`
+- Contact: `/contact-config` (GET, public), `/contact-sales` (POST, public), `/contact-support` (POST, public)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages
@@ -77,6 +78,13 @@ All prefixed with `/api`:
 - **Premium**: + reports, billing, analytics, delivery, loyalty, crm, offers
 - **Enterprise**: + integrations, multi-location, api_access, custom_branding
 
+
+## Contact Sales & Support
+- **Contact Sales**: Gold floating button (bottom-right), appears ONLY on `/billing` page. Opens inquiry form with business details, subscription interest, demo request.
+- **Contact Support**: Headset icon in header (all pages, global). Opens quick support form with issue type, urgency, description. Auto-populates user/tenant context. Returns ticket reference number (SUP-XXXX).
+- **Email**: Stub implementation (logs to console). Configure SMTP via `SALES_EMAIL`, `SUPPORT_EMAIL`, `ENABLE_CONTACT_SALES`, `ENABLE_CONTACT_SUPPORT` env vars.
+- **DB tables**: `sales_inquiries`, `support_tickets`
+- **Mobile**: Support FAB (cyan, bottom-right), Sales FAB on billing page stacks above it.
 
 ## Design System
 - Fonts: Outfit (headings), Plus Jakarta Sans (body)

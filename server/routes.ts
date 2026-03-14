@@ -9,9 +9,9 @@ import {
   insertOrderItemSchema, insertInventoryItemSchema, insertStockMovementSchema,
   insertCustomerSchema, insertStaffScheduleSchema, insertUserSchema,
   insertOfferSchema, insertDeliveryOrderSchema, insertEmployeePerformanceLogSchema,
-  insertSalesInquirySchema,
+  insertSalesInquirySchema, insertSupportTicketSchema,
 } from "@shared/schema";
-import { sendContactSalesEmail, emailConfig } from "./email";
+import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -585,8 +585,11 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
-  app.get("/api/contact-sales/config", (_req, res) => {
-    res.json({ enabled: emailConfig.enableContactSales });
+  app.get("/api/contact-config", (_req, res) => {
+    res.json({
+      salesEnabled: emailConfig.enableContactSales,
+      supportEnabled: emailConfig.enableContactSupport,
+    });
   });
 
   app.post("/api/contact-sales", async (req, res) => {
@@ -608,6 +611,39 @@ export async function registerRoutes(
     } catch (err: any) {
       console.error("[Contact Sales Error]", err);
       res.status(500).json({ message: "Failed to submit inquiry. Please try again." });
+    }
+  });
+
+  app.post("/api/contact-support", async (req, res) => {
+    try {
+      if (!emailConfig.enableContactSupport) {
+        return res.status(403).json({ message: "Contact support is currently disabled" });
+      }
+      const parsed = insertSupportTicketSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten().fieldErrors });
+      }
+      const data = { ...parsed.data };
+      const authUser = req.user as any;
+      if (authUser) {
+        data.tenantId = authUser.tenantId || data.tenantId;
+        data.userId = authUser.id || data.userId;
+        data.userName = authUser.name || data.userName;
+      }
+      const ticket = await storage.createSupportTicket(data);
+      try {
+        await sendSupportEmail(data, ticket.referenceNumber || "");
+      } catch (emailErr) {
+        console.error("[Contact Support] Email notification failed (ticket saved):", emailErr);
+      }
+      res.json({
+        message: "Support ticket created successfully",
+        id: ticket.id,
+        referenceNumber: ticket.referenceNumber,
+      });
+    } catch (err: any) {
+      console.error("[Contact Support Error]", err);
+      res.status(500).json({ message: "Failed to create support ticket. Please try again." });
     }
   });
 

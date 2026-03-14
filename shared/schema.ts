@@ -377,6 +377,26 @@ export const insertFeedbackSchema = createInsertSchema(feedback).omit({ id: true
 export const insertOfferSchema = createInsertSchema(offers).omit({ id: true, createdAt: true });
 export const insertDeliveryOrderSchema = createInsertSchema(deliveryOrders).omit({ id: true, createdAt: true });
 export const insertEmployeePerformanceLogSchema = createInsertSchema(employeePerformanceLogs).omit({ id: true, recordedAt: true });
+export const supportTickets = pgTable("support_tickets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id"),
+  userId: varchar("user_id"),
+  userName: varchar("user_name"),
+  email: varchar("email").notNull(),
+  phone: varchar("phone"),
+  issueType: varchar("issue_type").notNull(),
+  urgency: varchar("urgency").notNull().default("medium"),
+  shortDescription: varchar("short_description", { length: 200 }).notNull(),
+  message: text("message"),
+  browserInfo: text("browser_info"),
+  sourcePage: varchar("source_page"),
+  subscriptionTier: varchar("subscription_tier"),
+  businessType: varchar("business_type"),
+  status: varchar("status").notNull().default("open"),
+  referenceNumber: varchar("reference_number"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertSalesInquirySchema = createInsertSchema(salesInquiries).omit({ id: true, createdAt: true }).extend({
   fullName: z.string().trim().min(1, "Full name is required").max(200),
   businessName: z.string().trim().min(1, "Business name is required").max(200),
@@ -393,6 +413,22 @@ export const insertSalesInquirySchema = createInsertSchema(salesInquiries).omit(
   wantsUpdates: z.boolean().optional().nullable(),
   userAgent: z.string().max(500).optional().nullable(),
   sourcePage: z.string().max(200).optional().nullable(),
+});
+
+export const insertSupportTicketSchema = createInsertSchema(supportTickets).omit({ id: true, createdAt: true, status: true, referenceNumber: true }).extend({
+  email: z.string().trim().email("Invalid email address").max(320),
+  phone: z.string().max(30).optional().nullable(),
+  issueType: z.enum(["pos_not_loading", "billing_issue", "menu_sync_problem", "staff_scheduling", "reservation_conflict", "inventory_issue", "delivery_issue", "account_access", "performance", "other"]),
+  urgency: z.enum(["low", "medium", "high", "critical"]).default("medium"),
+  shortDescription: z.string().trim().min(5, "Description must be at least 5 characters").max(200),
+  message: z.string().trim().max(5000).optional().nullable(),
+  browserInfo: z.string().max(500).optional().nullable(),
+  sourcePage: z.string().max(200).optional().nullable(),
+  tenantId: z.string().max(100).optional().nullable(),
+  userId: z.string().max(100).optional().nullable(),
+  userName: z.string().max(200).optional().nullable(),
+  subscriptionTier: z.string().max(50).optional().nullable(),
+  businessType: z.string().max(50).optional().nullable(),
 });
 
 export type Tenant = typeof tenants.$inferSelect;
@@ -431,3 +467,5 @@ export type EmployeePerformanceLog = typeof employeePerformanceLogs.$inferSelect
 export type InsertEmployeePerformanceLog = z.infer<typeof insertEmployeePerformanceLogSchema>;
 export type SalesInquiry = typeof salesInquiries.$inferSelect;
 export type InsertSalesInquiry = z.infer<typeof insertSalesInquirySchema>;
+export type SupportTicket = typeof supportTickets.$inferSelect;
+export type InsertSupportTicket = z.infer<typeof insertSupportTicketSchema>;
