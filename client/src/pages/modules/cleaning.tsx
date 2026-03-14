@@ -501,15 +501,23 @@ export default function CleaningPage() {
     );
   };
 
+  const { data: complianceReport } = useQuery<any>({
+    queryKey: ["/api/cleaning/compliance-report", selectedDate],
+    queryFn: () => fetchJson(`/api/cleaning/compliance-report?date=${selectedDate}`),
+  });
+
   const renderComplianceTab = () => {
     const allAreas: CleaningArea[] = ["kitchen", "restaurant_premises", "deep_cleaning"];
+    const report = complianceReport;
 
     return (
       <div data-testid="tab-content-compliance">
         <div className="grid gap-4 md:grid-cols-3 mb-6">
           {allAreas.map(area => {
             const config = areaConfig[area];
-            const progress = getOverallProgress(area);
+            const areaData = report?.areas?.[area];
+            const progress = areaData ? Math.round((areaData.completed / Math.max(areaData.total, 1)) * 100) : 0;
+            const missed = areaData ? areaData.total - areaData.completed : 0;
             return (
               <Card key={area} data-testid={`card-compliance-${area}`}>
                 <CardContent className="pt-6">
@@ -528,11 +536,21 @@ export default function CleaningPage() {
                       value={progress}
                       className={`h-3 ${progress === 100 ? "[&>div]:bg-green-500" : progress >= 50 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500"}`}
                     />
-                    {progress < 100 && (
+                    {missed > 0 && (
                       <p className="text-xs text-muted-foreground flex items-center gap-1">
                         <AlertTriangle className="w-3 h-3 text-yellow-500" />
-                        {100 - progress}% remaining tasks
+                        {missed} task{missed !== 1 ? "s" : ""} not completed
                       </p>
+                    )}
+                    {areaData?.templates && (
+                      <div className="mt-2 space-y-1">
+                        {areaData.templates.map((t: any) => (
+                          <div key={t.id} className="flex justify-between text-xs">
+                            <span className="text-muted-foreground truncate mr-2">{t.name}</span>
+                            <span className={t.rate === 100 ? "text-green-600 font-medium" : "text-muted-foreground"}>{t.completed}/{t.total}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </CardContent>
@@ -550,20 +568,20 @@ export default function CleaningPage() {
           </CardHeader>
           <CardContent>
             <div className="text-center mb-4">
-              <p className="text-4xl font-bold">{overallRate}%</p>
+              <p className="text-4xl font-bold">{report?.overallRate ?? 0}%</p>
               <p className="text-muted-foreground">Compliance Rate for {selectedDate}</p>
             </div>
             <Progress
-              value={overallRate}
-              className={`h-4 ${overallRate === 100 ? "[&>div]:bg-green-500" : overallRate >= 75 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500"}`}
+              value={report?.overallRate ?? 0}
+              className={`h-4 ${(report?.overallRate ?? 0) === 100 ? "[&>div]:bg-green-500" : (report?.overallRate ?? 0) >= 75 ? "[&>div]:bg-yellow-500" : "[&>div]:bg-red-500"}`}
             />
             <div className="grid grid-cols-2 gap-4 mt-4 text-center">
               <div>
-                <p className="text-2xl font-semibold text-green-600">{globalStats.completedTasks}</p>
+                <p className="text-2xl font-semibold text-green-600">{report?.completedTasks ?? 0}</p>
                 <p className="text-sm text-muted-foreground">Tasks Completed</p>
               </div>
               <div>
-                <p className="text-2xl font-semibold text-muted-foreground">{globalStats.remaining}</p>
+                <p className="text-2xl font-semibold text-muted-foreground">{report?.remaining ?? 0}</p>
                 <p className="text-sm text-muted-foreground">Tasks Remaining</p>
               </div>
             </div>

@@ -416,31 +416,45 @@ export async function seedDatabase() {
     await storage.createCleaningTemplateItem({ templateId: kitchenClosing.id, task, sortOrder: 0 });
   }
 
-  const premisesHourly = await storage.createCleaningTemplate({
-    tenantId: tenant.id, name: "Dining Area Hourly Check", area: "restaurant_premises", frequency: "hourly", sortOrder: 1,
+  const restroomHourly = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Restroom Hourly Check", area: "restaurant_premises", frequency: "hourly", sortOrder: 1,
+  });
+  for (const task of [
+    "Check and restock toilet paper and hand towels",
+    "Wipe down sinks, counters, and mirrors",
+    "Empty waste bins and replace liners",
+    "Mop floor and check for spills",
+    "Refill soap dispensers",
+    "Check air freshener levels",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: restroomHourly.id, task, sortOrder: 0 });
+  }
+
+  const diningEvery2h = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Dining Area (Every 2 Hours)", area: "restaurant_premises", frequency: "every_2_hours", sortOrder: 2,
   });
   for (const task of [
     "Wipe down all vacant tables and chairs",
     "Check and restock napkin dispensers",
     "Sweep visible floor debris",
-    "Check restroom cleanliness and supplies",
     "Empty full waste bins in dining area",
-  ]) {
-    await storage.createCleaningTemplateItem({ templateId: premisesHourly.id, task, sortOrder: 0 });
-  }
-
-  const premisesShift = await storage.createCleaningTemplate({
-    tenantId: tenant.id, name: "Premises Per-Shift Clean", area: "restaurant_premises", frequency: "per_shift", sortOrder: 2,
-  });
-  for (const task of [
-    "Deep clean all restrooms",
-    "Mop entire dining floor",
-    "Clean entrance glass doors and windows",
     "Wipe down bar area and counter",
     "Sanitize all condiment containers",
-    "Polish hostess stand and reception area",
   ]) {
-    await storage.createCleaningTemplateItem({ templateId: premisesShift.id, task, sortOrder: 0 });
+    await storage.createCleaningTemplateItem({ templateId: diningEvery2h.id, task, sortOrder: 0 });
+  }
+
+  const entryReception = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Entry & Reception Per-Shift", area: "restaurant_premises", frequency: "per_shift", sortOrder: 3,
+  });
+  for (const task of [
+    "Clean entrance glass doors and windows",
+    "Polish hostess stand and reception area",
+    "Sweep and mop entry foyer",
+    "Wipe down waiting area seating",
+    "Check exterior signage cleanliness",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: entryReception.id, task, sortOrder: 0 });
   }
 
   const deepWeekly = await storage.createCleaningTemplate({
