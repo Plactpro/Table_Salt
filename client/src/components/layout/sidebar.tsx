@@ -143,7 +143,7 @@ export default function Sidebar() {
 
   return (
     <aside
-      className="hidden md:flex flex-col w-64 h-screen sticky top-0 overflow-hidden"
+      className="hidden md:flex flex-col w-64 shrink-0 h-screen sticky top-0 overflow-hidden z-30"
       style={{
         background: `linear-gradient(180deg, 
           hsl(var(--sidebar-water-start)) 0%, 

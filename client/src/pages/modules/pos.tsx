@@ -245,7 +245,7 @@ export default function POSPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-4rem)] gap-0" data-testid="pos-page">
+    <div className="flex h-full gap-0" data-testid="pos-page">
       <div className="flex-1 flex flex-col overflow-hidden border-r">
         <div className="p-4 border-b space-y-3">
           <div className="relative">
