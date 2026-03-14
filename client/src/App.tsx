@@ -29,7 +29,7 @@ import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
-import ChefMascot from "@/components/widgets/chef-mascot";
+
 import { ReactNode } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -158,30 +158,27 @@ function PublicOnly({ children }: { children: ReactNode }) {
 
 function ProtectedPages() {
   return (
-    <>
-      <AppLayout>
-        <Switch>
-          <Route path="/" component={RoleDashboard} />
-          <Route path="/pos">{() => <GuardedRoute path="/pos" component={PosPage} />}</Route>
-          <Route path="/orders">{() => <GuardedRoute path="/orders" component={OrdersPage} />}</Route>
-          <Route path="/tables">{() => <GuardedRoute path="/tables" component={TablesPage} />}</Route>
-          <Route path="/menu">{() => <GuardedRoute path="/menu" component={MenuPage} />}</Route>
-          <Route path="/inventory">{() => <GuardedRoute path="/inventory" component={InventoryPage} />}</Route>
-          <Route path="/outlets">{() => <GuardedRoute path="/outlets" component={OutletsPage} />}</Route>
-          <Route path="/billing">{() => <GuardedRoute path="/billing" component={BillingPage} />}</Route>
-          <Route path="/offers">{() => <GuardedRoute path="/offers" component={OffersPage} />}</Route>
-          <Route path="/crm">{() => <GuardedRoute path="/crm" component={CrmPage} />}</Route>
-          <Route path="/performance">{() => <GuardedRoute path="/performance" component={PerformancePage} />}</Route>
-          <Route path="/delivery">{() => <GuardedRoute path="/delivery" component={DeliveryPage} />}</Route>
-          <Route path="/integrations">{() => <GuardedRoute path="/integrations" component={IntegrationsPage} />}</Route>
-          <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffPage} />}</Route>
-          <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsPage} />}</Route>
-          <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsPage} />}</Route>
-          <Route component={NotFound} />
-        </Switch>
-      </AppLayout>
-      <ChefMascot />
-    </>
+    <AppLayout>
+      <Switch>
+        <Route path="/" component={RoleDashboard} />
+        <Route path="/pos">{() => <GuardedRoute path="/pos" component={PosPage} />}</Route>
+        <Route path="/orders">{() => <GuardedRoute path="/orders" component={OrdersPage} />}</Route>
+        <Route path="/tables">{() => <GuardedRoute path="/tables" component={TablesPage} />}</Route>
+        <Route path="/menu">{() => <GuardedRoute path="/menu" component={MenuPage} />}</Route>
+        <Route path="/inventory">{() => <GuardedRoute path="/inventory" component={InventoryPage} />}</Route>
+        <Route path="/outlets">{() => <GuardedRoute path="/outlets" component={OutletsPage} />}</Route>
+        <Route path="/billing">{() => <GuardedRoute path="/billing" component={BillingPage} />}</Route>
+        <Route path="/offers">{() => <GuardedRoute path="/offers" component={OffersPage} />}</Route>
+        <Route path="/crm">{() => <GuardedRoute path="/crm" component={CrmPage} />}</Route>
+        <Route path="/performance">{() => <GuardedRoute path="/performance" component={PerformancePage} />}</Route>
+        <Route path="/delivery">{() => <GuardedRoute path="/delivery" component={DeliveryPage} />}</Route>
+        <Route path="/integrations">{() => <GuardedRoute path="/integrations" component={IntegrationsPage} />}</Route>
+        <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffPage} />}</Route>
+        <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsPage} />}</Route>
+        <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsPage} />}</Route>
+        <Route component={NotFound} />
+      </Switch>
+    </AppLayout>
   );
 }
 
