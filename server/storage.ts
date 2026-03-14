@@ -4,7 +4,7 @@ import {
   tenants, users, outlets, menuCategories, menuItems, tables,
   reservations, orders, orderItems, inventoryItems, stockMovements,
   customers, staffSchedules, feedback, offers, deliveryOrders, employeePerformanceLogs,
-  salesInquiries,
+  salesInquiries, supportTickets,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -23,6 +23,7 @@ import {
   type DeliveryOrder, type InsertDeliveryOrder,
   type EmployeePerformanceLog, type InsertEmployeePerformanceLog,
   type SalesInquiry, type InsertSalesInquiry,
+  type SupportTicket, type InsertSupportTicket,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -130,6 +131,7 @@ export interface IStorage {
   getDashboardStats(tenantId: string): Promise<any>;
   getSalesReport(tenantId: string, from: Date, to: Date): Promise<any>;
   createSalesInquiry(data: InsertSalesInquiry): Promise<SalesInquiry>;
+  createSupportTicket(data: InsertSupportTicket): Promise<SupportTicket>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -553,6 +555,14 @@ export class DatabaseStorage implements IStorage {
   async createSalesInquiry(data: InsertSalesInquiry) {
     const [inquiry] = await db.insert(salesInquiries).values(data).returning();
     return inquiry;
+  }
+
+  async createSupportTicket(data: InsertSupportTicket) {
+    const ticketCount = await db.select({ count: count() }).from(supportTickets);
+    const num = (ticketCount[0]?.count || 0) + 1;
+    const referenceNumber = `SUP-${String(num).padStart(4, "0")}`;
+    const [ticket] = await db.insert(supportTickets).values({ ...data, referenceNumber }).returning();
+    return ticket;
   }
 }
 
