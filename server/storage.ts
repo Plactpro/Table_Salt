@@ -591,25 +591,43 @@ export class DatabaseStorage implements IStorage {
     const logs = await db.select().from(attendanceLogs).where(
       and(eq(attendanceLogs.tenantId, tenantId), gte(attendanceLogs.date, from), lt(attendanceLogs.date, to))
     );
-    const byUser = new Map<string, { totalDays: number; lateDays: number; totalHours: number; entries: number }>();
+    const schedules = await db.select().from(staffSchedules).where(
+      and(eq(staffSchedules.tenantId, tenantId), gte(staffSchedules.date, from), lt(staffSchedules.date, to))
+    );
+
+    const scheduledByUser = new Map<string, number>();
+    for (const s of schedules) {
+      scheduledByUser.set(s.userId, (scheduledByUser.get(s.userId) || 0) + 1);
+    }
+
+    const byUser = new Map<string, { presentDays: number; lateDays: number; totalHours: number }>();
     for (const log of logs) {
       const uid = log.userId;
-      if (!byUser.has(uid)) byUser.set(uid, { totalDays: 0, lateDays: 0, totalHours: 0, entries: 0 });
+      if (!byUser.has(uid)) byUser.set(uid, { presentDays: 0, lateDays: 0, totalHours: 0 });
       const u = byUser.get(uid)!;
-      u.totalDays++;
-      u.entries++;
+      u.presentDays++;
       if (log.status === "late") u.lateDays++;
       if (log.hoursWorked) u.totalHours += parseFloat(String(log.hoursWorked));
+      if (!scheduledByUser.has(uid)) scheduledByUser.set(uid, u.presentDays);
     }
-    return Array.from(byUser.entries()).map(([userId, stats]) => ({
-      userId,
-      totalDays: stats.totalDays,
-      lateDays: stats.lateDays,
-      absentDays: 0,
-      totalHours: parseFloat(stats.totalHours.toFixed(2)),
-      avgHours: stats.totalDays > 0 ? parseFloat((stats.totalHours / stats.totalDays).toFixed(2)) : 0,
-      attendanceRate: 100,
-    }));
+
+    const allUserIds = new Set([...Array.from(scheduledByUser.keys()), ...Array.from(byUser.keys())]);
+    return Array.from(allUserIds).map((userId) => {
+      const stats = byUser.get(userId) || { presentDays: 0, lateDays: 0, totalHours: 0 };
+      const scheduled = scheduledByUser.get(userId) || stats.presentDays;
+      const absentDays = Math.max(0, scheduled - stats.presentDays);
+      const attendanceRate = scheduled > 0 ? parseFloat(((stats.presentDays / scheduled) * 100).toFixed(1)) : (stats.presentDays > 0 ? 100 : 0);
+      return {
+        userId,
+        scheduledDays: scheduled,
+        totalDays: stats.presentDays,
+        lateDays: stats.lateDays,
+        absentDays,
+        totalHours: parseFloat(stats.totalHours.toFixed(2)),
+        avgHours: stats.presentDays > 0 ? parseFloat((stats.totalHours / stats.presentDays).toFixed(2)) : 0,
+        attendanceRate,
+      };
+    });
   }
 
   async getTodayAttendanceForUser(userId: string, tenantId: string) {
