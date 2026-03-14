@@ -29,6 +29,7 @@ import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
+import ChefMascot from "@/components/widgets/chef-mascot";
 import { ReactNode } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -214,6 +215,7 @@ function App() {
         <AuthProvider>
           <Toaster />
           <Router />
+          <ChefMascot />
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
