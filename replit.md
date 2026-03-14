@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates)
 - `server/db.ts` - Database connection (Pool + Drizzle)
 - `server/storage.ts` - IStorage interface + DatabaseStorage implementation
