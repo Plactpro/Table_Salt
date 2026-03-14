@@ -157,7 +157,7 @@ export default function Sidebar() {
       <SandDecoration />
 
       <div className="relative flex items-center gap-3 px-6 py-5 overflow-hidden" style={{ borderBottom: "1px solid rgba(255,255,255,0.15)" }}>
-        <TableSaltLogo variant="compact" animate textClassName="drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" />
+        <TableSaltLogo variant="compact" animate colorScheme="dark" textClassName="drop-shadow-[0_1px_2px_rgba(255,255,255,0.3)]" />
       </div>
 
       <nav className="flex-1 overflow-y-auto py-4 px-3 relative z-10">

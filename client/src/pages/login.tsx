@@ -95,7 +95,7 @@ export default function LoginPage() {
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.6, delay: 0.4 }}
           >
-            <TableSaltLogo variant="full" animate iconSize={48} className="[&_span]:text-white [&_span]:!text-white" />
+            <TableSaltLogo variant="full" animate iconSize={48} colorScheme="dark" />
           </motion.div>
           <motion.h1
             className="text-4xl font-heading font-bold mb-4"
