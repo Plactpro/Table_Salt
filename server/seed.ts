@@ -387,8 +387,22 @@ export async function seedDatabase() {
     await storage.createCleaningTemplateItem({ templateId: kitchenMorning.id, task, sortOrder: 0 });
   }
 
+  const kitchenAfternoon = await storage.createCleaningTemplate({
+    tenantId: tenant.id, name: "Kitchen Afternoon Service", area: "kitchen", frequency: "daily", shift: "Afternoon", sortOrder: 2,
+  });
+  for (const task of [
+    "Re-sanitize all prep surfaces after lunch rush",
+    "Restock cooking stations with fresh supplies",
+    "Clean and organize walk-in cooler",
+    "Wipe down all equipment exteriors",
+    "Check and replenish cleaning supply stations",
+    "Clean floor drains",
+  ]) {
+    await storage.createCleaningTemplateItem({ templateId: kitchenAfternoon.id, task, sortOrder: 0 });
+  }
+
   const kitchenClosing = await storage.createCleaningTemplate({
-    tenantId: tenant.id, name: "Kitchen Closing", area: "kitchen", frequency: "daily", shift: "Closing", sortOrder: 2,
+    tenantId: tenant.id, name: "Kitchen Closing", area: "kitchen", frequency: "daily", shift: "Closing", sortOrder: 3,
   });
   for (const task of [
     "Deep clean all cooking stations",

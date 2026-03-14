@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { useToast } from "@/hooks/use-toast";
 import {
   ClipboardCheck, Plus, Trash2, CheckCircle2, Clock, AlertTriangle,
-  ChefHat, Building, Sparkles, ShieldCheck, Calendar,
+  ChefHat, Building, Sparkles, ShieldCheck, Calendar, User,
 } from "lucide-react";
 
 type CleaningArea = "kitchen" | "restaurant_premises" | "deep_cleaning";
@@ -50,10 +50,10 @@ interface CleaningLog {
   notes: string | null;
 }
 
-const areaConfig: Record<CleaningArea, { label: string; icon: typeof ChefHat; color: string }> = {
-  kitchen: { label: "Kitchen", icon: ChefHat, color: "bg-orange-100 text-orange-700" },
-  restaurant_premises: { label: "Restaurant Premises", icon: Building, color: "bg-blue-100 text-blue-700" },
-  deep_cleaning: { label: "Deep Cleaning", icon: Sparkles, color: "bg-purple-100 text-purple-700" },
+const areaConfig: Record<CleaningArea, { label: string; icon: typeof ChefHat; color: string; bgGradient: string }> = {
+  kitchen: { label: "Kitchen", icon: ChefHat, color: "bg-orange-100 text-orange-700", bgGradient: "from-orange-500 to-amber-500" },
+  restaurant_premises: { label: "Restaurant Premises", icon: Building, color: "bg-blue-100 text-blue-700", bgGradient: "from-blue-500 to-cyan-500" },
+  deep_cleaning: { label: "Deep Cleaning", icon: Sparkles, color: "bg-purple-100 text-purple-700", bgGradient: "from-purple-500 to-violet-500" },
 };
 
 const frequencyLabels: Record<CleaningFrequency, string> = {
@@ -78,7 +78,6 @@ export default function CleaningPage() {
   const [activeTab, setActiveTab] = useState<string>("kitchen");
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split("T")[0]);
   const [newTemplateOpen, setNewTemplateOpen] = useState(false);
-
   const isManager = user?.role === "owner" || user?.role === "manager";
 
   const { data: templates = [] } = useQuery<CleaningTemplate[]>({
@@ -91,10 +90,51 @@ export default function CleaningPage() {
     queryFn: () => fetchJson(`/api/cleaning/logs?date=${selectedDate}`),
   });
 
-  const { data: users = [] } = useQuery<any[]>({
+  const { data: staffUsers = [] } = useQuery<any[]>({
     queryKey: ["/api/users"],
     queryFn: () => fetchJson("/api/users"),
   });
+
+  const { data: schedules = [] } = useQuery<any[]>({
+    queryKey: ["/api/cleaning/schedules", selectedDate],
+    queryFn: () => fetchJson(`/api/cleaning/schedules?date=${selectedDate}`),
+  });
+
+  const assignStaffMutation = useMutation({
+    mutationFn: async ({ templateId, assignedTo }: { templateId: string; assignedTo: string | null }) => {
+      const existing = schedules.find((s: any) => s.templateId === templateId);
+      if (existing) {
+        const res = await fetch(`/api/cleaning/schedules/${existing.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ assignedTo }),
+        });
+        if (!res.ok) throw new Error("Failed to update assignment");
+        return res.json();
+      } else {
+        const today = new Date(selectedDate);
+        today.setHours(12, 0, 0, 0);
+        const res = await fetch("/api/cleaning/schedules", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ templateId, date: today.toISOString(), assignedTo }),
+        });
+        if (!res.ok) throw new Error("Failed to create assignment");
+        return res.json();
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cleaning/schedules"] });
+      toast({ title: "Staff assigned" });
+    },
+  });
+
+  const getAssignedStaff = (templateId: string): string => {
+    const schedule = schedules.find((s: any) => s.templateId === templateId);
+    return schedule?.assignedTo || "unassigned";
+  };
 
   const [templateItems, setTemplateItems] = useState<Record<string, CleaningTemplateItem[]>>({});
 
@@ -198,11 +238,97 @@ export default function CleaningPage() {
   };
 
   const getUserName = (userId: string) => {
-    const u = users.find((u: any) => u.id === userId);
+    const u = staffUsers.find((u: any) => u.id === userId);
     return u?.name || "Unknown";
   };
 
   const isToday = selectedDate === new Date().toISOString().split("T")[0];
+
+  const globalStats = useMemo(() => {
+    const allAreas: CleaningArea[] = ["kitchen", "restaurant_premises", "deep_cleaning"];
+    let totalTasks = 0;
+    let completedTasks = 0;
+    for (const area of allAreas) {
+      for (const template of getAreaTemplates(area)) {
+        const items = templateItems[template.id] || [];
+        totalTasks += items.length;
+        completedTasks += items.filter(item => isTaskCompleted(item.id)).length;
+      }
+    }
+    return { totalTasks, completedTasks, remaining: totalTasks - completedTasks };
+  }, [templates, templateItems, logs]);
+
+  const overallRate = globalStats.totalTasks > 0 ? Math.round((globalStats.completedTasks / globalStats.totalTasks) * 100) : 0;
+
+  const renderTodayDashboard = () => {
+    const allAreas: CleaningArea[] = ["kitchen", "restaurant_premises", "deep_cleaning"];
+    return (
+      <Card className="border-0 shadow-md" data-testid="card-today-dashboard">
+        <CardContent className="pt-6">
+          <div className="grid gap-6 md:grid-cols-4">
+            <div className="text-center">
+              <div className="relative w-20 h-20 mx-auto mb-2">
+                <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                  <circle cx="40" cy="40" r="34" fill="none" stroke="currentColor" strokeWidth="6" className="text-muted/20" />
+                  <circle
+                    cx="40" cy="40" r="34" fill="none"
+                    stroke={overallRate === 100 ? "#22c55e" : overallRate >= 50 ? "#eab308" : "#ef4444"}
+                    strokeWidth="6" strokeLinecap="round"
+                    strokeDasharray={`${(overallRate / 100) * 213.6} 213.6`}
+                  />
+                </svg>
+                <span className="absolute inset-0 flex items-center justify-center text-lg font-bold">
+                  {overallRate}%
+                </span>
+              </div>
+              <p className="text-sm font-medium">Overall Completion</p>
+              <p className="text-xs text-muted-foreground">{globalStats.completedTasks}/{globalStats.totalTasks} tasks</p>
+            </div>
+            {allAreas.map(area => {
+              const config = areaConfig[area];
+              const progress = getOverallProgress(area);
+              const areaTemplates = getAreaTemplates(area);
+              let areaTotal = 0;
+              let areaDone = 0;
+              for (const t of areaTemplates) {
+                const items = templateItems[t.id] || [];
+                areaTotal += items.length;
+                areaDone += items.filter(i => isTaskCompleted(i.id)).length;
+              }
+              return (
+                <div key={area} className="text-center" data-testid={`dashboard-area-${area}`}>
+                  <div className="relative w-16 h-16 mx-auto mb-2">
+                    <svg className="w-16 h-16 -rotate-90" viewBox="0 0 64 64">
+                      <circle cx="32" cy="32" r="26" fill="none" stroke="currentColor" strokeWidth="5" className="text-muted/20" />
+                      <circle
+                        cx="32" cy="32" r="26" fill="none"
+                        stroke={progress === 100 ? "#22c55e" : progress >= 50 ? "#eab308" : "#ef4444"}
+                        strokeWidth="5" strokeLinecap="round"
+                        strokeDasharray={`${(progress / 100) * 163.4} 163.4`}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <config.icon className="w-5 h-5 text-muted-foreground" />
+                    </div>
+                  </div>
+                  <p className="text-sm font-medium">{config.label}</p>
+                  <p className="text-xs text-muted-foreground">{areaDone}/{areaTotal} ({progress}%)</p>
+                </div>
+              );
+            })}
+          </div>
+          {globalStats.remaining > 0 && isToday && (
+            <div className="mt-4 p-3 rounded-lg bg-amber-50 border border-amber-200 flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="text-sm text-amber-700">
+                {globalStats.remaining} task{globalStats.remaining !== 1 ? "s" : ""} remaining for today
+              </span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
 
   const renderTemplateChecklist = (template: CleaningTemplate) => {
     const items = templateItems[template.id] || [];
@@ -252,6 +378,27 @@ export default function CleaningPage() {
               )}
             </div>
           </div>
+          {isManager && (
+            <div className="flex items-center gap-2 mt-2">
+              <User className="w-3.5 h-3.5 text-muted-foreground" />
+              <Select
+                value={getAssignedStaff(template.id)}
+                onValueChange={(v) => {
+                  assignStaffMutation.mutate({ templateId: template.id, assignedTo: v === "unassigned" ? null : v });
+                }}
+              >
+                <SelectTrigger className="h-7 text-xs w-48" data-testid={`select-assign-staff-${template.id}`}>
+                  <SelectValue placeholder="Assign staff" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {staffUsers.map((u: any) => (
+                    <SelectItem key={u.id} value={u.id}>{u.name} ({u.role})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Progress value={progress} className="h-2 mt-2" />
         </CardHeader>
         <CardContent>
@@ -356,18 +503,6 @@ export default function CleaningPage() {
 
   const renderComplianceTab = () => {
     const allAreas: CleaningArea[] = ["kitchen", "restaurant_premises", "deep_cleaning"];
-    let totalTasks = 0;
-    let completedTasks = 0;
-
-    for (const area of allAreas) {
-      for (const template of getAreaTemplates(area)) {
-        const items = templateItems[template.id] || [];
-        totalTasks += items.length;
-        completedTasks += items.filter(item => isTaskCompleted(item.id)).length;
-      }
-    }
-
-    const overallRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
     return (
       <div data-testid="tab-content-compliance">
@@ -424,11 +559,11 @@ export default function CleaningPage() {
             />
             <div className="grid grid-cols-2 gap-4 mt-4 text-center">
               <div>
-                <p className="text-2xl font-semibold text-green-600">{completedTasks}</p>
+                <p className="text-2xl font-semibold text-green-600">{globalStats.completedTasks}</p>
                 <p className="text-sm text-muted-foreground">Tasks Completed</p>
               </div>
               <div>
-                <p className="text-2xl font-semibold text-muted-foreground">{totalTasks - completedTasks}</p>
+                <p className="text-2xl font-semibold text-muted-foreground">{globalStats.remaining}</p>
                 <p className="text-sm text-muted-foreground">Tasks Remaining</p>
               </div>
             </div>
@@ -505,6 +640,8 @@ export default function CleaningPage() {
           )}
         </div>
       </div>
+
+      {renderTodayDashboard()}
 
       {!isToday && (
         <Card className="border-yellow-200 bg-yellow-50">

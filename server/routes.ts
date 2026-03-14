@@ -884,6 +884,10 @@ export async function registerRoutes(
       if (!template || template.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Template not found" });
       }
+      const items = await storage.getCleaningTemplateItems(templateId);
+      if (!items.some(i => i.id === templateItemId)) {
+        return res.status(400).json({ message: "Invalid template item" });
+      }
       const log = await storage.createCleaningLog({ templateId, templateItemId, date: new Date(date), tenantId: user.tenantId, completedBy: user.id, notes: notes || null });
       res.json(log);
     } catch (err: any) {
@@ -895,6 +899,103 @@ export async function registerRoutes(
     const user = req.user as any;
     await storage.deleteCleaningLog(req.params.id, user.tenantId);
     res.json({ message: "Deleted" });
+  });
+
+  app.get("/api/cleaning/schedules", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
+      const schedules = await storage.getCleaningSchedules(user.tenantId, date);
+      res.json(schedules);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/cleaning/schedules", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (user.role !== "owner" && user.role !== "manager") return res.status(403).json({ message: "Forbidden" });
+      const { templateId, date, assignedTo } = req.body;
+      if (!templateId || !date) return res.status(400).json({ message: "templateId and date are required" });
+      const template = await storage.getCleaningTemplate(templateId);
+      if (!template || template.tenantId !== user.tenantId) return res.status(404).json({ message: "Template not found" });
+      if (assignedTo) {
+        const assignee = await storage.getUser(assignedTo);
+        if (!assignee || assignee.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid assignee" });
+      }
+      const schedule = await storage.createCleaningSchedule({ tenantId: user.tenantId, templateId, date: new Date(date), assignedTo: assignedTo || null, status: "pending" });
+      res.json(schedule);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/cleaning/schedules/:id", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      if (user.role !== "owner" && user.role !== "manager") return res.status(403).json({ message: "Forbidden" });
+      const allowed: Record<string, boolean> = { assignedTo: true, status: true };
+      const updates: Record<string, any> = {};
+      for (const key of Object.keys(req.body)) {
+        if (allowed[key]) updates[key] = req.body[key];
+      }
+      if (updates.assignedTo) {
+        const assignee = await storage.getUser(updates.assignedTo);
+        if (!assignee || assignee.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid assignee" });
+      }
+      const updated = await storage.updateCleaningSchedule(req.params.id, user.tenantId, updates);
+      if (!updated) return res.status(404).json({ message: "Schedule not found" });
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/cleaning/compliance-report", async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Unauthorized" });
+      const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
+      const allTemplates = await storage.getCleaningTemplatesByTenant(user.tenantId);
+      const dayLogs = await storage.getCleaningLogsByTenant(user.tenantId, new Date(date));
+      const completedItemIds = new Set(dayLogs.map(l => l.templateItemId));
+      const areas: Record<string, { total: number; completed: number; templates: any[] }> = {};
+      for (const template of allTemplates) {
+        if (template.active === false) continue;
+        const items = await storage.getCleaningTemplateItems(template.id);
+        const done = items.filter(i => completedItemIds.has(i.id)).length;
+        if (!areas[template.area]) areas[template.area] = { total: 0, completed: 0, templates: [] };
+        areas[template.area].total += items.length;
+        areas[template.area].completed += done;
+        areas[template.area].templates.push({
+          id: template.id,
+          name: template.name,
+          total: items.length,
+          completed: done,
+          rate: items.length > 0 ? Math.round((done / items.length) * 100) : 0,
+        });
+      }
+      let totalAll = 0;
+      let completedAll = 0;
+      for (const a of Object.values(areas)) {
+        totalAll += a.total;
+        completedAll += a.completed;
+      }
+      res.json({
+        date,
+        overallRate: totalAll > 0 ? Math.round((completedAll / totalAll) * 100) : 0,
+        totalTasks: totalAll,
+        completedTasks: completedAll,
+        remaining: totalAll - completedAll,
+        areas,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.get("/api/health", (_req, res) => {

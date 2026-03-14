@@ -540,9 +540,22 @@ export const cleaningLogs = pgTable("cleaning_logs", {
   notes: text("notes"),
 });
 
+export const cleaningSchedules = pgTable("cleaning_schedules", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  templateId: varchar("template_id", { length: 36 }).notNull().references(() => cleaningTemplates.id),
+  date: timestamp("date").notNull(),
+  assignedTo: varchar("assigned_to", { length: 36 }).references(() => users.id),
+  status: varchar("status", { length: 20 }).default("pending").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 export const insertCleaningTemplateSchema = createInsertSchema(cleaningTemplates).omit({ id: true });
 export const insertCleaningTemplateItemSchema = createInsertSchema(cleaningTemplateItems).omit({ id: true });
 export const insertCleaningLogSchema = createInsertSchema(cleaningLogs).omit({ id: true, completedAt: true });
+export const insertCleaningScheduleSchema = createInsertSchema(cleaningSchedules).omit({ id: true, createdAt: true });
 
 export type CleaningTemplate = typeof cleaningTemplates.$inferSelect;
 export type InsertCleaningTemplate = z.infer<typeof insertCleaningTemplateSchema>;
@@ -550,3 +563,5 @@ export type CleaningTemplateItem = typeof cleaningTemplateItems.$inferSelect;
 export type InsertCleaningTemplateItem = z.infer<typeof insertCleaningTemplateItemSchema>;
 export type CleaningLog = typeof cleaningLogs.$inferSelect;
 export type InsertCleaningLog = z.infer<typeof insertCleaningLogSchema>;
+export type CleaningSchedule = typeof cleaningSchedules.$inferSelect;
+export type InsertCleaningSchedule = z.infer<typeof insertCleaningScheduleSchema>;
