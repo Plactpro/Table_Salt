@@ -195,6 +195,7 @@ export const waitlistEntries = pgTable("waitlist_entries", {
   status: text("status").default("waiting"),
   estimatedWaitMinutes: integer("estimated_wait_minutes"),
   notificationSent: boolean("notification_sent").default(false),
+  priority: integer("priority").default(0),
   notes: text("notes"),
   seatedTableId: varchar("seated_table_id", { length: 36 }).references(() => tables.id),
   createdAt: timestamp("created_at").defaultNow(),

@@ -69,6 +69,7 @@ interface WaitlistData {
   status: string | null;
   estimatedWaitMinutes: number | null;
   notificationSent: boolean | null;
+  priority: number | null;
   notes: string | null;
   seatedTableId: string | null;
   createdAt: string | null;
@@ -105,6 +106,7 @@ interface AnalyticsData {
   avgTurnTime: number;
   byZone: Record<string, { total: number; occupied: number }>;
   waitByHour: Record<string, number>;
+  waitByDay: Record<string, number>;
 }
 
 interface CustomerData {
@@ -167,6 +169,8 @@ export default function TablesPage() {
   const [showDetailDialog, setShowDetailDialog] = useState(false);
   const [showSeatDialog, setShowSeatDialog] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [showTransferDialog, setShowTransferDialog] = useState(false);
+  const [transferTargetId, setTransferTargetId] = useState("");
   const [showAddReservation, setShowAddReservation] = useState(false);
   const [showReservationDetail, setShowReservationDetail] = useState(false);
   const [selectedReservation, setSelectedReservation] = useState<ReservationData | null>(null);
@@ -192,7 +196,7 @@ export default function TablesPage() {
   const [seatFormData, setSeatFormData] = useState({ partyName: "", partySize: "2" });
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [waitlistForm, setWaitlistForm] = useState({
-    customerName: "", customerPhone: "", partySize: "2", preferredZone: "", notes: "", estimatedWaitMinutes: "",
+    customerName: "", customerPhone: "", partySize: "2", preferredZone: "", notes: "", estimatedWaitMinutes: "", priority: "0",
   });
   const [zoneForm, setZoneForm] = useState({ name: "", color: "#6366f1" });
   const [editingZone, setEditingZone] = useState<ZoneData | null>(null);
@@ -288,7 +292,7 @@ export default function TablesPage() {
 
   const createWaitlistMut = useMutation({
     mutationFn: async (data: Record<string, unknown>) => { const r = await apiRequest("POST", "/api/waitlist", data); return r.json(); },
-    onSuccess: () => { invalidateAll(); setShowAddWaitlist(false); setWaitlistForm({ customerName: "", customerPhone: "", partySize: "2", preferredZone: "", notes: "", estimatedWaitMinutes: "" }); toast({ title: "Added to waitlist" }); },
+    onSuccess: () => { invalidateAll(); setShowAddWaitlist(false); setWaitlistForm({ customerName: "", customerPhone: "", partySize: "2", preferredZone: "", notes: "", estimatedWaitMinutes: "", priority: "0" }); toast({ title: "Added to waitlist" }); },
   });
   const seatWaitlistMut = useMutation({
     mutationFn: async ({ id, tableId }: { id: string; tableId: string }) => { const r = await apiRequest("PATCH", `/api/waitlist/${id}/seat`, { tableId }); return r.json(); },
@@ -301,6 +305,14 @@ export default function TablesPage() {
   const notifyWaitlistMut = useMutation({
     mutationFn: async (id: string) => { const r = await apiRequest("POST", `/api/waitlist/${id}/notify`, { channel: "sms" }); return r.json(); },
     onSuccess: () => { invalidateAll(); toast({ title: "Notification sent" }); },
+  });
+
+  const transferMut = useMutation({
+    mutationFn: async ({ sourceId, targetId }: { sourceId: string; targetId: string }) => {
+      const r = await apiRequest("POST", `/api/tables/${sourceId}/transfer`, { targetTableId: targetId });
+      return r.json();
+    },
+    onSuccess: () => { invalidateAll(); toast({ title: "Party transferred" }); },
   });
 
   const createResMut = useMutation({
@@ -360,9 +372,21 @@ export default function TablesPage() {
     const rect = canvasRef.current.getBoundingClientRect();
     const newX = snapToGrid(Math.max(0, Math.min(CANVAS_W - TABLE_W, e.clientX - rect.left - dragOffset.x)));
     const newY = snapToGrid(Math.max(0, Math.min(CANVAS_H - TABLE_H, e.clientY - rect.top - dragOffset.y)));
+    const draggedTable = tables.find(t => t.id === dragTableId);
+    if (draggedTable?.status === "occupied") {
+      const dropTarget = tables.find(t => t.id !== dragTableId && t.status === "free" &&
+        Math.abs((t.posX || 0) - newX) < TABLE_W && Math.abs((t.posY || 0) - newY) < TABLE_H);
+      if (dropTarget) {
+        const el = document.getElementById(`floor-table-${dragTableId}`);
+        if (el) { el.style.left = `${draggedTable.posX || 0}px`; el.style.top = `${draggedTable.posY || 0}px`; }
+        transferMut.mutate({ sourceId: dragTableId, targetId: dropTarget.id });
+        setDragTableId(null);
+        return;
+      }
+    }
     positionMut.mutate({ id: dragTableId, posX: newX, posY: newY });
     setDragTableId(null);
-  }, [dragTableId, dragOffset, positionMut]);
+  }, [dragTableId, dragOffset, positionMut, transferMut, tables]);
 
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -501,7 +525,7 @@ export default function TablesPage() {
               <CardContent className="p-4">
                 <div className="text-xs text-muted-foreground mb-2 flex items-center gap-2">
                   <GripVertical className="w-3.5 h-3.5" />
-                  Drag tables to position them on the floor plan. Changes save automatically.
+                  Drag tables to reposition. Drag an occupied table onto a free table to transfer the party.
                 </div>
                 <div
                   ref={canvasRef}
@@ -669,6 +693,7 @@ export default function TablesPage() {
                         <div>
                           <div className="font-medium flex items-center gap-2">
                             {entry.customerName}
+                            {entry.priority !== undefined && entry.priority !== null && <Badge variant="outline" className="text-[10px] h-4">P{entry.priority}</Badge>}
                             {entry.notificationSent && <Badge variant="outline" className="text-[10px] h-4"><Bell className="w-2.5 h-2.5 mr-0.5" />Notified</Badge>}
                           </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -849,6 +874,32 @@ export default function TablesPage() {
                           <span className="w-12 text-muted-foreground text-right">{hour}</span>
                           <div className="flex-1 h-5 bg-muted rounded overflow-hidden">
                             <div className="h-full bg-blue-500 rounded transition-all flex items-center justify-end pr-1" style={{ width: `${pct}%` }}>
+                              {pct > 20 && <span className="text-[10px] text-white font-medium">{count}</span>}
+                            </div>
+                          </div>
+                          {pct <= 20 && <span className="text-xs text-muted-foreground">{count}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analytics && analytics.waitByDay && Object.keys(analytics.waitByDay).length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className="text-sm">Waitlist by Day</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].filter(d => analytics.waitByDay[d]).map(day => {
+                      const count = analytics.waitByDay[day] || 0;
+                      const maxCount = Math.max(...Object.values(analytics.waitByDay));
+                      const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+                      return (
+                        <div key={day} className="flex items-center gap-3 text-sm">
+                          <span className="w-12 text-muted-foreground text-right">{day}</span>
+                          <div className="flex-1 h-5 bg-muted rounded overflow-hidden">
+                            <div className="h-full bg-purple-500 rounded transition-all flex items-center justify-end pr-1" style={{ width: `${pct}%` }}>
                               {pct > 20 && <span className="text-[10px] text-white font-medium">{count}</span>}
                             </div>
                           </div>
@@ -1051,9 +1102,14 @@ export default function TablesPage() {
                       </Button>
                     )}
                     {s === "occupied" && (
-                      <Button size="sm" variant="outline" onClick={() => clearTableMut.mutate(selectedTable.id)} data-testid="button-detail-clear">
-                        <Sparkles className="w-4 h-4 mr-1.5" />Clear Table
-                      </Button>
+                      <>
+                        <Button size="sm" variant="outline" onClick={() => clearTableMut.mutate(selectedTable.id)} data-testid="button-detail-clear">
+                          <Sparkles className="w-4 h-4 mr-1.5" />Clear Table
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setTransferTargetId(""); setShowTransferDialog(true); }} data-testid="button-detail-transfer">
+                          <ArrowRightLeft className="w-4 h-4 mr-1.5" />Transfer Party
+                        </Button>
+                      </>
                     )}
                     {s === "cleaning" && (
                       <Button size="sm" onClick={() => quickStatusMut.mutate({ id: selectedTable.id, status: "free" })} data-testid="button-detail-ready">
@@ -1130,6 +1186,29 @@ export default function TablesPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={showTransferDialog} onOpenChange={setShowTransferDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Transfer Party from Table {selectedTable?.number}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">Move {selectedTable?.partyName || "the party"} ({selectedTable?.partySize} guests) to another table. You can also drag an occupied table onto a free table in the floor plan.</p>
+          <div className="space-y-4">
+            <div><Label>Transfer to Table</Label>
+              <Select value={transferTargetId} onValueChange={setTransferTargetId}>
+                <SelectTrigger data-testid="select-transfer-target"><SelectValue placeholder="Select free table..." /></SelectTrigger>
+                <SelectContent>
+                  {tables.filter(t => t.id !== selectedTable?.id && t.status === "free").map(t => (
+                    <SelectItem key={t.id} value={t.id}>T{t.number} - {t.zone} ({t.capacity} seats)</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowTransferDialog(false)}>Cancel</Button>
+            <Button onClick={() => { if (selectedTable && transferTargetId) { transferMut.mutate({ sourceId: selectedTable.id, targetId: transferTargetId }); setShowTransferDialog(false); setShowDetailDialog(false); } }} disabled={!transferTargetId || transferMut.isPending} data-testid="button-confirm-transfer">Transfer Party</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={showAddWaitlist} onOpenChange={setShowAddWaitlist}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add to Waitlist</DialogTitle></DialogHeader>
@@ -1151,11 +1230,12 @@ export default function TablesPage() {
               </div>
               <div><Label>Est. Wait (min)</Label><Input type="number" value={waitlistForm.estimatedWaitMinutes} onChange={e => setWaitlistForm({ ...waitlistForm, estimatedWaitMinutes: e.target.value })} placeholder="Auto" data-testid="input-waitlist-wait-time" /></div>
             </div>
+            <div><Label>Priority (0=highest)</Label><Input type="number" min="0" value={waitlistForm.priority} onChange={e => setWaitlistForm({ ...waitlistForm, priority: e.target.value })} data-testid="input-waitlist-priority" /></div>
             <div><Label>Notes</Label><Textarea value={waitlistForm.notes} onChange={e => setWaitlistForm({ ...waitlistForm, notes: e.target.value })} placeholder="Special requests..." data-testid="input-waitlist-notes" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddWaitlist(false)}>Cancel</Button>
-            <Button onClick={() => createWaitlistMut.mutate({ customerName: waitlistForm.customerName, customerPhone: waitlistForm.customerPhone || undefined, partySize: parseInt(waitlistForm.partySize), preferredZone: waitlistForm.preferredZone || undefined, estimatedWaitMinutes: waitlistForm.estimatedWaitMinutes ? parseInt(waitlistForm.estimatedWaitMinutes) : undefined, notes: waitlistForm.notes || undefined })} disabled={!waitlistForm.customerName || createWaitlistMut.isPending} data-testid="button-submit-waitlist">Add to Waitlist</Button>
+            <Button onClick={() => createWaitlistMut.mutate({ customerName: waitlistForm.customerName, customerPhone: waitlistForm.customerPhone || undefined, partySize: parseInt(waitlistForm.partySize), preferredZone: waitlistForm.preferredZone || undefined, estimatedWaitMinutes: waitlistForm.estimatedWaitMinutes ? parseInt(waitlistForm.estimatedWaitMinutes) : undefined, priority: parseInt(waitlistForm.priority) || 0, notes: waitlistForm.notes || undefined })} disabled={!waitlistForm.customerName || createWaitlistMut.isPending} data-testid="button-submit-waitlist">Add to Waitlist</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -284,6 +284,26 @@ export async function registerRoutes(
     res.json(tbl);
   });
 
+  app.post("/api/tables/:id/transfer", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { targetTableId } = req.body;
+    if (!targetTableId) return res.status(400).json({ message: "targetTableId required" });
+    const allTables = await storage.getTablesByTenant(user.tenantId);
+    const source = allTables.find(t => t.id === req.params.id);
+    const target = allTables.find(t => t.id === targetTableId);
+    if (!source || !target) return res.status(404).json({ message: "Table not found" });
+    if (source.status !== "occupied") return res.status(400).json({ message: "Source table has no party to transfer" });
+    if (target.status !== "free") return res.status(400).json({ message: "Target table is not free" });
+    await storage.updateTableByTenant(target.id, user.tenantId, {
+      status: "occupied", partyName: source.partyName, partySize: source.partySize, seatedAt: source.seatedAt,
+    });
+    await storage.updateTableByTenant(source.id, user.tenantId, {
+      status: "free", partyName: null, partySize: null, seatedAt: null,
+    });
+    const updated = await storage.getTablesByTenant(user.tenantId);
+    res.json({ source: updated.find(t => t.id === source.id), target: updated.find(t => t.id === target.id) });
+  });
+
   app.delete("/api/tables/:id", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
     await storage.deleteTableByTenant(req.params.id, user.tenantId);
@@ -371,11 +391,15 @@ export async function registerRoutes(
     const turnsToday = completedToday.length;
     const avgTurnTime = turnsToday > 0 ? Math.round(avgDiningMinutes * 0.8) : 0;
     const waitByHour: Record<string, number> = {};
+    const waitByDay: Record<string, number> = {};
     for (const w of waitlistAll) {
       if (!w.createdAt) continue;
-      const hour = new Date(w.createdAt).getHours();
+      const d = new Date(w.createdAt);
+      const hour = d.getHours();
       const key = `${hour}:00`;
       waitByHour[key] = (waitByHour[key] || 0) + 1;
+      const dayKey = d.toLocaleDateString("en-US", { weekday: "short" });
+      waitByDay[dayKey] = (waitByDay[dayKey] || 0) + 1;
     }
     res.json({
       totalTables, occupied, free, reserved, cleaning, blocked,
@@ -384,7 +408,7 @@ export async function registerRoutes(
       waitingCount, avgWaitMinutes, avgDiningMinutes,
       turnsToday, avgTurnTime,
       byZone: Object.fromEntries(zones),
-      waitByHour,
+      waitByHour, waitByDay,
     });
   });
 

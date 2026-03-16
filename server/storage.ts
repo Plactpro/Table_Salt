@@ -463,7 +463,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWaitlistByTenant(tenantId: string) {
-    return db.select().from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId)).orderBy(waitlistEntries.createdAt);
+    return db.select().from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId)).orderBy(waitlistEntries.priority, waitlistEntries.createdAt);
   }
   async createWaitlistEntry(data: InsertWaitlistEntry) {
     const [w] = await db.insert(waitlistEntries).values(data).returning();
