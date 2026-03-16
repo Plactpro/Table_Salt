@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 
 interface Region { id: string; tenantId: string; name: string; description: string | null; sortOrder: number; active: boolean; }
 interface Outlet { id: string; tenantId: string; regionId: string | null; name: string; address: string | null; openingHours: string | null; isFranchise: boolean | null; franchiseeName: string | null; royaltyRate: string | null; minimumGuarantee: string | null; active: boolean | null; }
-interface OutletKPI { outletId: string; outletName: string; isFranchise: boolean; regionId: string | null; totalOrders: number; totalRevenue: string; totalTax: string; totalDiscount: string; avgCheck: string; voidCount: number; }
+interface OutletKPI { outletId: string; outletName: string; isFranchise: boolean; regionId: string | null; totalOrders: number; totalRevenue: string; totalTax: string; totalDiscount: string; avgCheck: string; voidCount: number; avgRating: string; feedbackCount: number; labourCostPct: string; foodCostPct: string; }
 interface FranchiseInvoice { id: string; tenantId: string; outletId: string; periodStart: string; periodEnd: string; netSales: string; royaltyRate: string; calculatedRoyalty: string; minimumGuarantee: string; finalAmount: string; status: string; notes: string | null; createdAt: string; }
 interface MenuItem { id: string; name: string; price: string; categoryId: string; }
 interface OutletMenuOverride { id: string; tenantId: string; outletId: string; menuItemId: string; overridePrice: string | null; available: boolean; }
@@ -81,15 +81,25 @@ export default function HQConsolePage() {
 
   const totals = useMemo(() => {
     let totalRevenue = 0, totalOrders = 0, totalTax = 0, totalVoids = 0;
+    let totalFeedbackCount = 0, totalRatingSum = 0;
+    let avgFoodCost = 0, avgLabourCost = 0, costCount = 0;
     for (const k of filteredKPIs) {
       totalRevenue += parseFloat(k.totalRevenue || "0");
       totalOrders += Number(k.totalOrders || 0);
       totalTax += parseFloat(k.totalTax || "0");
       totalVoids += Number(k.voidCount || 0);
+      totalFeedbackCount += Number(k.feedbackCount || 0);
+      totalRatingSum += parseFloat(k.avgRating || "0") * Number(k.feedbackCount || 0);
+      avgFoodCost += parseFloat(k.foodCostPct || "0");
+      avgLabourCost += parseFloat(k.labourCostPct || "0");
+      costCount++;
     }
     const avgCheck = totalOrders > 0 ? totalRevenue / totalOrders : 0;
     const voidRate = totalOrders > 0 ? ((totalVoids / totalOrders) * 100).toFixed(1) : "0.0";
-    return { totalRevenue, totalOrders, totalTax, avgCheck, totalVoids, voidRate };
+    const avgRating = totalFeedbackCount > 0 ? (totalRatingSum / totalFeedbackCount).toFixed(1) : "—";
+    const foodCostPct = costCount > 0 ? (avgFoodCost / costCount).toFixed(1) : "0.0";
+    const labourCostPct = costCount > 0 ? (avgLabourCost / costCount).toFixed(1) : "0.0";
+    return { totalRevenue, totalOrders, totalTax, avgCheck, totalVoids, voidRate, avgRating, totalFeedbackCount, foodCostPct, labourCostPct };
   }, [filteredKPIs]);
 
   const onMutError = (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -127,6 +137,12 @@ export default function HQConsolePage() {
   const sortedKPIs = useMemo(() => {
     return [...filteredKPIs].sort((a, b) => parseFloat(b.totalRevenue || "0") - parseFloat(a.totalRevenue || "0"));
   }, [filteredKPIs]);
+
+  const filteredInvoices = useMemo(() => {
+    if (selectedOutlet === "all" && regionFilter === "all") return invoices;
+    const outletIds = new Set(filteredOutlets.map(o => o.id));
+    return invoices.filter(inv => outletIds.has(inv.outletId));
+  }, [invoices, filteredOutlets, selectedOutlet, regionFilter]);
 
   return (
     <div className="p-6 space-y-6" data-testid="hq-console-page">
@@ -169,51 +185,55 @@ export default function HQConsolePage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
             <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-lg"><Store className="h-5 w-5 text-primary" /></div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Active Outlets</p>
-                  <p className="text-2xl font-bold" data-testid="text-active-outlets">{filteredOutlets.filter(o => o.active).length}</p>
-                </div>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Active Outlets</p>
+                <p className="text-xl font-bold" data-testid="text-active-outlets">{filteredOutlets.filter(o => o.active).length}</p>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg"><DollarSign className="h-5 w-5 text-green-600" /></div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Revenue</p>
-                  <p className="text-2xl font-bold" data-testid="text-total-revenue">{fmt(totals.totalRevenue.toFixed(2))}</p>
-                </div>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Total Revenue</p>
+                <p className="text-xl font-bold" data-testid="text-total-revenue">{fmt(totals.totalRevenue.toFixed(2))}</p>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-blue-100 rounded-lg"><Receipt className="h-5 w-5 text-blue-600" /></div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Total Orders</p>
-                  <p className="text-2xl font-bold" data-testid="text-total-orders">{totals.totalOrders}</p>
-                </div>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Total Orders</p>
+                <p className="text-xl font-bold" data-testid="text-total-orders">{totals.totalOrders}</p>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-purple-100 rounded-lg"><TrendingUp className="h-5 w-5 text-purple-600" /></div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Avg Check</p>
-                  <p className="text-2xl font-bold" data-testid="text-avg-check">{fmt(totals.avgCheck.toFixed(2))}</p>
-                </div>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Avg Check</p>
+                <p className="text-xl font-bold" data-testid="text-avg-check">{fmt(totals.avgCheck.toFixed(2))}</p>
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-red-100 rounded-lg"><XCircle className="h-5 w-5 text-red-600" /></div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Void Rate</p>
-                  <p className="text-2xl font-bold" data-testid="text-void-rate">{totals.voidRate}%</p>
-                  <p className="text-xs text-muted-foreground">{totals.totalVoids} voids</p>
-                </div>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Food Cost %</p>
+                <p className="text-xl font-bold" data-testid="text-food-cost">{totals.foodCostPct}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Labour Cost %</p>
+                <p className="text-xl font-bold" data-testid="text-labour-cost">{totals.labourCostPct}%</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Void Rate</p>
+                <p className="text-xl font-bold" data-testid="text-void-rate">{totals.voidRate}%</p>
+                <p className="text-[10px] text-muted-foreground">{totals.totalVoids} voids</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">Avg Rating</p>
+                <p className="text-xl font-bold" data-testid="text-avg-rating">{totals.avgRating}<span className="text-xs text-muted-foreground">/5</span></p>
+                <p className="text-[10px] text-muted-foreground">{totals.totalFeedbackCount} reviews</p>
               </CardContent>
             </Card>
           </div>
@@ -232,7 +252,7 @@ export default function HQConsolePage() {
                         <span className="text-sm font-bold text-muted-foreground w-6">#{idx + 1}</span>
                         <div className="flex-1">
                           <div className="flex justify-between mb-1">
-                            <button className="text-sm font-medium flex items-center gap-1 hover:text-primary hover:underline" onClick={() => navigate(`/outlets`)} data-testid={`link-drill-down-${k.outletId}`}>
+                            <button className="text-sm font-medium flex items-center gap-1 hover:text-primary hover:underline" onClick={() => { setSelectedOutlet(k.outletId); }} data-testid={`link-drill-down-${k.outletId}`}>
                               {k.outletName}
                               {outlet?.isFranchise && <Crown className="h-3 w-3 text-amber-500" />}
                               <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100" />
@@ -299,8 +319,10 @@ export default function HQConsolePage() {
                     <TableHead className="text-right">Orders</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Avg Check</TableHead>
-                    <TableHead className="text-right">Tax</TableHead>
+                    <TableHead className="text-right">Food %</TableHead>
+                    <TableHead className="text-right">Labour %</TableHead>
                     <TableHead className="text-right">Voids</TableHead>
+                    <TableHead className="text-right">Rating</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -320,10 +342,12 @@ export default function HQConsolePage() {
                         <TableCell className="text-right">{k.totalOrders}</TableCell>
                         <TableCell className="text-right font-semibold">{fmt(k.totalRevenue)}</TableCell>
                         <TableCell className="text-right">{fmt(k.avgCheck)}</TableCell>
-                        <TableCell className="text-right">{fmt(k.totalTax)}</TableCell>
+                        <TableCell className="text-right">{k.foodCostPct}%</TableCell>
+                        <TableCell className="text-right">{k.labourCostPct}%</TableCell>
                         <TableCell className="text-right">{Number(k.voidCount) > 0 ? <span className="text-red-500">{k.voidCount}</span> : "0"}</TableCell>
+                        <TableCell className="text-right">{parseFloat(k.avgRating || "0") > 0 ? `${k.avgRating}/5` : "—"}</TableCell>
                         <TableCell className="text-right">
-                          <Button variant="ghost" size="sm" onClick={() => navigate("/outlets")} data-testid={`button-drilldown-${k.outletId}`}>
+                          <Button variant="ghost" size="sm" onClick={() => { setSelectedOutlet(k.outletId); setActiveTab("overview"); }} data-testid={`button-drilldown-${k.outletId}`}>
                             <ExternalLink className="h-3 w-3" />
                           </Button>
                         </TableCell>
@@ -331,7 +355,7 @@ export default function HQConsolePage() {
                     );
                   })}
                   {sortedKPIs.length === 0 && (
-                    <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">No data available</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">No data available</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -441,7 +465,7 @@ export default function HQConsolePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {invoices.map(inv => {
+                  {filteredInvoices.map(inv => {
                     const outlet = outletMap.get(inv.outletId);
                     return (
                       <TableRow key={inv.id} data-testid={`invoice-row-${inv.id}`}>

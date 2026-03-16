@@ -168,11 +168,11 @@ export default function OutletsPage() {
       name: outlet.name,
       address: outlet.address || "",
       openingHours: outlet.openingHours || "",
-      regionId: (outlet as any).regionId || "",
-      isFranchise: (outlet as any).isFranchise || false,
-      franchiseeName: (outlet as any).franchiseeName || "",
-      royaltyRate: (outlet as any).royaltyRate || "",
-      minimumGuarantee: (outlet as any).minimumGuarantee || "",
+      regionId: outlet.regionId || "",
+      isFranchise: outlet.isFranchise || false,
+      franchiseeName: outlet.franchiseeName || "",
+      royaltyRate: outlet.royaltyRate || "",
+      minimumGuarantee: outlet.minimumGuarantee || "",
     });
     setDialogOpen(true);
   }
