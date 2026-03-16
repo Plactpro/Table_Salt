@@ -2719,15 +2719,19 @@ export async function registerRoutes(
         for (const s of userScheds) scheduledHours += parseHours(s.startTime, s.endTime);
         for (const l of userLogs) actualHours += parseFloat(l.hoursWorked || "0");
         const rate = getRate(u);
+        const otRate = u.overtimeRate ? parseFloat(u.overtimeRate) : rate * 1.5;
         const overtimeHours = Math.max(0, actualHours - scheduledHours);
+        const regularHours = actualHours - overtimeHours;
+        const actualCost = regularHours * rate + overtimeHours * otRate;
+        const scheduledCost = scheduledHours * rate;
         return {
           userId, name: u.name, role: u.role, hourlyRate: rate,
           scheduledHours: parseFloat(scheduledHours.toFixed(2)),
           actualHours: parseFloat(actualHours.toFixed(2)),
           overtimeHours: parseFloat(overtimeHours.toFixed(2)),
-          scheduledCost: parseFloat((scheduledHours * rate).toFixed(2)),
-          actualCost: parseFloat((actualHours * rate).toFixed(2)),
-          variance: parseFloat(((actualHours - scheduledHours) * rate).toFixed(2)),
+          scheduledCost: parseFloat(scheduledCost.toFixed(2)),
+          actualCost: parseFloat(actualCost.toFixed(2)),
+          variance: parseFloat((actualCost - scheduledCost).toFixed(2)),
           shiftsScheduled: userScheds.length,
           shiftsWorked: userLogs.length,
         };
@@ -2770,8 +2774,12 @@ export async function registerRoutes(
         for (const s of userScheds) scheduledHours += parseHours(s.startTime, s.endTime);
         for (const l of userLogs) actualHours += parseFloat(l.hoursWorked || "0");
         const rate = getRate(u);
+        const otRate = u.overtimeRate ? parseFloat(u.overtimeRate) : rate * 1.5;
         const overtimeHours = Math.max(0, actualHours - scheduledHours);
-        csvLines.push(`"${u.name}",${u.role},${rate},${scheduledHours.toFixed(2)},${actualHours.toFixed(2)},${overtimeHours.toFixed(2)},${(scheduledHours * rate).toFixed(2)},${(actualHours * rate).toFixed(2)},${((actualHours - scheduledHours) * rate).toFixed(2)},${userScheds.length},${userLogs.length}`);
+        const regularHours = actualHours - overtimeHours;
+        const actualCost = regularHours * rate + overtimeHours * otRate;
+        const scheduledCost = scheduledHours * rate;
+        csvLines.push(`"${u.name}",${u.role},${rate},${scheduledHours.toFixed(2)},${actualHours.toFixed(2)},${overtimeHours.toFixed(2)},${scheduledCost.toFixed(2)},${actualCost.toFixed(2)},${(actualCost - scheduledCost).toFixed(2)},${userScheds.length},${userLogs.length}`);
       }
 
       res.setHeader("Content-Type", "text/csv");

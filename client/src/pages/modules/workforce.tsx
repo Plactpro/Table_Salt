@@ -82,7 +82,7 @@ export default function WorkforcePage() {
               <SelectItem value="month">This Month</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={() => { setTargetPct(String(kpis?.labourTargetPct || 30)); setSettingsDialog(true); }} data-testid="button-settings"><Settings className="h-4 w-4 mr-1" />Settings</Button>
+          {user?.role === "owner" && <Button variant="outline" size="sm" onClick={() => { setTargetPct(String(kpis?.labourTargetPct || 30)); setSettingsDialog(true); }} data-testid="button-settings"><Settings className="h-4 w-4 mr-1" />Settings</Button>}
         </div>
       </div>
 
