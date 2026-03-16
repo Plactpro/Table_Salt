@@ -68,8 +68,8 @@ export interface IStorage {
   getOutletsByTenant(tenantId: string): Promise<Outlet[]>;
   getOutlet(id: string): Promise<Outlet | undefined>;
   createOutlet(data: InsertOutlet): Promise<Outlet>;
-  updateOutlet(id: string, data: Partial<InsertOutlet>): Promise<Outlet | undefined>;
-  deleteOutlet(id: string): Promise<void>;
+  updateOutlet(id: string, tenantId: string, data: Partial<InsertOutlet>): Promise<Outlet | undefined>;
+  deleteOutlet(id: string, tenantId: string): Promise<void>;
 
   getCategoriesByTenant(tenantId: string): Promise<MenuCategory[]>;
   getCategory(id: string): Promise<MenuCategory | undefined>;
@@ -258,6 +258,9 @@ export interface IStorage {
   deleteOutletMenuOverride(id: string, tenantId: string): Promise<void>;
 
   getOutletKPIs(tenantId: string, outletId?: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
+  getOutletFeedbackMetrics(tenantId: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
+  getOutletLabourMetrics(tenantId: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
+  getOutletFoodCostMetrics(tenantId: string): Promise<Map<string, string>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -312,12 +315,12 @@ export class DatabaseStorage implements IStorage {
     const [o] = await db.insert(outlets).values(data).returning();
     return o;
   }
-  async updateOutlet(id: string, data: Partial<InsertOutlet>) {
-    const [o] = await db.update(outlets).set(data).where(eq(outlets.id, id)).returning();
+  async updateOutlet(id: string, tenantId: string, data: Partial<InsertOutlet>) {
+    const [o] = await db.update(outlets).set(data).where(and(eq(outlets.id, id), eq(outlets.tenantId, tenantId))).returning();
     return o;
   }
-  async deleteOutlet(id: string) {
-    await db.delete(outlets).where(eq(outlets.id, id));
+  async deleteOutlet(id: string, tenantId: string) {
+    await db.delete(outlets).where(and(eq(outlets.id, id), eq(outlets.tenantId, tenantId)));
   }
 
   async getCategoriesByTenant(tenantId: string) {
@@ -1124,6 +1127,66 @@ export class DatabaseStorage implements IStorage {
       voidCount: sql<number>`COUNT(CASE WHEN ${orders.status} IN ('voided','cancelled') THEN 1 END)`,
     }).from(orders).where(and(...conditions)).groupBy(orders.outletId);
     return rows as Record<string, unknown>[];
+  }
+
+  async getOutletFeedbackMetrics(tenantId: string, from?: Date, to?: Date) {
+    const conditions = [eq(feedback.tenantId, tenantId)];
+    if (from) conditions.push(gte(feedback.createdAt, from));
+    if (to) conditions.push(lte(feedback.createdAt, to));
+    const rows = await db.select({
+      outletId: sql<string>`COALESCE(${orders.outletId}, 'unknown')`,
+      avgRating: sql<string>`ROUND(AVG(${feedback.rating})::numeric, 1)`,
+      feedbackCount: count(feedback.id),
+    }).from(feedback)
+      .leftJoin(orders, eq(feedback.orderId, orders.id))
+      .where(and(...conditions))
+      .groupBy(orders.outletId);
+    return rows as Record<string, unknown>[];
+  }
+
+  async getOutletLabourMetrics(tenantId: string, from?: Date, to?: Date) {
+    const conditions = [eq(attendanceLogs.tenantId, tenantId)];
+    if (from) conditions.push(gte(attendanceLogs.date, from));
+    if (to) conditions.push(lte(attendanceLogs.date, to));
+    const rows = await db.select({
+      outletId: sql<string>`COALESCE(${staffSchedules.outletId}, 'unknown')`,
+      labourHours: sql<number>`COALESCE(SUM(CAST(${attendanceLogs.hoursWorked} AS NUMERIC)), 0)`,
+    }).from(attendanceLogs)
+      .leftJoin(staffSchedules, eq(attendanceLogs.scheduleId, staffSchedules.id))
+      .where(and(...conditions))
+      .groupBy(staffSchedules.outletId);
+    return rows as Record<string, unknown>[];
+  }
+
+  async getOutletFoodCostMetrics(tenantId: string): Promise<Map<string, string>> {
+    const allRecipes = await db.select().from(recipes).where(eq(recipes.tenantId, tenantId));
+    const allIngredients = await db.select().from(recipeIngredients);
+    const allItems = await db.select().from(menuItems).where(eq(menuItems.tenantId, tenantId));
+    const invItems = await db.select().from(inventoryItems).where(eq(inventoryItems.tenantId, tenantId));
+    const invMap = new Map(invItems.map(i => [i.id, parseFloat(i.costPerUnit || "0")]));
+
+    let totalMenuPrice = 0;
+    let totalCost = 0;
+    for (const recipe of allRecipes) {
+      const mi = allItems.find(m => m.id === recipe.menuItemId);
+      if (!mi) continue;
+      const price = parseFloat(mi.price);
+      const ingredients = allIngredients.filter(ri => ri.recipeId === recipe.id);
+      let recipeCost = 0;
+      for (const ing of ingredients) {
+        const unitCost = invMap.get(ing.inventoryItemId) || 0;
+        recipeCost += parseFloat(ing.quantity) * unitCost;
+      }
+      totalMenuPrice += price;
+      totalCost += recipeCost;
+    }
+    const globalFoodCostPct = totalMenuPrice > 0 ? ((totalCost / totalMenuPrice) * 100).toFixed(1) : "0.0";
+    const result = new Map<string, string>();
+    const outletList = await this.getOutletsByTenant(tenantId);
+    for (const o of outletList) {
+      result.set(o.id, globalFoodCostPct);
+    }
+    return result;
   }
 }
 

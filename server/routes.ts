@@ -133,12 +133,14 @@ export async function registerRoutes(
   });
 
   app.patch("/api/outlets/:id", requireRole("owner", "manager"), async (req, res) => {
-    const outlet = await storage.updateOutlet(req.params.id, req.body);
+    const user = req.user as Express.User & { tenantId: string };
+    const outlet = await storage.updateOutlet(req.params.id, user.tenantId, req.body);
     res.json(outlet);
   });
 
   app.delete("/api/outlets/:id", requireRole("owner", "manager"), async (req, res) => {
-    await storage.deleteOutlet(req.params.id);
+    const user = req.user as Express.User & { tenantId: string };
+    await storage.deleteOutlet(req.params.id, user.tenantId);
     res.json({ success: true });
   });
 
@@ -2093,11 +2095,36 @@ export async function registerRoutes(
       const from = req.query.from ? new Date(req.query.from as string) : undefined;
       const to = req.query.to ? new Date(req.query.to as string) : undefined;
       const kpis = await storage.getOutletKPIs(user.tenantId, outletId, from, to);
-      const outlets = await storage.getOutletsByTenant(user.tenantId);
-      const outletMap = new Map(outlets.map(o => [o.id, o]));
+      const allOutlets = await storage.getOutletsByTenant(user.tenantId);
+      const outletMapLocal = new Map(allOutlets.map(o => [o.id, o]));
+
+      const [feedbackMetrics, labourMetrics, foodCostReport] = await Promise.all([
+        storage.getOutletFeedbackMetrics(user.tenantId, from, to),
+        storage.getOutletLabourMetrics(user.tenantId, from, to),
+        storage.getOutletFoodCostMetrics(user.tenantId),
+      ]);
+
+      const feedbackMap = new Map(feedbackMetrics.map((f: any) => [f.outletId, f]));
+      const labourMap = new Map(labourMetrics.map((l: any) => [l.outletId, l]));
+
       const enriched = kpis.map(k => {
-        const outlet = outletMap.get(k.outletId as string);
-        return { ...k, outletName: outlet?.name || "Unknown", isFranchise: outlet?.isFranchise || false, regionId: outlet?.regionId || null };
+        const outlet = outletMapLocal.get(k.outletId as string);
+        const fb = feedbackMap.get(k.outletId as string) || { avgRating: "0", feedbackCount: 0 };
+        const lab = labourMap.get(k.outletId as string) || { labourHours: 0 };
+        const revenue = parseFloat(String(k.totalRevenue || "0"));
+        const estimatedLabourCost = Number(lab.labourHours || 0) * 15;
+        const labourPct = revenue > 0 ? ((estimatedLabourCost / revenue) * 100).toFixed(1) : "0.0";
+        const foodCostPct = foodCostReport.get(k.outletId as string) || "0.0";
+        return {
+          ...k,
+          outletName: outlet?.name || "Unknown",
+          isFranchise: outlet?.isFranchise || false,
+          regionId: outlet?.regionId || null,
+          avgRating: fb.avgRating,
+          feedbackCount: fb.feedbackCount,
+          labourCostPct: labourPct,
+          foodCostPct,
+        };
       });
       res.json(enriched);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
