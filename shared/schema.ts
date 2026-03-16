@@ -180,6 +180,9 @@ export const orders = pgTable("orders", {
   notes: text("notes"),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
   offerId: varchar("offer_id", { length: 36 }),
+  channel: text("channel"),
+  channelOrderId: text("channel_order_id"),
+  channelData: jsonb("channel_data"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -736,3 +739,44 @@ export const insertKitchenStationSchema = createInsertSchema(kitchenStations).om
 export type KitchenStation = typeof kitchenStations.$inferSelect;
 export type InsertKitchenStation = z.infer<typeof insertKitchenStationSchema>;
 export type InsertAuditIssue = z.infer<typeof insertAuditIssueSchema>;
+
+export const orderChannels = pgTable("order_channels", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  icon: text("icon"),
+  active: boolean("active").default(true),
+  commissionPct: decimal("commission_pct", { precision: 5, scale: 2 }).default("0"),
+});
+
+export const channelConfigs = pgTable("channel_configs", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  channelId: varchar("channel_id", { length: 36 }).notNull().references(() => orderChannels.id),
+  outletId: varchar("outlet_id", { length: 36 }).notNull().references(() => outlets.id),
+  enabled: boolean("enabled").default(false),
+  prepTimeMinutes: integer("prep_time_minutes").default(20),
+  packagingFee: decimal("packaging_fee", { precision: 10, scale: 2 }).default("0"),
+  autoAccept: boolean("auto_accept").default(false),
+});
+
+export const onlineMenuMappings = pgTable("online_menu_mappings", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull().references(() => menuItems.id),
+  channelId: varchar("channel_id", { length: 36 }).notNull().references(() => orderChannels.id),
+  externalItemId: text("external_item_id"),
+  externalPrice: decimal("external_price", { precision: 10, scale: 2 }),
+  available: boolean("available").default(true),
+});
+
+export const insertOrderChannelSchema = createInsertSchema(orderChannels).omit({ id: true });
+export const insertChannelConfigSchema = createInsertSchema(channelConfigs).omit({ id: true });
+export const insertOnlineMenuMappingSchema = createInsertSchema(onlineMenuMappings).omit({ id: true });
+export type OrderChannel = typeof orderChannels.$inferSelect;
+export type InsertOrderChannel = z.infer<typeof insertOrderChannelSchema>;
+export type ChannelConfig = typeof channelConfigs.$inferSelect;
+export type InsertChannelConfig = z.infer<typeof insertChannelConfigSchema>;
+export type OnlineMenuMapping = typeof onlineMenuMappings.$inferSelect;
+export type InsertOnlineMenuMapping = z.infer<typeof insertOnlineMenuMappingSchema>;

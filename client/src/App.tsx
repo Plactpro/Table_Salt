@@ -23,6 +23,7 @@ import OffersPage from "@/pages/modules/offers";
 import CrmPage from "@/pages/modules/crm";
 import PerformancePage from "@/pages/modules/performance";
 import DeliveryPage from "@/pages/modules/delivery";
+import OrdersHubPage from "@/pages/modules/orders-hub";
 import CleaningPage from "@/pages/modules/cleaning";
 import AuditsPage from "@/pages/modules/audits";
 import BillingPage from "@/pages/modules/billing";
@@ -55,6 +56,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/crm": { roles: ["owner", "manager"], featureKey: "crm" },
   "/performance": { roles: ["owner", "manager"], featureKey: "staff" },
   "/delivery": { roles: ["owner", "manager"], featureKey: "delivery_management" },
+  "/orders-hub": { roles: ["owner", "manager"], featureKey: "delivery_management" },
   "/cleaning": { roles: ["owner", "manager"], featureKey: "cleaning" },
   "/audits": { roles: ["owner", "manager"], featureKey: "internal_audits" },
   "/integrations": { roles: ["owner", "manager"], featureKey: "integrations" },
@@ -175,6 +177,7 @@ function ProtectedPages() {
         <Route path="/crm">{() => <GuardedRoute path="/crm" component={CrmPage} />}</Route>
         <Route path="/performance">{() => <GuardedRoute path="/performance" component={PerformancePage} />}</Route>
         <Route path="/delivery">{() => <GuardedRoute path="/delivery" component={DeliveryPage} />}</Route>
+        <Route path="/orders-hub">{() => <GuardedRoute path="/orders-hub" component={OrdersHubPage} />}</Route>
         <Route path="/cleaning">{() => <GuardedRoute path="/cleaning" component={CleaningPage} />}</Route>
         <Route path="/audits">{() => <GuardedRoute path="/audits" component={AuditsPage} />}</Route>
         <Route path="/integrations">{() => <GuardedRoute path="/integrations" component={IntegrationsPage} />}</Route>
