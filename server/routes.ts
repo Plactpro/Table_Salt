@@ -2299,7 +2299,7 @@ export async function registerRoutes(
       const user = req.user as Express.User & { tenantId: string; id: string };
       const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
       if (!po) return res.status(404).json({ message: "PO not found" });
-      if (po.status !== "approved" && po.status !== "draft") return res.status(400).json({ message: "PO must be approved or draft to send" });
+      if (po.status !== "approved") return res.status(400).json({ message: "PO must be approved before sending" });
       await storage.updatePurchaseOrder(po.id, user.tenantId, { status: "sent" });
       await storage.createProcurementApproval({ tenantId: user.tenantId, purchaseOrderId: po.id, action: "sent", performedBy: user.id, notes: null });
       res.json({ success: true });
@@ -2347,9 +2347,12 @@ export async function registerRoutes(
 
         const invItem = await storage.getInventoryItem(poItem.inventoryItemId);
         if (invItem) {
-          const newStock = parseFloat(invItem.currentStock || "0") + parseFloat(item.quantityReceived);
-          await storage.updateInventoryItem(invItem.id, { currentStock: newStock.toFixed(2), costPrice: item.actualUnitCost, costPerBaseUnit: item.actualUnitCost });
-          await storage.createStockMovement({ tenantId: user.tenantId, itemId: invItem.id, type: "received", quantity: item.quantityReceived, reason: `GRN ${grnNumber} from PO ${po.poNumber}` });
+          const conversionRatio = parseFloat(invItem.conversionRatio || "1");
+          const receivedQtyBase = parseFloat(item.quantityReceived) * conversionRatio;
+          const newStock = parseFloat(invItem.currentStock || "0") + receivedQtyBase;
+          const costPerBaseUnit = conversionRatio > 0 ? (parseFloat(item.actualUnitCost) / conversionRatio).toFixed(4) : item.actualUnitCost;
+          await storage.updateInventoryItem(invItem.id, { currentStock: newStock.toFixed(2), costPrice: item.actualUnitCost, costPerBaseUnit });
+          await storage.createStockMovement({ tenantId: user.tenantId, itemId: invItem.id, type: "received", quantity: receivedQtyBase.toFixed(2), reason: `GRN ${grnNumber} from PO ${po.poNumber}` });
         }
       }
 
@@ -2366,6 +2369,10 @@ export async function registerRoutes(
   });
   app.get("/api/grns/:id/items", requireRole("owner", "manager"), async (req, res) => {
     try {
+      const user = req.user as Express.User & { tenantId: string };
+      const grns = await storage.getGRNsByTenant(user.tenantId);
+      const grn = grns.find(g => g.id === req.params.id);
+      if (!grn) return res.status(404).json({ message: "GRN not found" });
       res.json(await storage.getGRNItems(req.params.id));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
