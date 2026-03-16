@@ -1694,10 +1694,12 @@ export async function registerRoutes(
       if (status === "recalled" && order.status === "ready") {
         await storage.updateOrder(item.orderId, { status: "in_progress" });
       }
-      if (status === "ready") {
-        const allItems = await storage.getOrderItemsByOrder(item.orderId);
-        const allReady = allItems.every(i => i.status === "ready" || i.status === "served" || i.id === req.params.id);
-        if (allReady) await storage.updateOrder(item.orderId, { status: "ready" });
+      if (status === "ready" || status === "served") {
+        const freshItems = await storage.getOrderItemsByOrder(item.orderId);
+        const allServed = freshItems.every(i => i.status === "served");
+        const allReadyOrServed = freshItems.every(i => i.status === "ready" || i.status === "served");
+        if (allServed) await storage.updateOrder(item.orderId, { status: "served" });
+        else if (allReadyOrServed) await storage.updateOrder(item.orderId, { status: "ready" });
       }
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
