@@ -195,7 +195,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
       layout
     >
       <Card
-        className={`overflow-hidden border-l-4 ${timeBorder} ${timeBg} transition-all duration-200 ${isLate && !allReady ? "animate-pulse ring-2 ring-red-400/50" : ""} ${isNew ? "ring-1 ring-primary/30" : ""}`}
+        className={`overflow-hidden border-l-4 ${timeBorder} ${timeBg} transition-all duration-200 ${isLate && !allReady ? "animate-pulse ring-2 ring-red-400/50" : ""} ${isNew ? "animate-[kds-flash_1.5s_ease-in-out_3] ring-2 ring-primary/40" : ""}`}
         data-testid={`kds-ticket-${ticket.id.slice(-4)}`}
       >
         <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between space-y-0">

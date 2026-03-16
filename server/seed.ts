@@ -159,8 +159,8 @@ export async function seedDatabase() {
         name: item.name,
         quantity: Math.floor(Math.random() * 3) + 1,
         price: item.price,
-        station: (item as any).station || null,
-        course: (item as any).course || null,
+        station: item.station || null,
+        course: item.course || null,
       });
     }
   }

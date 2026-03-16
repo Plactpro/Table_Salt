@@ -311,6 +311,11 @@
   100% { box-shadow: 0 0 0 0 rgba(15, 118, 110, 0); }
 }
 
+@keyframes kds-flash {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(15, 118, 110, 0.3); opacity: 1; }
+  50% { box-shadow: 0 0 12px 4px rgba(15, 118, 110, 0.15); opacity: 0.85; }
+}
+
 @keyframes skeleton-pulse {
   0% { opacity: 0.4; }
   50% { opacity: 0.8; }

@@ -258,12 +258,12 @@ export async function registerRoutes(
         const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
         const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
         for (const item of items) {
-          const mi = item.menuItemId ? menuMap.get(item.menuItemId) : null;
+          const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
           await storage.createOrderItem({
             ...item,
             orderId: order.id,
-            station: item.station || (mi as any)?.station || null,
-            course: item.course || (mi as any)?.course || null,
+            station: item.station || mi?.station || null,
+            course: item.course || mi?.course || null,
           });
         }
       }
@@ -1668,7 +1668,7 @@ export async function registerRoutes(
 
   app.patch("/api/kds/order-items/:id/status", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { tenantId: string };
       const { status } = req.body;
       const validTransitions: Record<string, string[]> = {
         pending: ["cooking"],
@@ -1683,7 +1683,7 @@ export async function registerRoutes(
       if (!allowed || !allowed.includes(status)) return res.status(400).json({ message: `Invalid transition: ${currentStatus} -> ${status}` });
       const order = await storage.getOrder(item.orderId);
       if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
-      const updates: any = { status };
+      const updates: Record<string, string | Date | null> = { status };
       if (status === "cooking" && !item.startedAt) updates.startedAt = new Date();
       if (status === "ready") updates.readyAt = new Date();
       if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
@@ -1708,23 +1708,33 @@ export async function registerRoutes(
   // ── Bulk update order item status (e.g. mark all items in order as started) ──
   app.patch("/api/kds/orders/:id/items-status", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { tenantId: string };
       const { status, station } = req.body;
+      const validTransitions: Record<string, string[]> = {
+        pending: ["cooking"],
+        cooking: ["ready"],
+        ready: ["recalled", "served"],
+        recalled: ["cooking"],
+      };
       const order = await storage.getOrder(req.params.id);
       if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const items = await storage.getOrderItemsByOrder(req.params.id);
-      const filtered = station ? items.filter((i: any) => i.station === station) : items;
+      const filtered = station ? items.filter(i => i.station === station) : items;
       for (const item of filtered) {
-        const updates: any = { status };
+        const currentStatus = item.status || "pending";
+        const allowed = validTransitions[currentStatus];
+        if (!allowed || !allowed.includes(status)) continue;
+        const updates: Record<string, string | Date | null> = { status };
         if (status === "cooking" && !item.startedAt) updates.startedAt = new Date();
         if (status === "ready") updates.readyAt = new Date();
+        if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
         await storage.updateOrderItem(item.id, updates);
       }
       const freshItems = await storage.getOrderItemsByOrder(req.params.id);
-      const allReady = freshItems.every((i: any) => i.status === "ready" || i.status === "served");
-      const allServed = freshItems.every((i: any) => i.status === "served");
-      if (status === "served" && allServed) await storage.updateOrder(req.params.id, { status: "served" });
-      else if (status === "ready" && allReady) await storage.updateOrder(req.params.id, { status: "ready" });
+      const allServed = freshItems.every(i => i.status === "served");
+      const allReadyOrServed = freshItems.every(i => i.status === "ready" || i.status === "served");
+      if (allServed) await storage.updateOrder(req.params.id, { status: "served" });
+      else if (allReadyOrServed) await storage.updateOrder(req.params.id, { status: "ready" });
       if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) {
         await storage.updateOrder(req.params.id, { status: "in_progress" });
       }
