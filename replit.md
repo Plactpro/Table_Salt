@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, table_zones, tables, waitlist_entries, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -66,7 +66,7 @@ scheduled / present / absent / late
 ## API Routes
 All prefixed with `/api`:
 - Auth: `/auth/register`, `/auth/login`, `/auth/logout`, `/auth/me`
-- Resources: `/outlets`, `/menu-categories`, `/menu-items`, `/tables`, `/reservations`, `/orders`, `/inventory`, `/customers`, `/users`, `/staff-schedules`
+- Resources: `/outlets`, `/menu-categories`, `/menu-items`, `/table-zones` (CRUD), `/tables` (CRUD + `/seat`, `/clear`, `/merge`, `/unmerge`), `/waitlist` (CRUD + `/seat`), `/table-analytics`, `/reservations`, `/orders`, `/inventory`, `/customers`, `/users`, `/staff-schedules`
 - Offers: `/offers` (CRUD), `/orders-with-offers`
 - Delivery: `/delivery-orders` (CRUD)
 - Performance: `/performance-logs` (CRUD)
@@ -90,7 +90,7 @@ All prefixed with `/api`:
 - `/` - Role-based dashboard (owner/manager/waiter/kitchen/accountant)
 - `/pos` - Point of Sale (with offer integration)
 - `/orders` - Order management (with Ready to Pay status, bill preview)
-- `/tables` - Table floor plan & reservations
+- `/tables` - Advanced Table & Queue Management (floor plan with zone grouping, party seating/clearing, table merging/unmerging, waitlist queue, weekly reservation calendar, zone management with colors, real-time analytics)
 - `/menu` - Menu management (with image, tags, ingredients, DishInfoPanel)
 - `/inventory` - Inventory & Recipe Costing (4 tabs: Inventory items, Recipes with ingredient picker & live cost calc, Stock Takes with variance, Food Cost report)
 - `/staff` - Staff management (roster, schedule, attendance tabs with clock-in/out tracking)

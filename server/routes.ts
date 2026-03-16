@@ -17,6 +17,7 @@ import {
   insertRegionSchema, insertFranchiseInvoiceSchema, insertOutletMenuOverrideSchema,
   insertSupplierSchema, insertSupplierCatalogItemSchema, insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema, insertGoodsReceivedNoteSchema, insertGrnItemSchema,
+  insertTableZoneSchema, insertWaitlistEntrySchema,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
@@ -190,6 +191,28 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
+  app.get("/api/table-zones", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    res.json(await storage.getTableZonesByTenant(user.tenantId));
+  });
+  app.post("/api/table-zones", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    const { tenantId: _t, id: _i, ...body } = req.body;
+    res.json(await storage.createTableZone({ ...body, tenantId: user.tenantId }));
+  });
+  app.patch("/api/table-zones/:id", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    const { tenantId: _t, id: _i, ...body } = req.body;
+    const z = await storage.updateTableZone(req.params.id, user.tenantId, body);
+    if (!z) return res.status(404).json({ message: "Zone not found" });
+    res.json(z);
+  });
+  app.delete("/api/table-zones/:id", requireRole("owner", "manager"), async (req, res) => {
+    const user = req.user as any;
+    await storage.deleteTableZone(req.params.id, user.tenantId);
+    res.json({ message: "Deleted" });
+  });
+
   app.get("/api/tables", requireAuth, async (req, res) => {
     const user = req.user as any;
     const tbs = await storage.getTablesByTenant(user.tenantId);
@@ -198,13 +221,65 @@ export async function registerRoutes(
 
   app.post("/api/tables", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
-    const tbl = await storage.createTable({ ...req.body, tenantId: user.tenantId });
+    const { tenantId: _t, id: _i, ...body } = req.body;
+    const tbl = await storage.createTable({ ...body, tenantId: user.tenantId });
     res.json(tbl);
   });
 
   app.patch("/api/tables/:id", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, req.body);
+    const { tenantId: _t, id: _i, ...body } = req.body;
+    const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, body);
+    if (!tbl) return res.status(404).json({ message: "Table not found" });
+    res.json(tbl);
+  });
+
+  app.patch("/api/tables/:id/seat", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { partyName, partySize } = req.body;
+    const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
+      status: "occupied",
+      partyName,
+      partySize,
+      seatedAt: new Date(),
+    });
+    if (!tbl) return res.status(404).json({ message: "Table not found" });
+    res.json(tbl);
+  });
+
+  app.patch("/api/tables/:id/clear", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
+      status: "cleaning",
+      partyName: null,
+      partySize: null,
+      seatedAt: null,
+    });
+    if (!tbl) return res.status(404).json({ message: "Table not found" });
+    res.json(tbl);
+  });
+
+  app.patch("/api/tables/:id/merge", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { targetTableId } = req.body;
+    if (!targetTableId) return res.status(400).json({ message: "Target table ID required" });
+    const source = await storage.getTable(req.params.id);
+    const target = await storage.getTable(targetTableId);
+    if (!source || source.tenantId !== user.tenantId) return res.status(404).json({ message: "Source table not found" });
+    if (!target || target.tenantId !== user.tenantId) return res.status(404).json({ message: "Target table not found" });
+    if (source.mergedWith) return res.status(400).json({ message: "Source table already merged" });
+    if (target.mergedWith) return res.status(400).json({ message: "Target table already merged" });
+    const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
+      mergedWith: targetTableId,
+    });
+    res.json(tbl);
+  });
+
+  app.patch("/api/tables/:id/unmerge", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
+      mergedWith: null,
+    });
     if (!tbl) return res.status(404).json({ message: "Table not found" });
     res.json(tbl);
   });
@@ -215,6 +290,83 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
+  app.get("/api/waitlist", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    res.json(await storage.getWaitlistByTenant(user.tenantId));
+  });
+  app.post("/api/waitlist", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { tenantId: _t, id: _i, ...body } = req.body;
+    res.json(await storage.createWaitlistEntry({ ...body, tenantId: user.tenantId }));
+  });
+  app.patch("/api/waitlist/:id", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { tenantId: _t, id: _i, ...body } = req.body;
+    const w = await storage.updateWaitlistEntry(req.params.id, user.tenantId, body);
+    if (!w) return res.status(404).json({ message: "Entry not found" });
+    res.json(w);
+  });
+  app.patch("/api/waitlist/:id/seat", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { tableId } = req.body;
+    if (!tableId) return res.status(400).json({ message: "Table ID required" });
+    const table = await storage.getTable(tableId);
+    if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
+    if (table.status !== "free") return res.status(400).json({ message: "Table is not available" });
+    const tbl = await storage.updateTableByTenant(tableId, user.tenantId, {
+      status: "occupied",
+      seatedAt: new Date(),
+    });
+    if (!tbl) return res.status(404).json({ message: "Table not found" });
+    const w = await storage.updateWaitlistEntry(req.params.id, user.tenantId, {
+      status: "seated",
+      seatedTableId: tableId,
+      seatedAt: new Date(),
+    });
+    res.json(w);
+  });
+  app.delete("/api/waitlist/:id", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    await storage.deleteWaitlistEntry(req.params.id, user.tenantId);
+    res.json({ message: "Deleted" });
+  });
+
+  app.get("/api/table-analytics", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const allTables = await storage.getTablesByTenant(user.tenantId);
+    const totalTables = allTables.length;
+    const occupied = allTables.filter(t => t.status === "occupied").length;
+    const free = allTables.filter(t => t.status === "free").length;
+    const reserved = allTables.filter(t => t.status === "reserved").length;
+    const cleaning = allTables.filter(t => t.status === "cleaning").length;
+    const blocked = allTables.filter(t => t.status === "blocked").length;
+    const totalCapacity = allTables.reduce((s, t) => s + (t.capacity || 0), 0);
+    const seatedGuests = allTables.filter(t => t.status === "occupied").reduce((s, t) => s + (t.partySize || 0), 0);
+    const waitlist = await storage.getWaitlistByTenant(user.tenantId);
+    const waitingCount = waitlist.filter(w => w.status === "waiting").length;
+    const zones = new Map<string, { total: number; occupied: number }>();
+    for (const t of allTables) {
+      const z = t.zone || "Main";
+      const cur = zones.get(z) || { total: 0, occupied: 0 };
+      cur.total++;
+      if (t.status === "occupied") cur.occupied++;
+      zones.set(z, cur);
+    }
+    res.json({
+      totalTables,
+      occupied,
+      free,
+      reserved,
+      cleaning,
+      blocked,
+      totalCapacity,
+      seatedGuests,
+      occupancyRate: totalTables > 0 ? Math.round((occupied / totalTables) * 100) : 0,
+      waitingCount,
+      byZone: Object.fromEntries(zones),
+    });
+  });
+
   app.get("/api/reservations", requireAuth, async (req, res) => {
     const user = req.user as any;
     const reservationsList = await storage.getReservationsByTenant(user.tenantId);
@@ -223,7 +375,9 @@ export async function registerRoutes(
 
   app.post("/api/reservations", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const reservation = await storage.createReservation({ ...req.body, tenantId: user.tenantId });
+    const { tenantId: _t, id: _i, ...body } = req.body;
+    if (body.dateTime && typeof body.dateTime === "string") body.dateTime = new Date(body.dateTime);
+    const reservation = await storage.createReservation({ ...body, tenantId: user.tenantId });
     res.json(reservation);
   });
 

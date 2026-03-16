@@ -150,6 +150,18 @@ export const menuItems = pgTable("menu_items", {
   course: text("course"),
 });
 
+export const tableZones = pgTable("table_zones", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  name: text("name").notNull(),
+  color: text("color").default("#6366f1"),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").default(true),
+});
+
 export const tables = pgTable("tables", {
   id: varchar("id", { length: 36 })
     .primaryKey()
@@ -159,7 +171,34 @@ export const tables = pgTable("tables", {
   number: integer("number").notNull(),
   capacity: integer("capacity").default(4),
   zone: text("zone").default("Main"),
+  zoneId: varchar("zone_id", { length: 36 }).references(() => tableZones.id),
+  posX: integer("pos_x").default(0),
+  posY: integer("pos_y").default(0),
+  shape: text("shape").default("square"),
+  mergedWith: varchar("merged_with", { length: 36 }),
+  seatedAt: timestamp("seated_at"),
+  partyName: text("party_name"),
+  partySize: integer("party_size"),
   status: tableStatusEnum("status").default("free"),
+});
+
+export const waitlistEntries = pgTable("waitlist_entries", {
+  id: varchar("id", { length: 36 })
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  customerName: text("customer_name").notNull(),
+  customerPhone: text("customer_phone"),
+  partySize: integer("party_size").notNull().default(2),
+  preferredZone: text("preferred_zone"),
+  status: text("status").default("waiting"),
+  estimatedWaitMinutes: integer("estimated_wait_minutes"),
+  notificationSent: boolean("notification_sent").default(false),
+  notes: text("notes"),
+  seatedTableId: varchar("seated_table_id", { length: 36 }).references(() => tables.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  seatedAt: timestamp("seated_at"),
 });
 
 export const reservations = pgTable("reservations", {
@@ -401,7 +440,9 @@ export const insertUserSchema = createInsertSchema(users).omit({ id: true });
 export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true });
 export const insertMenuCategorySchema = createInsertSchema(menuCategories).omit({ id: true });
 export const insertMenuItemSchema = createInsertSchema(menuItems).omit({ id: true });
+export const insertTableZoneSchema = createInsertSchema(tableZones).omit({ id: true });
 export const insertTableSchema = createInsertSchema(tables).omit({ id: true });
+export const insertWaitlistEntrySchema = createInsertSchema(waitlistEntries).omit({ id: true, createdAt: true });
 export const insertReservationSchema = createInsertSchema(reservations).omit({ id: true });
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true });
 export const insertOrderItemSchema = createInsertSchema(orderItems).omit({ id: true });
@@ -495,8 +536,12 @@ export type MenuCategory = typeof menuCategories.$inferSelect;
 export type InsertMenuCategory = z.infer<typeof insertMenuCategorySchema>;
 export type MenuItem = typeof menuItems.$inferSelect;
 export type InsertMenuItem = z.infer<typeof insertMenuItemSchema>;
+export type TableZone = typeof tableZones.$inferSelect;
+export type InsertTableZone = z.infer<typeof insertTableZoneSchema>;
 export type Table = typeof tables.$inferSelect;
 export type InsertTable = z.infer<typeof insertTableSchema>;
+export type WaitlistEntry = typeof waitlistEntries.$inferSelect;
+export type InsertWaitlistEntry = z.infer<typeof insertWaitlistEntrySchema>;
 export type Reservation = typeof reservations.$inferSelect;
 export type InsertReservation = z.infer<typeof insertReservationSchema>;
 export type Order = typeof orders.$inferSelect;

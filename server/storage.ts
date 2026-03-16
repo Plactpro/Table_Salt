@@ -1,7 +1,7 @@
 import { eq, and, desc, sql, gte, lte, lt, count, sum } from "drizzle-orm";
 import { db } from "./db";
 import {
-  tenants, users, outlets, menuCategories, menuItems, tables,
+  tenants, users, outlets, menuCategories, menuItems, tableZones, tables, waitlistEntries,
   reservations, orders, orderItems, inventoryItems, stockMovements,
   customers, staffSchedules, feedback, offers, deliveryOrders, employeePerformanceLogs,
   salesInquiries, supportTickets, attendanceLogs,
@@ -13,7 +13,9 @@ import {
   type Outlet, type InsertOutlet,
   type MenuCategory, type InsertMenuCategory,
   type MenuItem, type InsertMenuItem,
+  type TableZone, type InsertTableZone,
   type Table, type InsertTable,
+  type WaitlistEntry, type InsertWaitlistEntry,
   type Reservation, type InsertReservation,
   type Order, type InsertOrder,
   type OrderItem, type InsertOrderItem,
@@ -95,6 +97,11 @@ export interface IStorage {
   updateMenuItem(id: string, data: Partial<InsertMenuItem>): Promise<MenuItem | undefined>;
   deleteMenuItem(id: string): Promise<void>;
 
+  getTableZonesByTenant(tenantId: string): Promise<TableZone[]>;
+  createTableZone(data: InsertTableZone): Promise<TableZone>;
+  updateTableZone(id: string, tenantId: string, data: Partial<InsertTableZone>): Promise<TableZone | undefined>;
+  deleteTableZone(id: string, tenantId: string): Promise<void>;
+
   getTablesByTenant(tenantId: string): Promise<Table[]>;
   getTable(id: string): Promise<Table | undefined>;
   createTable(data: InsertTable): Promise<Table>;
@@ -102,6 +109,11 @@ export interface IStorage {
   updateTableByTenant(id: string, tenantId: string, data: Partial<InsertTable>): Promise<Table | undefined>;
   deleteTable(id: string): Promise<void>;
   deleteTableByTenant(id: string, tenantId: string): Promise<void>;
+
+  getWaitlistByTenant(tenantId: string): Promise<WaitlistEntry[]>;
+  createWaitlistEntry(data: InsertWaitlistEntry): Promise<WaitlistEntry>;
+  updateWaitlistEntry(id: string, tenantId: string, data: Partial<InsertWaitlistEntry>): Promise<WaitlistEntry | undefined>;
+  deleteWaitlistEntry(id: string, tenantId: string): Promise<void>;
 
   getReservationsByTenant(tenantId: string): Promise<Reservation[]>;
   createReservation(data: InsertReservation): Promise<Reservation>;
@@ -409,6 +421,21 @@ export class DatabaseStorage implements IStorage {
     await db.delete(menuItems).where(eq(menuItems.id, id));
   }
 
+  async getTableZonesByTenant(tenantId: string) {
+    return db.select().from(tableZones).where(eq(tableZones.tenantId, tenantId)).orderBy(tableZones.sortOrder);
+  }
+  async createTableZone(data: InsertTableZone) {
+    const [z] = await db.insert(tableZones).values(data).returning();
+    return z;
+  }
+  async updateTableZone(id: string, tenantId: string, data: Partial<InsertTableZone>) {
+    const [z] = await db.update(tableZones).set(data).where(and(eq(tableZones.id, id), eq(tableZones.tenantId, tenantId))).returning();
+    return z;
+  }
+  async deleteTableZone(id: string, tenantId: string) {
+    await db.delete(tableZones).where(and(eq(tableZones.id, id), eq(tableZones.tenantId, tenantId)));
+  }
+
   async getTablesByTenant(tenantId: string) {
     return db.select().from(tables).where(eq(tables.tenantId, tenantId)).orderBy(tables.number);
   }
@@ -433,6 +460,21 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteTableByTenant(id: string, tenantId: string) {
     await db.delete(tables).where(and(eq(tables.id, id), eq(tables.tenantId, tenantId)));
+  }
+
+  async getWaitlistByTenant(tenantId: string) {
+    return db.select().from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId)).orderBy(waitlistEntries.createdAt);
+  }
+  async createWaitlistEntry(data: InsertWaitlistEntry) {
+    const [w] = await db.insert(waitlistEntries).values(data).returning();
+    return w;
+  }
+  async updateWaitlistEntry(id: string, tenantId: string, data: Partial<InsertWaitlistEntry>) {
+    const [w] = await db.update(waitlistEntries).set(data).where(and(eq(waitlistEntries.id, id), eq(waitlistEntries.tenantId, tenantId))).returning();
+    return w;
+  }
+  async deleteWaitlistEntry(id: string, tenantId: string) {
+    await db.delete(waitlistEntries).where(and(eq(waitlistEntries.id, id), eq(waitlistEntries.tenantId, tenantId)));
   }
 
   async getReservationsByTenant(tenantId: string) {
