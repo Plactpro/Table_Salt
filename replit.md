@@ -83,6 +83,7 @@ All prefixed with `/api`:
 - GRNs: `/grns` (POST with auto inventory update + stock movements + PO status transition)
 - Procurement Analytics: `/procurement/analytics` (spend by supplier/item, price variances), `/procurement/low-stock` (suggested reorder quantities)
 - Workforce: `/workforce/dashboard` (GET with period=day|week|month, KPIs+byRole+byOutlet+byDay+byHour), `/workforce/timesheet` (GET), `/workforce/timesheet/csv` (GET, CSV export), `/workforce/alerts` (GET, threshold alerts), `/workforce/snapshots` (GET/POST generate daily snapshots), `/workforce/settings` (PATCH, owner-only)
+- BI Dashboards: `/reports/operations` (hourly sales, channel mix, heatmap, top items), `/reports/finance` (net sales, tax, discounts, voids, food/labour cost %, gross margin, daily breakdown), `/reports/marketing` (loyalty enrollments, tier distribution, campaigns, ratings), `/reports/forecast` (weekly moving-average forecast + production suggestions)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages
@@ -95,6 +96,7 @@ All prefixed with `/api`:
 - `/inventory` - Inventory & Recipe Costing (4 tabs: Inventory items, Recipes with ingredient picker & live cost calc, Stock Takes with variance, Food Cost report)
 - `/staff` - Staff management (roster, schedule, attendance tabs with clock-in/out tracking)
 - `/reports` - Sales reports
+- `/bi-dashboard` - BI Dashboards & Forecasting (Operations: hourly sales, heatmap, channel mix, top dishes; Finance: P&L, margins, cost breakdown; Marketing: loyalty, campaigns, ratings; Forecasting: weekly moving-average + production suggestions)
 - `/offers` - Offers & Discounts management (premium+ tier, combo/BOGO/free_item marked as POS N/A)
 - `/billing` - Subscription plans + Invoice history (service charge line in dine-in invoices)
 - `/crm` - Customer Relationship Management (profiles, loyalty tiers, tags, order history)

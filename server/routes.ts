@@ -713,6 +713,237 @@ export async function registerRoutes(
     res.json(report);
   });
 
+  app.get("/api/reports/operations", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const from = req.query.from ? new Date(req.query.from as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const to = req.query.to ? new Date(req.query.to as string) : new Date();
+    const allOrders = await storage.getOrdersByTenant(user.tenantId);
+    const rangeOrders = allOrders.filter(o => {
+      const d = new Date(o.createdAt!);
+      return d >= from && d <= to;
+    });
+    const hourlySales: Record<number, { hour: number; revenue: number; count: number }> = {};
+    for (let h = 0; h < 24; h++) hourlySales[h] = { hour: h, revenue: 0, count: 0 };
+    const dayHourHeat: Record<string, Record<number, number>> = {};
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    days.forEach(d => { dayHourHeat[d] = {}; for (let h = 0; h < 24; h++) dayHourHeat[d][h] = 0; });
+    const channelMix: Record<string, { channel: string; revenue: number; count: number }> = {};
+    let totalRevenue = 0, totalOrders = 0, totalCovers = 0;
+    for (const o of rangeOrders) {
+      const d = new Date(o.createdAt!);
+      const h = d.getHours();
+      const dayName = days[d.getDay()];
+      const rev = Number(o.total) || 0;
+      hourlySales[h].revenue += rev;
+      hourlySales[h].count++;
+      dayHourHeat[dayName][h] += rev;
+      const ch = o.orderType || "dine_in";
+      if (!channelMix[ch]) channelMix[ch] = { channel: ch, revenue: 0, count: 0 };
+      channelMix[ch].revenue += rev;
+      channelMix[ch].count++;
+      totalRevenue += rev;
+      totalOrders++;
+    }
+    const allItems = await storage.getOrderItemsByTenant(user.tenantId);
+    const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
+    const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+    const itemSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
+    for (const oi of allItems) {
+      const mi = menuMap.get(oi.menuItemId || "");
+      if (!mi) continue;
+      const ordDate = rangeOrders.find(o => o.id === oi.orderId);
+      if (!ordDate) continue;
+      const name = mi.name;
+      if (!itemSales[name]) itemSales[name] = { name, quantity: 0, revenue: 0 };
+      itemSales[name].quantity += oi.quantity || 1;
+      itemSales[name].revenue += Number(oi.price) * (oi.quantity || 1);
+    }
+    const topItems = Object.values(itemSales).sort((a, b) => b.quantity - a.quantity).slice(0, 10);
+    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+    const allTables = await storage.getTablesByTenant(user.tenantId);
+    const occupiedTables = allTables.filter(t => t.status === "occupied" && t.seatedAt);
+    const avgTurnMinutes = occupiedTables.length > 0
+      ? Math.round(occupiedTables.reduce((s, t) => s + (Date.now() - new Date(t.seatedAt!).getTime()) / 60000, 0) / occupiedTables.length) : 0;
+    const heatmapData: { day: string; hour: number; value: number }[] = [];
+    for (const day of days) {
+      for (let h = 0; h < 24; h++) {
+        if (dayHourHeat[day][h] > 0) heatmapData.push({ day, hour: h, value: Math.round(dayHourHeat[day][h]) });
+      }
+    }
+    res.json({
+      hourlySales: Object.values(hourlySales).filter(h => h.count > 0),
+      channelMix: Object.values(channelMix),
+      topItems,
+      heatmapData,
+      avgOrderValue: Math.round(avgOrderValue * 100) / 100,
+      totalOrders,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      avgTurnMinutes,
+      totalCovers: occupiedTables.reduce((s, t) => s + (t.partySize || 0), 0),
+    });
+  });
+
+  app.get("/api/reports/finance", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const from = req.query.from ? new Date(req.query.from as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const to = req.query.to ? new Date(req.query.to as string) : new Date();
+    const allOrders = await storage.getOrdersByTenant(user.tenantId);
+    const rangeOrders = allOrders.filter(o => {
+      const d = new Date(o.createdAt!);
+      return d >= from && d <= to;
+    });
+    let netSales = 0, totalTax = 0, totalDiscount = 0, voidCount = 0, voidAmount = 0;
+    const dailyFinance: Record<string, { date: string; netSales: number; tax: number; discount: number; gross: number }> = {};
+    for (const o of rangeOrders) {
+      const dateStr = new Date(o.createdAt!).toISOString().split("T")[0];
+      if (!dailyFinance[dateStr]) dailyFinance[dateStr] = { date: dateStr, netSales: 0, tax: 0, discount: 0, gross: 0 };
+      if (o.status === "void" || o.status === "cancelled") {
+        voidCount++;
+        voidAmount += Number(o.total) || 0;
+        continue;
+      }
+      const sub = Number(o.subtotal) || 0;
+      const tax = Number(o.tax) || 0;
+      const disc = Number(o.discount) || 0;
+      const total = Number(o.total) || 0;
+      netSales += sub;
+      totalTax += tax;
+      totalDiscount += disc;
+      dailyFinance[dateStr].netSales += sub;
+      dailyFinance[dateStr].tax += tax;
+      dailyFinance[dateStr].discount += disc;
+      dailyFinance[dateStr].gross += total;
+    }
+    const inventoryItems = await storage.getInventoryByTenant(user.tenantId);
+    const totalFoodCost = inventoryItems.reduce((s, i) => s + (Number(i.costPrice) || 0) * (Number(i.currentStock) || 0), 0);
+    const labourSnapshots = await storage.getLabourCostSnapshots(user.tenantId, from, to);
+    const totalLabourCost = labourSnapshots.reduce((s, l) => s + (Number(l.totalLabourCost) || 0), 0);
+    const grossSales = netSales + totalTax;
+    const foodCostPct = grossSales > 0 ? (totalFoodCost / grossSales) * 100 : 0;
+    const labourPct = grossSales > 0 ? (totalLabourCost / grossSales) * 100 : 0;
+    const grossMargin = grossSales - totalFoodCost - totalLabourCost;
+    const grossMarginPct = grossSales > 0 ? (grossMargin / grossSales) * 100 : 0;
+    res.json({
+      netSales: Math.round(netSales * 100) / 100,
+      totalTax: Math.round(totalTax * 100) / 100,
+      totalDiscount: Math.round(totalDiscount * 100) / 100,
+      voidCount,
+      voidAmount: Math.round(voidAmount * 100) / 100,
+      foodCostPct: Math.round(foodCostPct * 10) / 10,
+      labourPct: Math.round(labourPct * 10) / 10,
+      grossMargin: Math.round(grossMargin * 100) / 100,
+      grossMarginPct: Math.round(grossMarginPct * 10) / 10,
+      dailyFinance: Object.values(dailyFinance).sort((a, b) => a.date.localeCompare(b.date)),
+      totalLabourCost: Math.round(totalLabourCost * 100) / 100,
+      totalFoodCost: Math.round(totalFoodCost * 100) / 100,
+    });
+  });
+
+  app.get("/api/reports/marketing", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const customers = await storage.getCustomersByTenant(user.tenantId);
+    const loyaltyEnrolled = customers.filter(c => (c.loyaltyPoints || 0) > 0 || c.loyaltyTier).length;
+    const totalCustomers = customers.length;
+    const tierBreakdown: Record<string, number> = {};
+    let totalRedemptions = 0, totalPointsOutstanding = 0;
+    for (const c of customers) {
+      const tier = c.loyaltyTier || "none";
+      tierBreakdown[tier] = (tierBreakdown[tier] || 0) + 1;
+      totalPointsOutstanding += c.loyaltyPoints || 0;
+    }
+    const offers = await storage.getOffersByTenant(user.tenantId);
+    const campaignData = offers.map(o => ({
+      name: o.name,
+      type: o.type,
+      usageCount: o.usageCount || 0,
+      usageLimit: o.usageLimit,
+      value: Number(o.value) || 0,
+      active: o.active,
+    }));
+    const avgSpend = totalCustomers > 0 ? customers.reduce((s, c) => s + (Number(c.averageSpend) || Number(c.totalSpent) || 0), 0) / totalCustomers : 0;
+    const feedback = await storage.getFeedbackByTenant(user.tenantId);
+    const avgRating = feedback.length > 0 ? feedback.reduce((s, f) => s + (f.rating || 0), 0) / feedback.length : 0;
+    res.json({
+      totalCustomers,
+      loyaltyEnrolled,
+      enrollmentRate: totalCustomers > 0 ? Math.round((loyaltyEnrolled / totalCustomers) * 100) : 0,
+      tierBreakdown,
+      totalPointsOutstanding,
+      totalRedemptions,
+      campaigns: campaignData,
+      avgCustomerSpend: Math.round(avgSpend * 100) / 100,
+      avgRating: Math.round(avgRating * 10) / 10,
+      feedbackCount: feedback.length,
+    });
+  });
+
+  app.get("/api/reports/forecast", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const allOrders = await storage.getOrdersByTenant(user.tenantId);
+    const weeks = 8;
+    const now = new Date();
+    const cutoff = new Date(now.getTime() - weeks * 7 * 24 * 60 * 60 * 1000);
+    const historicalOrders = allOrders.filter(o => {
+      const d = new Date(o.createdAt!);
+      return d >= cutoff && d <= now && o.status !== "void" && o.status !== "cancelled";
+    });
+    const dayBuckets: Record<number, { revenue: number[]; orders: number[] }> = {};
+    for (let d = 0; d < 7; d++) dayBuckets[d] = { revenue: [], orders: [] };
+    const weeklyData: Record<string, Record<number, { revenue: number; count: number }>> = {};
+    for (const o of historicalOrders) {
+      const d = new Date(o.createdAt!);
+      const weekKey = `${d.getFullYear()}-W${Math.ceil((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000))}`;
+      const dow = d.getDay();
+      if (!weeklyData[weekKey]) {
+        weeklyData[weekKey] = {};
+        for (let i = 0; i < 7; i++) weeklyData[weekKey][i] = { revenue: 0, count: 0 };
+      }
+      weeklyData[weekKey][dow].revenue += Number(o.total) || 0;
+      weeklyData[weekKey][dow].count++;
+    }
+    for (const wk of Object.values(weeklyData)) {
+      for (let d = 0; d < 7; d++) {
+        dayBuckets[d].revenue.push(wk[d].revenue);
+        dayBuckets[d].orders.push(wk[d].count);
+      }
+    }
+    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const forecast = days.map((name, i) => {
+      const revArr = dayBuckets[i].revenue;
+      const ordArr = dayBuckets[i].orders;
+      const avgRev = revArr.length > 0 ? revArr.reduce((s, v) => s + v, 0) / revArr.length : 0;
+      const avgOrd = ordArr.length > 0 ? ordArr.reduce((s, v) => s + v, 0) / ordArr.length : 0;
+      return { day: name, forecastRevenue: Math.round(avgRev * 100) / 100, forecastOrders: Math.round(avgOrd), weeksOfData: revArr.length };
+    });
+    const totalForecastRevenue = forecast.reduce((s, f) => s + f.forecastRevenue, 0);
+    const totalForecastOrders = forecast.reduce((s, f) => s + f.forecastOrders, 0);
+    const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+    const orderItems = await storage.getOrderItemsByTenant(user.tenantId);
+    const recentOrderIds = new Set(historicalOrders.map(o => o.id));
+    const recentItems = orderItems.filter(oi => recentOrderIds.has(oi.orderId || ""));
+    const itemConsumption: Record<string, { name: string; avgWeeklyQty: number; price: number }> = {};
+    for (const oi of recentItems) {
+      const mi = menuItems.find(m => m.id === oi.menuItemId);
+      if (!mi) continue;
+      if (!itemConsumption[mi.id]) itemConsumption[mi.id] = { name: mi.name, avgWeeklyQty: 0, price: Number(mi.price) || 0 };
+      itemConsumption[mi.id].avgWeeklyQty += (oi.quantity || 1);
+    }
+    const weeksCount = Math.max(Object.keys(weeklyData).length, 1);
+    const productionSuggestions = Object.values(itemConsumption).map(item => ({
+      name: item.name,
+      avgWeeklyQty: Math.round(item.avgWeeklyQty / weeksCount),
+      suggestedQty: Math.round((item.avgWeeklyQty / weeksCount) * 1.1),
+      unitPrice: item.price,
+    })).sort((a, b) => b.avgWeeklyQty - a.avgWeeklyQty).slice(0, 20);
+    res.json({
+      forecast,
+      totalForecastRevenue: Math.round(totalForecastRevenue * 100) / 100,
+      totalForecastOrders,
+      weeksAnalyzed: Object.keys(weeklyData).length,
+      productionSuggestions,
+    });
+  });
+
   app.get("/api/tenant", requireAuth, async (req, res) => {
     const user = req.user as any;
     const tenant = await storage.getTenant(user.tenantId);
