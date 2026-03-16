@@ -59,19 +59,19 @@ export async function seedDatabase() {
   const pw = await hashPassword("demo123");
 
   const owner = await storage.createUser({
-    tenantId: tenant.id, username: "owner", password: pw, name: "Alex Sterling", email: "alex@grandkitchen.com", role: "owner",
+    tenantId: tenant.id, username: "owner", password: pw, name: "Alex Sterling", email: "alex@grandkitchen.com", role: "owner", hourlyRate: "50.00", overtimeRate: "75.00",
   });
   const manager = await storage.createUser({
-    tenantId: tenant.id, username: "manager", password: pw, name: "Jordan Rivera", email: "jordan@grandkitchen.com", role: "manager",
+    tenantId: tenant.id, username: "manager", password: pw, name: "Jordan Rivera", email: "jordan@grandkitchen.com", role: "manager", hourlyRate: "35.00", overtimeRate: "52.50",
   });
   const waiter = await storage.createUser({
-    tenantId: tenant.id, username: "waiter", password: pw, name: "Sam Chen", email: "sam@grandkitchen.com", role: "waiter",
+    tenantId: tenant.id, username: "waiter", password: pw, name: "Sam Chen", email: "sam@grandkitchen.com", role: "waiter", hourlyRate: "18.00", overtimeRate: "27.00",
   });
   const kitchen = await storage.createUser({
-    tenantId: tenant.id, username: "kitchen", password: pw, name: "Pat Garcia", email: "pat@grandkitchen.com", role: "kitchen",
+    tenantId: tenant.id, username: "kitchen", password: pw, name: "Pat Garcia", email: "pat@grandkitchen.com", role: "kitchen", hourlyRate: "20.00", overtimeRate: "30.00",
   });
   await storage.createUser({
-    tenantId: tenant.id, username: "accountant", password: pw, name: "Morgan Lee", email: "morgan@grandkitchen.com", role: "accountant",
+    tenantId: tenant.id, username: "accountant", password: pw, name: "Morgan Lee", email: "morgan@grandkitchen.com", role: "accountant", hourlyRate: "30.00", overtimeRate: "45.00",
   });
 
   const categories = [
@@ -361,6 +361,7 @@ export async function seedDatabase() {
         startTime: "10:00",
         endTime: "18:00",
         role: "waiter",
+        hourlyRate: "18.00",
         attendance: dayOffset < new Date().getDay() ? "present" : "scheduled",
       });
     }
@@ -373,6 +374,7 @@ export async function seedDatabase() {
         startTime: "08:00",
         endTime: "16:00",
         role: "kitchen",
+        hourlyRate: "20.00",
         attendance: dayOffset < new Date().getDay() ? "present" : "scheduled",
       });
     }
@@ -385,6 +387,7 @@ export async function seedDatabase() {
         startTime: "09:00",
         endTime: "17:00",
         role: "manager",
+        hourlyRate: "35.00",
         attendance: dayOffset < new Date().getDay() ? "present" : "scheduled",
       });
     }

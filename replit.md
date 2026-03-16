@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -82,6 +82,7 @@ All prefixed with `/api`:
 - Purchase Orders: `/purchase-orders` (GET/POST), `/purchase-orders/:id` (GET with items/GRNs/approvals), `/purchase-orders/:id/approve` (POST), `/purchase-orders/:id/send` (POST)
 - GRNs: `/grns` (POST with auto inventory update + stock movements + PO status transition)
 - Procurement Analytics: `/procurement/analytics` (spend by supplier/item, price variances), `/procurement/low-stock` (suggested reorder quantities)
+- Workforce: `/workforce/dashboard` (GET with period=day|week|month, KPIs+byRole+byOutlet+byDay), `/workforce/timesheet` (GET), `/workforce/timesheet/csv` (GET, CSV export), `/workforce/alerts` (GET, threshold alerts), `/workforce/settings` (PATCH, owner-only)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages
@@ -105,6 +106,7 @@ All prefixed with `/api`:
 - `/hq-console` - HQ Console (multi-outlet KPIs, outlet comparison, franchise royalty calculator/invoices, menu overrides, region management)
 - `/suppliers` - Supplier Management (supplier list, detail view, product catalogs per supplier)
 - `/procurement` - Procurement (PO lifecycle: draft→approved→sent→partially_received→closed, GRN with auto inventory update, analytics with spend-by-supplier/item, price variances, low-stock alerts)
+- `/workforce` - Workforce & Labour Cost (KPI dashboard with labour %, sales/labour hr, overtime tracking; cost breakdown by role/outlet/day; timesheet with CSV export; configurable target alerts)
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
 
