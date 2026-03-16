@@ -852,27 +852,60 @@ export async function registerRoutes(
     const orderItems = await storage.getOrderItemsByTenant(user.tenantId);
     const recentOrderIds = new Set(historicalOrders.map(o => o.id));
     const recentItems = orderItems.filter(oi => recentOrderIds.has(oi.orderId || ""));
-    const itemConsumption: Record<string, { name: string; avgWeeklyQty: number; price: number }> = {};
+    const menuItemDemand: Record<string, { name: string; totalQty: number; price: number }> = {};
     for (const oi of recentItems) {
       const mi = menuMap.get(oi.menuItemId || "");
       const name = mi?.name || oi.name || "Unknown";
       const key = mi?.id || name;
-      if (!itemConsumption[key]) itemConsumption[key] = { name, avgWeeklyQty: 0, price: Number(mi?.price || oi.price) || 0 };
-      itemConsumption[key].avgWeeklyQty += (oi.quantity || 1);
+      if (!menuItemDemand[key]) menuItemDemand[key] = { name, totalQty: 0, price: Number(mi?.price || oi.price) || 0 };
+      menuItemDemand[key].totalQty += (oi.quantity || 1);
     }
     const weeksCount = Math.max(weeksAnalyzed, 1);
-    const productionSuggestions = Object.values(itemConsumption).map(item => ({
+    const productionSuggestions = Object.values(menuItemDemand).map(item => ({
       name: item.name,
-      avgWeeklyQty: Math.round(item.avgWeeklyQty / weeksCount),
-      suggestedQty: Math.round((item.avgWeeklyQty / weeksCount) * 1.1),
+      avgWeeklyQty: Math.round(item.totalQty / weeksCount),
+      suggestedQty: Math.round((item.totalQty / weeksCount) * 1.1),
       unitPrice: item.price,
     })).sort((a, b) => b.avgWeeklyQty - a.avgWeeklyQty).slice(0, 20);
+    const allRecipes = await storage.getRecipesByTenant(user.tenantId);
+    const inventoryItems = await storage.getInventoryByTenant(user.tenantId);
+    const invMap = new Map(inventoryItems.map(i => [i.id, { name: i.name, unit: i.unit || i.baseUnit || "unit", costPerUnit: parseFloat(i.costPerBaseUnit || i.costPrice || "0") }]));
+    const ingredientDemand: Record<string, { name: string; unit: string; weeklyQty: number; costPerUnit: number }> = {};
+    for (const recipe of allRecipes) {
+      if (!recipe.menuItemId) continue;
+      const demand = menuItemDemand[recipe.menuItemId];
+      if (!demand) continue;
+      const forecastedWeeklyQty = demand.totalQty / weeksCount;
+      const recipeIngredientsList = await storage.getRecipeIngredients(recipe.id);
+      const yieldVal = Number(recipe.yield) || 1;
+      for (const ri of recipeIngredientsList) {
+        const inv = invMap.get(ri.inventoryItemId);
+        if (!inv) continue;
+        const qtyPerPortion = Number(ri.quantity) / yieldVal;
+        const wasteMult = 1 + (Number(ri.wastePct) || 0) / 100;
+        const weeklyNeed = forecastedWeeklyQty * qtyPerPortion * wasteMult;
+        if (!ingredientDemand[ri.inventoryItemId]) {
+          ingredientDemand[ri.inventoryItemId] = { name: inv.name, unit: inv.unit, weeklyQty: 0, costPerUnit: inv.costPerUnit };
+        }
+        ingredientDemand[ri.inventoryItemId].weeklyQty += weeklyNeed;
+      }
+    }
+    const ingredientSuggestions = Object.entries(ingredientDemand).map(([id, item]) => ({
+      inventoryItemId: id,
+      name: item.name,
+      unit: item.unit,
+      avgWeeklyNeed: Math.round(item.weeklyQty * 100) / 100,
+      suggestedOrder: Math.round(item.weeklyQty * 1.1 * 100) / 100,
+      costPerUnit: item.costPerUnit,
+      estimatedWeeklyCost: Math.round(item.weeklyQty * 1.1 * item.costPerUnit * 100) / 100,
+    })).sort((a, b) => b.estimatedWeeklyCost - a.estimatedWeeklyCost);
     res.json({
       forecast,
       totalForecastRevenue,
       totalForecastOrders,
       weeksAnalyzed,
       productionSuggestions,
+      ingredientSuggestions,
       outletId: outletId || null,
     });
   });
