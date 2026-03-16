@@ -2585,6 +2585,42 @@ export async function registerRoutes(
         }
       }
 
+      const byHour: Record<string, { hour: number; scheduledCost: number; actualCost: number; sales: number }> = {};
+      for (const s of periodSchedules) {
+        const u = userMap.get(s.userId); if (!u) continue;
+        const rate = getRate(u, s.hourlyRate);
+        const [sh] = s.startTime.split(":").map(Number);
+        const [eh] = s.endTime.split(":").map(Number);
+        const endH = eh <= sh ? eh + 24 : eh;
+        for (let h = sh; h < endH; h++) {
+          const hKey = String(h % 24).padStart(2, "0");
+          if (!byHour[hKey]) byHour[hKey] = { hour: h % 24, scheduledCost: 0, actualCost: 0, sales: 0 };
+          byHour[hKey].scheduledCost += rate;
+        }
+      }
+      for (const log of attendanceLogs) {
+        const u = userMap.get(log.userId); if (!u) continue;
+        const rate = getRate(u);
+        const clockIn = log.clockIn ? new Date(log.clockIn) : null;
+        const clockOut = log.clockOut ? new Date(log.clockOut) : null;
+        if (clockIn) {
+          const startH = clockIn.getHours();
+          const hours = parseFloat(log.hoursWorked || "0");
+          const endH = startH + Math.ceil(hours);
+          for (let h = startH; h < endH; h++) {
+            const hKey = String(h % 24).padStart(2, "0");
+            if (!byHour[hKey]) byHour[hKey] = { hour: h % 24, scheduledCost: 0, actualCost: 0, sales: 0 };
+            byHour[hKey].actualCost += rate;
+          }
+        }
+      }
+      for (const o of periodOrders) {
+        const h = new Date(o.createdAt!).getHours();
+        const hKey = String(h).padStart(2, "0");
+        if (!byHour[hKey]) byHour[hKey] = { hour: h, scheduledCost: 0, actualCost: 0, sales: 0 };
+        byHour[hKey].sales += parseFloat(o.total || "0");
+      }
+
       const labourPct = totalSales > 0 ? (totalActualCost / totalSales) * 100 : 0;
       const salesPerLabourHour = totalActualHours > 0 ? totalSales / totalActualHours : 0;
 
@@ -2623,6 +2659,12 @@ export async function registerRoutes(
           actualCost: parseFloat(d.actualCost.toFixed(2)), sales: parseFloat(d.sales.toFixed(2)),
           labourPct: d.sales > 0 ? parseFloat(((d.actualCost / d.sales) * 100).toFixed(1)) : 0,
         })),
+        byHour: Object.values(byHour).sort((a, b) => a.hour - b.hour).map(h => ({
+          hour: h.hour, label: `${String(h.hour).padStart(2, "0")}:00`,
+          scheduledCost: parseFloat(h.scheduledCost.toFixed(2)), actualCost: parseFloat(h.actualCost.toFixed(2)),
+          sales: parseFloat(h.sales.toFixed(2)),
+          labourPct: h.sales > 0 ? parseFloat(((h.actualCost / h.sales) * 100).toFixed(1)) : 0,
+        })),
         period,
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -2636,7 +2678,7 @@ export async function registerRoutes(
       const toStr = String(req.query.to || "");
       const now = new Date();
       const from = fromStr ? new Date(fromStr) : (() => { const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0,0,0,0); return d; })();
-      const to = toStr ? new Date(toStr) : now;
+      const to = toStr ? (() => { const d = new Date(toStr); d.setHours(23,59,59,999); return d; })() : now;
 
       const schedules = await storage.getStaffSchedulesByTenant(tenantId);
       const allUsers = await storage.getUsersByTenant(tenantId);
@@ -2703,7 +2745,7 @@ export async function registerRoutes(
       const toStr = String(req.query.to || "");
       const now = new Date();
       const from = fromStr ? new Date(fromStr) : (() => { const d = new Date(now); d.setDate(d.getDate() - 6); d.setHours(0,0,0,0); return d; })();
-      const to = toStr ? new Date(toStr) : now;
+      const to = toStr ? (() => { const d = new Date(toStr); d.setHours(23,59,59,999); return d; })() : now;
 
       const schedules = await storage.getStaffSchedulesByTenant(tenantId);
       const allUsers = await storage.getUsersByTenant(tenantId);
@@ -2792,6 +2834,94 @@ export async function registerRoutes(
       });
 
       res.json({ labourTargetPct, costAlerts: alerts, overtimeAlerts });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/workforce/snapshots", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      const fromStr = String(req.query.from || "");
+      const toStr = String(req.query.to || "");
+      const now = new Date();
+      const from = fromStr ? new Date(fromStr) : (() => { const d = new Date(now); d.setDate(d.getDate() - 30); d.setHours(0,0,0,0); return d; })();
+      const to = toStr ? new Date(toStr) : now;
+      const snapshots = await storage.getLabourCostSnapshots(tenantId, from, to);
+      res.json(snapshots);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/workforce/snapshots/generate", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      const dateStr = String(req.body.date || "");
+      const targetDate = dateStr ? new Date(dateStr) : (() => { const d = new Date(); d.setDate(d.getDate() - 1); return d; })();
+      targetDate.setHours(0, 0, 0, 0);
+      const nextDay = new Date(targetDate); nextDay.setDate(nextDay.getDate() + 1);
+
+      const schedules = await storage.getStaffSchedulesByTenant(tenantId);
+      const allUsers = await storage.getUsersByTenant(tenantId);
+      const userMap = new Map(allUsers.map(u => [u.id, u]));
+      const logs = await storage.getAttendanceLogsByTenant(tenantId, targetDate, nextDay);
+      const orders = await storage.getOrdersByTenant(tenantId);
+
+      const daySchedules = schedules.filter(s => { const d = new Date(s.date); d.setHours(0,0,0,0); return d.getTime() === targetDate.getTime(); });
+      const dayOrders = orders.filter(o => { const d = new Date(o.createdAt!); return d >= targetDate && d < nextDay && o.status !== "voided" && o.status !== "cancelled"; });
+      const totalSales = dayOrders.reduce((s, o) => s + parseFloat(o.total || "0"), 0);
+
+      const parseHours = (start: string, end: string) => { const [sh, sm] = start.split(":").map(Number); const [eh, em] = end.split(":").map(Number); let h = (eh * 60 + em) - (sh * 60 + sm); if (h < 0) h += 24 * 60; return h / 60; };
+      const defaultRates: Record<string, number> = { owner: 50, manager: 35, waiter: 18, kitchen: 20, accountant: 30 };
+      const standardHours = 8;
+
+      const byRole: Record<string, { scheduledHrs: number; actualHrs: number; overtimeHrs: number; scheduledCost: number; actualCost: number; overtimeCost: number; headcount: Set<string> }> = {};
+
+      for (const s of daySchedules) {
+        const u = userMap.get(s.userId); if (!u) continue;
+        const hrs = parseHours(s.startTime, s.endTime);
+        const rate = s.hourlyRate ? parseFloat(s.hourlyRate) : (u.hourlyRate ? parseFloat(u.hourlyRate) : (defaultRates[u.role] || 18));
+        const role = s.role || u.role;
+        if (!byRole[role]) byRole[role] = { scheduledHrs: 0, actualHrs: 0, overtimeHrs: 0, scheduledCost: 0, actualCost: 0, overtimeCost: 0, headcount: new Set() };
+        byRole[role].scheduledHrs += hrs;
+        byRole[role].scheduledCost += hrs * rate;
+        byRole[role].headcount.add(s.userId);
+      }
+
+      for (const log of logs) {
+        const u = userMap.get(log.userId); if (!u) continue;
+        const hrs = parseFloat(log.hoursWorked || "0");
+        const rate = u.hourlyRate ? parseFloat(u.hourlyRate) : (defaultRates[u.role] || 18);
+        const otRate = u.overtimeRate ? parseFloat(u.overtimeRate) : rate * 1.5;
+        const regularHrs = Math.min(hrs, standardHours);
+        const overtimeHrs = Math.max(0, hrs - standardHours);
+        const role = u.role;
+        if (!byRole[role]) byRole[role] = { scheduledHrs: 0, actualHrs: 0, overtimeHrs: 0, scheduledCost: 0, actualCost: 0, overtimeCost: 0, headcount: new Set() };
+        byRole[role].actualHrs += hrs;
+        byRole[role].overtimeHrs += overtimeHrs;
+        byRole[role].actualCost += regularHrs * rate + overtimeHrs * otRate;
+        byRole[role].overtimeCost += overtimeHrs * otRate;
+        byRole[role].headcount.add(log.userId);
+      }
+
+      const created: Array<Record<string, unknown>> = [];
+      for (const [role, d] of Object.entries(byRole)) {
+        const totalActualCost = d.actualCost;
+        const snapshot = await storage.createLabourCostSnapshot({
+          tenantId, date: targetDate, role,
+          scheduledHours: String(d.scheduledHrs.toFixed(2)),
+          actualHours: String(d.actualHrs.toFixed(2)),
+          overtimeHours: String(d.overtimeHrs.toFixed(2)),
+          scheduledCost: String(d.scheduledCost.toFixed(2)),
+          actualCost: String(totalActualCost.toFixed(2)),
+          overtimeCost: String(d.overtimeCost.toFixed(2)),
+          salesRevenue: String(totalSales.toFixed(2)),
+          labourPct: totalSales > 0 ? String(((totalActualCost / totalSales) * 100).toFixed(1)) : "0",
+          headcount: d.headcount.size,
+        });
+        created.push(snapshot);
+      }
+
+      res.json({ date: targetDate.toISOString().split("T")[0], snapshotsCreated: created.length, snapshots: created });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

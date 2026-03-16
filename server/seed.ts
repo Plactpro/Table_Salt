@@ -831,6 +831,42 @@ export async function seedDatabase() {
     await storage.createPurchaseOrderItem({ purchaseOrderId: po3.id, inventoryItemId: createdInvItems[9].id, quantity: "25", unitCost: "1.28", totalCost: "32.00", receivedQty: "0" });
   }
 
+  const snapshotDays = [5, 4, 3, 2, 1];
+  for (const daysAgo of snapshotDays) {
+    const snapDate = new Date(); snapDate.setDate(snapDate.getDate() - daysAgo); snapDate.setHours(0, 0, 0, 0);
+    const baseSales = 800 + Math.random() * 400;
+    await storage.createLabourCostSnapshot({
+      tenantId: tenant.id, date: snapDate, role: "waiter",
+      scheduledHours: "8.00", actualHours: String((7 + Math.random() * 2).toFixed(2)),
+      overtimeHours: String(Math.max(0, Math.random() * 1.5).toFixed(2)),
+      scheduledCost: "144.00", actualCost: String((130 + Math.random() * 30).toFixed(2)),
+      overtimeCost: String((Math.random() * 20).toFixed(2)),
+      salesRevenue: String(baseSales.toFixed(2)),
+      labourPct: String(((150 / baseSales) * 100).toFixed(1)),
+      headcount: 1,
+    });
+    await storage.createLabourCostSnapshot({
+      tenantId: tenant.id, date: snapDate, role: "kitchen",
+      scheduledHours: "8.00", actualHours: String((7.5 + Math.random() * 1.5).toFixed(2)),
+      overtimeHours: String(Math.max(0, Math.random() * 1).toFixed(2)),
+      scheduledCost: "160.00", actualCost: String((150 + Math.random() * 25).toFixed(2)),
+      overtimeCost: String((Math.random() * 15).toFixed(2)),
+      salesRevenue: String(baseSales.toFixed(2)),
+      labourPct: String(((160 / baseSales) * 100).toFixed(1)),
+      headcount: 1,
+    });
+    await storage.createLabourCostSnapshot({
+      tenantId: tenant.id, date: snapDate, role: "manager",
+      scheduledHours: "8.00", actualHours: "8.00",
+      overtimeHours: "0.00",
+      scheduledCost: "280.00", actualCost: "280.00",
+      overtimeCost: "0.00",
+      salesRevenue: String(baseSales.toFixed(2)),
+      labourPct: String(((280 / baseSales) * 100).toFixed(1)),
+      headcount: 1,
+    });
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

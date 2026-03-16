@@ -82,7 +82,7 @@ All prefixed with `/api`:
 - Purchase Orders: `/purchase-orders` (GET/POST), `/purchase-orders/:id` (GET with items/GRNs/approvals), `/purchase-orders/:id/approve` (POST), `/purchase-orders/:id/send` (POST)
 - GRNs: `/grns` (POST with auto inventory update + stock movements + PO status transition)
 - Procurement Analytics: `/procurement/analytics` (spend by supplier/item, price variances), `/procurement/low-stock` (suggested reorder quantities)
-- Workforce: `/workforce/dashboard` (GET with period=day|week|month, KPIs+byRole+byOutlet+byDay), `/workforce/timesheet` (GET), `/workforce/timesheet/csv` (GET, CSV export), `/workforce/alerts` (GET, threshold alerts), `/workforce/settings` (PATCH, owner-only)
+- Workforce: `/workforce/dashboard` (GET with period=day|week|month, KPIs+byRole+byOutlet+byDay+byHour), `/workforce/timesheet` (GET), `/workforce/timesheet/csv` (GET, CSV export), `/workforce/alerts` (GET, threshold alerts), `/workforce/snapshots` (GET/POST generate daily snapshots), `/workforce/settings` (PATCH, owner-only)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages

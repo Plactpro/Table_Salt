@@ -20,6 +20,7 @@ interface DashboardData {
   byRole: Array<{ role: string; scheduledHours: number; actualHours: number; scheduledCost: number; actualCost: number; headcount: number }>;
   byOutlet: Array<{ outletId: string; name: string; scheduledHours: number; actualHours: number; scheduledCost: number; actualCost: number; sales: number; labourPct: number; headcount: number }>;
   byDay: Array<{ date: string; scheduledCost: number; actualCost: number; sales: number; labourPct: number }>;
+  byHour: Array<{ hour: number; label: string; scheduledCost: number; actualCost: number; sales: number; labourPct: number }>;
   period: string;
 }
 interface TimesheetData { rows: Array<{ userId: string; name: string; role: string; hourlyRate: number; scheduledHours: number; actualHours: number; overtimeHours: number; scheduledCost: number; actualCost: number; variance: number; shiftsScheduled: number; shiftsWorked: number }>; from: string; to: string; }
@@ -119,6 +120,7 @@ export default function WorkforcePage() {
       <Tabs defaultValue="overview">
         <TabsList>
           <TabsTrigger value="overview" data-testid="tab-overview">Overview</TabsTrigger>
+          <TabsTrigger value="by-hour" data-testid="tab-by-hour">By Hour</TabsTrigger>
           <TabsTrigger value="by-role" data-testid="tab-by-role">By Role</TabsTrigger>
           <TabsTrigger value="by-outlet" data-testid="tab-by-outlet">By Outlet</TabsTrigger>
           <TabsTrigger value="timesheet" data-testid="tab-timesheet">Timesheet</TabsTrigger>
@@ -175,6 +177,45 @@ export default function WorkforcePage() {
               </CardContent>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="by-hour" className="mt-4">
+          <Card>
+            <CardHeader><CardTitle className="text-lg flex items-center gap-2"><Clock className="h-5 w-5" />Hourly Labour Cost Breakdown</CardTitle></CardHeader>
+            <CardContent>
+              {dashboard && dashboard.byHour.length > 0 ? (
+                <div className="space-y-2">
+                  {dashboard.byHour.map((h, i) => {
+                    const maxVal = Math.max(...dashboard.byHour.map(hh => Math.max(hh.actualCost, hh.scheduledCost, hh.sales)), 1);
+                    return (
+                      <div key={i} data-testid={`hour-row-${i}`}>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="font-medium w-12">{h.label}</span>
+                          <div className="flex gap-4">
+                            <span>Labour: {fmt(h.actualCost)}</span>
+                            <span>Sales: {fmt(h.sales)}</span>
+                            <span className={h.labourPct > (kpis?.labourTargetPct || 30) ? "text-red-600 font-semibold" : "text-green-600"}>
+                              {h.labourPct}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex gap-1 h-3">
+                          <div className="bg-blue-400 rounded-sm h-full" style={{ width: `${(h.actualCost / maxVal) * 100}%` }} title={`Labour: ${fmt(h.actualCost)}`} />
+                          <div className="bg-green-300 rounded-sm h-full" style={{ width: `${(h.sales / maxVal) * 100}%` }} title={`Sales: ${fmt(h.sales)}`} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="flex gap-6 text-xs text-muted-foreground mt-3 pt-2 border-t">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 bg-blue-400 rounded-sm inline-block" />Actual Labour Cost</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 bg-green-300 rounded-sm inline-block" />Sales Revenue</span>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-center text-muted-foreground py-4">No hourly data for selected period</p>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         <TabsContent value="by-role" className="mt-4">
