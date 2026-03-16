@@ -5,6 +5,11 @@ import { storage } from "./storage";
 import { setupAuth, requireAuth, requireRole, hashPassword } from "./auth";
 import { getAdapter } from "./aggregator-adapters";
 import {
+  isVoidOrCancelled, filterOrdersByDateRange, filterValidOrders,
+  computeHourlySales, computeChannelMix, computeHeatmap, computeTopItems,
+  computeFinanceTotals, computeWeeklyForecast,
+} from "./analytics-helpers";
+import {
   insertTenantSchema, insertMenuCategorySchema, insertMenuItemSchema,
   insertTableSchema, insertReservationSchema, insertOrderSchema,
   insertOrderItemSchema, insertInventoryItemSchema, insertStockMovementSchema,
@@ -722,57 +727,24 @@ export async function registerRoutes(
       const d = new Date(o.createdAt!);
       return d >= from && d <= to;
     });
-    const hourlySales: Record<number, { hour: number; revenue: number; count: number }> = {};
-    for (let h = 0; h < 24; h++) hourlySales[h] = { hour: h, revenue: 0, count: 0 };
-    const dayHourHeat: Record<string, Record<number, number>> = {};
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    days.forEach(d => { dayHourHeat[d] = {}; for (let h = 0; h < 24; h++) dayHourHeat[d][h] = 0; });
-    const channelMix: Record<string, { channel: string; revenue: number; count: number }> = {};
-    let totalRevenue = 0, totalOrders = 0, totalCovers = 0;
-    for (const o of rangeOrders) {
-      const d = new Date(o.createdAt!);
-      const h = d.getHours();
-      const dayName = days[d.getDay()];
-      const rev = Number(o.total) || 0;
-      hourlySales[h].revenue += rev;
-      hourlySales[h].count++;
-      dayHourHeat[dayName][h] += rev;
-      const ch = o.orderType || "dine_in";
-      if (!channelMix[ch]) channelMix[ch] = { channel: ch, revenue: 0, count: 0 };
-      channelMix[ch].revenue += rev;
-      channelMix[ch].count++;
-      totalRevenue += rev;
-      totalOrders++;
-    }
+    const validOrders = filterValidOrders(rangeOrders);
+    const totalRevenue = validOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
+    const totalOrders = validOrders.length;
+    const hourlySales = computeHourlySales(rangeOrders);
+    const channelMix = computeChannelMix(rangeOrders);
+    const heatmapData = computeHeatmap(rangeOrders);
     const allItems = await storage.getOrderItemsByTenant(user.tenantId);
     const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
-    const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
-    const itemSales: Record<string, { name: string; quantity: number; revenue: number }> = {};
-    for (const oi of allItems) {
-      const mi = menuMap.get(oi.menuItemId || "");
-      if (!mi) continue;
-      const ordDate = rangeOrders.find(o => o.id === oi.orderId);
-      if (!ordDate) continue;
-      const name = mi.name;
-      if (!itemSales[name]) itemSales[name] = { name, quantity: 0, revenue: 0 };
-      itemSales[name].quantity += oi.quantity || 1;
-      itemSales[name].revenue += Number(oi.price) * (oi.quantity || 1);
-    }
-    const topItems = Object.values(itemSales).sort((a, b) => b.quantity - a.quantity).slice(0, 10);
+    const validOrderIds = new Set(validOrders.map(o => o.id));
+    const topItems = computeTopItems(allItems, menuItemsList, validOrderIds, 10);
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
     const allTables = await storage.getTablesByTenant(user.tenantId);
     const occupiedTables = allTables.filter(t => t.status === "occupied" && t.seatedAt);
     const avgTurnMinutes = occupiedTables.length > 0
       ? Math.round(occupiedTables.reduce((s, t) => s + (Date.now() - new Date(t.seatedAt!).getTime()) / 60000, 0) / occupiedTables.length) : 0;
-    const heatmapData: { day: string; hour: number; value: number }[] = [];
-    for (const day of days) {
-      for (let h = 0; h < 24; h++) {
-        if (dayHourHeat[day][h] > 0) heatmapData.push({ day, hour: h, value: Math.round(dayHourHeat[day][h]) });
-      }
-    }
     res.json({
-      hourlySales: Object.values(hourlySales).filter(h => h.count > 0),
-      channelMix: Object.values(channelMix),
+      hourlySales,
+      channelMix,
       topItems,
       heatmapData,
       avgOrderValue: Math.round(avgOrderValue * 100) / 100,
@@ -792,28 +764,7 @@ export async function registerRoutes(
       const d = new Date(o.createdAt!);
       return d >= from && d <= to;
     });
-    let netSales = 0, totalTax = 0, totalDiscount = 0, voidCount = 0, voidAmount = 0;
-    const dailyFinance: Record<string, { date: string; netSales: number; tax: number; discount: number; gross: number }> = {};
-    for (const o of rangeOrders) {
-      const dateStr = new Date(o.createdAt!).toISOString().split("T")[0];
-      if (!dailyFinance[dateStr]) dailyFinance[dateStr] = { date: dateStr, netSales: 0, tax: 0, discount: 0, gross: 0 };
-      if (o.status === "void" || o.status === "cancelled") {
-        voidCount++;
-        voidAmount += Number(o.total) || 0;
-        continue;
-      }
-      const sub = Number(o.subtotal) || 0;
-      const tax = Number(o.tax) || 0;
-      const disc = Number(o.discount) || 0;
-      const total = Number(o.total) || 0;
-      netSales += sub;
-      totalTax += tax;
-      totalDiscount += disc;
-      dailyFinance[dateStr].netSales += sub;
-      dailyFinance[dateStr].tax += tax;
-      dailyFinance[dateStr].discount += disc;
-      dailyFinance[dateStr].gross += total;
-    }
+    const { netSales, totalTax, totalDiscount, voidCount, voidAmount, dailyFinance } = computeFinanceTotals(rangeOrders);
     const inventoryItems = await storage.getInventoryByTenant(user.tenantId);
     const totalFoodCost = inventoryItems.reduce((s, i) => s + (Number(i.costPrice) || 0) * (Number(i.currentStock) || 0), 0);
     const labourSnapshots = await storage.getLabourCostSnapshots(user.tenantId, from, to);
@@ -845,21 +796,26 @@ export async function registerRoutes(
     const loyaltyEnrolled = customers.filter(c => (c.loyaltyPoints || 0) > 0 || c.loyaltyTier).length;
     const totalCustomers = customers.length;
     const tierBreakdown: Record<string, number> = {};
-    let totalRedemptions = 0, totalPointsOutstanding = 0;
+    let totalPointsOutstanding = 0;
     for (const c of customers) {
       const tier = c.loyaltyTier || "none";
       tierBreakdown[tier] = (tierBreakdown[tier] || 0) + 1;
       totalPointsOutstanding += c.loyaltyPoints || 0;
     }
     const offers = await storage.getOffersByTenant(user.tenantId);
-    const campaignData = offers.map(o => ({
-      name: o.name,
-      type: o.type,
-      usageCount: o.usageCount || 0,
-      usageLimit: o.usageLimit,
-      value: Number(o.value) || 0,
-      active: o.active,
-    }));
+    const totalRedemptions = offers.reduce((s, o) => s + (o.usageCount || 0), 0);
+    const campaignData = offers.map(o => {
+      const uplift = o.usageLimit && o.usageLimit > 0 ? Math.round(((o.usageCount || 0) / o.usageLimit) * 100) : null;
+      return {
+        name: o.name,
+        type: o.type,
+        usageCount: o.usageCount || 0,
+        usageLimit: o.usageLimit,
+        value: Number(o.value) || 0,
+        active: o.active,
+        uptakeRate: uplift,
+      };
+    });
     const avgSpend = totalCustomers > 0 ? customers.reduce((s, c) => s + (Number(c.averageSpend) || Number(c.totalSpent) || 0), 0) / totalCustomers : 0;
     const feedback = await storage.getFeedbackByTenant(user.tenantId);
     const avgRating = feedback.length > 0 ? feedback.reduce((s, f) => s + (f.rating || 0), 0) / feedback.length : 0;
@@ -880,55 +836,31 @@ export async function registerRoutes(
   app.get("/api/reports/forecast", requireAuth, async (req, res) => {
     const user = req.user as any;
     const allOrders = await storage.getOrdersByTenant(user.tenantId);
-    const weeks = 8;
+    const outletId = req.query.outletId as string | undefined;
+    const weeks = Number(req.query.weeks) || 8;
+    const { forecast, totalForecastRevenue, totalForecastOrders, weeksAnalyzed } = computeWeeklyForecast(allOrders, weeks, outletId);
     const now = new Date();
     const cutoff = new Date(now.getTime() - weeks * 7 * 24 * 60 * 60 * 1000);
-    const historicalOrders = allOrders.filter(o => {
-      const d = new Date(o.createdAt!);
-      return d >= cutoff && d <= now && o.status !== "void" && o.status !== "cancelled";
+    let historicalOrders = allOrders.filter(o => {
+      if (!o.createdAt) return false;
+      const d = new Date(o.createdAt);
+      return d >= cutoff && d <= now && !isVoidOrCancelled(o.status);
     });
-    const dayBuckets: Record<number, { revenue: number[]; orders: number[] }> = {};
-    for (let d = 0; d < 7; d++) dayBuckets[d] = { revenue: [], orders: [] };
-    const weeklyData: Record<string, Record<number, { revenue: number; count: number }>> = {};
-    for (const o of historicalOrders) {
-      const d = new Date(o.createdAt!);
-      const weekKey = `${d.getFullYear()}-W${Math.ceil((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / (7 * 24 * 60 * 60 * 1000))}`;
-      const dow = d.getDay();
-      if (!weeklyData[weekKey]) {
-        weeklyData[weekKey] = {};
-        for (let i = 0; i < 7; i++) weeklyData[weekKey][i] = { revenue: 0, count: 0 };
-      }
-      weeklyData[weekKey][dow].revenue += Number(o.total) || 0;
-      weeklyData[weekKey][dow].count++;
-    }
-    for (const wk of Object.values(weeklyData)) {
-      for (let d = 0; d < 7; d++) {
-        dayBuckets[d].revenue.push(wk[d].revenue);
-        dayBuckets[d].orders.push(wk[d].count);
-      }
-    }
-    const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const forecast = days.map((name, i) => {
-      const revArr = dayBuckets[i].revenue;
-      const ordArr = dayBuckets[i].orders;
-      const avgRev = revArr.length > 0 ? revArr.reduce((s, v) => s + v, 0) / revArr.length : 0;
-      const avgOrd = ordArr.length > 0 ? ordArr.reduce((s, v) => s + v, 0) / ordArr.length : 0;
-      return { day: name, forecastRevenue: Math.round(avgRev * 100) / 100, forecastOrders: Math.round(avgOrd), weeksOfData: revArr.length };
-    });
-    const totalForecastRevenue = forecast.reduce((s, f) => s + f.forecastRevenue, 0);
-    const totalForecastOrders = forecast.reduce((s, f) => s + f.forecastOrders, 0);
+    if (outletId) historicalOrders = historicalOrders.filter(o => o.outletId === outletId);
     const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+    const menuMap = new Map(menuItems.map(m => [m.id, m]));
     const orderItems = await storage.getOrderItemsByTenant(user.tenantId);
     const recentOrderIds = new Set(historicalOrders.map(o => o.id));
     const recentItems = orderItems.filter(oi => recentOrderIds.has(oi.orderId || ""));
     const itemConsumption: Record<string, { name: string; avgWeeklyQty: number; price: number }> = {};
     for (const oi of recentItems) {
-      const mi = menuItems.find(m => m.id === oi.menuItemId);
-      if (!mi) continue;
-      if (!itemConsumption[mi.id]) itemConsumption[mi.id] = { name: mi.name, avgWeeklyQty: 0, price: Number(mi.price) || 0 };
-      itemConsumption[mi.id].avgWeeklyQty += (oi.quantity || 1);
+      const mi = menuMap.get(oi.menuItemId || "");
+      const name = mi?.name || oi.name || "Unknown";
+      const key = mi?.id || name;
+      if (!itemConsumption[key]) itemConsumption[key] = { name, avgWeeklyQty: 0, price: Number(mi?.price || oi.price) || 0 };
+      itemConsumption[key].avgWeeklyQty += (oi.quantity || 1);
     }
-    const weeksCount = Math.max(Object.keys(weeklyData).length, 1);
+    const weeksCount = Math.max(weeksAnalyzed, 1);
     const productionSuggestions = Object.values(itemConsumption).map(item => ({
       name: item.name,
       avgWeeklyQty: Math.round(item.avgWeeklyQty / weeksCount),
@@ -937,10 +869,11 @@ export async function registerRoutes(
     })).sort((a, b) => b.avgWeeklyQty - a.avgWeeklyQty).slice(0, 20);
     res.json({
       forecast,
-      totalForecastRevenue: Math.round(totalForecastRevenue * 100) / 100,
+      totalForecastRevenue,
       totalForecastOrders,
-      weeksAnalyzed: Object.keys(weeklyData).length,
+      weeksAnalyzed,
       productionSuggestions,
+      outletId: outletId || null,
     });
   });
 

@@ -518,8 +518,13 @@ export class DatabaseStorage implements IStorage {
     return db.select({
       id: orderItems.id,
       orderId: orderItems.orderId,
+      menuItemId: orderItems.menuItemId,
       name: orderItems.name,
       quantity: orderItems.quantity,
+      price: orderItems.price,
+      status: orderItems.status,
+      station: orderItems.station,
+      course: orderItems.course,
     }).from(orderItems)
       .innerJoin(orders, eq(orderItems.orderId, orders.id))
       .where(eq(orders.tenantId, tenantId));
