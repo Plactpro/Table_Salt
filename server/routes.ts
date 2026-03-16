@@ -1720,7 +1720,9 @@ export async function registerRoutes(
       }
       const freshItems = await storage.getOrderItemsByOrder(req.params.id);
       const allReady = freshItems.every((i: any) => i.status === "ready" || i.status === "served");
-      if (status === "ready" && allReady) await storage.updateOrder(req.params.id, { status: "ready" });
+      const allServed = freshItems.every((i: any) => i.status === "served");
+      if (status === "served" && allServed) await storage.updateOrder(req.params.id, { status: "served" });
+      else if (status === "ready" && allReady) await storage.updateOrder(req.params.id, { status: "ready" });
       if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) {
         await storage.updateOrder(req.params.id, { status: "in_progress" });
       }

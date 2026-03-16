@@ -247,9 +247,14 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
                       </Button>
                     )}
                     {item.status === "ready" && (
-                      <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-yellow-100" onClick={() => onItemStatus(item.id, "recalled")} data-testid={`btn-recall-${item.id.slice(-4)}`}>
-                        <RotateCcw className="h-3 w-3 text-yellow-600" />
-                      </Button>
+                      <>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-blue-100" onClick={() => onItemStatus(item.id, "served")} data-testid={`btn-served-${item.id.slice(-4)}`}>
+                          <Utensils className="h-3 w-3 text-blue-600" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-yellow-100" onClick={() => onItemStatus(item.id, "recalled")} data-testid={`btn-recall-${item.id.slice(-4)}`}>
+                          <RotateCcw className="h-3 w-3 text-yellow-600" />
+                        </Button>
+                      </>
                     )}
                     <StatusDot status={item.status} />
                   </div>
@@ -273,9 +278,9 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
               <Badge variant="outline" className="text-xs text-orange-600">Partial</Badge>
             )}
             {allReady && (
-              <Badge className="text-xs bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300">
-                <CheckCircle2 className="h-3 w-3 mr-1" /> Complete
-              </Badge>
+              <Button size="sm" className="h-7 text-xs gap-1 bg-blue-600 hover:bg-blue-700" onClick={() => onBulkStatus(ticket.id, "served", stationFilter || undefined)} data-testid={`btn-served-all-${ticket.id.slice(-4)}`}>
+                <Utensils className="h-3 w-3" /> Served
+              </Button>
             )}
           </div>
         </CardContent>
