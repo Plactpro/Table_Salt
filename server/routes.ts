@@ -289,7 +289,7 @@ export async function registerRoutes(
     }
 
     const order = await storage.updateOrder(req.params.id, updateData);
-    if (req.body.status === "paid") {
+    if (req.body.status === "paid" && existing.status !== "paid") {
       if (existing.tableId) {
         await storage.updateTable(existing.tableId, { status: "free" });
       }
@@ -1299,9 +1299,18 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const { ingredients, ...recipeData } = req.body;
+      if (recipeData.menuItemId) {
+        const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+        if (!menuItems.find(m => m.id === recipeData.menuItemId)) {
+          return res.status(400).json({ message: "Invalid menu item" });
+        }
+      }
+      const tenantInventory = await storage.getInventoryByTenant(user.tenantId);
+      const tenantInvIds = new Set(tenantInventory.map(i => i.id));
       const recipe = await storage.createRecipe({ ...recipeData, tenantId: user.tenantId });
       if (ingredients && Array.isArray(ingredients)) {
         for (let i = 0; i < ingredients.length; i++) {
+          if (!tenantInvIds.has(ingredients[i].inventoryItemId)) continue;
           await storage.createRecipeIngredient({ ...ingredients[i], recipeId: recipe.id, sortOrder: i });
         }
       }
@@ -1314,11 +1323,20 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const { ingredients, ...recipeData } = req.body;
+      if (recipeData.menuItemId) {
+        const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+        if (!menuItems.find(m => m.id === recipeData.menuItemId)) {
+          return res.status(400).json({ message: "Invalid menu item" });
+        }
+      }
       const recipe = await storage.updateRecipe(req.params.id, user.tenantId, recipeData);
       if (!recipe) return res.status(404).json({ message: "Not found" });
       if (ingredients && Array.isArray(ingredients)) {
+        const tenantInventory = await storage.getInventoryByTenant(user.tenantId);
+        const tenantInvIds = new Set(tenantInventory.map(i => i.id));
         await storage.deleteRecipeIngredients(recipe.id);
         for (let i = 0; i < ingredients.length; i++) {
+          if (!tenantInvIds.has(ingredients[i].inventoryItemId)) continue;
           await storage.createRecipeIngredient({ ...ingredients[i], recipeId: recipe.id, sortOrder: i });
         }
       }
@@ -1411,19 +1429,32 @@ export async function registerRoutes(
         };
       }));
 
+      const movements = await storage.getStockMovementsByTenant(user.tenantId, 10000);
+      const actualUsageByItem = new Map<string, number>();
+      for (const mv of movements) {
+        if (mv.type === "out") {
+          actualUsageByItem.set(mv.itemId, (actualUsageByItem.get(mv.itemId) || 0) + Number(mv.quantity));
+        }
+      }
+
       const varianceByIngredient = Array.from(ingredientIdealUsage.entries()).map(([itemId, idealQty]) => {
         const item = invMap.get(itemId);
         if (!item) return null;
-        const movements = [];
-        const actualUsed = idealQty * 1.0;
+        const actualUsed = actualUsageByItem.get(itemId) || 0;
+        const varianceQty = actualUsed - idealQty;
+        const costPrice = Number(item.costPrice || 0);
         return {
           itemId,
           itemName: item.name,
           unit: item.unit,
           idealUsage: Math.round(idealQty * 100) / 100,
+          actualUsage: Math.round(actualUsed * 100) / 100,
+          varianceQty: Math.round(varianceQty * 100) / 100,
           currentStock: Number(item.currentStock || 0),
-          costPrice: Number(item.costPrice || 0),
-          idealCost: Math.round(idealQty * Number(item.costPrice || 0) * 100) / 100,
+          costPrice,
+          idealCost: Math.round(idealQty * costPrice * 100) / 100,
+          actualCost: Math.round(actualUsed * costPrice * 100) / 100,
+          varianceCost: Math.round(varianceQty * costPrice * 100) / 100,
         };
       }).filter(Boolean);
 

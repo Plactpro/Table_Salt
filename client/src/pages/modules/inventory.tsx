@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency } from "@shared/currency";
+import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -462,7 +463,11 @@ function RecipesTab() {
       if (!item) return sum;
       const qty = Number(ing.quantity) || 0;
       const waste = Number(ing.wastePct || 0) / 100;
-      return sum + qty * (1 + waste) * Number(item.costPrice);
+      const effectiveQty = qty / (1 - waste);
+      const ingUnit = ing.unit || item.unit || "pcs";
+      const invUnit = item.unit || "pcs";
+      const convertedQty = convertUnits(effectiveQty, ingUnit, invUnit);
+      return sum + convertedQty * Number(item.costPrice);
     }, 0);
   }
 }
@@ -680,18 +685,21 @@ function FoodCostTab() {
 
       {varianceData.length > 0 && (
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-4 w-4" />Ideal vs Actual Usage</CardTitle></CardHeader>
+          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-4 w-4" />Ideal vs Actual Usage Variance</CardTitle></CardHeader>
           <CardContent>
             <Table>
-              <TableHeader><TableRow><TableHead>Ingredient</TableHead><TableHead>Ideal Usage</TableHead><TableHead>Current Stock</TableHead><TableHead>Unit</TableHead><TableHead>Ideal Cost</TableHead></TableRow></TableHeader>
+              <TableHeader><TableRow><TableHead>Ingredient</TableHead><TableHead>Ideal</TableHead><TableHead>Actual</TableHead><TableHead>Variance</TableHead><TableHead>Unit</TableHead><TableHead>Ideal Cost</TableHead><TableHead>Actual Cost</TableHead><TableHead>Variance Cost</TableHead></TableRow></TableHeader>
               <TableBody>
-                {varianceData.filter((v: any) => v.idealUsage > 0).map((v: any) => (
+                {varianceData.filter((v: any) => v.idealUsage > 0 || v.actualUsage > 0).map((v: any) => (
                   <TableRow key={v.itemId} data-testid={`row-variance-${v.itemId}`}>
                     <TableCell className="font-medium">{v.itemName}</TableCell>
                     <TableCell>{v.idealUsage}</TableCell>
-                    <TableCell>{v.currentStock}</TableCell>
+                    <TableCell>{v.actualUsage}</TableCell>
+                    <TableCell className={v.varianceQty > 0 ? "text-red-600 font-medium" : v.varianceQty < 0 ? "text-green-600 font-medium" : ""}>{v.varianceQty > 0 ? "+" : ""}{v.varianceQty}</TableCell>
                     <TableCell className="text-muted-foreground">{v.unit}</TableCell>
                     <TableCell>{fmt(v.idealCost)}</TableCell>
+                    <TableCell>{fmt(v.actualCost)}</TableCell>
+                    <TableCell className={v.varianceCost > 0 ? "text-red-600 font-medium" : v.varianceCost < 0 ? "text-green-600 font-medium" : ""}>{v.varianceCost > 0 ? "+" : ""}{fmt(v.varianceCost)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
