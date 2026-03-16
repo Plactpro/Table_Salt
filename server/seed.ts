@@ -123,18 +123,23 @@ export async function seedDatabase() {
     await storage.createMenuItem({ ...item, tenantId: tenant.id });
   }
 
+  const zoneMain = await storage.createTableZone({ tenantId: tenant.id, outletId: outlet.id, name: "Main Hall", color: "#10b981", sortOrder: 0 });
+  const zonePatio = await storage.createTableZone({ tenantId: tenant.id, outletId: outlet.id, name: "Patio", color: "#6366f1", sortOrder: 1 });
+  const zonePrivate = await storage.createTableZone({ tenantId: tenant.id, outletId: outlet.id, name: "Private", color: "#f59e0b", sortOrder: 2 });
+  await storage.createTableZone({ tenantId: tenant.id, outletId: outlet.id, name: "Bar", color: "#8b5cf6", sortOrder: 3 });
+
   const zones = ["Main Hall", "Patio", "Private"];
   const tableData = [
-    { number: 1, capacity: 2, zone: "Main Hall" },
-    { number: 2, capacity: 2, zone: "Main Hall" },
-    { number: 3, capacity: 4, zone: "Main Hall" },
-    { number: 4, capacity: 4, zone: "Main Hall" },
-    { number: 5, capacity: 6, zone: "Main Hall" },
-    { number: 6, capacity: 4, zone: "Patio" },
-    { number: 7, capacity: 2, zone: "Patio" },
-    { number: 8, capacity: 6, zone: "Patio" },
-    { number: 9, capacity: 8, zone: "Private" },
-    { number: 10, capacity: 10, zone: "Private" },
+    { number: 1, capacity: 2, zone: "Main Hall", zoneId: zoneMain.id, shape: "square" as const, posX: 20, posY: 20 },
+    { number: 2, capacity: 2, zone: "Main Hall", zoneId: zoneMain.id, shape: "circle" as const, posX: 160, posY: 20 },
+    { number: 3, capacity: 4, zone: "Main Hall", zoneId: zoneMain.id, shape: "square" as const, posX: 300, posY: 20 },
+    { number: 4, capacity: 4, zone: "Main Hall", zoneId: zoneMain.id, shape: "rectangle" as const, posX: 440, posY: 20 },
+    { number: 5, capacity: 6, zone: "Main Hall", zoneId: zoneMain.id, shape: "circle" as const, posX: 620, posY: 20 },
+    { number: 6, capacity: 4, zone: "Patio", zoneId: zonePatio.id, shape: "circle" as const, posX: 20, posY: 160 },
+    { number: 7, capacity: 2, zone: "Patio", zoneId: zonePatio.id, shape: "square" as const, posX: 160, posY: 160 },
+    { number: 8, capacity: 6, zone: "Patio", zoneId: zonePatio.id, shape: "rectangle" as const, posX: 300, posY: 160 },
+    { number: 9, capacity: 8, zone: "Private", zoneId: zonePrivate.id, shape: "rectangle" as const, posX: 20, posY: 300 },
+    { number: 10, capacity: 10, zone: "Private", zoneId: zonePrivate.id, shape: "circle" as const, posX: 200, posY: 300 },
   ];
 
   const tableIds: string[] = [];
@@ -144,9 +149,16 @@ export async function seedDatabase() {
       tenantId: tenant.id,
       outletId: outlet.id,
       status: t.number <= 3 ? "occupied" : t.number === 6 ? "reserved" : "free",
+      partyName: t.number === 1 ? "Smith Family" : t.number === 2 ? "Johnson" : t.number === 3 ? "VIP Guest" : undefined,
+      partySize: t.number === 1 ? 2 : t.number === 2 ? 2 : t.number === 3 ? 4 : undefined,
+      seatedAt: t.number <= 3 ? new Date(Date.now() - (t.number * 15 * 60000)) : undefined,
     });
     tableIds.push(tbl.id);
   }
+
+  await storage.createWaitlistEntry({ tenantId: tenant.id, outletId: outlet.id, customerName: "Ahmed Al-Rashid", customerPhone: "+971-55-123-4567", partySize: 4, preferredZone: "Main Hall", status: "waiting", estimatedWaitMinutes: 15, notes: "Birthday celebration", priority: 1 });
+  await storage.createWaitlistEntry({ tenantId: tenant.id, outletId: outlet.id, customerName: "Sarah Johnson", customerPhone: "+971-50-987-6543", partySize: 2, status: "waiting", estimatedWaitMinutes: 10, priority: 2 });
+  await storage.createWaitlistEntry({ tenantId: tenant.id, outletId: outlet.id, customerName: "Kumar Family", customerPhone: "+971-56-456-7890", partySize: 6, preferredZone: "Patio", status: "waiting", estimatedWaitMinutes: 25, notes: "Need high chair", priority: 3 });
 
   const stationDefs = [
     { name: "grill", displayName: "Grill Station", color: "#EF4444", sortOrder: 1 },
