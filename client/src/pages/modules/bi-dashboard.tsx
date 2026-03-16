@@ -7,6 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   BarChart3, TrendingUp, DollarSign, Users, PieChart as PieIcon,
   Activity, Clock, ShoppingBag, Target, Star, Award, Percent,
@@ -99,12 +100,15 @@ export default function BIDashboard() {
     to: new Date().toISOString().split("T")[0],
   });
   const [activeTab, setActiveTab] = useState("operations");
+  const [forecastOutlet, setForecastOutlet] = useState("all");
 
   const queryParams = `?from=${dateRange.from}&to=${dateRange.to}`;
   const { data: ops } = useQuery<any>({ queryKey: ["/api/reports/operations", dateRange], queryFn: () => fetch(`/api/reports/operations${queryParams}`, { credentials: "include" }).then(r => r.json()) });
   const { data: fin } = useQuery<any>({ queryKey: ["/api/reports/finance", dateRange], queryFn: () => fetch(`/api/reports/finance${queryParams}`, { credentials: "include" }).then(r => r.json()) });
   const { data: mkt } = useQuery<any>({ queryKey: ["/api/reports/marketing"], queryFn: () => fetch("/api/reports/marketing", { credentials: "include" }).then(r => r.json()) });
-  const { data: forecast } = useQuery<any>({ queryKey: ["/api/reports/forecast"], queryFn: () => fetch("/api/reports/forecast", { credentials: "include" }).then(r => r.json()) });
+  const forecastParams = forecastOutlet !== "all" ? `?outletId=${forecastOutlet}` : "";
+  const { data: forecast } = useQuery<any>({ queryKey: ["/api/reports/forecast", forecastOutlet], queryFn: () => fetch(`/api/reports/forecast${forecastParams}`, { credentials: "include" }).then(r => r.json()) });
+  const { data: outlets } = useQuery<any[]>({ queryKey: ["/api/outlets"], queryFn: () => fetch("/api/outlets", { credentials: "include" }).then(r => r.json()) });
 
   return (
     <div className="space-y-6">
@@ -136,10 +140,11 @@ export default function BIDashboard() {
         <TabsContent value="operations" className="space-y-6 mt-4">
           {ops && (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <StatCard label="Total Revenue" value={formatCur(ops.totalRevenue)} icon={DollarSign} color="text-green-600" testId="card-ops-revenue" />
                 <StatCard label="Total Orders" value={ops.totalOrders} icon={ShoppingBag} color="text-blue-600" testId="card-ops-orders" />
                 <StatCard label="Avg Order Value" value={formatCur(ops.avgOrderValue)} icon={BarChart3} color="text-purple-600" testId="card-ops-aov" />
+                <StatCard label="Total Covers" value={ops.totalCovers || 0} sub="seated guests" icon={Users} color="text-teal-600" testId="card-ops-covers" />
                 <StatCard label="Avg Turn Time" value={`${ops.avgTurnMinutes}m`} sub="current dining" icon={Clock} color="text-amber-600" testId="card-ops-turn" />
               </div>
 
@@ -293,9 +298,10 @@ export default function BIDashboard() {
         <TabsContent value="marketing" className="space-y-6 mt-4">
           {mkt && (
             <>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 <StatCard label="Total Customers" value={mkt.totalCustomers} icon={Users} color="text-blue-600" testId="card-mkt-customers" />
                 <StatCard label="Loyalty Enrolled" value={mkt.loyaltyEnrolled} sub={`${mkt.enrollmentRate}% enrollment`} icon={Award} color="text-purple-600" testId="card-mkt-loyalty" />
+                <StatCard label="Redemptions" value={mkt.totalRedemptions || 0} sub="offer uses" icon={Percent} color="text-rose-500" testId="card-mkt-redemptions" />
                 <StatCard label="Avg Rating" value={mkt.avgRating} sub={`${mkt.feedbackCount} reviews`} icon={Star} color="text-amber-500" testId="card-mkt-rating" />
                 <StatCard label="Avg Spend" value={formatCur(mkt.avgCustomerSpend)} icon={DollarSign} color="text-green-600" testId="card-mkt-avg-spend" />
               </div>
@@ -339,7 +345,12 @@ export default function BIDashboard() {
                               <div className="text-right">
                                 <div className="text-sm font-bold">{c.usageCount} used</div>
                                 {c.usageLimit && <div className="text-xs text-muted-foreground">of {c.usageLimit} limit</div>}
-                                <Badge variant={c.active ? "default" : "secondary"} className="text-[10px] mt-0.5">{c.active ? "Active" : "Inactive"}</Badge>
+                                <div className="flex items-center gap-1 justify-end mt-0.5">
+                                  <Badge variant={c.active ? "default" : "secondary"} className="text-[10px]">{c.active ? "Active" : "Inactive"}</Badge>
+                                  {c.uptakeRate !== null && c.uptakeRate !== undefined && (
+                                    <Badge variant="outline" className="text-[10px]">{c.uptakeRate}% uptake</Badge>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           ))}
@@ -378,6 +389,21 @@ export default function BIDashboard() {
         <TabsContent value="forecasting" className="space-y-6 mt-4">
           {forecast && (
             <>
+              <div className="flex items-center gap-3 mb-2">
+                <Label className="text-xs whitespace-nowrap">Outlet</Label>
+                <Select value={forecastOutlet} onValueChange={setForecastOutlet}>
+                  <SelectTrigger className="w-48 h-8 text-xs" data-testid="select-forecast-outlet">
+                    <SelectValue placeholder="All outlets" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Outlets</SelectItem>
+                    {outlets?.map((o: any) => (
+                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {forecast.outletId && <Badge variant="outline" className="text-xs">Filtered</Badge>}
+              </div>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <StatCard label="Forecast Revenue" value={formatCur(forecast.totalForecastRevenue)} sub="next week" icon={TrendingUp} color="text-green-600" testId="card-fc-revenue" />
                 <StatCard label="Forecast Orders" value={forecast.totalForecastOrders} sub="next week" icon={ShoppingBag} color="text-blue-600" testId="card-fc-orders" />
@@ -472,6 +498,51 @@ export default function BIDashboard() {
                   </CardContent>
                 </Card>
               </motion.div>
+
+              {forecast.ingredientSuggestions?.length > 0 && (
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+                  <Card data-testid="card-ingredient-suggestions">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm">Ingredient-Level Procurement Forecast</CardTitle>
+                      <p className="text-xs text-muted-foreground">Based on recipe consumption × forecasted menu demand (10% safety buffer)</p>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b">
+                              <th className="text-left py-2 font-medium text-muted-foreground">Ingredient</th>
+                              <th className="text-right py-2 font-medium text-muted-foreground">Unit</th>
+                              <th className="text-right py-2 font-medium text-muted-foreground">Avg Weekly</th>
+                              <th className="text-right py-2 font-medium text-muted-foreground">Order Qty</th>
+                              <th className="text-right py-2 font-medium text-muted-foreground">Cost/Unit</th>
+                              <th className="text-right py-2 font-medium text-muted-foreground">Est. Cost</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {forecast.ingredientSuggestions.map((item: any, i: number) => (
+                              <tr key={i} className="border-b last:border-0" data-testid={`row-ingredient-${i}`}>
+                                <td className="py-2 font-medium">{item.name}</td>
+                                <td className="py-2 text-right text-muted-foreground">{item.unit}</td>
+                                <td className="py-2 text-right">{item.avgWeeklyNeed}</td>
+                                <td className="py-2 text-right font-bold text-primary">{item.suggestedOrder}</td>
+                                <td className="py-2 text-right text-muted-foreground">{formatCur(item.costPerUnit)}</td>
+                                <td className="py-2 text-right">{formatCur(item.estimatedWeeklyCost)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          <tfoot>
+                            <tr className="border-t-2 font-bold">
+                              <td className="py-2" colSpan={5}>Total Estimated Ingredient Cost</td>
+                              <td className="py-2 text-right">{formatCur(forecast.ingredientSuggestions.reduce((s: number, i: any) => s + i.estimatedWeeklyCost, 0))}</td>
+                            </tr>
+                          </tfoot>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              )}
             </>
           )}
         </TabsContent>
