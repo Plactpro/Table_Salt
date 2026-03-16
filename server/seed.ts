@@ -674,6 +674,26 @@ export async function seedDatabase() {
   await storage.createAuditIssue({ tenantId: tenant.id, title: "Walk-in cooler temperature fluctuation", description: "Temperature readings showing inconsistent values between 2-6°C.", severity: "high", status: "open", assignedTo: manager.id });
   await storage.createAuditIssue({ tenantId: tenant.id, title: "Fire extinguisher expired in kitchen B", description: "Monthly inspection found expired fire extinguisher near station B.", severity: "critical", status: "open", assignedTo: owner.id });
 
+  const chPOS = await storage.createOrderChannel({ tenantId: tenant.id, name: "POS (In-house)", slug: "pos", icon: "monitor", active: true, commissionPct: "0" });
+  const chSwiggy = await storage.createOrderChannel({ tenantId: tenant.id, name: "Swiggy", slug: "swiggy", icon: "bike", active: true, commissionPct: "22" });
+  const chZomato = await storage.createOrderChannel({ tenantId: tenant.id, name: "Zomato", slug: "zomato", icon: "utensils", active: true, commissionPct: "18" });
+  const chUberEats = await storage.createOrderChannel({ tenantId: tenant.id, name: "UberEats", slug: "ubereats", icon: "car", active: true, commissionPct: "25" });
+  const chWebsite = await storage.createOrderChannel({ tenantId: tenant.id, name: "Website", slug: "website", icon: "globe", active: true, commissionPct: "0" });
+
+  await storage.createChannelConfig({ tenantId: tenant.id, channelId: chSwiggy.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 25, packagingFee: "5.00", autoAccept: true });
+  await storage.createChannelConfig({ tenantId: tenant.id, channelId: chZomato.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 20, packagingFee: "4.50", autoAccept: false });
+  await storage.createChannelConfig({ tenantId: tenant.id, channelId: chUberEats.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 30, packagingFee: "6.00", autoAccept: true });
+  await storage.createChannelConfig({ tenantId: tenant.id, channelId: chWebsite.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 15, packagingFee: "0", autoAccept: true });
+
+  const allMenuForMapping = await storage.getMenuItemsByTenant(tenant.id);
+  for (const mi of allMenuForMapping.slice(0, 6)) {
+    const markup = 1.1;
+    const extPrice = (parseFloat(mi.price) * markup).toFixed(2);
+    await storage.createOnlineMenuMapping({ tenantId: tenant.id, menuItemId: mi.id, channelId: chSwiggy.id, externalItemId: `SWG-${mi.id.slice(-6)}`, externalPrice: extPrice, available: true });
+    await storage.createOnlineMenuMapping({ tenantId: tenant.id, menuItemId: mi.id, channelId: chZomato.id, externalItemId: `ZMT-${mi.id.slice(-6)}`, externalPrice: extPrice, available: true });
+    await storage.createOnlineMenuMapping({ tenantId: tenant.id, menuItemId: mi.id, channelId: chUberEats.id, externalItemId: `UBE-${mi.id.slice(-6)}`, externalPrice: (parseFloat(mi.price) * 1.15).toFixed(2), available: true });
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");
