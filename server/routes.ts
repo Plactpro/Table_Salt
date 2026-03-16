@@ -2115,6 +2115,11 @@ export async function registerRoutes(
         const estimatedLabourCost = Number(lab.labourHours || 0) * 15;
         const labourPct = revenue > 0 ? ((estimatedLabourCost / revenue) * 100).toFixed(1) : "0.0";
         const foodCostPct = foodCostReport.get(k.outletId as string) || "0.0";
+        const rating = parseFloat(String(fb.avgRating || "0"));
+        const count = Number(fb.feedbackCount || 0);
+        const promoters = Math.round(count * Math.max(0, (rating - 4) / 1));
+        const detractors = Math.round(count * Math.max(0, (3 - rating) / 3));
+        const nps = count > 0 ? Math.round(((promoters - detractors) / count) * 100) : 0;
         return {
           ...k,
           outletName: outlet?.name || "Unknown",
@@ -2122,11 +2127,20 @@ export async function registerRoutes(
           regionId: outlet?.regionId || null,
           avgRating: fb.avgRating,
           feedbackCount: fb.feedbackCount,
+          nps,
           labourCostPct: labourPct,
           foodCostPct,
         };
       });
       res.json(enriched);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/outlets/:outletId/menu", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const items = await storage.getMenuItemsForOutlet(user.tenantId, req.params.outletId);
+      res.json(items);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

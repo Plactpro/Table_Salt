@@ -18,7 +18,7 @@ import { useLocation } from "wouter";
 
 interface Region { id: string; tenantId: string; name: string; description: string | null; sortOrder: number; active: boolean; }
 interface Outlet { id: string; tenantId: string; regionId: string | null; name: string; address: string | null; openingHours: string | null; isFranchise: boolean | null; franchiseeName: string | null; royaltyRate: string | null; minimumGuarantee: string | null; active: boolean | null; }
-interface OutletKPI { outletId: string; outletName: string; isFranchise: boolean; regionId: string | null; totalOrders: number; totalRevenue: string; totalTax: string; totalDiscount: string; avgCheck: string; voidCount: number; avgRating: string; feedbackCount: number; labourCostPct: string; foodCostPct: string; }
+interface OutletKPI { outletId: string; outletName: string; isFranchise: boolean; regionId: string | null; totalOrders: number; totalRevenue: string; totalTax: string; totalDiscount: string; avgCheck: string; voidCount: number; avgRating: string; feedbackCount: number; nps: number; labourCostPct: string; foodCostPct: string; }
 interface FranchiseInvoice { id: string; tenantId: string; outletId: string; periodStart: string; periodEnd: string; netSales: string; royaltyRate: string; calculatedRoyalty: string; minimumGuarantee: string; finalAmount: string; status: string; notes: string | null; createdAt: string; }
 interface MenuItem { id: string; name: string; price: string; categoryId: string; }
 interface OutletMenuOverride { id: string; tenantId: string; outletId: string; menuItemId: string; overridePrice: string | null; available: boolean; }
@@ -99,7 +99,13 @@ export default function HQConsolePage() {
     const avgRating = totalFeedbackCount > 0 ? (totalRatingSum / totalFeedbackCount).toFixed(1) : "—";
     const foodCostPct = costCount > 0 ? (avgFoodCost / costCount).toFixed(1) : "0.0";
     const labourCostPct = costCount > 0 ? (avgLabourCost / costCount).toFixed(1) : "0.0";
-    return { totalRevenue, totalOrders, totalTax, avgCheck, totalVoids, voidRate, avgRating, totalFeedbackCount, foodCostPct, labourCostPct };
+    let totalNpsWeight = 0, totalNpsSum = 0;
+    for (const k of filteredKPIs) {
+      const fc = Number(k.feedbackCount || 0);
+      if (fc > 0) { totalNpsSum += (k.nps || 0) * fc; totalNpsWeight += fc; }
+    }
+    const nps = totalNpsWeight > 0 ? Math.round(totalNpsSum / totalNpsWeight) : 0;
+    return { totalRevenue, totalOrders, totalTax, avgCheck, totalVoids, voidRate, avgRating, totalFeedbackCount, nps, foodCostPct, labourCostPct };
   }, [filteredKPIs]);
 
   const onMutError = (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -185,7 +191,7 @@ export default function HQConsolePage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-3">
             <Card>
               <CardContent className="p-3">
                 <p className="text-xs text-muted-foreground">Active Outlets</p>
@@ -234,6 +240,13 @@ export default function HQConsolePage() {
                 <p className="text-xs text-muted-foreground">Avg Rating</p>
                 <p className="text-xl font-bold" data-testid="text-avg-rating">{totals.avgRating}<span className="text-xs text-muted-foreground">/5</span></p>
                 <p className="text-[10px] text-muted-foreground">{totals.totalFeedbackCount} reviews</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3">
+                <p className="text-xs text-muted-foreground">NPS Score</p>
+                <p className="text-xl font-bold" data-testid="text-nps">{totals.nps > 0 ? "+" : ""}{totals.nps}</p>
+                <p className="text-[10px] text-muted-foreground">{totals.nps >= 50 ? "Excellent" : totals.nps >= 0 ? "Good" : "Needs work"}</p>
               </CardContent>
             </Card>
           </div>
@@ -323,6 +336,7 @@ export default function HQConsolePage() {
                     <TableHead className="text-right">Labour %</TableHead>
                     <TableHead className="text-right">Voids</TableHead>
                     <TableHead className="text-right">Rating</TableHead>
+                    <TableHead className="text-right">NPS</TableHead>
                     <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
@@ -346,6 +360,7 @@ export default function HQConsolePage() {
                         <TableCell className="text-right">{k.labourCostPct}%</TableCell>
                         <TableCell className="text-right">{Number(k.voidCount) > 0 ? <span className="text-red-500">{k.voidCount}</span> : "0"}</TableCell>
                         <TableCell className="text-right">{parseFloat(k.avgRating || "0") > 0 ? `${k.avgRating}/5` : "—"}</TableCell>
+                        <TableCell className="text-right">{k.nps > 0 ? `+${k.nps}` : k.nps}</TableCell>
                         <TableCell className="text-right">
                           <Button variant="ghost" size="sm" onClick={() => { setSelectedOutlet(k.outletId); setActiveTab("overview"); }} data-testid={`button-drilldown-${k.outletId}`}>
                             <ExternalLink className="h-3 w-3" />
@@ -355,7 +370,7 @@ export default function HQConsolePage() {
                     );
                   })}
                   {sortedKPIs.length === 0 && (
-                    <TableRow><TableCell colSpan={11} className="text-center text-muted-foreground">No data available</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={12} className="text-center text-muted-foreground">No data available</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>

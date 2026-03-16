@@ -261,6 +261,7 @@ export interface IStorage {
   getOutletFeedbackMetrics(tenantId: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
   getOutletLabourMetrics(tenantId: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
   getOutletFoodCostMetrics(tenantId: string): Promise<Map<string, string>>;
+  getMenuItemsForOutlet(tenantId: string, outletId: string): Promise<Record<string, unknown>[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1163,7 +1164,7 @@ export class DatabaseStorage implements IStorage {
     const allIngredients = await db.select().from(recipeIngredients);
     const allItems = await db.select().from(menuItems).where(eq(menuItems.tenantId, tenantId));
     const invItems = await db.select().from(inventoryItems).where(eq(inventoryItems.tenantId, tenantId));
-    const invMap = new Map(invItems.map(i => [i.id, parseFloat(i.costPerUnit || "0")]));
+    const invMap = new Map(invItems.map(i => [i.id, parseFloat(i.costPerBaseUnit || i.costPrice || "0")]));
 
     let totalMenuPrice = 0;
     let totalCost = 0;
@@ -1187,6 +1188,25 @@ export class DatabaseStorage implements IStorage {
       result.set(o.id, globalFoodCostPct);
     }
     return result;
+  }
+
+  async getMenuItemsForOutlet(tenantId: string, outletId: string) {
+    const items = await db.select().from(menuItems).where(eq(menuItems.tenantId, tenantId));
+    const overrideRows = await db.select().from(outletMenuOverrides)
+      .where(and(eq(outletMenuOverrides.tenantId, tenantId), eq(outletMenuOverrides.outletId, outletId)));
+    const overrideMap = new Map(overrideRows.map(o => [o.menuItemId, o]));
+    return items.map(item => {
+      const override = overrideMap.get(item.id);
+      if (override) {
+        return {
+          ...item,
+          price: override.overridePrice || item.price,
+          available: override.available,
+          hasOverride: true,
+        };
+      }
+      return { ...item, hasOverride: false };
+    }).filter(item => item.available !== false);
   }
 }
 
