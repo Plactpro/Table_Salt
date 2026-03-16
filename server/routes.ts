@@ -255,8 +255,16 @@ export async function registerRoutes(
       const { items, ...orderData } = req.body;
       const order = await storage.createOrder({ ...orderData, tenantId: user.tenantId, waiterId: user.id });
       if (items && items.length > 0) {
+        const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
+        const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
         for (const item of items) {
-          await storage.createOrderItem({ ...item, orderId: order.id });
+          const mi = item.menuItemId ? menuMap.get(item.menuItemId) : null;
+          await storage.createOrderItem({
+            ...item,
+            orderId: order.id,
+            station: item.station || (mi as any)?.station || null,
+            course: item.course || (mi as any)?.course || null,
+          });
         }
       }
       if (orderData.tableId) {
@@ -1600,6 +1608,123 @@ export async function registerRoutes(
       const limit = req.query.limit ? Number(req.query.limit) : 50;
       const movements = await storage.getStockMovementsByTenant(user.tenantId, limit);
       res.json(movements);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Kitchen Stations CRUD ──
+  app.get("/api/kitchen-stations", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const stations = await storage.getKitchenStationsByTenant(user.tenantId);
+      res.json(stations);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/kitchen-stations", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const station = await storage.createKitchenStation({ ...req.body, tenantId: user.tenantId });
+      res.json(station);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/kitchen-stations/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const station = await storage.updateKitchenStation(req.params.id, user.tenantId, req.body);
+      if (!station) return res.status(404).json({ message: "Station not found" });
+      res.json(station);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/kitchen-stations/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await storage.deleteKitchenStation(req.params.id, user.tenantId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── KDS Order Item Status Transitions ──
+  app.get("/api/kds/tickets", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allOrders = await storage.getOrdersByTenant(user.tenantId);
+      const allTables = await storage.getTablesByTenant(user.tenantId);
+      const tableMap = new Map(allTables.map(t => [t.id, t.number]));
+      const activeOrders = allOrders.filter(o => ["new", "sent_to_kitchen", "in_progress", "ready"].includes(o.status || ""));
+      const tickets = [];
+      for (const o of activeOrders) {
+        const items = await storage.getOrderItemsByOrder(o.id);
+        tickets.push({
+          ...o,
+          tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined,
+          items,
+        });
+      }
+      res.json(tickets);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/kds/order-items/:id/status", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { status } = req.body;
+      const validTransitions: Record<string, string[]> = {
+        pending: ["cooking"],
+        cooking: ["ready"],
+        ready: ["recalled", "served"],
+        recalled: ["cooking"],
+      };
+      const item = await storage.getOrderItem(req.params.id);
+      if (!item) return res.status(404).json({ message: "Order item not found" });
+      const currentStatus = item.status || "pending";
+      const allowed = validTransitions[currentStatus];
+      if (!allowed || !allowed.includes(status)) return res.status(400).json({ message: `Invalid transition: ${currentStatus} -> ${status}` });
+      const order = await storage.getOrder(item.orderId);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const updates: any = { status };
+      if (status === "cooking" && !item.startedAt) updates.startedAt = new Date();
+      if (status === "ready") updates.readyAt = new Date();
+      if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
+      const updated = await storage.updateOrderItem(req.params.id, updates);
+      if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) {
+        await storage.updateOrder(item.orderId, { status: "in_progress" });
+      }
+      if (status === "recalled" && order.status === "ready") {
+        await storage.updateOrder(item.orderId, { status: "in_progress" });
+      }
+      if (status === "ready") {
+        const allItems = await storage.getOrderItemsByOrder(item.orderId);
+        const allReady = allItems.every(i => i.status === "ready" || i.status === "served" || i.id === req.params.id);
+        if (allReady) await storage.updateOrder(item.orderId, { status: "ready" });
+      }
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Bulk update order item status (e.g. mark all items in order as started) ──
+  app.patch("/api/kds/orders/:id/items-status", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { status, station } = req.body;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const items = await storage.getOrderItemsByOrder(req.params.id);
+      const filtered = station ? items.filter((i: any) => i.station === station) : items;
+      for (const item of filtered) {
+        const updates: any = { status };
+        if (status === "cooking" && !item.startedAt) updates.startedAt = new Date();
+        if (status === "ready") updates.readyAt = new Date();
+        await storage.updateOrderItem(item.id, updates);
+      }
+      const freshItems = await storage.getOrderItemsByOrder(req.params.id);
+      const allReady = freshItems.every((i: any) => i.status === "ready" || i.status === "served");
+      if (status === "ready" && allReady) await storage.updateOrder(req.params.id, { status: "ready" });
+      if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) {
+        await storage.updateOrder(req.params.id, { status: "in_progress" });
+      }
+      res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -130,6 +130,8 @@ export const menuItems = pgTable("menu_items", {
   available: boolean("available").default(true),
   tags: text("tags").array(),
   ingredients: jsonb("ingredients"),
+  station: text("station"),
+  course: text("course"),
 });
 
 export const tables = pgTable("tables", {
@@ -192,6 +194,10 @@ export const orderItems = pgTable("order_items", {
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   notes: text("notes"),
   status: text("status").default("pending"),
+  station: text("station"),
+  course: text("course"),
+  startedAt: timestamp("started_at"),
+  readyAt: timestamp("ready_at"),
 });
 
 export const inventoryItems = pgTable("inventory_items", {
@@ -715,4 +721,18 @@ export type InsertAuditSchedule = z.infer<typeof insertAuditScheduleSchema>;
 export type AuditResponse = typeof auditResponses.$inferSelect;
 export type InsertAuditResponse = z.infer<typeof insertAuditResponseSchema>;
 export type AuditIssue = typeof auditIssues.$inferSelect;
+
+export const kitchenStations = pgTable("kitchen_stations", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  displayName: text("display_name").notNull(),
+  color: text("color").default("#3B82F6"),
+  sortOrder: integer("sort_order").default(0),
+  active: boolean("active").default(true),
+});
+
+export const insertKitchenStationSchema = createInsertSchema(kitchenStations).omit({ id: true });
+export type KitchenStation = typeof kitchenStations.$inferSelect;
+export type InsertKitchenStation = z.infer<typeof insertKitchenStationSchema>;
 export type InsertAuditIssue = z.infer<typeof insertAuditIssueSchema>;

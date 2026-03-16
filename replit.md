@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -41,6 +41,17 @@ requested → confirmed → seated → completed/no_show (auto-syncs table statu
 ## Order Status Flow
 new → sent_to_kitchen → in_progress → ready → served → ready_to_pay → paid
 (Also: cancelled, voided as terminal states)
+
+## KDS (Kitchen Display System)
+- **Kitchen Stations**: grill, main, fryer, cold, pastry, bar (configurable per tenant)
+- **Menu items** have `station` and `course` fields → auto-copied to order items on creation
+- **Order item status flow**: pending → cooking → ready → served (with recall: ready → cooking)
+- **Order-level sync**: When all items are ready, order moves to "ready"; when any item starts cooking, order moves to "in_progress"; recall downgrades order from "ready" to "in_progress"
+- **Elapsed time color coding**: green (<5min), orange (5-10min), red (>10min) with flashing for late tickets
+- **Station filtering**: KDS UI can filter by station to show only relevant items
+- **Course grouping**: Items grouped by course (starter/main/dessert/beverage) within tickets
+- **API endpoints**: `/api/kitchen-stations` (CRUD), `/api/kds/tickets` (GET), `/api/kds/order-items/:id/status` (PATCH), `/api/kds/orders/:id/items-status` (bulk PATCH)
+- **Access control**: KDS mutations restricted to owner/manager/kitchen roles
 
 ## Tenant Configuration Fields
 - `timezone` (IANA zone, default "UTC"), `timeFormat` ("12hr" / "24hr")
