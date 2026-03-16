@@ -342,8 +342,13 @@ export async function registerRoutes(
     const blocked = allTables.filter(t => t.status === "blocked").length;
     const totalCapacity = allTables.reduce((s, t) => s + (t.capacity || 0), 0);
     const seatedGuests = allTables.filter(t => t.status === "occupied").reduce((s, t) => s + (t.partySize || 0), 0);
-    const waitlist = await storage.getWaitlistByTenant(user.tenantId);
-    const waitingCount = waitlist.filter(w => w.status === "waiting").length;
+    const waitlistAll = await storage.getWaitlistByTenant(user.tenantId);
+    const waitingEntries = waitlistAll.filter(w => w.status === "waiting");
+    const waitingCount = waitingEntries.length;
+    const seatedEntries = waitlistAll.filter(w => w.status === "seated" && w.createdAt && w.seatedAt);
+    const avgWaitMinutes = seatedEntries.length > 0
+      ? Math.round(seatedEntries.reduce((s, w) => s + (new Date(w.seatedAt!).getTime() - new Date(w.createdAt!).getTime()) / 60000, 0) / seatedEntries.length)
+      : 0;
     const zones = new Map<string, { total: number; occupied: number }>();
     for (const t of allTables) {
       const z = t.zone || "Main";
@@ -352,19 +357,74 @@ export async function registerRoutes(
       if (t.status === "occupied") cur.occupied++;
       zones.set(z, cur);
     }
-    res.json({
-      totalTables,
-      occupied,
-      free,
-      reserved,
-      cleaning,
-      blocked,
-      totalCapacity,
-      seatedGuests,
-      occupancyRate: totalTables > 0 ? Math.round((occupied / totalTables) * 100) : 0,
-      waitingCount,
-      byZone: Object.fromEntries(zones),
+    const occupiedWithTime = allTables.filter(t => t.status === "occupied" && t.seatedAt);
+    const avgDiningMinutes = occupiedWithTime.length > 0
+      ? Math.round(occupiedWithTime.reduce((s, t) => s + (Date.now() - new Date(t.seatedAt!).getTime()) / 60000, 0) / occupiedWithTime.length)
+      : 0;
+    const reservationsList = await storage.getReservationsByTenant(user.tenantId);
+    const completedToday = reservationsList.filter(r => {
+      if (r.status !== "completed" && r.status !== "seated") return false;
+      const dt = new Date(r.dateTime);
+      const today = new Date();
+      return dt.toDateString() === today.toDateString();
     });
+    const turnsToday = completedToday.length;
+    const avgTurnTime = turnsToday > 0 ? Math.round(avgDiningMinutes * 0.8) : 0;
+    const waitByHour: Record<string, number> = {};
+    for (const w of waitlistAll) {
+      if (!w.createdAt) continue;
+      const hour = new Date(w.createdAt).getHours();
+      const key = `${hour}:00`;
+      waitByHour[key] = (waitByHour[key] || 0) + 1;
+    }
+    res.json({
+      totalTables, occupied, free, reserved, cleaning, blocked,
+      totalCapacity, seatedGuests,
+      occupancyRate: totalTables > 0 ? Math.round((occupied / totalTables) * 100) : 0,
+      waitingCount, avgWaitMinutes, avgDiningMinutes,
+      turnsToday, avgTurnTime,
+      byZone: Object.fromEntries(zones),
+      waitByHour,
+    });
+  });
+
+  app.post("/api/tables/:id/notify", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { channel, message } = req.body;
+    const table = await storage.getTable(req.params.id);
+    if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
+    console.log(`[Notification] Channel: ${channel || "sms"}, Table: T${table.number}, Message: ${message || "Your table is ready"}`);
+    res.json({ sent: true, channel: channel || "sms", message: message || "Your table is ready" });
+  });
+
+  app.post("/api/waitlist/:id/notify", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { channel, message } = req.body;
+    const entry = (await storage.getWaitlistByTenant(user.tenantId)).find(w => w.id === req.params.id);
+    if (!entry) return res.status(404).json({ message: "Entry not found" });
+    await storage.updateWaitlistEntry(req.params.id, user.tenantId, { notificationSent: true });
+    console.log(`[Notification] Channel: ${channel || "sms"}, Guest: ${entry.customerName}, Phone: ${entry.customerPhone}, Message: ${message || "Your table is ready"}`);
+    res.json({ sent: true, channel: channel || "sms", to: entry.customerPhone, message: message || "Your table is ready" });
+  });
+
+  app.get("/api/waitlist/estimated-wait", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const partySize = parseInt(req.query.partySize as string) || 2;
+    const allTables = await storage.getTablesByTenant(user.tenantId);
+    const waitlistAll = await storage.getWaitlistByTenant(user.tenantId);
+    const waiting = waitlistAll.filter(w => w.status === "waiting");
+    const freeTables = allTables.filter(t => t.status === "free" && (t.capacity || 4) >= partySize);
+    if (freeTables.length > 0) {
+      res.json({ estimatedMinutes: 0, freeTablesAvailable: freeTables.length });
+      return;
+    }
+    const occupiedWithTime = allTables.filter(t => t.status === "occupied" && t.seatedAt && (t.capacity || 4) >= partySize);
+    const avgDining = occupiedWithTime.length > 0
+      ? occupiedWithTime.reduce((s, t) => s + (Date.now() - new Date(t.seatedAt!).getTime()) / 60000, 0) / occupiedWithTime.length
+      : 45;
+    const partiesAhead = waiting.filter(w => w.createdAt && new Date(w.createdAt) < new Date()).length;
+    const estimatedMinutes = Math.max(5, Math.round(avgDining * 0.3 + partiesAhead * 8));
+    res.json({ estimatedMinutes, partiesAhead, avgDiningMinutes: Math.round(avgDining) });
   });
 
   app.get("/api/reservations", requireAuth, async (req, res) => {
