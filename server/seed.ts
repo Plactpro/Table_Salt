@@ -167,10 +167,20 @@ export async function seedDatabase() {
     { name: "Spaghetti Pasta", sku: "PAS-001", category: "Pantry", unit: "kg", currentStock: "20", reorderLevel: "10", costPrice: "1.80", supplier: "Italian Imports" },
     { name: "Arborio Rice", sku: "RIC-001", category: "Pantry", unit: "kg", currentStock: "10", reorderLevel: "5", costPrice: "3.50", supplier: "Italian Imports" },
     { name: "Fresh Mint", sku: "MNT-001", category: "Produce", unit: "bunches", currentStock: "10", reorderLevel: "5", costPrice: "1.50", supplier: "Farm Direct" },
+    { name: "Butter", sku: "BTR-001", category: "Dairy", unit: "kg", currentStock: "8", reorderLevel: "5", costPrice: "4.50", supplier: "Dairy Fresh" },
+    { name: "Garlic", sku: "GRL-001", category: "Produce", unit: "kg", currentStock: "3.50", reorderLevel: "3", costPrice: "8.00", supplier: "Farm Direct" },
+    { name: "Onions", sku: "ONI-001", category: "Produce", unit: "kg", currentStock: "12", reorderLevel: "8", costPrice: "2.50", supplier: "Farm Direct" },
+    { name: "Lemon", sku: "LMN-001", category: "Produce", unit: "kg", currentStock: "4", reorderLevel: "5", costPrice: "5.00", supplier: "Farm Direct" },
+    { name: "Sugar", sku: "SGR-001", category: "Dry Goods", unit: "kg", currentStock: "15", reorderLevel: "5", costPrice: "2.00", supplier: "Metro Foods" },
+    { name: "Salt", sku: "SLT-001", category: "Dry Goods", unit: "kg", currentStock: "10", reorderLevel: "4", costPrice: "1.50", supplier: "Metro Foods" },
+    { name: "Black Pepper", sku: "BPP-001", category: "Spices", unit: "kg", currentStock: "1.50", reorderLevel: "2", costPrice: "25.00", supplier: "Italian Imports" },
+    { name: "Basil", sku: "BSL-001", category: "Produce", unit: "bunches", currentStock: "6", reorderLevel: "5", costPrice: "3.00", supplier: "Farm Direct" },
   ];
 
+  const createdInvItems = [];
   for (const inv of inventoryData) {
-    await storage.createInventoryItem({ ...inv, tenantId: tenant.id });
+    const item = await storage.createInventoryItem({ ...inv, tenantId: tenant.id });
+    createdInvItems.push(item);
   }
 
   const customerData = [
@@ -620,6 +630,28 @@ export async function seedDatabase() {
         });
       }
     }
+  }
+
+  const stockTake = await storage.createStockTake({
+    tenantId: tenant.id,
+    conductedBy: owner.id,
+    status: "completed",
+    notes: "Weekly stock count - demo",
+  });
+  const stItems = createdInvItems.slice(0, 10);
+  for (const item of stItems) {
+    const sys = Number(item.currentStock);
+    const variance = Math.round((Math.random() * 4 - 2) * 100) / 100;
+    const counted = Math.max(0, sys + variance);
+    const varianceCost = variance * Number(item.costPrice || 0);
+    await storage.createStockTakeLine({
+      stockTakeId: stockTake.id,
+      inventoryItemId: item.id,
+      expectedQty: String(sys),
+      countedQty: String(counted.toFixed(2)),
+      varianceQty: String(variance.toFixed(2)),
+      varianceCost: String(varianceCost.toFixed(2)),
+    });
   }
 
   await storage.createAuditSchedule({ tenantId: tenant.id, templateId: auditKitchen.id, scheduledDate: new Date(), status: "pending", assignedTo: manager.id, maxScore: 85 });
