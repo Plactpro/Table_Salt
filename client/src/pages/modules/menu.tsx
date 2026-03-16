@@ -19,7 +19,7 @@ import {
   Plus, Pencil, Trash2, UtensilsCrossed, Leaf, Drumstick, Coffee, Beef,
   IceCream, Wine, Soup, Pizza, Salad, Sandwich, Eye, X, ImageIcon, Flame,
 } from "lucide-react";
-import type { MenuCategory, MenuItem } from "@shared/schema";
+import type { MenuCategory, MenuItem, KitchenStation } from "@shared/schema";
 
 const categoryIcons: Record<string, React.ElementType> = {
   appetizers: Soup, starters: Soup, mains: Beef, main: Beef,
@@ -75,12 +75,14 @@ export default function MenuPage() {
     isVeg: false, available: true, image: "", spicyLevel: 0,
     tags: [] as string[], customTag: "",
     ingredientsList: "", allergens: "", nutritionalNotes: "", preparationNotes: "", calories: "",
+    station: "", course: "",
   });
 
   const [detailItem, setDetailItem] = useState<MenuItem | null>(null);
 
   const { data: categories = [] } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
   const { data: allItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: stations = [] } = useQuery<KitchenStation[]>({ queryKey: ["/api/kitchen-stations"] });
 
   const filteredItems = selectedCategoryId
     ? allItems.filter((item) => item.categoryId === selectedCategoryId)
@@ -213,6 +215,7 @@ export default function MenuPage() {
       isVeg: false, available: true, image: "", spicyLevel: 0,
       tags: [], customTag: "",
       ingredientsList: "", allergens: "", nutritionalNotes: "", preparationNotes: "", calories: "",
+      station: "", course: "",
     });
     setItemDialogOpen(true);
   }
@@ -236,6 +239,8 @@ export default function MenuPage() {
       nutritionalNotes: ing?.nutritionalNotes || "",
       preparationNotes: ing?.preparationNotes || "",
       calories: ing?.calories ? String(ing.calories) : "",
+      station: (item as any).station || "",
+      course: (item as any).course || "",
     });
     setItemDialogOpen(true);
   }
@@ -269,6 +274,8 @@ export default function MenuPage() {
       spicyLevel: itemForm.spicyLevel,
       tags: itemForm.tags.length > 0 ? itemForm.tags : null,
       ingredients: Object.keys(ingredients).length > 0 ? ingredients : null,
+      station: itemForm.station || null,
+      course: itemForm.course || null,
     };
     if (editingItem) {
       updateItem.mutate({ id: editingItem.id, data: payload });
@@ -600,6 +607,39 @@ export default function MenuPage() {
               <div className="flex items-center gap-2">
                 <Switch checked={itemForm.available} onCheckedChange={(checked) => setItemForm({ ...itemForm, available: checked })} data-testid="switch-item-available" />
                 <Label>Available</Label>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="item-station">KDS Station</Label>
+                <Select value={itemForm.station || "none"} onValueChange={(v) => setItemForm({ ...itemForm, station: v === "none" ? "" : v })}>
+                  <SelectTrigger id="item-station" data-testid="select-item-station">
+                    <SelectValue placeholder="Select station" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No station</SelectItem>
+                    {stations.map(s => (
+                      <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="item-course">Course</Label>
+                <Select value={itemForm.course || "none"} onValueChange={(v) => setItemForm({ ...itemForm, course: v === "none" ? "" : v })}>
+                  <SelectTrigger id="item-course" data-testid="select-item-course">
+                    <SelectValue placeholder="Select course" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No course</SelectItem>
+                    <SelectItem value="appetizer">Appetizer</SelectItem>
+                    <SelectItem value="starter">Starter</SelectItem>
+                    <SelectItem value="main">Main</SelectItem>
+                    <SelectItem value="dessert">Dessert</SelectItem>
+                    <SelectItem value="beverage">Beverage</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
