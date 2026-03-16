@@ -97,7 +97,7 @@ export interface IStorage {
   getOrderItemsByOrder(orderId: string): Promise<OrderItem[]>;
   getOrderItemsByTenant(tenantId: string): Promise<any[]>;
   createOrderItem(data: InsertOrderItem): Promise<OrderItem>;
-  updateOrderItem(id: string, data: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
+  updateOrderItem(id: string, data: Record<string, any>): Promise<OrderItem | undefined>;
 
   getInventoryByTenant(tenantId: string): Promise<InventoryItem[]>;
   getInventoryItem(id: string): Promise<InventoryItem | undefined>;
@@ -217,7 +217,6 @@ export interface IStorage {
   updateKitchenStation(id: string, tenantId: string, data: Partial<InsertKitchenStation>): Promise<KitchenStation | undefined>;
   deleteKitchenStation(id: string, tenantId: string): Promise<void>;
   getOrderItem(id: string): Promise<OrderItem | undefined>;
-  updateOrderItem(id: string, data: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -398,7 +397,7 @@ export class DatabaseStorage implements IStorage {
     const [i] = await db.insert(orderItems).values(data).returning();
     return i;
   }
-  async updateOrderItem(id: string, data: Partial<InsertOrderItem>) {
+  async updateOrderItem(id: string, data: Record<string, any>) {
     const [i] = await db.update(orderItems).set(data).where(eq(orderItems.id, id)).returning();
     return i;
   }
@@ -966,10 +965,6 @@ export class DatabaseStorage implements IStorage {
   }
   async getOrderItem(id: string) {
     const [item] = await db.select().from(orderItems).where(eq(orderItems.id, id));
-    return item;
-  }
-  async updateOrderItem(id: string, data: Partial<InsertOrderItem>) {
-    const [item] = await db.update(orderItems).set(data as any).where(eq(orderItems.id, id)).returning();
     return item;
   }
 }
