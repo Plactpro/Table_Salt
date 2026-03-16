@@ -36,6 +36,7 @@ import {
   ShoppingCart,
   BookOpen,
   HardHat,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
@@ -63,6 +64,7 @@ const navItems: NavItem[] = [
   { id: "m-25", name: "Workforce", icon: HardHat, path: "/workforce", roles: ["owner", "manager"], featureKey: "staff" },
   { id: "m-9", name: "Staff", icon: Users, path: "/staff", roles: ["owner", "manager"], featureKey: "staff" },
   { id: "m-10", name: "Reports", icon: BarChart3, path: "/reports", roles: ["owner", "manager", "accountant"], featureKey: "reports" },
+  { id: "m-26", name: "BI & Forecasting", icon: Activity, path: "/bi-dashboard", roles: ["owner", "manager", "accountant"], featureKey: "reports" },
   { id: "m-11", name: "Outlets", icon: Store, path: "/outlets", roles: ["owner", "manager"], featureKey: "outlets" },
   { id: "m-12", name: "Offers", icon: Tag, path: "/offers", roles: ["owner", "manager"], featureKey: "offers" },
   { id: "m-13", name: "CRM", icon: Heart, path: "/crm", roles: ["owner", "manager"], featureKey: "crm" },
