@@ -7,7 +7,7 @@ import {
   salesInquiries, supportTickets, attendanceLogs,
   cleaningTemplates, cleaningTemplateItems, cleaningLogs, cleaningSchedules,
   auditTemplates, auditTemplateItems, auditSchedules, auditResponses, auditIssues,
-  recipes, recipeIngredients, stockTakes, stockTakeLines,
+  recipes, recipeIngredients, stockTakes, stockTakeLines, kitchenStations,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -41,6 +41,7 @@ import {
   type RecipeIngredient, type InsertRecipeIngredient,
   type StockTake, type InsertStockTake,
   type StockTakeLine, type InsertStockTakeLine,
+  type KitchenStation, type InsertKitchenStation,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -209,6 +210,14 @@ export interface IStorage {
   createStockTakeLine(data: InsertStockTakeLine): Promise<StockTakeLine>;
   updateStockTakeLine(id: string, data: Partial<InsertStockTakeLine>): Promise<StockTakeLine | undefined>;
   getStockMovementsByTenant(tenantId: string, limit?: number): Promise<StockMovement[]>;
+
+  getKitchenStationsByTenant(tenantId: string): Promise<KitchenStation[]>;
+  getKitchenStation(id: string): Promise<KitchenStation | undefined>;
+  createKitchenStation(data: InsertKitchenStation): Promise<KitchenStation>;
+  updateKitchenStation(id: string, tenantId: string, data: Partial<InsertKitchenStation>): Promise<KitchenStation | undefined>;
+  deleteKitchenStation(id: string, tenantId: string): Promise<void>;
+  getOrderItem(id: string): Promise<OrderItem | undefined>;
+  updateOrderItem(id: string, data: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -935,6 +944,33 @@ export class DatabaseStorage implements IStorage {
     const q = db.select().from(stockMovements).where(eq(stockMovements.tenantId, tenantId)).orderBy(desc(stockMovements.createdAt));
     if (limit) return q.limit(limit);
     return q;
+  }
+
+  async getKitchenStationsByTenant(tenantId: string) {
+    return db.select().from(kitchenStations).where(eq(kitchenStations.tenantId, tenantId)).orderBy(kitchenStations.sortOrder);
+  }
+  async getKitchenStation(id: string) {
+    const [s] = await db.select().from(kitchenStations).where(eq(kitchenStations.id, id));
+    return s;
+  }
+  async createKitchenStation(data: InsertKitchenStation) {
+    const [s] = await db.insert(kitchenStations).values(data).returning();
+    return s;
+  }
+  async updateKitchenStation(id: string, tenantId: string, data: Partial<InsertKitchenStation>) {
+    const [s] = await db.update(kitchenStations).set(data).where(and(eq(kitchenStations.id, id), eq(kitchenStations.tenantId, tenantId))).returning();
+    return s;
+  }
+  async deleteKitchenStation(id: string, tenantId: string) {
+    await db.delete(kitchenStations).where(and(eq(kitchenStations.id, id), eq(kitchenStations.tenantId, tenantId)));
+  }
+  async getOrderItem(id: string) {
+    const [item] = await db.select().from(orderItems).where(eq(orderItems.id, id));
+    return item;
+  }
+  async updateOrderItem(id: string, data: Partial<InsertOrderItem>) {
+    const [item] = await db.update(orderItems).set(data as any).where(eq(orderItems.id, id)).returning();
+    return item;
   }
 }
 
