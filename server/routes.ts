@@ -1975,7 +1975,7 @@ export async function registerRoutes(
   });
 
   // ── Regions CRUD ──
-  app.get("/api/regions", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/regions", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const regions = await storage.getRegionsByTenant(user.tenantId);
@@ -2007,7 +2007,7 @@ export async function registerRoutes(
   });
 
   // ── Franchise Invoices ──
-  app.get("/api/franchise-invoices", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/franchise-invoices", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const outletId = req.query.outletId as string | undefined;
@@ -2028,7 +2028,7 @@ export async function registerRoutes(
       res.json(invoice);
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
-  app.post("/api/franchise-invoices/calculate", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/franchise-invoices/calculate", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const { outletId, periodStart, periodEnd } = req.body;
@@ -2056,14 +2056,14 @@ export async function registerRoutes(
   });
 
   // ── Outlet Menu Overrides ──
-  app.get("/api/outlet-menu-overrides/:outletId", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/outlet-menu-overrides/:outletId", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const overrides = await storage.getOutletMenuOverrides(req.params.outletId, user.tenantId);
       res.json(overrides);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
-  app.post("/api/outlet-menu-overrides", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/outlet-menu-overrides", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const data = insertOutletMenuOverrideSchema.parse({ ...req.body, tenantId: user.tenantId });
@@ -2071,7 +2071,7 @@ export async function registerRoutes(
       res.json(override);
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
-  app.patch("/api/outlet-menu-overrides/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/outlet-menu-overrides/:id", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const override = await storage.updateOutletMenuOverride(req.params.id, user.tenantId, req.body);
@@ -2079,7 +2079,7 @@ export async function registerRoutes(
       res.json(override);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
-  app.delete("/api/outlet-menu-overrides/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.delete("/api/outlet-menu-overrides/:id", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       await storage.deleteOutletMenuOverride(req.params.id, user.tenantId);
@@ -2088,7 +2088,7 @@ export async function registerRoutes(
   });
 
   // ── HQ / Cross-Outlet KPIs ──
-  app.get("/api/hq/outlet-kpis", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/hq/outlet-kpis", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const outletId = req.query.outletId as string | undefined;
