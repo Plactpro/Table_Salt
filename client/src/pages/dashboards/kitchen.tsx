@@ -169,8 +169,6 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
     ? ticket.items.filter(i => i.station === stationFilter)
     : ticket.items;
 
-  if (filteredItems.length === 0) return null;
-
   const groupedByCourse = useMemo(() => {
     const groups: Record<string, KDSOrderItem[]> = {};
     for (const item of filteredItems) {
@@ -185,6 +183,8 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
   const allCooking = filteredItems.every(i => i.status === "cooking");
   const allReady = filteredItems.every(i => i.status === "ready");
   const someReady = filteredItems.some(i => i.status === "ready");
+
+  if (filteredItems.length === 0) return null;
 
   return (
     <motion.div
