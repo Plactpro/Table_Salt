@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -213,6 +213,19 @@ export default function TablesPage() {
   const { data: customers = [] } = useQuery<CustomerData[]>({ queryKey: ["/api/customers"] });
 
   const activeWaitlist = useMemo(() => waitlist.filter(w => w.status === "waiting"), [waitlist]);
+
+  useEffect(() => {
+    if (showAddWaitlist && waitlistForm.partySize && !waitlistForm.estimatedWaitMinutes) {
+      fetch(`/api/waitlist/estimated-wait?partySize=${waitlistForm.partySize}`, { credentials: "include" })
+        .then(r => r.json())
+        .then(data => {
+          if (data.estimatedMinutes !== undefined) {
+            setWaitlistForm(f => ({ ...f, estimatedWaitMinutes: String(data.estimatedMinutes) }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [showAddWaitlist, waitlistForm.partySize]);
 
   const filteredTables = useMemo(() => {
     let result = tables;
@@ -945,7 +958,8 @@ export default function TablesPage() {
               <CardContent>
                 <div className="space-y-3">
                   {(Object.keys(statusConfig) as TableStatus[]).map(s => {
-                    const count = analytics ? (analytics as Record<string, number>)[s] || 0 : 0;
+                    const statusCountMap: Record<string, number> = analytics ? { free: analytics.free, occupied: analytics.occupied, reserved: analytics.reserved, cleaning: analytics.cleaning, blocked: analytics.blocked } : {};
+                    const count = statusCountMap[s] || 0;
                     const total = analytics?.totalTables || 1;
                     const pct = Math.round((count / total) * 100);
                     return (
