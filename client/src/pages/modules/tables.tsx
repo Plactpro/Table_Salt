@@ -1,15 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Edit2, Trash2, Users, MapPin, Clock, CalendarDays,
-  Filter, ChevronDown, ChevronLeft, ChevronRight,
+  Filter, ChevronLeft, ChevronRight,
   CircleCheck, CircleX, Timer, Sparkles, ShieldBan, Armchair,
-  Phone, UserCheck, X, LayoutGrid, ListOrdered, BarChart3,
+  Phone, X, LayoutGrid, ListOrdered, BarChart3,
   Merge, Unlink, UserPlus, Bell, Check, Search, Palette,
-  Square, Circle, RectangleHorizontal,
+  Square, Circle, RectangleHorizontal, Move, GripVertical, MessageSquare,
+  TrendingUp, ArrowRightLeft,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -98,7 +99,12 @@ interface AnalyticsData {
   seatedGuests: number;
   occupancyRate: number;
   waitingCount: number;
+  avgWaitMinutes: number;
+  avgDiningMinutes: number;
+  turnsToday: number;
+  avgTurnTime: number;
   byZone: Record<string, { total: number; occupied: number }>;
+  waitByHour: Record<string, number>;
 }
 
 interface CustomerData {
@@ -107,12 +113,12 @@ interface CustomerData {
   phone: string | null;
 }
 
-const statusConfig: Record<TableStatus, { color: string; bg: string; label: string; dot: string }> = {
-  free: { color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700", label: "Free", dot: "bg-green-500" },
-  occupied: { color: "text-red-700 dark:text-red-400", bg: "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700", label: "Occupied", dot: "bg-red-500" },
-  reserved: { color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700", label: "Reserved", dot: "bg-yellow-500" },
-  cleaning: { color: "text-stone-700 dark:text-stone-400", bg: "bg-stone-100 dark:bg-stone-900/40 border-stone-300 dark:border-stone-700", label: "Cleaning", dot: "bg-stone-500" },
-  blocked: { color: "text-gray-700 dark:text-gray-400", bg: "bg-gray-100 dark:bg-gray-900/40 border-gray-300 dark:border-gray-700", label: "Blocked", dot: "bg-gray-500" },
+const statusConfig: Record<TableStatus, { color: string; bg: string; label: string; dot: string; fill: string }> = {
+  free: { color: "text-green-700 dark:text-green-400", bg: "bg-green-100 dark:bg-green-900/40 border-green-300 dark:border-green-700", label: "Free", dot: "bg-green-500", fill: "#22c55e" },
+  occupied: { color: "text-red-700 dark:text-red-400", bg: "bg-red-100 dark:bg-red-900/40 border-red-300 dark:border-red-700", label: "Occupied", dot: "bg-red-500", fill: "#ef4444" },
+  reserved: { color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-100 dark:bg-amber-900/40 border-amber-300 dark:border-amber-700", label: "Reserved", dot: "bg-yellow-500", fill: "#eab308" },
+  cleaning: { color: "text-stone-700 dark:text-stone-400", bg: "bg-stone-100 dark:bg-stone-900/40 border-stone-300 dark:border-stone-700", label: "Cleaning", dot: "bg-stone-500", fill: "#78716c" },
+  blocked: { color: "text-gray-700 dark:text-gray-400", bg: "bg-gray-100 dark:bg-gray-900/40 border-gray-300 dark:border-gray-700", label: "Blocked", dot: "bg-gray-500", fill: "#6b7280" },
 };
 
 const statusIcon: Record<TableStatus, React.ElementType> = {
@@ -139,11 +145,22 @@ function getTimeSince(dateStr: string) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
+const GRID_SIZE = 20;
+const TABLE_W = 100;
+const TABLE_H = 80;
+const CANVAS_W = 900;
+const CANVAS_H = 600;
+
+function snapToGrid(val: number) {
+  return Math.round(val / GRID_SIZE) * GRID_SIZE;
+}
+
 export default function TablesPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("floor");
+  const [viewMode, setViewMode] = useState<"grid" | "floorplan">("grid");
   const [selectedTable, setSelectedTable] = useState<TableData | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -158,6 +175,9 @@ export default function TablesPage() {
   const [filterZone, setFilterZone] = useState<string>("all");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [dragTableId, setDragTableId] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const canvasRef = useRef<HTMLDivElement>(null);
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - d.getDay());
@@ -167,11 +187,12 @@ export default function TablesPage() {
 
   const [formData, setFormData] = useState({
     number: "", capacity: "4", zone: "Main", status: "free" as TableStatus, shape: "square",
+    posX: "0", posY: "0",
   });
   const [seatFormData, setSeatFormData] = useState({ partyName: "", partySize: "2" });
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [waitlistForm, setWaitlistForm] = useState({
-    customerName: "", customerPhone: "", partySize: "2", preferredZone: "", notes: "", estimatedWaitMinutes: "15",
+    customerName: "", customerPhone: "", partySize: "2", preferredZone: "", notes: "", estimatedWaitMinutes: "",
   });
   const [zoneForm, setZoneForm] = useState({ name: "", color: "#6366f1" });
   const [editingZone, setEditingZone] = useState<ZoneData | null>(null);
@@ -244,6 +265,13 @@ export default function TablesPage() {
     mutationFn: async ({ id, status }: { id: string; status: string }) => { const r = await apiRequest("PATCH", `/api/tables/${id}`, { status }); return r.json(); },
     onSuccess: () => { invalidateAll(); },
   });
+  const positionMut = useMutation({
+    mutationFn: async ({ id, posX, posY }: { id: string; posX: number; posY: number }) => {
+      const r = await apiRequest("PATCH", `/api/tables/${id}`, { posX, posY });
+      return r.json();
+    },
+    onSuccess: () => { invalidateAll(); },
+  });
 
   const createZoneMut = useMutation({
     mutationFn: async (data: Record<string, unknown>) => { const r = await apiRequest("POST", "/api/table-zones", data); return r.json(); },
@@ -260,7 +288,7 @@ export default function TablesPage() {
 
   const createWaitlistMut = useMutation({
     mutationFn: async (data: Record<string, unknown>) => { const r = await apiRequest("POST", "/api/waitlist", data); return r.json(); },
-    onSuccess: () => { invalidateAll(); setShowAddWaitlist(false); toast({ title: "Added to waitlist" }); },
+    onSuccess: () => { invalidateAll(); setShowAddWaitlist(false); setWaitlistForm({ customerName: "", customerPhone: "", partySize: "2", preferredZone: "", notes: "", estimatedWaitMinutes: "" }); toast({ title: "Added to waitlist" }); },
   });
   const seatWaitlistMut = useMutation({
     mutationFn: async ({ id, tableId }: { id: string; tableId: string }) => { const r = await apiRequest("PATCH", `/api/waitlist/${id}/seat`, { tableId }); return r.json(); },
@@ -269,6 +297,10 @@ export default function TablesPage() {
   const removeWaitlistMut = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/waitlist/${id}`); },
     onSuccess: () => { invalidateAll(); toast({ title: "Removed from waitlist" }); },
+  });
+  const notifyWaitlistMut = useMutation({
+    mutationFn: async (id: string) => { const r = await apiRequest("POST", `/api/waitlist/${id}/notify`, { channel: "sms" }); return r.json(); },
+    onSuccess: () => { invalidateAll(); toast({ title: "Notification sent" }); },
   });
 
   const createResMut = useMutation({
@@ -280,32 +312,57 @@ export default function TablesPage() {
     onSuccess: () => { invalidateAll(); setShowReservationDetail(false); toast({ title: "Reservation updated" }); },
   });
 
-  const resetForm = () => setFormData({ number: "", capacity: "4", zone: "Main", status: "free", shape: "square" });
+  const resetForm = () => setFormData({ number: "", capacity: "4", zone: "Main", status: "free", shape: "square", posX: "0", posY: "0" });
 
   const handleAddTable = () => {
-    createTableMut.mutate({ number: parseInt(formData.number), capacity: parseInt(formData.capacity), zone: formData.zone, status: formData.status, shape: formData.shape });
+    createTableMut.mutate({ number: parseInt(formData.number), capacity: parseInt(formData.capacity), zone: formData.zone, status: formData.status, shape: formData.shape, posX: parseInt(formData.posX) || 0, posY: parseInt(formData.posY) || 0 });
   };
   const handleEditTable = () => {
     if (!selectedTable) return;
-    updateTableMut.mutate({ id: selectedTable.id, number: parseInt(formData.number), capacity: parseInt(formData.capacity), zone: formData.zone, status: formData.status as string, shape: formData.shape });
+    updateTableMut.mutate({ id: selectedTable.id, number: parseInt(formData.number), capacity: parseInt(formData.capacity), zone: formData.zone, status: formData.status as string, shape: formData.shape, posX: parseInt(formData.posX) || 0, posY: parseInt(formData.posY) || 0 });
   };
 
   const openEditDialog = (t: TableData) => {
     setSelectedTable(t);
-    setFormData({ number: String(t.number), capacity: String(t.capacity || 4), zone: t.zone || "Main", status: t.status || "free", shape: t.shape || "square" });
+    setFormData({ number: String(t.number), capacity: String(t.capacity || 4), zone: t.zone || "Main", status: t.status || "free", shape: t.shape || "square", posX: String(t.posX || 0), posY: String(t.posY || 0) });
     setShowEditDialog(true);
   };
+  const openTableDetail = (t: TableData) => { setSelectedTable(t); setShowDetailDialog(true); };
+  const openSeatDialog = (t: TableData) => { setSelectedTable(t); setSeatFormData({ partyName: "", partySize: "2" }); setShowSeatDialog(true); };
 
-  const openTableDetail = (t: TableData) => {
-    setSelectedTable(t);
-    setShowDetailDialog(true);
-  };
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent, tableId: string) => {
+    e.stopPropagation();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const table = tables.find(t => t.id === tableId);
+    if (!table) return;
+    setDragTableId(tableId);
+    setDragOffset({
+      x: e.clientX - rect.left - (table.posX || 0),
+      y: e.clientY - rect.top - (table.posY || 0),
+    });
+  }, [tables]);
 
-  const openSeatDialog = (t: TableData) => {
-    setSelectedTable(t);
-    setSeatFormData({ partyName: "", partySize: "2" });
-    setShowSeatDialog(true);
-  };
+  const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!dragTableId || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const newX = snapToGrid(Math.max(0, Math.min(CANVAS_W - TABLE_W, e.clientX - rect.left - dragOffset.x)));
+    const newY = snapToGrid(Math.max(0, Math.min(CANVAS_H - TABLE_H, e.clientY - rect.top - dragOffset.y)));
+    const el = document.getElementById(`floor-table-${dragTableId}`);
+    if (el) {
+      el.style.left = `${newX}px`;
+      el.style.top = `${newY}px`;
+    }
+  }, [dragTableId, dragOffset]);
+
+  const handleCanvasMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!dragTableId || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const newX = snapToGrid(Math.max(0, Math.min(CANVAS_W - TABLE_W, e.clientX - rect.left - dragOffset.x)));
+    const newY = snapToGrid(Math.max(0, Math.min(CANVAS_H - TABLE_H, e.clientY - rect.top - dragOffset.y)));
+    positionMut.mutate({ id: dragTableId, posX: newX, posY: newY });
+    setDragTableId(null);
+  }, [dragTableId, dragOffset, positionMut]);
 
   const weekDays = useMemo(() => {
     return Array.from({ length: 7 }, (_, i) => {
@@ -346,7 +403,7 @@ export default function TablesPage() {
       </div>
 
       {analytics && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
           <Card data-testid="card-stat-occupancy"><CardContent className="pt-4 pb-3 px-4">
             <div className="text-xs text-muted-foreground font-medium">Occupancy</div>
             <div className="text-2xl font-bold">{analytics.occupancyRate}%</div>
@@ -362,15 +419,25 @@ export default function TablesPage() {
             <div className="text-2xl font-bold text-red-600">{analytics.occupied}</div>
             <div className="text-xs text-muted-foreground">{analytics.reserved} reserved</div>
           </CardContent></Card>
-          <Card data-testid="card-stat-cleaning"><CardContent className="pt-4 pb-3 px-4">
-            <div className="text-xs text-muted-foreground font-medium">Cleaning</div>
-            <div className="text-2xl font-bold text-stone-600">{analytics.cleaning}</div>
-            <div className="text-xs text-muted-foreground">{analytics.blocked} blocked</div>
-          </CardContent></Card>
           <Card data-testid="card-stat-waitlist"><CardContent className="pt-4 pb-3 px-4">
             <div className="text-xs text-muted-foreground font-medium">Waitlist</div>
             <div className="text-2xl font-bold text-blue-600">{analytics.waitingCount}</div>
             <div className="text-xs text-muted-foreground">parties waiting</div>
+          </CardContent></Card>
+          <Card data-testid="card-stat-avg-wait"><CardContent className="pt-4 pb-3 px-4">
+            <div className="text-xs text-muted-foreground font-medium">Avg Wait</div>
+            <div className="text-2xl font-bold">{analytics.avgWaitMinutes}m</div>
+            <div className="text-xs text-muted-foreground">wait time</div>
+          </CardContent></Card>
+          <Card data-testid="card-stat-dining"><CardContent className="pt-4 pb-3 px-4">
+            <div className="text-xs text-muted-foreground font-medium">Avg Dining</div>
+            <div className="text-2xl font-bold">{analytics.avgDiningMinutes}m</div>
+            <div className="text-xs text-muted-foreground">{analytics.turnsToday} turns today</div>
+          </CardContent></Card>
+          <Card data-testid="card-stat-turn"><CardContent className="pt-4 pb-3 px-4">
+            <div className="text-xs text-muted-foreground font-medium">Turn Time</div>
+            <div className="text-2xl font-bold">{analytics.avgTurnTime}m</div>
+            <div className="text-xs text-muted-foreground">{analytics.cleaning} cleaning</div>
           </CardContent></Card>
         </div>
       )}
@@ -381,6 +448,7 @@ export default function TablesPage() {
           <TabsTrigger value="waitlist" data-testid="tab-waitlist"><ListOrdered className="w-4 h-4 mr-1.5" />Waitlist ({activeWaitlist.length})</TabsTrigger>
           <TabsTrigger value="reservations" data-testid="tab-reservations"><CalendarDays className="w-4 h-4 mr-1.5" />Reservations</TabsTrigger>
           <TabsTrigger value="zones" data-testid="tab-zones"><MapPin className="w-4 h-4 mr-1.5" />Zones</TabsTrigger>
+          <TabsTrigger value="analytics" data-testid="tab-analytics"><BarChart3 className="w-4 h-4 mr-1.5" />Analytics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="floor" className="space-y-4">
@@ -403,6 +471,14 @@ export default function TablesPage() {
                 {(Object.keys(statusConfig) as TableStatus[]).map(s => <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>)}
               </SelectContent>
             </Select>
+            <div className="flex border rounded-lg overflow-hidden">
+              <Button variant={viewMode === "grid" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => setViewMode("grid")} data-testid="button-view-grid">
+                <LayoutGrid className="w-4 h-4" />
+              </Button>
+              <Button variant={viewMode === "floorplan" ? "default" : "ghost"} size="sm" className="rounded-none" onClick={() => setViewMode("floorplan")} data-testid="button-view-floorplan">
+                <Move className="w-4 h-4" />
+              </Button>
+            </div>
             <Button variant="outline" size="sm" onClick={() => setShowZoneManager(true)} data-testid="button-manage-zones">
               <Palette className="w-4 h-4 mr-1.5" />Zones
             </Button>
@@ -420,85 +496,151 @@ export default function TablesPage() {
             })}
           </div>
 
-          {uniqueZones.filter(z => filterZone === "all" || z === filterZone).map(zoneName => {
-            const zoneTables = filteredTables.filter(t => (t.zone || "Main") === zoneName);
-            if (zoneTables.length === 0) return null;
-            const zoneConfig = zones.find(z => z.name === zoneName);
-            return (
-              <div key={zoneName} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: zoneConfig?.color || "#6366f1" }} />
-                  <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">{zoneName}</h3>
-                  <Badge variant="outline" className="text-xs">{zoneTables.length} tables</Badge>
+          {viewMode === "floorplan" ? (
+            <Card>
+              <CardContent className="p-4">
+                <div className="text-xs text-muted-foreground mb-2 flex items-center gap-2">
+                  <GripVertical className="w-3.5 h-3.5" />
+                  Drag tables to position them on the floor plan. Changes save automatically.
                 </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
-                  <AnimatePresence>
-                    {zoneTables.map(table => {
-                      const status = table.status || "free";
-                      const cfg = statusConfig[status];
-                      const Icon = statusIcon[status];
-                      const isMerged = !!table.mergedWith;
-                      const mergedTarget = tables.find(t => t.id === table.mergedWith);
-                      return (
-                        <motion.div
-                          key={table.id}
-                          layout
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          className={`relative border-2 rounded-xl p-3 cursor-pointer transition-all hover:shadow-md ${cfg.bg} ${table.shape === "circle" ? "rounded-full aspect-square flex flex-col items-center justify-center" : ""}`}
-                          onClick={() => openTableDetail(table)}
-                          data-testid={`card-table-${table.id}`}
-                        >
-                          {isMerged && (
-                            <div className="absolute -top-2 -right-2 bg-blue-500 text-white rounded-full p-0.5">
-                              <Merge className="w-3 h-3" />
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-bold text-sm">T{table.number}</span>
-                            <Icon className={`w-4 h-4 ${cfg.color}`} />
+                <div
+                  ref={canvasRef}
+                  className="relative border-2 border-dashed rounded-lg bg-muted/30 overflow-hidden select-none"
+                  style={{ width: CANVAS_W, height: CANVAS_H }}
+                  onMouseMove={handleCanvasMouseMove}
+                  onMouseUp={handleCanvasMouseUp}
+                  onMouseLeave={handleCanvasMouseUp}
+                  data-testid="floor-plan-canvas"
+                >
+                  {Array.from({ length: Math.floor(CANVAS_W / GRID_SIZE) + 1 }).map((_, i) => (
+                    <div key={`gv-${i}`} className="absolute top-0 bottom-0 border-l border-muted/40" style={{ left: i * GRID_SIZE }} />
+                  ))}
+                  {Array.from({ length: Math.floor(CANVAS_H / GRID_SIZE) + 1 }).map((_, i) => (
+                    <div key={`gh-${i}`} className="absolute left-0 right-0 border-t border-muted/40" style={{ top: i * GRID_SIZE }} />
+                  ))}
+
+                  {filteredTables.map(table => {
+                    const status = table.status || "free";
+                    const cfg = statusConfig[status];
+                    const isCircle = table.shape === "circle";
+                    const isRect = table.shape === "rectangle";
+                    const w = isRect ? TABLE_W * 1.5 : TABLE_W;
+                    const h = isCircle ? TABLE_W : TABLE_H;
+                    const zoneConfig = zones.find(z => z.name === table.zone);
+                    return (
+                      <div
+                        key={table.id}
+                        id={`floor-table-${table.id}`}
+                        className={`absolute cursor-grab active:cursor-grabbing border-2 flex flex-col items-center justify-center text-center transition-shadow hover:shadow-lg ${cfg.bg} ${isCircle ? "rounded-full" : "rounded-lg"} ${dragTableId === table.id ? "shadow-xl z-50 opacity-80" : ""}`}
+                        style={{
+                          left: table.posX || 0,
+                          top: table.posY || 0,
+                          width: w,
+                          height: h,
+                          borderColor: zoneConfig?.color || undefined,
+                        }}
+                        onMouseDown={(e) => handleCanvasMouseDown(e, table.id)}
+                        onDoubleClick={() => openTableDetail(table)}
+                        data-testid={`floor-table-${table.id}`}
+                      >
+                        <div className="font-bold text-sm">T{table.number}</div>
+                        <div className="text-[10px] flex items-center gap-0.5">
+                          <Users className="w-3 h-3" />{table.partySize || 0}/{table.capacity || 4}
+                        </div>
+                        {table.partyName && <div className="text-[10px] font-medium truncate max-w-[80px]">{table.partyName}</div>}
+                        {table.seatedAt && status === "occupied" && (
+                          <div className="text-[9px] opacity-70">{getTimeSince(table.seatedAt)}</div>
+                        )}
+                        {table.mergedWith && (
+                          <div className="absolute -top-1.5 -right-1.5 bg-blue-500 text-white rounded-full w-4 h-4 flex items-center justify-center">
+                            <Merge className="w-2.5 h-2.5" />
                           </div>
-                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                            <Users className="w-3 h-3" />
-                            <span>{table.partySize || 0}/{table.capacity || 4}</span>
-                          </div>
-                          {table.partyName && (
-                            <div className="text-xs font-medium mt-1 truncate">{table.partyName}</div>
-                          )}
-                          {table.seatedAt && status === "occupied" && (
-                            <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                              <Clock className="w-3 h-3" />{getTimeSince(table.seatedAt)}
-                            </div>
-                          )}
-                          {isMerged && mergedTarget && (
-                            <div className="text-xs text-blue-600 mt-0.5">+T{mergedTarget.number}</div>
-                          )}
-                          <div className="flex gap-1 mt-2">
-                            {status === "free" && (
-                              <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5" onClick={e => { e.stopPropagation(); openSeatDialog(table); }} data-testid={`button-seat-${table.id}`}>
-                                <Armchair className="w-3 h-3 mr-1" />Seat
-                              </Button>
-                            )}
-                            {status === "occupied" && (
-                              <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5" onClick={e => { e.stopPropagation(); clearTableMut.mutate(table.id); }} data-testid={`button-clear-${table.id}`}>
-                                <Sparkles className="w-3 h-3 mr-1" />Clear
-                              </Button>
-                            )}
-                            {status === "cleaning" && (
-                              <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5" onClick={e => { e.stopPropagation(); quickStatusMut.mutate({ id: table.id, status: "free" }); }} data-testid={`button-mark-free-${table.id}`}>
-                                <Check className="w-3 h-3 mr-1" />Ready
-                              </Button>
-                            )}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </AnimatePresence>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-            );
-          })}
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {uniqueZones.filter(z => filterZone === "all" || z === filterZone).map(zoneName => {
+                const zoneTables = filteredTables.filter(t => (t.zone || "Main") === zoneName);
+                if (zoneTables.length === 0) return null;
+                const zoneConfig = zones.find(z => z.name === zoneName);
+                return (
+                  <div key={zoneName} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 rounded-full" style={{ backgroundColor: zoneConfig?.color || "#6366f1" }} />
+                      <h3 className="font-semibold text-sm uppercase tracking-wider text-muted-foreground">{zoneName}</h3>
+                      <Badge variant="outline" className="text-xs">{zoneTables.length} tables</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-3">
+                      <AnimatePresence>
+                        {zoneTables.map(table => {
+                          const status = table.status || "free";
+                          const cfg = statusConfig[status];
+                          const Icon = statusIcon[status];
+                          const isMerged = !!table.mergedWith;
+                          const mergedTarget = tables.find(t => t.id === table.mergedWith);
+                          return (
+                            <motion.div
+                              key={table.id}
+                              layout
+                              initial={{ opacity: 0, scale: 0.9 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              exit={{ opacity: 0, scale: 0.9 }}
+                              className={`relative border-2 rounded-xl p-3 cursor-pointer transition-all hover:shadow-md ${cfg.bg} ${table.shape === "circle" ? "rounded-full aspect-square flex flex-col items-center justify-center" : ""}`}
+                              onClick={() => openTableDetail(table)}
+                              data-testid={`card-table-${table.id}`}
+                            >
+                              {isMerged && (
+                                <div className="absolute -top-2 -right-2 bg-blue-500 text-white rounded-full p-0.5">
+                                  <Merge className="w-3 h-3" />
+                                </div>
+                              )}
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-bold text-sm">T{table.number}</span>
+                                <Icon className={`w-4 h-4 ${cfg.color}`} />
+                              </div>
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Users className="w-3 h-3" />
+                                <span>{table.partySize || 0}/{table.capacity || 4}</span>
+                              </div>
+                              {table.partyName && <div className="text-xs font-medium mt-1 truncate">{table.partyName}</div>}
+                              {table.seatedAt && status === "occupied" && (
+                                <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                                  <Clock className="w-3 h-3" />{getTimeSince(table.seatedAt)}
+                                </div>
+                              )}
+                              {isMerged && mergedTarget && <div className="text-xs text-blue-600 mt-0.5">+T{mergedTarget.number}</div>}
+                              <div className="flex gap-1 mt-2">
+                                {status === "free" && (
+                                  <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5" onClick={e => { e.stopPropagation(); openSeatDialog(table); }} data-testid={`button-seat-${table.id}`}>
+                                    <Armchair className="w-3 h-3 mr-1" />Seat
+                                  </Button>
+                                )}
+                                {status === "occupied" && (
+                                  <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5" onClick={e => { e.stopPropagation(); clearTableMut.mutate(table.id); }} data-testid={`button-clear-${table.id}`}>
+                                    <Sparkles className="w-3 h-3 mr-1" />Clear
+                                  </Button>
+                                )}
+                                {status === "cleaning" && (
+                                  <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5" onClick={e => { e.stopPropagation(); quickStatusMut.mutate({ id: table.id, status: "free" }); }} data-testid={`button-mark-free-${table.id}`}>
+                                    <Check className="w-3 h-3 mr-1" />Ready
+                                  </Button>
+                                )}
+                              </div>
+                            </motion.div>
+                          );
+                        })}
+                      </AnimatePresence>
+                    </div>
+                  </div>
+                );
+              })}
+            </>
+          )}
         </TabsContent>
 
         <TabsContent value="waitlist" className="space-y-4">
@@ -525,7 +667,10 @@ export default function TablesPage() {
                           {idx + 1}
                         </div>
                         <div>
-                          <div className="font-medium">{entry.customerName}</div>
+                          <div className="font-medium flex items-center gap-2">
+                            {entry.customerName}
+                            {entry.notificationSent && <Badge variant="outline" className="text-[10px] h-4"><Bell className="w-2.5 h-2.5 mr-0.5" />Notified</Badge>}
+                          </div>
                           <div className="flex items-center gap-3 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1"><Users className="w-3 h-3" />{entry.partySize} guests</span>
                             {entry.customerPhone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{entry.customerPhone}</span>}
@@ -537,6 +682,11 @@ export default function TablesPage() {
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="text-xs font-medium text-muted-foreground">~{entry.estimatedWaitMinutes || "?"}min</div>
+                        {entry.customerPhone && !entry.notificationSent && (
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => notifyWaitlistMut.mutate(entry.id)} title="Send notification" data-testid={`button-notify-waitlist-${entry.id}`}>
+                            <Bell className="w-4 h-4" />
+                          </Button>
+                        )}
                         <Select onValueChange={(tableId) => seatWaitlistMut.mutate({ id: entry.id, tableId })}>
                           <SelectTrigger className="w-[120px] h-8" data-testid={`select-seat-waitlist-${entry.id}`}>
                             <SelectValue placeholder="Seat at..." />
@@ -657,27 +807,112 @@ export default function TablesPage() {
               </div>
             </CardContent>
           </Card>
+        </TabsContent>
 
-          {analytics && Object.keys(analytics.byZone).length > 0 && (
+        <TabsContent value="analytics" className="space-y-4">
+          <h2 className="text-lg font-semibold">Table Analytics</h2>
+          <div className="grid md:grid-cols-2 gap-4">
+            {analytics && Object.keys(analytics.byZone).length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className="text-sm">Zone Occupancy</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {Object.entries(analytics.byZone).map(([zone, data]) => {
+                      const pct = data.total > 0 ? Math.round((data.occupied / data.total) * 100) : 0;
+                      return (
+                        <div key={zone} className="space-y-1">
+                          <div className="flex justify-between text-sm">
+                            <span>{zone}</span>
+                            <span className="text-muted-foreground">{data.occupied}/{data.total} ({pct}%)</span>
+                          </div>
+                          <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analytics && Object.keys(analytics.waitByHour).length > 0 && (
+              <Card>
+                <CardHeader><CardTitle className="text-sm">Waitlist by Hour</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {Object.entries(analytics.waitByHour).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([hour, count]) => {
+                      const maxCount = Math.max(...Object.values(analytics.waitByHour));
+                      const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
+                      return (
+                        <div key={hour} className="flex items-center gap-3 text-sm">
+                          <span className="w-12 text-muted-foreground text-right">{hour}</span>
+                          <div className="flex-1 h-5 bg-muted rounded overflow-hidden">
+                            <div className="h-full bg-blue-500 rounded transition-all flex items-center justify-end pr-1" style={{ width: `${pct}%` }}>
+                              {pct > 20 && <span className="text-[10px] text-white font-medium">{count}</span>}
+                            </div>
+                          </div>
+                          {pct <= 20 && <span className="text-xs text-muted-foreground">{count}</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <Card>
-              <CardHeader><CardTitle className="text-sm">Zone Occupancy</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="text-sm">Performance Summary</CardTitle></CardHeader>
               <CardContent>
-                <div className="space-y-3">
-                  {Object.entries(analytics.byZone).map(([zone, data]) => (
-                    <div key={zone} className="space-y-1">
-                      <div className="flex justify-between text-sm">
-                        <span>{zone}</span>
-                        <span className="text-muted-foreground">{data.occupied}/{data.total} occupied</span>
-                      </div>
-                      <div className="h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${data.total > 0 ? (data.occupied / data.total) * 100 : 0}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm"><TrendingUp className="w-4 h-4 text-primary" />Occupancy Rate</div>
+                    <span className="font-bold text-lg">{analytics?.occupancyRate || 0}%</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm"><Clock className="w-4 h-4 text-orange-500" />Avg Dining Duration</div>
+                    <span className="font-bold text-lg">{analytics?.avgDiningMinutes || 0}m</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm"><ArrowRightLeft className="w-4 h-4 text-blue-500" />Table Turns Today</div>
+                    <span className="font-bold text-lg">{analytics?.turnsToday || 0}</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm"><Timer className="w-4 h-4 text-green-500" />Avg Turn Time</div>
+                    <span className="font-bold text-lg">{analytics?.avgTurnTime || 0}m</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm"><Users className="w-4 h-4 text-purple-500" />Avg Wait Time</div>
+                    <span className="font-bold text-lg">{analytics?.avgWaitMinutes || 0}m</span>
+                  </div>
                 </div>
               </CardContent>
             </Card>
-          )}
+
+            <Card>
+              <CardHeader><CardTitle className="text-sm">Current Status Breakdown</CardTitle></CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {(Object.keys(statusConfig) as TableStatus[]).map(s => {
+                    const count = analytics ? (analytics as Record<string, number>)[s] || 0 : 0;
+                    const total = analytics?.totalTables || 1;
+                    const pct = Math.round((count / total) * 100);
+                    return (
+                      <div key={s} className="flex items-center gap-3">
+                        <div className={`w-3 h-3 rounded-full ${statusConfig[s].dot}`} />
+                        <span className="text-sm flex-1">{statusConfig[s].label}</span>
+                        <span className="text-sm font-medium">{count}</span>
+                        <div className="w-20 h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: statusConfig[s].fill }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-8 text-right">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -711,13 +946,17 @@ export default function TablesPage() {
                 </Select>
               </div>
             </div>
-            <div><Label>Status</Label>
-              <Select value={formData.status} onValueChange={(v: string) => setFormData({ ...formData, status: v as TableStatus })}>
-                <SelectTrigger data-testid="select-table-status"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(statusConfig) as TableStatus[]).map(s => <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-3 gap-4">
+              <div><Label>Status</Label>
+                <Select value={formData.status} onValueChange={(v: string) => setFormData({ ...formData, status: v as TableStatus })}>
+                  <SelectTrigger data-testid="select-table-status"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(statusConfig) as TableStatus[]).map(s => <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Position X</Label><Input type="number" value={formData.posX} onChange={e => setFormData({ ...formData, posX: e.target.value })} data-testid="input-table-posx" /></div>
+              <div><Label>Position Y</Label><Input type="number" value={formData.posY} onChange={e => setFormData({ ...formData, posY: e.target.value })} data-testid="input-table-posy" /></div>
             </div>
           </div>
           <DialogFooter>
@@ -756,13 +995,17 @@ export default function TablesPage() {
                 </Select>
               </div>
             </div>
-            <div><Label>Status</Label>
-              <Select value={formData.status} onValueChange={(v: string) => setFormData({ ...formData, status: v as TableStatus })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {(Object.keys(statusConfig) as TableStatus[]).map(s => <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>)}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-3 gap-4">
+              <div><Label>Status</Label>
+                <Select value={formData.status} onValueChange={(v: string) => setFormData({ ...formData, status: v as TableStatus })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(Object.keys(statusConfig) as TableStatus[]).map(s => <SelectItem key={s} value={s}>{statusConfig[s].label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div><Label>Position X</Label><Input type="number" value={formData.posX} onChange={e => setFormData({ ...formData, posX: e.target.value })} data-testid="input-edit-table-posx" /></div>
+              <div><Label>Position Y</Label><Input type="number" value={formData.posY} onChange={e => setFormData({ ...formData, posY: e.target.value })} data-testid="input-edit-table-posy" /></div>
             </div>
           </div>
           <DialogFooter>
@@ -792,6 +1035,7 @@ export default function TablesPage() {
                     <div><span className="text-muted-foreground">Zone:</span> <span className="font-medium">{selectedTable.zone || "Main"}</span></div>
                     <div><span className="text-muted-foreground">Capacity:</span> <span className="font-medium">{selectedTable.capacity || 4}</span></div>
                     <div><span className="text-muted-foreground">Shape:</span> <span className="font-medium capitalize">{selectedTable.shape || "square"}</span></div>
+                    <div><span className="text-muted-foreground">Position:</span> <span className="font-medium">({selectedTable.posX || 0}, {selectedTable.posY || 0})</span></div>
                     {selectedTable.partyName && <div><span className="text-muted-foreground">Party:</span> <span className="font-medium">{selectedTable.partyName}</span></div>}
                     {selectedTable.partySize && <div><span className="text-muted-foreground">Guests:</span> <span className="font-medium">{selectedTable.partySize}</span></div>}
                     {selectedTable.seatedAt && <div><span className="text-muted-foreground">Seated:</span> <span className="font-medium">{getTimeSince(selectedTable.seatedAt)} ago</span></div>}
@@ -823,7 +1067,7 @@ export default function TablesPage() {
                     )}
                     {selectedTable.mergedWith && (
                       <Button size="sm" variant="outline" onClick={() => unmergeTableMut.mutate(selectedTable.id)} data-testid="button-detail-unmerge">
-                        <Unlink className="w-4 h-4 mr-1.5" />Unmerge
+                        <Unlink className="w-4 h-4 mr-1.5" />Split / Unmerge
                       </Button>
                     )}
                     <Button size="sm" variant="outline" onClick={() => { setShowDetailDialog(false); openEditDialog(selectedTable); }} data-testid="button-detail-edit">
@@ -905,13 +1149,13 @@ export default function TablesPage() {
                   </SelectContent>
                 </Select>
               </div>
-              <div><Label>Est. Wait (min)</Label><Input type="number" value={waitlistForm.estimatedWaitMinutes} onChange={e => setWaitlistForm({ ...waitlistForm, estimatedWaitMinutes: e.target.value })} data-testid="input-waitlist-wait-time" /></div>
+              <div><Label>Est. Wait (min)</Label><Input type="number" value={waitlistForm.estimatedWaitMinutes} onChange={e => setWaitlistForm({ ...waitlistForm, estimatedWaitMinutes: e.target.value })} placeholder="Auto" data-testid="input-waitlist-wait-time" /></div>
             </div>
             <div><Label>Notes</Label><Textarea value={waitlistForm.notes} onChange={e => setWaitlistForm({ ...waitlistForm, notes: e.target.value })} placeholder="Special requests..." data-testid="input-waitlist-notes" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddWaitlist(false)}>Cancel</Button>
-            <Button onClick={() => createWaitlistMut.mutate({ customerName: waitlistForm.customerName, customerPhone: waitlistForm.customerPhone || undefined, partySize: parseInt(waitlistForm.partySize), preferredZone: waitlistForm.preferredZone || undefined, estimatedWaitMinutes: parseInt(waitlistForm.estimatedWaitMinutes) || undefined, notes: waitlistForm.notes || undefined })} disabled={!waitlistForm.customerName || createWaitlistMut.isPending} data-testid="button-submit-waitlist">Add to Waitlist</Button>
+            <Button onClick={() => createWaitlistMut.mutate({ customerName: waitlistForm.customerName, customerPhone: waitlistForm.customerPhone || undefined, partySize: parseInt(waitlistForm.partySize), preferredZone: waitlistForm.preferredZone || undefined, estimatedWaitMinutes: waitlistForm.estimatedWaitMinutes ? parseInt(waitlistForm.estimatedWaitMinutes) : undefined, notes: waitlistForm.notes || undefined })} disabled={!waitlistForm.customerName || createWaitlistMut.isPending} data-testid="button-submit-waitlist">Add to Waitlist</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
