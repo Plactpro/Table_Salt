@@ -1121,10 +1121,10 @@ export class DatabaseStorage implements IStorage {
     const rows = await db.select({
       outletId: orders.outletId,
       totalOrders: count(orders.id),
-      totalRevenue: sum(orders.total),
-      totalTax: sum(orders.tax),
-      totalDiscount: sum(orders.discountAmount),
-      avgCheck: sql<string>`COALESCE(AVG(CAST(${orders.total} AS NUMERIC)), 0)`,
+      totalRevenue: sql<string>`COALESCE(SUM(CASE WHEN ${orders.status} NOT IN ('voided','cancelled') THEN CAST(${orders.total} AS NUMERIC) ELSE 0 END), 0)`,
+      totalTax: sql<string>`COALESCE(SUM(CASE WHEN ${orders.status} NOT IN ('voided','cancelled') THEN CAST(${orders.tax} AS NUMERIC) ELSE 0 END), 0)`,
+      totalDiscount: sql<string>`COALESCE(SUM(CASE WHEN ${orders.status} NOT IN ('voided','cancelled') THEN CAST(${orders.discountAmount} AS NUMERIC) ELSE 0 END), 0)`,
+      avgCheck: sql<string>`COALESCE(AVG(CASE WHEN ${orders.status} NOT IN ('voided','cancelled') THEN CAST(${orders.total} AS NUMERIC) END), 0)`,
       voidCount: sql<number>`COUNT(CASE WHEN ${orders.status} IN ('voided','cancelled') THEN 1 END)`,
     }).from(orders).where(and(...conditions)).groupBy(orders.outletId);
     return rows as Record<string, unknown>[];
