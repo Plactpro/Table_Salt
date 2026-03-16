@@ -45,9 +45,10 @@ export default function HQConsolePage() {
 
   const fmt = (amount: string | number) => {
     if (!user) return String(amount);
-    const u = user as Record<string, unknown>;
+    const u = user as unknown as Record<string, unknown>;
     const tenant = (u.tenant || {}) as Record<string, unknown>;
-    return sharedFormatCurrency(amount, String(tenant.currency || "USD"), { position: String(tenant.currencyPosition || "before"), decimals: parseInt(String(tenant.currencyDecimals ?? "2")) });
+    const pos = String(tenant.currencyPosition || "before");
+    return sharedFormatCurrency(amount, String(tenant.currency || "USD"), { position: pos as "before" | "after", decimals: parseInt(String(tenant.currencyDecimals ?? "2")) });
   };
 
   const { data: regions = [] } = useQuery<Region[]>({ queryKey: ["/api/regions"] });
@@ -191,6 +192,84 @@ export default function HQConsolePage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
+          {selectedOutlet !== "all" && (() => {
+            const outletData = outletMap.get(selectedOutlet);
+            const outletKpi = filteredKPIs[0];
+            const region = outletData?.regionId ? regionMap.get(outletData.regionId) : null;
+            if (!outletData) return null;
+            return (
+              <Card className="border-primary/30 bg-primary/5" data-testid="outlet-dashboard">
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <Store className="h-6 w-6 text-primary" />
+                      <div>
+                        <CardTitle className="text-xl">{outletData.name} — Outlet Dashboard</CardTitle>
+                        <div className="flex items-center gap-2 mt-1">
+                          {region && <Badge variant="outline"><MapPin className="h-3 w-3 mr-1" />{region.name}</Badge>}
+                          {outletData.isFranchise ? <Badge variant="outline" className="text-amber-600 border-amber-300"><Crown className="h-3 w-3 mr-1" />Franchise — {outletData.franchiseeName}</Badge> : <Badge variant="outline" className="text-primary">Company-owned</Badge>}
+                          {outletData.address && <span className="text-xs text-muted-foreground">{outletData.address}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={() => setSelectedOutlet("all")} data-testid="button-back-all-outlets">
+                      <XCircle className="h-4 w-4 mr-1" /> Back to All
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {outletKpi && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">Revenue</p>
+                        <p className="text-lg font-bold">{fmt(outletKpi.totalRevenue)}</p>
+                      </div>
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">Orders</p>
+                        <p className="text-lg font-bold">{outletKpi.totalOrders}</p>
+                      </div>
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">Avg Check</p>
+                        <p className="text-lg font-bold">{fmt(outletKpi.avgCheck)}</p>
+                      </div>
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">Food Cost</p>
+                        <p className="text-lg font-bold">{outletKpi.foodCostPct}%</p>
+                      </div>
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">Labour Cost</p>
+                        <p className="text-lg font-bold">{outletKpi.labourCostPct}%</p>
+                      </div>
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">Void Rate</p>
+                        <p className="text-lg font-bold">{totals.voidRate}%</p>
+                        <p className="text-[10px] text-muted-foreground">{outletKpi.voidCount} voids</p>
+                      </div>
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">Rating</p>
+                        <p className="text-lg font-bold">{parseFloat(outletKpi.avgRating) > 0 ? `${outletKpi.avgRating}/5` : "—"}</p>
+                        <p className="text-[10px] text-muted-foreground">{outletKpi.feedbackCount} reviews</p>
+                      </div>
+                      <div className="bg-background rounded-lg p-3 border">
+                        <p className="text-xs text-muted-foreground">NPS</p>
+                        <p className="text-lg font-bold">{outletKpi.nps > 0 ? "+" : ""}{outletKpi.nps}</p>
+                        <p className="text-[10px] text-muted-foreground">{outletKpi.nps >= 50 ? "Excellent" : outletKpi.nps >= 0 ? "Good" : "Needs work"}</p>
+                      </div>
+                    </div>
+                  )}
+                  {outletData.isFranchise && outletData.royaltyRate && (
+                    <div className="mt-4 p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
+                      <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Franchise Terms</p>
+                      <div className="flex gap-6 mt-1 text-sm">
+                        <span>Royalty: {outletData.royaltyRate}%</span>
+                        {outletData.minimumGuarantee && <span>Min Guarantee: {fmt(outletData.minimumGuarantee)}</span>}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-3">
             <Card>
               <CardContent className="p-3">
