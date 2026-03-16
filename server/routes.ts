@@ -738,10 +738,33 @@ export async function registerRoutes(
     const validOrderIds = new Set(validOrders.map(o => o.id));
     const topItems = computeTopItems(allItems, menuItemsList, validOrderIds, 10);
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-    const allTables = await storage.getTablesByTenant(user.tenantId);
-    const occupiedTables = allTables.filter(t => t.status === "occupied" && t.seatedAt);
-    const avgTurnMinutes = occupiedTables.length > 0
-      ? Math.round(occupiedTables.reduce((s, t) => s + (Date.now() - new Date(t.seatedAt!).getTime()) / 60000, 0) / occupiedTables.length) : 0;
+    const dineInOrders = validOrders.filter(o => o.orderType === "dine_in");
+    const totalCovers = dineInOrders.reduce((s, o) => {
+      const items = allItems.filter(oi => oi.orderId === o.id);
+      return s + Math.max(items.length > 0 ? items.reduce((sum, oi) => sum + (oi.quantity || 1), 0) : 1, 1);
+    }, 0);
+    const completedOrders = validOrders.filter(o => o.status === "completed" || o.status === "paid");
+    let avgTurnMinutes = 0;
+    if (completedOrders.length >= 2) {
+      const allTables = await storage.getTablesByTenant(user.tenantId);
+      const tableOrderMap: Record<string, Date[]> = {};
+      for (const o of completedOrders) {
+        if (o.tableId) {
+          if (!tableOrderMap[o.tableId]) tableOrderMap[o.tableId] = [];
+          tableOrderMap[o.tableId].push(new Date(o.createdAt!));
+        }
+      }
+      let totalTurns = 0, turnCount = 0;
+      for (const times of Object.values(tableOrderMap)) {
+        if (times.length < 2) continue;
+        times.sort((a, b) => a.getTime() - b.getTime());
+        for (let i = 1; i < times.length; i++) {
+          totalTurns += (times[i].getTime() - times[i - 1].getTime()) / 60000;
+          turnCount++;
+        }
+      }
+      avgTurnMinutes = turnCount > 0 ? Math.round(totalTurns / turnCount) : 0;
+    }
     res.json({
       hourlySales,
       channelMix,
@@ -751,7 +774,7 @@ export async function registerRoutes(
       totalOrders,
       totalRevenue: Math.round(totalRevenue * 100) / 100,
       avgTurnMinutes,
-      totalCovers: occupiedTables.reduce((s, t) => s + (t.partySize || 0), 0),
+      totalCovers,
     });
   });
 
@@ -765,8 +788,28 @@ export async function registerRoutes(
       return d >= from && d <= to;
     });
     const { netSales, totalTax, totalDiscount, voidCount, voidAmount, dailyFinance } = computeFinanceTotals(rangeOrders);
+    const validRangeOrders = filterValidOrders(rangeOrders);
+    const rangeOrderIds = new Set(validRangeOrders.map(o => o.id));
+    const allOrderItems = await storage.getOrderItemsByTenant(user.tenantId);
+    const rangeItems = allOrderItems.filter(oi => rangeOrderIds.has(oi.orderId || ""));
+    const allRecipes = await storage.getRecipesByTenant(user.tenantId);
     const inventoryItems = await storage.getInventoryByTenant(user.tenantId);
-    const totalFoodCost = inventoryItems.reduce((s, i) => s + (Number(i.costPrice) || 0) * (Number(i.currentStock) || 0), 0);
+    const invCostMap = new Map(inventoryItems.map(i => [i.id, parseFloat(i.costPerBaseUnit || i.costPrice || "0")]));
+    let totalFoodCost = 0;
+    for (const recipe of allRecipes) {
+      if (!recipe.menuItemId) continue;
+      const itemsForRecipe = rangeItems.filter(oi => oi.menuItemId === recipe.menuItemId);
+      if (itemsForRecipe.length === 0) continue;
+      const totalQtySold = itemsForRecipe.reduce((s, oi) => s + (oi.quantity || 1), 0);
+      const recipeIngredients = await storage.getRecipeIngredients(recipe.id);
+      const yieldVal = Number(recipe.yield) || 1;
+      for (const ri of recipeIngredients) {
+        const unitCost = invCostMap.get(ri.inventoryItemId) || 0;
+        const qtyPerPortion = Number(ri.quantity) / yieldVal;
+        const wasteMult = 1 + (Number(ri.wastePct) || 0) / 100;
+        totalFoodCost += totalQtySold * qtyPerPortion * wasteMult * unitCost;
+      }
+    }
     const labourSnapshots = await storage.getLabourCostSnapshots(user.tenantId, from, to);
     const totalLabourCost = labourSnapshots.reduce((s, l) => s + (Number(l.actualCost) || 0) + (Number(l.overtimeCost) || 0), 0);
     const grossSales = netSales + totalTax;
