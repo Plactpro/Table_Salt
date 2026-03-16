@@ -1648,7 +1648,8 @@ export async function registerRoutes(
   // ── KDS Order Item Status Transitions ──
   app.get("/api/kds/tickets", requireAuth, async (req, res) => {
     try {
-      const user = req.user as any;
+      const user = req.user as Express.User & { tenantId: string };
+      const stationFilter = req.query.station as string | undefined;
       const allOrders = await storage.getOrdersByTenant(user.tenantId);
       const allTables = await storage.getTablesByTenant(user.tenantId);
       const tableMap = new Map(allTables.map(t => [t.id, t.number]));
@@ -1656,10 +1657,12 @@ export async function registerRoutes(
       const tickets = [];
       for (const o of activeOrders) {
         const items = await storage.getOrderItemsByOrder(o.id);
+        const filteredItems = stationFilter ? items.filter(i => i.station === stationFilter) : items;
+        if (filteredItems.length === 0 && stationFilter) continue;
         tickets.push({
           ...o,
           tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined,
-          items,
+          items: stationFilter ? filteredItems : items,
         });
       }
       res.json(tickets);
