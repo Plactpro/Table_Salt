@@ -33,6 +33,8 @@ import {
   ClipboardCheck,
   ShieldCheck,
   Building2,
+  ShoppingCart,
+  BookOpen,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
@@ -55,6 +57,8 @@ const navItems: NavItem[] = [
   { id: "m-6", name: "Tables", icon: Utensils, path: "/tables", roles: ["owner", "manager", "waiter"], featureKey: "tables" },
   { id: "m-7", name: "Menu", icon: MenuSquare, path: "/menu", roles: ["owner", "manager"], featureKey: "menu" },
   { id: "m-8", name: "Inventory", icon: Package2, path: "/inventory", roles: ["owner", "manager"], featureKey: "inventory" },
+  { id: "m-23", name: "Suppliers", icon: BookOpen, path: "/suppliers", roles: ["owner", "manager"], featureKey: "inventory" },
+  { id: "m-24", name: "Procurement", icon: ShoppingCart, path: "/procurement", roles: ["owner", "manager"], featureKey: "inventory" },
   { id: "m-9", name: "Staff", icon: Users, path: "/staff", roles: ["owner", "manager"], featureKey: "staff" },
   { id: "m-10", name: "Reports", icon: BarChart3, path: "/reports", roles: ["owner", "manager", "accountant"], featureKey: "reports" },
   { id: "m-11", name: "Outlets", icon: Store, path: "/outlets", roles: ["owner", "manager"], featureKey: "outlets" },

@@ -44,12 +44,21 @@ import {
   type KitchenStation, type InsertKitchenStation,
   orderChannels, channelConfigs, onlineMenuMappings,
   regions, franchiseInvoices, outletMenuOverrides,
+  suppliers, supplierCatalogItems, purchaseOrders, purchaseOrderItems,
+  goodsReceivedNotes, grnItems, procurementApprovals,
   type OrderChannel, type InsertOrderChannel,
   type ChannelConfig, type InsertChannelConfig,
   type OnlineMenuMapping, type InsertOnlineMenuMapping,
   type Region, type InsertRegion,
   type FranchiseInvoice, type InsertFranchiseInvoice,
   type OutletMenuOverride, type InsertOutletMenuOverride,
+  type Supplier, type InsertSupplier,
+  type SupplierCatalogItem, type InsertSupplierCatalogItem,
+  type PurchaseOrder, type InsertPurchaseOrder,
+  type PurchaseOrderItem, type InsertPurchaseOrderItem,
+  type GoodsReceivedNote, type InsertGoodsReceivedNote,
+  type GrnItem, type InsertGrnItem,
+  type ProcurementApproval, type InsertProcurementApproval,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -262,6 +271,36 @@ export interface IStorage {
   getOutletLabourMetrics(tenantId: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
   getOutletFoodCostMetrics(tenantId: string): Promise<Map<string, string>>;
   getMenuItemsForOutlet(tenantId: string, outletId: string): Promise<Record<string, unknown>[]>;
+
+  getSuppliersByTenant(tenantId: string): Promise<Supplier[]>;
+  getSupplier(id: string, tenantId: string): Promise<Supplier | undefined>;
+  createSupplier(data: InsertSupplier): Promise<Supplier>;
+  updateSupplier(id: string, tenantId: string, data: Partial<InsertSupplier>): Promise<Supplier | undefined>;
+  deleteSupplier(id: string, tenantId: string): Promise<void>;
+
+  getSupplierCatalogItems(supplierId: string, tenantId: string): Promise<SupplierCatalogItem[]>;
+  getCatalogItemsByInventoryItem(inventoryItemId: string, tenantId: string): Promise<SupplierCatalogItem[]>;
+  createSupplierCatalogItem(data: InsertSupplierCatalogItem): Promise<SupplierCatalogItem>;
+  updateSupplierCatalogItem(id: string, tenantId: string, data: Partial<InsertSupplierCatalogItem>): Promise<SupplierCatalogItem | undefined>;
+  deleteSupplierCatalogItem(id: string, tenantId: string): Promise<void>;
+
+  getPurchaseOrdersByTenant(tenantId: string): Promise<PurchaseOrder[]>;
+  getPurchaseOrder(id: string, tenantId: string): Promise<PurchaseOrder | undefined>;
+  createPurchaseOrder(data: InsertPurchaseOrder): Promise<PurchaseOrder>;
+  updatePurchaseOrder(id: string, tenantId: string, data: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
+
+  getPurchaseOrderItems(poId: string): Promise<PurchaseOrderItem[]>;
+  createPurchaseOrderItem(data: InsertPurchaseOrderItem): Promise<PurchaseOrderItem>;
+  updatePurchaseOrderItem(id: string, data: Partial<InsertPurchaseOrderItem>): Promise<PurchaseOrderItem | undefined>;
+
+  getGRNsByTenant(tenantId: string): Promise<GoodsReceivedNote[]>;
+  getGRNsByPO(poId: string): Promise<GoodsReceivedNote[]>;
+  createGRN(data: InsertGoodsReceivedNote): Promise<GoodsReceivedNote>;
+  getGRNItems(grnId: string): Promise<GrnItem[]>;
+  createGRNItem(data: InsertGrnItem): Promise<GrnItem>;
+
+  getProcurementApprovals(poId: string): Promise<ProcurementApproval[]>;
+  createProcurementApproval(data: InsertProcurementApproval): Promise<ProcurementApproval>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1207,6 +1246,97 @@ export class DatabaseStorage implements IStorage {
       }
       return { ...item, hasOverride: false };
     }).filter(item => item.available !== false);
+  }
+
+  async getSuppliersByTenant(tenantId: string) {
+    return db.select().from(suppliers).where(eq(suppliers.tenantId, tenantId)).orderBy(suppliers.name);
+  }
+  async getSupplier(id: string, tenantId: string) {
+    const [s] = await db.select().from(suppliers).where(and(eq(suppliers.id, id), eq(suppliers.tenantId, tenantId)));
+    return s;
+  }
+  async createSupplier(data: InsertSupplier) {
+    const [s] = await db.insert(suppliers).values(data).returning();
+    return s;
+  }
+  async updateSupplier(id: string, tenantId: string, data: Partial<InsertSupplier>) {
+    const [s] = await db.update(suppliers).set(data).where(and(eq(suppliers.id, id), eq(suppliers.tenantId, tenantId))).returning();
+    return s;
+  }
+  async deleteSupplier(id: string, tenantId: string) {
+    await db.delete(suppliers).where(and(eq(suppliers.id, id), eq(suppliers.tenantId, tenantId)));
+  }
+
+  async getSupplierCatalogItems(supplierId: string, tenantId: string) {
+    return db.select().from(supplierCatalogItems).where(and(eq(supplierCatalogItems.supplierId, supplierId), eq(supplierCatalogItems.tenantId, tenantId)));
+  }
+  async getCatalogItemsByInventoryItem(inventoryItemId: string, tenantId: string) {
+    return db.select().from(supplierCatalogItems).where(and(eq(supplierCatalogItems.inventoryItemId, inventoryItemId), eq(supplierCatalogItems.tenantId, tenantId)));
+  }
+  async createSupplierCatalogItem(data: InsertSupplierCatalogItem) {
+    const [s] = await db.insert(supplierCatalogItems).values(data).returning();
+    return s;
+  }
+  async updateSupplierCatalogItem(id: string, tenantId: string, data: Partial<InsertSupplierCatalogItem>) {
+    const [s] = await db.update(supplierCatalogItems).set(data).where(and(eq(supplierCatalogItems.id, id), eq(supplierCatalogItems.tenantId, tenantId))).returning();
+    return s;
+  }
+  async deleteSupplierCatalogItem(id: string, tenantId: string) {
+    await db.delete(supplierCatalogItems).where(and(eq(supplierCatalogItems.id, id), eq(supplierCatalogItems.tenantId, tenantId)));
+  }
+
+  async getPurchaseOrdersByTenant(tenantId: string) {
+    return db.select().from(purchaseOrders).where(eq(purchaseOrders.tenantId, tenantId)).orderBy(desc(purchaseOrders.createdAt));
+  }
+  async getPurchaseOrder(id: string, tenantId: string) {
+    const [po] = await db.select().from(purchaseOrders).where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.tenantId, tenantId)));
+    return po;
+  }
+  async createPurchaseOrder(data: InsertPurchaseOrder) {
+    const [po] = await db.insert(purchaseOrders).values(data).returning();
+    return po;
+  }
+  async updatePurchaseOrder(id: string, tenantId: string, data: Partial<InsertPurchaseOrder>) {
+    const [po] = await db.update(purchaseOrders).set(data).where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.tenantId, tenantId))).returning();
+    return po;
+  }
+
+  async getPurchaseOrderItems(poId: string) {
+    return db.select().from(purchaseOrderItems).where(eq(purchaseOrderItems.purchaseOrderId, poId));
+  }
+  async createPurchaseOrderItem(data: InsertPurchaseOrderItem) {
+    const [item] = await db.insert(purchaseOrderItems).values(data).returning();
+    return item;
+  }
+  async updatePurchaseOrderItem(id: string, data: Partial<InsertPurchaseOrderItem>) {
+    const [item] = await db.update(purchaseOrderItems).set(data).where(eq(purchaseOrderItems.id, id)).returning();
+    return item;
+  }
+
+  async getGRNsByTenant(tenantId: string) {
+    return db.select().from(goodsReceivedNotes).where(eq(goodsReceivedNotes.tenantId, tenantId)).orderBy(desc(goodsReceivedNotes.createdAt));
+  }
+  async getGRNsByPO(poId: string) {
+    return db.select().from(goodsReceivedNotes).where(eq(goodsReceivedNotes.purchaseOrderId, poId));
+  }
+  async createGRN(data: InsertGoodsReceivedNote) {
+    const [grn] = await db.insert(goodsReceivedNotes).values(data).returning();
+    return grn;
+  }
+  async getGRNItems(grnId: string) {
+    return db.select().from(grnItems).where(eq(grnItems.grnId, grnId));
+  }
+  async createGRNItem(data: InsertGrnItem) {
+    const [item] = await db.insert(grnItems).values(data).returning();
+    return item;
+  }
+
+  async getProcurementApprovals(poId: string) {
+    return db.select().from(procurementApprovals).where(eq(procurementApprovals.purchaseOrderId, poId)).orderBy(desc(procurementApprovals.performedAt));
+  }
+  async createProcurementApproval(data: InsertProcurementApproval) {
+    const [a] = await db.insert(procurementApprovals).values(data).returning();
+    return a;
   }
 }
 
