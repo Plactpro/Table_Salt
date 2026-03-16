@@ -8,11 +8,62 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, TrendingUp, DollarSign, Users, PieChart as PieIcon,
   Activity, Clock, ShoppingBag, Target, Star, Award, Percent,
   ArrowUpRight, ArrowDownRight, CalendarDays, Package,
 } from "lucide-react";
+
+interface HourlySalesItem { hour: number; revenue: number; count: number }
+interface ChannelMixItem { channel: string; revenue: number; count: number }
+interface HeatmapItem { day: string; hour: number; value: number }
+interface TopItemEntry { name: string; quantity: number; revenue: number }
+interface OperationsData {
+  hourlySales: HourlySalesItem[];
+  channelMix: ChannelMixItem[];
+  topItems: TopItemEntry[];
+  heatmapData: HeatmapItem[];
+  avgOrderValue: number;
+  totalOrders: number;
+  totalRevenue: number;
+  avgTurnMinutes: number;
+  totalCovers: number;
+}
+interface DailyFinanceEntry { date: string; netSales: number; tax: number; discount: number; gross: number }
+interface FinanceData {
+  netSales: number; totalTax: number; totalDiscount: number;
+  voidCount: number; voidAmount: number; foodCostPct: number;
+  labourPct: number; grossMargin: number; grossMarginPct: number;
+  dailyFinance: DailyFinanceEntry[];
+  totalLabourCost: number; totalFoodCost: number;
+}
+interface CampaignEntry {
+  name: string; type: string; usageCount: number;
+  usageLimit: number | null; value: number; active: boolean;
+  uptakeRate: number | null;
+}
+interface MarketingData {
+  totalCustomers: number; loyaltyEnrolled: number; enrollmentRate: number;
+  tierBreakdown: Record<string, number>; totalPointsOutstanding: number;
+  totalRedemptions: number; campaigns: CampaignEntry[];
+  avgCustomerSpend: number; avgRating: number; feedbackCount: number;
+}
+interface ForecastDay { day: string; forecastRevenue: number; forecastOrders: number; weeksOfData: number }
+interface ProductionSuggestion { name: string; avgWeeklyQty: number; suggestedQty: number; unitPrice: number }
+interface IngredientSuggestion {
+  inventoryItemId: string; name: string; unit: string;
+  avgWeeklyNeed: number; suggestedOrder: number;
+  costPerUnit: number; estimatedWeeklyCost: number;
+}
+interface ForecastData {
+  forecast: ForecastDay[]; totalForecastRevenue: number;
+  totalForecastOrders: number; weeksAnalyzed: number;
+  productionSuggestions: ProductionSuggestion[];
+  ingredientSuggestions: IngredientSuggestion[];
+  outletId: string | null;
+}
+interface OutletEntry { id: string; name: string }
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, XAxis, YAxis,
   Tooltip, CartesianGrid, PieChart, Pie, Cell, Legend, Area, AreaChart,
@@ -30,7 +81,7 @@ function formatCur(n: number) {
 }
 
 function StatCard({ label, value, sub, icon: Icon, color = "text-primary", testId }: {
-  label: string; value: string | number; sub?: string; icon: any; color?: string; testId: string;
+  label: string; value: string | number; sub?: string; icon: LucideIcon; color?: string; testId: string;
 }) {
   return (
     <Card data-testid={testId}>
@@ -103,12 +154,12 @@ export default function BIDashboard() {
   const [forecastOutlet, setForecastOutlet] = useState("all");
 
   const queryParams = `?from=${dateRange.from}&to=${dateRange.to}`;
-  const { data: ops } = useQuery<any>({ queryKey: ["/api/reports/operations", dateRange], queryFn: () => fetch(`/api/reports/operations${queryParams}`, { credentials: "include" }).then(r => r.json()) });
-  const { data: fin } = useQuery<any>({ queryKey: ["/api/reports/finance", dateRange], queryFn: () => fetch(`/api/reports/finance${queryParams}`, { credentials: "include" }).then(r => r.json()) });
-  const { data: mkt } = useQuery<any>({ queryKey: ["/api/reports/marketing"], queryFn: () => fetch("/api/reports/marketing", { credentials: "include" }).then(r => r.json()) });
+  const { data: ops } = useQuery<OperationsData>({ queryKey: ["/api/reports/operations", dateRange], queryFn: () => fetch(`/api/reports/operations${queryParams}`, { credentials: "include" }).then(r => r.json()) });
+  const { data: fin } = useQuery<FinanceData>({ queryKey: ["/api/reports/finance", dateRange], queryFn: () => fetch(`/api/reports/finance${queryParams}`, { credentials: "include" }).then(r => r.json()) });
+  const { data: mkt } = useQuery<MarketingData>({ queryKey: ["/api/reports/marketing"], queryFn: () => fetch("/api/reports/marketing", { credentials: "include" }).then(r => r.json()) });
   const forecastParams = forecastOutlet !== "all" ? `?outletId=${forecastOutlet}` : "";
-  const { data: forecast } = useQuery<any>({ queryKey: ["/api/reports/forecast", forecastOutlet], queryFn: () => fetch(`/api/reports/forecast${forecastParams}`, { credentials: "include" }).then(r => r.json()) });
-  const { data: outlets } = useQuery<any[]>({ queryKey: ["/api/outlets"], queryFn: () => fetch("/api/outlets", { credentials: "include" }).then(r => r.json()) });
+  const { data: forecast } = useQuery<ForecastData>({ queryKey: ["/api/reports/forecast", forecastOutlet], queryFn: () => fetch(`/api/reports/forecast${forecastParams}`, { credentials: "include" }).then(r => r.json()) });
+  const { data: outlets } = useQuery<OutletEntry[]>({ queryKey: ["/api/outlets"], queryFn: () => fetch("/api/outlets", { credentials: "include" }).then(r => r.json()) });
 
   return (
     <div className="space-y-6">
@@ -172,8 +223,8 @@ export default function BIDashboard() {
                     <CardContent>
                       <ResponsiveContainer width="100%" height={280}>
                         <PieChart>
-                          <Pie data={ops.channelMix} dataKey="revenue" nameKey="channel" cx="50%" cy="50%" outerRadius={100} label={({ channel, percent }: any) => `${channel} ${(percent * 100).toFixed(0)}%`}>
-                            {ops.channelMix.map((_: any, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                          <Pie data={ops.channelMix} dataKey="revenue" nameKey="channel" cx="50%" cy="50%" outerRadius={100} label={({ channel, percent }: { channel: string; percent: number }) => `${channel} ${(percent * 100).toFixed(0)}%`}>
+                            {ops.channelMix.map((_: ChannelMixItem, i: number) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                           </Pie>
                           <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => formatCur(v)} />
                           <Legend />
@@ -199,7 +250,7 @@ export default function BIDashboard() {
                   <CardContent>
                     {ops.topItems?.length > 0 ? (
                       <div className="space-y-2">
-                        {ops.topItems.map((item: any, i: number) => {
+                        {ops.topItems.map((item: TopItemEntry, i: number) => {
                           const maxQty = ops.topItems[0]?.quantity || 1;
                           const pct = (item.quantity / maxQty) * 100;
                           return (
@@ -277,7 +328,7 @@ export default function BIDashboard() {
                               { name: "Gross Margin", value: Math.max(0, fin.grossMargin) },
                             ]}
                             dataKey="value" cx="50%" cy="50%" outerRadius={100} innerRadius={50}
-                            label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                            label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`}
                           >
                             <Cell fill="#f59e0b" />
                             <Cell fill="#8b5cf6" />
@@ -317,7 +368,7 @@ export default function BIDashboard() {
                             <Pie
                               data={Object.entries(mkt.tierBreakdown).map(([tier, count]) => ({ name: tier === "none" ? "No Tier" : tier, value: count as number }))}
                               dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100}
-                              label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
+                              label={({ name, percent }: { name: string; percent: number }) => `${name} ${(percent * 100).toFixed(0)}%`}
                             >
                               {Object.keys(mkt.tierBreakdown).map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                             </Pie>
@@ -336,7 +387,7 @@ export default function BIDashboard() {
                     <CardContent>
                       {mkt.campaigns?.length > 0 ? (
                         <div className="space-y-3">
-                          {mkt.campaigns.map((c: any, i: number) => (
+                          {mkt.campaigns.map((c: CampaignEntry, i: number) => (
                             <div key={i} className="flex items-center justify-between border-b pb-2 last:border-0" data-testid={`row-campaign-${i}`}>
                               <div>
                                 <div className="font-medium text-sm">{c.name}</div>
@@ -397,7 +448,7 @@ export default function BIDashboard() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">All Outlets</SelectItem>
-                    {outlets?.map((o: any) => (
+                    {outlets?.map((o: OutletEntry) => (
                       <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -473,7 +524,7 @@ export default function BIDashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {forecast.productionSuggestions.map((item: any, i: number) => (
+                            {forecast.productionSuggestions.map((item: ProductionSuggestion, i: number) => (
                               <tr key={i} className="border-b last:border-0" data-testid={`row-production-${i}`}>
                                 <td className="py-2 font-medium">{item.name}</td>
                                 <td className="py-2 text-right">{item.avgWeeklyQty}</td>
@@ -486,10 +537,10 @@ export default function BIDashboard() {
                           <tfoot>
                             <tr className="border-t-2 font-bold">
                               <td className="py-2">Total</td>
-                              <td className="py-2 text-right">{forecast.productionSuggestions.reduce((s: number, i: any) => s + i.avgWeeklyQty, 0)}</td>
-                              <td className="py-2 text-right text-primary">{forecast.productionSuggestions.reduce((s: number, i: any) => s + i.suggestedQty, 0)}</td>
+                              <td className="py-2 text-right">{forecast.productionSuggestions.reduce((s: number, p: ProductionSuggestion) => s + p.avgWeeklyQty, 0)}</td>
+                              <td className="py-2 text-right text-primary">{forecast.productionSuggestions.reduce((s: number, p: ProductionSuggestion) => s + p.suggestedQty, 0)}</td>
                               <td></td>
-                              <td className="py-2 text-right">{formatCur(forecast.productionSuggestions.reduce((s: number, i: any) => s + i.suggestedQty * i.unitPrice, 0))}</td>
+                              <td className="py-2 text-right">{formatCur(forecast.productionSuggestions.reduce((s: number, p: ProductionSuggestion) => s + p.suggestedQty * p.unitPrice, 0))}</td>
                             </tr>
                           </tfoot>
                         </table>
@@ -520,7 +571,7 @@ export default function BIDashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {forecast.ingredientSuggestions.map((item: any, i: number) => (
+                            {forecast.ingredientSuggestions.map((item: IngredientSuggestion, i: number) => (
                               <tr key={i} className="border-b last:border-0" data-testid={`row-ingredient-${i}`}>
                                 <td className="py-2 font-medium">{item.name}</td>
                                 <td className="py-2 text-right text-muted-foreground">{item.unit}</td>
@@ -534,7 +585,7 @@ export default function BIDashboard() {
                           <tfoot>
                             <tr className="border-t-2 font-bold">
                               <td className="py-2" colSpan={5}>Total Estimated Ingredient Cost</td>
-                              <td className="py-2 text-right">{formatCur(forecast.ingredientSuggestions.reduce((s: number, i: any) => s + i.estimatedWeeklyCost, 0))}</td>
+                              <td className="py-2 text-right">{formatCur(forecast.ingredientSuggestions.reduce((s: number, ig: IngredientSuggestion) => s + ig.estimatedWeeklyCost, 0))}</td>
                             </tr>
                           </tfoot>
                         </table>
