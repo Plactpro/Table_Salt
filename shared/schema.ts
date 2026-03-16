@@ -92,6 +92,8 @@ export const users = pgTable("users", {
   phone: text("phone"),
   role: roleEnum("role").notNull().default("waiter"),
   active: boolean("active").default(true),
+  hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
+  overtimeRate: decimal("overtime_rate", { precision: 8, scale: 2 }),
 });
 
 export const regions = pgTable("regions", {
@@ -277,6 +279,7 @@ export const staffSchedules = pgTable("staff_schedules", {
   endTime: text("end_time").notNull(),
   role: text("role"),
   attendance: text("attendance").default("scheduled"),
+  hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
 });
 
 export const feedback = pgTable("feedback", {
@@ -938,3 +941,25 @@ export type GrnItem = typeof grnItems.$inferSelect;
 export type InsertGrnItem = z.infer<typeof insertGrnItemSchema>;
 export type ProcurementApproval = typeof procurementApprovals.$inferSelect;
 export type InsertProcurementApproval = z.infer<typeof insertProcurementApprovalSchema>;
+
+export const labourCostSnapshots = pgTable("labour_cost_snapshots", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  date: timestamp("date").notNull(),
+  role: text("role"),
+  scheduledHours: decimal("scheduled_hours", { precision: 8, scale: 2 }).default("0"),
+  actualHours: decimal("actual_hours", { precision: 8, scale: 2 }).default("0"),
+  overtimeHours: decimal("overtime_hours", { precision: 8, scale: 2 }).default("0"),
+  scheduledCost: decimal("scheduled_cost", { precision: 10, scale: 2 }).default("0"),
+  actualCost: decimal("actual_cost", { precision: 10, scale: 2 }).default("0"),
+  overtimeCost: decimal("overtime_cost", { precision: 10, scale: 2 }).default("0"),
+  salesRevenue: decimal("sales_revenue", { precision: 12, scale: 2 }).default("0"),
+  labourPct: decimal("labour_pct", { precision: 5, scale: 2 }).default("0"),
+  headcount: integer("headcount").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertLabourCostSnapshotSchema = createInsertSchema(labourCostSnapshots).omit({ id: true, createdAt: true });
+export type LabourCostSnapshot = typeof labourCostSnapshots.$inferSelect;
+export type InsertLabourCostSnapshot = z.infer<typeof insertLabourCostSnapshotSchema>;

@@ -59,6 +59,8 @@ import {
   type GoodsReceivedNote, type InsertGoodsReceivedNote,
   type GrnItem, type InsertGrnItem,
   type ProcurementApproval, type InsertProcurementApproval,
+  labourCostSnapshots,
+  type LabourCostSnapshot, type InsertLabourCostSnapshot,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -174,6 +176,9 @@ export interface IStorage {
   createAttendanceLog(data: InsertAttendanceLog): Promise<AttendanceLog>;
   updateAttendanceLog(id: string, tenantId: string, data: Partial<InsertAttendanceLog>): Promise<AttendanceLog | undefined>;
   getAttendanceSummary(tenantId: string, from: Date, to: Date): Promise<any[]>;
+
+  getLabourCostSnapshots(tenantId: string, from: Date, to: Date): Promise<LabourCostSnapshot[]>;
+  createLabourCostSnapshot(data: InsertLabourCostSnapshot): Promise<LabourCostSnapshot>;
 
   getCleaningTemplatesByTenant(tenantId: string): Promise<CleaningTemplate[]>;
   getCleaningTemplate(id: string): Promise<CleaningTemplate | undefined>;
@@ -789,6 +794,16 @@ export class DatabaseStorage implements IStorage {
         attendanceRate,
       };
     });
+  }
+
+  async getLabourCostSnapshots(tenantId: string, from: Date, to: Date) {
+    return db.select().from(labourCostSnapshots).where(
+      and(eq(labourCostSnapshots.tenantId, tenantId), gte(labourCostSnapshots.date, from), lte(labourCostSnapshots.date, to))
+    ).orderBy(labourCostSnapshots.date);
+  }
+  async createLabourCostSnapshot(data: InsertLabourCostSnapshot) {
+    const [s] = await db.insert(labourCostSnapshots).values(data).returning();
+    return s;
   }
 
   async getTodayAttendanceForUser(userId: string, tenantId: string) {
