@@ -2020,6 +2020,10 @@ export async function registerRoutes(
   app.post("/api/franchise-invoices", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      const outlet = outlets.find(o => o.id === req.body.outletId);
+      if (!outlet) return res.status(400).json({ message: "Outlet not found in your tenant" });
+      if (!outlet.isFranchise) return res.status(400).json({ message: "Outlet is not a franchise" });
       const body = { ...req.body, tenantId: user.tenantId };
       if (typeof body.periodStart === "string") body.periodStart = new Date(body.periodStart);
       if (typeof body.periodEnd === "string") body.periodEnd = new Date(body.periodEnd);
@@ -2066,6 +2070,10 @@ export async function registerRoutes(
   app.post("/api/outlet-menu-overrides", requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      if (!outlets.find(o => o.id === req.body.outletId)) return res.status(400).json({ message: "Outlet not found in your tenant" });
+      const allItems = await storage.getMenuItemsByTenant(user.tenantId);
+      if (!allItems.find(m => m.id === req.body.menuItemId)) return res.status(400).json({ message: "Menu item not found in your tenant" });
       const data = insertOutletMenuOverrideSchema.parse({ ...req.body, tenantId: user.tenantId });
       const override = await storage.createOutletMenuOverride(data);
       res.json(override);
