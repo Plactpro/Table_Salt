@@ -94,14 +94,28 @@ export const users = pgTable("users", {
   active: boolean("active").default(true),
 });
 
+export const regions = pgTable("regions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  sortOrder: integer("sort_order").default(0),
+  active: boolean("active").default(true),
+});
+
 export const outlets = pgTable("outlets", {
   id: varchar("id", { length: 36 })
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  regionId: varchar("region_id", { length: 36 }).references(() => regions.id),
   name: text("name").notNull(),
   address: text("address"),
   openingHours: text("opening_hours"),
+  isFranchise: boolean("is_franchise").default(false),
+  franchiseeName: text("franchisee_name"),
+  royaltyRate: decimal("royalty_rate", { precision: 5, scale: 2 }).default("0"),
+  minimumGuarantee: decimal("minimum_guarantee", { precision: 10, scale: 2 }).default("0"),
   active: boolean("active").default(true),
 });
 
@@ -771,9 +785,44 @@ export const onlineMenuMappings = pgTable("online_menu_mappings", {
   available: boolean("available").default(true),
 });
 
+export const franchiseInvoices = pgTable("franchise_invoices", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).notNull().references(() => outlets.id),
+  periodStart: timestamp("period_start").notNull(),
+  periodEnd: timestamp("period_end").notNull(),
+  netSales: decimal("net_sales", { precision: 12, scale: 2 }).notNull(),
+  royaltyRate: decimal("royalty_rate", { precision: 5, scale: 2 }).notNull(),
+  calculatedRoyalty: decimal("calculated_royalty", { precision: 12, scale: 2 }).notNull(),
+  minimumGuarantee: decimal("minimum_guarantee", { precision: 10, scale: 2 }).default("0"),
+  finalAmount: decimal("final_amount", { precision: 12, scale: 2 }).notNull(),
+  status: varchar("status", { length: 20 }).default("draft"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const outletMenuOverrides = pgTable("outlet_menu_overrides", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).notNull().references(() => outlets.id),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull().references(() => menuItems.id),
+  overridePrice: decimal("override_price", { precision: 10, scale: 2 }),
+  available: boolean("available").default(true),
+});
+
+export const insertRegionSchema = createInsertSchema(regions).omit({ id: true });
+export const insertFranchiseInvoiceSchema = createInsertSchema(franchiseInvoices).omit({ id: true, createdAt: true });
+export const insertOutletMenuOverrideSchema = createInsertSchema(outletMenuOverrides).omit({ id: true });
 export const insertOrderChannelSchema = createInsertSchema(orderChannels).omit({ id: true });
 export const insertChannelConfigSchema = createInsertSchema(channelConfigs).omit({ id: true });
 export const insertOnlineMenuMappingSchema = createInsertSchema(onlineMenuMappings).omit({ id: true });
+
+export type Region = typeof regions.$inferSelect;
+export type InsertRegion = z.infer<typeof insertRegionSchema>;
+export type FranchiseInvoice = typeof franchiseInvoices.$inferSelect;
+export type InsertFranchiseInvoice = z.infer<typeof insertFranchiseInvoiceSchema>;
+export type OutletMenuOverride = typeof outletMenuOverrides.$inferSelect;
+export type InsertOutletMenuOverride = z.infer<typeof insertOutletMenuOverrideSchema>;
 export type OrderChannel = typeof orderChannels.$inferSelect;
 export type InsertOrderChannel = z.infer<typeof insertOrderChannelSchema>;
 export type ChannelConfig = typeof channelConfigs.$inferSelect;

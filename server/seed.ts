@@ -19,11 +19,41 @@ export async function seedDatabase() {
     businessType: "fine_dining",
   });
 
+  const regionDowntown = await storage.createRegion({ tenantId: tenant.id, name: "Downtown", description: "City centre outlets", sortOrder: 1 });
+  const regionMarina = await storage.createRegion({ tenantId: tenant.id, name: "Marina District", description: "Waterfront & marina area outlets", sortOrder: 2 });
+  const regionAirport = await storage.createRegion({ tenantId: tenant.id, name: "Airport Zone", description: "Airport terminals & vicinity", sortOrder: 3 });
+
   const outlet = await storage.createOutlet({
     tenantId: tenant.id,
+    regionId: regionDowntown.id,
     name: "Main Branch",
     address: "123 Culinary Avenue",
     openingHours: "10:00-23:00",
+    isFranchise: false,
+  });
+
+  await storage.createOutlet({
+    tenantId: tenant.id,
+    regionId: regionMarina.id,
+    name: "Marina Walk",
+    address: "Marina Promenade, Block C",
+    openingHours: "11:00-00:00",
+    isFranchise: true,
+    franchiseeName: "Gulf Dining Group LLC",
+    royaltyRate: "8",
+    minimumGuarantee: "5000",
+  });
+
+  await storage.createOutlet({
+    tenantId: tenant.id,
+    regionId: regionAirport.id,
+    name: "Airport Terminal 3",
+    address: "Terminal 3, Gate B12",
+    openingHours: "05:00-01:00",
+    isFranchise: true,
+    franchiseeName: "Airport F&B Holdings",
+    royaltyRate: "10",
+    minimumGuarantee: "8000",
   });
 
   const pw = await hashPassword("demo123");

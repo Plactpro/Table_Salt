@@ -43,9 +43,13 @@ import {
   type StockTakeLine, type InsertStockTakeLine,
   type KitchenStation, type InsertKitchenStation,
   orderChannels, channelConfigs, onlineMenuMappings,
+  regions, franchiseInvoices, outletMenuOverrides,
   type OrderChannel, type InsertOrderChannel,
   type ChannelConfig, type InsertChannelConfig,
   type OnlineMenuMapping, type InsertOnlineMenuMapping,
+  type Region, type InsertRegion,
+  type FranchiseInvoice, type InsertFranchiseInvoice,
+  type OutletMenuOverride, type InsertOutletMenuOverride,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -236,6 +240,24 @@ export interface IStorage {
   createOnlineMenuMapping(data: InsertOnlineMenuMapping): Promise<OnlineMenuMapping>;
   updateOnlineMenuMapping(id: string, tenantId: string, data: Partial<InsertOnlineMenuMapping>): Promise<OnlineMenuMapping | undefined>;
   deleteOnlineMenuMapping(id: string, tenantId: string): Promise<void>;
+
+  getRegionsByTenant(tenantId: string): Promise<Region[]>;
+  getRegion(id: string): Promise<Region | undefined>;
+  createRegion(data: InsertRegion): Promise<Region>;
+  updateRegion(id: string, tenantId: string, data: Partial<InsertRegion>): Promise<Region | undefined>;
+  deleteRegion(id: string, tenantId: string): Promise<void>;
+
+  getFranchiseInvoicesByTenant(tenantId: string): Promise<FranchiseInvoice[]>;
+  getFranchiseInvoicesByOutlet(outletId: string, tenantId: string): Promise<FranchiseInvoice[]>;
+  createFranchiseInvoice(data: InsertFranchiseInvoice): Promise<FranchiseInvoice>;
+  updateFranchiseInvoice(id: string, tenantId: string, data: Partial<InsertFranchiseInvoice>): Promise<FranchiseInvoice | undefined>;
+
+  getOutletMenuOverrides(outletId: string, tenantId: string): Promise<OutletMenuOverride[]>;
+  createOutletMenuOverride(data: InsertOutletMenuOverride): Promise<OutletMenuOverride>;
+  updateOutletMenuOverride(id: string, tenantId: string, data: Partial<InsertOutletMenuOverride>): Promise<OutletMenuOverride | undefined>;
+  deleteOutletMenuOverride(id: string, tenantId: string): Promise<void>;
+
+  getOutletKPIs(tenantId: string, outletId?: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1036,6 +1058,71 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteOnlineMenuMapping(id: string, tenantId: string) {
     await db.delete(onlineMenuMappings).where(and(eq(onlineMenuMappings.id, id), eq(onlineMenuMappings.tenantId, tenantId)));
+  }
+
+  async getRegionsByTenant(tenantId: string) {
+    return db.select().from(regions).where(eq(regions.tenantId, tenantId)).orderBy(regions.sortOrder);
+  }
+  async getRegion(id: string) {
+    const [r] = await db.select().from(regions).where(eq(regions.id, id));
+    return r;
+  }
+  async createRegion(data: InsertRegion) {
+    const [r] = await db.insert(regions).values(data).returning();
+    return r;
+  }
+  async updateRegion(id: string, tenantId: string, data: Partial<InsertRegion>) {
+    const [r] = await db.update(regions).set(data).where(and(eq(regions.id, id), eq(regions.tenantId, tenantId))).returning();
+    return r;
+  }
+  async deleteRegion(id: string, tenantId: string) {
+    await db.delete(regions).where(and(eq(regions.id, id), eq(regions.tenantId, tenantId)));
+  }
+
+  async getFranchiseInvoicesByTenant(tenantId: string) {
+    return db.select().from(franchiseInvoices).where(eq(franchiseInvoices.tenantId, tenantId)).orderBy(desc(franchiseInvoices.createdAt));
+  }
+  async getFranchiseInvoicesByOutlet(outletId: string, tenantId: string) {
+    return db.select().from(franchiseInvoices).where(and(eq(franchiseInvoices.outletId, outletId), eq(franchiseInvoices.tenantId, tenantId))).orderBy(desc(franchiseInvoices.createdAt));
+  }
+  async createFranchiseInvoice(data: InsertFranchiseInvoice) {
+    const [inv] = await db.insert(franchiseInvoices).values(data).returning();
+    return inv;
+  }
+  async updateFranchiseInvoice(id: string, tenantId: string, data: Partial<InsertFranchiseInvoice>) {
+    const [inv] = await db.update(franchiseInvoices).set(data).where(and(eq(franchiseInvoices.id, id), eq(franchiseInvoices.tenantId, tenantId))).returning();
+    return inv;
+  }
+
+  async getOutletMenuOverrides(outletId: string, tenantId: string) {
+    return db.select().from(outletMenuOverrides).where(and(eq(outletMenuOverrides.outletId, outletId), eq(outletMenuOverrides.tenantId, tenantId)));
+  }
+  async createOutletMenuOverride(data: InsertOutletMenuOverride) {
+    const [o] = await db.insert(outletMenuOverrides).values(data).returning();
+    return o;
+  }
+  async updateOutletMenuOverride(id: string, tenantId: string, data: Partial<InsertOutletMenuOverride>) {
+    const [o] = await db.update(outletMenuOverrides).set(data).where(and(eq(outletMenuOverrides.id, id), eq(outletMenuOverrides.tenantId, tenantId))).returning();
+    return o;
+  }
+  async deleteOutletMenuOverride(id: string, tenantId: string) {
+    await db.delete(outletMenuOverrides).where(and(eq(outletMenuOverrides.id, id), eq(outletMenuOverrides.tenantId, tenantId)));
+  }
+
+  async getOutletKPIs(tenantId: string, outletId?: string, from?: Date, to?: Date) {
+    const conditions = [eq(orders.tenantId, tenantId)];
+    if (outletId) conditions.push(eq(orders.outletId, outletId));
+    if (from) conditions.push(gte(orders.createdAt, from));
+    if (to) conditions.push(lte(orders.createdAt, to));
+    const rows = await db.select({
+      outletId: orders.outletId,
+      totalOrders: count(orders.id),
+      totalRevenue: sum(orders.total),
+      totalTax: sum(orders.tax),
+      totalDiscount: sum(orders.discountAmount),
+      avgCheck: sql<string>`COALESCE(AVG(CAST(${orders.total} AS NUMERIC)), 0)`,
+    }).from(orders).where(and(...conditions)).groupBy(orders.outletId);
+    return rows as Record<string, unknown>[];
   }
 }
 
