@@ -810,12 +810,107 @@ export const outletMenuOverrides = pgTable("outlet_menu_overrides", {
   available: boolean("available").default(true),
 });
 
+export const suppliers = pgTable("suppliers", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  contactName: text("contact_name"),
+  email: text("email"),
+  phone: text("phone"),
+  address: text("address"),
+  paymentTerms: text("payment_terms").default("Net 30"),
+  leadTimeDays: integer("lead_time_days").default(3),
+  rating: decimal("rating", { precision: 2, scale: 1 }).default("0"),
+  notes: text("notes"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const supplierCatalogItems = pgTable("supplier_catalog_items", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  supplierId: varchar("supplier_id", { length: 36 }).notNull().references(() => suppliers.id),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  supplierSku: text("supplier_sku"),
+  packSize: decimal("pack_size", { precision: 10, scale: 2 }).default("1"),
+  packUnit: text("pack_unit").default("pcs"),
+  packCost: decimal("pack_cost", { precision: 10, scale: 2 }).notNull(),
+  contractedPrice: decimal("contracted_price", { precision: 10, scale: 2 }),
+  lastPurchasePrice: decimal("last_purchase_price", { precision: 10, scale: 2 }),
+  preferred: boolean("preferred").default(false),
+});
+
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  supplierId: varchar("supplier_id", { length: 36 }).notNull().references(() => suppliers.id),
+  poNumber: text("po_number").notNull(),
+  status: varchar("status", { length: 30 }).default("draft"),
+  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }).default("0"),
+  notes: text("notes"),
+  expectedDelivery: timestamp("expected_delivery"),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
+  approvedBy: varchar("approved_by", { length: 36 }).references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const purchaseOrderItems = pgTable("purchase_order_items", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  purchaseOrderId: varchar("purchase_order_id", { length: 36 }).notNull().references(() => purchaseOrders.id),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  catalogItemId: varchar("catalog_item_id", { length: 36 }).references(() => supplierCatalogItems.id),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull(),
+  receivedQty: decimal("received_qty", { precision: 10, scale: 2 }).default("0"),
+});
+
+export const goodsReceivedNotes = pgTable("goods_received_notes", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  purchaseOrderId: varchar("purchase_order_id", { length: 36 }).notNull().references(() => purchaseOrders.id),
+  grnNumber: text("grn_number").notNull(),
+  receivedBy: varchar("received_by", { length: 36 }).references(() => users.id),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const grnItems = pgTable("grn_items", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  grnId: varchar("grn_id", { length: 36 }).notNull().references(() => goodsReceivedNotes.id),
+  purchaseOrderItemId: varchar("purchase_order_item_id", { length: 36 }).notNull().references(() => purchaseOrderItems.id),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  quantityReceived: decimal("quantity_received", { precision: 10, scale: 2 }).notNull(),
+  actualUnitCost: decimal("actual_unit_cost", { precision: 10, scale: 2 }).notNull(),
+  priceVariance: decimal("price_variance", { precision: 10, scale: 2 }).default("0"),
+  notes: text("notes"),
+});
+
+export const procurementApprovals = pgTable("procurement_approvals", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  purchaseOrderId: varchar("purchase_order_id", { length: 36 }).notNull().references(() => purchaseOrders.id),
+  action: varchar("action", { length: 20 }).notNull(),
+  performedBy: varchar("performed_by", { length: 36 }).notNull().references(() => users.id),
+  performedAt: timestamp("performed_at").defaultNow(),
+  notes: text("notes"),
+});
+
 export const insertRegionSchema = createInsertSchema(regions).omit({ id: true });
 export const insertFranchiseInvoiceSchema = createInsertSchema(franchiseInvoices).omit({ id: true, createdAt: true });
 export const insertOutletMenuOverrideSchema = createInsertSchema(outletMenuOverrides).omit({ id: true });
 export const insertOrderChannelSchema = createInsertSchema(orderChannels).omit({ id: true });
 export const insertChannelConfigSchema = createInsertSchema(channelConfigs).omit({ id: true });
 export const insertOnlineMenuMappingSchema = createInsertSchema(onlineMenuMappings).omit({ id: true });
+export const insertSupplierSchema = createInsertSchema(suppliers).omit({ id: true, createdAt: true });
+export const insertSupplierCatalogItemSchema = createInsertSchema(supplierCatalogItems).omit({ id: true });
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({ id: true, createdAt: true, approvedAt: true });
+export const insertPurchaseOrderItemSchema = createInsertSchema(purchaseOrderItems).omit({ id: true });
+export const insertGoodsReceivedNoteSchema = createInsertSchema(goodsReceivedNotes).omit({ id: true, createdAt: true });
+export const insertGrnItemSchema = createInsertSchema(grnItems).omit({ id: true });
+export const insertProcurementApprovalSchema = createInsertSchema(procurementApprovals).omit({ id: true, performedAt: true });
 
 export type Region = typeof regions.$inferSelect;
 export type InsertRegion = z.infer<typeof insertRegionSchema>;
@@ -829,3 +924,17 @@ export type ChannelConfig = typeof channelConfigs.$inferSelect;
 export type InsertChannelConfig = z.infer<typeof insertChannelConfigSchema>;
 export type OnlineMenuMapping = typeof onlineMenuMappings.$inferSelect;
 export type InsertOnlineMenuMapping = z.infer<typeof insertOnlineMenuMappingSchema>;
+export type Supplier = typeof suppliers.$inferSelect;
+export type InsertSupplier = z.infer<typeof insertSupplierSchema>;
+export type SupplierCatalogItem = typeof supplierCatalogItems.$inferSelect;
+export type InsertSupplierCatalogItem = z.infer<typeof insertSupplierCatalogItemSchema>;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+export type InsertPurchaseOrder = z.infer<typeof insertPurchaseOrderSchema>;
+export type PurchaseOrderItem = typeof purchaseOrderItems.$inferSelect;
+export type InsertPurchaseOrderItem = z.infer<typeof insertPurchaseOrderItemSchema>;
+export type GoodsReceivedNote = typeof goodsReceivedNotes.$inferSelect;
+export type InsertGoodsReceivedNote = z.infer<typeof insertGoodsReceivedNoteSchema>;
+export type GrnItem = typeof grnItems.$inferSelect;
+export type InsertGrnItem = z.infer<typeof insertGrnItemSchema>;
+export type ProcurementApproval = typeof procurementApprovals.$inferSelect;
+export type InsertProcurementApproval = z.infer<typeof insertProcurementApprovalSchema>;

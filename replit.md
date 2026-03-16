@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -77,6 +77,11 @@ All prefixed with `/api`:
 - Recipes: `/recipes` (CRUD with ingredients), `/food-cost-report` (GET)
 - Stock Takes: `/stock-takes` (GET/POST), `/stock-takes/:id` (GET), `/stock-takes/:id/lines/:lineId` (PATCH), `/stock-takes/:id/complete` (PATCH)
 - Stock Movements: `/stock-movements` (GET with limit)
+- Suppliers: `/suppliers` (CRUD), `/suppliers/:id/catalog` (GET)
+- Supplier Catalog: `/supplier-catalog-items` (POST/DELETE)
+- Purchase Orders: `/purchase-orders` (GET/POST), `/purchase-orders/:id` (GET with items/GRNs/approvals), `/purchase-orders/:id/approve` (POST), `/purchase-orders/:id/send` (POST)
+- GRNs: `/grns` (POST with auto inventory update + stock movements + PO status transition)
+- Procurement Analytics: `/procurement/analytics` (spend by supplier/item, price variances), `/procurement/low-stock` (suggested reorder quantities)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages
@@ -98,6 +103,8 @@ All prefixed with `/api`:
 - `/audits` - Internal Audits (Dashboard, Schedules, Templates, Issues, Analytics tabs with audit execution flow)
 - `/orders-hub` - Online Orders / Aggregator Hub (Talabat, Deliveroo, Careem, Noon Food)
 - `/hq-console` - HQ Console (multi-outlet KPIs, outlet comparison, franchise royalty calculator/invoices, menu overrides, region management)
+- `/suppliers` - Supplier Management (supplier list, detail view, product catalogs per supplier)
+- `/procurement` - Procurement (PO lifecycle: draft→approved→sent→partially_received→closed, GRN with auto inventory update, analytics with spend-by-supplier/item, price variances, low-stock alerts)
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
 

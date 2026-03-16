@@ -760,6 +760,68 @@ export async function seedDatabase() {
     await storage.createOutletMenuOverride({ tenantId: tenant.id, outletId: outletAirport.id, menuItemId: allMenuItems[2].id, overridePrice: (parseFloat(allMenuItems[2].price) * 1.2).toFixed(2), available: true });
   }
 
+  const supplierFarmDirect = await storage.createSupplier({
+    tenantId: tenant.id, name: "Farm Direct Produce", contactName: "Ahmed Hassan",
+    email: "ahmed@farmdirect.ae", phone: "+971-4-555-1001", address: "Al Quoz Industrial 3, Dubai",
+    paymentTerms: "Net 15", leadTimeDays: 1, rating: "4.5", notes: "Fresh daily delivery before 7am",
+  });
+  const supplierItalian = await storage.createSupplier({
+    tenantId: tenant.id, name: "Italian Imports LLC", contactName: "Marco Rossi",
+    email: "marco@italianimports.ae", phone: "+971-4-555-2002", address: "Jebel Ali Free Zone, Dubai",
+    paymentTerms: "Net 30", leadTimeDays: 7, rating: "4.8", notes: "Premium Italian products, minimum order 500 AED",
+  });
+  const supplierMetro = await storage.createSupplier({
+    tenantId: tenant.id, name: "Metro Foods Trading", contactName: "Priya Sharma",
+    email: "priya@metrofoods.ae", phone: "+971-4-555-3003", address: "Dubai Investment Park, Dubai",
+    paymentTerms: "Net 30", leadTimeDays: 3, rating: "4.2", notes: "Bulk dry goods and pantry staples",
+  });
+  const supplierDairy = await storage.createSupplier({
+    tenantId: tenant.id, name: "Dairy Fresh Co.", contactName: "Sara Al-Mahmoud",
+    email: "sara@dairyfresh.ae", phone: "+971-4-555-4004", address: "Al Ain Farms, Abu Dhabi",
+    paymentTerms: "COD", leadTimeDays: 2, rating: "4.0", notes: "Refrigerated delivery. Call before 2pm for next-day.",
+  });
+
+  if (createdInvItems.length >= 6) {
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierFarmDirect.id, inventoryItemId: createdInvItems[5].id, packSize: "5", packUnit: "kg", packCost: "35.00", preferred: true });
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierFarmDirect.id, inventoryItemId: createdInvItems[6].id, packSize: "10", packUnit: "kg", packCost: "22.00", preferred: true });
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierFarmDirect.id, inventoryItemId: createdInvItems[7].id, packSize: "5", packUnit: "kg", packCost: "22.50", preferred: true });
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierItalian.id, inventoryItemId: createdInvItems[2].id, packSize: "10", packUnit: "kg", packCost: "16.00", preferred: true });
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierItalian.id, inventoryItemId: createdInvItems[3].id, packSize: "5", packUnit: "kg", packCost: "15.50", preferred: true });
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierMetro.id, inventoryItemId: createdInvItems[8].id, packSize: "25", packUnit: "kg", packCost: "45.00", preferred: true });
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierMetro.id, inventoryItemId: createdInvItems[9].id, packSize: "25", packUnit: "kg", packCost: "32.00", preferred: true });
+    await storage.createSupplierCatalogItem({ tenantId: tenant.id, supplierId: supplierDairy.id, inventoryItemId: createdInvItems[4].id, packSize: "5", packUnit: "kg", packCost: "20.00", preferred: true });
+
+    const po1 = await storage.createPurchaseOrder({
+      tenantId: tenant.id, outletId: outlet.id, supplierId: supplierFarmDirect.id,
+      poNumber: "PO-2026-001", status: "closed", totalAmount: "79.50",
+      notes: "Weekly produce order", createdBy: owner.id, approvedBy: owner.id,
+      approvedAt: new Date("2026-03-10"), expectedDelivery: new Date("2026-03-11"),
+    });
+    await storage.createPurchaseOrderItem({ purchaseOrderId: po1.id, inventoryItemId: createdInvItems[5].id, quantity: "5", unitCost: "7.00", totalCost: "35.00", receivedQty: "5" });
+    await storage.createPurchaseOrderItem({ purchaseOrderId: po1.id, inventoryItemId: createdInvItems[6].id, quantity: "10", unitCost: "2.20", totalCost: "22.00", receivedQty: "10" });
+    await storage.createPurchaseOrderItem({ purchaseOrderId: po1.id, inventoryItemId: createdInvItems[7].id, quantity: "5", unitCost: "4.50", totalCost: "22.50", receivedQty: "5" });
+    await storage.createProcurementApproval({ tenantId: tenant.id, purchaseOrderId: po1.id, action: "approved", performedBy: owner.id, notes: "Approved weekly order" });
+
+    const po2 = await storage.createPurchaseOrder({
+      tenantId: tenant.id, outletId: outlet.id, supplierId: supplierItalian.id,
+      poNumber: "PO-2026-002", status: "sent", totalAmount: "31.50",
+      notes: "Pasta and rice restock", createdBy: owner.id, approvedBy: owner.id,
+      approvedAt: new Date("2026-03-14"), expectedDelivery: new Date("2026-03-20"),
+    });
+    await storage.createPurchaseOrderItem({ purchaseOrderId: po2.id, inventoryItemId: createdInvItems[2].id, quantity: "10", unitCost: "1.60", totalCost: "16.00", receivedQty: "0" });
+    await storage.createPurchaseOrderItem({ purchaseOrderId: po2.id, inventoryItemId: createdInvItems[3].id, quantity: "5", unitCost: "3.10", totalCost: "15.50", receivedQty: "0" });
+    await storage.createProcurementApproval({ tenantId: tenant.id, purchaseOrderId: po2.id, action: "approved", performedBy: owner.id, notes: "Approved Italian restock" });
+    await storage.createProcurementApproval({ tenantId: tenant.id, purchaseOrderId: po2.id, action: "sent", performedBy: owner.id, notes: "Emailed to supplier" });
+
+    const po3 = await storage.createPurchaseOrder({
+      tenantId: tenant.id, outletId: outlet.id, supplierId: supplierMetro.id,
+      poNumber: "PO-2026-003", status: "draft", totalAmount: "77.00",
+      notes: "Monthly dry goods", createdBy: owner.id, expectedDelivery: new Date("2026-03-25"),
+    });
+    await storage.createPurchaseOrderItem({ purchaseOrderId: po3.id, inventoryItemId: createdInvItems[8].id, quantity: "25", unitCost: "1.80", totalCost: "45.00", receivedQty: "0" });
+    await storage.createPurchaseOrderItem({ purchaseOrderId: po3.id, inventoryItemId: createdInvItems[9].id, quantity: "25", unitCost: "1.28", totalCost: "32.00", receivedQty: "0" });
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");
