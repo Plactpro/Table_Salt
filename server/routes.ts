@@ -1461,6 +1461,9 @@ export async function registerRoutes(
       const totalCost = report.reduce((s, r) => s + r.plateCost, 0);
       const totalRevenue = report.reduce((s, r) => s + r.sellingPrice, 0);
       const avgFoodCostPct = totalRevenue > 0 ? (totalCost / totalRevenue) * 100 : 0;
+      const totalSalesCost = report.reduce((s, r) => s + r.totalIdealCost, 0);
+      const totalSalesRevenue = report.reduce((s, r) => s + r.sellingPrice * r.soldQty, 0);
+      const salesWeightedFoodCostPct = totalSalesRevenue > 0 ? (totalSalesCost / totalSalesRevenue) * 100 : 0;
 
       const topMovers = inventory
         .map(item => {
@@ -1489,7 +1492,14 @@ export async function registerRoutes(
 
       res.json({
         recipes: report,
-        summary: { totalCost: Math.round(totalCost * 100) / 100, totalRevenue: Math.round(totalRevenue * 100) / 100, avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10 },
+        summary: {
+          totalCost: Math.round(totalCost * 100) / 100,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+          avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10,
+          totalSalesCost: Math.round(totalSalesCost * 100) / 100,
+          totalSalesRevenue: Math.round(totalSalesRevenue * 100) / 100,
+          salesWeightedFoodCostPct: Math.round(salesWeightedFoodCostPct * 10) / 10,
+        },
         varianceByIngredient,
         topMovers,
         reorderSuggestions,

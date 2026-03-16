@@ -277,7 +277,11 @@ function RecipesTab() {
       if (!item) return sum;
       const qty = Number(ing.quantity) || 0;
       const waste = Number(ing.wastePct || 0) / 100;
-      return sum + qty * (1 + waste) * Number(item.costPrice);
+      const effectiveQty = qty / (1 - waste);
+      const ingUnit = ing.unit || item.unit || "pcs";
+      const invUnit = item.unit || "pcs";
+      const converted = convertUnits(effectiveQty, ingUnit, invUnit);
+      return sum + converted * Number(item.costPrice);
     }, 0);
   }
 
@@ -433,7 +437,7 @@ function RecipesTab() {
                     </Select>
                   </div>
                   <div className="col-span-2"><Label className="text-xs">Waste %</Label><Input type="number" step="0.5" value={ing.wastePct} onChange={(e) => { const arr = [...ingredients]; arr[idx].wastePct = e.target.value; setIngredients(arr); }} /></div>
-                  <div className="col-span-1"><Label className="text-xs">Cost</Label><div className="text-sm font-medium pt-2">{fmt((() => { const item = invMap.get(ing.inventoryItemId); if (!item) return 0; return Number(ing.quantity) * (1 + Number(ing.wastePct || 0) / 100) * Number(item.costPrice); })())}</div></div>
+                  <div className="col-span-1"><Label className="text-xs">Cost</Label><div className="text-sm font-medium pt-2">{fmt((() => { const item = invMap.get(ing.inventoryItemId); if (!item) return 0; const q = Number(ing.quantity) || 0; const w = Number(ing.wastePct || 0) / 100; const eff = q / (1 - w); const iu = ing.unit || item.unit || "pcs"; return convertUnits(eff, iu, item.unit || "pcs") * Number(item.costPrice); })())}</div></div>
                   <div className="col-span-1"><Button variant="ghost" size="sm" onClick={() => setIngredients(ingredients.filter((_, i) => i !== idx))}><X className="h-3 w-3" /></Button></div>
                 </div>
               ))}
