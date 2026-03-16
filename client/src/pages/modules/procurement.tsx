@@ -175,7 +175,7 @@ export default function ProcurementPage() {
                     {poDetail.status === "draft" && (
                       <Button size="sm" onClick={() => approveMut.mutate(poDetail.id)} data-testid="button-approve-po"><CheckCircle className="h-4 w-4 mr-1" />Approve</Button>
                     )}
-                    {(poDetail.status === "approved" || poDetail.status === "draft") && (
+                    {poDetail.status === "approved" && (
                       <Button size="sm" variant="outline" onClick={() => sendMut.mutate(poDetail.id)} data-testid="button-send-po"><Send className="h-4 w-4 mr-1" />Send</Button>
                     )}
                     {poDetail.status === "sent" || poDetail.status === "partially_received" ? (

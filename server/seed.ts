@@ -802,6 +802,12 @@ export async function seedDatabase() {
     await storage.createPurchaseOrderItem({ purchaseOrderId: po1.id, inventoryItemId: createdInvItems[7].id, quantity: "5", unitCost: "4.50", totalCost: "22.50", receivedQty: "5" });
     await storage.createProcurementApproval({ tenantId: tenant.id, purchaseOrderId: po1.id, action: "approved", performedBy: owner.id, notes: "Approved weekly order" });
 
+    const po1Items = await storage.getPurchaseOrderItems(po1.id);
+    const grn1 = await storage.createGRN({ tenantId: tenant.id, purchaseOrderId: po1.id, grnNumber: "GRN-0001", receivedBy: owner.id, notes: "Full delivery received, all items in good condition" });
+    for (const pi of po1Items) {
+      await storage.createGRNItem({ grnId: grn1.id, purchaseOrderItemId: pi.id, inventoryItemId: pi.inventoryItemId, quantityReceived: pi.quantity, actualUnitCost: pi.unitCost, priceVariance: "0.00" });
+    }
+
     const po2 = await storage.createPurchaseOrder({
       tenantId: tenant.id, outletId: outlet.id, supplierId: supplierItalian.id,
       poNumber: "PO-2026-002", status: "sent", totalAmount: "31.50",
