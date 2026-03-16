@@ -333,9 +333,14 @@ export async function registerRoutes(
     const table = await storage.getTable(tableId);
     if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
     if (table.status !== "free") return res.status(400).json({ message: "Table is not available" });
+    const allWaitlist = await storage.getWaitlistByTenant(user.tenantId);
+    const entry = allWaitlist.find(w => w.id === req.params.id);
+    if (!entry) return res.status(404).json({ message: "Waitlist entry not found" });
     const tbl = await storage.updateTableByTenant(tableId, user.tenantId, {
       status: "occupied",
       seatedAt: new Date(),
+      partyName: entry.customerName,
+      partySize: entry.partySize,
     });
     if (!tbl) return res.status(404).json({ message: "Table not found" });
     const w = await storage.updateWaitlistEntry(req.params.id, user.tenantId, {
