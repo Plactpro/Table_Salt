@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -72,6 +73,11 @@ export default function OutletsPage() {
     name: "",
     address: "",
     openingHours: "",
+    regionId: "",
+    isFranchise: false,
+    franchiseeName: "",
+    royaltyRate: "",
+    minimumGuarantee: "",
   });
 
   const { data: tenant } = useQuery<any>({
@@ -82,13 +88,27 @@ export default function OutletsPage() {
     queryKey: ["/api/outlets"],
   });
 
+  const { data: regions = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/regions"],
+  });
+
   const businessType = tenant?.businessType || "casual_dining";
   const view = getBusinessTypeView(businessType);
   const ViewIcon = view.icon;
 
+  function cleanFormData(data: typeof formData) {
+    return {
+      ...data,
+      regionId: data.regionId || null,
+      franchiseeName: data.isFranchise ? data.franchiseeName : null,
+      royaltyRate: data.isFranchise ? data.royaltyRate : null,
+      minimumGuarantee: data.isFranchise ? data.minimumGuarantee : null,
+    };
+  }
+
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => {
-      const res = await apiRequest("POST", "/api/outlets", data);
+      const res = await apiRequest("POST", "/api/outlets", cleanFormData(data));
       return res.json();
     },
     onSuccess: () => {
@@ -104,7 +124,7 @@ export default function OutletsPage() {
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => {
-      const res = await apiRequest("PATCH", `/api/outlets/${id}`, data);
+      const res = await apiRequest("PATCH", `/api/outlets/${id}`, cleanFormData(data));
       return res.json();
     },
     onSuccess: () => {
@@ -133,7 +153,7 @@ export default function OutletsPage() {
   });
 
   function resetForm() {
-    setFormData({ name: "", address: "", openingHours: "" });
+    setFormData({ name: "", address: "", openingHours: "", regionId: "", isFranchise: false, franchiseeName: "", royaltyRate: "", minimumGuarantee: "" });
   }
 
   function openAddDialog() {
@@ -148,6 +168,11 @@ export default function OutletsPage() {
       name: outlet.name,
       address: outlet.address || "",
       openingHours: outlet.openingHours || "",
+      regionId: (outlet as any).regionId || "",
+      isFranchise: (outlet as any).isFranchise || false,
+      franchiseeName: (outlet as any).franchiseeName || "",
+      royaltyRate: (outlet as any).royaltyRate || "",
+      minimumGuarantee: (outlet as any).minimumGuarantee || "",
     });
     setDialogOpen(true);
   }
@@ -412,6 +437,38 @@ export default function OutletsPage() {
                 data-testid="input-outlet-hours"
               />
             </div>
+            <div className="space-y-2">
+              <Label>Region</Label>
+              <Select value={formData.regionId || "none"} onValueChange={(v) => setFormData({ ...formData, regionId: v === "none" ? "" : v })}>
+                <SelectTrigger data-testid="select-outlet-region"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Region</SelectItem>
+                  {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />
+              <Label htmlFor="outlet-franchise">Franchise Outlet</Label>
+            </div>
+            {formData.isFranchise && (
+              <div className="space-y-3 pl-4 border-l-2 border-amber-300">
+                <div className="space-y-2">
+                  <Label>Franchisee Name</Label>
+                  <Input value={formData.franchiseeName} onChange={(e) => setFormData({ ...formData, franchiseeName: e.target.value })} placeholder="e.g. Gulf Dining Group LLC" data-testid="input-franchisee-name" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Royalty Rate (%)</Label>
+                    <Input type="number" step="0.1" value={formData.royaltyRate} onChange={(e) => setFormData({ ...formData, royaltyRate: e.target.value })} placeholder="e.g. 8" data-testid="input-royalty-rate" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Min Guarantee</Label>
+                    <Input type="number" step="100" value={formData.minimumGuarantee} onChange={(e) => setFormData({ ...formData, minimumGuarantee: e.target.value })} placeholder="e.g. 5000" data-testid="input-min-guarantee" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">

@@ -13,11 +13,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Building2, MapPin, TrendingUp, DollarSign, BarChart3, Receipt, Plus, FileText, Calculator, Store, Crown, ChevronRight } from "lucide-react";
+import { Building2, MapPin, TrendingUp, DollarSign, BarChart3, Receipt, Plus, FileText, Calculator, Store, Crown, ChevronRight, ExternalLink, XCircle } from "lucide-react";
+import { useLocation } from "wouter";
 
 interface Region { id: string; tenantId: string; name: string; description: string | null; sortOrder: number; active: boolean; }
 interface Outlet { id: string; tenantId: string; regionId: string | null; name: string; address: string | null; openingHours: string | null; isFranchise: boolean | null; franchiseeName: string | null; royaltyRate: string | null; minimumGuarantee: string | null; active: boolean | null; }
-interface OutletKPI { outletId: string; outletName: string; isFranchise: boolean; regionId: string | null; totalOrders: number; totalRevenue: string; totalTax: string; totalDiscount: string; avgCheck: string; }
+interface OutletKPI { outletId: string; outletName: string; isFranchise: boolean; regionId: string | null; totalOrders: number; totalRevenue: string; totalTax: string; totalDiscount: string; avgCheck: string; voidCount: number; }
 interface FranchiseInvoice { id: string; tenantId: string; outletId: string; periodStart: string; periodEnd: string; netSales: string; royaltyRate: string; calculatedRoyalty: string; minimumGuarantee: string; finalAmount: string; status: string; notes: string | null; createdAt: string; }
 interface MenuItem { id: string; name: string; price: string; categoryId: string; }
 interface OutletMenuOverride { id: string; tenantId: string; outletId: string; menuItemId: string; overridePrice: string | null; available: boolean; }
@@ -26,6 +27,7 @@ export default function HQConsolePage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("overview");
   const [regionFilter, setRegionFilter] = useState("all");
   const [selectedOutlet, setSelectedOutlet] = useState("all");
@@ -78,14 +80,16 @@ export default function HQConsolePage() {
   const franchiseOutlets = useMemo(() => outlets.filter(o => o.isFranchise), [outlets]);
 
   const totals = useMemo(() => {
-    let totalRevenue = 0, totalOrders = 0, totalTax = 0;
+    let totalRevenue = 0, totalOrders = 0, totalTax = 0, totalVoids = 0;
     for (const k of filteredKPIs) {
       totalRevenue += parseFloat(k.totalRevenue || "0");
       totalOrders += Number(k.totalOrders || 0);
       totalTax += parseFloat(k.totalTax || "0");
+      totalVoids += Number(k.voidCount || 0);
     }
     const avgCheck = totalOrders > 0 ? totalRevenue / totalOrders : 0;
-    return { totalRevenue, totalOrders, totalTax, avgCheck };
+    const voidRate = totalOrders > 0 ? ((totalVoids / totalOrders) * 100).toFixed(1) : "0.0";
+    return { totalRevenue, totalOrders, totalTax, avgCheck, totalVoids, voidRate };
   }, [filteredKPIs]);
 
   const onMutError = (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -165,7 +169,7 @@ export default function HQConsolePage() {
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <Card>
               <CardContent className="p-4 flex items-center gap-3">
                 <div className="p-2 bg-primary/10 rounded-lg"><Store className="h-5 w-5 text-primary" /></div>
@@ -202,6 +206,16 @@ export default function HQConsolePage() {
                 </div>
               </CardContent>
             </Card>
+            <Card>
+              <CardContent className="p-4 flex items-center gap-3">
+                <div className="p-2 bg-red-100 rounded-lg"><XCircle className="h-5 w-5 text-red-600" /></div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Void Rate</p>
+                  <p className="text-2xl font-bold" data-testid="text-void-rate">{totals.voidRate}%</p>
+                  <p className="text-xs text-muted-foreground">{totals.totalVoids} voids</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -218,14 +232,20 @@ export default function HQConsolePage() {
                         <span className="text-sm font-bold text-muted-foreground w-6">#{idx + 1}</span>
                         <div className="flex-1">
                           <div className="flex justify-between mb-1">
-                            <span className="text-sm font-medium flex items-center gap-1">
+                            <button className="text-sm font-medium flex items-center gap-1 hover:text-primary hover:underline" onClick={() => navigate(`/outlets`)} data-testid={`link-drill-down-${k.outletId}`}>
                               {k.outletName}
                               {outlet?.isFranchise && <Crown className="h-3 w-3 text-amber-500" />}
-                            </span>
+                              <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100" />
+                            </button>
                             <span className="text-sm font-semibold">{fmt(k.totalRevenue)}</span>
                           </div>
                           <div className="h-2 bg-muted rounded-full overflow-hidden">
                             <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+                          </div>
+                          <div className="flex gap-3 mt-1 text-xs text-muted-foreground">
+                            <span>{k.totalOrders} orders</span>
+                            <span>Avg: {fmt(k.avgCheck)}</span>
+                            {Number(k.voidCount) > 0 && <span className="text-red-500">{k.voidCount} voids</span>}
                           </div>
                         </div>
                       </div>
@@ -280,6 +300,8 @@ export default function HQConsolePage() {
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Avg Check</TableHead>
                     <TableHead className="text-right">Tax</TableHead>
+                    <TableHead className="text-right">Voids</TableHead>
+                    <TableHead></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -299,11 +321,17 @@ export default function HQConsolePage() {
                         <TableCell className="text-right font-semibold">{fmt(k.totalRevenue)}</TableCell>
                         <TableCell className="text-right">{fmt(k.avgCheck)}</TableCell>
                         <TableCell className="text-right">{fmt(k.totalTax)}</TableCell>
+                        <TableCell className="text-right">{Number(k.voidCount) > 0 ? <span className="text-red-500">{k.voidCount}</span> : "0"}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="ghost" size="sm" onClick={() => navigate("/outlets")} data-testid={`button-drilldown-${k.outletId}`}>
+                            <ExternalLink className="h-3 w-3" />
+                          </Button>
+                        </TableCell>
                       </TableRow>
                     );
                   })}
                   {sortedKPIs.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">No data available</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={9} className="text-center text-muted-foreground">No data available</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>

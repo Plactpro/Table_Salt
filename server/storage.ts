@@ -1121,6 +1121,7 @@ export class DatabaseStorage implements IStorage {
       totalTax: sum(orders.tax),
       totalDiscount: sum(orders.discountAmount),
       avgCheck: sql<string>`COALESCE(AVG(CAST(${orders.total} AS NUMERIC)), 0)`,
+      voidCount: sql<number>`COUNT(CASE WHEN ${orders.status} IN ('voided','cancelled') THEN 1 END)`,
     }).from(orders).where(and(...conditions)).groupBy(orders.outletId);
     return rows as Record<string, unknown>[];
   }
