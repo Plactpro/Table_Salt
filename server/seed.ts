@@ -543,6 +543,85 @@ export async function seedDatabase() {
     await storage.createAuditTemplateItem({ templateId: auditCompliance.id, title, category: "compliance", points: i < 4 || i === 6 ? 10 : 8, photoRequired: i < 2, sortOrder: i + 1 });
   }
 
+  const allMenuItems = await storage.getMenuItemsByTenant(tenant.id);
+  const allInvItems = await storage.getInventoryByTenant(tenant.id);
+  const invByName = new Map(allInvItems.map(i => [i.name.toLowerCase(), i]));
+  const menuByName = new Map(allMenuItems.map(m => [m.name.toLowerCase(), m]));
+
+  const recipeDefinitions = [
+    { name: "Grilled Salmon Recipe", menuItem: "Grilled Salmon", ingredients: [
+      { item: "Salmon Fillet", qty: "0.25", unit: "kg", waste: "5" },
+      { item: "Olive Oil", qty: "0.03", unit: "ltr", waste: "0" },
+      { item: "Tomatoes", qty: "0.1", unit: "kg", waste: "10" },
+    ]},
+    { name: "Chicken Tikka Masala Recipe", menuItem: "Chicken Tikka Masala", ingredients: [
+      { item: "Chicken Breast", qty: "0.3", unit: "kg", waste: "8" },
+      { item: "Heavy Cream", qty: "0.1", unit: "ltr", waste: "0" },
+      { item: "Tomatoes", qty: "0.15", unit: "kg", waste: "10" },
+      { item: "Olive Oil", qty: "0.02", unit: "ltr", waste: "0" },
+    ]},
+    { name: "Lamb Rack Recipe", menuItem: "Lamb Rack", ingredients: [
+      { item: "Lamb Rack", qty: "0.35", unit: "kg", waste: "5" },
+      { item: "Olive Oil", qty: "0.02", unit: "ltr", waste: "0" },
+    ]},
+    { name: "Mushroom Risotto Recipe", menuItem: "Mushroom Risotto", ingredients: [
+      { item: "Arborio Rice", qty: "0.12", unit: "kg", waste: "0" },
+      { item: "Mushrooms", qty: "0.15", unit: "kg", waste: "15" },
+      { item: "Parmesan", qty: "0.04", unit: "kg", waste: "0" },
+      { item: "Heavy Cream", qty: "0.05", unit: "ltr", waste: "0" },
+      { item: "Olive Oil", qty: "0.02", unit: "ltr", waste: "0" },
+    ]},
+    { name: "Spaghetti Carbonara Recipe", menuItem: "Spaghetti Carbonara", ingredients: [
+      { item: "Spaghetti Pasta", qty: "0.15", unit: "kg", waste: "0" },
+      { item: "Parmesan", qty: "0.05", unit: "kg", waste: "0" },
+      { item: "Heavy Cream", qty: "0.08", unit: "ltr", waste: "0" },
+    ]},
+    { name: "Bruschetta Recipe", menuItem: "Bruschetta", ingredients: [
+      { item: "Tomatoes", qty: "0.12", unit: "kg", waste: "10" },
+      { item: "Olive Oil", qty: "0.02", unit: "ltr", waste: "0" },
+      { item: "All Purpose Flour", qty: "0.08", unit: "kg", waste: "0" },
+    ]},
+    { name: "Classic Mojito Recipe", menuItem: "Classic Mojito", ingredients: [
+      { item: "White Rum", qty: "0.06", unit: "bottles", waste: "0" },
+      { item: "Fresh Mint", qty: "0.1", unit: "bunches", waste: "20" },
+    ]},
+    { name: "Old Fashioned Recipe", menuItem: "Old Fashioned", ingredients: [
+      { item: "Bourbon", qty: "0.06", unit: "bottles", waste: "0" },
+    ]},
+    { name: "Espresso Recipe", menuItem: "Espresso", ingredients: [
+      { item: "Espresso Beans", qty: "0.018", unit: "kg", waste: "5" },
+    ]},
+    { name: "Beef Tenderloin Recipe", menuItem: "Beef Tenderloin", ingredients: [
+      { item: "Olive Oil", qty: "0.03", unit: "ltr", waste: "0" },
+      { item: "Mushrooms", qty: "0.08", unit: "kg", waste: "10" },
+    ]},
+  ];
+
+  for (const rd of recipeDefinitions) {
+    const mi = menuByName.get(rd.menuItem.toLowerCase());
+    const recipe = await storage.createRecipe({
+      tenantId: tenant.id,
+      name: rd.name,
+      menuItemId: mi?.id || null,
+      yield: "1",
+      yieldUnit: "portion",
+      notes: null,
+    });
+    for (let i = 0; i < rd.ingredients.length; i++) {
+      const invItem = invByName.get(rd.ingredients[i].item.toLowerCase());
+      if (invItem) {
+        await storage.createRecipeIngredient({
+          recipeId: recipe.id,
+          inventoryItemId: invItem.id,
+          quantity: rd.ingredients[i].qty,
+          unit: rd.ingredients[i].unit,
+          wastePct: rd.ingredients[i].waste,
+          sortOrder: i,
+        });
+      }
+    }
+  }
+
   await storage.createAuditSchedule({ tenantId: tenant.id, templateId: auditKitchen.id, scheduledDate: new Date(), status: "pending", assignedTo: manager.id, maxScore: 85 });
   await storage.createAuditSchedule({ tenantId: tenant.id, templateId: auditOps.id, scheduledDate: new Date(Date.now() + 3 * 86400000), status: "pending", assignedTo: owner.id, maxScore: 59 });
 
