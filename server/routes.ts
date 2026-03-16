@@ -739,10 +739,12 @@ export async function registerRoutes(
     const topItems = computeTopItems(allItems, menuItemsList, validOrderIds, 10);
     const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
     const dineInOrders = validOrders.filter(o => o.orderType === "dine_in");
-    const totalCovers = dineInOrders.reduce((s, o) => {
-      const items = allItems.filter(oi => oi.orderId === o.id);
-      return s + Math.max(items.length > 0 ? items.reduce((sum, oi) => sum + (oi.quantity || 1), 0) : 1, 1);
-    }, 0);
+    const itemsByOrder = new Map<string, number>();
+    for (const oi of allItems) {
+      if (!oi.orderId) continue;
+      itemsByOrder.set(oi.orderId, (itemsByOrder.get(oi.orderId) || 0) + (oi.quantity || 1));
+    }
+    const totalCovers = dineInOrders.reduce((s, o) => s + Math.max(itemsByOrder.get(o.id) || 1, 1), 0);
     const completedOrders = validOrders.filter(o => o.status === "completed" || o.status === "paid");
     let avgTurnMinutes = 0;
     if (completedOrders.length >= 2) {

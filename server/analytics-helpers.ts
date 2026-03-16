@@ -7,6 +7,7 @@ export interface OrderData {
   orderType: string | null;
   status: string | null;
   outletId: string | null;
+  tableId: string | null;
   createdAt: Date | string | null;
 }
 
