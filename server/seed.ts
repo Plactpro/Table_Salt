@@ -32,7 +32,7 @@ export async function seedDatabase() {
     isFranchise: false,
   });
 
-  await storage.createOutlet({
+  const outletMarina = await storage.createOutlet({
     tenantId: tenant.id,
     regionId: regionMarina.id,
     name: "Marina Walk",
@@ -44,7 +44,7 @@ export async function seedDatabase() {
     minimumGuarantee: "5000",
   });
 
-  await storage.createOutlet({
+  const outletAirport = await storage.createOutlet({
     tenantId: tenant.id,
     regionId: regionAirport.id,
     name: "Airport Terminal 3",
@@ -722,6 +722,42 @@ export async function seedDatabase() {
     await storage.createOnlineMenuMapping({ tenantId: tenant.id, menuItemId: mi.id, channelId: chSwiggy.id, externalItemId: `SWG-${mi.id.slice(-6)}`, externalPrice: extPrice, available: true });
     await storage.createOnlineMenuMapping({ tenantId: tenant.id, menuItemId: mi.id, channelId: chZomato.id, externalItemId: `ZMT-${mi.id.slice(-6)}`, externalPrice: extPrice, available: true });
     await storage.createOnlineMenuMapping({ tenantId: tenant.id, menuItemId: mi.id, channelId: chUberEats.id, externalItemId: `UBE-${mi.id.slice(-6)}`, externalPrice: (parseFloat(mi.price) * 1.15).toFixed(2), available: true });
+  }
+
+  await storage.createFranchiseInvoice({
+    tenantId: tenant.id, outletId: outletMarina.id,
+    periodStart: new Date("2026-01-01"), periodEnd: new Date("2026-01-31"),
+    netSales: "62500", royaltyRate: "8", calculatedRoyalty: "5000",
+    minimumGuarantee: "5000", finalAmount: "5000", status: "paid",
+    notes: "January 2026 royalty — paid on time",
+  });
+  await storage.createFranchiseInvoice({
+    tenantId: tenant.id, outletId: outletMarina.id,
+    periodStart: new Date("2026-02-01"), periodEnd: new Date("2026-02-28"),
+    netSales: "58200", royaltyRate: "8", calculatedRoyalty: "4656",
+    minimumGuarantee: "5000", finalAmount: "5000", status: "sent",
+    notes: "February 2026 royalty — minimum guarantee applied",
+  });
+  await storage.createFranchiseInvoice({
+    tenantId: tenant.id, outletId: outletAirport.id,
+    periodStart: new Date("2026-01-01"), periodEnd: new Date("2026-01-31"),
+    netSales: "95000", royaltyRate: "10", calculatedRoyalty: "9500",
+    minimumGuarantee: "8000", finalAmount: "9500", status: "paid",
+    notes: "January 2026 royalty — Airport T3",
+  });
+  await storage.createFranchiseInvoice({
+    tenantId: tenant.id, outletId: outletAirport.id,
+    periodStart: new Date("2026-02-01"), periodEnd: new Date("2026-02-28"),
+    netSales: "87300", royaltyRate: "10", calculatedRoyalty: "8730",
+    minimumGuarantee: "8000", finalAmount: "8730", status: "draft",
+    notes: "February 2026 royalty — Airport T3",
+  });
+
+  if (allMenuItems.length >= 3) {
+    await storage.createOutletMenuOverride({ tenantId: tenant.id, outletId: outletMarina.id, menuItemId: allMenuItems[0].id, overridePrice: (parseFloat(allMenuItems[0].price) * 1.15).toFixed(2), available: true });
+    await storage.createOutletMenuOverride({ tenantId: tenant.id, outletId: outletMarina.id, menuItemId: allMenuItems[1].id, overridePrice: (parseFloat(allMenuItems[1].price) * 0.9).toFixed(2), available: true });
+    await storage.createOutletMenuOverride({ tenantId: tenant.id, outletId: outletAirport.id, menuItemId: allMenuItems[0].id, overridePrice: (parseFloat(allMenuItems[0].price) * 1.25).toFixed(2), available: true });
+    await storage.createOutletMenuOverride({ tenantId: tenant.id, outletId: outletAirport.id, menuItemId: allMenuItems[2].id, overridePrice: (parseFloat(allMenuItems[2].price) * 1.2).toFixed(2), available: true });
   }
 
   console.log("Demo data seeded successfully!");
