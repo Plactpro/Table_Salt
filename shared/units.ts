@@ -9,10 +9,20 @@ const UNIT_CONVERSIONS: Record<string, Record<string, number>> = {
   fl_oz: { ltr: 0.0295735, ml: 29.5735, gal: 0.0078125 },
 };
 
+const UNIT_ALIASES: Record<string, string> = {
+  liters: "ltr", liter: "ltr", litres: "ltr", litre: "ltr", l: "ltr",
+  kilogram: "kg", kilograms: "kg",
+  gram: "g", grams: "g",
+  pound: "lb", pounds: "lb", lbs: "lb",
+  ounce: "oz", ounces: "oz",
+  milliliter: "ml", milliliters: "ml", millilitre: "ml", millilitres: "ml",
+  gallon: "gal", gallons: "gal",
+};
+
 export function convertUnits(quantity: number, fromUnit: string, toUnit: string): number {
   if (fromUnit === toUnit) return quantity;
-  const from = fromUnit.toLowerCase().replace(/\s+/g, "_");
-  const to = toUnit.toLowerCase().replace(/\s+/g, "_");
+  const from = UNIT_ALIASES[fromUnit.toLowerCase().replace(/\s+/g, "_")] || fromUnit.toLowerCase().replace(/\s+/g, "_");
+  const to = UNIT_ALIASES[toUnit.toLowerCase().replace(/\s+/g, "_")] || toUnit.toLowerCase().replace(/\s+/g, "_");
   if (from === to) return quantity;
   const conversions = UNIT_CONVERSIONS[from];
   if (conversions && conversions[to] !== undefined) {

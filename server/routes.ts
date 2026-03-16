@@ -12,6 +12,7 @@ import {
   insertSalesInquirySchema, insertSupportTicketSchema,
   insertCleaningTemplateSchema, insertCleaningLogSchema,
   insertAuditTemplateSchema, insertAuditScheduleSchema, insertAuditIssueSchema,
+  insertRecipeSchema, insertStockTakeSchema,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
@@ -1299,6 +1300,8 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const { ingredients, ...recipeData } = req.body;
+      const validated = insertRecipeSchema.omit({ tenantId: true }).safeParse(recipeData);
+      if (!validated.success) return res.status(400).json({ message: "Invalid recipe data", errors: validated.error.format() });
       if (recipeData.menuItemId) {
         const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
         if (!menuItems.find(m => m.id === recipeData.menuItemId)) {
