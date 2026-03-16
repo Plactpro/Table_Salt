@@ -203,9 +203,14 @@ export const inventoryItems = pgTable("inventory_items", {
   sku: text("sku"),
   category: text("category"),
   unit: text("unit").default("pcs"),
+  baseUnit: text("base_unit"),
+  conversionRatio: decimal("conversion_ratio", { precision: 10, scale: 4 }).default("1"),
   currentStock: decimal("current_stock", { precision: 10, scale: 2 }).default("0"),
   reorderLevel: decimal("reorder_level", { precision: 10, scale: 2 }).default("10"),
+  parLevel: decimal("par_level", { precision: 10, scale: 2 }),
+  leadTimeDays: integer("lead_time_days").default(1),
   costPrice: decimal("cost_price", { precision: 10, scale: 2 }).default("0"),
+  costPerBaseUnit: decimal("cost_per_base_unit", { precision: 10, scale: 4 }),
   supplier: text("supplier"),
 });
 

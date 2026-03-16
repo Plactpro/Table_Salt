@@ -7,7 +7,7 @@ import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Package, Plus, Search, AlertTriangle, Edit, Trash2, ArrowUpDown,
-  Warehouse, BoxIcon, TrendingDown, ChefHat, ClipboardList, DollarSign,
+  Warehouse, BoxIcon, TrendingDown, TrendingUp, ChefHat, ClipboardList, DollarSign,
   BookOpen, X, Percent, Activity,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -249,7 +249,7 @@ function RecipesTab() {
 
   const { data: allRecipes = [] } = useQuery<RecipeWithIngredients[]>({ queryKey: ["/api/recipes"] });
   const { data: inventory = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
-  const { data: menuItemsList = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu"] });
+  const { data: menuItemsList = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
 
   const invMap = new Map(inventory.map(i => [i.id, i]));
   const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
@@ -594,6 +594,10 @@ function FoodCostTab() {
   if (isLoading) return <div className="text-center py-8 text-muted-foreground">Loading report...</div>;
   if (!report) return <div className="text-center py-8 text-muted-foreground">No data available</div>;
 
+  const topMovers = report.topMovers || [];
+  const reorderSuggestions = report.reorderSuggestions || [];
+  const varianceData = report.varianceByIngredient || [];
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -609,7 +613,7 @@ function FoodCostTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Recipe</TableHead><TableHead>Menu Item</TableHead><TableHead>Plate Cost</TableHead><TableHead>Selling Price</TableHead><TableHead>Food Cost %</TableHead><TableHead>Margin</TableHead>
+                  <TableHead>Recipe</TableHead><TableHead>Menu Item</TableHead><TableHead>Plate Cost</TableHead><TableHead>Selling Price</TableHead><TableHead>Food Cost %</TableHead><TableHead>Margin</TableHead><TableHead>Sold</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -621,6 +625,7 @@ function FoodCostTab() {
                     <TableCell>{r.sellingPrice > 0 ? fmt(r.sellingPrice) : "—"}</TableCell>
                     <TableCell><Badge variant={r.foodCostPct > 35 ? "destructive" : r.foodCostPct > 30 ? "default" : "secondary"}>{r.foodCostPct}%</Badge></TableCell>
                     <TableCell className={r.margin >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>{r.sellingPrice > 0 ? fmt(r.margin) : "—"}</TableCell>
+                    <TableCell>{r.soldQty || 0}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -628,6 +633,72 @@ function FoodCostTab() {
           )}
         </CardContent>
       </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><TrendingUp className="h-4 w-4" />Top 10 Movers</CardTitle></CardHeader>
+          <CardContent>
+            {topMovers.length === 0 ? <div className="text-center py-4 text-muted-foreground text-sm">No usage data yet</div> : (
+              <Table>
+                <TableHeader><TableRow><TableHead>Ingredient</TableHead><TableHead>Usage</TableHead><TableHead>Unit</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {topMovers.filter((m: any) => m.usage > 0).map((m: any) => (
+                    <TableRow key={m.itemId} data-testid={`row-top-mover-${m.itemId}`}>
+                      <TableCell className="font-medium">{m.itemName}</TableCell>
+                      <TableCell>{m.usage}</TableCell>
+                      <TableCell className="text-muted-foreground">{m.unit}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-500" />Reorder Suggestions</CardTitle></CardHeader>
+          <CardContent>
+            {reorderSuggestions.length === 0 ? <div className="text-center py-4 text-muted-foreground text-sm">All items above par level</div> : (
+              <Table>
+                <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Stock</TableHead><TableHead>Par</TableHead><TableHead>Lead</TableHead><TableHead>Suggested Order</TableHead></TableRow></TableHeader>
+                <TableBody>
+                  {reorderSuggestions.map((s: any) => (
+                    <TableRow key={s.itemId} data-testid={`row-reorder-${s.itemId}`}>
+                      <TableCell className="font-medium">{s.itemName}</TableCell>
+                      <TableCell className="text-red-600">{s.currentStock} {s.unit}</TableCell>
+                      <TableCell>{s.parLevel} {s.unit}</TableCell>
+                      <TableCell>{s.leadTimeDays}d</TableCell>
+                      <TableCell className="font-bold text-primary">{Math.round(s.suggestedOrder * 100) / 100} {s.unit}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {varianceData.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-4 w-4" />Ideal vs Actual Usage</CardTitle></CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader><TableRow><TableHead>Ingredient</TableHead><TableHead>Ideal Usage</TableHead><TableHead>Current Stock</TableHead><TableHead>Unit</TableHead><TableHead>Ideal Cost</TableHead></TableRow></TableHeader>
+              <TableBody>
+                {varianceData.filter((v: any) => v.idealUsage > 0).map((v: any) => (
+                  <TableRow key={v.itemId} data-testid={`row-variance-${v.itemId}`}>
+                    <TableCell className="font-medium">{v.itemName}</TableCell>
+                    <TableCell>{v.idealUsage}</TableCell>
+                    <TableCell>{v.currentStock}</TableCell>
+                    <TableCell className="text-muted-foreground">{v.unit}</TableCell>
+                    <TableCell>{fmt(v.idealCost)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
