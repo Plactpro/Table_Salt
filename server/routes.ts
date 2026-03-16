@@ -13,6 +13,7 @@ import {
   insertCleaningTemplateSchema, insertCleaningLogSchema,
   insertAuditTemplateSchema, insertAuditScheduleSchema, insertAuditIssueSchema,
 } from "@shared/schema";
+import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
 
 export async function registerRoutes(
@@ -300,8 +301,12 @@ export async function registerRoutes(
           if (!recipe) continue;
           const recipeIngs = await storage.getRecipeIngredients(recipe.id);
           for (const ing of recipeIngs) {
-            const qty = Number(ing.quantity) * (1 + Number(ing.wastePct || 0) / 100) * (oi.quantity || 1);
             const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+            const ingUnit = ing.unit || invItem?.unit || "pcs";
+            const invUnit = invItem?.unit || "pcs";
+            const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
+            const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
+            const qty = convertedQty * (oi.quantity || 1);
             if (invItem) {
               const newStock = Math.max(0, Number(invItem.currentStock) - qty);
               await storage.updateInventoryItem(ing.inventoryItemId, { currentStock: String(Math.round(newStock * 100) / 100) });
@@ -1339,25 +1344,50 @@ export async function registerRoutes(
       const invMap = new Map(inventory.map(i => [i.id, i]));
       const menuItemsAll = await storage.getMenuItemsByTenant(user.tenantId);
       const menuMap = new Map(menuItemsAll.map(m => [m.id, m]));
+      const orders = await storage.getOrdersByTenant(user.tenantId);
+      const paidOrders = orders.filter(o => o.status === "paid");
+
+      const menuItemSales = new Map<string, number>();
+      for (const order of paidOrders) {
+        const items = await storage.getOrderItemsByOrder(order.id);
+        for (const oi of items) {
+          menuItemSales.set(oi.menuItemId, (menuItemSales.get(oi.menuItemId) || 0) + Number(oi.quantity));
+        }
+      }
+
+      const ingredientIdealUsage = new Map<string, number>();
 
       const report = await Promise.all(allRecipes.map(async (recipe) => {
         const ingredients = await storage.getRecipeIngredients(recipe.id);
         let plateCost = 0;
+        const soldQty = recipe.menuItemId ? (menuItemSales.get(recipe.menuItemId) || 0) : 0;
+
         const ingredientDetails = ingredients.map(ing => {
           const invItem = invMap.get(ing.inventoryItemId);
           const costPerUnit = Number(invItem?.costPrice || 0);
           const qty = Number(ing.quantity);
           const waste = Number(ing.wastePct || 0) / 100;
-          const effectiveQty = qty * (1 + waste);
-          const cost = effectiveQty * costPerUnit;
+          const effectiveQty = qty / (1 - waste);
+          const ingUnit = ing.unit || invItem?.unit || "pcs";
+          const invUnit = invItem?.unit || "pcs";
+          const convertedQty = convertUnits(effectiveQty, ingUnit, invUnit);
+          const cost = convertedQty * costPerUnit;
           plateCost += cost;
+
+          const idealUse = convertedQty * soldQty;
+          if (invItem) {
+            ingredientIdealUsage.set(invItem.id, (ingredientIdealUsage.get(invItem.id) || 0) + idealUse);
+          }
+
           return {
             name: invItem?.name || "Unknown",
+            inventoryItemId: ing.inventoryItemId,
             quantity: qty,
-            unit: ing.unit,
+            unit: ingUnit,
             wastePct: Number(ing.wastePct || 0),
             costPerUnit,
             totalCost: Math.round(cost * 100) / 100,
+            idealUsage: Math.round(idealUse * 100) / 100,
           };
         });
 
@@ -1370,19 +1400,69 @@ export async function registerRoutes(
           recipeId: recipe.id,
           recipeName: recipe.name,
           menuItemName: menuItem?.name || null,
+          menuItemId: recipe.menuItemId,
           sellingPrice: Math.round(sellingPrice * 100) / 100,
           plateCost: Math.round(plateCost * 100) / 100,
           margin: Math.round(margin * 100) / 100,
           foodCostPct: Math.round(foodCostPct * 10) / 10,
+          soldQty,
+          totalIdealCost: Math.round(plateCost * soldQty * 100) / 100,
           ingredients: ingredientDetails,
         };
       }));
+
+      const varianceByIngredient = Array.from(ingredientIdealUsage.entries()).map(([itemId, idealQty]) => {
+        const item = invMap.get(itemId);
+        if (!item) return null;
+        const movements = [];
+        const actualUsed = idealQty * 1.0;
+        return {
+          itemId,
+          itemName: item.name,
+          unit: item.unit,
+          idealUsage: Math.round(idealQty * 100) / 100,
+          currentStock: Number(item.currentStock || 0),
+          costPrice: Number(item.costPrice || 0),
+          idealCost: Math.round(idealQty * Number(item.costPrice || 0) * 100) / 100,
+        };
+      }).filter(Boolean);
 
       const totalCost = report.reduce((s, r) => s + r.plateCost, 0);
       const totalRevenue = report.reduce((s, r) => s + r.sellingPrice, 0);
       const avgFoodCostPct = totalRevenue > 0 ? (totalCost / totalRevenue) * 100 : 0;
 
-      res.json({ recipes: report, summary: { totalCost: Math.round(totalCost * 100) / 100, totalRevenue: Math.round(totalRevenue * 100) / 100, avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10 } });
+      const topMovers = inventory
+        .map(item => {
+          const ideal = ingredientIdealUsage.get(item.id) || 0;
+          return { itemId: item.id, itemName: item.name, usage: Math.round(ideal * 100) / 100, unit: item.unit };
+        })
+        .sort((a, b) => b.usage - a.usage)
+        .slice(0, 10);
+
+      const reorderSuggestions = inventory
+        .filter(item => {
+          const stock = Number(item.currentStock || 0);
+          const par = Number(item.parLevel || item.reorderLevel || 0);
+          return stock <= par && par > 0;
+        })
+        .map(item => ({
+          itemId: item.id,
+          itemName: item.name,
+          currentStock: Number(item.currentStock || 0),
+          reorderLevel: Number(item.reorderLevel || 0),
+          parLevel: Number(item.parLevel || 0),
+          leadTimeDays: Number(item.leadTimeDays || 1),
+          suggestedOrder: Math.max(0, Number(item.parLevel || item.reorderLevel || 0) * 2 - Number(item.currentStock || 0)),
+          unit: item.unit,
+        }));
+
+      res.json({
+        recipes: report,
+        summary: { totalCost: Math.round(totalCost * 100) / 100, totalRevenue: Math.round(totalRevenue * 100) / 100, avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10 },
+        varianceByIngredient,
+        topMovers,
+        reorderSuggestions,
+      });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
