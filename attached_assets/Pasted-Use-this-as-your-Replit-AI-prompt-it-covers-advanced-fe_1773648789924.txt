@@ -1,0 +1,198 @@
+Use this as your Replit AI prompt (it covers advanced features 1–9 and assumes the existing Table Salt base app with POS, billing, CRM, etc.):
+
+***
+
+Build fully functional advanced modules for the **Table Salt** restaurant management web application, implementing the following features end‑to‑end:
+
+Focus only on these 9 advanced feature areas (integrated with the existing POS, billing, CRM, outlets, and settings modules):
+
+1. Advanced Inventory & Recipe Costing  
+2. Kitchen Display System (KDS)  
+3. Online Ordering & Aggregator Hub  
+4. Loyalty, Digital Wallet & Gift Cards  
+5. Multi‑Outlet & Franchise Console  
+6. Supplier, Procurement & Cost Control  
+7. BI Dashboards & Forecasting  
+8. Advanced Table & Queue Management  
+9. Workforce & Labour Cost Module  
+
+Use clean, modular JavaScript (or TypeScript if you prefer), HTML, and CSS. Keep everything in English. You may simulate data with JSON and localStorage; design the code so it can later be wired to real APIs.
+
+***
+
+## 1. Advanced Inventory & Recipe Costing
+
+Implement a complete inventory system that tracks ingredients, stock movements, and recipe‑level costing:
+
+- Data models:
+  - Ingredients: id, name, category, base unit, unit conversions (kg ↔ g, litre ↔ ml, piece), cost per base unit, current stock, reorder level.
+  - Recipes (dishes): id, name, outlet availability, list of ingredients with quantity and unit, yield/servings, theoretical cost per serving.
+  - Stock transactions: type (purchase, adjustment, wastage, return, stock‑take), qty, cost, user, timestamp.
+- Features:
+  - Auto‑deplete stock when a dish is sold in POS (based on its recipe).
+  - Manual stock‑take screen with variance calculation (expected vs counted).
+  - Food cost % report: show ideal consumption vs actual, variance by ingredient and by dish.
+  - Low‑stock alerts and reorder suggestions based on par levels and lead time.
+- UI:
+  - Inventory dashboard: cards for current stock value, stock at risk (near expiry), and top 10 moving items.
+  - Recipe editor: pick ingredients from inventory, define quantities, auto‑calculate plate cost and margin using current selling price.
+- Make all unit, cost, and quantity calculations robust and reusable via helper functions.
+
+***
+
+## 2. Kitchen Display System (KDS)
+
+Build a KDS module that receives orders from POS and displays them in real time for different kitchen stations:
+
+- Data:
+  - KOT (Kitchen Order Ticket): id, order id, table, items, modifiers, course (starter/main/dessert), timestamp, station (main, grill, fryer, bar, pastry), status (new, in_progress, ready, served).
+- Features:
+  - Station views: each station sees only relevant items (e.g., “Grill” sees only grill items).
+  - Status transitions with buttons: “Start”, “Ready”, “Recall”.
+  - Color coding by elapsed time (green <5 min, orange 5–10, red >10).
+  - Integration with POS: when KDS marks an item “Ready”, POS and table views update.
+- UI:
+  - Full‑screen KDS layout with large cards per order, grouped by table or ticket.
+  - Sound/visual alert for new tickets and late tickets.
+- Support offline‑friendly behavior using localStorage queues.
+
+***
+
+## 3. Online Ordering & Aggregator Hub
+
+Create an omni‑channel orders module that consolidates internal online orders and third‑party delivery platforms:
+
+- Order channels:
+  - Direct web/QR orders (in‑house).
+  - Aggregators: abstract integration points for Swiggy/Zomato/UberEats/etc. (mock with JSON feeds).
+- Features:
+  - “Orders Hub” screen listing all live orders with filters by channel, outlet, status.
+  - Auto‑route orders to KDS and POS for billing and inventory deduction.
+  - Menu sync concept: a central “Online Menu” mapping internal dishes to each aggregator’s item id and price (account for per‑channel pricing and availability).
+- Provide an interface to:
+  - Toggle channels per outlet.
+  - Set channel‑specific prep times and packaging fees.
+- Use a clean adapter pattern for aggregators so adding a new platform is trivial.
+
+***
+
+## 4. Loyalty, Digital Wallet & Gift Cards
+
+Implement a complete loyalty and stored‑value system connected to CRM and POS:
+
+- Data models:
+  - Loyalty account: customer id, points balance, tier (Silver/Gold/Platinum), join date.
+  - Transactions: earn/redeem events tied to bills, with multipliers by tier.
+  - Wallet: stored value balance, top‑ups, redemptions, expiry rules.
+  - Gift cards: card id, initial value, current balance, purchase and expiry dates, purchaser vs recipient.
+- Rules:
+  - Points earned as a configurable percentage of net spend after discounts and before tax.
+  - Tier thresholds and automatic upgrades/downgrades.
+- POS integration:
+  - Search customer by phone/email, attach loyalty/wallet to the bill.
+  - Apply points redemption or wallet funds as a payment method.
+  - Show post‑transaction balances on the receipt.
+- UI:
+  - “Loyalty & Wallet” section inside CRM: per‑customer view of history, balances, and tier progress bars.
+  - Gift card management: issue, top‑up, deactivate, view usage.
+
+***
+
+## 5. Multi‑Outlet & Franchise Console
+
+Add a head‑office console for groups with multiple outlets and franchisees:
+
+- Hierarchy:
+  - Organization → Regions → Outlets; franchise vs company‑owned flag.
+- Features:
+  - Centralized menu and pricing master with per‑outlet overrides (e.g., surcharges for airports).
+  - Outlet KPIs: daily sales, avg check, food cost %, labour %, voids/discounts, NPS score.
+  - Cross‑outlet comparisons and rankings; drill‑down into a single outlet’s dashboards.
+  - Franchise module: royalty calculation (percentage of net sales, minimum guarantee), invoice generation for franchise fees.
+- UI:
+  - “HQ Console” view restricted to HQ/admin roles.
+  - Outlet selector that filters all other reports and widgets.
+
+***
+
+## 6. Supplier, Procurement & Cost Control
+
+Build a procurement workflow fully linked to inventory and cost control:
+
+- Data:
+  - Suppliers: id, name, contact, terms, lead time, rating.
+  - Catalog: supplier‑specific items, pack size, pack cost, contracted price, last purchase price.
+  - PR (Purchase Request), PO (Purchase Order), GRN (Goods Received Note).
+- Features:
+  - Generate PRs from low‑stock suggestions / par levels per outlet.
+  - Convert approved PRs to POs; mark POs as “Sent”, “Partially Received”, “Closed”.
+  - GRN creation against POs: update inventory in correct units and record actual cost; flag price variance against contracted cost.
+  - Purchase analytics: spend by supplier, item, and outlet; price trend charts; top variance items.
+- Include simple approval logic (e.g., manager vs owner) and logs of who approved what.
+
+***
+
+## 7. BI Dashboards & Forecasting
+
+Create analytics dashboards and simple forecasting utilities on top of the existing data:
+
+- Dashboards:
+  - Operations: sales by day/time, average order value, covers, table turn time, best‑selling dishes, channel mix (dine‑in/takeaway/delivery).
+  - Finance: net sales vs discounts vs tax vs voids, food cost %, labour %, gross margin.
+  - Marketing: loyalty enrollments, redemptions, campaign uplift.
+- Visuals:
+  - Use charting (e.g., Chart.js or any light JS chart lib) to show time‑series, pie charts, and bar charts.
+- Forecasting (simple rule‑based / moving averages):
+  - Next‑week sales forecast per outlet based on the last 8–12 weeks and weekday patterns.
+  - Suggested production/inventory based on forecast and recipe consumption.
+- Implement reusable data‑access functions so that new dashboards can be added easily.
+
+***
+
+## 8. Advanced Table & Queue Management
+
+Extend the existing reservations/tables module into a fully featured floor & waitlist manager:
+
+- Floor plan:
+  - Visual layout with tables, capacity, zones (bar, terrace, dining room).
+  - Real‑time statuses: vacant, seated, cleaning, reserved, blocked.
+- Queue management:
+  - Waitlist with customer name, party size, estimated wait time, and preferred area.
+  - SMS/WhatsApp placeholder integration (abstracted) to notify when a table is ready.
+- Analytics:
+  - Table turn time, occupancy %, average dining duration, wait time by day and hour.
+- UI:
+  - Drag‑and‑drop to move parties between tables.
+  - Quick actions: “Seat”, “Merge”, “Split”, “Mark Cleaned”.
+
+***
+
+## 9. Workforce & Labour Cost Module
+
+Extend your staff/scheduling into a labour analytics and control module:
+
+- Data:
+  - Shifts: employee, role, outlet, start/end time, scheduled hours, hourly rate.
+  - Time punches (optionally mocked): actual clock‑in/clock‑out.
+- Features:
+  - Labour cost calculation per day/outlet/role (scheduled vs actual).
+  - KPIs: labour cost % of sales by hour/day; sales per labour hour; tip distribution (optional).
+  - Alerts when labour % exceeds a configurable threshold during a shift.
+- UI:
+  - “Workforce” dashboard with charts and tables by outlet and period.
+  - Export‑ready timesheet and labour cost summary.
+
+***
+
+## Cross‑Cutting Requirements
+
+- Use a modular architecture: separate modules/files for inventory, KDS, online orders, loyalty, procurement, HQ console, BI, tables/queue, and workforce.
+- All features must respect:
+  - Multi‑outlet structure and roles/permissions (server, manager, HQ admin, franchisee).
+  - Existing settings for time zone, currency, and tax: use the global configuration/helpers already defined (do NOT re‑invent formatting).
+- Use localStorage or in‑memory stores to mock data persistence, but keep repository interfaces so a backend can be plugged in later.
+- Add seed/demo data so each module looks populated when opened for the first time.
+- Provide minimal but clear navigation changes in the sidebar to access each new module.
+- Comment major functions to explain their purpose and how other developers can extend them.
+
+Goal: Deliver a cohesive set of advanced modules (1–9) that can run in the browser as a working prototype, demonstrating how a production‑grade multi‑outlet restaurant platform like Table Salt would behave.
