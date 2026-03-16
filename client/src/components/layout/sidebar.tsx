@@ -63,7 +63,7 @@ const navItems: NavItem[] = [
   { id: "m-20", name: "Internal Audits", icon: ShieldCheck, path: "/audits", roles: ["owner", "manager"], featureKey: "internal_audits" },
   { id: "m-14", name: "Performance", icon: TrendingUp, path: "/performance", roles: ["owner", "manager"], featureKey: "staff" },
   { id: "m-15", name: "Delivery", icon: Truck, path: "/delivery", roles: ["owner", "manager"], featureKey: "delivery_management" },
-  { id: "m-21", name: "Orders Hub", icon: ShoppingBag, path: "/orders-hub", roles: ["owner", "manager"], featureKey: "delivery_management" },
+  { id: "m-21", name: "Online Orders", icon: ShoppingBag, path: "/orders-hub", roles: ["owner", "manager"], featureKey: "delivery_management" },
   { id: "m-16", name: "Integrations", icon: Puzzle, path: "/integrations", roles: ["owner", "manager"], featureKey: "integrations" },
   { id: "m-17", name: "Billing", icon: CreditCard, path: "/billing", roles: ["owner"], featureKey: "billing" },
   { id: "m-18", name: "Settings", icon: Settings, path: "/settings", roles: ["owner"], featureKey: "settings" },
