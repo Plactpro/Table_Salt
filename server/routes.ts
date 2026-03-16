@@ -288,7 +288,37 @@ export async function registerRoutes(
     }
 
     const order = await storage.updateOrder(req.params.id, updateData);
-    if (req.body.status === "paid" || req.body.status === "cancelled") {
+    if (req.body.status === "paid") {
+      if (existing.tableId) {
+        await storage.updateTable(existing.tableId, { status: "free" });
+      }
+      try {
+        const oItems = await storage.getOrderItemsByOrder(req.params.id);
+        for (const oi of oItems) {
+          if (!oi.menuItemId) continue;
+          const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
+          if (!recipe) continue;
+          const recipeIngs = await storage.getRecipeIngredients(recipe.id);
+          for (const ing of recipeIngs) {
+            const qty = Number(ing.quantity) * (1 + Number(ing.wastePct || 0) / 100) * (oi.quantity || 1);
+            const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+            if (invItem) {
+              const newStock = Math.max(0, Number(invItem.currentStock) - qty);
+              await storage.updateInventoryItem(ing.inventoryItemId, { currentStock: String(Math.round(newStock * 100) / 100) });
+              await storage.createStockMovement({
+                tenantId: user.tenantId,
+                itemId: ing.inventoryItemId,
+                type: "out",
+                quantity: String(Math.round(qty * 100) / 100),
+                reason: `Auto-depletion: ${oi.name} x${oi.quantity}`,
+              });
+            }
+          }
+        }
+      } catch (depErr) {
+        console.error("Auto-depletion error:", depErr);
+      }
+    } else if (req.body.status === "cancelled") {
       if (existing.tableId) {
         await storage.updateTable(existing.tableId, { status: "free" });
       }
@@ -1234,6 +1264,218 @@ export async function registerRoutes(
           percentage: s.maxScore ? Math.round(((s.totalScore || 0) / s.maxScore) * 100) : 0,
         })),
       });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Recipes CRUD ──
+  app.get("/api/recipes", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allRecipes = await storage.getRecipesByTenant(user.tenantId);
+      const result = await Promise.all(allRecipes.map(async (r) => {
+        const ingredients = await storage.getRecipeIngredients(r.id);
+        return { ...r, ingredients };
+      }));
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/recipes/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const recipe = await storage.getRecipe(req.params.id);
+      if (!recipe || recipe.tenantId !== user.tenantId) return res.status(404).json({ message: "Not found" });
+      const ingredients = await storage.getRecipeIngredients(recipe.id);
+      res.json({ ...recipe, ingredients });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/recipes", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { ingredients, ...recipeData } = req.body;
+      const recipe = await storage.createRecipe({ ...recipeData, tenantId: user.tenantId });
+      if (ingredients && Array.isArray(ingredients)) {
+        for (let i = 0; i < ingredients.length; i++) {
+          await storage.createRecipeIngredient({ ...ingredients[i], recipeId: recipe.id, sortOrder: i });
+        }
+      }
+      const createdIngredients = await storage.getRecipeIngredients(recipe.id);
+      res.json({ ...recipe, ingredients: createdIngredients });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/recipes/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { ingredients, ...recipeData } = req.body;
+      const recipe = await storage.updateRecipe(req.params.id, user.tenantId, recipeData);
+      if (!recipe) return res.status(404).json({ message: "Not found" });
+      if (ingredients && Array.isArray(ingredients)) {
+        await storage.deleteRecipeIngredients(recipe.id);
+        for (let i = 0; i < ingredients.length; i++) {
+          await storage.createRecipeIngredient({ ...ingredients[i], recipeId: recipe.id, sortOrder: i });
+        }
+      }
+      const updatedIngredients = await storage.getRecipeIngredients(recipe.id);
+      res.json({ ...recipe, ingredients: updatedIngredients });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/recipes/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await storage.deleteRecipe(req.params.id, user.tenantId);
+      res.json({ message: "Deleted" });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Food Cost Report ──
+  app.get("/api/food-cost-report", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allRecipes = await storage.getRecipesByTenant(user.tenantId);
+      const inventory = await storage.getInventoryByTenant(user.tenantId);
+      const invMap = new Map(inventory.map(i => [i.id, i]));
+      const menuItemsAll = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItemsAll.map(m => [m.id, m]));
+
+      const report = await Promise.all(allRecipes.map(async (recipe) => {
+        const ingredients = await storage.getRecipeIngredients(recipe.id);
+        let plateCost = 0;
+        const ingredientDetails = ingredients.map(ing => {
+          const invItem = invMap.get(ing.inventoryItemId);
+          const costPerUnit = Number(invItem?.costPrice || 0);
+          const qty = Number(ing.quantity);
+          const waste = Number(ing.wastePct || 0) / 100;
+          const effectiveQty = qty * (1 + waste);
+          const cost = effectiveQty * costPerUnit;
+          plateCost += cost;
+          return {
+            name: invItem?.name || "Unknown",
+            quantity: qty,
+            unit: ing.unit,
+            wastePct: Number(ing.wastePct || 0),
+            costPerUnit,
+            totalCost: Math.round(cost * 100) / 100,
+          };
+        });
+
+        const menuItem = recipe.menuItemId ? menuMap.get(recipe.menuItemId) : null;
+        const sellingPrice = Number(menuItem?.price || 0);
+        const margin = sellingPrice > 0 ? sellingPrice - plateCost : 0;
+        const foodCostPct = sellingPrice > 0 ? (plateCost / sellingPrice) * 100 : 0;
+
+        return {
+          recipeId: recipe.id,
+          recipeName: recipe.name,
+          menuItemName: menuItem?.name || null,
+          sellingPrice: Math.round(sellingPrice * 100) / 100,
+          plateCost: Math.round(plateCost * 100) / 100,
+          margin: Math.round(margin * 100) / 100,
+          foodCostPct: Math.round(foodCostPct * 10) / 10,
+          ingredients: ingredientDetails,
+        };
+      }));
+
+      const totalCost = report.reduce((s, r) => s + r.plateCost, 0);
+      const totalRevenue = report.reduce((s, r) => s + r.sellingPrice, 0);
+      const avgFoodCostPct = totalRevenue > 0 ? (totalCost / totalRevenue) * 100 : 0;
+
+      res.json({ recipes: report, summary: { totalCost: Math.round(totalCost * 100) / 100, totalRevenue: Math.round(totalRevenue * 100) / 100, avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10 } });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Stock Takes ──
+  app.get("/api/stock-takes", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const takes = await storage.getStockTakesByTenant(user.tenantId);
+      res.json(takes);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/stock-takes/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const take = await storage.getStockTake(req.params.id);
+      if (!take || take.tenantId !== user.tenantId) return res.status(404).json({ message: "Not found" });
+      const lines = await storage.getStockTakeLines(take.id);
+      res.json({ ...take, lines });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/stock-takes", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const inventory = await storage.getInventoryByTenant(user.tenantId);
+      const take = await storage.createStockTake({ tenantId: user.tenantId, conductedBy: user.id, status: "draft", notes: req.body.notes || null });
+      for (const item of inventory) {
+        await storage.createStockTakeLine({
+          stockTakeId: take.id,
+          inventoryItemId: item.id,
+          expectedQty: item.currentStock || "0",
+        });
+      }
+      const lines = await storage.getStockTakeLines(take.id);
+      res.json({ ...take, lines });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/stock-takes/:id/lines/:lineId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const take = await storage.getStockTake(req.params.id);
+      if (!take || take.tenantId !== user.tenantId) return res.status(404).json({ message: "Not found" });
+      const { countedQty } = req.body;
+      const lines = await storage.getStockTakeLines(take.id);
+      const line = lines.find(l => l.id === req.params.lineId);
+      if (!line) return res.status(404).json({ message: "Line not found" });
+      const variance = Number(countedQty) - Number(line.expectedQty);
+      const invItem = await storage.getInventoryItem(line.inventoryItemId);
+      const varianceCost = variance * Number(invItem?.costPrice || 0);
+      const updated = await storage.updateStockTakeLine(req.params.lineId, {
+        countedQty: String(countedQty),
+        varianceQty: String(variance),
+        varianceCost: String(Math.round(varianceCost * 100) / 100),
+      });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/stock-takes/:id/complete", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const take = await storage.getStockTake(req.params.id);
+      if (!take || take.tenantId !== user.tenantId) return res.status(404).json({ message: "Not found" });
+      const lines = await storage.getStockTakeLines(take.id);
+      for (const line of lines) {
+        if (line.countedQty !== null && line.countedQty !== undefined) {
+          await storage.updateInventoryItem(line.inventoryItemId, { currentStock: line.countedQty });
+          const variance = Number(line.countedQty) - Number(line.expectedQty);
+          if (variance !== 0) {
+            await storage.createStockMovement({
+              tenantId: user.tenantId,
+              itemId: line.inventoryItemId,
+              type: variance > 0 ? "in" : "out",
+              quantity: String(Math.abs(variance)),
+              reason: `Stock take adjustment (Take #${take.id.slice(0, 8)})`,
+            });
+          }
+        }
+      }
+      const updated = await storage.updateStockTake(req.params.id, user.tenantId, { status: "completed", completedAt: new Date() });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Stock Movements History ──
+  app.get("/api/stock-movements", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const limit = req.query.limit ? Number(req.query.limit) : 50;
+      const movements = await storage.getStockMovementsByTenant(user.tenantId, limit);
+      res.json(movements);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

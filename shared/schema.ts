@@ -638,6 +638,63 @@ export const auditIssues = pgTable("audit_issues", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export const recipes = pgTable("recipes", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  menuItemId: varchar("menu_item_id", { length: 36 }).references(() => menuItems.id),
+  name: text("name").notNull(),
+  yield: decimal("yield", { precision: 10, scale: 2 }).default("1"),
+  yieldUnit: text("yield_unit").default("portion"),
+  prepTimeMinutes: integer("prep_time_minutes"),
+  notes: text("notes"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const recipeIngredients = pgTable("recipe_ingredients", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  recipeId: varchar("recipe_id", { length: 36 }).notNull().references(() => recipes.id),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull(),
+  unit: text("unit").notNull(),
+  wastePct: decimal("waste_pct", { precision: 5, scale: 2 }).default("0"),
+  sortOrder: integer("sort_order").default(0),
+});
+
+export const stockTakes = pgTable("stock_takes", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  conductedBy: varchar("conducted_by", { length: 36 }).notNull().references(() => users.id),
+  status: text("status").default("draft"),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const stockTakeLines = pgTable("stock_take_lines", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  stockTakeId: varchar("stock_take_id", { length: 36 }).notNull().references(() => stockTakes.id),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  expectedQty: decimal("expected_qty", { precision: 10, scale: 2 }).notNull(),
+  countedQty: decimal("counted_qty", { precision: 10, scale: 2 }),
+  varianceQty: decimal("variance_qty", { precision: 10, scale: 2 }),
+  varianceCost: decimal("variance_cost", { precision: 10, scale: 2 }),
+});
+
+export const insertRecipeSchema = createInsertSchema(recipes).omit({ id: true, createdAt: true });
+export const insertRecipeIngredientSchema = createInsertSchema(recipeIngredients).omit({ id: true });
+export const insertStockTakeSchema = createInsertSchema(stockTakes).omit({ id: true, createdAt: true });
+export const insertStockTakeLineSchema = createInsertSchema(stockTakeLines).omit({ id: true });
+
+export type Recipe = typeof recipes.$inferSelect;
+export type InsertRecipe = z.infer<typeof insertRecipeSchema>;
+export type RecipeIngredient = typeof recipeIngredients.$inferSelect;
+export type InsertRecipeIngredient = z.infer<typeof insertRecipeIngredientSchema>;
+export type StockTake = typeof stockTakes.$inferSelect;
+export type InsertStockTake = z.infer<typeof insertStockTakeSchema>;
+export type StockTakeLine = typeof stockTakeLines.$inferSelect;
+export type InsertStockTakeLine = z.infer<typeof insertStockTakeLineSchema>;
+
 export const insertAuditTemplateSchema = createInsertSchema(auditTemplates).omit({ id: true, createdAt: true });
 export const insertAuditTemplateItemSchema = createInsertSchema(auditTemplateItems).omit({ id: true });
 export const insertAuditScheduleSchema = createInsertSchema(auditSchedules).omit({ id: true, createdAt: true });

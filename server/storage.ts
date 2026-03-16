@@ -7,6 +7,7 @@ import {
   salesInquiries, supportTickets, attendanceLogs,
   cleaningTemplates, cleaningTemplateItems, cleaningLogs, cleaningSchedules,
   auditTemplates, auditTemplateItems, auditSchedules, auditResponses, auditIssues,
+  recipes, recipeIngredients, stockTakes, stockTakeLines,
   type Tenant, type InsertTenant,
   type User, type InsertUser,
   type Outlet, type InsertOutlet,
@@ -36,6 +37,10 @@ import {
   type AuditSchedule, type InsertAuditSchedule,
   type AuditResponse, type InsertAuditResponse,
   type AuditIssue, type InsertAuditIssue,
+  type Recipe, type InsertRecipe,
+  type RecipeIngredient, type InsertRecipeIngredient,
+  type StockTake, type InsertStockTake,
+  type StockTakeLine, type InsertStockTakeLine,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -185,6 +190,25 @@ export interface IStorage {
   getAuditIssuesByTenant(tenantId: string, status?: string): Promise<AuditIssue[]>;
   createAuditIssue(data: InsertAuditIssue): Promise<AuditIssue>;
   updateAuditIssue(id: string, tenantId: string, data: Partial<InsertAuditIssue>): Promise<AuditIssue | undefined>;
+
+  getRecipesByTenant(tenantId: string): Promise<Recipe[]>;
+  getRecipe(id: string): Promise<Recipe | undefined>;
+  createRecipe(data: InsertRecipe): Promise<Recipe>;
+  updateRecipe(id: string, tenantId: string, data: Partial<InsertRecipe>): Promise<Recipe | undefined>;
+  deleteRecipe(id: string, tenantId: string): Promise<void>;
+  getRecipeIngredients(recipeId: string): Promise<RecipeIngredient[]>;
+  createRecipeIngredient(data: InsertRecipeIngredient): Promise<RecipeIngredient>;
+  deleteRecipeIngredients(recipeId: string): Promise<void>;
+  getRecipeByMenuItem(menuItemId: string): Promise<Recipe | undefined>;
+
+  getStockTakesByTenant(tenantId: string): Promise<StockTake[]>;
+  getStockTake(id: string): Promise<StockTake | undefined>;
+  createStockTake(data: InsertStockTake): Promise<StockTake>;
+  updateStockTake(id: string, tenantId: string, data: Partial<InsertStockTake>): Promise<StockTake | undefined>;
+  getStockTakeLines(stockTakeId: string): Promise<StockTakeLine[]>;
+  createStockTakeLine(data: InsertStockTakeLine): Promise<StockTakeLine>;
+  updateStockTakeLine(id: string, data: Partial<InsertStockTakeLine>): Promise<StockTakeLine | undefined>;
+  getStockMovementsByTenant(tenantId: string, limit?: number): Promise<StockMovement[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -843,6 +867,74 @@ export class DatabaseStorage implements IStorage {
   async updateAuditIssue(id: string, tenantId: string, data: Partial<InsertAuditIssue>) {
     const [issue] = await db.update(auditIssues).set(data).where(and(eq(auditIssues.id, id), eq(auditIssues.tenantId, tenantId))).returning();
     return issue;
+  }
+
+  async getRecipesByTenant(tenantId: string) {
+    return db.select().from(recipes).where(eq(recipes.tenantId, tenantId)).orderBy(recipes.name);
+  }
+  async getRecipe(id: string) {
+    const [r] = await db.select().from(recipes).where(eq(recipes.id, id));
+    return r;
+  }
+  async createRecipe(data: InsertRecipe) {
+    const [r] = await db.insert(recipes).values(data).returning();
+    return r;
+  }
+  async updateRecipe(id: string, tenantId: string, data: Partial<InsertRecipe>) {
+    const [r] = await db.update(recipes).set(data).where(and(eq(recipes.id, id), eq(recipes.tenantId, tenantId))).returning();
+    return r;
+  }
+  async deleteRecipe(id: string, tenantId: string) {
+    await db.delete(recipeIngredients).where(
+      sql`${recipeIngredients.recipeId} = ${id}`
+    );
+    await db.delete(recipes).where(and(eq(recipes.id, id), eq(recipes.tenantId, tenantId)));
+  }
+  async getRecipeIngredients(recipeId: string) {
+    return db.select().from(recipeIngredients).where(eq(recipeIngredients.recipeId, recipeId)).orderBy(recipeIngredients.sortOrder);
+  }
+  async createRecipeIngredient(data: InsertRecipeIngredient) {
+    const [ri] = await db.insert(recipeIngredients).values(data).returning();
+    return ri;
+  }
+  async deleteRecipeIngredients(recipeId: string) {
+    await db.delete(recipeIngredients).where(eq(recipeIngredients.recipeId, recipeId));
+  }
+  async getRecipeByMenuItem(menuItemId: string) {
+    const [r] = await db.select().from(recipes).where(eq(recipes.menuItemId, menuItemId));
+    return r;
+  }
+
+  async getStockTakesByTenant(tenantId: string) {
+    return db.select().from(stockTakes).where(eq(stockTakes.tenantId, tenantId)).orderBy(desc(stockTakes.createdAt));
+  }
+  async getStockTake(id: string) {
+    const [st] = await db.select().from(stockTakes).where(eq(stockTakes.id, id));
+    return st;
+  }
+  async createStockTake(data: InsertStockTake) {
+    const [st] = await db.insert(stockTakes).values(data).returning();
+    return st;
+  }
+  async updateStockTake(id: string, tenantId: string, data: Partial<InsertStockTake>) {
+    const [st] = await db.update(stockTakes).set(data).where(and(eq(stockTakes.id, id), eq(stockTakes.tenantId, tenantId))).returning();
+    return st;
+  }
+  async getStockTakeLines(stockTakeId: string) {
+    return db.select().from(stockTakeLines).where(eq(stockTakeLines.stockTakeId, stockTakeId));
+  }
+  async createStockTakeLine(data: InsertStockTakeLine) {
+    const [line] = await db.insert(stockTakeLines).values(data).returning();
+    return line;
+  }
+  async updateStockTakeLine(id: string, data: Partial<InsertStockTakeLine>) {
+    const [line] = await db.update(stockTakeLines).set(data).where(eq(stockTakeLines.id, id)).returning();
+    return line;
+  }
+  async getStockMovementsByTenant(tenantId: string, limit?: number) {
+    const q = db.select().from(stockMovements).where(eq(stockMovements.tenantId, tenantId)).orderBy(desc(stockMovements.createdAt));
+    if (limit) return q.limit(limit);
+    return q;
   }
 }
 

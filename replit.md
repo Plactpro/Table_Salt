@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -63,6 +63,9 @@ All prefixed with `/api`:
 - Attendance: `/attendance` (GET, role-scoped), `/attendance/status` (GET), `/attendance/clock-in` (POST), `/attendance/clock-out` (POST)
 - Cleaning: `/cleaning/templates` (CRUD), `/cleaning/templates/:id/items` (GET), `/cleaning/logs` (GET/POST/DELETE)
 - Contact: `/contact-config` (GET, public), `/contact-sales` (POST, public), `/contact-support` (POST, public)
+- Recipes: `/recipes` (CRUD with ingredients), `/food-cost-report` (GET)
+- Stock Takes: `/stock-takes` (GET/POST), `/stock-takes/:id` (GET), `/stock-takes/:id/lines/:lineId` (PATCH), `/stock-takes/:id/complete` (PATCH)
+- Stock Movements: `/stock-movements` (GET with limit)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages
@@ -72,7 +75,7 @@ All prefixed with `/api`:
 - `/orders` - Order management (with Ready to Pay status, bill preview)
 - `/tables` - Table floor plan & reservations
 - `/menu` - Menu management (with image, tags, ingredients, DishInfoPanel)
-- `/inventory` - Inventory management
+- `/inventory` - Inventory & Recipe Costing (4 tabs: Inventory items, Recipes with ingredient picker & live cost calc, Stock Takes with variance, Food Cost report)
 - `/staff` - Staff management (roster, schedule, attendance tabs with clock-in/out tracking)
 - `/reports` - Sales reports
 - `/offers` - Offers & Discounts management (premium+ tier, combo/BOGO/free_item marked as POS N/A)
