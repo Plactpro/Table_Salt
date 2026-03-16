@@ -14,6 +14,7 @@ import {
   insertCleaningTemplateSchema, insertCleaningLogSchema,
   insertAuditTemplateSchema, insertAuditScheduleSchema, insertAuditIssueSchema,
   insertRecipeSchema, insertStockTakeSchema,
+  insertRegionSchema, insertFranchiseInvoiceSchema, insertOutletMenuOverrideSchema,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
@@ -1968,6 +1969,137 @@ export async function registerRoutes(
         await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course });
       }
       res.json({ order, simulatedPayload: mockOrder });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Regions CRUD ──
+  app.get("/api/regions", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const regions = await storage.getRegionsByTenant(user.tenantId);
+      res.json(regions);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+  app.post("/api/regions", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const data = insertRegionSchema.parse({ ...req.body, tenantId: user.tenantId });
+      const region = await storage.createRegion(data);
+      res.json(region);
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+  app.patch("/api/regions/:id", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const region = await storage.updateRegion(req.params.id, user.tenantId, req.body);
+      if (!region) return res.status(404).json({ message: "Region not found" });
+      res.json(region);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+  app.delete("/api/regions/:id", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      await storage.deleteRegion(req.params.id, user.tenantId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Franchise Invoices ──
+  app.get("/api/franchise-invoices", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const outletId = req.query.outletId as string | undefined;
+      const invoices = outletId
+        ? await storage.getFranchiseInvoicesByOutlet(outletId, user.tenantId)
+        : await storage.getFranchiseInvoicesByTenant(user.tenantId);
+      res.json(invoices);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+  app.post("/api/franchise-invoices", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const body = { ...req.body, tenantId: user.tenantId };
+      if (typeof body.periodStart === "string") body.periodStart = new Date(body.periodStart);
+      if (typeof body.periodEnd === "string") body.periodEnd = new Date(body.periodEnd);
+      const data = insertFranchiseInvoiceSchema.parse(body);
+      const invoice = await storage.createFranchiseInvoice(data);
+      res.json(invoice);
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+  app.post("/api/franchise-invoices/calculate", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const { outletId, periodStart, periodEnd } = req.body;
+      if (!outletId || !periodStart || !periodEnd) return res.status(400).json({ message: "outletId, periodStart, periodEnd required" });
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      const outlet = outlets.find(o => o.id === outletId);
+      if (!outlet || !outlet.isFranchise) return res.status(400).json({ message: "Outlet is not a franchise" });
+      const kpis = await storage.getOutletKPIs(user.tenantId, outletId, new Date(periodStart), new Date(periodEnd));
+      const kpi = kpis[0] || { totalRevenue: "0" };
+      const netSales = parseFloat(String(kpi.totalRevenue || "0"));
+      const royaltyRate = parseFloat(outlet.royaltyRate || "0");
+      const minGuarantee = parseFloat(outlet.minimumGuarantee || "0");
+      const calculatedRoyalty = netSales * (royaltyRate / 100);
+      const finalAmount = Math.max(calculatedRoyalty, minGuarantee);
+      res.json({ outletId, outletName: outlet.name, periodStart, periodEnd, netSales: netSales.toFixed(2), royaltyRate: royaltyRate.toFixed(2), calculatedRoyalty: calculatedRoyalty.toFixed(2), minimumGuarantee: minGuarantee.toFixed(2), finalAmount: finalAmount.toFixed(2) });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+  app.patch("/api/franchise-invoices/:id", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const invoice = await storage.updateFranchiseInvoice(req.params.id, user.tenantId, req.body);
+      if (!invoice) return res.status(404).json({ message: "Invoice not found" });
+      res.json(invoice);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Outlet Menu Overrides ──
+  app.get("/api/outlet-menu-overrides/:outletId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const overrides = await storage.getOutletMenuOverrides(req.params.outletId, user.tenantId);
+      res.json(overrides);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+  app.post("/api/outlet-menu-overrides", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const data = insertOutletMenuOverrideSchema.parse({ ...req.body, tenantId: user.tenantId });
+      const override = await storage.createOutletMenuOverride(data);
+      res.json(override);
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+  app.patch("/api/outlet-menu-overrides/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const override = await storage.updateOutletMenuOverride(req.params.id, user.tenantId, req.body);
+      if (!override) return res.status(404).json({ message: "Override not found" });
+      res.json(override);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+  app.delete("/api/outlet-menu-overrides/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      await storage.deleteOutletMenuOverride(req.params.id, user.tenantId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── HQ / Cross-Outlet KPIs ──
+  app.get("/api/hq/outlet-kpis", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const outletId = req.query.outletId as string | undefined;
+      const from = req.query.from ? new Date(req.query.from as string) : undefined;
+      const to = req.query.to ? new Date(req.query.to as string) : undefined;
+      const kpis = await storage.getOutletKPIs(user.tenantId, outletId, from, to);
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      const outletMap = new Map(outlets.map(o => [o.id, o]));
+      const enriched = kpis.map(k => {
+        const outlet = outletMap.get(k.outletId as string);
+        return { ...k, outletName: outlet?.name || "Unknown", isFranchise: outlet?.isFranchise || false, regionId: outlet?.regionId || null };
+      });
+      res.json(enriched);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

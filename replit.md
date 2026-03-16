@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, tables, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -96,6 +96,8 @@ All prefixed with `/api`:
 - `/delivery` - Delivery order management (status flow, driver info, fee display)
 - `/cleaning` - Cleaning & Maintenance schedules (Kitchen, Premises, Deep Clean tabs + Compliance reporting)
 - `/audits` - Internal Audits (Dashboard, Schedules, Templates, Issues, Analytics tabs with audit execution flow)
+- `/orders-hub` - Online Orders / Aggregator Hub (Talabat, Deliveroo, Careem, Noon Food)
+- `/hq-console` - HQ Console (multi-outlet KPIs, outlet comparison, franchise royalty calculator/invoices, menu overrides, region management)
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
 
