@@ -1,0 +1,21 @@
+{
+  "uber_order_id": "UBE-DEMO-001",
+  "store_id": "UBE-STORE-42",
+  "line_items": [
+    { "uber_item_id": "UBE-001", "title": "Grilled Salmon", "count": 1, "base_price": "24.99" },
+    { "uber_item_id": "UBE-002", "title": "Tiramisu", "count": 2, "base_price": "9.99" }
+  ],
+  "eater": {
+    "first_name": "Omar",
+    "last_name": "Khan",
+    "phone": "+971-554567890"
+  },
+  "dropoff": {
+    "address_line": "Business Bay, Sky Tower, Floor 22",
+    "latitude": 25.1864,
+    "longitude": 55.2614
+  },
+  "special_request": "Contactless delivery preferred",
+  "payment_type": "card",
+  "created_at": "2026-03-16T12:15:00Z"
+}

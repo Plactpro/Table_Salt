@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
 import { setupAuth, requireAuth, requireRole, hashPassword } from "./auth";
+import { getAdapter } from "./aggregator-adapters";
 import {
   insertTenantSchema, insertMenuCategorySchema, insertMenuItemSchema,
   insertTableSchema, insertReservationSchema, insertOrderSchema,
@@ -1762,13 +1763,15 @@ export async function registerRoutes(
   });
   app.patch("/api/order-channels/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
-      const channel = await storage.updateOrderChannel(req.params.id, req.body);
+      const user = req.user as Express.User & { tenantId: string };
+      const channel = await storage.updateOrderChannel(req.params.id, user.tenantId, req.body);
       res.json(channel);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
   app.delete("/api/order-channels/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
-      await storage.deleteOrderChannel(req.params.id);
+      const user = req.user as Express.User & { tenantId: string };
+      await storage.deleteOrderChannel(req.params.id, user.tenantId);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1790,13 +1793,15 @@ export async function registerRoutes(
   });
   app.patch("/api/channel-configs/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
-      const config = await storage.updateChannelConfig(req.params.id, req.body);
+      const user = req.user as Express.User & { tenantId: string };
+      const config = await storage.updateChannelConfig(req.params.id, user.tenantId, req.body);
       res.json(config);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
   app.delete("/api/channel-configs/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
-      await storage.deleteChannelConfig(req.params.id);
+      const user = req.user as Express.User & { tenantId: string };
+      await storage.deleteChannelConfig(req.params.id, user.tenantId);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1818,13 +1823,15 @@ export async function registerRoutes(
   });
   app.patch("/api/online-menu-mappings/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
-      const mapping = await storage.updateOnlineMenuMapping(req.params.id, req.body);
+      const user = req.user as Express.User & { tenantId: string };
+      const mapping = await storage.updateOnlineMenuMapping(req.params.id, user.tenantId, req.body);
       res.json(mapping);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
   app.delete("/api/online-menu-mappings/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
-      await storage.deleteOnlineMenuMapping(req.params.id);
+      const user = req.user as Express.User & { tenantId: string };
+      await storage.deleteOnlineMenuMapping(req.params.id, user.tenantId);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1840,100 +1847,70 @@ export async function registerRoutes(
       const channels = await storage.getOrderChannelsByTenant(user.tenantId);
       const ch = channels.find(c => c.slug === channel);
       if (!ch) return res.status(400).json({ message: `Unknown channel: ${channel}` });
+      const normalizedOrder = {
+        channelOrderId: channelOrderId || `${channel.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
+        items: (items as Array<Record<string, unknown>>).map((i: Record<string, unknown>) => ({ externalItemId: String(i.externalItemId || ""), menuItemId: String(i.menuItemId || ""), name: String(i.name || ""), quantity: Number(i.quantity || 1), price: String(i.price || "0") })),
+        customerName: customerName || "", customerPhone: customerPhone || "", customerAddress: customerAddress || "", notes: notes || "",
+      };
       const outlets = await storage.getOutletsByTenant(user.tenantId);
-      const outlet = outlets[0];
       const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
       const menuMap = new Map(menuItems.map(m => [m.id, m]));
       const mappings = await storage.getOnlineMenuMappingsByTenant(user.tenantId);
       const externalToMenuId = new Map(mappings.filter(m => m.channelId === ch.id).map(m => [m.externalItemId, m.menuItemId]));
       let subtotal = 0;
-      const orderItemsData: Array<{ menuItemId: string; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
-      for (const item of items) {
-        let menuItemId = item.menuItemId;
-        if (!menuItemId && item.externalItemId) {
-          menuItemId = externalToMenuId.get(item.externalItemId);
-        }
+      const orderItemsData: Array<{ menuItemId: string | null; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
+      for (const item of normalizedOrder.items) {
+        let menuItemId: string | undefined = item.menuItemId;
+        if (!menuItemId && item.externalItemId) menuItemId = externalToMenuId.get(item.externalItemId);
         const mi = menuItemId ? menuMap.get(menuItemId) : undefined;
+        if (menuItemId && !mi) menuItemId = undefined;
         const price = item.price || (mi ? mi.price : "0");
-        const qty = item.quantity || 1;
-        subtotal += parseFloat(price) * qty;
-        orderItemsData.push({
-          menuItemId: menuItemId || "",
-          name: item.name || mi?.name || "Unknown Item",
-          quantity: qty,
-          price,
-          station: mi?.station || null,
-          course: mi?.course || null,
-        });
+        subtotal += parseFloat(price) * item.quantity;
+        orderItemsData.push({ menuItemId: menuItemId || null, name: item.name || mi?.name || "Unknown Item", quantity: item.quantity, price, station: mi?.station || null, course: mi?.course || null });
       }
       const tenant = await storage.getTenant(user.tenantId);
       const taxRate = parseFloat(tenant?.taxRate || "0");
       const tax = subtotal * (taxRate / 100);
       const total = subtotal + tax;
       const order = await storage.createOrder({
-        tenantId: user.tenantId,
-        outletId: outlet?.id || null,
-        orderType: "delivery",
-        status: "new",
-        subtotal: subtotal.toFixed(2),
-        tax: tax.toFixed(2),
-        total: total.toFixed(2),
-        channel: ch.slug,
-        channelOrderId: channelOrderId || null,
-        channelData: { customerName, customerPhone, customerAddress, notes } as Record<string, unknown>,
-        notes: notes || null,
+        tenantId: user.tenantId, outletId: outlets[0]?.id || null, orderType: "delivery", status: "new",
+        subtotal: subtotal.toFixed(2), tax: tax.toFixed(2), total: total.toFixed(2),
+        channel: ch.slug, channelOrderId: normalizedOrder.channelOrderId,
+        channelData: { customerName: normalizedOrder.customerName, customerPhone: normalizedOrder.customerPhone, customerAddress: normalizedOrder.customerAddress } as Record<string, unknown>,
+        notes: normalizedOrder.notes || null,
       });
       for (const oi of orderItemsData) {
-        await storage.createOrderItem({
-          orderId: order.id,
-          menuItemId: oi.menuItemId,
-          name: oi.name,
-          quantity: oi.quantity,
-          price: oi.price,
-          station: oi.station,
-          course: oi.course,
-        });
+        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course });
       }
       res.json(order);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  // ── Mock Aggregator Feeds (simulate incoming orders from platforms) ──
-  app.post("/api/aggregator/simulate/:platform", requireRole("owner", "manager"), async (req, res) => {
+  // ── Aggregator Webhook (parse raw platform payload via adapter) ──
+  app.post("/api/aggregator/webhook/:platform", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const platform = req.params.platform;
+      const adapter = getAdapter(platform);
+      if (!adapter) return res.status(400).json({ message: `No adapter for platform: ${platform}` });
       const channels = await storage.getOrderChannelsByTenant(user.tenantId);
       const ch = channels.find(c => c.slug === platform);
-      if (!ch) return res.status(400).json({ message: `Platform ${platform} not found` });
+      if (!ch) return res.status(400).json({ message: `Channel ${platform} not configured` });
+      const parsed = adapter.parseOrder(req.body);
       const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
-      if (menuItems.length === 0) return res.status(400).json({ message: "No menu items available" });
-      const sampleNames = ["Ahmed", "Fatima", "Omar", "Sara", "Khalid", "Maryam"];
-      const sampleAddresses = ["Downtown Dubai, Tower B, Apt 1203", "JBR Walk, Building 5, Unit 8A", "Business Bay, Sky Tower, Floor 22", "Marina Walk, Pearl Tower, 1804"];
-      const numItems = Math.floor(Math.random() * 3) + 1;
-      const selectedItems = [];
-      for (let i = 0; i < numItems; i++) {
-        const mi = menuItems[Math.floor(Math.random() * menuItems.length)];
-        selectedItems.push({ menuItemId: mi.id, name: mi.name, quantity: Math.floor(Math.random() * 2) + 1, price: mi.price });
-      }
-      const customerName = sampleNames[Math.floor(Math.random() * sampleNames.length)];
-      const mockPayload = {
-        channel: platform,
-        channelOrderId: `${platform.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
-        items: selectedItems,
-        customerName,
-        customerPhone: `+971-5${Math.floor(Math.random() * 10000000).toString().padStart(7, "0")}`,
-        customerAddress: sampleAddresses[Math.floor(Math.random() * sampleAddresses.length)],
-        notes: `${platform} order - handle with care`,
-      };
-      const fakeReq = { body: mockPayload, user: req.user } as typeof req;
-      let subtotal = 0;
-      const orderItemsData: Array<{ menuItemId: string; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
       const menuMap = new Map(menuItems.map(m => [m.id, m]));
-      for (const item of selectedItems) {
-        const mi = menuMap.get(item.menuItemId);
-        subtotal += parseFloat(item.price) * item.quantity;
-        orderItemsData.push({ menuItemId: item.menuItemId, name: item.name, quantity: item.quantity, price: item.price, station: mi?.station || null, course: mi?.course || null });
+      const mappings = await storage.getOnlineMenuMappingsByTenant(user.tenantId);
+      const externalToMenuId = new Map(mappings.filter(m => m.channelId === ch.id).map(m => [m.externalItemId, m.menuItemId]));
+      let subtotal = 0;
+      const orderItemsData: Array<{ menuItemId: string | null; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
+      for (const item of parsed.items) {
+        let menuItemId: string | undefined = item.menuItemId;
+        if (!menuItemId && item.externalItemId) menuItemId = externalToMenuId.get(item.externalItemId);
+        const mi = menuItemId ? menuMap.get(menuItemId) : undefined;
+        if (menuItemId && !mi) menuItemId = undefined;
+        const price = item.price || (mi ? mi.price : "0");
+        subtotal += parseFloat(price) * item.quantity;
+        orderItemsData.push({ menuItemId: menuItemId || null, name: item.name || mi?.name || "Unknown", quantity: item.quantity, price, station: mi?.station || null, course: mi?.course || null });
       }
       const tenant = await storage.getTenant(user.tenantId);
       const taxRate = parseFloat(tenant?.taxRate || "0");
@@ -1941,22 +1918,56 @@ export async function registerRoutes(
       const total = subtotal + tax;
       const outlets = await storage.getOutletsByTenant(user.tenantId);
       const order = await storage.createOrder({
-        tenantId: user.tenantId,
-        outletId: outlets[0]?.id || null,
-        orderType: "delivery",
-        status: "new",
-        subtotal: subtotal.toFixed(2),
-        tax: tax.toFixed(2),
-        total: total.toFixed(2),
-        channel: platform,
-        channelOrderId: mockPayload.channelOrderId,
-        channelData: { customerName: mockPayload.customerName, customerPhone: mockPayload.customerPhone, customerAddress: mockPayload.customerAddress } as Record<string, unknown>,
-        notes: mockPayload.notes,
+        tenantId: user.tenantId, outletId: outlets[0]?.id || null, orderType: "delivery", status: "new",
+        subtotal: subtotal.toFixed(2), tax: tax.toFixed(2), total: total.toFixed(2),
+        channel: platform, channelOrderId: parsed.channelOrderId,
+        channelData: { customerName: parsed.customerName, customerPhone: parsed.customerPhone, customerAddress: parsed.customerAddress } as Record<string, unknown>,
+        notes: parsed.notes || null,
       });
       for (const oi of orderItemsData) {
         await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course });
       }
-      res.json({ order, simulatedPayload: mockPayload });
+      res.json(order);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Mock Aggregator Feeds (adapter pattern - simulate incoming orders) ──
+  app.post("/api/aggregator/simulate/:platform", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const platform = req.params.platform;
+      const adapter = getAdapter(platform);
+      if (!adapter) return res.status(400).json({ message: `No adapter for platform: ${platform}` });
+      const channels = await storage.getOrderChannelsByTenant(user.tenantId);
+      const ch = channels.find(c => c.slug === platform);
+      if (!ch) return res.status(400).json({ message: `Channel ${platform} not configured` });
+      const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+      if (menuItems.length === 0) return res.status(400).json({ message: "No menu items available" });
+      const mockOrder = adapter.generateMockOrder(menuItems.map(m => ({ id: m.id, name: m.name, price: m.price })));
+      const menuMap = new Map(menuItems.map(m => [m.id, m]));
+      let subtotal = 0;
+      const orderItemsData: Array<{ menuItemId: string; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
+      for (const item of mockOrder.items) {
+        const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
+        subtotal += parseFloat(item.price) * item.quantity;
+        orderItemsData.push({ menuItemId: item.menuItemId || "", name: item.name, quantity: item.quantity, price: item.price, station: mi?.station || null, course: mi?.course || null });
+      }
+      const tenant = await storage.getTenant(user.tenantId);
+      const taxRate = parseFloat(tenant?.taxRate || "0");
+      const tax = subtotal * (taxRate / 100);
+      const total = subtotal + tax;
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      const order = await storage.createOrder({
+        tenantId: user.tenantId, outletId: outlets[0]?.id || null, orderType: "delivery", status: "new",
+        subtotal: subtotal.toFixed(2), tax: tax.toFixed(2), total: total.toFixed(2),
+        channel: platform, channelOrderId: mockOrder.channelOrderId,
+        channelData: { customerName: mockOrder.customerName, customerPhone: mockOrder.customerPhone, customerAddress: mockOrder.customerAddress } as Record<string, unknown>,
+        notes: mockOrder.notes || null,
+      });
+      for (const oi of orderItemsData) {
+        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course });
+      }
+      res.json({ order, simulatedPayload: mockOrder });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

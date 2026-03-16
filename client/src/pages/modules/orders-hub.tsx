@@ -88,6 +88,7 @@ export default function OrdersHub() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("live-orders");
   const [channelFilter, setChannelFilter] = useState("all");
+  const [outletFilter, setOutletFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(null);
@@ -98,7 +99,12 @@ export default function OrdersHub() {
 
   const formatCurrency = (amount: string | number) => {
     if (!user) return String(amount);
-    return sharedFormatCurrency(amount, { currency: (user as Record<string, string>).currency || "USD", position: (user as Record<string, string>).currencyPosition || "before", decimals: parseInt((user as Record<string, string>).currencyDecimals || "2") });
+    const u = user as Record<string, unknown>;
+    const tenant = (u.tenant || {}) as Record<string, unknown>;
+    const currency = String(tenant.currency || u.currency || "USD");
+    const position = String(tenant.currencyPosition || u.currencyPosition || "before");
+    const decimals = parseInt(String(tenant.currencyDecimals ?? u.currencyDecimals ?? "2"));
+    return sharedFormatCurrency(amount, currency, { position, decimals });
   };
 
   const { data: orders = [] } = useQuery<OrderWithItems[]>({ queryKey: ["/api/orders"] });
@@ -183,13 +189,14 @@ export default function OrdersHub() {
   const liveOrders = useMemo(() => {
     let filtered = orders.filter(o => liveStatuses.includes(o.status || ""));
     if (channelFilter !== "all") filtered = filtered.filter(o => (o.channel || "pos") === channelFilter);
+    if (outletFilter !== "all") filtered = filtered.filter(o => o.outletId === outletFilter);
     if (statusFilter !== "all") filtered = filtered.filter(o => o.status === statusFilter);
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       filtered = filtered.filter(o => o.id.toLowerCase().includes(q) || (o.channelOrderId || "").toLowerCase().includes(q) || (o.notes || "").toLowerCase().includes(q));
     }
     return filtered.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-  }, [orders, channelFilter, statusFilter, searchQuery]);
+  }, [orders, channelFilter, outletFilter, statusFilter, searchQuery]);
 
   const channelStats = useMemo(() => {
     const stats: Record<string, { total: number; active: number; revenue: number }> = {};
@@ -278,6 +285,15 @@ export default function OrdersHub() {
               <SelectContent>
                 <SelectItem value="all">All Channels</SelectItem>
                 {channels.map(ch => <SelectItem key={ch.id} value={ch.slug}>{ch.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={outletFilter} onValueChange={setOutletFilter}>
+              <SelectTrigger className="w-[160px]" data-testid="select-outlet-filter">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Outlets</SelectItem>
+                {outlets.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
