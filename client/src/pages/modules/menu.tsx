@@ -239,8 +239,8 @@ export default function MenuPage() {
       nutritionalNotes: ing?.nutritionalNotes || "",
       preparationNotes: ing?.preparationNotes || "",
       calories: ing?.calories ? String(ing.calories) : "",
-      station: (item as any).station || "",
-      course: (item as any).course || "",
+      station: item.station || "",
+      course: item.course || "",
     });
     setItemDialogOpen(true);
   }

@@ -5,6 +5,7 @@ import {
   ChefHat, Flame, CheckCircle2, Utensils, Clock, LogIn, LogOut, CheckCircle, AlertCircle,
   Maximize2, Minimize2, RotateCcw, Coffee, IceCream, Beef, CookingPot, Filter,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -42,7 +43,7 @@ interface KitchenStation {
   active: boolean;
 }
 
-const STATION_ICONS: Record<string, any> = {
+const STATION_ICONS: Record<string, LucideIcon> = {
   grill: Beef,
   main: CookingPot,
   fryer: Flame,
@@ -305,8 +306,10 @@ export default function KitchenDashboard() {
   const [selectedStation, setSelectedStation] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  const ticketsUrl = selectedStation ? `/api/kds/tickets?station=${encodeURIComponent(selectedStation)}` : "/api/kds/tickets";
   const { data: tickets = [], isLoading } = useQuery<KDSTicket[]>({
-    queryKey: ["/api/kds/tickets"],
+    queryKey: ["/api/kds/tickets", selectedStation],
+    queryFn: () => fetch(ticketsUrl, { credentials: "include" }).then(r => r.json()),
     refetchInterval: 5000,
   });
 
@@ -318,7 +321,7 @@ export default function KitchenDashboard() {
     mutationFn: async ({ itemId, status }: { itemId: string; status: string }) => {
       await apiRequest("PATCH", `/api/kds/order-items/${itemId}/status`, { status });
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] }); queryClient.invalidateQueries({ queryKey: ["/api/orders"] }); },
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
   });
 
