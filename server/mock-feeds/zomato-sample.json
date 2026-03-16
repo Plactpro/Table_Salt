@@ -1,0 +1,14 @@
+{
+  "zomato_order_id": "ZMT-DEMO-001",
+  "restaurant_zomato_id": "ZMT-RST-99",
+  "cart": [
+    { "zomato_item_id": "ZMT-001", "dish_name": "Butter Chicken", "qty": 1, "unit_price": "16.99" },
+    { "zomato_item_id": "ZMT-002", "dish_name": "Garlic Naan", "qty": 3, "unit_price": "3.99" }
+  ],
+  "customer_name": "Fatima Hassan",
+  "customer_contact": "+971-559876543",
+  "drop_location": "JBR Walk, Building 5, Unit 8A",
+  "notes": "Ring the doorbell twice",
+  "payment_mode": "online",
+  "placed_at": "2026-03-16T11:00:00Z"
+}

@@ -225,17 +225,17 @@ export interface IStorage {
   getOrderChannelsByTenant(tenantId: string): Promise<OrderChannel[]>;
   getOrderChannel(id: string): Promise<OrderChannel | undefined>;
   createOrderChannel(data: InsertOrderChannel): Promise<OrderChannel>;
-  updateOrderChannel(id: string, data: Partial<InsertOrderChannel>): Promise<OrderChannel | undefined>;
-  deleteOrderChannel(id: string): Promise<void>;
+  updateOrderChannel(id: string, tenantId: string, data: Partial<InsertOrderChannel>): Promise<OrderChannel | undefined>;
+  deleteOrderChannel(id: string, tenantId: string): Promise<void>;
   getChannelConfigsByTenant(tenantId: string): Promise<ChannelConfig[]>;
   getChannelConfig(id: string): Promise<ChannelConfig | undefined>;
   createChannelConfig(data: InsertChannelConfig): Promise<ChannelConfig>;
-  updateChannelConfig(id: string, data: Partial<InsertChannelConfig>): Promise<ChannelConfig | undefined>;
-  deleteChannelConfig(id: string): Promise<void>;
+  updateChannelConfig(id: string, tenantId: string, data: Partial<InsertChannelConfig>): Promise<ChannelConfig | undefined>;
+  deleteChannelConfig(id: string, tenantId: string): Promise<void>;
   getOnlineMenuMappingsByTenant(tenantId: string): Promise<OnlineMenuMapping[]>;
   createOnlineMenuMapping(data: InsertOnlineMenuMapping): Promise<OnlineMenuMapping>;
-  updateOnlineMenuMapping(id: string, data: Partial<InsertOnlineMenuMapping>): Promise<OnlineMenuMapping | undefined>;
-  deleteOnlineMenuMapping(id: string): Promise<void>;
+  updateOnlineMenuMapping(id: string, tenantId: string, data: Partial<InsertOnlineMenuMapping>): Promise<OnlineMenuMapping | undefined>;
+  deleteOnlineMenuMapping(id: string, tenantId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -998,12 +998,12 @@ export class DatabaseStorage implements IStorage {
     const [c] = await db.insert(orderChannels).values(data).returning();
     return c;
   }
-  async updateOrderChannel(id: string, data: Partial<InsertOrderChannel>) {
-    const [c] = await db.update(orderChannels).set(data).where(eq(orderChannels.id, id)).returning();
+  async updateOrderChannel(id: string, tenantId: string, data: Partial<InsertOrderChannel>) {
+    const [c] = await db.update(orderChannels).set(data).where(and(eq(orderChannels.id, id), eq(orderChannels.tenantId, tenantId))).returning();
     return c;
   }
-  async deleteOrderChannel(id: string) {
-    await db.delete(orderChannels).where(eq(orderChannels.id, id));
+  async deleteOrderChannel(id: string, tenantId: string) {
+    await db.delete(orderChannels).where(and(eq(orderChannels.id, id), eq(orderChannels.tenantId, tenantId)));
   }
   async getChannelConfigsByTenant(tenantId: string) {
     return db.select().from(channelConfigs).where(eq(channelConfigs.tenantId, tenantId));
@@ -1016,12 +1016,12 @@ export class DatabaseStorage implements IStorage {
     const [c] = await db.insert(channelConfigs).values(data).returning();
     return c;
   }
-  async updateChannelConfig(id: string, data: Partial<InsertChannelConfig>) {
-    const [c] = await db.update(channelConfigs).set(data).where(eq(channelConfigs.id, id)).returning();
+  async updateChannelConfig(id: string, tenantId: string, data: Partial<InsertChannelConfig>) {
+    const [c] = await db.update(channelConfigs).set(data).where(and(eq(channelConfigs.id, id), eq(channelConfigs.tenantId, tenantId))).returning();
     return c;
   }
-  async deleteChannelConfig(id: string) {
-    await db.delete(channelConfigs).where(eq(channelConfigs.id, id));
+  async deleteChannelConfig(id: string, tenantId: string) {
+    await db.delete(channelConfigs).where(and(eq(channelConfigs.id, id), eq(channelConfigs.tenantId, tenantId)));
   }
   async getOnlineMenuMappingsByTenant(tenantId: string) {
     return db.select().from(onlineMenuMappings).where(eq(onlineMenuMappings.tenantId, tenantId));
@@ -1030,12 +1030,12 @@ export class DatabaseStorage implements IStorage {
     const [m] = await db.insert(onlineMenuMappings).values(data).returning();
     return m;
   }
-  async updateOnlineMenuMapping(id: string, data: Partial<InsertOnlineMenuMapping>) {
-    const [m] = await db.update(onlineMenuMappings).set(data).where(eq(onlineMenuMappings.id, id)).returning();
+  async updateOnlineMenuMapping(id: string, tenantId: string, data: Partial<InsertOnlineMenuMapping>) {
+    const [m] = await db.update(onlineMenuMappings).set(data).where(and(eq(onlineMenuMappings.id, id), eq(onlineMenuMappings.tenantId, tenantId))).returning();
     return m;
   }
-  async deleteOnlineMenuMapping(id: string) {
-    await db.delete(onlineMenuMappings).where(eq(onlineMenuMappings.id, id));
+  async deleteOnlineMenuMapping(id: string, tenantId: string) {
+    await db.delete(onlineMenuMappings).where(and(eq(onlineMenuMappings.id, id), eq(onlineMenuMappings.tenantId, tenantId)));
   }
 }
 
