@@ -768,7 +768,7 @@ export async function registerRoutes(
     const inventoryItems = await storage.getInventoryByTenant(user.tenantId);
     const totalFoodCost = inventoryItems.reduce((s, i) => s + (Number(i.costPrice) || 0) * (Number(i.currentStock) || 0), 0);
     const labourSnapshots = await storage.getLabourCostSnapshots(user.tenantId, from, to);
-    const totalLabourCost = labourSnapshots.reduce((s, l) => s + (Number(l.totalLabourCost) || 0), 0);
+    const totalLabourCost = labourSnapshots.reduce((s, l) => s + (Number(l.actualCost) || 0) + (Number(l.overtimeCost) || 0), 0);
     const grossSales = netSales + totalTax;
     const foodCostPct = grossSales > 0 ? (totalFoodCost / grossSales) * 100 : 0;
     const labourPct = grossSales > 0 ? (totalLabourCost / grossSales) * 100 : 0;
