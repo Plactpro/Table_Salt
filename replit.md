@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, table_zones, tables, waitlist_entries, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots, audit_events)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, table_zones, tables, waitlist_entries, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots, audit_events, device_sessions)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -86,7 +86,7 @@ All prefixed with `/api`:
 - Procurement Analytics: `/procurement/analytics` (spend by supplier/item, price variances), `/procurement/low-stock` (suggested reorder quantities)
 - Workforce: `/workforce/dashboard` (GET with period=day|week|month, KPIs+byRole+byOutlet+byDay+byHour), `/workforce/timesheet` (GET), `/workforce/timesheet/csv` (GET, CSV export), `/workforce/alerts` (GET, threshold alerts), `/workforce/snapshots` (GET/POST generate daily snapshots), `/workforce/settings` (PATCH, owner-only)
 - BI Dashboards: `/reports/operations` (hourly sales, channel mix, heatmap, top items), `/reports/finance` (net sales, tax, discounts, voids, food/labour cost %, gross margin, daily breakdown), `/reports/marketing` (loyalty enrollments, tier distribution, campaigns, ratings), `/reports/forecast` (weekly moving-average forecast + production suggestions)
-- Security & Audit: `/permissions` (GET role permissions), `/permissions/check` (POST check action), `/supervisor/verify` (POST supervisor override), `/audit-log` (GET with filters, `/entity/:type/:id`, `/export/csv`, `/actions`), `/security/settings` (GET/PATCH)
+- Security & Audit: `/permissions` (GET role permissions), `/permissions/check` (POST check action), `/supervisor/verify` (POST supervisor override), `/supervisor/otp-challenge` (POST), `/supervisor/otp-verify` (POST), `/audit-log` (GET with filters, `/entity/:type/:id`, `/export/csv`, `/actions`), `/security/settings` (GET/PATCH), `/device-sessions` (CRUD + `/trust`), `/users/:id/role` (PATCH with audit)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages
@@ -115,7 +115,7 @@ All prefixed with `/api`:
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
 - `/audit-log` - Audit Log (filterable event timeline, action/user/entity filters, date range, before/after diffs, CSV export, event detail dialog)
-- `/security-settings` - Security & Governance (session controls, supervisor approval toggles, role-permission matrix with 32 permissions across 5 roles)
+- `/security-settings` - Security & Governance (session controls, supervisor approval toggles for void/discount/price/stock, role-permission matrix with 32 permissions across 5 roles, trusted device management, OTP challenge/verify simulation)
 
 ## Subscription Tiers & Feature Gating
 - **Basic**: orders, menu, settings
