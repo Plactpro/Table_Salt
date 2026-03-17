@@ -27,6 +27,7 @@ import {
   insertTableZoneSchema, insertWaitlistEntrySchema,
   insertKioskDeviceSchema, insertUpsellRuleSchema,
   insertEventSchema,
+  insertComboOfferSchema,
   deviceSessions,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
@@ -757,22 +758,69 @@ export async function registerRoutes(
 
       const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
       const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+      const comboIdsInOrder: string[] = [];
 
       let serverSubtotal = 0;
       const serverItems: { menuItemId: string; name: string; price: number; quantity: number; categoryId?: string }[] = [];
       if (items && items.length > 0) {
         for (const item of items) {
-          const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
-          const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
-          const qty = Number(item.quantity) || 1;
-          serverSubtotal += canonicalPrice * qty;
-          serverItems.push({
-            menuItemId: item.menuItemId,
-            name: mi?.name || item.name,
-            price: canonicalPrice,
-            quantity: qty,
-            categoryId: mi?.categoryId || undefined,
-          });
+          const isComboItem = item.isCombo === true || item.menuItemId?.startsWith("combo-") || false;
+          if (isComboItem) {
+            const comboId = item.comboId || item.menuItemId?.replace(/^combo-/, "").replace(/-\d+$/, "") || item.menuItemId;
+            const combo = await storage.getComboOffer(comboId, user.tenantId);
+            if (!combo) {
+              return res.status(400).json({ message: `Combo offer not found: ${comboId}` });
+            }
+            if (!combo.isActive) {
+              return res.status(400).json({ message: `Combo "${combo.name}" is no longer active` });
+            }
+            const now = new Date();
+            if (combo.validityStart && now < new Date(combo.validityStart)) {
+              return res.status(400).json({ message: `Combo "${combo.name}" has not started yet` });
+            }
+            if (combo.validityEnd && now > new Date(combo.validityEnd)) {
+              return res.status(400).json({ message: `Combo "${combo.name}" has expired` });
+            }
+            if (combo.timeSlots && Array.isArray(combo.timeSlots) && (combo.timeSlots as string[]).length > 0) {
+              const hour = now.getHours();
+              const slotMap: Record<string, [number, number]> = { breakfast: [6, 11], lunch: [11, 15], dinner: [18, 23], "late-night": [23, 6] };
+              const currentSlots = Object.entries(slotMap).filter(([, [s, e]]) => s <= e ? hour >= s && hour < e : hour >= s || hour < e).map(([k]) => k);
+              const comboSlots = combo.timeSlots as string[];
+              if (!currentSlots.some(cs => comboSlots.includes(cs))) {
+                return res.status(400).json({ message: `Combo "${combo.name}" is not available at this time` });
+              }
+            }
+            if (combo.outlets && Array.isArray(combo.outlets) && (combo.outlets as string[]).length > 0) {
+              const userOutletId = "outletId" in user ? (user as { outletId?: string }).outletId : null;
+              if (userOutletId && !(combo.outlets as string[]).includes(userOutletId)) {
+                return res.status(400).json({ message: `Combo "${combo.name}" is not available at this outlet` });
+              }
+            }
+            comboIdsInOrder.push(comboId);
+            const comboPrice = Number(combo.comboPrice);
+            const qty = Number(item.quantity) || 1;
+            serverSubtotal += comboPrice * qty;
+            serverItems.push({
+              menuItemId: comboId,
+              name: combo.name,
+              price: comboPrice,
+              quantity: qty,
+              categoryId: undefined,
+            });
+
+          } else {
+            const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
+            const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
+            const qty = Number(item.quantity) || 1;
+            serverSubtotal += canonicalPrice * qty;
+            serverItems.push({
+              menuItemId: item.menuItemId,
+              name: mi?.name || item.name,
+              price: canonicalPrice,
+              quantity: qty,
+              categoryId: mi?.categoryId || undefined,
+            });
+          }
         }
       }
 
@@ -850,15 +898,54 @@ export async function registerRoutes(
       }
       if (items && items.length > 0) {
         for (const item of items) {
-          const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
-          const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
-          await storage.createOrderItem({
-            ...item,
-            price: canonicalPrice.toFixed(2),
-            orderId: order.id,
-            station: item.station || mi?.station || null,
-            course: item.course || mi?.course || null,
-          });
+          const isComboItem = item.isCombo === true || item.menuItemId?.startsWith("combo-") || false;
+          if (isComboItem) {
+            const comboId = item.comboId || item.menuItemId?.replace(/^combo-/, "").replace(/-\d+$/, "") || item.menuItemId;
+            const combo = await storage.getComboOffer(comboId, user.tenantId);
+            if (combo) {
+              const mainCItems2 = (combo.mainItems as { menuItemId: string; name: string; price: string }[]) || [];
+              const sideCItems2 = (combo.sideItems as { menuItemId: string; name: string; price: string }[]) || [];
+              const addonCItems2 = (combo.addonItems as { menuItemId: string; name: string; price: string }[]) || [];
+              const allComponents = [...mainCItems2, ...sideCItems2, ...addonCItems2];
+              const componentNames = allComponents.map(c => c.name).join(", ");
+              const savingsAmt = (Number(combo.individualTotal) - Number(combo.comboPrice)).toFixed(2);
+              await storage.createOrderItem({
+                menuItemId: null,
+                name: `${combo.name} (Save ${savingsAmt})`,
+                price: Number(combo.comboPrice).toFixed(2),
+                quantity: Number(item.quantity) || 1,
+                notes: `Includes: ${componentNames}`,
+                orderId: order.id,
+                station: null,
+                course: null,
+                metadata: {
+                  isCombo: true,
+                  comboId,
+                  components: allComponents.map(c => ({ menuItemId: c.menuItemId, name: c.name })),
+                },
+              });
+            }
+          } else {
+            const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
+            const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
+            await storage.createOrderItem({
+              ...item,
+              price: canonicalPrice.toFixed(2),
+              orderId: order.id,
+              station: item.station || mi?.station || null,
+              course: item.course || mi?.course || null,
+            });
+          }
+        }
+      }
+      for (const item of items || []) {
+        const isComboItem = item.isCombo === true || item.menuItemId?.startsWith("combo-") || false;
+        if (isComboItem) {
+          const comboId = item.comboId || item.menuItemId?.replace(/^combo-/, "").replace(/-\d+$/, "") || item.menuItemId;
+          const qty = Number(item.quantity) || 1;
+          for (let i = 0; i < qty; i++) {
+            storage.incrementComboOrderCount(comboId, user.tenantId).catch(() => {});
+          }
         }
       }
       if (orderData.tableId) {
@@ -934,9 +1021,21 @@ export async function registerRoutes(
       }
       try {
         const oItems = await storage.getOrderItemsByOrder(req.params.id);
+        const depletionTargets: { menuItemId: string; name: string; quantity: number }[] = [];
         for (const oi of oItems) {
-          if (!oi.menuItemId) continue;
-          const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
+          if (oi.menuItemId) {
+            depletionTargets.push({ menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity || 1 });
+          } else if (oi.metadata && typeof oi.metadata === "object" && (oi.metadata as Record<string, unknown>).isCombo) {
+            const meta = oi.metadata as { components?: { menuItemId: string; name: string }[] };
+            if (meta.components) {
+              for (const comp of meta.components) {
+                depletionTargets.push({ menuItemId: comp.menuItemId, name: comp.name, quantity: oi.quantity || 1 });
+              }
+            }
+          }
+        }
+        for (const dt of depletionTargets) {
+          const recipe = await storage.getRecipeByMenuItem(dt.menuItemId);
           if (!recipe) continue;
           const recipeIngs = await storage.getRecipeIngredients(recipe.id);
           for (const ing of recipeIngs) {
@@ -945,7 +1044,7 @@ export async function registerRoutes(
             const invUnit = invItem?.unit || "pcs";
             const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
             const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
-            const qty = convertedQty * (oi.quantity || 1);
+            const qty = convertedQty * dt.quantity;
             if (invItem) {
               const newStock = Math.max(0, Number(invItem.currentStock) - qty);
               await storage.updateInventoryItem(ing.inventoryItemId, { currentStock: String(Math.round(newStock * 100) / 100) });
@@ -954,7 +1053,7 @@ export async function registerRoutes(
                 itemId: ing.inventoryItemId,
                 type: "out",
                 quantity: String(Math.round(qty * 100) / 100),
-                reason: `Auto-depletion: ${oi.name} x${oi.quantity}`,
+                reason: `Auto-depletion: ${dt.name} x${dt.quantity}`,
               });
             }
           }
@@ -4925,6 +5024,197 @@ export async function registerRoutes(
       await storage.deleteEvent(req.params.id, user.tenantId);
       await auditLogFromReq(req, { action: "event_deleted", entityType: "event", entityId: req.params.id, entityName: existing.title });
       res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/combo-offers", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const combos = await storage.getComboOffersByTenant(user.tenantId);
+      const now = new Date();
+      const result = combos.map((c) => {
+        if (c.isActive && c.validityEnd && new Date(c.validityEnd) < now) {
+          storage.updateComboOffer(c.id, user.tenantId, { isActive: false });
+          return { ...c, isActive: false };
+        }
+        return c;
+      });
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/combo-offers/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const combo = await storage.getComboOffer(req.params.id, user.tenantId);
+      if (!combo) return res.status(404).json({ message: "Combo not found" });
+      res.json(combo);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/combo-offers", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const body = {
+        ...req.body,
+        tenantId: user.tenantId,
+        createdBy: user.id,
+      };
+      if (body.validityStart) body.validityStart = new Date(body.validityStart);
+      if (body.validityEnd) body.validityEnd = new Date(body.validityEnd);
+
+      const comboPrice = parseFloat(body.comboPrice);
+      if (isNaN(comboPrice)) {
+        return res.status(400).json({ message: "Invalid combo price" });
+      }
+
+      if (!body.mainItems || !Array.isArray(body.mainItems) || body.mainItems.length !== 1) {
+        return res.status(400).json({ message: "Exactly one main item is required" });
+      }
+      if (body.sideItems && Array.isArray(body.sideItems) && body.sideItems.length > 3) {
+        return res.status(400).json({ message: "Maximum 3 side items allowed" });
+      }
+      if (body.addonItems && Array.isArray(body.addonItems) && body.addonItems.length > 2) {
+        return res.status(400).json({ message: "Maximum 2 add-on items allowed" });
+      }
+
+      const menuItemsForValidation = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItemsForValidation.map((m) => [m.id, m]));
+      const allComponentItems = [...body.mainItems, ...(body.sideItems || []), ...(body.addonItems || [])];
+      let computedIndividualTotal = 0;
+      for (const comp of allComponentItems) {
+        if (!comp.menuItemId || !menuMap.has(comp.menuItemId)) {
+          return res.status(400).json({ message: `Menu item not found: ${comp.menuItemId || "missing ID"}` });
+        }
+        computedIndividualTotal += Number(menuMap.get(comp.menuItemId)!.price);
+      }
+      body.individualTotal = computedIndividualTotal.toFixed(2);
+
+      if (comboPrice >= computedIndividualTotal) {
+        return res.status(400).json({ message: "Combo price must be less than individual total" });
+      }
+      const savingsPct = ((computedIndividualTotal - comboPrice) / computedIndividualTotal) * 100;
+      if (savingsPct < 5) {
+        return res.status(400).json({ message: "Savings must be at least 5%" });
+      }
+      if (savingsPct > 50) {
+        return res.status(400).json({ message: "Savings cannot exceed 50%" });
+      }
+      body.savingsPercentage = savingsPct.toFixed(2);
+
+      const existingCombos = await storage.getComboOffersByTenant(user.tenantId);
+      if (existingCombos.some((c) => c.name.toLowerCase() === body.name.toLowerCase())) {
+        return res.status(400).json({ message: "A combo with this name already exists" });
+      }
+
+      const combo = await storage.createComboOffer(body);
+      auditLogFromReq(req, { action: "combo_offer_created", entityType: "combo_offer", entityId: combo.id, entityName: combo.name, after: { name: combo.name, comboPrice: combo.comboPrice } });
+      res.status(201).json(combo);
+    } catch (err: any) { res.status(err.name === "ZodError" ? 400 : 500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/combo-offers/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const existing = await storage.getComboOffer(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Combo not found" });
+
+      const body = { ...req.body };
+      if (body.validityStart) body.validityStart = new Date(body.validityStart);
+      if (body.validityEnd) body.validityEnd = new Date(body.validityEnd);
+
+      if (body.mainItems && (!Array.isArray(body.mainItems) || body.mainItems.length !== 1)) {
+        return res.status(400).json({ message: "Exactly one main item is required" });
+      }
+      if (body.sideItems && Array.isArray(body.sideItems) && body.sideItems.length > 3) {
+        return res.status(400).json({ message: "Maximum 3 side items allowed" });
+      }
+      if (body.addonItems && Array.isArray(body.addonItems) && body.addonItems.length > 2) {
+        return res.status(400).json({ message: "Maximum 2 add-on items allowed" });
+      }
+
+      const finalMainItems = body.mainItems || existing.mainItems || [];
+      const finalSideItems = body.sideItems || existing.sideItems || [];
+      const finalAddonItems = body.addonItems || existing.addonItems || [];
+      const allFinalComponents = [...finalMainItems, ...finalSideItems, ...finalAddonItems];
+
+      const menuItemsForValidation = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItemsForValidation.map((m) => [m.id, m]));
+      let computedIndividualTotal = 0;
+      for (const comp of allFinalComponents) {
+        if (!comp.menuItemId || !menuMap.has(comp.menuItemId)) {
+          return res.status(400).json({ message: `Menu item not found: ${comp.menuItemId || "missing ID"}` });
+        }
+        computedIndividualTotal += Number(menuMap.get(comp.menuItemId)!.price);
+      }
+      body.individualTotal = computedIndividualTotal.toFixed(2);
+
+      const comboPrice = parseFloat(body.comboPrice ?? existing.comboPrice);
+      if (comboPrice >= computedIndividualTotal) {
+        return res.status(400).json({ message: "Combo price must be less than individual total" });
+      }
+      const savingsPct = ((computedIndividualTotal - comboPrice) / computedIndividualTotal) * 100;
+      if (savingsPct < 5) return res.status(400).json({ message: "Savings must be at least 5%" });
+      if (savingsPct > 50) return res.status(400).json({ message: "Savings cannot exceed 50%" });
+      body.savingsPercentage = savingsPct.toFixed(2);
+
+      if (body.name && body.name.toLowerCase() !== existing.name.toLowerCase()) {
+        const allCombos = await storage.getComboOffersByTenant(user.tenantId);
+        if (allCombos.some((c) => c.id !== req.params.id && c.name.toLowerCase() === body.name.toLowerCase())) {
+          return res.status(400).json({ message: "A combo with this name already exists" });
+        }
+      }
+
+      const updated = await storage.updateComboOffer(req.params.id, user.tenantId, body);
+      auditLogFromReq(req, { action: "combo_offer_updated", entityType: "combo_offer", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, comboPrice: existing.comboPrice }, after: { name: updated?.name, comboPrice: updated?.comboPrice } });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/combo-offers/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const existing = await storage.getComboOffer(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Combo not found" });
+      await storage.deleteComboOffer(req.params.id, user.tenantId);
+      auditLogFromReq(req, { action: "combo_offer_deleted", entityType: "combo_offer", entityId: req.params.id, entityName: existing.name });
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/combo-offers/:id/duplicate", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const existing = await storage.getComboOffer(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Combo not found" });
+
+      const allCombos = await storage.getComboOffersByTenant(user.tenantId);
+      let newName = `${existing.name} (Copy)`;
+      let suffix = 2;
+      while (allCombos.some((c) => c.name.toLowerCase() === newName.toLowerCase())) {
+        newName = `${existing.name} (Copy ${suffix})`;
+        suffix++;
+      }
+
+      const duplicate = await storage.createComboOffer({
+        tenantId: user.tenantId,
+        name: newName,
+        description: existing.description,
+        comboPrice: existing.comboPrice,
+        individualTotal: existing.individualTotal,
+        savingsPercentage: existing.savingsPercentage,
+        mainItems: existing.mainItems,
+        sideItems: existing.sideItems,
+        addonItems: existing.addonItems,
+        validityStart: existing.validityStart,
+        validityEnd: existing.validityEnd,
+        timeSlots: existing.timeSlots,
+        outlets: existing.outlets,
+        isActive: false,
+        orderCount: 0,
+        createdBy: user.id,
+      });
+      res.status(201).json(duplicate);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

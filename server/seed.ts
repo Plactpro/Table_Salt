@@ -1165,6 +1165,90 @@ export async function seedDatabase() {
     await storage.createEvent(eventData);
   }
 
+  const comboMenuItems = await storage.getMenuItemsByTenant(tenant.id);
+  const findItem = (name: string) => comboMenuItems.find((i) => i.name === name);
+
+  const chickenWings = findItem("Chicken Wings");
+  const fries = findItem("Spring Rolls");
+  const espresso = findItem("Espresso");
+  const grilledSalmon = findItem("Grilled Salmon");
+  const mushroomRisotto = findItem("Mushroom Risotto");
+  const tiramisu = findItem("Tiramisu");
+  const ribeyeSteak = findItem("Ribeye Steak");
+  const tomatoSoup = findItem("Tomato Basil Soup");
+  const chocolateLava = findItem("Chocolate Lava Cake");
+  const mojito = findItem("Classic Mojito");
+
+  if (chickenWings && fries && espresso) {
+    const mainTotal = Number(chickenWings.price);
+    const sideTotal = Number(fries.price);
+    const addonTotal = Number(espresso.price);
+    const indivTotal = mainTotal + sideTotal + addonTotal;
+    const comboPrice = 19.99;
+    const savings = ((indivTotal - comboPrice) / indivTotal * 100).toFixed(2);
+    await storage.createComboOffer({
+      tenantId: tenant.id,
+      name: "Wings + Rolls + Espresso Combo",
+      description: "Crispy chicken wings with spring rolls and an espresso to finish",
+      comboPrice: String(comboPrice),
+      individualTotal: indivTotal.toFixed(2),
+      savingsPercentage: savings,
+      mainItems: [{ menuItemId: chickenWings.id, name: chickenWings.name, price: chickenWings.price }],
+      sideItems: [{ menuItemId: fries.id, name: fries.name, price: fries.price }],
+      addonItems: [{ menuItemId: espresso.id, name: espresso.name, price: espresso.price }],
+      isActive: true,
+      validityStart: new Date("2026-01-01"),
+      validityEnd: new Date("2026-12-31"),
+      orderCount: 42,
+      createdBy: owner.id,
+    });
+  }
+
+  if (grilledSalmon && mushroomRisotto && tiramisu) {
+    const indivTotal = Number(grilledSalmon.price) + Number(mushroomRisotto.price) + Number(tiramisu.price);
+    const comboPrice = 42.99;
+    const savings = ((indivTotal - comboPrice) / indivTotal * 100).toFixed(2);
+    await storage.createComboOffer({
+      tenantId: tenant.id,
+      name: "Salmon + Risotto + Dessert Combo",
+      description: "Premium dining combo with salmon, mushroom risotto, and tiramisu",
+      comboPrice: String(comboPrice),
+      individualTotal: indivTotal.toFixed(2),
+      savingsPercentage: savings,
+      mainItems: [{ menuItemId: grilledSalmon.id, name: grilledSalmon.name, price: grilledSalmon.price }],
+      sideItems: [{ menuItemId: mushroomRisotto.id, name: mushroomRisotto.name, price: mushroomRisotto.price }],
+      addonItems: [{ menuItemId: tiramisu.id, name: tiramisu.name, price: tiramisu.price }],
+      isActive: true,
+      validityStart: new Date("2026-01-01"),
+      validityEnd: new Date("2026-12-31"),
+      orderCount: 28,
+      createdBy: owner.id,
+    });
+  }
+
+  if (ribeyeSteak && tomatoSoup && chocolateLava && mojito) {
+    const indivTotal = Number(ribeyeSteak.price) + Number(tomatoSoup.price) + Number(chocolateLava.price) + Number(mojito.price);
+    const comboPrice = 54.99;
+    const savings = ((indivTotal - comboPrice) / indivTotal * 100).toFixed(2);
+    await storage.createComboOffer({
+      tenantId: tenant.id,
+      name: "Steak Night Special",
+      description: "Ribeye steak with soup, chocolate lava cake, and a mojito",
+      comboPrice: String(comboPrice),
+      individualTotal: indivTotal.toFixed(2),
+      savingsPercentage: savings,
+      mainItems: [{ menuItemId: ribeyeSteak.id, name: ribeyeSteak.name, price: ribeyeSteak.price }],
+      sideItems: [{ menuItemId: tomatoSoup.id, name: tomatoSoup.name, price: tomatoSoup.price }],
+      addonItems: [{ menuItemId: chocolateLava.id, name: chocolateLava.name, price: chocolateLava.price }, { menuItemId: mojito.id, name: mojito.name, price: mojito.price }],
+      isActive: true,
+      validityStart: new Date("2026-01-01"),
+      validityEnd: new Date("2026-12-31"),
+      timeSlots: ["dinner"],
+      orderCount: 15,
+      createdBy: owner.id,
+    });
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

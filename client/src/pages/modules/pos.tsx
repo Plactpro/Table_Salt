@@ -25,7 +25,7 @@ import {
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent,
 } from "lucide-react";
-import type { MenuCategory, MenuItem, Table, Offer } from "@shared/schema";
+import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 
 interface EngineDiscount {
   ruleId: string;
@@ -44,6 +44,10 @@ interface CartItem {
   notes: string;
   isVeg: boolean | null;
   categoryId: string | null;
+  isCombo?: boolean;
+  comboId?: string;
+  comboItems?: { menuItemId: string; name: string; price: string }[];
+  originalPrice?: number;
 }
 
 type OrderType = "dine_in" | "takeaway" | "delivery";
@@ -96,6 +100,28 @@ function isOfferApplicable(offer: Offer, cart: CartItem[], subtotal: number): bo
   return true;
 }
 
+interface ComboItemRef {
+  menuItemId: string;
+  name: string;
+  price: string;
+}
+
+function isComboActive(combo: ComboOffer, userOutletId?: string | null): boolean {
+  if (!combo.isActive) return false;
+  const now = new Date();
+  if (combo.validityStart && new Date(combo.validityStart) > now) return false;
+  if (combo.validityEnd && new Date(combo.validityEnd) < now) return false;
+  if (combo.timeSlots && Array.isArray(combo.timeSlots) && combo.timeSlots.length > 0) {
+    const hour = now.getHours();
+    const currentSlot = hour < 11 ? "breakfast" : hour < 15 ? "lunch" : hour < 21 ? "dinner" : "late_night";
+    if (!combo.timeSlots.includes(currentSlot)) return false;
+  }
+  if (combo.outlets && Array.isArray(combo.outlets) && combo.outlets.length > 0 && userOutletId) {
+    if (!combo.outlets.includes(userOutletId)) return false;
+  }
+  return true;
+}
+
 export default function POSPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -108,6 +134,7 @@ export default function POSPage() {
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [showCombos, setShowCombos] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [orderType, setOrderType] = useState<OrderType>("dine_in");
   const [selectedTable, setSelectedTable] = useState<string>("");
@@ -129,6 +156,10 @@ export default function POSPage() {
   const { data: menuItems = [] } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");
+  const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
+
+  const userOutletId = user && "outletId" in user ? (user as { outletId?: string }).outletId || null : null;
+  const activeCombos = useMemo(() => comboOffers.filter((c) => isComboActive(c, userOutletId)), [comboOffers, userOutletId]);
 
   const freeTables = useMemo(() => tables.filter((t) => t.status === "free"), [tables]);
 
@@ -228,13 +259,43 @@ export default function POSPage() {
     setAddedItemId(item.id);
     setTimeout(() => setAddedItemId(null), 600);
     setCart((prev) => {
-      const existing = prev.find((c) => c.menuItemId === item.id);
+      const existing = prev.find((c) => c.menuItemId === item.id && !c.isCombo);
       if (existing) {
-        return prev.map((c) => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+        return prev.map((c) => c.menuItemId === item.id && !c.isCombo ? { ...c, quantity: c.quantity + 1 } : c);
       }
       return [...prev, { menuItemId: item.id, name: item.name, price: parseFloat(item.price), quantity: 1, notes: "", isVeg: item.isVeg, categoryId: item.categoryId }];
     });
   }, []);
+
+  const addComboToCart = useCallback((combo: ComboOffer) => {
+    const mainItems = (combo.mainItems as ComboItemRef[]) || [];
+    const sideItems = (combo.sideItems as ComboItemRef[]) || [];
+    const addonItems = (combo.addonItems as ComboItemRef[]) || [];
+    const allComboItems = [...mainItems, ...sideItems, ...addonItems];
+    const savingsAmount = Number(combo.individualTotal) - Number(combo.comboPrice);
+    const comboCartId = `combo-${combo.id}-${Date.now()}`;
+
+    setAddedItemId(combo.id);
+    setTimeout(() => setAddedItemId(null), 600);
+
+    setCart((prev) => [
+      ...prev,
+      {
+        menuItemId: comboCartId,
+        name: `${combo.name}`,
+        price: Number(combo.comboPrice),
+        quantity: 1,
+        notes: `Save ${fmt(savingsAmount)}`,
+        isVeg: null,
+        categoryId: null,
+        isCombo: true,
+        comboId: combo.id,
+        comboItems: allComboItems,
+        originalPrice: Number(combo.individualTotal),
+      },
+    ]);
+
+  }, [fmt]);
 
   const updateQuantity = (menuItemId: string, delta: number) => {
     setCart((prev) => prev.map((c) => c.menuItemId === menuItemId ? { ...c, quantity: c.quantity + delta } : c).filter((c) => c.quantity > 0));
@@ -260,6 +321,30 @@ export default function POSPage() {
 
   const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
     const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    const orderItems: { menuItemId: string; name: string; quantity: number; price: string; notes: string | null; isCombo?: boolean; comboId?: string }[] = [];
+    for (const c of cart) {
+      if (c.isCombo && c.comboItems) {
+        orderItems.push({
+          menuItemId: c.comboId || c.menuItemId,
+          name: c.name,
+          quantity: c.quantity,
+          price: c.price.toFixed(2),
+          notes: c.comboItems.map((ci) => ci.name).join(", ") + (c.notes ? ` | ${c.notes}` : ""),
+          isCombo: true,
+          comboId: c.comboId || undefined,
+        });
+      } else {
+        orderItems.push({
+          menuItemId: c.menuItemId,
+          name: c.name,
+          quantity: c.quantity,
+          price: c.price.toFixed(2),
+          notes: c.notes || null,
+        });
+      }
+    }
+
     const orderData: Record<string, unknown> = {
       channel: "pos",
       clientOrderId,
@@ -273,10 +358,7 @@ export default function POSPage() {
       status: isDineIn ? "in_progress" : "new",
       offerId: selectedOffer?.id || null,
       manualDiscountAmount: manualDiscount > 0 ? manualDiscount.toFixed(2) : null,
-      items: cart.map((c) => ({
-        menuItemId: c.menuItemId, name: c.name, quantity: c.quantity,
-        price: c.price.toFixed(2), notes: c.notes || null,
-      })),
+      items: orderItems,
     };
     if (!isDineIn) {
       orderData.paymentMethod = paymentMethod;
@@ -339,6 +421,7 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/offers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/combo-offers"] });
     },
     onError: (err: Error) => {
       if (err.message.startsWith("__SUPERVISOR_REQUIRED__:")) {
@@ -376,13 +459,19 @@ export default function POSPage() {
             <Input data-testid="input-search-menu" placeholder="Search menu items..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            <Button data-testid="button-category-all" variant={selectedCategory === null ? "default" : "outline"} size="sm" onClick={() => setSelectedCategory(null)} className="transition-all duration-200 hover:scale-105">
+            <Button data-testid="button-category-all" variant={selectedCategory === null && !showCombos ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(null); setShowCombos(false); }} className="transition-all duration-200 hover:scale-105">
               <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> All
             </Button>
+            {activeCombos.length > 0 && (
+              <Button data-testid="button-category-combos" variant={showCombos ? "default" : "outline"} size="sm" onClick={() => { setShowCombos(true); setSelectedCategory(null); }} className="transition-all duration-200 hover:scale-105 whitespace-nowrap">
+                <Package className="h-3.5 w-3.5 mr-1" /> Combos
+                <Badge variant="secondary" className="ml-1 text-xs h-4 px-1">{activeCombos.length}</Badge>
+              </Button>
+            )}
             {categories.filter((c) => c.active !== false).map((cat) => {
               const CatIcon = getCategoryIcon(cat.name);
               return (
-                <Button key={cat.id} data-testid={`button-category-${cat.id}`} variant={selectedCategory === cat.id ? "default" : "outline"} size="sm" onClick={() => setSelectedCategory(cat.id)} className="whitespace-nowrap transition-all duration-200 hover:scale-105">
+                <Button key={cat.id} data-testid={`button-category-${cat.id}`} variant={selectedCategory === cat.id ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(cat.id); setShowCombos(false); }} className="whitespace-nowrap transition-all duration-200 hover:scale-105">
                   <CatIcon className="h-3.5 w-3.5 mr-1" /> {cat.name}
                 </Button>
               );
@@ -391,7 +480,62 @@ export default function POSPage() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {filteredItems.length === 0 ? (
+          {showCombos ? (
+            activeCombos.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <Package className="h-12 w-12 mb-2" />
+                <p>No active combos</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                {activeCombos.map((combo, index) => {
+                  const mainItems = (combo.mainItems as ComboItemRef[]) || [];
+                  const sideItems = (combo.sideItems as ComboItemRef[]) || [];
+                  const addonItems = (combo.addonItems as ComboItemRef[]) || [];
+                  const allComboItems = [...mainItems, ...sideItems, ...addonItems];
+                  const justAdded = addedItemId === combo.id;
+                  return (
+                    <motion.div key={combo.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03, duration: 0.3 }}>
+                      <Card data-testid={`card-combo-${combo.id}`} className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.03] relative overflow-hidden border-2 border-primary/20" onClick={() => addComboToCart(combo)}>
+                        <AnimatePresence>
+                          {justAdded && (
+                            <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="absolute inset-0 z-10 flex items-center justify-center bg-primary/20 backdrop-blur-sm rounded-lg">
+                              <motion.div initial={{ scale: 0 }} animate={{ scale: [0, 1.3, 1] }} transition={{ duration: 0.4 }}>
+                                <CheckCircle2 className="h-8 w-8 text-primary" />
+                              </motion.div>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                        <div className="h-20 bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center relative">
+                          <Package className="h-8 w-8 text-primary/40" />
+                          <Badge className="absolute top-2 right-2 bg-green-600 text-white text-xs font-bold" data-testid={`badge-combo-save-${combo.id}`}>
+                            SAVE {Number(combo.savingsPercentage).toFixed(0)}%
+                          </Badge>
+                        </div>
+                        <CardContent className="p-3">
+                          <h4 className="font-semibold text-sm leading-tight line-clamp-2 mb-1" data-testid={`text-combo-name-${combo.id}`}>{combo.name}</h4>
+                          <div className="flex flex-wrap gap-0.5 mb-2">
+                            {allComboItems.slice(0, 3).map((item, i) => (
+                              <span key={i} className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">{item.name}</span>
+                            ))}
+                            {allComboItems.length > 3 && (
+                              <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">+{allComboItems.length - 3}</span>
+                            )}
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-baseline gap-1.5">
+                              <span className="font-bold text-sm text-primary" data-testid={`text-combo-price-${combo.id}`}>{fmt(combo.comboPrice)}</span>
+                              <span className="text-xs text-muted-foreground line-through">{fmt(combo.individualTotal)}</span>
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            )
+          ) : filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <UtensilsCrossed className="h-12 w-12 mb-2" />
               <p>No items found</p>
@@ -399,7 +543,7 @@ export default function POSPage() {
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
               {filteredItems.map((item, index) => {
-                const inCart = cart.find((c) => c.menuItemId === item.id);
+                const inCart = cart.find((c) => c.menuItemId === item.id && !c.isCombo);
                 const justAdded = addedItemId === item.id;
                 return (
                   <motion.div key={item.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03, duration: 0.3 }}>
@@ -516,11 +660,13 @@ export default function POSPage() {
             <div className="space-y-3">
               <AnimatePresence>
                 {cart.map((item) => (
-                  <motion.div key={item.menuItemId} data-testid={`cart-item-${item.menuItemId}`} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40, height: 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} className="flex flex-col gap-1.5 p-2 rounded-lg border bg-background">
+                  <motion.div key={item.menuItemId} data-testid={`cart-item-${item.menuItemId}`} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40, height: 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} className={`flex flex-col gap-1.5 p-2 rounded-lg border bg-background ${item.isCombo ? "border-primary/30 bg-primary/5" : ""}`}>
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1">
-                          {item.isVeg === true ? (
+                          {item.isCombo ? (
+                            <Package className="h-3 w-3 text-primary shrink-0" />
+                          ) : item.isVeg === true ? (
                             <span className="h-3 w-3 shrink-0 border border-green-600 rounded-sm flex items-center justify-center">
                               <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
                             </span>
@@ -531,7 +677,15 @@ export default function POSPage() {
                           ) : null}
                           <span className="font-medium text-sm truncate">{item.name}</span>
                         </div>
-                        <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>
+                          {item.isCombo && item.originalPrice && (
+                            <span className="text-xs text-muted-foreground line-through">{fmt(item.originalPrice)}</span>
+                          )}
+                          {item.isCombo && (
+                            <Badge variant="secondary" className="text-[9px] h-4 bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">Combo</Badge>
+                          )}
+                        </div>
                       </div>
                       <span className="font-semibold text-sm">{fmt(item.price * item.quantity)}</span>
                     </div>
@@ -554,7 +708,14 @@ export default function POSPage() {
                         </Button>
                       </div>
                     </div>
-                    {item.notes && <p className="text-xs text-muted-foreground italic pl-1">Note: {item.notes}</p>}
+                    {item.notes && !item.isCombo && <p className="text-xs text-muted-foreground italic pl-1">Note: {item.notes}</p>}
+                    {item.isCombo && item.comboItems && (
+                      <div className="text-xs text-muted-foreground pl-1 flex flex-wrap gap-1">
+                        {item.comboItems.map((ci, i) => (
+                          <span key={i} className="bg-muted px-1.5 py-0.5 rounded">{ci.name}</span>
+                        ))}
+                      </div>
+                    )}
                   </motion.div>
                 ))}
               </AnimatePresence>

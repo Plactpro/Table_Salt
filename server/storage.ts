@@ -76,6 +76,8 @@ import {
   type GuestCartItem, type InsertGuestCartItem,
   events,
   type Event, type InsertEvent,
+  comboOffers,
+  type ComboOffer, type InsertComboOffer,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -376,6 +378,13 @@ export interface IStorage {
   createEvent(data: InsertEvent): Promise<Event>;
   updateEvent(id: string, tenantId: string, data: Partial<InsertEvent>): Promise<Event | undefined>;
   deleteEvent(id: string, tenantId: string): Promise<void>;
+
+  getComboOffersByTenant(tenantId: string): Promise<ComboOffer[]>;
+  getComboOffer(id: string, tenantId: string): Promise<ComboOffer | undefined>;
+  createComboOffer(data: InsertComboOffer): Promise<ComboOffer>;
+  updateComboOffer(id: string, tenantId: string, data: Partial<InsertComboOffer>): Promise<ComboOffer | undefined>;
+  deleteComboOffer(id: string, tenantId: string): Promise<void>;
+  incrementComboOrderCount(id: string, tenantId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1627,6 +1636,28 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteEvent(id: string, tenantId: string) {
     await db.delete(events).where(and(eq(events.id, id), eq(events.tenantId, tenantId)));
+  }
+
+  async getComboOffersByTenant(tenantId: string) {
+    return db.select().from(comboOffers).where(eq(comboOffers.tenantId, tenantId)).orderBy(desc(comboOffers.createdAt));
+  }
+  async getComboOffer(id: string, tenantId: string) {
+    const [c] = await db.select().from(comboOffers).where(and(eq(comboOffers.id, id), eq(comboOffers.tenantId, tenantId)));
+    return c;
+  }
+  async createComboOffer(data: InsertComboOffer) {
+    const [c] = await db.insert(comboOffers).values(data).returning();
+    return c;
+  }
+  async updateComboOffer(id: string, tenantId: string, data: Partial<InsertComboOffer>) {
+    const [c] = await db.update(comboOffers).set({ ...data, updatedAt: new Date() }).where(and(eq(comboOffers.id, id), eq(comboOffers.tenantId, tenantId))).returning();
+    return c;
+  }
+  async deleteComboOffer(id: string, tenantId: string) {
+    await db.delete(comboOffers).where(and(eq(comboOffers.id, id), eq(comboOffers.tenantId, tenantId)));
+  }
+  async incrementComboOrderCount(id: string, tenantId: string) {
+    await db.update(comboOffers).set({ orderCount: sql`${comboOffers.orderCount} + 1` }).where(and(eq(comboOffers.id, id), eq(comboOffers.tenantId, tenantId)));
   }
 }
 

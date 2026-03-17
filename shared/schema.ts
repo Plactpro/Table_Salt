@@ -266,6 +266,7 @@ export const orderItems = pgTable("order_items", {
   course: text("course"),
   startedAt: timestamp("started_at"),
   readyAt: timestamp("ready_at"),
+  metadata: jsonb("metadata"),
 });
 
 export const inventoryItems = pgTable("inventory_items", {
@@ -1180,3 +1181,29 @@ export const insertEventSchema = createInsertSchema(events).omit({ id: true, cre
 export type InsertEvent = z.infer<typeof insertEventSchema>;
 export type Event = typeof events.$inferSelect;
 export type InsertGuestCartItem = z.infer<typeof insertGuestCartItemSchema>;
+
+export const comboOffers = pgTable("combo_offers", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  comboPrice: decimal("combo_price", { precision: 10, scale: 2 }).notNull(),
+  individualTotal: decimal("individual_total", { precision: 10, scale: 2 }).notNull(),
+  savingsPercentage: decimal("savings_percentage", { precision: 5, scale: 2 }).notNull(),
+  mainItems: jsonb("main_items").notNull(),
+  sideItems: jsonb("side_items"),
+  addonItems: jsonb("addon_items"),
+  validityStart: timestamp("validity_start"),
+  validityEnd: timestamp("validity_end"),
+  timeSlots: text("time_slots").array(),
+  outlets: text("outlets").array(),
+  isActive: boolean("is_active").default(true),
+  orderCount: integer("order_count").default(0),
+  createdBy: varchar("created_by", { length: 36 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertComboOfferSchema = createInsertSchema(comboOffers).omit({ id: true, createdAt: true, updatedAt: true });
+export type ComboOffer = typeof comboOffers.$inferSelect;
+export type InsertComboOffer = z.infer<typeof insertComboOfferSchema>;
