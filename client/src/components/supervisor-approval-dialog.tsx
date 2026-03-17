@@ -11,7 +11,7 @@ interface SupervisorApprovalDialogProps {
   onOpenChange: (open: boolean) => void;
   action: string;
   actionLabel: string;
-  onApproved: (supervisorId: string) => void;
+  onApproved: (supervisorId: string, credentials: { username: string; password: string }) => void;
 }
 
 export default function SupervisorApprovalDialog({
@@ -34,7 +34,7 @@ export default function SupervisorApprovalDialog({
       const res = await apiRequest("POST", "/api/supervisor/verify", { username, password, action });
       const data = await res.json();
       if (data.verified) {
-        onApproved(data.supervisor.id);
+        onApproved(data.supervisor.id, { username, password });
         setUsername("");
         setPassword("");
         onOpenChange(false);

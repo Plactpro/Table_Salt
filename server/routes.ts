@@ -554,7 +554,19 @@ export async function registerRoutes(
     if (existing.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
     if (req.body.status === "voided" && !can(user, "void_order")) {
-      return res.status(403).json({ message: "Permission denied", action: "void_order", requiresSupervisor: needsSupervisorApproval(user, "void_order") });
+      if (req.body.supervisorOverride) {
+        const supervisor = await storage.getUserByUsername(req.body.supervisorOverride.username);
+        if (!supervisor || supervisor.tenantId !== user.tenantId) {
+          return res.status(403).json({ message: "Supervisor not found" });
+        }
+        const validPw = await comparePasswords(req.body.supervisorOverride.password, supervisor.password);
+        if (!validPw || !can({ id: supervisor.id, role: supervisor.role, tenantId: supervisor.tenantId }, "void_order")) {
+          return res.status(403).json({ message: "Supervisor verification failed" });
+        }
+        auditLogFromReq(req, { action: "supervisor_override", metadata: { supervisorId: supervisor.id, supervisorName: supervisor.name, forAction: "void_order", requestedBy: user.name }, supervisorId: supervisor.id });
+      } else {
+        return res.status(403).json({ message: "Permission denied", action: "void_order", requiresSupervisor: needsSupervisorApproval(user, "void_order") });
+      }
     }
 
     const updateData = { ...req.body };
@@ -1857,6 +1869,7 @@ export async function registerRoutes(
         }
       }
       const createdIngredients = await storage.getRecipeIngredients(recipe.id);
+      auditLogFromReq(req, { action: "recipe_created", entityType: "recipe", entityId: recipe.id, entityName: recipe.name, after: { name: recipe.name, ingredientCount: createdIngredients.length } });
       res.json({ ...recipe, ingredients: createdIngredients });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1883,6 +1896,7 @@ export async function registerRoutes(
         }
       }
       const updatedIngredients = await storage.getRecipeIngredients(recipe.id);
+      auditLogFromReq(req, { action: "recipe_updated", entityType: "recipe", entityId: req.params.id, entityName: recipe.name, after: { name: recipe.name, ingredientCount: updatedIngredients.length } });
       res.json({ ...recipe, ingredients: updatedIngredients });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1891,6 +1905,7 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       await storage.deleteRecipe(req.params.id, user.tenantId);
+      auditLogFromReq(req, { action: "recipe_deleted", entityType: "recipe", entityId: req.params.id });
       res.json({ message: "Deleted" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -2106,17 +2121,19 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/stock-takes/:id/complete", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/stock-takes/:id/complete", requireRole("owner", "manager"), requirePermission("adjust_stock"), async (req, res) => {
     try {
       const user = req.user as any;
       const take = await storage.getStockTake(req.params.id);
       if (!take || take.tenantId !== user.tenantId) return res.status(404).json({ message: "Not found" });
       const lines = await storage.getStockTakeLines(take.id);
+      let adjustmentCount = 0;
       for (const line of lines) {
         if (line.countedQty !== null && line.countedQty !== undefined) {
           await storage.updateInventoryItem(line.inventoryItemId, { currentStock: line.countedQty });
           const variance = Number(line.countedQty) - Number(line.expectedQty);
           if (variance !== 0) {
+            adjustmentCount++;
             await storage.createStockMovement({
               tenantId: user.tenantId,
               itemId: line.inventoryItemId,
@@ -2128,6 +2145,7 @@ export async function registerRoutes(
         }
       }
       const updated = await storage.updateStockTake(req.params.id, user.tenantId, { status: "completed", completedAt: new Date() });
+      auditLogFromReq(req, { action: "inventory_adjusted", entityType: "stock_take", entityId: req.params.id, metadata: { type: "stock_take_complete", linesCount: lines.length, adjustments: adjustmentCount } });
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
