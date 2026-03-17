@@ -195,7 +195,7 @@ export default function MenuPage() {
     },
   });
 
-  const handleMenuSupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string }) => {
+  const handleMenuSupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string; otpApprovalToken?: string }) => {
     if (supervisorDialog?.pendingData) {
       const { id, data } = supervisorDialog.pendingData;
       updateItem.mutate({ id, data: { ...data, supervisorOverride: credentials } });

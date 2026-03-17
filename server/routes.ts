@@ -45,13 +45,36 @@ async function getSecuritySettings(tenantId: string) {
   };
 }
 
+const otpApprovalTokens = new Map<string, { supervisorId: string; supervisorName: string; tenantId: string; action: string; expiresAt: number }>();
+
 async function verifySupervisorOverride(
-  override: { username: string; password: string } | undefined,
+  override: { username: string; password: string; otpApprovalToken?: string } | undefined,
   tenantId: string,
   action: PermissionAction,
   req: import("express").Request
 ): Promise<{ verified: boolean; supervisorId?: string; error?: string }> {
   if (!override) return { verified: false, error: "No override provided" };
+
+  if (override.otpApprovalToken) {
+    const tokenData = otpApprovalTokens.get(override.otpApprovalToken);
+    if (!tokenData) return { verified: false, error: "Invalid or expired approval token" };
+    if (tokenData.expiresAt < Date.now()) {
+      otpApprovalTokens.delete(override.otpApprovalToken);
+      return { verified: false, error: "Approval token expired" };
+    }
+    if (tokenData.tenantId !== tenantId || tokenData.action !== action) {
+      return { verified: false, error: "Approval token does not match this action" };
+    }
+    otpApprovalTokens.delete(override.otpApprovalToken);
+    const user = req.user as { id: string; name: string; tenantId: string } | undefined;
+    auditLogFromReq(req, {
+      action: "supervisor_override",
+      metadata: { supervisorId: tokenData.supervisorId, supervisorName: tokenData.supervisorName, forAction: action, requestedBy: user?.name || "unknown", method: "otp" },
+      supervisorId: tokenData.supervisorId,
+    });
+    return { verified: true, supervisorId: tokenData.supervisorId };
+  }
+
   const supervisor = await storage.getUserByUsername(override.username);
   if (!supervisor || supervisor.tenantId !== tenantId) return { verified: false, error: "Supervisor not found" };
   const validPw = await comparePasswords(override.password, supervisor.password);
@@ -62,7 +85,7 @@ async function verifySupervisorOverride(
   const user = req.user as { id: string; name: string; tenantId: string } | undefined;
   auditLogFromReq(req, {
     action: "supervisor_override",
-    metadata: { supervisorId: supervisor.id, supervisorName: supervisor.name, forAction: action, requestedBy: user?.name || "unknown" },
+    metadata: { supervisorId: supervisor.id, supervisorName: supervisor.name, forAction: action, requestedBy: user?.name || "unknown", method: "credentials" },
     supervisorId: supervisor.id,
   });
   return { verified: true, supervisorId: supervisor.id };
@@ -233,16 +256,21 @@ export async function registerRoutes(
   app.post("/api/menu-categories", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const user = req.user as any;
     const cat = await storage.createCategory({ ...req.body, tenantId: user.tenantId });
+    auditLogFromReq(req, { action: "category_created", entityType: "menu_category", entityId: cat.id, entityName: cat.name, after: { name: cat.name } });
     res.json(cat);
   });
 
   app.patch("/api/menu-categories/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
+    const before = await storage.getCategory(req.params.id);
     const cat = await storage.updateCategory(req.params.id, req.body);
+    auditLogFromReq(req, { action: "category_updated", entityType: "menu_category", entityId: req.params.id, entityName: cat.name, before: before ? { name: before.name } : undefined, after: { name: cat.name } });
     res.json(cat);
   });
 
   app.delete("/api/menu-categories/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
+    const before = await storage.getCategory(req.params.id);
     await storage.deleteCategory(req.params.id);
+    auditLogFromReq(req, { action: "category_deleted", entityType: "menu_category", entityId: req.params.id, entityName: before?.name || "unknown" });
     res.json({ message: "Deleted" });
   });
 
@@ -3892,8 +3920,17 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Invalid OTP code" });
       }
       otpCache.delete(challengeId);
+      const approvalToken = `otp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const user = req.user as { tenantId: string };
+      otpApprovalTokens.set(approvalToken, {
+        supervisorId: entry.supervisorId,
+        supervisorName: entry.supervisorName,
+        tenantId: user.tenantId,
+        action: entry.action,
+        expiresAt: Date.now() + 5 * 60 * 1000,
+      });
       auditLogFromReq(req, { action: "otp_verified", metadata: { challengeId, forAction: entry.action, supervisorId: entry.supervisorId } });
-      res.json({ verified: true, action: entry.action, supervisor: { id: entry.supervisorId, name: entry.supervisorName } });
+      res.json({ verified: true, action: entry.action, approvalToken, supervisor: { id: entry.supervisorId, name: entry.supervisorName } });
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Unknown error" }); }
   });
 

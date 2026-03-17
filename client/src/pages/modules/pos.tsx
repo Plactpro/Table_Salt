@@ -204,7 +204,7 @@ export default function POSPage() {
     setItemNoteText("");
   };
 
-  const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string }) => {
+  const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
     const orderData: Record<string, unknown> = {
       orderType,
       tableId: isDineIn ? selectedTable || null : null,
@@ -231,7 +231,7 @@ export default function POSPage() {
   }, [orderType, isDineIn, selectedTable, subtotal, taxAmount, totalDiscount, total, orderNotes, serviceChargeAmount, selectedOffer, cart, paymentMethod]);
 
   const placeOrderMutation = useMutation({
-    mutationFn: async (supervisorOverride?: { username: string; password: string }) => {
+    mutationFn: async (supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
       const orderData = buildOrderData(supervisorOverride);
       const res = await fetch("/api/orders", {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",

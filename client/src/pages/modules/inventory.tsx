@@ -88,7 +88,7 @@ function InventoryTab() {
   const pendingAdjustRef = { current: null as { id: string; data: { type: string; quantity: string; reason: string } } | null };
 
   const adjustMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { type: string; quantity: string; reason: string; supervisorOverride?: { username: string; password: string } } }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { type: string; quantity: string; reason: string; supervisorOverride?: { username: string; password: string; otpApprovalToken?: string } } }) => {
       pendingAdjustRef.current = { id, data: { type: data.type, quantity: data.quantity, reason: data.reason } };
       const res = await fetch(`/api/inventory/${id}/adjust`, {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
@@ -116,7 +116,7 @@ function InventoryTab() {
     },
   });
 
-  const handleInventorySupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string }) => {
+  const handleInventorySupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string; otpApprovalToken?: string }) => {
     if (supervisorDialog?.pendingData) {
       const { id, data } = supervisorDialog.pendingData;
       adjustMutation.mutate({ id, data: { ...data, supervisorOverride: credentials } });

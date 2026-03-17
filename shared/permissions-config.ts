@@ -32,9 +32,23 @@ export type PermissionAction =
   | "manage_security"
   | "supervisor_override";
 
-export type Role = "owner" | "manager" | "waiter" | "kitchen" | "accountant" | "customer";
+export type UserRole =
+  | "owner"
+  | "manager"
+  | "waiter"
+  | "kitchen"
+  | "accountant"
+  | "customer"
+  | "cashier"
+  | "supervisor"
+  | "outlet_manager"
+  | "hq_admin"
+  | "franchise_owner"
+  | "auditor";
 
-export const rolePermissions: Record<Role, PermissionAction[]> = {
+export type Role = UserRole;
+
+export const rolePermissions: Record<UserRole, PermissionAction[]> = {
   owner: [
     "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
     "change_price", "close_day", "view_reports", "view_cost_reports",
@@ -44,6 +58,22 @@ export const rolePermissions: Record<Role, PermissionAction[]> = {
     "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
   ],
+  franchise_owner: [
+    "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
+    "change_price", "close_day", "view_reports", "view_cost_reports",
+    "manage_menu", "edit_recipe", "manage_inventory", "adjust_stock", "large_stock_adjustment",
+    "manage_staff", "manage_tables", "manage_outlets", "manage_offers", "manage_crm",
+    "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
+    "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
+    "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
+  ],
+  hq_admin: [
+    "view_reports", "view_cost_reports", "manage_menu", "manage_inventory",
+    "manage_staff", "manage_outlets", "manage_offers", "manage_crm",
+    "manage_delivery", "manage_audits", "manage_suppliers", "manage_procurement",
+    "approve_purchase", "manage_integrations", "manage_settings", "manage_billing",
+    "manage_users", "view_audit_log", "manage_security",
+  ],
   manager: [
     "create_order", "edit_order", "void_order", "apply_discount",
     "close_day", "view_reports", "view_cost_reports",
@@ -51,6 +81,23 @@ export const rolePermissions: Record<Role, PermissionAction[]> = {
     "manage_staff", "manage_tables", "manage_outlets", "manage_offers", "manage_crm",
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_users", "view_audit_log", "supervisor_override",
+  ],
+  outlet_manager: [
+    "create_order", "edit_order", "void_order", "apply_discount",
+    "close_day", "view_reports", "view_cost_reports",
+    "manage_menu", "edit_recipe", "manage_inventory", "adjust_stock",
+    "manage_staff", "manage_tables", "manage_offers", "manage_crm",
+    "manage_delivery", "manage_cleaning", "manage_audits",
+    "manage_users", "view_audit_log", "supervisor_override",
+  ],
+  supervisor: [
+    "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
+    "change_price", "close_day", "view_reports",
+    "manage_menu", "manage_inventory", "adjust_stock", "large_stock_adjustment",
+    "manage_tables", "manage_cleaning", "supervisor_override",
+  ],
+  cashier: [
+    "create_order", "edit_order", "apply_discount", "manage_tables",
   ],
   waiter: [
     "create_order", "edit_order", "apply_discount", "manage_tables",
@@ -60,6 +107,9 @@ export const rolePermissions: Record<Role, PermissionAction[]> = {
   ],
   accountant: [
     "view_reports", "view_cost_reports", "view_audit_log",
+  ],
+  auditor: [
+    "view_reports", "view_cost_reports", "view_audit_log", "manage_audits",
   ],
   customer: [],
 };
@@ -106,10 +156,28 @@ export const actionLabels: Record<PermissionAction, string> = {
   supervisor_override: "Supervisor Override",
 };
 
-export const allRoles: Role[] = ["owner", "manager", "waiter", "kitchen", "accountant", "customer"];
+export const roleLabels: Record<UserRole, string> = {
+  owner: "Owner",
+  franchise_owner: "Franchise Owner",
+  hq_admin: "HQ Admin",
+  manager: "Manager",
+  outlet_manager: "Outlet Manager",
+  supervisor: "Supervisor",
+  cashier: "Cashier",
+  waiter: "Waiter",
+  kitchen: "Kitchen",
+  accountant: "Accountant",
+  auditor: "Auditor",
+  customer: "Customer",
+};
+
+export const allRoles: UserRole[] = [
+  "owner", "franchise_owner", "hq_admin", "manager", "outlet_manager",
+  "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor", "customer",
+];
 
 export function getPermissionsForRole(role: string): PermissionAction[] {
-  return rolePermissions[role as Role] || [];
+  return rolePermissions[role as UserRole] || [];
 }
 
 export function getAllActions(): PermissionAction[] {
