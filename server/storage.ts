@@ -65,6 +65,8 @@ import {
   type LabourCostSnapshot, type InsertLabourCostSnapshot,
   auditEvents,
   type AuditEvent, type InsertAuditEvent,
+  promotionRules,
+  type PromotionRule, type InsertPromotionRule,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -326,6 +328,12 @@ export interface IStorage {
   }): Promise<{ events: AuditEvent[]; total: number }>;
   createAuditEvent(data: InsertAuditEvent): Promise<AuditEvent>;
   getAuditEventsByEntity(tenantId: string, entityType: string, entityId: string): Promise<AuditEvent[]>;
+
+  getPromotionRulesByTenant(tenantId: string): Promise<PromotionRule[]>;
+  getPromotionRule(id: string, tenantId: string): Promise<PromotionRule | undefined>;
+  createPromotionRule(data: InsertPromotionRule): Promise<PromotionRule>;
+  updatePromotionRule(id: string, tenantId: string, data: Partial<InsertPromotionRule>): Promise<PromotionRule | undefined>;
+  deletePromotionRule(id: string, tenantId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1450,6 +1458,25 @@ export class DatabaseStorage implements IStorage {
         eq(auditEvents.entityId, entityId),
       ))
       .orderBy(desc(auditEvents.createdAt));
+  }
+
+  async getPromotionRulesByTenant(tenantId: string) {
+    return db.select().from(promotionRules).where(eq(promotionRules.tenantId, tenantId)).orderBy(desc(promotionRules.priority));
+  }
+  async getPromotionRule(id: string, tenantId: string) {
+    const [r] = await db.select().from(promotionRules).where(and(eq(promotionRules.id, id), eq(promotionRules.tenantId, tenantId)));
+    return r;
+  }
+  async createPromotionRule(data: InsertPromotionRule) {
+    const [r] = await db.insert(promotionRules).values(data).returning();
+    return r;
+  }
+  async updatePromotionRule(id: string, tenantId: string, data: Partial<InsertPromotionRule>) {
+    const [r] = await db.update(promotionRules).set(data).where(and(eq(promotionRules.id, id), eq(promotionRules.tenantId, tenantId))).returning();
+    return r;
+  }
+  async deletePromotionRule(id: string, tenantId: string) {
+    await db.delete(promotionRules).where(and(eq(promotionRules.id, id), eq(promotionRules.tenantId, tenantId)));
   }
 }
 

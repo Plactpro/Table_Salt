@@ -25,6 +25,15 @@ import {
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer } from "@shared/schema";
 
+interface EngineDiscount {
+  ruleId: string;
+  ruleName: string;
+  ruleType: string;
+  discountType: string;
+  discountAmount: number;
+  description: string;
+}
+
 interface CartItem {
   menuItemId: string;
   name: string;
@@ -130,6 +139,40 @@ export default function POSPage() {
 
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
 
+  const evaluatePayload = useMemo(() => {
+    if (cart.length === 0) return null;
+    return {
+      items: cart.map((c) => ({
+        menuItemId: c.menuItemId,
+        name: c.name,
+        price: c.price,
+        quantity: c.quantity,
+        categoryId: c.categoryId || undefined,
+      })),
+      subtotal,
+      channel: "pos",
+      orderType,
+    };
+  }, [cart, subtotal, orderType]);
+
+  const { data: engineResult } = useQuery<{
+    appliedDiscounts: EngineDiscount[];
+    totalDiscount: number;
+    finalSubtotal: number;
+  }>({
+    queryKey: ["/api/promotions/evaluate", evaluatePayload],
+    queryFn: async () => {
+      if (!evaluatePayload) return { appliedDiscounts: [], totalDiscount: 0, finalSubtotal: subtotal };
+      const res = await apiRequest("POST", "/api/promotions/evaluate", evaluatePayload);
+      return res.json();
+    },
+    enabled: cart.length > 0,
+    staleTime: 5000,
+  });
+
+  const engineDiscount = engineResult?.totalDiscount ?? 0;
+  const engineDiscounts = engineResult?.appliedDiscounts ?? [];
+
   const SUPPORTED_OFFER_TYPES = ["percentage", "fixed_amount", "happy_hour"];
 
   const applicableOffers = useMemo(
@@ -157,7 +200,7 @@ export default function POSPage() {
     return isNaN(d) ? 0 : d;
   }, [discount]);
 
-  const totalDiscount = offerDiscount + manualDiscount;
+  const totalDiscount = offerDiscount + manualDiscount + engineDiscount;
   const tenantTaxType = user?.tenant?.taxType || "vat";
   const tenantCompoundTax = user?.tenant?.compoundTax ?? false;
   const tenantServiceChargePct = Number(user?.tenant?.serviceCharge || "0") / 100;
@@ -531,6 +574,12 @@ export default function POSPage() {
                 <span>-{fmt(offerDiscount)}</span>
               </div>
             )}
+            {engineDiscounts.length > 0 && engineDiscounts.map((ed) => (
+              <div key={ed.ruleId} className="flex justify-between text-purple-600" data-testid={`text-engine-discount-${ed.ruleId}`}>
+                <span className="flex items-center gap-1 text-xs"><Percent className="h-3 w-3" /> {ed.ruleName}</span>
+                <span>{ed.discountAmount > 0 ? `-${fmt(ed.discountAmount)}` : `+${fmt(Math.abs(ed.discountAmount))}`}</span>
+              </div>
+            ))}
             {manualDiscount > 0 && (
               <div className="flex justify-between text-green-600" data-testid="text-discount">
                 <span>Manual Discount</span>
