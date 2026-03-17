@@ -4283,6 +4283,16 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/kiosk/device-config", async (req, res) => {
+    try {
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+      res.json({ id: device.id, name: device.name, settings: device.settings || {} });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.post("/api/kiosk/order", async (req, res) => {
     try {
       const token = req.headers["x-kiosk-token"] as string;
@@ -4338,17 +4348,22 @@ export async function registerRoutes(
       const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
       const serverTotal = Math.round((afterDiscount + serverServiceCharge + serverTax) * 100) / 100;
 
+      const pm = paymentMethod || "card";
+      const isDigitalPayment = ["card", "upi", "wallet"].includes(pm);
+      const orderStatus = isDigitalPayment ? "confirmed" : "new";
+
       const order = await storage.createOrder({
         tenantId: device.tenantId!,
         outletId: device.outletId,
         orderType: requestedServiceType,
         channel: "kiosk",
-        status: "new",
+        status: orderStatus,
         subtotal: serverSubtotal.toFixed(2),
         discount: totalDiscount.toFixed(2),
         tax: serverTax.toFixed(2),
         total: serverTotal.toFixed(2),
-        paymentMethod: paymentMethod || "card",
+        paymentMethod: pm,
+        paymentStatus: isDigitalPayment ? "paid" : "unpaid",
         notes: `Kiosk order from ${device.name}`,
       });
 

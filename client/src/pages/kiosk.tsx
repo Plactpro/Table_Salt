@@ -87,6 +87,7 @@ export default function KioskPage() {
   const [itemNoteText, setItemNoteText] = useState("");
   const [noteEditItem, setNoteEditItem] = useState<string | null>(null);
   const [noteEditText, setNoteEditText] = useState("");
+  const [promoCode, setPromoCode] = useState("");
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const token = getKioskToken();
 
@@ -111,6 +112,20 @@ export default function KioskPage() {
     enabled: !!token,
     staleTime: 60000,
   });
+
+  const { data: deviceConfig } = useQuery({
+    queryKey: ["kiosk-device-config", token],
+    queryFn: async () => {
+      const res = await kioskFetch("/api/kiosk/device-config");
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!token,
+    staleTime: 60000,
+  });
+
+  const idleTimeoutMs = (deviceConfig?.settings?.idleTimeout || 120) * 1000;
+  const confirmResetMs = (deviceConfig?.settings?.confirmTimeout || 15) * 1000;
 
   const { data: upsellRules = [] } = useQuery({
     queryKey: ["kiosk-upsells", token],
@@ -186,9 +201,9 @@ export default function KioskPage() {
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (step !== "welcome" && step !== "confirmation") {
-      idleTimerRef.current = setTimeout(resetKiosk, 120000);
+      idleTimerRef.current = setTimeout(resetKiosk, idleTimeoutMs);
     }
-  }, [step, resetKiosk]);
+  }, [step, resetKiosk, idleTimeoutMs]);
 
   useEffect(() => {
     resetIdleTimer();
@@ -263,7 +278,7 @@ export default function KioskPage() {
       setOrderResult(result);
       setStep("confirmation");
       setCart([]);
-      setTimeout(() => resetKiosk(), 15000);
+      setTimeout(() => resetKiosk(), confirmResetMs);
     } catch (err) {
       console.error("Order failed", err);
     } finally {
@@ -330,7 +345,9 @@ export default function KioskPage() {
             serviceChargeRate={serviceChargeRate}
             taxRate={taxRate}
             serviceType={serviceType}
+            promoCode={promoCode}
             fmt={fmt}
+            onPromoCodeChange={setPromoCode}
             onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart}
             onEditNote={(cartLineId) => { setNoteEditItem(cartLineId); setNoteEditText(cart.find(c => c.cartLineId === cartLineId)?.notes || ""); }}
@@ -850,7 +867,7 @@ function MenuScreen({
 
 function CartScreen({
   cart, subtotal, serviceChargeAmount, taxAmount, total, serviceChargeRate, taxRate,
-  serviceType, fmt, onUpdateQuantity, onRemoveFromCart, onEditNote, onBack, onCheckout,
+  serviceType, promoCode, fmt, onPromoCodeChange, onUpdateQuantity, onRemoveFromCart, onEditNote, onBack, onCheckout,
 }: {
   cart: KioskCartItem[];
   subtotal: number;
@@ -860,7 +877,9 @@ function CartScreen({
   serviceChargeRate: number;
   taxRate: number;
   serviceType: ServiceType;
+  promoCode: string;
   fmt: (val: number | string) => string;
+  onPromoCodeChange: (v: string) => void;
   onUpdateQuantity: (id: string, delta: number) => void;
   onRemoveFromCart: (id: string) => void;
   onEditNote: (id: string) => void;
@@ -981,6 +1000,24 @@ function CartScreen({
 
       {cart.length > 0 && (
         <div className="px-6 pb-6">
+          <div className="flex gap-2 mb-4">
+            <Input
+              data-testid="input-promo-code"
+              placeholder="Have a promo code?"
+              value={promoCode}
+              onChange={e => onPromoCodeChange(e.target.value.toUpperCase())}
+              className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 rounded-xl"
+            />
+            <Button
+              data-testid="button-apply-promo"
+              variant="outline"
+              className="text-white border-white/20 hover:bg-white/10 rounded-xl whitespace-nowrap"
+              disabled={!promoCode.trim()}
+            >
+              Apply
+            </Button>
+          </div>
+
           <div className="bg-white/5 rounded-xl p-5 border border-white/10 space-y-3 mb-4">
             <div className="flex justify-between text-slate-300">
               <span>Subtotal</span>
