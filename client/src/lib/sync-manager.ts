@@ -1,3 +1,5 @@
+import type { SyncService, ConfigCache } from "./sync-interfaces";
+
 const DB_NAME = "tablesalt_sync";
 const DB_VERSION = 1;
 const QUEUE_STORE = "sync_queue";
@@ -49,7 +51,7 @@ function generateId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-class SyncManager {
+class SyncManager implements SyncService, ConfigCache {
   private db: IDBDatabase | null = null;
   private listeners: Set<SyncListener> = new Set();
   private _status: SyncStatus = "online";
@@ -224,11 +226,17 @@ class SyncManager {
       await this.updateQueueItem(item.id, { status: "in_flight", lastAttemptAt: Date.now() });
 
       try {
-        const res = await fetch("/api/orders", {
+        const endpoint = (item.payload._endpoint as string) || "/api/orders";
+        const kioskToken = item.payload._kioskToken as string | undefined;
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (kioskToken) headers["X-Kiosk-Token"] = kioskToken;
+
+        const { _endpoint: _e, _kioskToken: _k, ...cleanPayload } = item.payload;
+        const res = await fetch(endpoint, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify(item.payload),
+          headers,
+          credentials: kioskToken ? "omit" : "include",
+          body: JSON.stringify(cleanPayload),
         });
 
         if (res.ok || res.status === 409) {
@@ -395,6 +403,47 @@ class SyncManager {
     await this.refreshConfig("menu-items", "/api/menu-items");
     await this.refreshConfig("menu-categories", "/api/menu-categories");
     await this.refreshConfig("offers", "/api/offers");
+  }
+
+  async enqueueKioskOrder(
+    payload: Record<string, unknown>,
+    kioskToken: string
+  ): Promise<{ queued: boolean; orderId: string; responseData?: Record<string, unknown> }> {
+    const orderId = (payload.clientOrderId as string) || generateId();
+    const finalPayload = { ...payload, clientOrderId: orderId };
+
+    if (this._status === "online") {
+      try {
+        const res = await fetch("/api/kiosk/order", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Kiosk-Token": kioskToken,
+          },
+          body: JSON.stringify(finalPayload),
+        });
+        if (res.ok || res.status === 409) {
+          const data = await res.json();
+          return { queued: false, orderId, responseData: data };
+        }
+        if (res.status >= 400 && res.status < 500) {
+          const errData = await res.json();
+          throw new Error(errData.message || `Error ${res.status}`);
+        }
+        throw new Error(`Server returned ${res.status}`);
+      } catch (err: any) {
+        const msg = err?.message || "";
+        const isClientError = msg.startsWith("Error ") && !msg.startsWith("Error 5");
+        if (isClientError) {
+          throw err;
+        }
+        await this.addToQueue(orderId, { ...finalPayload, _kioskToken: kioskToken, _endpoint: "/api/kiosk/order" });
+        return { queued: true, orderId };
+      }
+    }
+
+    await this.addToQueue(orderId, { ...finalPayload, _kioskToken: kioskToken, _endpoint: "/api/kiosk/order" });
+    return { queued: true, orderId };
   }
 
   destroy(): void {

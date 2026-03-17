@@ -4329,7 +4329,15 @@ export async function registerRoutes(
       const device = await storage.getKioskDeviceByToken(token);
       if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
 
-      const { items, paymentMethod } = req.body;
+      const { items, paymentMethod, clientOrderId } = req.body;
+
+      if (clientOrderId) {
+        const existing = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
+        if (existing) {
+          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems }, tokenNumber: existing.orderNumber || existing.id.slice(0, 6).toUpperCase() });
+        }
+      }
       if (!items || !Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ message: "Order must have at least one item" });
       }
@@ -4381,19 +4389,32 @@ export async function registerRoutes(
       const isDigitalPayment = ["card", "upi", "wallet"].includes(pm);
       const orderStatus = isDigitalPayment ? "paid" : "new";
 
-      const order = await storage.createOrder({
-        tenantId: device.tenantId!,
-        outletId: device.outletId,
-        orderType: requestedServiceType,
-        channel: "kiosk",
-        status: orderStatus,
-        subtotal: serverSubtotal.toFixed(2),
-        discount: totalDiscount.toFixed(2),
-        tax: serverTax.toFixed(2),
-        total: serverTotal.toFixed(2),
-        paymentMethod: pm,
-        notes: `Kiosk order from ${device.name}`,
-      });
+      let order;
+      try {
+        order = await storage.createOrder({
+          tenantId: device.tenantId!,
+          outletId: device.outletId,
+          orderType: requestedServiceType,
+          channel: "kiosk",
+          channelOrderId: clientOrderId || undefined,
+          status: orderStatus,
+          subtotal: serverSubtotal.toFixed(2),
+          discount: totalDiscount.toFixed(2),
+          tax: serverTax.toFixed(2),
+          total: serverTotal.toFixed(2),
+          paymentMethod: pm,
+          notes: `Kiosk order from ${device.name}`,
+        });
+      } catch (dbErr: any) {
+        if (clientOrderId && dbErr.code === "23505" && dbErr.constraint?.includes("channel_order_id")) {
+          const dup = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
+          if (dup) {
+            const dupItems = await storage.getOrderItemsByOrder(dup.id);
+            return res.status(409).json({ message: "Duplicate order", order: { ...dup, items: dupItems }, tokenNumber: dup.orderNumber || dup.id.slice(0, 6).toUpperCase() });
+          }
+        }
+        throw dbErr;
+      }
 
       for (const item of serverItems) {
         const mi = menuMap.get(item.menuItemId);

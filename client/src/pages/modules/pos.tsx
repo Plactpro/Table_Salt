@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { syncManager } from "@/lib/sync-manager";
+import { useCachedQuery } from "@/hooks/use-cached-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,10 +125,10 @@ export default function POSPage() {
 
   useEffect(() => { syncManager.init(); }, []);
 
-  const { data: categories = [] } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
-  const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: categories = [] } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
+  const { data: menuItems = [] } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
-  const { data: offers = [] } = useQuery<Offer[]>({ queryKey: ["/api/offers"] });
+  const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");
 
   const freeTables = useMemo(() => tables.filter((t) => t.status === "free"), [tables]);
 

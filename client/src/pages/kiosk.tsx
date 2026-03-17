@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
+import { syncManager, type SyncStatus } from "@/lib/sync-manager";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +13,7 @@ import {
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ChevronLeft,
   ChevronRight, CreditCard, Wallet, Smartphone, Store, Leaf, CheckCircle,
-  Clock, X, Sparkles, Package, StickyNote, Info,
+  Clock, X, Sparkles, Package, StickyNote, Info, Wifi, WifiOff, Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
@@ -94,8 +95,19 @@ export default function KioskPage() {
   const [tableNumber, setTableNumber] = useState("");
   const [showUpsellStep, setShowUpsellStep] = useState(false);
   const [loyaltyPhone, setLoyaltyPhone] = useState("");
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("online");
+  const [syncPending, setSyncPending] = useState(0);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const token = getKioskToken();
+
+  useEffect(() => {
+    syncManager.init();
+    const unsub = syncManager.subscribe((status, pending) => {
+      setSyncStatus(status);
+      setSyncPending(pending);
+    });
+    return unsub;
+  }, []);
 
   const { data: menuData } = useQuery({
     queryKey: ["kiosk-menu", token],
@@ -275,17 +287,21 @@ export default function KioskPage() {
   const placeOrder = useCallback(async () => {
     setIsPlacingOrder(true);
     try {
-      const res = await kioskFetch("/api/kiosk/order", {
-        method: "POST",
-        body: JSON.stringify({
-          items: cart.map(c => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: c.notes || undefined })),
-          paymentMethod,
-          serviceType,
-        }),
-      });
-      if (!res.ok) throw new Error("Failed to place order");
-      const result = await res.json();
-      setOrderResult(result);
+      const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const payload = {
+        items: cart.map(c => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: c.notes || undefined })),
+        paymentMethod,
+        serviceType,
+        clientOrderId,
+      };
+
+      const { queued, responseData } = await syncManager.enqueueKioskOrder(payload, token);
+
+      if (queued) {
+        setOrderResult({ tokenNumber: "QUEUED", queued: true });
+      } else {
+        setOrderResult(responseData || { tokenNumber: "OK" });
+      }
       setStep("confirmation");
       setCart([]);
       setTimeout(() => resetKiosk(), confirmResetMs);
@@ -294,7 +310,7 @@ export default function KioskPage() {
     } finally {
       setIsPlacingOrder(false);
     }
-  }, [cart, paymentMethod, serviceType, resetKiosk]);
+  }, [cart, paymentMethod, serviceType, resetKiosk, token]);
 
   if (!token) {
     return (
@@ -310,6 +326,14 @@ export default function KioskPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 text-white select-none overflow-hidden" data-testid="kiosk-page" onClick={resetIdleTimer}>
+      <div className="fixed top-3 right-3 z-50 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/40 backdrop-blur-sm" data-testid="kiosk-sync-indicator">
+        {syncStatus === "online" && <Wifi className="h-3.5 w-3.5 text-green-400" />}
+        {syncStatus === "offline" && <WifiOff className="h-3.5 w-3.5 text-red-400" />}
+        {syncStatus === "syncing" && <Loader2 className="h-3.5 w-3.5 text-amber-400 animate-spin" />}
+        {syncPending > 0 && (
+          <span className="text-xs text-white/80">{syncPending} pending</span>
+        )}
+      </div>
       <AnimatePresence mode="wait">
         {step === "welcome" && (
           <WelcomeScreen key="welcome" onStart={() => setStep("language")} tenantName={tenantInfo?.name || "Restaurant"} />
@@ -1432,7 +1456,7 @@ function ConfirmationScreen({
         transition={{ delay: 0.3 }}
         className="text-4xl font-bold mb-4"
       >
-        Order Confirmed!
+        {orderResult?.queued ? "Order Saved!" : "Order Confirmed!"}
       </motion.h1>
 
       <motion.div
@@ -1441,14 +1465,16 @@ function ConfirmationScreen({
         transition={{ delay: 0.5 }}
         className="bg-white/10 rounded-2xl p-8 text-center mb-8 border border-white/10"
       >
-        <p className="text-slate-300 mb-2">Your Token Number</p>
+        <p className="text-slate-300 mb-2">{orderResult?.queued ? "Order Queued" : "Your Token Number"}</p>
         <p className="text-6xl font-bold text-teal-400 font-mono" data-testid="text-kiosk-token-number">
-          {orderResult?.tokenNumber || orderResult?.orderNumber || "---"}
+          {orderResult?.queued ? "⏳" : (orderResult?.tokenNumber || orderResult?.orderNumber || "---")}
         </p>
         <p className="text-slate-400 mt-4 text-sm">
-          {serviceType === "dine_in"
-            ? "Please take a seat. Your order will be served to you."
-            : "Please wait at the counter for your order."}
+          {orderResult?.queued
+            ? "Your order has been saved and will be sent when connectivity is restored."
+            : serviceType === "dine_in"
+              ? "Please take a seat. Your order will be served to you."
+              : "Please wait at the counter for your order."}
         </p>
         {orderResult?.total && (
           <p className="text-lg text-white mt-4">Total: {fmt(orderResult.total)}</p>
