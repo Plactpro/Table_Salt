@@ -41,6 +41,7 @@ import {
   Shield,
   Zap,
   Layers,
+  CalendarDays,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
@@ -74,6 +75,7 @@ const navItems: NavItem[] = [
   { id: "m-29", name: "Promotions", icon: Zap, path: "/promotions", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
   { id: "m-30", name: "Kiosk", icon: MonitorSmartphone, path: "/kiosk-management", roles: ["owner", "manager"] },
   { id: "m-31", name: "Omnichannel", icon: Layers, path: "/omnichannel", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
+  { id: "m-32", name: "Events", icon: CalendarDays, path: "/events", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor"], featureKey: "staff" },
   { id: "m-13", name: "CRM", icon: Heart, path: "/crm", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "crm" },
   { id: "m-19", name: "Cleaning", icon: ClipboardCheck, path: "/cleaning", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "cleaning" },
   { id: "m-20", name: "Internal Audits", icon: ShieldCheck, path: "/audits", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "auditor"], featureKey: "internal_audits" },
