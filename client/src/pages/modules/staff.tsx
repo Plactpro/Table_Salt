@@ -107,6 +107,20 @@ export default function StaffPage() {
     queryKey: ["/api/outlets"],
   });
 
+  const { data: calEvents = [] } = useQuery<{ id: string; title: string; type: string; impact: string; startDate: string; endDate: string; color: string | null; allDay: boolean | null }[]>({
+    queryKey: ["/api/events"],
+  });
+
+  const getHighImpactEventsForDay = (date: Date): { title: string; impact: string; color: string | null }[] => {
+    return calEvents.filter((ev) => {
+      if (ev.impact !== "high" && ev.impact !== "very_high") return false;
+      const d = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+      const s = new Date(new Date(ev.startDate).getFullYear(), new Date(ev.startDate).getMonth(), new Date(ev.startDate).getDate()).getTime();
+      const e = new Date(new Date(ev.endDate).getFullYear(), new Date(ev.endDate).getMonth(), new Date(ev.endDate).getDate()).getTime();
+      return d >= s && d <= e;
+    });
+  };
+
   const [attendanceDateFrom, setAttendanceDateFrom] = useState(() => {
     const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split("T")[0];
   });
@@ -549,10 +563,16 @@ export default function StaffPage() {
                     <th className="border p-2 text-left text-sm font-medium bg-muted/50 w-40">Staff</th>
                     {weekDays.map((day) => {
                       const isToday = day.toISOString().split("T")[0] === new Date().toISOString().split("T")[0];
+                      const dayHighEvents = getHighImpactEventsForDay(day);
                       return (
                         <th key={day.toISOString()} className={`border p-2 text-center text-xs font-medium ${isToday ? "bg-primary/10" : "bg-muted/50"}`}>
                           <div>{day.toLocaleDateString(undefined, { weekday: "short" })}</div>
                           <div className={`text-base font-bold ${isToday ? "text-primary" : ""}`}>{day.getDate()}</div>
+                          {dayHighEvents.map((ev, i) => (
+                            <div key={i} className="text-[10px] px-1 py-0.5 mt-0.5 rounded font-medium" style={{ backgroundColor: (ev.color || "#ef4444") + "20", color: ev.color || "#ef4444" }} data-testid={`staff-event-banner-${day.getDate()}-${i}`}>
+                              ⚡ {ev.title}
+                            </div>
+                          ))}
                         </th>
                       );
                     })}
@@ -634,6 +654,7 @@ export default function StaffPage() {
                   if (!day) return <div key={`pad-${idx}`} className="bg-background p-1 min-h-[80px]" />;
                   const isToday = day.toISOString().split("T")[0] === new Date().toISOString().split("T")[0];
                   const dayShifts = getShiftsForDay(day);
+                  const monthDayEvents = getHighImpactEventsForDay(day);
                   return (
                     <div
                       key={day.toISOString()}
@@ -643,6 +664,11 @@ export default function StaffPage() {
                       <div className={`text-xs font-medium mb-0.5 ${isToday ? "text-primary font-bold" : "text-muted-foreground"}`}>
                         {day.getDate()}
                       </div>
+                      {monthDayEvents.map((ev, i) => (
+                        <div key={i} className="text-[9px] px-1 py-0.5 mb-0.5 rounded font-semibold" style={{ backgroundColor: (ev.color || "#ef4444") + "20", color: ev.color || "#ef4444" }} data-testid={`staff-month-event-${day.getDate()}-${i}`}>
+                          ⚡ {ev.title}
+                        </div>
+                      ))}
                       <div className="space-y-0.5">
                         {dayShifts.slice(0, 3).map((shift) => {
                           const member = activeStaff.find((s) => s.id === shift.userId);

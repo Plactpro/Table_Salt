@@ -3,20 +3,21 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
-import type { Event as CalEvent, Offer } from "@shared/schema";
-import { motion, AnimatePresence } from "framer-motion";
+import type { Event as CalEvent, Offer, Outlet } from "@shared/schema";
+import { motion } from "framer-motion";
 import {
   Calendar as CalendarIcon, Plus, Search, ChevronLeft, ChevronRight,
-  Edit, Trash2, List, LayoutGrid, Clock, MapPin, Tag, Sparkles,
-  PartyPopper, Trophy, Building2, Megaphone, Sun, Filter, X,
-  AlertTriangle, Info,
+  Edit, Trash2, List, LayoutGrid, Clock, Copy,
+  PartyPopper, Trophy, Building2, Megaphone, Sun, Filter,
+  Sparkles, AlertTriangle, Bell,
+  type LucideIcon,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
@@ -27,8 +28,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Checkbox } from "@/components/ui/checkbox";
 
-const typeConfig: Record<string, { label: string; icon: any; color: string }> = {
+type ViewType = "month" | "week" | "day" | "list";
+
+const typeConfig: Record<string, { label: string; icon: LucideIcon; color: string }> = {
   holiday: { label: "Holiday", icon: Sun, color: "#f59e0b" },
   festival: { label: "Festival", icon: PartyPopper, color: "#8b5cf6" },
   sports: { label: "Sports Event", icon: Trophy, color: "#22c55e" },
@@ -44,6 +48,36 @@ const impactConfig: Record<string, { label: string; color: string; bg: string }>
 };
 
 const colorPresets = ["#3b82f6", "#ef4444", "#22c55e", "#f59e0b", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316"];
+
+interface EventFormData {
+  title: string;
+  description: string;
+  type: string;
+  impact: string;
+  startDate: string;
+  endDate: string;
+  allDay: boolean;
+  color: string;
+  outlets: string[];
+  tags: string;
+  linkedOfferId: string;
+  notes: string;
+}
+
+interface EventPayload {
+  title: string;
+  description: string | null;
+  type: string;
+  impact: string;
+  startDate: string;
+  endDate: string;
+  allDay: boolean;
+  color: string;
+  outlets: string[] | null;
+  tags: string[] | null;
+  linkedOfferId: string | null;
+  notes: string | null;
+}
 
 function getDaysInMonth(year: number, month: number) {
   return new Date(year, month + 1, 0).getDate();
@@ -65,13 +99,56 @@ function isInRange(date: Date, start: Date, end: Date) {
 }
 
 function formatDate(d: Date | string) {
-  const date = new Date(d);
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return new Date(d).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 }
 
 function formatTime(d: Date | string) {
-  const date = new Date(d);
-  return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  return new Date(d).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function daysUntil(d: Date | string) {
+  const now = new Date();
+  const target = new Date(d);
+  const diff = Math.ceil((target.getTime() - now.getTime()) / 86400000);
+  return diff;
+}
+
+function EventTooltipContent({ ev }: { ev: CalEvent }) {
+  const tc = typeConfig[ev.type] || typeConfig.holiday;
+  const ic = impactConfig[ev.impact] || impactConfig.medium;
+  return (
+    <div className="max-w-[220px] space-y-1">
+      <div className="font-semibold">{ev.title}</div>
+      <div className="text-xs opacity-80">{tc.label} · {ic.label} Impact</div>
+      <div className="text-xs opacity-80">
+        {ev.allDay ? "All Day" : `${formatTime(ev.startDate)} – ${formatTime(ev.endDate)}`}
+      </div>
+      <div className="text-xs opacity-80">{formatDate(ev.startDate)} – {formatDate(ev.endDate)}</div>
+      {ev.outlets && ev.outlets.length > 0 && (
+        <div className="text-xs opacity-80">Outlets: {ev.outlets.join(", ")}</div>
+      )}
+    </div>
+  );
+}
+
+function EventBar({ ev, onEventClick }: { ev: CalEvent; onEventClick: (e: CalEvent) => void }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <div
+          className="text-[10px] leading-tight px-1.5 py-0.5 rounded truncate cursor-pointer font-medium"
+          style={{ backgroundColor: (ev.color || "#3b82f6") + "20", color: ev.color || "#3b82f6", borderLeft: `3px solid ${ev.color || "#3b82f6"}` }}
+          onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
+          data-testid={`event-bar-${ev.id}`}
+        >
+          {ev.title}
+        </div>
+      </TooltipTrigger>
+      <TooltipContent side="right">
+        <EventTooltipContent ev={ev} />
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 function CalendarMonthView({ events, currentDate, onDayClick, onEventClick }: {
@@ -86,7 +163,7 @@ function CalendarMonthView({ events, currentDate, onDayClick, onEventClick }: {
   const firstDay = getFirstDayOfMonth(year, month);
   const today = new Date();
 
-  const days = [];
+  const days: (number | null)[] = [];
   for (let i = 0; i < firstDay; i++) days.push(null);
   for (let d = 1; d <= daysInMonth; d++) days.push(d);
 
@@ -94,7 +171,7 @@ function CalendarMonthView({ events, currentDate, onDayClick, onEventClick }: {
   for (let i = 0; i < days.length; i += 7) {
     weeks.push(days.slice(i, i + 7));
   }
-  while (weeks[weeks.length - 1]?.length < 7) {
+  while (weeks.length > 0 && weeks[weeks.length - 1].length < 7) {
     weeks[weeks.length - 1].push(null);
   }
 
@@ -126,15 +203,7 @@ function CalendarMonthView({ events, currentDate, onDayClick, onEventClick }: {
                 </div>
                 <div className="space-y-0.5">
                   {dayEvents.slice(0, 3).map((ev) => (
-                    <div
-                      key={ev.id}
-                      className="text-[10px] leading-tight px-1.5 py-0.5 rounded truncate cursor-pointer font-medium"
-                      style={{ backgroundColor: (ev.color || "#3b82f6") + "20", color: ev.color || "#3b82f6", borderLeft: `3px solid ${ev.color || "#3b82f6"}` }}
-                      onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
-                      data-testid={`event-bar-${ev.id}`}
-                    >
-                      {ev.title}
-                    </div>
+                    <EventBar key={ev.id} ev={ev} onEventClick={onEventClick} />
                   ))}
                   {dayEvents.length > 3 && (
                     <div className="text-[10px] text-muted-foreground px-1">+{dayEvents.length - 3} more</div>
@@ -179,16 +248,20 @@ function CalendarWeekView({ events, currentDate, onEventClick }: {
               </div>
               <div className="p-1 space-y-1">
                 {dayEvents.map((ev) => (
-                  <div
-                    key={ev.id}
-                    className="text-xs p-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
-                    style={{ backgroundColor: (ev.color || "#3b82f6") + "15", color: ev.color || "#3b82f6", borderLeft: `3px solid ${ev.color || "#3b82f6"}` }}
-                    onClick={() => onEventClick(ev)}
-                    data-testid={`week-event-${ev.id}`}
-                  >
-                    <div className="font-medium truncate">{ev.title}</div>
-                    {!ev.allDay && <div className="text-[10px] opacity-70">{formatTime(ev.startDate)}</div>}
-                  </div>
+                  <Tooltip key={ev.id}>
+                    <TooltipTrigger asChild>
+                      <div
+                        className="text-xs p-1.5 rounded cursor-pointer hover:opacity-80 transition-opacity"
+                        style={{ backgroundColor: (ev.color || "#3b82f6") + "15", color: ev.color || "#3b82f6", borderLeft: `3px solid ${ev.color || "#3b82f6"}` }}
+                        onClick={() => onEventClick(ev)}
+                        data-testid={`week-event-${ev.id}`}
+                      >
+                        <div className="font-medium truncate">{ev.title}</div>
+                        {!ev.allDay && <div className="text-[10px] opacity-70">{formatTime(ev.startDate)}</div>}
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent><EventTooltipContent ev={ev} /></TooltipContent>
+                  </Tooltip>
                 ))}
               </div>
             </div>
@@ -254,30 +327,89 @@ function DayView({ events, currentDate, onEventClick }: {
   );
 }
 
+function NotificationBanners({ events }: { events: CalEvent[] }) {
+  const now = new Date();
+
+  const categorized = useMemo(() => {
+    const today: CalEvent[] = [];
+    const in1Day: CalEvent[] = [];
+    const in3Days: CalEvent[] = [];
+    const in7Days: CalEvent[] = [];
+
+    events.forEach((ev) => {
+      if (ev.impact !== "high" && ev.impact !== "very_high") return;
+      const d = daysUntil(ev.startDate);
+      if (isInRange(now, new Date(ev.startDate), new Date(ev.endDate))) {
+        today.push(ev);
+      } else if (d === 1) {
+        in1Day.push(ev);
+      } else if (d > 0 && d <= 3) {
+        in3Days.push(ev);
+      } else if (d > 3 && d <= 7) {
+        in7Days.push(ev);
+      }
+    });
+    return { today, in1Day, in3Days, in7Days };
+  }, [events]);
+
+  const banners: { label: string; events: CalEvent[]; variant: string; icon: LucideIcon }[] = [];
+  if (categorized.today.length > 0) banners.push({ label: "Happening Now", events: categorized.today, variant: "border-red-500 bg-red-50", icon: AlertTriangle });
+  if (categorized.in1Day.length > 0) banners.push({ label: "Tomorrow", events: categorized.in1Day, variant: "border-orange-500 bg-orange-50", icon: Bell });
+  if (categorized.in3Days.length > 0) banners.push({ label: "In 3 Days", events: categorized.in3Days, variant: "border-yellow-500 bg-yellow-50", icon: Bell });
+  if (categorized.in7Days.length > 0) banners.push({ label: "This Week", events: categorized.in7Days, variant: "border-blue-500 bg-blue-50", icon: CalendarIcon });
+
+  if (banners.length === 0) return null;
+
+  return (
+    <div className="space-y-2" data-testid="notification-banners">
+      {banners.map((b) => {
+        const BIcon = b.icon;
+        return (
+          <Card key={b.label} className={`border-l-4 ${b.variant}`}>
+            <CardContent className="py-2.5 px-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <BIcon className="h-4 w-4 shrink-0" />
+                <span className="text-sm font-semibold">{b.label}:</span>
+                {b.events.map((ev) => (
+                  <Badge key={ev.id} variant="outline" className="text-xs" data-testid={`notification-event-${ev.id}`}>
+                    {ev.title} ({impactConfig[ev.impact]?.label || ev.impact})
+                  </Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function EventsPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [view, setView] = useState<"month" | "week" | "day" | "list">("month");
+  const [view, setView] = useState<ViewType>("month");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalEvent | null>(null);
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState("all");
   const [filterImpact, setFilterImpact] = useState("all");
+  const [filterOutlet, setFilterOutlet] = useState("all");
 
   const canEdit = ["owner", "franchise_owner", "manager", "outlet_manager", "hq_admin"].includes(user?.role || "");
 
-  const defaultForm = {
+  const defaultForm: EventFormData = {
     title: "", description: "", type: "holiday", impact: "medium",
     startDate: "", endDate: "", allDay: true, color: "#3b82f6",
-    outlets: [] as string[], tags: "" as string, linkedOfferId: "none", notes: "",
+    outlets: [], tags: "", linkedOfferId: "none", notes: "",
   };
-  const [form, setForm] = useState(defaultForm);
+  const [form, setForm] = useState<EventFormData>(defaultForm);
 
   const { data: allEvents = [] } = useQuery<CalEvent[]>({ queryKey: ["/api/events"] });
   const { data: offers = [] } = useQuery<Offer[]>({ queryKey: ["/api/offers"] });
+  const { data: outlets = [] } = useQuery<Outlet[]>({ queryKey: ["/api/outlets"] });
 
   const filtered = useMemo(() => {
     let result = allEvents;
@@ -287,8 +419,9 @@ export default function EventsPage() {
     }
     if (filterType !== "all") result = result.filter((e) => e.type === filterType);
     if (filterImpact !== "all") result = result.filter((e) => e.impact === filterImpact);
+    if (filterOutlet !== "all") result = result.filter((e) => !e.outlets || e.outlets.length === 0 || e.outlets.includes(filterOutlet));
     return result;
-  }, [allEvents, search, filterType, filterImpact]);
+  }, [allEvents, search, filterType, filterImpact, filterOutlet]);
 
   const upcomingEvents = useMemo(() => {
     const now = new Date();
@@ -304,13 +437,13 @@ export default function EventsPage() {
   }, [allEvents]);
 
   const createMutation = useMutation({
-    mutationFn: async (data: any) => { const res = await apiRequest("POST", "/api/events", data); return res.json(); },
+    mutationFn: async (data: EventPayload) => { const res = await apiRequest("POST", "/api/events", data); return res.json(); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/events"] }); setDialogOpen(false); toast({ title: "Event created" }); },
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => { const res = await apiRequest("PATCH", `/api/events/${id}`, data); return res.json(); },
+    mutationFn: async ({ id, data }: { id: string; data: EventPayload }) => { const res = await apiRequest("PATCH", `/api/events/${id}`, data); return res.json(); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/events"] }); setDialogOpen(false); setEditingEvent(null); toast({ title: "Event updated" }); },
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
@@ -350,10 +483,27 @@ export default function EventsPage() {
     setDialogOpen(true);
   }
 
-  function handleSave() {
-    if (!form.title.trim()) { toast({ title: "Title is required", variant: "destructive" }); return; }
-    if (!form.startDate || !form.endDate) { toast({ title: "Dates are required", variant: "destructive" }); return; }
-    const body: any = {
+  function duplicateEvent(ev: CalEvent) {
+    setEditingEvent(null);
+    setForm({
+      title: `${ev.title} (Copy)`,
+      description: ev.description || "",
+      type: ev.type,
+      impact: ev.impact,
+      startDate: new Date(ev.startDate).toISOString().slice(0, 16),
+      endDate: new Date(ev.endDate).toISOString().slice(0, 16),
+      allDay: ev.allDay ?? true,
+      color: ev.color || "#3b82f6",
+      outlets: ev.outlets || [],
+      tags: (ev.tags || []).join(", "),
+      linkedOfferId: ev.linkedOfferId || "none",
+      notes: ev.notes || "",
+    });
+    setDialogOpen(true);
+  }
+
+  function buildPayload(): EventPayload {
+    return {
       title: form.title,
       description: form.description || null,
       type: form.type,
@@ -363,10 +513,16 @@ export default function EventsPage() {
       allDay: form.allDay,
       color: form.color,
       outlets: form.outlets.length > 0 ? form.outlets : null,
-      tags: form.tags ? form.tags.split(",").map((t: string) => t.trim()).filter(Boolean) : null,
+      tags: form.tags ? form.tags.split(",").map((t) => t.trim()).filter(Boolean) : null,
       linkedOfferId: form.linkedOfferId === "none" ? null : form.linkedOfferId,
       notes: form.notes || null,
     };
+  }
+
+  function handleSave() {
+    if (!form.title.trim()) { toast({ title: "Title is required", variant: "destructive" }); return; }
+    if (!form.startDate || !form.endDate) { toast({ title: "Dates are required", variant: "destructive" }); return; }
+    const body = buildPayload();
     if (editingEvent) {
       updateMutation.mutate({ id: editingEvent.id, data: body });
     } else {
@@ -390,6 +546,13 @@ export default function EventsPage() {
     const d = new Date(currentDate);
     d.setDate(d.getDate() + dir);
     setCurrentDate(d);
+  }
+
+  function toggleOutlet(outletId: string) {
+    setForm((prev) => ({
+      ...prev,
+      outlets: prev.outlets.includes(outletId) ? prev.outlets.filter((o) => o !== outletId) : [...prev.outlets, outletId],
+    }));
   }
 
   const statsThisMonth = useMemo(() => {
@@ -425,23 +588,7 @@ export default function EventsPage() {
         </div>
       </div>
 
-      {todayEvents.length > 0 && (
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }}>
-          <Card className="border-l-4" style={{ borderLeftColor: todayEvents[0]?.color || "#3b82f6" }}>
-            <CardContent className="py-3 px-4">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-amber-500" />
-                <span className="text-sm font-medium">Today:</span>
-                {todayEvents.map((ev, i) => (
-                  <Badge key={ev.id} variant="outline" className="text-xs cursor-pointer" onClick={() => openEdit(ev)} data-testid={`badge-today-event-${i}`}>
-                    {ev.title}
-                  </Badge>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
+      <NotificationBanners events={allEvents} />
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Events</p><p className="text-2xl font-bold" data-testid="stat-total-events">{allEvents.length}</p></CardContent></Card>
@@ -452,7 +599,7 @@ export default function EventsPage() {
 
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-2">
-          <Tabs value={view} onValueChange={(v) => setView(v as any)}>
+          <Tabs value={view} onValueChange={(v) => setView(v as ViewType)}>
             <TabsList>
               <TabsTrigger value="month" data-testid="tab-month"><LayoutGrid className="h-4 w-4 mr-1" />Month</TabsTrigger>
               <TabsTrigger value="week" data-testid="tab-week"><CalendarIcon className="h-4 w-4 mr-1" />Week</TabsTrigger>
@@ -507,6 +654,17 @@ export default function EventsPage() {
               ))}
             </SelectContent>
           </Select>
+          {outlets.length > 0 && (
+            <Select value={filterOutlet} onValueChange={setFilterOutlet}>
+              <SelectTrigger className="w-[140px] h-9" data-testid="select-filter-outlet"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Outlets</SelectItem>
+                {outlets.map((o) => (
+                  <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
 
@@ -524,21 +682,21 @@ export default function EventsPage() {
           events={filtered}
           currentDate={currentDate}
           onDayClick={(d) => { setCurrentDate(d); setView("day"); }}
-          onEventClick={(ev) => canEdit ? openEdit(ev) : null}
+          onEventClick={(ev) => { if (canEdit) openEdit(ev); }}
         />
       )}
       {view === "week" && (
         <CalendarWeekView
           events={filtered}
           currentDate={currentDate}
-          onEventClick={(ev) => canEdit ? openEdit(ev) : null}
+          onEventClick={(ev) => { if (canEdit) openEdit(ev); }}
         />
       )}
       {view === "day" && (
         <DayView
           events={filtered}
           currentDate={currentDate}
-          onEventClick={(ev) => canEdit ? openEdit(ev) : null}
+          onEventClick={(ev) => { if (canEdit) openEdit(ev); }}
         />
       )}
 
@@ -592,8 +750,15 @@ export default function EventsPage() {
                         {canEdit && (
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
-                              <Button variant="ghost" size="sm" onClick={() => openEdit(ev)} data-testid={`button-edit-event-${ev.id}`}><Edit className="h-4 w-4" /></Button>
-                              <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(ev.id)} data-testid={`button-delete-event-${ev.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                              <Tooltip><TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => duplicateEvent(ev)} data-testid={`button-duplicate-event-${ev.id}`}><Copy className="h-4 w-4" /></Button>
+                              </TooltipTrigger><TooltipContent>Duplicate</TooltipContent></Tooltip>
+                              <Tooltip><TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => openEdit(ev)} data-testid={`button-edit-event-${ev.id}`}><Edit className="h-4 w-4" /></Button>
+                              </TooltipTrigger><TooltipContent>Edit</TooltipContent></Tooltip>
+                              <Tooltip><TooltipTrigger asChild>
+                                <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(ev.id)} data-testid={`button-delete-event-${ev.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                              </TooltipTrigger><TooltipContent>Delete</TooltipContent></Tooltip>
                             </div>
                           </TableCell>
                         )}
@@ -618,7 +783,7 @@ export default function EventsPage() {
                 const tc = typeConfig[ev.type] || typeConfig.holiday;
                 const Icon = tc.icon;
                 return (
-                  <div key={ev.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer" onClick={() => canEdit ? openEdit(ev) : null} data-testid={`upcoming-event-${ev.id}`}>
+                  <div key={ev.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer" onClick={() => { if (canEdit) openEdit(ev); }} data-testid={`upcoming-event-${ev.id}`}>
                     <div className="w-2 h-8 rounded-full" style={{ backgroundColor: ev.color || "#3b82f6" }} />
                     <Icon className="h-4 w-4" style={{ color: ev.color || "#3b82f6" }} />
                     <div className="flex-1 min-w-0">
@@ -702,6 +867,20 @@ export default function EventsPage() {
                 <Input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="w-9 h-7 p-0 border-0 cursor-pointer" data-testid="input-event-color" />
               </div>
             </div>
+            {outlets.length > 0 && (
+              <div>
+                <Label>Outlets</Label>
+                <div className="mt-1.5 space-y-1.5 max-h-[120px] overflow-y-auto border rounded-md p-2" data-testid="outlet-selector">
+                  {outlets.map((o) => (
+                    <label key={o.id} className="flex items-center gap-2 cursor-pointer text-sm">
+                      <Checkbox checked={form.outlets.includes(o.id)} onCheckedChange={() => toggleOutlet(o.id)} data-testid={`checkbox-outlet-${o.id}`} />
+                      {o.name}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Leave empty for all outlets</p>
+              </div>
+            )}
             <div>
               <Label>Tags (comma-separated)</Label>
               <Input value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="e.g. busy, extra-staff, special-menu" data-testid="input-event-tags" />
