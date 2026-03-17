@@ -46,6 +46,9 @@ interface TableData {
   partyName: string | null;
   partySize: number | null;
   status: TableStatus | null;
+  qrToken: string | null;
+  callServerFlag: boolean | null;
+  requestBillFlag: boolean | null;
 }
 
 interface ZoneData {
@@ -636,6 +639,16 @@ export default function TablesPage() {
                                   <Merge className="w-3 h-3" />
                                 </div>
                               )}
+                              {table.callServerFlag && (
+                                <div className="absolute -top-2 -left-2 bg-amber-500 text-white rounded-full p-0.5 animate-pulse" data-testid={`flag-call-server-${table.id}`}>
+                                  <Bell className="w-3 h-3" />
+                                </div>
+                              )}
+                              {table.requestBillFlag && (
+                                <div className="absolute -bottom-2 -right-2 bg-blue-500 text-white rounded-full p-0.5 animate-pulse" data-testid={`flag-request-bill-${table.id}`}>
+                                  <MessageSquare className="w-3 h-3" />
+                                </div>
+                              )}
                               <div className="flex items-center justify-between mb-1">
                                 <span className="font-bold text-sm">T{table.number}</span>
                                 <Icon className={`w-4 h-4 ${cfg.color}`} />
@@ -1147,6 +1160,25 @@ export default function TablesPage() {
                       <Trash2 className="w-4 h-4 mr-1.5" />Delete
                     </Button>
                   </div>
+                  {(selectedTable.callServerFlag || selectedTable.requestBillFlag) && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedTable.callServerFlag && (
+                        <Badge className="bg-amber-100 text-amber-700 border-amber-300 animate-pulse" data-testid="badge-call-server">
+                          <Bell className="w-3 h-3 mr-1" /> Server Requested
+                        </Badge>
+                      )}
+                      {selectedTable.requestBillFlag && (
+                        <Badge className="bg-blue-100 text-blue-700 border-blue-300 animate-pulse" data-testid="badge-request-bill">
+                          <MessageSquare className="w-3 h-3 mr-1" /> Bill Requested
+                        </Badge>
+                      )}
+                      <Button size="sm" variant="outline" className="text-xs h-7" onClick={() => {
+                        apiRequest("PATCH", `/api/tables/${selectedTable.id}`, { callServerFlag: false, requestBillFlag: false }).then(() => { invalidateAll(); toast({ title: "Flags dismissed" }); });
+                      }} data-testid="button-dismiss-flags">
+                        <Check className="w-3 h-3 mr-1" />Dismiss Flags
+                      </Button>
+                    </div>
+                  )}
                   <div className="border-t pt-3">
                     <h4 className="text-sm font-medium mb-2">Quick Status</h4>
                     <div className="flex flex-wrap gap-1.5">
@@ -1157,6 +1189,28 @@ export default function TablesPage() {
                       ))}
                     </div>
                   </div>
+                  {selectedTable.qrToken && selectedTable.outletId && (
+                    <div className="border-t pt-3">
+                      <h4 className="text-sm font-medium mb-2">Guest QR Ordering</h4>
+                      <div className="bg-muted/50 rounded-lg p-3 space-y-2">
+                        <div className="text-xs text-muted-foreground break-all font-mono" data-testid="text-qr-link">
+                          {window.location.origin}/guest/o/{selectedTable.outletId}/t/{selectedTable.qrToken}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="text-xs"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/guest/o/${selectedTable.outletId}/t/${selectedTable.qrToken}`);
+                            toast({ title: "QR link copied to clipboard" });
+                          }}
+                          data-testid="button-copy-qr-link"
+                        >
+                          Copy Link
+                        </Button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </>
             );

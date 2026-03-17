@@ -21,6 +21,7 @@ Key technical implementations include:
 - **Subscription Tiers & Feature Gating**: Features are dynamically enabled/disabled based on the tenant's subscription plan (Basic, Standard, Premium, Enterprise).
 - **Promotion & Pricing Rules Engine**: A flexible engine (`server/promotions-engine.ts`) evaluates rules based on order context, supporting various rule types (e.g., happy hour, combo deals) and discount types, with configurable stacking behavior.
 - **Self-Ordering Kiosk**: A dedicated full-screen interface with token-based device authentication, menu browsing, cart management, payment simulation, and upsell rules.
+- **Guest QR Table Ordering**: Public web interface (`/guest/o/:outletId/t/:tableToken`) enabling diners to scan a table QR code, browse the menu, add items to a shared cart, place orders (channel: `qr_table`), call server, and request bill. Tables have `qrToken`, `callServerFlag`, and `requestBillFlag` columns. Sessions tracked in `table_sessions` table with cart items in `guest_cart_items`.
 - **Design System**: Utilizes Outfit and Plus Jakarta Sans fonts, a professional blue primary theme with light/dark mode support, and Framer Motion for UI animations.
 
 ## External Dependencies

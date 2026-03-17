@@ -36,6 +36,7 @@ import AuditLogPage from "@/pages/modules/audit-log";
 import SecuritySettingsPage from "@/pages/modules/security-settings";
 import PromotionsPage from "@/pages/modules/promotions";
 import KioskPage from "@/pages/kiosk";
+import GuestPage from "@/pages/guest";
 import KioskManagementPage from "@/pages/modules/kiosk-management";
 import OwnerDashboard from "@/pages/dashboards/owner";
 import ManagerDashboard from "@/pages/dashboards/manager";
@@ -224,6 +225,15 @@ function Router() {
 
   if (location === "/kiosk") {
     return <KioskPage />;
+  }
+
+  if (location.startsWith("/guest/")) {
+    return (
+      <Switch>
+        <Route path="/guest/o/:outletId/t/:tableToken" component={GuestPage} />
+        <Route component={NotFound} />
+      </Switch>
+    );
   }
 
   if (location === "/login") {

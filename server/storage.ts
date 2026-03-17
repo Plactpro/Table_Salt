@@ -71,6 +71,9 @@ import {
   type KioskDevice, type InsertKioskDevice,
   upsellRules,
   type UpsellRule, type InsertUpsellRule,
+  tableSessions, guestCartItems,
+  type TableSession, type InsertTableSession,
+  type GuestCartItem, type InsertGuestCartItem,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -351,6 +354,19 @@ export interface IStorage {
   createUpsellRule(data: InsertUpsellRule): Promise<UpsellRule>;
   updateUpsellRule(id: string, tenantId: string, data: Partial<InsertUpsellRule>): Promise<UpsellRule | undefined>;
   deleteUpsellRule(id: string, tenantId: string): Promise<void>;
+
+  getTableByQrToken(outletId: string, qrToken: string): Promise<Table | undefined>;
+  getTableSessionsByTable(tableId: string): Promise<TableSession[]>;
+  getTableSession(id: string): Promise<TableSession | undefined>;
+  getActiveTableSession(tableId: string): Promise<TableSession | undefined>;
+  createTableSession(data: InsertTableSession): Promise<TableSession>;
+  updateTableSession(id: string, data: Partial<InsertTableSession>): Promise<TableSession | undefined>;
+
+  getGuestCartItems(sessionId: string): Promise<GuestCartItem[]>;
+  createGuestCartItem(data: InsertGuestCartItem): Promise<GuestCartItem>;
+  updateGuestCartItem(id: string, data: Partial<InsertGuestCartItem>): Promise<GuestCartItem | undefined>;
+  deleteGuestCartItem(id: string): Promise<void>;
+  clearGuestCart(sessionId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1536,6 +1552,48 @@ export class DatabaseStorage implements IStorage {
   }
   async deleteUpsellRule(id: string, tenantId: string) {
     await db.delete(upsellRules).where(and(eq(upsellRules.id, id), eq(upsellRules.tenantId, tenantId)));
+  }
+
+  async getTableByQrToken(outletId: string, qrToken: string) {
+    const [t] = await db.select().from(tables).where(and(eq(tables.outletId, outletId), eq(tables.qrToken, qrToken)));
+    return t;
+  }
+  async getTableSessionsByTable(tableId: string) {
+    return db.select().from(tableSessions).where(eq(tableSessions.tableId, tableId)).orderBy(desc(tableSessions.createdAt));
+  }
+  async getTableSession(id: string) {
+    const [s] = await db.select().from(tableSessions).where(eq(tableSessions.id, id));
+    return s;
+  }
+  async getActiveTableSession(tableId: string) {
+    const [s] = await db.select().from(tableSessions).where(and(eq(tableSessions.tableId, tableId), eq(tableSessions.status, "active")));
+    return s;
+  }
+  async createTableSession(data: InsertTableSession) {
+    const [s] = await db.insert(tableSessions).values(data).returning();
+    return s;
+  }
+  async updateTableSession(id: string, data: Partial<InsertTableSession>) {
+    const [s] = await db.update(tableSessions).set(data).where(eq(tableSessions.id, id)).returning();
+    return s;
+  }
+
+  async getGuestCartItems(sessionId: string) {
+    return db.select().from(guestCartItems).where(eq(guestCartItems.sessionId, sessionId)).orderBy(guestCartItems.createdAt);
+  }
+  async createGuestCartItem(data: InsertGuestCartItem) {
+    const [item] = await db.insert(guestCartItems).values(data).returning();
+    return item;
+  }
+  async updateGuestCartItem(id: string, data: Partial<InsertGuestCartItem>) {
+    const [item] = await db.update(guestCartItems).set(data).where(eq(guestCartItems.id, id)).returning();
+    return item;
+  }
+  async deleteGuestCartItem(id: string) {
+    await db.delete(guestCartItems).where(eq(guestCartItems.id, id));
+  }
+  async clearGuestCart(sessionId: string) {
+    await db.delete(guestCartItems).where(eq(guestCartItems.sessionId, sessionId));
   }
 }
 
