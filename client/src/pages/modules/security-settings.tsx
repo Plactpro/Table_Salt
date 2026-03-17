@@ -28,40 +28,9 @@ interface PermissionsData {
   permissions: string[];
 }
 
-const PERMISSION_LABELS: Record<string, string> = {
-  create_order: "Create Orders",
-  edit_order: "Edit Orders",
-  void_order: "Void Orders",
-  apply_discount: "Apply Discounts",
-  apply_large_discount: "Apply Large Discounts",
-  change_price: "Change Prices",
-  close_day: "Close Day",
-  view_reports: "View Reports",
-  view_cost_reports: "View Cost Reports",
-  manage_menu: "Manage Menu",
-  edit_recipe: "Edit Recipes",
-  manage_inventory: "Manage Inventory",
-  adjust_stock: "Adjust Stock",
-  large_stock_adjustment: "Large Stock Adjustments",
-  manage_staff: "Manage Staff",
-  manage_tables: "Manage Tables",
-  manage_outlets: "Manage Outlets",
-  manage_offers: "Manage Offers",
-  manage_crm: "Manage CRM",
-  manage_delivery: "Manage Delivery",
-  manage_cleaning: "Manage Cleaning",
-  manage_audits: "Manage Audits",
-  manage_suppliers: "Manage Suppliers",
-  manage_procurement: "Manage Procurement",
-  approve_purchase: "Approve Purchases",
-  manage_integrations: "Manage Integrations",
-  manage_settings: "Manage Settings",
-  manage_billing: "Manage Billing",
-  manage_users: "Manage Users",
-  view_audit_log: "View Audit Log",
-  manage_security: "Manage Security",
-  supervisor_override: "Supervisor Override",
-};
+import { actionLabels, rolePermissions, allRoles } from "@shared/permissions-config";
+
+const PERMISSION_LABELS: Record<string, string> = actionLabels;
 
 const ROLE_LABELS: Record<string, { label: string; color: string }> = {
   owner: { label: "Owner", color: "bg-purple-100 text-purple-800" },
@@ -427,29 +396,6 @@ export default function SecuritySettingsPage() {
   );
 }
 
-const ROLE_PERMISSIONS: Record<string, string[]> = {
-  owner: [
-    "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
-    "change_price", "close_day", "view_reports", "view_cost_reports",
-    "manage_menu", "edit_recipe", "manage_inventory", "adjust_stock", "large_stock_adjustment",
-    "manage_staff", "manage_tables", "manage_outlets", "manage_offers", "manage_crm",
-    "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
-    "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
-    "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
-  ],
-  manager: [
-    "create_order", "edit_order", "void_order", "apply_discount",
-    "close_day", "view_reports", "view_cost_reports",
-    "manage_menu", "edit_recipe", "manage_inventory", "adjust_stock",
-    "manage_staff", "manage_tables", "manage_outlets", "manage_offers", "manage_crm",
-    "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
-    "manage_procurement", "approve_purchase", "manage_users", "view_audit_log", "supervisor_override",
-  ],
-  waiter: ["create_order", "edit_order", "apply_discount", "manage_tables"],
-  kitchen: ["edit_order"],
-  accountant: ["view_reports", "view_cost_reports", "view_audit_log"],
-};
-
 function getPermissionsForRoleFE(role: string): string[] {
-  return ROLE_PERMISSIONS[role] || [];
+  return (rolePermissions as Record<string, string[]>)[role] || [];
 }

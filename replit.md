@@ -17,7 +17,8 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - `server/db.ts` - Database connection (Pool + Drizzle)
 - `server/storage.ts` - IStorage interface + DatabaseStorage implementation
 - `server/auth.ts` - Passport setup, password hashing, auth middleware
-- `server/permissions.ts` - RBAC permission map, `can()`, `needsSupervisorApproval()` helpers
+- `shared/permissions-config.ts` - Single source of truth for role→permission mapping, action labels, supervisor-required actions (imported by both backend and frontend)
+- `server/permissions.ts` - RBAC middleware: `can()` with context support (outletId, amount/threshold), `needsSupervisorApproval()`, `requirePermission()` middleware
 - `server/audit.ts` - `auditLog()` / `auditLogFromReq()` audit event logging helpers
 - `server/routes.ts` - All API routes (prefixed /api)
 - `server/seed.ts` - Demo data seeder
@@ -115,7 +116,7 @@ All prefixed with `/api`:
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
 - `/audit-log` - Audit Log (filterable event timeline, action/user/entity filters, date range, before/after diffs, CSV export, event detail dialog)
-- `/security-settings` - Security & Governance (session controls, supervisor approval toggles for void/discount/price/stock, role-permission matrix with 32 permissions across 5 roles, trusted device management, OTP challenge/verify simulation)
+- `/security` - Security & Governance (session controls, supervisor approval toggles for void/discount/price/stock, role-permission matrix with 32 permissions across 5 roles, trusted device management, OTP challenge/verify simulation)
 
 ## Subscription Tiers & Feature Gating
 - **Basic**: orders, menu, settings
