@@ -58,6 +58,18 @@ let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startRetentionScheduler() {
   if (cleanupInterval) return;
+
+  setTimeout(async () => {
+    try {
+      const result = await runRetentionCleanup();
+      if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0) {
+        console.log(`[retention-cleanup] Startup run: deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers`);
+      }
+    } catch (err) {
+      console.error("[retention-cleanup] Startup run error:", err);
+    }
+  }, 30000);
+
   cleanupInterval = setInterval(async () => {
     try {
       const result = await runRetentionCleanup();

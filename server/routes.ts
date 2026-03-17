@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { db, pool } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "./auth";
-import { setupCsrf, setupIpAllowlistMiddleware } from "./security";
+import { setupCsrf, setupIpAllowlistMiddleware, isValidCidr } from "./security";
 import { getAdapter } from "./aggregator-adapters";
 import {
   isVoidOrCancelled, filterOrdersByDateRange, filterValidOrders,
@@ -5434,10 +5434,9 @@ export async function registerRoutes(
       const user = req.user as any;
       const { ipAllowlist, ipAllowlistEnabled, ipAllowlistRoles } = req.body;
       if (ipAllowlist && !Array.isArray(ipAllowlist)) return res.status(400).json({ message: "ipAllowlist must be an array" });
-      const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
       if (ipAllowlist) {
         for (const cidr of ipAllowlist) {
-          if (typeof cidr !== "string" || !cidrRegex.test(cidr)) {
+          if (typeof cidr !== "string" || !isValidCidr(cidr)) {
             return res.status(400).json({ message: `Invalid CIDR format: ${cidr}` });
           }
         }
@@ -5446,7 +5445,7 @@ export async function registerRoutes(
         for (const [role, cidrs] of Object.entries(ipAllowlistRoles)) {
           if (!Array.isArray(cidrs)) return res.status(400).json({ message: `Role rules for ${role} must be an array` });
           for (const cidr of cidrs as string[]) {
-            if (typeof cidr !== "string" || !cidrRegex.test(cidr)) {
+            if (typeof cidr !== "string" || !isValidCidr(cidr)) {
               return res.status(400).json({ message: `Invalid CIDR format for role ${role}: ${cidr}` });
             }
           }
