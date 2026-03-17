@@ -987,6 +987,87 @@ export async function seedDatabase() {
     await db.insert(deviceSessions).values(ds);
   }
 
+  const kioskMain = await storage.createKioskDevice({
+    tenantId: tenant.id,
+    outletId: outlet.id,
+    name: "Main Entrance Kiosk",
+    deviceToken: "kiosk-demo-token-main-001",
+    active: true,
+    settings: { theme: "dark", idleTimeout: 120 },
+  });
+
+  await storage.createKioskDevice({
+    tenantId: tenant.id,
+    outletId: outletMarina.id,
+    name: "Marina Walk Kiosk",
+    deviceToken: "kiosk-demo-token-marina-001",
+    active: true,
+    settings: { theme: "dark", idleTimeout: 120 },
+  });
+
+  await storage.createKioskDevice({
+    tenantId: tenant.id,
+    outletId: outletAirport.id,
+    name: "Airport T3 Kiosk",
+    deviceToken: "kiosk-demo-token-airport-001",
+    active: true,
+    settings: { theme: "dark", idleTimeout: 90 },
+  });
+
+  const beverageCatId = catMap["Beverages"];
+  const dessertCatId = catMap["Desserts"];
+  const mainCourseCatId = catMap["Main Course"];
+
+  const allMenuItems = await storage.getMenuItemsByTenant(tenant.id);
+  const espressoItem = allMenuItems.find(i => i.name === "Espresso");
+  const tiramisuItem = allMenuItems.find(i => i.name === "Tiramisu");
+  const sparklingItem = allMenuItems.find(i => i.name === "Sparkling Water");
+  const chocoLavaItem = allMenuItems.find(i => i.name === "Chocolate Lava Cake");
+
+  if (espressoItem && mainCourseCatId) {
+    await storage.createUpsellRule({
+      tenantId: tenant.id,
+      triggerCategoryId: mainCourseCatId,
+      suggestItemId: espressoItem.id,
+      label: "Add an Espresso to finish your meal?",
+      priority: 10,
+      active: true,
+    });
+  }
+
+  if (tiramisuItem && mainCourseCatId) {
+    await storage.createUpsellRule({
+      tenantId: tenant.id,
+      triggerCategoryId: mainCourseCatId,
+      suggestItemId: tiramisuItem.id,
+      label: "Top it off with our signature Tiramisu!",
+      priority: 8,
+      active: true,
+    });
+  }
+
+  if (sparklingItem && beverageCatId) {
+    await storage.createUpsellRule({
+      tenantId: tenant.id,
+      triggerCategoryId: beverageCatId,
+      suggestItemId: sparklingItem.id,
+      label: "Stay refreshed with Sparkling Water",
+      priority: 5,
+      active: true,
+    });
+  }
+
+  if (chocoLavaItem) {
+    await storage.createUpsellRule({
+      tenantId: tenant.id,
+      triggerCategoryId: catMap["Grills"],
+      suggestItemId: chocoLavaItem.id,
+      label: "Perfect dessert after your grill!",
+      priority: 7,
+      active: true,
+    });
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");
@@ -994,4 +1075,8 @@ export async function seedDatabase() {
   console.log("  Waiter: username=waiter");
   console.log("  Kitchen: username=kitchen");
   console.log("  Accountant: username=accountant");
+  console.log("\nKiosk URLs:");
+  console.log("  Main Branch: /kiosk?token=kiosk-demo-token-main-001");
+  console.log("  Marina Walk: /kiosk?token=kiosk-demo-token-marina-001");
+  console.log("  Airport T3: /kiosk?token=kiosk-demo-token-airport-001");
 }

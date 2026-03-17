@@ -67,6 +67,10 @@ import {
   type AuditEvent, type InsertAuditEvent,
   promotionRules,
   type PromotionRule, type InsertPromotionRule,
+  kioskDevices,
+  type KioskDevice, type InsertKioskDevice,
+  upsellRules,
+  type UpsellRule, type InsertUpsellRule,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -334,6 +338,19 @@ export interface IStorage {
   createPromotionRule(data: InsertPromotionRule): Promise<PromotionRule>;
   updatePromotionRule(id: string, tenantId: string, data: Partial<InsertPromotionRule>): Promise<PromotionRule | undefined>;
   deletePromotionRule(id: string, tenantId: string): Promise<void>;
+
+  getKioskDevicesByTenant(tenantId: string): Promise<KioskDevice[]>;
+  getKioskDevice(id: string, tenantId: string): Promise<KioskDevice | undefined>;
+  getKioskDeviceByToken(token: string): Promise<KioskDevice | undefined>;
+  createKioskDevice(data: InsertKioskDevice): Promise<KioskDevice>;
+  updateKioskDevice(id: string, tenantId: string, data: Partial<InsertKioskDevice>): Promise<KioskDevice | undefined>;
+  deleteKioskDevice(id: string, tenantId: string): Promise<void>;
+
+  getUpsellRulesByTenant(tenantId: string): Promise<UpsellRule[]>;
+  getUpsellRule(id: string, tenantId: string): Promise<UpsellRule | undefined>;
+  createUpsellRule(data: InsertUpsellRule): Promise<UpsellRule>;
+  updateUpsellRule(id: string, tenantId: string, data: Partial<InsertUpsellRule>): Promise<UpsellRule | undefined>;
+  deleteUpsellRule(id: string, tenantId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1477,6 +1494,48 @@ export class DatabaseStorage implements IStorage {
   }
   async deletePromotionRule(id: string, tenantId: string) {
     await db.delete(promotionRules).where(and(eq(promotionRules.id, id), eq(promotionRules.tenantId, tenantId)));
+  }
+
+  async getKioskDevicesByTenant(tenantId: string) {
+    return db.select().from(kioskDevices).where(eq(kioskDevices.tenantId, tenantId)).orderBy(desc(kioskDevices.createdAt));
+  }
+  async getKioskDevice(id: string, tenantId: string) {
+    const [d] = await db.select().from(kioskDevices).where(and(eq(kioskDevices.id, id), eq(kioskDevices.tenantId, tenantId)));
+    return d;
+  }
+  async getKioskDeviceByToken(token: string) {
+    const [d] = await db.select().from(kioskDevices).where(eq(kioskDevices.deviceToken, token));
+    return d;
+  }
+  async createKioskDevice(data: InsertKioskDevice) {
+    const [d] = await db.insert(kioskDevices).values(data).returning();
+    return d;
+  }
+  async updateKioskDevice(id: string, tenantId: string, data: Partial<InsertKioskDevice>) {
+    const [d] = await db.update(kioskDevices).set(data).where(and(eq(kioskDevices.id, id), eq(kioskDevices.tenantId, tenantId))).returning();
+    return d;
+  }
+  async deleteKioskDevice(id: string, tenantId: string) {
+    await db.delete(kioskDevices).where(and(eq(kioskDevices.id, id), eq(kioskDevices.tenantId, tenantId)));
+  }
+
+  async getUpsellRulesByTenant(tenantId: string) {
+    return db.select().from(upsellRules).where(eq(upsellRules.tenantId, tenantId)).orderBy(desc(upsellRules.priority));
+  }
+  async getUpsellRule(id: string, tenantId: string) {
+    const [r] = await db.select().from(upsellRules).where(and(eq(upsellRules.id, id), eq(upsellRules.tenantId, tenantId)));
+    return r;
+  }
+  async createUpsellRule(data: InsertUpsellRule) {
+    const [r] = await db.insert(upsellRules).values(data).returning();
+    return r;
+  }
+  async updateUpsellRule(id: string, tenantId: string, data: Partial<InsertUpsellRule>) {
+    const [r] = await db.update(upsellRules).set(data).where(and(eq(upsellRules.id, id), eq(upsellRules.tenantId, tenantId))).returning();
+    return r;
+  }
+  async deleteUpsellRule(id: string, tenantId: string) {
+    await db.delete(upsellRules).where(and(eq(upsellRules.id, id), eq(upsellRules.tenantId, tenantId)));
   }
 }
 
