@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { syncManager, type SyncStatus } from "@/lib/sync-manager";
+import { useCachedQuery } from "@/hooks/use-cached-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -109,52 +110,32 @@ export default function KioskPage() {
     return unsub;
   }, []);
 
-  const { data: menuData } = useQuery({
-    queryKey: ["kiosk-menu", token],
-    queryFn: async () => {
-      const res = await kioskFetch("/api/kiosk/menu");
-      if (!res.ok) throw new Error("Failed to load menu");
-      return res.json();
-    },
-    enabled: !!token,
-    staleTime: 60000,
-  });
+  const { data: menuData } = useCachedQuery(
+    ["kiosk-menu", token],
+    "/api/kiosk/menu",
+    { enabled: !!token, staleTime: 60000, customFetcher: kioskFetch }
+  );
 
-  const { data: tenantInfo } = useQuery<TenantInfo>({
-    queryKey: ["kiosk-tenant", token],
-    queryFn: async () => {
-      const res = await kioskFetch("/api/kiosk/tenant-info");
-      if (!res.ok) throw new Error("Failed to load tenant info");
-      return res.json();
-    },
-    enabled: !!token,
-    staleTime: 60000,
-  });
+  const { data: tenantInfo } = useCachedQuery<TenantInfo>(
+    ["kiosk-tenant", token],
+    "/api/kiosk/tenant-info",
+    { enabled: !!token, staleTime: 60000, customFetcher: kioskFetch }
+  );
 
-  const { data: deviceConfig } = useQuery({
-    queryKey: ["kiosk-device-config", token],
-    queryFn: async () => {
-      const res = await kioskFetch("/api/kiosk/device-config");
-      if (!res.ok) return null;
-      return res.json();
-    },
-    enabled: !!token,
-    staleTime: 60000,
-  });
+  const { data: deviceConfig } = useCachedQuery(
+    ["kiosk-device-config", token],
+    "/api/kiosk/device-config",
+    { enabled: !!token, staleTime: 60000, customFetcher: kioskFetch }
+  );
 
   const idleTimeoutMs = (deviceConfig?.settings?.idleTimeout || 120) * 1000;
   const confirmResetMs = (deviceConfig?.settings?.confirmTimeout || 15) * 1000;
 
-  const { data: upsellRules = [] } = useQuery({
-    queryKey: ["kiosk-upsells", token],
-    queryFn: async () => {
-      const res = await kioskFetch("/api/kiosk/upsells");
-      if (!res.ok) return [];
-      return res.json();
-    },
-    enabled: !!token,
-    staleTime: 60000,
-  });
+  const { data: upsellRules = [] } = useCachedQuery(
+    ["kiosk-upsells", token],
+    "/api/kiosk/upsells",
+    { enabled: !!token, staleTime: 60000, customFetcher: kioskFetch }
+  );
 
   const categories = menuData?.categories || [];
   const menuItems = menuData?.items || [];
