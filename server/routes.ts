@@ -8,7 +8,7 @@ import { storage } from "./storage";
 import { db, pool } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "./auth";
-import { setupCsrf } from "./security";
+import { setupCsrf, setupIpAllowlistMiddleware } from "./security";
 import { getAdapter } from "./aggregator-adapters";
 import {
   isVoidOrCancelled, filterOrdersByDateRange, filterValidOrders,
@@ -133,6 +133,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   setupAuth(app);
   setupCsrf(app);
+  setupIpAllowlistMiddleware(app);
 
   app.use("/uploads", (await import("express")).default.static(uploadDir));
 
@@ -4317,6 +4318,9 @@ export async function registerRoutes(
         e.supervisorId || "",
       ]);
       const csv = [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
+
+      auditLogFromReq(req, { action: "audit_log_exported", entityType: "audit_log", entityId: tenantId, metadata: { rowCount: rows.length } });
+      alertDataExport(String(user.id), tenantId, String(user.name), req);
 
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", "attachment; filename=audit-log.csv");
