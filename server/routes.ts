@@ -4899,19 +4899,21 @@ export async function registerRoutes(
       if (!eventWriteRoles.includes(user.role)) return res.status(403).json({ message: "Insufficient permissions" });
       const existing = await storage.getEvent(req.params.id, user.tenantId);
       if (!existing) return res.status(404).json({ message: "Event not found" });
+      const updateEventSchema = insertEventSchema.partial();
       const allowedFields = ["title", "description", "type", "startDate", "endDate", "allDay", "impact", "color", "outlets", "tags", "notes", "linkedOfferId"] as const;
-      const sanitized: Record<string, unknown> = {};
+      const raw: Record<string, unknown> = {};
       for (const key of allowedFields) {
         if (req.body[key] !== undefined) {
-          sanitized[key] = req.body[key];
+          raw[key] = req.body[key];
         }
       }
-      if (sanitized.startDate) sanitized.startDate = new Date(sanitized.startDate as string);
-      if (sanitized.endDate) sanitized.endDate = new Date(sanitized.endDate as string);
+      if (raw.startDate) raw.startDate = new Date(raw.startDate as string);
+      if (raw.endDate) raw.endDate = new Date(raw.endDate as string);
+      const sanitized = updateEventSchema.parse(raw);
       const updated = await storage.updateEvent(req.params.id, user.tenantId, sanitized);
       await auditLogFromReq(req, { action: "event_updated", entityType: "event", entityId: req.params.id, entityName: existing.title, before: { title: existing.title, type: existing.type, impact: existing.impact }, after: { title: updated.title, type: updated.type, impact: updated.impact } });
       res.json(updated);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+    } catch (err: any) { res.status(err.name === "ZodError" ? 400 : 500).json({ message: err.message }); }
   });
 
   app.delete("/api/events/:id", requireAuth, async (req, res) => {

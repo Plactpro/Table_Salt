@@ -782,6 +782,7 @@ export default function EventsPage() {
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("impact")} data-testid="sort-impact">Impact {sortField === "impact" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("startDate")} data-testid="sort-start">Start {sortField === "startDate" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("endDate")} data-testid="sort-end">End {sortField === "endDate" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
+                    <TableHead>Time</TableHead>
                     <TableHead>Outlets</TableHead>
                     <TableHead>Created By</TableHead>
                     {canEdit && <TableHead className="text-right">Actions</TableHead>}
@@ -806,6 +807,7 @@ export default function EventsPage() {
                         <TableCell><Badge className={`text-xs ${ic.bg} ${ic.color}`}>{ic.label}</Badge></TableCell>
                         <TableCell className="text-sm">{formatDate(ev.startDate)}</TableCell>
                         <TableCell className="text-sm">{formatDate(ev.endDate)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{ev.allDay ? "All Day" : `${formatTime(ev.startDate)} – ${formatTime(ev.endDate)}`}</TableCell>
                         <TableCell>
                           <div className="flex gap-1 flex-wrap">
                             {ev.outlets && ev.outlets.length > 0 ? ev.outlets.map((oid) => (
