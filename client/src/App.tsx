@@ -32,6 +32,8 @@ import BIDashboardPage from "@/pages/modules/bi-dashboard";
 import CleaningPage from "@/pages/modules/cleaning";
 import AuditsPage from "@/pages/modules/audits";
 import BillingPage from "@/pages/modules/billing";
+import AuditLogPage from "@/pages/modules/audit-log";
+import SecuritySettingsPage from "@/pages/modules/security-settings";
 import OwnerDashboard from "@/pages/dashboards/owner";
 import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
@@ -74,6 +76,8 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/procurement": { roles: ["owner", "manager"], featureKey: "inventory" },
   "/workforce": { roles: ["owner", "manager"], featureKey: "staff" },
   "/bi-dashboard": { roles: ["owner", "manager", "accountant"], featureKey: "reports" },
+  "/audit-log": { roles: ["owner", "manager", "accountant"], featureKey: "reports" },
+  "/security": { roles: ["owner"], featureKey: "settings" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -198,6 +202,8 @@ function ProtectedPages() {
         <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffPage} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsPage} />}</Route>
         <Route path="/bi-dashboard">{() => <GuardedRoute path="/bi-dashboard" component={BIDashboardPage} />}</Route>
+        <Route path="/audit-log">{() => <GuardedRoute path="/audit-log" component={AuditLogPage} />}</Route>
+        <Route path="/security">{() => <GuardedRoute path="/security" component={SecuritySettingsPage} />}</Route>
         <Route path="/billing">{() => <GuardedRoute path="/billing" component={BillingPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsPage} />}</Route>
         <Route component={NotFound} />

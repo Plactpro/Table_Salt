@@ -37,6 +37,8 @@ import {
   BookOpen,
   HardHat,
   Activity,
+  ScrollText,
+  Shield,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
@@ -74,6 +76,8 @@ const navItems: NavItem[] = [
   { id: "m-15", name: "Delivery", icon: Truck, path: "/delivery", roles: ["owner", "manager"], featureKey: "delivery_management" },
   { id: "m-21", name: "Online Orders", icon: ShoppingBag, path: "/orders-hub", roles: ["owner", "manager"], featureKey: "delivery_management" },
   { id: "m-22", name: "HQ Console", icon: Building2, path: "/hq-console", roles: ["owner"], featureKey: "outlets" },
+  { id: "m-27", name: "Audit Log", icon: ScrollText, path: "/audit-log", roles: ["owner", "manager", "accountant"], featureKey: "reports" },
+  { id: "m-28", name: "Security", icon: Shield, path: "/security", roles: ["owner"], featureKey: "settings" },
   { id: "m-16", name: "Integrations", icon: Puzzle, path: "/integrations", roles: ["owner", "manager"], featureKey: "integrations" },
   { id: "m-17", name: "Billing", icon: CreditCard, path: "/billing", roles: ["owner"], featureKey: "billing" },
   { id: "m-18", name: "Settings", icon: Settings, path: "/settings", roles: ["owner"], featureKey: "settings" },

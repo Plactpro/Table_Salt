@@ -879,6 +879,38 @@ export async function seedDatabase() {
     });
   }
 
+  const auditSamples = [
+    { action: "login", userId: owner.id, userName: owner.name, entityType: "user", entityId: owner.id, entityName: owner.name, ipAddress: "192.168.1.10" },
+    { action: "login", userId: manager.id, userName: manager.name, entityType: "user", entityId: manager.id, entityName: manager.name, ipAddress: "192.168.1.11" },
+    { action: "menu_item_updated", userId: owner.id, userName: owner.name, entityType: "menu_item", entityId: allItems[0]?.id, entityName: allItems[0]?.name, before: { price: "7.99" }, after: { price: "8.99" } },
+    { action: "inventory_adjusted", userId: manager.id, userName: manager.name, entityType: "inventory_item", entityId: createdInvItems[0]?.id, entityName: createdInvItems[0]?.name, before: { currentStock: "20" }, after: { currentStock: "25" }, metadata: { type: "in", quantity: "5", reason: "Weekly delivery" } },
+    { action: "order_voided", userId: owner.id, userName: owner.name, entityType: "order", entityId: allOrders[0]?.id, before: { status: "paid", total: "45.50" }, after: { status: "voided" }, metadata: { reason: "Customer complaint" } },
+    { action: "tenant_settings_updated", userId: owner.id, userName: owner.name, entityType: "tenant", entityId: tenant.id, before: { taxRate: "8.0" }, after: { taxRate: "8.5" } },
+    { action: "supervisor_override", userId: waiter.id, userName: waiter.name, metadata: { supervisorId: manager.id, supervisorName: manager.name, forAction: "apply_large_discount", requestedBy: waiter.name }, supervisorId: manager.id },
+    { action: "login_failed", metadata: { username: "unknown_user" }, ipAddress: "10.0.0.99" },
+    { action: "offer_created", userId: owner.id, userName: owner.name, entityType: "offer", entityName: "Happy Hour - 20% Off Cocktails", after: { name: "Happy Hour", type: "percentage", value: "20" } },
+    { action: "user_created", userId: owner.id, userName: owner.name, entityType: "user", entityId: waiter.id, entityName: waiter.name, after: { name: waiter.name, role: "waiter" } },
+  ];
+
+  for (const sample of auditSamples) {
+    await storage.createAuditEvent({
+      tenantId: tenant.id,
+      userId: sample.userId || null,
+      userName: sample.userName || null,
+      action: sample.action,
+      entityType: sample.entityType || null,
+      entityId: sample.entityId || null,
+      entityName: sample.entityName || null,
+      outletId: null,
+      before: (sample.before as Record<string, unknown>) || null,
+      after: (sample.after as Record<string, unknown>) || null,
+      metadata: (sample.metadata as Record<string, unknown>) || null,
+      ipAddress: sample.ipAddress || null,
+      userAgent: null,
+      supervisorId: sample.supervisorId || null,
+    });
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

@@ -11,12 +11,14 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, table_zones, tables, waitlist_entries, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, table_zones, tables, waitlist_entries, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots, audit_events)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
 - `server/storage.ts` - IStorage interface + DatabaseStorage implementation
 - `server/auth.ts` - Passport setup, password hashing, auth middleware
+- `server/permissions.ts` - RBAC permission map, `can()`, `needsSupervisorApproval()` helpers
+- `server/audit.ts` - `auditLog()` / `auditLogFromReq()` audit event logging helpers
 - `server/routes.ts` - All API routes (prefixed /api)
 - `server/seed.ts` - Demo data seeder
 - `client/src/lib/auth.tsx` - AuthProvider with login/register/logout via TanStack Query, useSubscription hook
@@ -84,6 +86,7 @@ All prefixed with `/api`:
 - Procurement Analytics: `/procurement/analytics` (spend by supplier/item, price variances), `/procurement/low-stock` (suggested reorder quantities)
 - Workforce: `/workforce/dashboard` (GET with period=day|week|month, KPIs+byRole+byOutlet+byDay+byHour), `/workforce/timesheet` (GET), `/workforce/timesheet/csv` (GET, CSV export), `/workforce/alerts` (GET, threshold alerts), `/workforce/snapshots` (GET/POST generate daily snapshots), `/workforce/settings` (PATCH, owner-only)
 - BI Dashboards: `/reports/operations` (hourly sales, channel mix, heatmap, top items), `/reports/finance` (net sales, tax, discounts, voids, food/labour cost %, gross margin, daily breakdown), `/reports/marketing` (loyalty enrollments, tier distribution, campaigns, ratings), `/reports/forecast` (weekly moving-average forecast + production suggestions)
+- Security & Audit: `/permissions` (GET role permissions), `/permissions/check` (POST check action), `/supervisor/verify` (POST supervisor override), `/audit-log` (GET with filters, `/entity/:type/:id`, `/export/csv`, `/actions`), `/security/settings` (GET/PATCH)
 - Dashboard: `/dashboard`, `/reports/sales`, `/tenant`
 
 ## Frontend Pages
@@ -111,6 +114,8 @@ All prefixed with `/api`:
 - `/workforce` - Workforce & Labour Cost (KPI dashboard with labour %, sales/labour hr, overtime tracking; cost breakdown by role/outlet/day; timesheet with CSV export; configurable target alerts)
 - `/integrations` - Third-party integration management
 - `/settings` - Tenant settings
+- `/audit-log` - Audit Log (filterable event timeline, action/user/entity filters, date range, before/after diffs, CSV export, event detail dialog)
+- `/security-settings` - Security & Governance (session controls, supervisor approval toggles, role-permission matrix with 32 permissions across 5 roles)
 
 ## Subscription Tiers & Feature Gating
 - **Basic**: orders, menu, settings
