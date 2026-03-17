@@ -28,17 +28,32 @@ interface PermissionsData {
   permissions: string[];
 }
 
-import { actionLabels, rolePermissions, allRoles } from "@shared/permissions-config";
+import { actionLabels, rolePermissions, allRoles, roleLabels } from "@shared/permissions-config";
 
 const PERMISSION_LABELS: Record<string, string> = actionLabels;
 
-const ROLE_LABELS: Record<string, { label: string; color: string }> = {
-  owner: { label: "Owner", color: "bg-purple-100 text-purple-800" },
-  manager: { label: "Manager", color: "bg-blue-100 text-blue-800" },
-  waiter: { label: "Waiter", color: "bg-green-100 text-green-800" },
-  kitchen: { label: "Kitchen", color: "bg-orange-100 text-orange-800" },
-  accountant: { label: "Accountant", color: "bg-gray-100 text-gray-800" },
+const ROLE_COLORS: Record<string, string> = {
+  owner: "bg-purple-100 text-purple-800",
+  franchise_owner: "bg-red-100 text-red-800",
+  hq_admin: "bg-violet-100 text-violet-800",
+  manager: "bg-blue-100 text-blue-800",
+  outlet_manager: "bg-indigo-100 text-indigo-800",
+  supervisor: "bg-yellow-100 text-yellow-800",
+  cashier: "bg-cyan-100 text-cyan-800",
+  waiter: "bg-green-100 text-green-800",
+  kitchen: "bg-orange-100 text-orange-800",
+  accountant: "bg-gray-100 text-gray-800",
+  auditor: "bg-slate-100 text-slate-800",
+  customer: "bg-neutral-100 text-neutral-600",
 };
+
+function getRoleLabel(role: string): string {
+  return (roleLabels as Record<string, string>)[role] || role;
+}
+
+function getRoleColor(role: string): string {
+  return ROLE_COLORS[role] || "bg-gray-100 text-gray-800";
+}
 
 export default function SecuritySettingsPage() {
   const { toast } = useToast();
@@ -306,12 +321,12 @@ export default function SecuritySettingsPage() {
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            {Object.entries(ROLE_LABELS).map(([role, config]) => {
+            {allRoles.map((role) => {
               const roleUsers = (allUsers || []).filter(u => u.role === role);
               return (
                 <div key={role} className="border rounded-lg p-4" data-testid={`role-permissions-${role}`}>
                   <div className="flex items-center gap-3 mb-3">
-                    <Badge className={`${config.color} border-0`}>{config.label}</Badge>
+                    <Badge className={`${getRoleColor(role)} border-0`}>{getRoleLabel(role)}</Badge>
                     <span className="text-xs text-muted-foreground">
                       {roleUsers.length} user{roleUsers.length !== 1 ? "s" : ""}
                       {roleUsers.length > 0 && ` (${roleUsers.map(u => u.name).join(", ")})`}

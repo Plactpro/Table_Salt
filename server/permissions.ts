@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from "express";
 import {
   type PermissionAction,
-  type Role,
+  type UserRole,
   rolePermissions,
   supervisorRequiredActions,
   getPermissionsForRole,
@@ -26,12 +26,12 @@ interface PermissionContext {
 }
 
 export function can(user: UserLike, action: PermissionAction, context?: PermissionContext): boolean {
-  const perms = rolePermissions[user.role as Role];
+  const perms = rolePermissions[user.role as UserRole];
   if (!perms) return false;
   if (!perms.includes(action)) return false;
   if (context) {
     if (context.outletId && user.outletId && user.outletId !== context.outletId) {
-      if (user.role !== "owner") return false;
+      if (user.role !== "owner" && user.role !== "franchise_owner" && user.role !== "hq_admin") return false;
     }
     if (context.amount !== undefined && context.threshold !== undefined && context.amount > context.threshold) {
       if (!perms.includes(action)) return false;
@@ -42,7 +42,7 @@ export function can(user: UserLike, action: PermissionAction, context?: Permissi
 
 export function needsSupervisorApproval(user: UserLike, action: PermissionAction): boolean {
   if (!supervisorRequiredActions.includes(action)) return false;
-  const perms = rolePermissions[user.role as Role];
+  const perms = rolePermissions[user.role as UserRole];
   if (!perms) return true;
   return !perms.includes(action);
 }

@@ -146,7 +146,7 @@ export default function OrdersPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, paymentMethod: pm, supervisorOverride }: { id: string; status: string; paymentMethod?: string; supervisorOverride?: { username: string; password: string } }) => {
+    mutationFn: async ({ id, status, paymentMethod: pm, supervisorOverride }: { id: string; status: string; paymentMethod?: string; supervisorOverride?: { username: string; password: string; otpApprovalToken?: string } }) => {
       const body: Record<string, unknown> = { status };
       if (pm) body.paymentMethod = pm;
       if (supervisorOverride) body.supervisorOverride = supervisorOverride;
@@ -180,7 +180,7 @@ export default function OrdersPage() {
     },
   });
 
-  const handleSupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string }) => {
+  const handleSupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string; otpApprovalToken?: string }) => {
     if (supervisorDialog) {
       updateStatusMutation.mutate({
         id: supervisorDialog.orderId,

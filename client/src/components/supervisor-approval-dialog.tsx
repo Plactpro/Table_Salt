@@ -12,7 +12,7 @@ interface SupervisorApprovalDialogProps {
   onOpenChange: (open: boolean) => void;
   action: string;
   actionLabel: string;
-  onApproved: (supervisorId: string, credentials: { username: string; password: string }) => void;
+  onApproved: (supervisorId: string, credentials: { username: string; password: string; otpApprovalToken?: string }) => void;
 }
 
 export default function SupervisorApprovalDialog({
@@ -87,7 +87,7 @@ export default function SupervisorApprovalDialog({
       const res = await apiRequest("POST", "/api/supervisor/otp-verify", { challengeId: otpChallengeId, code: otpCode, action });
       const data = await res.json();
       if (data.verified) {
-        onApproved(data.supervisor.id, { username: otpUsername, password: "__otp_verified__" });
+        onApproved(data.supervisor.id, { username: otpUsername, password: "", otpApprovalToken: data.approvalToken });
         resetForm();
         onOpenChange(false);
       }

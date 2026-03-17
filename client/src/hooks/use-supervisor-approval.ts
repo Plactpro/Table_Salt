@@ -1,17 +1,23 @@
 import { useState, useCallback } from "react";
 
+export interface SupervisorCredentials {
+  username: string;
+  password: string;
+  otpApprovalToken?: string;
+}
+
 interface SupervisorState {
   open: boolean;
   action: string;
   actionLabel: string;
-  pendingCallback: ((credentials: { username: string; password: string }) => void) | null;
+  pendingCallback: ((credentials: SupervisorCredentials) => void) | null;
 }
 
 export function useSupervisorApproval() {
   const [state, setState] = useState<SupervisorState | null>(null);
 
   const handleApiError = useCallback(
-    (error: Error, retryWithOverride: (credentials: { username: string; password: string }) => void, actionLabel: string) => {
+    (error: Error, retryWithOverride: (credentials: SupervisorCredentials) => void, actionLabel: string) => {
       if (error.message.startsWith("__SUPERVISOR_REQUIRED__:")) {
         const action = error.message.split(":")[1] || "unknown";
         setState({
@@ -28,7 +34,7 @@ export function useSupervisorApproval() {
   );
 
   const handleApproved = useCallback(
-    (_supervisorId: string, credentials: { username: string; password: string }) => {
+    (_supervisorId: string, credentials: SupervisorCredentials) => {
       if (state?.pendingCallback) {
         state.pendingCallback(credentials);
       }
