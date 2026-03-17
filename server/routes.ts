@@ -1244,9 +1244,33 @@ export async function registerRoutes(
   app.post("/api/promotions/evaluate", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
+      const body = req.body;
+      if (!body || !Array.isArray(body.items) || typeof body.subtotal !== "number") {
+        return res.status(400).json({ message: "Invalid input: requires items (array) and subtotal (number)" });
+      }
+      if (!body.channel || typeof body.channel !== "string") {
+        return res.status(400).json({ message: "Invalid input: channel (string) is required" });
+      }
+      for (const item of body.items) {
+        if (!item.menuItemId || typeof item.price !== "number" || typeof item.quantity !== "number") {
+          return res.status(400).json({ message: "Invalid input: each item requires menuItemId, price (number), and quantity (number)" });
+        }
+      }
       const { evaluateRules } = await import("./promotions-engine");
       const rules = await storage.getPromotionRulesByTenant(user.tenantId);
-      const result = evaluateRules(rules, req.body);
+      const result = evaluateRules(rules, {
+        items: body.items,
+        subtotal: body.subtotal,
+        channel: body.channel,
+        orderType: body.orderType,
+        outletId: body.outletId,
+        tableArea: body.tableArea,
+        customerId: body.customerId,
+        loyaltyTier: body.loyaltyTier,
+        customerSegment: body.customerSegment,
+        dayOfWeek: body.dayOfWeek,
+        hour: body.hour,
+      });
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
