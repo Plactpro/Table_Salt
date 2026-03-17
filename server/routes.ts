@@ -230,18 +230,18 @@ export async function registerRoutes(
     res.json(cats);
   });
 
-  app.post("/api/menu-categories", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/menu-categories", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const user = req.user as any;
     const cat = await storage.createCategory({ ...req.body, tenantId: user.tenantId });
     res.json(cat);
   });
 
-  app.patch("/api/menu-categories/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/menu-categories/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const cat = await storage.updateCategory(req.params.id, req.body);
     res.json(cat);
   });
 
-  app.delete("/api/menu-categories/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.delete("/api/menu-categories/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     await storage.deleteCategory(req.params.id);
     res.json({ message: "Deleted" });
   });
@@ -778,7 +778,7 @@ export async function registerRoutes(
     res.json(item);
   });
 
-  app.delete("/api/inventory/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.delete("/api/inventory/:id", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
     await storage.deleteInventoryItem(req.params.id);
     res.json({ message: "Deleted" });
   });
@@ -3853,38 +3853,48 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  // Supervisor OTP simulation
+  const otpCache = new Map<string, { code: string; action: string; supervisorId: string; supervisorName: string; tenantId: string; expiresAt: number }>();
+
   app.post("/api/supervisor/otp-challenge", requireAuth, async (req, res) => {
     try {
-      const user = req.user as any;
-      const { action } = req.body;
+      const user = req.user as Record<string, string>;
+      const { username, action } = req.body;
+      if (!username || !action) return res.status(400).json({ message: "Username and action are required" });
+      const supervisor = await storage.getUserByUsername(username);
+      if (!supervisor || supervisor.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Supervisor not found in this tenant" });
+      }
+      if (!can({ id: supervisor.id, role: supervisor.role, tenantId: supervisor.tenantId }, action as PermissionAction)) {
+        return res.status(403).json({ message: `User ${username} does not have permission for ${action}` });
+      }
       const code = String(100000 + Math.floor(Math.random() * 900000));
-      const cacheKey = `otp:${user.tenantId}:${action}:${Date.now()}`;
-      (global as any).__otpCache = (global as any).__otpCache || {};
-      (global as any).__otpCache[cacheKey] = { code, action, userId: user.id, expiresAt: Date.now() + 5 * 60 * 1000 };
-      auditLogFromReq(req, { action: "otp_challenge_issued", metadata: { forAction: action, cacheKey } });
-      res.json({ challengeId: cacheKey, expiresIn: 300, message: `OTP code (simulated): ${code}` });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      const challengeId = `otp:${user.tenantId}:${action}:${Date.now()}`;
+      otpCache.set(challengeId, { code, action, supervisorId: supervisor.id, supervisorName: supervisor.name, tenantId: user.tenantId, expiresAt: Date.now() + 5 * 60 * 1000 });
+      auditLogFromReq(req, { action: "otp_challenge_issued", metadata: { forAction: action, supervisorUsername: username, challengeId } });
+      res.json({ challengeId, expiresIn: 300, message: `OTP code (simulated): ${code}` });
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Unknown error" }); }
   });
 
   app.post("/api/supervisor/otp-verify", requireAuth, async (req, res) => {
     try {
-      const { challengeId, code } = req.body;
-      const cache = (global as any).__otpCache || {};
-      const entry = cache[challengeId];
+      const { challengeId, code, action } = req.body;
+      const entry = otpCache.get(challengeId);
       if (!entry) return res.status(400).json({ message: "Challenge not found or expired" });
       if (entry.expiresAt < Date.now()) {
-        delete cache[challengeId];
+        otpCache.delete(challengeId);
         return res.status(400).json({ message: "OTP expired" });
+      }
+      if (action && entry.action !== action) {
+        return res.status(403).json({ message: "OTP was not issued for this action" });
       }
       if (entry.code !== code) {
         auditLogFromReq(req, { action: "otp_verify_failed", metadata: { challengeId } });
         return res.status(403).json({ message: "Invalid OTP code" });
       }
-      delete cache[challengeId];
-      auditLogFromReq(req, { action: "otp_verified", metadata: { challengeId, forAction: entry.action } });
-      res.json({ verified: true, action: entry.action });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      otpCache.delete(challengeId);
+      auditLogFromReq(req, { action: "otp_verified", metadata: { challengeId, forAction: entry.action, supervisorId: entry.supervisorId } });
+      res.json({ verified: true, action: entry.action, supervisor: { id: entry.supervisorId, name: entry.supervisorName } });
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Unknown error" }); }
   });
 
   // User role change audit
