@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import express from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
@@ -122,7 +123,7 @@ export async function registerRoutes(
 ): Promise<Server> {
   setupAuth(app);
 
-  app.use("/uploads", (await import("express")).default.static(uploadDir));
+  app.use("/uploads", express.static(uploadDir));
 
   app.post("/api/upload/image", requireAuth, (req: any, res: any, next: any) => {
     upload.single("image")(req, res, (err: any) => {
