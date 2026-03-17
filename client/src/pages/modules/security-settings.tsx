@@ -715,7 +715,10 @@ function DataPrivacyCard() {
     mutationFn: async () => {
       const res = await fetch("/api/gdpr/export", { method: "POST", credentials: "include", headers: { "x-csrf-token": document.cookie.match(/csrf-token=([^;]+)/)?.[1] || "" } });
       if (!res.ok) throw new Error("Export failed");
-      const data = await res.json();
+      const { downloadUrl } = await res.json() as { downloadUrl: string };
+      const downloadRes = await fetch(downloadUrl, { credentials: "include" });
+      if (!downloadRes.ok) throw new Error("Download failed");
+      const data = await downloadRes.json();
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");

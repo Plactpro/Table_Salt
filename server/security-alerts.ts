@@ -157,3 +157,16 @@ export async function alertDataExport(userId: string, tenantId: string, userName
     metadata: { userName },
   });
 }
+
+export async function alertBulkDataExport(userId: string, tenantId: string, userName: string, rowCount: number, req: Request): Promise<void> {
+  await createSecurityAlert({
+    tenantId,
+    userId,
+    type: "bulk_data_export",
+    severity: "medium",
+    title: "Bulk data export performed",
+    description: `User ${userName} exported ${rowCount} audit log records`,
+    ipAddress: getIpFromReq(req),
+    metadata: { userName, rowCount },
+  });
+}

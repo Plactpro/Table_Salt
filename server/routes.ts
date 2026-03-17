@@ -41,7 +41,7 @@ import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
 import { can, needsSupervisorApproval, getPermissionsForRole, requirePermission, type PermissionAction } from "./permissions";
 import { auditLog, auditLogFromReq } from "./audit";
-import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled, alertRoleEscalation, alertDataExport, createSecurityAlert } from "./security-alerts";
+import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled, alertRoleEscalation, alertDataExport, alertBulkDataExport, createSecurityAlert } from "./security-alerts";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
 import multer from "multer";
 import path from "path";
@@ -4320,7 +4320,7 @@ export async function registerRoutes(
       const csv = [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
 
       auditLogFromReq(req, { action: "audit_log_exported", entityType: "audit_log", entityId: tenantId, metadata: { rowCount: rows.length } });
-      alertDataExport(String(user.id), tenantId, String(user.name), req);
+      alertBulkDataExport(String(user.id), tenantId, String(user.name), rows.length, req);
 
       res.setHeader("Content-Type", "text/csv");
       res.setHeader("Content-Disposition", "attachment; filename=audit-log.csv");
@@ -5421,14 +5421,18 @@ export async function registerRoutes(
       const user = req.user as any;
       const tenant = await storage.getTenant(user.tenantId);
       const mc = (tenant?.moduleConfig || {}) as Record<string, unknown>;
-      res.json({ ipAllowlist: mc.ipAllowlist || [], ipAllowlistEnabled: mc.ipAllowlistEnabled || false });
+      res.json({
+        ipAllowlist: mc.ipAllowlist || [],
+        ipAllowlistEnabled: mc.ipAllowlistEnabled || false,
+        ipAllowlistRoles: mc.ipAllowlistRoles || {},
+      });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.put("/api/security/ip-allowlist", requireAuth, requireRole("owner"), async (req, res) => {
     try {
       const user = req.user as any;
-      const { ipAllowlist, ipAllowlistEnabled } = req.body;
+      const { ipAllowlist, ipAllowlistEnabled, ipAllowlistRoles } = req.body;
       if (ipAllowlist && !Array.isArray(ipAllowlist)) return res.status(400).json({ message: "ipAllowlist must be an array" });
       const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
       if (ipAllowlist) {
@@ -5438,27 +5442,84 @@ export async function registerRoutes(
           }
         }
       }
+      if (ipAllowlistRoles && typeof ipAllowlistRoles === "object") {
+        for (const [role, cidrs] of Object.entries(ipAllowlistRoles)) {
+          if (!Array.isArray(cidrs)) return res.status(400).json({ message: `Role rules for ${role} must be an array` });
+          for (const cidr of cidrs as string[]) {
+            if (typeof cidr !== "string" || !cidrRegex.test(cidr)) {
+              return res.status(400).json({ message: `Invalid CIDR format for role ${role}: ${cidr}` });
+            }
+          }
+        }
+      }
       const tenant = await storage.getTenant(user.tenantId);
       const mc = (tenant?.moduleConfig || {}) as Record<string, unknown>;
-      await storage.updateTenant(user.tenantId, {
-        moduleConfig: { ...mc, ipAllowlist: ipAllowlist || mc.ipAllowlist, ipAllowlistEnabled: ipAllowlistEnabled ?? mc.ipAllowlistEnabled },
-      });
-      auditLogFromReq(req, { action: "ip_allowlist_updated", entityType: "tenant", entityId: user.tenantId, after: { ipAllowlist, ipAllowlistEnabled } });
+      const updates: Record<string, unknown> = { ...mc };
+      if (ipAllowlist !== undefined) updates.ipAllowlist = ipAllowlist;
+      if (ipAllowlistEnabled !== undefined) updates.ipAllowlistEnabled = ipAllowlistEnabled;
+      if (ipAllowlistRoles !== undefined) updates.ipAllowlistRoles = ipAllowlistRoles;
+      await storage.updateTenant(user.tenantId, { moduleConfig: updates });
+      auditLogFromReq(req, { action: "ip_allowlist_updated", entityType: "tenant", entityId: user.tenantId, after: { ipAllowlist, ipAllowlistEnabled, ipAllowlistRoles } });
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   // ── GDPR & Data Retention ──
+  const gdprExportTokens = new Map<string, { userId: string; tenantId: string; expiresAt: number }>();
+
   app.post("/api/gdpr/export", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       const fullUser = await storage.getUser(user.id);
       if (!fullUser) return res.status(404).json({ message: "User not found" });
 
-      const userOrders = await storage.getOrdersByTenant(user.tenantId);
-      const myOrders = userOrders.filter(o => o.waiterId === user.id || o.customerId === user.id);
-      const myReservations = (await storage.getReservationsByTenant(user.tenantId));
-      const mySchedules = await storage.getStaffSchedulesByTenant(user.tenantId);
+      const token = randomBytes(32).toString("hex");
+      gdprExportTokens.set(token, {
+        userId: user.id,
+        tenantId: user.tenantId,
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      });
+
+      auditLogFromReq(req, { action: "gdpr_data_export", entityType: "user", entityId: user.id, entityName: user.name });
+      alertDataExport(user.id, user.tenantId, user.name, req);
+      res.json({ downloadUrl: `/api/gdpr/export/download?token=${token}`, expiresInMinutes: 10 });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/gdpr/export/download", async (req, res) => {
+    try {
+      const token = req.query.token as string;
+      if (!token) return res.status(400).json({ message: "Missing download token" });
+
+      const entry = gdprExportTokens.get(token);
+      if (!entry) return res.status(404).json({ message: "Invalid or expired download link" });
+      if (Date.now() > entry.expiresAt) {
+        gdprExportTokens.delete(token);
+        return res.status(410).json({ message: "Download link has expired" });
+      }
+
+      gdprExportTokens.delete(token);
+
+      const fullUser = await storage.getUser(entry.userId);
+      if (!fullUser) return res.status(404).json({ message: "User not found" });
+
+      const userOrders = await storage.getOrdersByTenant(entry.tenantId);
+      const myOrders = userOrders.filter(o => o.waiterId === entry.userId || o.customerId === entry.userId);
+      const allReservations = await storage.getReservationsByTenant(entry.tenantId);
+      const mySchedules = await storage.getStaffSchedulesByTenant(entry.tenantId);
+      const allCustomers = await storage.getCustomersByTenant(entry.tenantId);
+      const matchingCustomer = allCustomers.find(c =>
+        (c.email && fullUser.email && c.email === fullUser.email) ||
+        (c.phone && fullUser.phone && c.phone === fullUser.phone)
+      );
+      const myReservations = allReservations.filter(r =>
+        (matchingCustomer && r.customerId === matchingCustomer.id) ||
+        (fullUser.name && r.customerName === fullUser.name)
+      );
+      const allFeedback = await storage.getFeedbackByTenant(entry.tenantId);
+      const myFeedback = matchingCustomer
+        ? allFeedback.filter(f => f.customerId === matchingCustomer.id)
+        : [];
 
       const exportData = {
         exportDate: new Date().toISOString(),
@@ -5470,14 +5531,23 @@ export async function registerRoutes(
           role: fullUser.role,
           active: fullUser.active,
         },
+        customerProfile: matchingCustomer ? {
+          name: matchingCustomer.name,
+          loyaltyPoints: matchingCustomer.loyaltyPoints,
+          loyaltyTier: matchingCustomer.loyaltyTier,
+          totalSpent: matchingCustomer.totalSpent,
+          averageSpend: matchingCustomer.averageSpend,
+          tags: matchingCustomer.tags,
+          privacyConsents: matchingCustomer.privacyConsents,
+        } : null,
         orders: myOrders.map(o => ({ id: o.id, type: o.orderType, status: o.status, total: o.total, createdAt: o.createdAt })),
-        schedules: mySchedules.filter(s => s.userId === user.id).map(s => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+        reservations: myReservations.map(r => ({ id: r.id, dateTime: r.dateTime, guests: r.guests, status: r.status, notes: r.notes })),
+        schedules: mySchedules.filter(s => s.userId === entry.userId).map(s => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+        feedback: myFeedback.map(f => ({ rating: f.rating, comment: f.comment, createdAt: f.createdAt })),
       };
 
-      auditLogFromReq(req, { action: "gdpr_data_export", entityType: "user", entityId: user.id, entityName: user.name });
-      alertDataExport(user.id, user.tenantId, user.name, req);
       res.setHeader("Content-Type", "application/json");
-      res.setHeader("Content-Disposition", `attachment; filename="data-export-${user.id}.json"`);
+      res.setHeader("Content-Disposition", `attachment; filename="data-export-${entry.userId}.json"`);
       res.json(exportData);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
