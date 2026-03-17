@@ -6,7 +6,7 @@ import { TOTP, Secret } from "otpauth";
 import QRCode from "qrcode";
 import { storage } from "./storage";
 import { db, pool } from "./db";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "./auth";
 import { setupCsrf } from "./security";
 import { getAdapter } from "./aggregator-adapters";
@@ -34,11 +34,15 @@ import {
   insertComboOfferSchema,
   deviceSessions,
   users,
+  securityAlerts,
+  customers,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
 import { can, needsSupervisorApproval, getPermissionsForRole, requirePermission, type PermissionAction } from "./permissions";
 import { auditLog, auditLogFromReq } from "./audit";
+import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled, alertRoleEscalation, alertDataExport, createSecurityAlert } from "./security-alerts";
+import { encryptField, decryptField, isEncrypted } from "./encryption";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -182,6 +186,7 @@ export async function registerRoutes(
       if (err) return next(err);
       if (!user) {
         auditLog({ tenantId: null, action: "login_failed", metadata: { username: req.body.username }, req });
+        checkFailedLoginAlert(req.body.username, req);
         return res.status(401).json({ message: info?.message || "Invalid credentials" });
       }
 
@@ -234,6 +239,7 @@ export async function registerRoutes(
         } catch (_) { /* concurrent session cleanup best-effort */ }
 
         auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
+        checkNewIpLoginAlert(user.id, user.tenantId, user.name, req);
         const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = user;
         return res.json(safeUser);
       });
@@ -303,6 +309,7 @@ export async function registerRoutes(
       if (!valid) return res.status(401).json({ message: "Invalid password" });
       await db.update(users).set({ totpEnabled: false, totpSecret: null, recoveryCodes: null }).where(eq(users.id, user.id));
       auditLogFromReq(req, { action: "2fa_disabled", entityType: "user", entityId: user.id, entityName: user.name });
+      alert2FADisabled(user.id, user.tenantId, user.name, req);
       res.json({ message: "2FA has been disabled" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -331,6 +338,7 @@ export async function registerRoutes(
       const history = [...(freshUser.passwordHistory || []), freshUser.password].slice(-10);
       await db.update(users).set({ password: newHash, passwordChangedAt: new Date(), passwordHistory: history }).where(eq(users.id, user.id));
       auditLogFromReq(req, { action: "password_changed", entityType: "user", entityId: user.id, entityName: user.name });
+      alertPasswordChanged(user.id, user.tenantId, user.name, req);
       res.json({ message: "Password changed successfully" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -4503,6 +4511,7 @@ export async function registerRoutes(
         before: { role: oldRole },
         after: { role: req.body.role },
       });
+      alertRoleEscalation(req.params.id, user.tenantId, targetUser.name, oldRole, req.body.role, req);
       if (updated) {
         const { password: _, totpSecret: _ts2, recoveryCodes: _rc2, passwordHistory: _ph2, ...safe } = updated;
         res.json(safe);
@@ -5337,6 +5346,196 @@ export async function registerRoutes(
         createdBy: user.id,
       });
       res.status(201).json(duplicate);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Security Alerts ──
+  app.get("/api/security-alerts", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = parseInt(req.query.offset as string) || 0;
+      const acknowledged = req.query.acknowledged === "true" ? true : req.query.acknowledged === "false" ? false : undefined;
+
+      const allAlerts = await db.select().from(securityAlerts)
+        .where(
+          acknowledged !== undefined
+            ? and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.acknowledged, acknowledged))
+            : eq(securityAlerts.tenantId, user.tenantId)
+        )
+        .orderBy(desc(securityAlerts.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      const [totalResult] = await db.select({ cnt: sql<number>`count(*)` }).from(securityAlerts)
+        .where(
+          acknowledged !== undefined
+            ? and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.acknowledged, acknowledged))
+            : eq(securityAlerts.tenantId, user.tenantId)
+        );
+
+      res.json({ alerts: allAlerts, total: Number(totalResult?.cnt || 0) });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/security-alerts/unread-count", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const [result] = await db.select({ cnt: sql<number>`count(*)` }).from(securityAlerts)
+        .where(and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.acknowledged, false)));
+      res.json({ count: Number(result?.cnt || 0) });
+    } catch (err: any) { res.json({ count: 0 }); }
+  });
+
+  app.patch("/api/security-alerts/:id/acknowledge", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const [alert] = await db.select().from(securityAlerts).where(and(eq(securityAlerts.id, req.params.id), eq(securityAlerts.tenantId, user.tenantId)));
+      if (!alert) return res.status(404).json({ message: "Alert not found" });
+      const [updated] = await db.update(securityAlerts)
+        .set({ acknowledged: true, acknowledgedBy: user.id, acknowledgedAt: new Date() })
+        .where(eq(securityAlerts.id, req.params.id))
+        .returning();
+      auditLogFromReq(req, { action: "security_alert_acknowledged", entityType: "security_alert", entityId: req.params.id, entityName: alert.title });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/security-alerts/acknowledge-all", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await db.update(securityAlerts)
+        .set({ acknowledged: true, acknowledgedBy: user.id, acknowledgedAt: new Date() })
+        .where(and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.acknowledged, false)));
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── IP Allowlisting ──
+  app.get("/api/security/ip-allowlist", requireAuth, requireRole("owner", "hq_admin"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenant = await storage.getTenant(user.tenantId);
+      const mc = (tenant?.moduleConfig || {}) as Record<string, unknown>;
+      res.json({ ipAllowlist: mc.ipAllowlist || [], ipAllowlistEnabled: mc.ipAllowlistEnabled || false });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.put("/api/security/ip-allowlist", requireAuth, requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { ipAllowlist, ipAllowlistEnabled } = req.body;
+      if (ipAllowlist && !Array.isArray(ipAllowlist)) return res.status(400).json({ message: "ipAllowlist must be an array" });
+      const cidrRegex = /^(\d{1,3}\.){3}\d{1,3}(\/\d{1,2})?$/;
+      if (ipAllowlist) {
+        for (const cidr of ipAllowlist) {
+          if (typeof cidr !== "string" || !cidrRegex.test(cidr)) {
+            return res.status(400).json({ message: `Invalid CIDR format: ${cidr}` });
+          }
+        }
+      }
+      const tenant = await storage.getTenant(user.tenantId);
+      const mc = (tenant?.moduleConfig || {}) as Record<string, unknown>;
+      await storage.updateTenant(user.tenantId, {
+        moduleConfig: { ...mc, ipAllowlist: ipAllowlist || mc.ipAllowlist, ipAllowlistEnabled: ipAllowlistEnabled ?? mc.ipAllowlistEnabled },
+      });
+      auditLogFromReq(req, { action: "ip_allowlist_updated", entityType: "tenant", entityId: user.tenantId, after: { ipAllowlist, ipAllowlistEnabled } });
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── GDPR & Data Retention ──
+  app.post("/api/gdpr/export", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const fullUser = await storage.getUser(user.id);
+      if (!fullUser) return res.status(404).json({ message: "User not found" });
+
+      const userOrders = await storage.getOrdersByTenant(user.tenantId);
+      const myOrders = userOrders.filter(o => o.waiterId === user.id || o.customerId === user.id);
+      const myReservations = (await storage.getReservationsByTenant(user.tenantId));
+      const mySchedules = await storage.getStaffSchedulesByTenant(user.tenantId);
+
+      const exportData = {
+        exportDate: new Date().toISOString(),
+        user: {
+          name: fullUser.name,
+          username: fullUser.username,
+          email: fullUser.email ? (isEncrypted(fullUser.email) ? decryptField(fullUser.email) : fullUser.email) : null,
+          phone: fullUser.phone ? (isEncrypted(fullUser.phone) ? decryptField(fullUser.phone) : fullUser.phone) : null,
+          role: fullUser.role,
+          active: fullUser.active,
+        },
+        orders: myOrders.map(o => ({ id: o.id, type: o.orderType, status: o.status, total: o.total, createdAt: o.createdAt })),
+        schedules: mySchedules.filter(s => s.userId === user.id).map(s => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
+      };
+
+      auditLogFromReq(req, { action: "gdpr_data_export", entityType: "user", entityId: user.id, entityName: user.name });
+      alertDataExport(user.id, user.tenantId, user.name, req);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Disposition", `attachment; filename="data-export-${user.id}.json"`);
+      res.json(exportData);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/gdpr/anonymize-account", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { password: confirmPassword } = req.body;
+      if (!confirmPassword) return res.status(400).json({ message: "Password confirmation required" });
+      const freshUser = await storage.getUser(user.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+      const valid = await comparePasswords(confirmPassword, freshUser.password);
+      if (!valid) return res.status(401).json({ message: "Invalid password" });
+      if (freshUser.role === "owner") return res.status(400).json({ message: "Account owners cannot self-anonymize. Transfer ownership first." });
+
+      await storage.updateUser(user.id, {
+        name: "[deleted]",
+        email: null,
+        phone: null,
+        active: false,
+        totpSecret: null,
+        totpEnabled: false,
+        recoveryCodes: null,
+        passwordHistory: null,
+      });
+      auditLogFromReq(req, { action: "gdpr_account_anonymized", entityType: "user", entityId: user.id, entityName: freshUser.name });
+      req.logout(() => {
+        req.session?.destroy(() => {});
+      });
+      res.json({ message: "Account data has been anonymized" });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/gdpr/retention-policy", requireAuth, requireRole("owner", "hq_admin"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenant = await storage.getTenant(user.tenantId);
+      const mc = (tenant?.moduleConfig || {}) as Record<string, unknown>;
+      res.json({
+        dataRetentionMonths: mc.dataRetentionMonths ?? 36,
+        autoDeleteAnonymized: mc.autoDeleteAnonymized ?? false,
+        auditLogRetentionMonths: mc.auditLogRetentionMonths ?? 24,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.put("/api/gdpr/retention-policy", requireAuth, requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { dataRetentionMonths, autoDeleteAnonymized, auditLogRetentionMonths } = req.body;
+      const tenant = await storage.getTenant(user.tenantId);
+      const mc = (tenant?.moduleConfig || {}) as Record<string, unknown>;
+      await storage.updateTenant(user.tenantId, {
+        moduleConfig: {
+          ...mc,
+          dataRetentionMonths: dataRetentionMonths ?? mc.dataRetentionMonths,
+          autoDeleteAnonymized: autoDeleteAnonymized ?? mc.autoDeleteAnonymized,
+          auditLogRetentionMonths: auditLogRetentionMonths ?? mc.auditLogRetentionMonths,
+        },
+      });
+      auditLogFromReq(req, { action: "retention_policy_updated", entityType: "tenant", entityId: user.tenantId, after: { dataRetentionMonths, autoDeleteAnonymized, auditLogRetentionMonths } });
+      res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -104,6 +104,7 @@ export function setupAuth(app: Express) {
       try {
         const user = await storage.getUserByUsername(username);
         if (!user) return done(null, false, { message: "Invalid credentials" });
+        if (user.active === false) return done(null, false, { message: "Account is deactivated" });
         const valid = await comparePasswords(password, user.password);
         if (!valid) return done(null, false, { message: "Invalid credentials" });
         return done(null, user);

@@ -1,4 +1,5 @@
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth, Role } from "@/lib/auth";
 import { useSubscription } from "@/lib/auth";
 import { cn } from "@/lib/utils";
@@ -147,6 +148,19 @@ export default function Sidebar() {
   const role = user?.role ?? "owner";
   const filteredItems = navItems.filter((item) => item.roles.includes(role));
 
+  const isSecurityRole = ["owner", "hq_admin", "franchise_owner"].includes(role);
+  const { data: alertCountData } = useQuery<{ count: number }>({
+    queryKey: ["/api/security-alerts/unread-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/security-alerts/unread-count", { credentials: "include" });
+      if (!res.ok) return { count: 0 };
+      return res.json();
+    },
+    enabled: isSecurityRole,
+    refetchInterval: 30000,
+  });
+  const unreadAlerts = alertCountData?.count || 0;
+
   return (
     <aside
       className="hidden md:flex flex-col w-64 shrink-0 h-screen sticky top-0 overflow-hidden z-30"
@@ -245,6 +259,15 @@ export default function Sidebar() {
                           )} />
                         </motion.div>
                         <span className="relative z-10 flex-1 text-left">{item.name}</span>
+                        {item.id === "m-18" && unreadAlerts > 0 && (
+                          <span
+                            className="relative z-10 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white"
+                            style={{ background: "hsl(0, 72%, 51%)" }}
+                            data-testid="badge-security-alerts"
+                          >
+                            {unreadAlerts > 99 ? "99+" : unreadAlerts}
+                          </span>
+                        )}
                         {isLocked && (
                           <Lock
                             className="relative z-10 h-3.5 w-3.5 text-[hsl(185,20%,40%)]"
