@@ -1,20 +1,35 @@
 import type { PromotionRule } from "@shared/schema";
 
+export interface EvaluateItem {
+  menuItemId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  categoryId?: string;
+}
+
 export interface EvaluateInput {
-  items: {
-    menuItemId: string;
-    name: string;
-    price: number;
-    quantity: number;
-    categoryId?: string;
-  }[];
+  items: EvaluateItem[];
   subtotal: number;
   channel: string;
   orderType?: string;
+  outletId?: string;
+  tableArea?: string;
   customerId?: string;
   loyaltyTier?: string;
+  customerSegment?: string;
   dayOfWeek?: number;
   hour?: number;
+}
+
+export interface LineItemAdjustment {
+  menuItemId: string;
+  itemName: string;
+  originalPrice: number;
+  adjustedPrice: number;
+  discountAmount: number;
+  ruleId: string;
+  ruleName: string;
 }
 
 export interface AppliedDiscount {
@@ -24,11 +39,14 @@ export interface AppliedDiscount {
   discountType: string;
   discountAmount: number;
   description: string;
+  affectedItems?: string[];
 }
 
 export interface EvaluateResult {
   appliedDiscounts: AppliedDiscount[];
+  lineItemAdjustments: LineItemAdjustment[];
   totalDiscount: number;
+  surchargeTotal: number;
   finalSubtotal: number;
 }
 
@@ -69,6 +87,27 @@ function isChannelAllowed(rule: PromotionRule, channel: string): boolean {
   return rule.channels.includes(channel);
 }
 
+function isOutletConditionMet(rule: PromotionRule, input: EvaluateInput): boolean {
+  const cond = rule.conditions as Record<string, unknown> | null;
+  if (!cond) return true;
+  if (cond.outletIds && Array.isArray(cond.outletIds) && cond.outletIds.length > 0) {
+    if (!input.outletId) return false;
+    return (cond.outletIds as string[]).includes(input.outletId);
+  }
+  if (cond.tableAreas && Array.isArray(cond.tableAreas) && cond.tableAreas.length > 0) {
+    if (!input.tableArea) return false;
+    return (cond.tableAreas as string[]).includes(input.tableArea);
+  }
+  return true;
+}
+
+function isCustomerSegmentMet(rule: PromotionRule, input: EvaluateInput): boolean {
+  const cond = rule.conditions as Record<string, unknown> | null;
+  if (!cond || !cond.customerSegment) return true;
+  if (!input.customerSegment) return false;
+  return input.customerSegment.toLowerCase() === String(cond.customerSegment).toLowerCase();
+}
+
 function isScopeMatched(rule: PromotionRule, input: EvaluateInput): boolean {
   const scope = rule.scope || "all_items";
   if (scope === "all_items" || scope === "order_total") return true;
@@ -97,22 +136,38 @@ function isLoyaltyConditionMet(rule: PromotionRule, input: EvaluateInput): boole
   return customerIdx >= requiredIdx;
 }
 
-function calculateDiscount(rule: PromotionRule, input: EvaluateInput): number {
+function getAffectedItems(rule: PromotionRule, input: EvaluateInput): EvaluateItem[] {
+  const scope = rule.scope || "all_items";
+  if (scope === "category" && rule.scopeRef) {
+    return input.items.filter((i) => i.categoryId === rule.scopeRef);
+  }
+  if (scope === "specific_items" && rule.scopeRef) {
+    const ids = rule.scopeRef.split(",").map((s) => s.trim());
+    return input.items.filter((i) => ids.includes(i.menuItemId));
+  }
+  return input.items;
+}
+
+function calculateDiscount(rule: PromotionRule, input: EvaluateInput): { amount: number; lineAdjustments: LineItemAdjustment[] } {
   let disc = 0;
   const value = Number(rule.discountValue);
+  const lineAdjustments: LineItemAdjustment[] = [];
+  const affectedItems = getAffectedItems(rule, input);
 
   if (rule.discountType === "percentage") {
-    if (rule.scope === "category" && rule.scopeRef) {
-      const catItems = input.items.filter((i) => i.categoryId === rule.scopeRef);
-      const catTotal = catItems.reduce((s, i) => s + i.price * i.quantity, 0);
-      disc = catTotal * (value / 100);
-    } else if (rule.scope === "specific_items" && rule.scopeRef) {
-      const ids = rule.scopeRef.split(",").map((s) => s.trim());
-      const matched = input.items.filter((i) => ids.includes(i.menuItemId));
-      const matchedTotal = matched.reduce((s, i) => s + i.price * i.quantity, 0);
-      disc = matchedTotal * (value / 100);
-    } else {
-      disc = input.subtotal * (value / 100);
+    for (const item of affectedItems) {
+      const itemTotal = item.price * item.quantity;
+      const itemDisc = Math.round(itemTotal * (value / 100) * 100) / 100;
+      disc += itemDisc;
+      lineAdjustments.push({
+        menuItemId: item.menuItemId,
+        itemName: item.name,
+        originalPrice: item.price,
+        adjustedPrice: Math.round((item.price - item.price * (value / 100)) * 100) / 100,
+        discountAmount: itemDisc,
+        ruleId: rule.id,
+        ruleName: rule.name,
+      });
     }
   } else if (rule.discountType === "fixed_amount") {
     disc = value;
@@ -124,7 +179,7 @@ function calculateDiscount(rule: PromotionRule, input: EvaluateInput): number {
     disc = Number(rule.maxDiscount);
   }
 
-  return Math.round(disc * 100) / 100;
+  return { amount: Math.round(disc * 100) / 100, lineAdjustments };
 }
 
 export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): EvaluateResult {
@@ -134,6 +189,8 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
     .filter((r) => isScopeMatched(r, input))
     .filter((r) => isTimeConditionMet(r, input))
     .filter((r) => isLoyaltyConditionMet(r, input))
+    .filter((r) => isOutletConditionMet(r, input))
+    .filter((r) => isCustomerSegmentMet(r, input))
     .filter((r) => {
       if (r.minOrderAmount && input.subtotal < Number(r.minOrderAmount)) return false;
       return true;
@@ -141,7 +198,9 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
     .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 
   const appliedDiscounts: AppliedDiscount[] = [];
+  const allLineAdjustments: LineItemAdjustment[] = [];
   let totalDiscount = 0;
+  let surchargeTotal = 0;
   let hasNonStackable = false;
 
   for (const rule of activeRules) {
@@ -149,8 +208,10 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
 
     if (!rule.stackable && appliedDiscounts.length > 0) continue;
 
-    const discAmount = calculateDiscount(rule, input);
+    const { amount: discAmount, lineAdjustments } = calculateDiscount(rule, input);
     if (discAmount === 0) continue;
+
+    const affectedItemNames = getAffectedItems(rule, input).map((i) => i.name);
 
     appliedDiscounts.push({
       ruleId: rule.id,
@@ -159,9 +220,16 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
       discountType: rule.discountType,
       discountAmount: discAmount,
       description: rule.description || rule.name,
+      affectedItems: affectedItemNames.length > 0 && affectedItemNames.length < input.items.length ? affectedItemNames : undefined,
     });
 
-    totalDiscount += discAmount;
+    if (discAmount > 0) {
+      totalDiscount += discAmount;
+    } else {
+      surchargeTotal += Math.abs(discAmount);
+    }
+
+    allLineAdjustments.push(...lineAdjustments);
 
     if (!rule.stackable) {
       hasNonStackable = true;
@@ -169,7 +237,9 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
   }
 
   totalDiscount = Math.round(totalDiscount * 100) / 100;
-  const finalSubtotal = Math.max(0, Math.round((input.subtotal - totalDiscount) * 100) / 100);
+  surchargeTotal = Math.round(surchargeTotal * 100) / 100;
+  const netAdjustment = totalDiscount - surchargeTotal;
+  const finalSubtotal = Math.max(0, Math.round((input.subtotal - netAdjustment) * 100) / 100);
 
-  return { appliedDiscounts, totalDiscount, finalSubtotal };
+  return { appliedDiscounts, lineItemAdjustments: allLineAdjustments, totalDiscount, surchargeTotal, finalSubtotal };
 }

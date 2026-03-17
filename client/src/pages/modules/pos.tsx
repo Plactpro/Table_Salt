@@ -116,6 +116,7 @@ export default function POSPage() {
   const [itemNoteText, setItemNoteText] = useState("");
   const [addedItemId, setAddedItemId] = useState<string | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [dismissedRuleIds, setDismissedRuleIds] = useState<Set<string>>(new Set());
   const [supervisorDialog, setSupervisorDialog] = useState<{
     open: boolean; action: string; actionLabel: string;
   } | null>(null);
@@ -170,8 +171,14 @@ export default function POSPage() {
     staleTime: 5000,
   });
 
-  const engineDiscount = engineResult?.totalDiscount ?? 0;
-  const engineDiscounts = engineResult?.appliedDiscounts ?? [];
+  const engineDiscounts = useMemo(() => {
+    const all = engineResult?.appliedDiscounts ?? [];
+    return all.filter((d) => !dismissedRuleIds.has(d.ruleId));
+  }, [engineResult, dismissedRuleIds]);
+
+  const engineDiscount = useMemo(() => {
+    return engineDiscounts.reduce((sum, d) => sum + d.discountAmount, 0);
+  }, [engineDiscounts]);
 
   const SUPPORTED_OFFER_TYPES = ["percentage", "fixed_amount", "happy_hour"];
 
@@ -297,6 +304,7 @@ export default function POSPage() {
       setOrderNotes("");
       setSelectedTable("");
       setSelectedOffer(null);
+      setDismissedRuleIds(new Set());
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/offers"] });
@@ -575,9 +583,20 @@ export default function POSPage() {
               </div>
             )}
             {engineDiscounts.length > 0 && engineDiscounts.map((ed) => (
-              <div key={ed.ruleId} className="flex justify-between text-purple-600" data-testid={`text-engine-discount-${ed.ruleId}`}>
+              <div key={ed.ruleId} className="flex justify-between items-center text-purple-600" data-testid={`text-engine-discount-${ed.ruleId}`}>
                 <span className="flex items-center gap-1 text-xs"><Percent className="h-3 w-3" /> {ed.ruleName}</span>
-                <span>{ed.discountAmount > 0 ? `-${fmt(ed.discountAmount)}` : `+${fmt(Math.abs(ed.discountAmount))}`}</span>
+                <span className="flex items-center gap-1">
+                  {ed.discountAmount > 0 ? `-${fmt(ed.discountAmount)}` : `+${fmt(Math.abs(ed.discountAmount))}`}
+                  <button
+                    type="button"
+                    className="ml-1 text-purple-400 hover:text-red-500 transition-colors"
+                    data-testid={`button-dismiss-rule-${ed.ruleId}`}
+                    title="Remove this auto-applied discount"
+                    onClick={() => setDismissedRuleIds((prev) => new Set([...prev, ed.ruleId]))}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
               </div>
             ))}
             {manualDiscount > 0 && (
