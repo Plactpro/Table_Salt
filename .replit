@@ -45,3 +45,8 @@ mockupState = "FULLSTACK"
 [postMerge]
 path = "scripts/post-merge.sh"
 timeoutMs = 120000
+
+[userenv]
+
+[userenv.shared]
+ENCRYPTION_KEY = "496b8d2b5325b3f03962b3cb793db895f63e16971d9ba8bc71365836e8242a1e"

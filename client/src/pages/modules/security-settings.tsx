@@ -7,10 +7,15 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
-import { Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2, Smartphone, Trash2, CheckCircle, Lock, QrCode, Copy, Eye, EyeOff } from "lucide-react";
+import {
+  Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2,
+  Smartphone, Trash2, CheckCircle, Lock, QrCode, Copy, Eye, EyeOff,
+  AlertTriangle, Bell, Globe, Download, UserX, Database, Plus, X,
+} from "lucide-react";
 
 interface SecuritySettings {
   idleTimeoutMinutes: number;
@@ -180,6 +185,8 @@ export default function SecuritySettingsPage() {
         )}
       </div>
 
+      <SecurityAlertsCard />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
@@ -316,6 +323,11 @@ export default function SecuritySettingsPage() {
         <PasswordChangeCard />
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <IpAllowlistCard />
+        <DataPrivacyCard />
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -413,6 +425,478 @@ export default function SecuritySettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+interface AlertItem {
+  id: string;
+  type: string;
+  severity: "info" | "warning" | "critical";
+  title: string;
+  description: string | null;
+  ipAddress: string | null;
+  acknowledged: boolean;
+  createdAt: string | null;
+}
+
+function SecurityAlertsCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isOwner = user?.role === "owner" || user?.role === "hq_admin" || user?.role === "franchise_owner";
+
+  const { data: alertsData } = useQuery<{ alerts: AlertItem[]; total: number }>({
+    queryKey: ["/api/security-alerts"],
+    queryFn: async () => {
+      const res = await fetch("/api/security-alerts?limit=20", { credentials: "include" });
+      if (!res.ok) return { alerts: [], total: 0 };
+      return res.json();
+    },
+    enabled: isOwner,
+  });
+
+  const acknowledgeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("PATCH", `/api/security-alerts/${id}/acknowledge`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/security-alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/security-alerts/unread-count"] });
+      toast({ title: "Alert acknowledged" });
+    },
+  });
+
+  const acknowledgeAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", "/api/security-alerts/acknowledge-all");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/security-alerts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/security-alerts/unread-count"] });
+      toast({ title: "All alerts acknowledged" });
+    },
+  });
+
+  if (!isOwner) return null;
+
+  const alerts = alertsData?.alerts || [];
+  const unacknowledged = alerts.filter(a => !a.acknowledged);
+
+  const severityColors: Record<string, string> = {
+    critical: "bg-red-100 text-red-800 border-red-200",
+    warning: "bg-yellow-100 text-yellow-800 border-yellow-200",
+    info: "bg-blue-100 text-blue-800 border-blue-200",
+  };
+
+  const severityIcons: Record<string, typeof AlertTriangle> = {
+    critical: AlertTriangle,
+    warning: Bell,
+    info: Shield,
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Security Alerts
+              {unacknowledged.length > 0 && (
+                <Badge variant="destructive" className="ml-2" data-testid="badge-unread-alerts">
+                  {unacknowledged.length}
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>Monitor suspicious activity and security events</CardDescription>
+          </div>
+          {unacknowledged.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => acknowledgeAllMutation.mutate()}
+              disabled={acknowledgeAllMutation.isPending}
+              data-testid="button-acknowledge-all-alerts"
+            >
+              <CheckCircle className="h-4 w-4 mr-1" />
+              Acknowledge All
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {alerts.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Shield className="h-8 w-8 mx-auto mb-2 opacity-50" />
+            <p className="text-sm">No security alerts</p>
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-96 overflow-y-auto" data-testid="security-alerts-list">
+            {alerts.map((alert) => {
+              const IconComp = severityIcons[alert.severity] || Shield;
+              return (
+                <div
+                  key={alert.id}
+                  className={`flex items-start gap-3 p-3 rounded-lg border ${alert.acknowledged ? "opacity-60" : ""} ${severityColors[alert.severity] || ""}`}
+                  data-testid={`security-alert-${alert.id}`}
+                >
+                  <IconComp className="h-5 w-5 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">{alert.title}</p>
+                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">{alert.severity}</Badge>
+                    </div>
+                    {alert.description && <p className="text-xs mt-0.5 opacity-80">{alert.description}</p>}
+                    <p className="text-[10px] mt-1 opacity-60">
+                      {alert.createdAt ? new Date(alert.createdAt).toLocaleString() : ""}
+                      {alert.ipAddress ? ` · IP: ${alert.ipAddress}` : ""}
+                    </p>
+                  </div>
+                  {!alert.acknowledged && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="shrink-0"
+                      onClick={() => acknowledgeMutation.mutate(alert.id)}
+                      disabled={acknowledgeMutation.isPending}
+                      data-testid={`button-acknowledge-alert-${alert.id}`}
+                    >
+                      <CheckCircle className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function IpAllowlistCard() {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isOwner = user?.role === "owner";
+  const [newCidr, setNewCidr] = useState("");
+
+  const { data: ipData } = useQuery<{ ipAllowlist: string[]; ipAllowlistEnabled: boolean }>({
+    queryKey: ["/api/security/ip-allowlist"],
+    queryFn: async () => {
+      const res = await fetch("/api/security/ip-allowlist", { credentials: "include" });
+      if (!res.ok) return { ipAllowlist: [], ipAllowlistEnabled: false };
+      return res.json();
+    },
+    enabled: isOwner || user?.role === "hq_admin",
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: { ipAllowlist?: string[]; ipAllowlistEnabled?: boolean }) => {
+      const res = await apiRequest("PUT", "/api/security/ip-allowlist", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/security/ip-allowlist"] });
+      toast({ title: "IP access rules updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const addCidr = () => {
+    if (!newCidr.trim()) return;
+    const currentList = ipData?.ipAllowlist || [];
+    if (currentList.includes(newCidr.trim())) {
+      toast({ title: "Already in list", variant: "destructive" });
+      return;
+    }
+    saveMutation.mutate({ ipAllowlist: [...currentList, newCidr.trim()] });
+    setNewCidr("");
+  };
+
+  const removeCidr = (cidr: string) => {
+    const currentList = ipData?.ipAllowlist || [];
+    saveMutation.mutate({ ipAllowlist: currentList.filter(c => c !== cidr) });
+  };
+
+  const toggleEnabled = (enabled: boolean) => {
+    saveMutation.mutate({ ipAllowlistEnabled: enabled });
+  };
+
+  if (!isOwner && user?.role !== "hq_admin") return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Globe className="h-5 w-5" />
+          IP Access Rules
+        </CardTitle>
+        <CardDescription>Restrict admin access to trusted IP addresses</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium">Enable IP Allowlist</p>
+            <p className="text-xs text-muted-foreground">When enabled, only listed IPs can access admin routes</p>
+          </div>
+          <Switch
+            checked={ipData?.ipAllowlistEnabled || false}
+            onCheckedChange={toggleEnabled}
+            disabled={!isOwner || saveMutation.isPending}
+            data-testid="switch-ip-allowlist"
+          />
+        </div>
+        <Separator />
+        <div className="space-y-2">
+          <Label>Allowed IP Addresses / CIDR Ranges</Label>
+          <div className="flex gap-2">
+            <Input
+              value={newCidr}
+              onChange={(e) => setNewCidr(e.target.value)}
+              placeholder="e.g., 192.168.1.0/24 or 10.0.0.1"
+              disabled={!isOwner}
+              data-testid="input-new-cidr"
+            />
+            <Button
+              onClick={addCidr}
+              disabled={!newCidr.trim() || !isOwner || saveMutation.isPending}
+              size="sm"
+              data-testid="button-add-cidr"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {(ipData?.ipAllowlist || []).length > 0 ? (
+          <div className="space-y-2" data-testid="ip-allowlist">
+            {(ipData?.ipAllowlist || []).map((cidr, idx) => (
+              <div key={idx} className="flex items-center justify-between p-2 border rounded">
+                <code className="text-sm font-mono">{cidr}</code>
+                {isOwner && (
+                  <Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeCidr(cidr)} data-testid={`button-remove-cidr-${idx}`}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground text-center py-2">No IP rules configured. All IPs are allowed.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DataPrivacyCard() {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const isOwner = user?.role === "owner";
+  const [deletePassword, setDeletePassword] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const { data: retentionPolicy } = useQuery<{ dataRetentionMonths: number; autoDeleteAnonymized: boolean; auditLogRetentionMonths: number }>({
+    queryKey: ["/api/gdpr/retention-policy"],
+    queryFn: async () => {
+      const res = await fetch("/api/gdpr/retention-policy", { credentials: "include" });
+      if (!res.ok) return { dataRetentionMonths: 36, autoDeleteAnonymized: false, auditLogRetentionMonths: 24 };
+      return res.json();
+    },
+    enabled: isOwner || user?.role === "hq_admin",
+  });
+
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/gdpr/export", { method: "POST", credentials: "include", headers: { "x-csrf-token": document.cookie.match(/csrf-token=([^;]+)/)?.[1] || "" } });
+      if (!res.ok) throw new Error("Export failed");
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `data-export-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: "Data exported successfully" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Export failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const anonymizeMutation = useMutation({
+    mutationFn: async (password: string) => {
+      const res = await apiRequest("POST", "/api/gdpr/anonymize-account", { password });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Account anonymized" });
+      window.location.href = "/";
+    },
+    onError: (err: Error) => {
+      toast({ title: "Anonymization failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const retentionMutation = useMutation({
+    mutationFn: async (data: { dataRetentionMonths?: number; autoDeleteAnonymized?: boolean; auditLogRetentionMonths?: number }) => {
+      const res = await apiRequest("PUT", "/api/gdpr/retention-policy", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/gdpr/retention-policy"] });
+      toast({ title: "Retention policy updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Database className="h-5 w-5" />
+          Data & Privacy
+        </CardTitle>
+        <CardDescription>GDPR controls, data export, and retention policies</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium">Export My Data</p>
+              <p className="text-xs text-muted-foreground">Download a JSON file of your personal data</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => exportMutation.mutate()}
+              disabled={exportMutation.isPending}
+              data-testid="button-export-data"
+            >
+              {exportMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Download className="h-4 w-4 mr-1" />}
+              Export
+            </Button>
+          </div>
+          <Separator />
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-red-600">Delete My Account</p>
+                <p className="text-xs text-muted-foreground">Anonymize all personal data. This cannot be undone.</p>
+              </div>
+              {!showDeleteConfirm && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  data-testid="button-delete-account"
+                >
+                  <UserX className="h-4 w-4 mr-1" />
+                  Delete
+                </Button>
+              )}
+            </div>
+            {showDeleteConfirm && (
+              <div className="p-3 border border-red-200 rounded-lg bg-red-50 space-y-2">
+                <p className="text-xs text-red-800 font-medium">This will permanently anonymize your account data.</p>
+                <Input
+                  type="password"
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="Enter your password to confirm"
+                  data-testid="input-delete-account-password"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => anonymizeMutation.mutate(deletePassword)}
+                    disabled={!deletePassword || anonymizeMutation.isPending}
+                    data-testid="button-confirm-delete-account"
+                  >
+                    {anonymizeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                    Confirm Delete
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => { setShowDeleteConfirm(false); setDeletePassword(""); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {(isOwner || user?.role === "hq_admin") && retentionPolicy && (
+          <>
+            <Separator />
+            <div className="space-y-3">
+              <p className="text-sm font-semibold">Retention Policy</p>
+              <div className="space-y-2">
+                <Label>Data Retention Period</Label>
+                <Select
+                  value={String(retentionPolicy.dataRetentionMonths)}
+                  onValueChange={(v) => retentionMutation.mutate({ dataRetentionMonths: parseInt(v) })}
+                  disabled={!isOwner}
+                >
+                  <SelectTrigger data-testid="select-data-retention">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12">12 months</SelectItem>
+                    <SelectItem value="24">24 months</SelectItem>
+                    <SelectItem value="36">36 months</SelectItem>
+                    <SelectItem value="60">60 months</SelectItem>
+                    <SelectItem value="120">10 years</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Audit Log Retention</Label>
+                <Select
+                  value={String(retentionPolicy.auditLogRetentionMonths)}
+                  onValueChange={(v) => retentionMutation.mutate({ auditLogRetentionMonths: parseInt(v) })}
+                  disabled={!isOwner}
+                >
+                  <SelectTrigger data-testid="select-audit-retention">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12">12 months</SelectItem>
+                    <SelectItem value="24">24 months</SelectItem>
+                    <SelectItem value="36">36 months</SelectItem>
+                    <SelectItem value="60">60 months</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium">Auto-purge anonymized records</p>
+                  <p className="text-xs text-muted-foreground">Automatically delete anonymized customer data after retention period</p>
+                </div>
+                <Switch
+                  checked={retentionPolicy.autoDeleteAnonymized}
+                  onCheckedChange={(v) => retentionMutation.mutate({ autoDeleteAnonymized: v })}
+                  disabled={!isOwner}
+                  data-testid="switch-auto-purge"
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -320,6 +320,8 @@ export const customers = pgTable("customers", {
   loyaltyTier: text("loyalty_tier").default("bronze"),
   tags: text("tags").array(),
   averageSpend: decimal("average_spend", { precision: 10, scale: 2 }).default("0"),
+  privacyConsents: jsonb("privacy_consents"),
+  anonymized: boolean("anonymized").default(false),
 });
 
 export const staffSchedules = pgTable("staff_schedules", {
@@ -1212,3 +1214,25 @@ export const comboOffers = pgTable("combo_offers", {
 export const insertComboOfferSchema = createInsertSchema(comboOffers).omit({ id: true, createdAt: true, updatedAt: true });
 export type ComboOffer = typeof comboOffers.$inferSelect;
 export type InsertComboOffer = z.infer<typeof insertComboOfferSchema>;
+
+export const alertSeverityEnum = pgEnum("alert_severity", ["info", "warning", "critical"]);
+
+export const securityAlerts = pgTable("security_alerts", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).references(() => tenants.id),
+  userId: varchar("user_id", { length: 36 }),
+  type: text("type").notNull(),
+  severity: alertSeverityEnum("severity").notNull().default("warning"),
+  title: text("title").notNull(),
+  description: text("description"),
+  ipAddress: text("ip_address"),
+  metadata: jsonb("metadata"),
+  acknowledged: boolean("acknowledged").default(false),
+  acknowledgedBy: varchar("acknowledged_by", { length: 36 }),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertSecurityAlertSchema = createInsertSchema(securityAlerts).omit({ id: true, createdAt: true });
+export type SecurityAlert = typeof securityAlerts.$inferSelect;
+export type InsertSecurityAlert = z.infer<typeof insertSecurityAlertSchema>;
