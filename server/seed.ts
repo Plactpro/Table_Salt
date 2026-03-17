@@ -789,11 +789,35 @@ export async function seedDatabase() {
   const chZomato = await storage.createOrderChannel({ tenantId: tenant.id, name: "Zomato", slug: "zomato", icon: "utensils", active: true, commissionPct: "18" });
   const chUberEats = await storage.createOrderChannel({ tenantId: tenant.id, name: "UberEats", slug: "ubereats", icon: "car", active: true, commissionPct: "25" });
   const chWebsite = await storage.createOrderChannel({ tenantId: tenant.id, name: "Website", slug: "website", icon: "globe", active: true, commissionPct: "0" });
+  const chQrDinein = await storage.createOrderChannel({ tenantId: tenant.id, name: "QR Table Order", slug: "qr_dinein", icon: "qr-code", active: true, commissionPct: "0" });
 
   await storage.createChannelConfig({ tenantId: tenant.id, channelId: chSwiggy.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 25, packagingFee: "5.00", autoAccept: true });
   await storage.createChannelConfig({ tenantId: tenant.id, channelId: chZomato.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 20, packagingFee: "4.50", autoAccept: false });
   await storage.createChannelConfig({ tenantId: tenant.id, channelId: chUberEats.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 30, packagingFee: "6.00", autoAccept: true });
   await storage.createChannelConfig({ tenantId: tenant.id, channelId: chWebsite.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 15, packagingFee: "0", autoAccept: true });
+  await storage.createChannelConfig({ tenantId: tenant.id, channelId: chQrDinein.id, outletId: outlet.id, enabled: true, prepTimeMinutes: 10, packagingFee: "0", autoAccept: true });
+
+  if (tableIds.length > 0) {
+    const sampleSession = await storage.createTableSession({
+      tenantId: tenant.id, outletId: outlet.id, tableId: tableIds[0],
+      token: "tbl-001", status: "active", guestCount: 2,
+    });
+    const sampleMenuItems = await storage.getMenuItemsByTenant(tenant.id);
+    if (sampleMenuItems.length > 0) {
+      await storage.createGuestCartItem({
+        sessionId: sampleSession.id, menuItemId: sampleMenuItems[0].id,
+        name: sampleMenuItems[0].name, price: sampleMenuItems[0].price,
+        quantity: 2, notes: "No onions", guestLabel: "Guest 1",
+      });
+      if (sampleMenuItems.length > 1) {
+        await storage.createGuestCartItem({
+          sessionId: sampleSession.id, menuItemId: sampleMenuItems[1].id,
+          name: sampleMenuItems[1].name, price: sampleMenuItems[1].price,
+          quantity: 1, notes: null, guestLabel: "Guest 2",
+        });
+      }
+    }
+  }
 
   const allMenuForMapping = await storage.getMenuItemsByTenant(tenant.id);
   for (const mi of allMenuForMapping.slice(0, 6)) {
@@ -1019,11 +1043,11 @@ export async function seedDatabase() {
   const dessertCatId = catMap["Desserts"];
   const mainCourseCatId = catMap["Main Course"];
 
-  const allMenuItems = await storage.getMenuItemsByTenant(tenant.id);
-  const espressoItem = allMenuItems.find(i => i.name === "Espresso");
-  const tiramisuItem = allMenuItems.find(i => i.name === "Tiramisu");
-  const sparklingItem = allMenuItems.find(i => i.name === "Sparkling Water");
-  const chocoLavaItem = allMenuItems.find(i => i.name === "Chocolate Lava Cake");
+  const allMenuItemsKiosk = await storage.getMenuItemsByTenant(tenant.id);
+  const espressoItem = allMenuItemsKiosk.find(i => i.name === "Espresso");
+  const tiramisuItem = allMenuItemsKiosk.find(i => i.name === "Tiramisu");
+  const sparklingItem = allMenuItemsKiosk.find(i => i.name === "Sparkling Water");
+  const chocoLavaItem = allMenuItemsKiosk.find(i => i.name === "Chocolate Lava Cake");
 
   if (espressoItem && mainCourseCatId) {
     await storage.createUpsellRule({
