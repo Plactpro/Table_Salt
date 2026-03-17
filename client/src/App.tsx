@@ -38,6 +38,7 @@ import PromotionsPage from "@/pages/modules/promotions";
 import KioskPage from "@/pages/kiosk";
 import GuestPage from "@/pages/guest";
 import KioskManagementPage from "@/pages/modules/kiosk-management";
+import OmnichannelPage from "@/pages/modules/omnichannel";
 import OwnerDashboard from "@/pages/dashboards/owner";
 import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
@@ -84,6 +85,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/security": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
   "/promotions": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
   "/kiosk-management": { roles: ["owner", "manager"] },
+  "/omnichannel": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -212,6 +214,7 @@ function ProtectedPages() {
         <Route path="/security">{() => <GuardedRoute path="/security" component={SecuritySettingsPage} />}</Route>
         <Route path="/promotions">{() => <GuardedRoute path="/promotions" component={PromotionsPage} />}</Route>
         <Route path="/kiosk-management">{() => <GuardedRoute path="/kiosk-management" component={KioskManagementPage} />}</Route>
+        <Route path="/omnichannel">{() => <GuardedRoute path="/omnichannel" component={OmnichannelPage} />}</Route>
         <Route path="/billing">{() => <GuardedRoute path="/billing" component={BillingPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsPage} />}</Route>
         <Route component={NotFound} />
