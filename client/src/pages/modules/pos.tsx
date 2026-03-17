@@ -22,7 +22,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
-  StickyNote, CreditCard, Banknote, Wallet, Leaf, Coffee, Beef, IceCream,
+  StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer } from "@shared/schema";
@@ -425,8 +425,26 @@ export default function POSPage() {
                       <CardContent className="p-3">
                         <div className="flex items-start justify-between mb-1">
                           <h4 className="font-medium text-sm leading-tight line-clamp-2">{item.name}</h4>
-                          {item.isVeg && <Leaf className="h-4 w-4 text-green-600 shrink-0 ml-1" />}
+                          {item.isVeg === true ? (
+                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-green-600 rounded-sm flex items-center justify-center" title="Veg" data-testid={`icon-veg-${item.id}`}>
+                              <span className="w-2 h-2 rounded-full bg-green-600" />
+                            </span>
+                          ) : item.isVeg === false ? (
+                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-red-600 rounded-sm flex items-center justify-center" title="Non-Veg" data-testid={`icon-nonveg-${item.id}`}>
+                              <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-600" />
+                            </span>
+                          ) : null}
                         </div>
+                        {item.tags && (item.tags as string[]).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-1.5">
+                            {(item.tags as string[]).slice(0, 2).map((tag, i) => (
+                              <span key={i} className="text-[9px] px-1.5 py-0 rounded bg-muted text-muted-foreground">{tag}</span>
+                            ))}
+                            {(item.tags as string[]).length > 2 && (
+                              <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">+{(item.tags as string[]).length - 2}</span>
+                            )}
+                          </div>
+                        )}
                         {item.description && <p className="text-xs text-muted-foreground line-clamp-1 mb-2">{item.description}</p>}
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-sm" data-testid={`text-price-${item.id}`}>{fmt(item.price)}</span>
@@ -502,7 +520,15 @@ export default function POSPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1">
-                          {item.isVeg && <Leaf className="h-3 w-3 text-green-600 shrink-0" />}
+                          {item.isVeg === true ? (
+                            <span className="h-3 w-3 shrink-0 border border-green-600 rounded-sm flex items-center justify-center">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
+                            </span>
+                          ) : item.isVeg === false ? (
+                            <span className="h-3 w-3 shrink-0 border border-red-600 rounded-sm flex items-center justify-center">
+                              <span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-l-transparent border-r-transparent border-b-red-600" />
+                            </span>
+                          ) : null}
                           <span className="font-medium text-sm truncate">{item.name}</span>
                         </div>
                         <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>

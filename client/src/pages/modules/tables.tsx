@@ -334,6 +334,7 @@ export default function TablesPage() {
   const createResMut = useMutation({
     mutationFn: async (data: Record<string, unknown>) => { const r = await apiRequest("POST", "/api/reservations", data); return r.json(); },
     onSuccess: () => { invalidateAll(); setShowAddReservation(false); toast({ title: "Reservation created" }); },
+    onError: (err: Error) => { toast({ title: "Failed to create reservation", description: err.message, variant: "destructive" }); },
   });
   const updateResMut = useMutation({
     mutationFn: async ({ id, ...data }: Record<string, unknown>) => { const r = await apiRequest("PATCH", `/api/reservations/${id}`, data); return r.json(); },
