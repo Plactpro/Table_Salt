@@ -152,6 +152,7 @@ export async function seedDatabase() {
       partyName: t.number === 1 ? "Smith Family" : t.number === 2 ? "Johnson" : t.number === 3 ? "VIP Guest" : undefined,
       partySize: t.number === 1 ? 2 : t.number === 2 ? 2 : t.number === 3 ? 4 : undefined,
       seatedAt: t.number <= 3 ? new Date(Date.now() - (t.number * 15 * 60000)) : undefined,
+      qrToken: `tbl-${t.number.toString().padStart(3, "0")}`,
     });
     tableIds.push(tbl.id);
   }

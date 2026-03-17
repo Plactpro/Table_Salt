@@ -186,6 +186,9 @@ export const tables = pgTable("tables", {
   partyName: text("party_name"),
   partySize: integer("party_size"),
   status: tableStatusEnum("status").default("free"),
+  qrToken: text("qr_token"),
+  callServerFlag: boolean("call_server_flag").default(false),
+  requestBillFlag: boolean("request_bill_flag").default(false),
 });
 
 export const waitlistEntries = pgTable("waitlist_entries", {
@@ -1116,3 +1119,36 @@ export const upsellRules = pgTable("upsell_rules", {
 export const insertUpsellRuleSchema = createInsertSchema(upsellRules).omit({ id: true, createdAt: true });
 export type UpsellRule = typeof upsellRules.$inferSelect;
 export type InsertUpsellRule = z.infer<typeof insertUpsellRuleSchema>;
+
+export const tableSessions = pgTable("table_sessions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  tableId: varchar("table_id", { length: 36 }).notNull().references(() => tables.id),
+  token: text("token").notNull(),
+  status: text("status").default("active"),
+  guestCount: integer("guest_count").default(1),
+  orderId: varchar("order_id", { length: 36 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  closedAt: timestamp("closed_at"),
+});
+
+export const insertTableSessionSchema = createInsertSchema(tableSessions).omit({ id: true, createdAt: true });
+export type TableSession = typeof tableSessions.$inferSelect;
+export type InsertTableSession = z.infer<typeof insertTableSessionSchema>;
+
+export const guestCartItems = pgTable("guest_cart_items", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id", { length: 36 }).notNull().references(() => tableSessions.id),
+  guestLabel: text("guest_label").default("Guest 1"),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull().references(() => menuItems.id),
+  name: text("name").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertGuestCartItemSchema = createInsertSchema(guestCartItems).omit({ id: true, createdAt: true });
+export type GuestCartItem = typeof guestCartItems.$inferSelect;
+export type InsertGuestCartItem = z.infer<typeof insertGuestCartItemSchema>;
