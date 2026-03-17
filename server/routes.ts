@@ -267,9 +267,30 @@ export async function registerRoutes(
   app.patch("/api/users/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const data = { ...req.body };
-      if (data.name !== undefined && (!data.name || !data.name.trim())) {
-        return res.status(400).json({ message: "Name cannot be empty" });
+      const allowedFields = ["name", "username", "role", "password", "outletId"];
+      const data: Record<string, any> = {};
+      for (const key of allowedFields) {
+        if (req.body[key] !== undefined) data[key] = req.body[key];
+      }
+      if (data.name !== undefined) {
+        if (typeof data.name !== "string" || !data.name.trim()) {
+          return res.status(400).json({ message: "Name cannot be empty" });
+        }
+        data.name = data.name.trim();
+      }
+      if (data.username !== undefined) {
+        if (typeof data.username !== "string" || !data.username.trim()) {
+          return res.status(400).json({ message: "Username cannot be empty" });
+        }
+        data.username = data.username.trim();
+        const existing = await storage.getUserByUsername(data.username);
+        if (existing && existing.id !== req.params.id) {
+          return res.status(409).json({ message: "Username already taken" });
+        }
+      }
+      const validRoles = ["owner", "manager", "waiter", "kitchen", "accountant"];
+      if (data.role !== undefined && !validRoles.includes(data.role)) {
+        return res.status(400).json({ message: `Invalid role. Must be one of: ${validRoles.join(", ")}` });
       }
       if (data.password) {
         data.password = await hashPassword(data.password);
@@ -423,6 +444,9 @@ export async function registerRoutes(
       const tbl = await storage.createTable({ ...body, tenantId: user.tenantId });
       res.json(tbl);
     } catch (err: any) {
+      if (err.code === "23505") {
+        return res.status(409).json({ message: `Table ${body.number} already exists in this zone. Please use a different number.` });
+      }
       res.status(500).json({ message: err.message || "Failed to create table" });
     }
   });
@@ -1096,8 +1120,19 @@ export async function registerRoutes(
       if (!date) {
         return res.status(400).json({ message: "Date is required" });
       }
+      const parsedDate = new Date(date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ message: "Invalid date format" });
+      }
       if (!startTime || !endTime) {
         return res.status(400).json({ message: "Start time and end time are required" });
+      }
+      const timeRegex = /^\d{1,2}:\d{2}$/;
+      if (!timeRegex.test(startTime) || !timeRegex.test(endTime)) {
+        return res.status(400).json({ message: "Start and end time must be in HH:MM format" });
+      }
+      if (startTime >= endTime) {
+        return res.status(400).json({ message: "End time must be after start time" });
       }
       const schedule = await storage.createStaffSchedule({ ...req.body, tenantId: user.tenantId });
       res.json(schedule);
