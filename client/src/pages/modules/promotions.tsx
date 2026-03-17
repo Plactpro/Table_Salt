@@ -36,6 +36,7 @@ const ruleTypeLabels: Record<string, string> = {
   loyalty_discount: "Loyalty Discount",
   percentage_off: "Percentage Off",
   fixed_discount: "Fixed Discount",
+  service_charge: "Service Charge",
   time_based: "Time-Based",
   minimum_order: "Minimum Order",
 };
@@ -45,6 +46,7 @@ const ruleTypeIcons: Record<string, React.ElementType> = {
   combo_deal: Layers,
   bogo: Gift,
   free_item: Gift,
+  service_charge: Percent,
   channel_surcharge: Truck,
   loyalty_discount: Crown,
   percentage_off: Percent,
@@ -109,11 +111,14 @@ interface RuleForm {
   endHour: string;
   daysOfWeek: number[];
   loyaltyTier: string;
+  outletIds: string;
+  customerSegment: string;
   buyQuantity: string;
   getQuantity: string;
   getDiscountPercent: string;
   freeItemName: string;
   freeQuantity: string;
+  mutualExclusionGroup: string;
 }
 
 const emptyForm: RuleForm = {
@@ -137,11 +142,14 @@ const emptyForm: RuleForm = {
   endHour: "",
   daysOfWeek: [],
   loyaltyTier: "",
+  outletIds: "",
+  customerSegment: "",
   buyQuantity: "1",
   getQuantity: "1",
   getDiscountPercent: "100",
   freeItemName: "",
   freeQuantity: "1",
+  mutualExclusionGroup: "",
 };
 
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -262,6 +270,9 @@ export default function PromotionsPage() {
       getDiscountPercent: cond.getDiscountPercent ? String(cond.getDiscountPercent) : "100",
       freeItemName: (cond.freeItemName as string) || "",
       freeQuantity: cond.freeQuantity ? String(cond.freeQuantity) : "1",
+      outletIds: Array.isArray(cond.outletIds) ? (cond.outletIds as string[]).join(", ") : "",
+      customerSegment: (cond.customerSegment as string) || "",
+      mutualExclusionGroup: (cond.mutualExclusionGroup as string) || "",
     });
     setDialogOpen(true);
   }
@@ -274,6 +285,9 @@ export default function PromotionsPage() {
     if (form.endHour) conditions.endHour = parseInt(form.endHour);
     if (form.daysOfWeek.length > 0) conditions.daysOfWeek = form.daysOfWeek;
     if (form.loyaltyTier) conditions.loyaltyTier = form.loyaltyTier;
+    if (form.outletIds.trim()) conditions.outletIds = form.outletIds.split(",").map(s => s.trim()).filter(Boolean);
+    if (form.customerSegment.trim()) conditions.customerSegment = form.customerSegment;
+    if (form.mutualExclusionGroup.trim()) conditions.mutualExclusionGroup = form.mutualExclusionGroup;
     if (form.ruleType === "bogo") {
       conditions.buyQuantity = parseInt(form.buyQuantity) || 1;
       conditions.getQuantity = parseInt(form.getQuantity) || 1;
@@ -820,6 +834,22 @@ export default function PromotionsPage() {
                 </Select>
               </div>
             )}
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="rule-outlet-ids">Outlet IDs (comma-separated)</Label>
+                <Input id="rule-outlet-ids" value={form.outletIds} onChange={(e) => setForm({ ...form, outletIds: e.target.value })} placeholder="Leave empty for all outlets" data-testid="input-outlet-ids" />
+              </div>
+              <div>
+                <Label htmlFor="rule-customer-segment">Customer Segment</Label>
+                <Input id="rule-customer-segment" value={form.customerSegment} onChange={(e) => setForm({ ...form, customerSegment: e.target.value })} placeholder="e.g. vip, corporate" data-testid="input-customer-segment" />
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="rule-exclusion-group">Mutual Exclusion Group</Label>
+              <Input id="rule-exclusion-group" value={form.mutualExclusionGroup} onChange={(e) => setForm({ ...form, mutualExclusionGroup: e.target.value })} placeholder="Rules in the same group cannot stack" data-testid="input-exclusion-group" />
+            </div>
 
             <Separator />
 

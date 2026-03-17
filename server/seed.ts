@@ -321,6 +321,7 @@ export async function seedDatabase() {
     stackable: true,
     active: true,
     maxDiscount: "25",
+    conditions: { requiredCategories: [catMap["Starters"], catMap["Main Course"]] },
   });
 
   await storage.createPromotionRule({
