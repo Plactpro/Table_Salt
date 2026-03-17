@@ -163,7 +163,7 @@ export async function alertBulkDataExport(userId: string, tenantId: string, user
     tenantId,
     userId,
     type: "bulk_data_export",
-    severity: "medium",
+    severity: "warning",
     title: "Bulk data export performed",
     description: `User ${userName} exported ${rowCount} audit log records`,
     ipAddress: getIpFromReq(req),
