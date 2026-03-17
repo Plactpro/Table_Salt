@@ -16,8 +16,9 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-type KioskStep = "welcome" | "service-type" | "menu" | "cart" | "payment" | "confirmation";
+type KioskStep = "welcome" | "language" | "service-type" | "table-number" | "menu" | "upsell" | "cart" | "payment" | "confirmation";
 type ServiceType = "dine_in" | "takeaway";
+type KioskLanguage = "en" | "ar";
 
 interface KioskCartItem {
   cartLineId: string;
@@ -77,6 +78,7 @@ const ATTRACTOR_SLIDES = [
 export default function KioskPage() {
   const [step, setStep] = useState<KioskStep>("welcome");
   const [serviceType, setServiceType] = useState<ServiceType>("takeaway");
+  const [language, setLanguage] = useState<KioskLanguage>("en");
   const [cart, setCart] = useState<KioskCartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -85,9 +87,13 @@ export default function KioskPage() {
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
   const [itemDetailModal, setItemDetailModal] = useState<any>(null);
   const [itemNoteText, setItemNoteText] = useState("");
+  const [itemDetailQty, setItemDetailQty] = useState(1);
   const [noteEditItem, setNoteEditItem] = useState<string | null>(null);
   const [noteEditText, setNoteEditText] = useState("");
   const [promoCode, setPromoCode] = useState("");
+  const [tableNumber, setTableNumber] = useState("");
+  const [showUpsellStep, setShowUpsellStep] = useState(false);
+  const [loyaltyPhone, setLoyaltyPhone] = useState("");
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const token = getKioskToken();
 
@@ -196,6 +202,10 @@ export default function KioskPage() {
     setOrderResult(null);
     setServiceType("takeaway");
     setItemDetailModal(null);
+    setTableNumber("");
+    setPromoCode("");
+    setLoyaltyPhone("");
+    setShowUpsellStep(false);
   }, []);
 
   const resetIdleTimer = useCallback(() => {
@@ -302,13 +312,29 @@ export default function KioskPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 text-white select-none overflow-hidden" data-testid="kiosk-page" onClick={resetIdleTimer}>
       <AnimatePresence mode="wait">
         {step === "welcome" && (
-          <WelcomeScreen key="welcome" onStart={() => setStep("service-type")} tenantName={tenantInfo?.name || "Restaurant"} />
+          <WelcomeScreen key="welcome" onStart={() => setStep("language")} tenantName={tenantInfo?.name || "Restaurant"} />
+        )}
+        {step === "language" && (
+          <LanguageScreen
+            key="language"
+            onSelect={(lang) => { setLanguage(lang); setStep("service-type"); }}
+            onBack={resetKiosk}
+          />
         )}
         {step === "service-type" && (
           <ServiceTypeScreen
             key="service-type"
-            onSelect={(t) => { setServiceType(t); setStep("menu"); }}
-            onBack={resetKiosk}
+            onSelect={(t) => { setServiceType(t); setStep(t === "dine_in" ? "table-number" : "menu"); }}
+            onBack={() => setStep("language")}
+          />
+        )}
+        {step === "table-number" && (
+          <TableNumberScreen
+            key="table-number"
+            tableNumber={tableNumber}
+            onTableNumberChange={setTableNumber}
+            onContinue={() => setStep("menu")}
+            onBack={() => setStep("service-type")}
           />
         )}
         {step === "menu" && (
@@ -329,9 +355,19 @@ export default function KioskPage() {
             onAddToCart={addToCart}
             onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart}
-            onViewCart={() => setStep("cart")}
-            onBack={() => setStep("service-type")}
-            onItemDetail={setItemDetailModal}
+            onViewCart={() => { if (upsellSuggestions.length > 0 && !showUpsellStep) { setShowUpsellStep(true); setStep("upsell"); } else { setStep("cart"); } }}
+            onBack={() => setStep(serviceType === "dine_in" ? "table-number" : "service-type")}
+            onItemDetail={(item) => { setItemDetailModal(item); setItemDetailQty(1); setItemNoteText(""); }}
+          />
+        )}
+        {step === "upsell" && upsellSuggestions.length > 0 && (
+          <UpsellInterstitialScreen
+            key="upsell"
+            suggestions={upsellSuggestions}
+            fmt={fmt}
+            onAddItem={(item) => { addToCart(item); }}
+            onSkip={() => { setShowUpsellStep(false); setStep("cart"); }}
+            onViewCart={() => { setShowUpsellStep(false); setStep("cart"); }}
           />
         )}
         {step === "cart" && (
@@ -346,8 +382,10 @@ export default function KioskPage() {
             taxRate={taxRate}
             serviceType={serviceType}
             promoCode={promoCode}
+            loyaltyPhone={loyaltyPhone}
             fmt={fmt}
             onPromoCodeChange={setPromoCode}
+            onLoyaltyPhoneChange={setLoyaltyPhone}
             onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart}
             onEditNote={(cartLineId) => { setNoteEditItem(cartLineId); setNoteEditText(cart.find(c => c.cartLineId === cartLineId)?.notes || ""); }}
@@ -384,9 +422,14 @@ export default function KioskPage() {
           fmt={fmt}
           cart={cart}
           noteText={itemNoteText}
+          quantity={itemDetailQty}
           onNoteChange={setItemNoteText}
-          onClose={() => { setItemDetailModal(null); setItemNoteText(""); }}
-          onAddToCart={(item, notes) => { addToCart(item, notes); setItemDetailModal(null); setItemNoteText(""); }}
+          onQuantityChange={setItemDetailQty}
+          onClose={() => { setItemDetailModal(null); setItemNoteText(""); setItemDetailQty(1); }}
+          onAddToCart={(item, notes, qty) => {
+            for (let i = 0; i < qty; i++) addToCart(item, notes);
+            setItemDetailModal(null); setItemNoteText(""); setItemDetailQty(1);
+          }}
         />
       )}
 
@@ -513,6 +556,106 @@ function WelcomeScreen({ onStart, tenantName }: { onStart: () => void; tenantNam
   );
 }
 
+function LanguageScreen({ onSelect, onBack }: { onSelect: (lang: KioskLanguage) => void; onBack: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="min-h-screen flex flex-col items-center justify-center p-8"
+      data-testid="kiosk-language"
+    >
+      <Button variant="ghost" onClick={onBack} className="absolute top-6 left-6 text-white hover:bg-white/10 rounded-xl" data-testid="button-kiosk-lang-back">
+        <ChevronLeft className="h-6 w-6 mr-1" /> Back
+      </Button>
+
+      <h2 className="text-3xl font-bold mb-4">Select Language</h2>
+      <p className="text-lg text-slate-400 mb-12">اختر اللغة</p>
+
+      <div className="flex gap-8">
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Card
+            data-testid="card-lang-en"
+            className="w-56 h-56 cursor-pointer bg-white/5 border-white/10 hover:bg-white/10 transition-all"
+            onClick={() => onSelect("en")}
+          >
+            <CardContent className="flex flex-col items-center justify-center h-full p-8">
+              <span className="text-5xl mb-4">🇬🇧</span>
+              <p className="text-2xl font-bold text-white">English</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Card
+            data-testid="card-lang-ar"
+            className="w-56 h-56 cursor-pointer bg-white/5 border-white/10 hover:bg-white/10 transition-all"
+            onClick={() => onSelect("ar")}
+          >
+            <CardContent className="flex flex-col items-center justify-center h-full p-8">
+              <span className="text-5xl mb-4">🇦🇪</span>
+              <p className="text-2xl font-bold text-white">العربية</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function TableNumberScreen({ tableNumber, onTableNumberChange, onContinue, onBack }: {
+  tableNumber: string;
+  onTableNumberChange: (v: string) => void;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="min-h-screen flex flex-col items-center justify-center p-8"
+      data-testid="kiosk-table-number"
+    >
+      <Button variant="ghost" onClick={onBack} className="absolute top-6 left-6 text-white hover:bg-white/10 rounded-xl" data-testid="button-kiosk-table-back">
+        <ChevronLeft className="h-6 w-6 mr-1" /> Back
+      </Button>
+
+      <UtensilsCrossed className="h-16 w-16 text-teal-400 mb-6" />
+      <h2 className="text-3xl font-bold mb-2">Enter Your Table Number</h2>
+      <p className="text-lg text-slate-400 mb-8">Check the number on your table tent</p>
+
+      <Input
+        data-testid="input-table-number"
+        value={tableNumber}
+        onChange={e => onTableNumberChange(e.target.value)}
+        placeholder="e.g. 5"
+        className="w-48 text-center text-4xl py-6 bg-white/10 border-white/20 text-white placeholder:text-slate-400 rounded-xl mb-8"
+        autoFocus
+      />
+
+      <div className="flex gap-4">
+        <Button
+          variant="outline"
+          onClick={onContinue}
+          className="px-8 py-4 text-white border-white/20 hover:bg-white/10 rounded-xl"
+          data-testid="button-skip-table"
+        >
+          Skip
+        </Button>
+        <Button
+          data-testid="button-confirm-table"
+          onClick={onContinue}
+          disabled={!tableNumber.trim()}
+          className="px-12 py-4 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 rounded-xl font-bold text-lg"
+        >
+          Continue
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
 function ServiceTypeScreen({ onSelect, onBack }: { onSelect: (t: ServiceType) => void; onBack: () => void }) {
   return (
     <motion.div
@@ -561,18 +704,83 @@ function ServiceTypeScreen({ onSelect, onBack }: { onSelect: (t: ServiceType) =>
   );
 }
 
+function UpsellInterstitialScreen({
+  suggestions, fmt, onAddItem, onSkip, onViewCart,
+}: {
+  suggestions: any[];
+  fmt: (val: number | string) => string;
+  onAddItem: (item: any) => void;
+  onSkip: () => void;
+  onViewCart: () => void;
+}) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 50 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -50 }}
+      className="min-h-screen flex flex-col items-center justify-center p-8"
+      data-testid="kiosk-upsell"
+    >
+      <Sparkles className="h-12 w-12 text-yellow-400 mb-4" />
+      <h2 className="text-3xl font-bold mb-2">Make It Even Better!</h2>
+      <p className="text-lg text-slate-400 mb-8">Add these popular items to your order</p>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-3xl mb-10">
+        {suggestions.map((s: any) => (
+          <motion.div key={s.id} whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Card
+              data-testid={`card-upsell-interstitial-${s.suggestItem.id}`}
+              className="bg-gradient-to-br from-amber-500/20 to-orange-500/20 border-amber-500/30 cursor-pointer hover:border-amber-400 transition-all"
+              onClick={() => { onAddItem(s.suggestItem); onViewCart(); }}
+            >
+              <CardContent className="p-6 text-center">
+                {s.suggestItem.image ? (
+                  <div className="h-24 w-24 mx-auto mb-3 rounded-lg overflow-hidden">
+                    <img src={s.suggestItem.image} alt={s.suggestItem.name} className="w-full h-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="h-24 w-24 mx-auto mb-3 rounded-lg bg-slate-700 flex items-center justify-center">
+                    <UtensilsCrossed className="h-8 w-8 text-slate-400" />
+                  </div>
+                )}
+                <h3 className="font-bold text-white text-lg">{s.suggestItem.name}</h3>
+                <p className="text-sm text-amber-300 mt-1">{s.label}</p>
+                <p className="text-lg font-bold text-white mt-2">{fmt(s.suggestItem.price)}</p>
+                <Button className="mt-3 bg-amber-500 hover:bg-amber-400 w-full" data-testid={`button-upsell-add-${s.suggestItem.id}`}>
+                  <Plus className="h-4 w-4 mr-1" /> Add
+                </Button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </div>
+
+      <Button
+        data-testid="button-upsell-skip"
+        variant="outline"
+        onClick={onSkip}
+        className="text-white border-white/20 hover:bg-white/10 px-12 py-4 rounded-xl text-lg"
+      >
+        No Thanks, Continue to Cart <ChevronRight className="h-5 w-5 ml-2" />
+      </Button>
+    </motion.div>
+  );
+}
+
 function ItemDetailModal({
-  item, fmt, cart, noteText, onNoteChange, onClose, onAddToCart,
+  item, fmt, cart, noteText, quantity, onNoteChange, onQuantityChange, onClose, onAddToCart,
 }: {
   item: any;
   fmt: (val: number | string) => string;
   cart: KioskCartItem[];
   noteText: string;
+  quantity: number;
   onNoteChange: (v: string) => void;
+  onQuantityChange: (v: number) => void;
   onClose: () => void;
-  onAddToCart: (item: any, notes: string) => void;
+  onAddToCart: (item: any, notes: string, qty: number) => void;
 }) {
-  const inCart = cart.find(c => c.menuItemId === item.id);
+  const totalInCart = cart.filter(c => c.menuItemId === item.id).reduce((s, c) => s + c.quantity, 0);
   return (
     <Dialog open={true} onOpenChange={onClose}>
       <DialogContent className="bg-slate-800 border-white/10 text-white max-w-lg" data-testid="dialog-item-detail">
@@ -594,10 +802,35 @@ function ItemDetailModal({
           <div className="flex items-center gap-1">
             <span className="text-sm text-slate-400">Spice Level:</span>
             {Array.from({ length: item.spicyLevel }).map((_, i) => (
-              <span key={i} className="text-red-400">🌶</span>
+              <span key={i} className="text-red-400">🌶️</span>
             ))}
           </div>
         )}
+
+        <div className="space-y-2">
+          <label className="text-sm text-slate-400">Quantity</label>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-full text-white border-white/20"
+              onClick={() => onQuantityChange(Math.max(1, quantity - 1))}
+              data-testid="button-detail-qty-minus"
+            >
+              <Minus className="h-4 w-4" />
+            </Button>
+            <span className="text-2xl font-bold w-12 text-center" data-testid="text-detail-qty">{quantity}</span>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 rounded-full text-white border-white/20"
+              onClick={() => onQuantityChange(quantity + 1)}
+              data-testid="button-detail-qty-plus"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
         <div className="space-y-2">
           <label className="text-sm text-slate-400 flex items-center gap-1">
@@ -616,10 +849,10 @@ function ItemDetailModal({
           <Button variant="outline" onClick={onClose} className="flex-1 text-white border-white/20">Cancel</Button>
           <Button
             data-testid="button-add-from-detail"
-            onClick={() => onAddToCart(item, noteText)}
+            onClick={() => onAddToCart(item, noteText, quantity)}
             className="flex-[2] bg-teal-500 hover:bg-teal-400 font-bold"
           >
-            <Plus className="h-4 w-4 mr-1" /> {inCart ? `Add Another (${inCart.quantity} in cart)` : "Add to Cart"}
+            <Plus className="h-4 w-4 mr-1" /> Add {quantity > 1 ? `${quantity} ` : ""}to Cart{totalInCart > 0 ? ` (${totalInCart} already)` : ""}
           </Button>
         </div>
       </DialogContent>
@@ -867,7 +1100,7 @@ function MenuScreen({
 
 function CartScreen({
   cart, subtotal, serviceChargeAmount, taxAmount, total, serviceChargeRate, taxRate,
-  serviceType, promoCode, fmt, onPromoCodeChange, onUpdateQuantity, onRemoveFromCart, onEditNote, onBack, onCheckout,
+  serviceType, promoCode, loyaltyPhone, fmt, onPromoCodeChange, onLoyaltyPhoneChange, onUpdateQuantity, onRemoveFromCart, onEditNote, onBack, onCheckout,
 }: {
   cart: KioskCartItem[];
   subtotal: number;
@@ -878,8 +1111,10 @@ function CartScreen({
   taxRate: number;
   serviceType: ServiceType;
   promoCode: string;
+  loyaltyPhone: string;
   fmt: (val: number | string) => string;
   onPromoCodeChange: (v: string) => void;
+  onLoyaltyPhoneChange: (v: string) => void;
   onUpdateQuantity: (id: string, delta: number) => void;
   onRemoveFromCart: (id: string) => void;
   onEditNote: (id: string) => void;
@@ -1000,22 +1235,42 @@ function CartScreen({
 
       {cart.length > 0 && (
         <div className="px-6 pb-6">
-          <div className="flex gap-2 mb-4">
-            <Input
-              data-testid="input-promo-code"
-              placeholder="Have a promo code?"
-              value={promoCode}
-              onChange={e => onPromoCodeChange(e.target.value.toUpperCase())}
-              className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 rounded-xl"
-            />
-            <Button
-              data-testid="button-apply-promo"
-              variant="outline"
-              className="text-white border-white/20 hover:bg-white/10 rounded-xl whitespace-nowrap"
-              disabled={!promoCode.trim()}
-            >
-              Apply
-            </Button>
+          <div className="space-y-3 mb-4">
+            <div className="flex gap-2">
+              <Input
+                data-testid="input-promo-code"
+                placeholder="Have a promo code?"
+                value={promoCode}
+                onChange={e => onPromoCodeChange(e.target.value.toUpperCase())}
+                className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 rounded-xl"
+              />
+              <Button
+                data-testid="button-apply-promo"
+                variant="outline"
+                className="text-white border-white/20 hover:bg-white/10 rounded-xl whitespace-nowrap"
+                disabled={!promoCode.trim()}
+              >
+                Apply
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Input
+                data-testid="input-loyalty-phone"
+                placeholder="Loyalty member? Enter phone number"
+                value={loyaltyPhone}
+                onChange={e => onLoyaltyPhoneChange(e.target.value)}
+                className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 rounded-xl"
+                type="tel"
+              />
+              <Button
+                data-testid="button-lookup-loyalty"
+                variant="outline"
+                className="text-white border-white/20 hover:bg-white/10 rounded-xl whitespace-nowrap"
+                disabled={!loyaltyPhone.trim()}
+              >
+                Look Up
+              </Button>
+            </div>
           </div>
 
           <div className="bg-white/5 rounded-xl p-5 border border-white/10 space-y-3 mb-4">
