@@ -4383,6 +4383,38 @@ export async function registerRoutes(
       const orderItems = await storage.getOrderItemsByOrder(order.id);
       const tokenNumber = order.orderNumber || order.id.slice(0, 6).toUpperCase();
 
+      if (isDigitalPayment) {
+        try {
+          for (const oi of orderItems) {
+            if (!oi.menuItemId) continue;
+            const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
+            if (!recipe) continue;
+            const recipeIngs = await storage.getRecipeIngredients(recipe.id);
+            for (const ing of recipeIngs) {
+              const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+              const ingUnit = ing.unit || invItem?.unit || "pcs";
+              const invUnit = invItem?.unit || "pcs";
+              const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
+              const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
+              const qty = convertedQty * (oi.quantity || 1);
+              if (invItem) {
+                const newStock = Math.max(0, Number(invItem.currentStock) - qty);
+                await storage.updateInventoryItem(ing.inventoryItemId, { currentStock: String(Math.round(newStock * 100) / 100) });
+                await storage.createStockMovement({
+                  tenantId: device.tenantId!,
+                  itemId: ing.inventoryItemId,
+                  type: "out",
+                  quantity: String(Math.round(qty * 100) / 100),
+                  reason: `Auto-depletion (kiosk): ${oi.name} x${oi.quantity}`,
+                });
+              }
+            }
+          }
+        } catch (depErr) {
+          console.error("Kiosk auto-depletion error:", depErr);
+        }
+      }
+
       res.json({ ...order, items: orderItems, tokenNumber });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
