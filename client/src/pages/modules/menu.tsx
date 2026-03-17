@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -61,6 +62,13 @@ export default function MenuPage() {
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
   const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: string | number) => sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
+
+  const [supervisorDialog, setSupervisorDialog] = useState<{
+    open: boolean;
+    action: string;
+    actionLabel: string;
+    pendingData: { id: string; data: Record<string, unknown> } | null;
+  } | null>(null);
 
   const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
@@ -147,7 +155,24 @@ export default function MenuPage() {
 
   const updateItem = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
-      const res = await apiRequest("PATCH", `/api/menu-items/${id}`, data);
+      const res = await fetch(`/api/menu-items/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (res.status === 403) {
+        const errData = await res.json();
+        if (errData.requiresSupervisor) {
+          const err = new Error(errData.message) as any;
+          err.requiresSupervisor = true;
+          err.action = errData.action;
+          err.pendingData = { id, data };
+          throw err;
+        }
+        throw new Error(errData.message || "Permission denied");
+      }
+      if (!res.ok) throw new Error((await res.json()).message || "Failed");
       return res.json();
     },
     onSuccess: () => {
@@ -155,10 +180,27 @@ export default function MenuPage() {
       toast({ title: "Item updated" });
       setItemDialogOpen(false);
     },
-    onError: (err: Error) => {
+    onError: (err: any) => {
+      if (err.requiresSupervisor && err.pendingData) {
+        setSupervisorDialog({
+          open: true,
+          action: err.action || "change_price",
+          actionLabel: "Change Menu Price",
+          pendingData: err.pendingData,
+        });
+        return;
+      }
       toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
+
+  const handleMenuSupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string }) => {
+    if (supervisorDialog?.pendingData) {
+      const { id, data } = supervisorDialog.pendingData;
+      updateItem.mutate({ id, data: { ...data, supervisorOverride: credentials } });
+    }
+    setSupervisorDialog(null);
+  }, [supervisorDialog, updateItem]);
 
   const deleteItem = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/menu-items/${id}`); },
@@ -701,6 +743,15 @@ export default function MenuPage() {
           )}
         </DialogContent>
       </Dialog>
+      {supervisorDialog && (
+        <SupervisorApprovalDialog
+          open={supervisorDialog.open}
+          onOpenChange={(open) => !open && setSupervisorDialog(null)}
+          action={supervisorDialog.action}
+          actionLabel={supervisorDialog.actionLabel}
+          onApproved={handleMenuSupervisorApproved}
+        />
+      )}
     </motion.div>
   );
 }
