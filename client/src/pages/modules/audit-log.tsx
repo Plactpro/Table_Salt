@@ -49,9 +49,15 @@ const ACTION_LABELS: Record<string, { label: string; color: string }> = {
   supervisor_verify_failed: { label: "Override Failed", color: "bg-red-100 text-red-800" },
   user_created: { label: "User Created", color: "bg-blue-100 text-blue-800" },
   user_updated: { label: "User Updated", color: "bg-blue-100 text-blue-800" },
+  user_role_changed: { label: "Role Changed", color: "bg-orange-100 text-orange-800" },
   recipe_created: { label: "Recipe Created", color: "bg-emerald-100 text-emerald-800" },
   recipe_updated: { label: "Recipe Updated", color: "bg-emerald-100 text-emerald-800" },
   recipe_deleted: { label: "Recipe Deleted", color: "bg-red-100 text-red-800" },
+  otp_challenge_issued: { label: "OTP Issued", color: "bg-yellow-100 text-yellow-800" },
+  otp_verified: { label: "OTP Verified", color: "bg-green-100 text-green-800" },
+  otp_verify_failed: { label: "OTP Failed", color: "bg-red-100 text-red-800" },
+  device_trust_changed: { label: "Device Trust", color: "bg-blue-100 text-blue-800" },
+  device_session_revoked: { label: "Device Revoked", color: "bg-red-100 text-red-800" },
 };
 
 const ENTITY_TYPES = [
@@ -63,6 +69,7 @@ const ENTITY_TYPES = [
   { value: "offer", label: "Offers" },
   { value: "tenant", label: "Settings" },
   { value: "recipe", label: "Recipes" },
+  { value: "device_session", label: "Device Sessions" },
 ];
 
 const PAGE_SIZE = 25;
@@ -73,6 +80,8 @@ export default function AuditLogPage() {
   const [actionFilter, setActionFilter] = useState("none");
   const [entityTypeFilter, setEntityTypeFilter] = useState("none");
   const [userFilter, setUserFilter] = useState("none");
+  const [outletFilter, setOutletFilter] = useState("none");
+  const [searchText, setSearchText] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
@@ -84,11 +93,12 @@ export default function AuditLogPage() {
   if (actionFilter !== "none") queryParams.set("action", actionFilter);
   if (entityTypeFilter !== "none") queryParams.set("entityType", entityTypeFilter);
   if (userFilter !== "none") queryParams.set("userId", userFilter);
+  if (outletFilter !== "none") queryParams.set("outletId", outletFilter);
   if (dateFrom) queryParams.set("from", new Date(dateFrom).toISOString());
   if (dateTo) queryParams.set("to", new Date(dateTo + "T23:59:59").toISOString());
 
   const { data, isLoading } = useQuery<{ events: AuditEvent[]; total: number }>({
-    queryKey: ["/api/audit-log", page, actionFilter, entityTypeFilter, userFilter, dateFrom, dateTo],
+    queryKey: ["/api/audit-log", page, actionFilter, entityTypeFilter, userFilter, outletFilter, searchText, dateFrom, dateTo],
     queryFn: async () => {
       const res = await fetch(`/api/audit-log?${queryParams.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch audit log");
@@ -112,6 +122,14 @@ export default function AuditLogPage() {
     },
   });
 
+  const { data: outlets } = useQuery<Array<{ id: string; name: string }>>({
+    queryKey: ["/api/outlets"],
+    queryFn: async () => {
+      const res = await fetch("/api/outlets", { credentials: "include" });
+      return res.json();
+    },
+  });
+
   const { data: entityHistoryData, isLoading: entityHistoryLoading } = useQuery<{ events: AuditEvent[] }>({
     queryKey: ["/api/audit-log/entity", entityHistory?.entityType, entityHistory?.entityId],
     queryFn: async () => {
@@ -131,6 +149,7 @@ export default function AuditLogPage() {
     if (actionFilter !== "none") exportParams.set("action", actionFilter);
     if (entityTypeFilter !== "none") exportParams.set("entityType", entityTypeFilter);
     if (userFilter !== "none") exportParams.set("userId", userFilter);
+    if (outletFilter !== "none") exportParams.set("outletId", outletFilter);
     if (dateFrom) exportParams.set("from", new Date(dateFrom).toISOString());
     if (dateTo) exportParams.set("to", new Date(dateTo + "T23:59:59").toISOString());
     window.open(`/api/audit-log/export?${exportParams.toString()}`, "_blank");
@@ -140,10 +159,20 @@ export default function AuditLogPage() {
     setActionFilter("none");
     setEntityTypeFilter("none");
     setUserFilter("none");
+    setOutletFilter("none");
+    setSearchText("");
     setDateFrom("");
     setDateTo("");
     setPage(0);
   };
+
+  const filteredEvents = searchText
+    ? events.filter(e =>
+        (e.entityName && e.entityName.toLowerCase().includes(searchText.toLowerCase())) ||
+        (e.userName && e.userName.toLowerCase().includes(searchText.toLowerCase())) ||
+        (e.action && e.action.toLowerCase().includes(searchText.toLowerCase()))
+      )
+    : events;
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
@@ -174,7 +203,19 @@ export default function AuditLogPage() {
 
       <Card>
         <CardContent className="pt-6">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <div className="mb-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by action, user, or entity name..."
+                value={searchText}
+                onChange={(e) => setSearchText(e.target.value)}
+                className="pl-9"
+                data-testid="input-audit-search"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
             <div>
               <label className="text-xs font-medium text-muted-foreground mb-1 block">Date From</label>
               <Input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(0); }} data-testid="input-date-from" />
@@ -218,8 +259,20 @@ export default function AuditLogPage() {
                 </SelectContent>
               </Select>
             </div>
+            <div>
+              <label className="text-xs font-medium text-muted-foreground mb-1 block">Outlet</label>
+              <Select value={outletFilter} onValueChange={(v) => { setOutletFilter(v); setPage(0); }}>
+                <SelectTrigger data-testid="select-outlet-filter"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">All Outlets</SelectItem>
+                  {(outlets || []).map(o => (
+                    <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
-          {(actionFilter !== "none" || entityTypeFilter !== "none" || userFilter !== "none" || dateFrom || dateTo) && (
+          {(actionFilter !== "none" || entityTypeFilter !== "none" || userFilter !== "none" || outletFilter !== "none" || searchText || dateFrom || dateTo) && (
             <div className="mt-3">
               <Button variant="ghost" size="sm" onClick={clearFilters} data-testid="button-clear-filters">
                 Clear all filters
@@ -265,7 +318,7 @@ export default function AuditLogPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {events.map((event) => (
+                    {filteredEvents.map((event) => (
                       <TableRow key={event.id} data-testid={`row-audit-event-${event.id}`}>
                         <TableCell className="text-xs">
                           <div className="flex items-center gap-1.5">
