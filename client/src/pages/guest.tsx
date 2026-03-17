@@ -121,6 +121,7 @@ export default function GuestPage() {
   const [itemQuantity, setItemQuantity] = useState(1);
   const [itemNotes, setItemNotes] = useState("");
   const [addedItemId, setAddedItemId] = useState<string | null>(null);
+  const [guestLabel, setGuestLabel] = useState("Guest 1");
 
   const [bill, setBill] = useState<BillData | null>(null);
   const [orderPlacedData, setOrderPlacedData] = useState<any>(null);
@@ -191,7 +192,7 @@ export default function GuestPage() {
           menuItemId: item.id,
           quantity: qty,
           notes: notes || null,
-          guestLabel: "Guest 1",
+          guestLabel,
         }),
       });
       if (!res.ok) throw new Error("Failed to add item");
@@ -322,7 +323,19 @@ export default function GuestPage() {
             )}
             <div>
               <h1 className="font-bold text-lg leading-tight" data-testid="text-restaurant-name">{tenant?.name}</h1>
-              <p className="text-xs text-gray-500">{outlet?.name} · Table {table?.number} {table?.zone ? `(${table.zone})` : ""}</p>
+              <div className="flex items-center gap-2 text-xs text-gray-500">
+                <span>{outlet?.name} · Table {table?.number} {table?.zone ? `(${table.zone})` : ""}</span>
+                <select
+                  value={guestLabel}
+                  onChange={e => setGuestLabel(e.target.value)}
+                  className="bg-teal-50 text-teal-700 rounded px-1.5 py-0.5 text-xs font-medium border-0 outline-none cursor-pointer"
+                  data-testid="select-guest-label"
+                >
+                  {[1,2,3,4,5,6].map(n => (
+                    <option key={n} value={`Guest ${n}`}>Guest {n}</option>
+                  ))}
+                </select>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-1">
@@ -553,7 +566,12 @@ export default function GuestPage() {
                     <div key={ci.id} className="bg-white rounded-xl border p-3 shadow-sm" data-testid={`guest-cart-item-${ci.id}`}>
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm">{ci.name}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="font-medium text-sm">{ci.name}</p>
+                            {ci.guestLabel && ci.guestLabel !== "Guest 1" && (
+                              <span className="text-[10px] bg-teal-100 text-teal-700 px-1.5 py-0.5 rounded-full">{ci.guestLabel}</span>
+                            )}
+                          </div>
                           <p className="text-xs text-gray-500">{fmt(ci.price)} each</p>
                           {ci.notes && <p className="text-xs text-teal-600 mt-0.5 italic">{ci.notes}</p>}
                         </div>

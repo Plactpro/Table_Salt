@@ -4434,14 +4434,14 @@ export async function registerRoutes(
       const tenant = await storage.getTenant(outlet.tenantId);
       if (!tenant) return res.status(404).json({ message: "Restaurant not found" });
       const categories = await storage.getCategoriesByTenant(tenant.id);
-      const items = await storage.getMenuItemsByTenant(tenant.id);
+      const items = await storage.getMenuItemsForOutlet(tenant.id, outletId);
       res.json({
         categories: categories.filter(c => c.active !== false),
-        items: items.filter(i => i.available !== false).map(i => ({
+        items: items.map((i: any) => ({
           id: i.id, name: i.name, description: i.description, price: i.price,
           categoryId: i.categoryId, image: i.image, isVeg: i.isVeg,
-          spicyLevel: i.spicyLevel, allergens: (i as any).allergens || null,
-          tags: (i as any).tags || null,
+          spicyLevel: i.spicyLevel, allergens: i.allergens || null,
+          tags: i.tags || null,
         })),
         currency: tenant.currency,
         currencyPosition: (tenant as any).currencyPosition || "before",
@@ -4454,11 +4454,12 @@ export async function registerRoutes(
 
   app.post("/api/tables/:tableId/generate-qr-token", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
       const table = await storage.getTable(req.params.tableId);
-      if (!table) return res.status(404).json({ message: "Table not found" });
+      if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
       const crypto = await import("crypto");
       const token = `tbl-${crypto.randomBytes(8).toString("hex")}`;
-      const updated = await storage.updateTable(table.id, { qrToken: token });
+      const updated = await storage.updateTableByTenant(table.id, user.tenantId, { qrToken: token });
       res.json({ qrToken: token, table: updated });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -4488,7 +4489,7 @@ export async function registerRoutes(
       }
 
       const categories = await storage.getCategoriesByTenant(tenant.id);
-      const items = await storage.getMenuItemsByTenant(tenant.id);
+      const items = await storage.getMenuItemsForOutlet(tenant.id, outletId);
       const cartItems = await storage.getGuestCartItems(session.id);
 
       const existingOrders = await storage.getOrdersByTenant(tenant.id);
