@@ -117,25 +117,25 @@ function daysUntil(d: Date | string) {
   return diff;
 }
 
-function EventTooltipContent({ ev }: { ev: CalEvent }) {
+function EventTooltipContent({ ev, outletNames }: { ev: CalEvent; outletNames?: Map<string, string> }) {
   const tc = typeConfig[ev.type] || typeConfig.holiday;
   const ic = impactConfig[ev.impact] || impactConfig.medium;
   return (
     <div className="max-w-[220px] space-y-1">
       <div className="font-semibold">{ev.title}</div>
-      <div className="text-xs opacity-80">{tc.label} · {ic.label} Impact</div>
+      <div className="text-xs opacity-80">{tc.emoji} {tc.label} · {ic.label} Impact</div>
       <div className="text-xs opacity-80">
         {ev.allDay ? "All Day" : `${formatTime(ev.startDate)} – ${formatTime(ev.endDate)}`}
       </div>
       <div className="text-xs opacity-80">{formatDate(ev.startDate)} – {formatDate(ev.endDate)}</div>
       {ev.outlets && ev.outlets.length > 0 && (
-        <div className="text-xs opacity-80">Outlets: {ev.outlets.join(", ")}</div>
+        <div className="text-xs opacity-80">Outlets: {ev.outlets.map((oid) => outletNames?.get(oid) || oid.slice(0, 8)).join(", ")}</div>
       )}
     </div>
   );
 }
 
-function EventBar({ ev, onEventClick }: { ev: CalEvent; onEventClick: (e: CalEvent) => void }) {
+function EventBar({ ev, onEventClick, outletNames }: { ev: CalEvent; onEventClick: (e: CalEvent) => void; outletNames?: Map<string, string> }) {
   const tc = typeConfig[ev.type] || typeConfig.holiday;
   return (
     <Tooltip>
@@ -150,17 +150,18 @@ function EventBar({ ev, onEventClick }: { ev: CalEvent; onEventClick: (e: CalEve
         </div>
       </TooltipTrigger>
       <TooltipContent side="right">
-        <EventTooltipContent ev={ev} />
+        <EventTooltipContent ev={ev} outletNames={outletNames} />
       </TooltipContent>
     </Tooltip>
   );
 }
 
-function CalendarMonthView({ events, currentDate, onDayClick, onEventClick }: {
+function CalendarMonthView({ events, currentDate, onDayClick, onEventClick, outletNames }: {
   events: CalEvent[];
   currentDate: Date;
   onDayClick: (date: Date) => void;
   onEventClick: (e: CalEvent) => void;
+  outletNames?: Map<string, string>;
 }) {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -208,7 +209,7 @@ function CalendarMonthView({ events, currentDate, onDayClick, onEventClick }: {
                 </div>
                 <div className="space-y-0.5">
                   {dayEvents.slice(0, 3).map((ev) => (
-                    <EventBar key={ev.id} ev={ev} onEventClick={onEventClick} />
+                    <EventBar key={ev.id} ev={ev} onEventClick={onEventClick} outletNames={outletNames} />
                   ))}
                   {dayEvents.length > 3 && (
                     <div className="text-[10px] text-muted-foreground px-1">+{dayEvents.length - 3} more</div>
@@ -223,10 +224,11 @@ function CalendarMonthView({ events, currentDate, onDayClick, onEventClick }: {
   );
 }
 
-function CalendarWeekView({ events, currentDate, onEventClick }: {
+function CalendarWeekView({ events, currentDate, onEventClick, outletNames }: {
   events: CalEvent[];
   currentDate: Date;
   onEventClick: (e: CalEvent) => void;
+  outletNames?: Map<string, string>;
 }) {
   const startOfWeek = new Date(currentDate);
   startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
@@ -265,7 +267,7 @@ function CalendarWeekView({ events, currentDate, onEventClick }: {
                         {!ev.allDay && <div className="text-[10px] opacity-70">{formatTime(ev.startDate)}</div>}
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent><EventTooltipContent ev={ev} /></TooltipContent>
+                    <TooltipContent><EventTooltipContent ev={ev} outletNames={outletNames} /></TooltipContent>
                   </Tooltip>
                 ))}
               </div>
@@ -277,11 +279,12 @@ function CalendarWeekView({ events, currentDate, onEventClick }: {
   );
 }
 
-function DayView({ events, currentDate, onEventClick, onAddEvent }: {
+function DayView({ events, currentDate, onEventClick, onAddEvent, outletNames }: {
   events: CalEvent[];
   currentDate: Date;
   onEventClick: (e: CalEvent) => void;
   onAddEvent?: (date: Date) => void;
+  outletNames?: Map<string, string>;
 }) {
   const dayEvents = events.filter((ev) =>
     isInRange(currentDate, new Date(ev.startDate), new Date(ev.endDate))
@@ -741,6 +744,7 @@ export default function EventsPage() {
           currentDate={currentDate}
           onDayClick={(d) => { setCurrentDate(d); setView("day"); }}
           onEventClick={(ev) => { if (canEdit) openEdit(ev); }}
+          outletNames={outletMap}
         />
       )}
       {view === "week" && (
@@ -748,6 +752,7 @@ export default function EventsPage() {
           events={filtered}
           currentDate={currentDate}
           onEventClick={(ev) => { if (canEdit) openEdit(ev); }}
+          outletNames={outletMap}
         />
       )}
       {view === "day" && (
@@ -756,6 +761,7 @@ export default function EventsPage() {
           currentDate={currentDate}
           onEventClick={(ev) => { if (canEdit) openEdit(ev); }}
           onAddEvent={canEdit ? (d) => openCreate(d) : undefined}
+          outletNames={outletMap}
         />
       )}
 
@@ -897,6 +903,12 @@ export default function EventsPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {form.impact === "very_high" && (
+                  <div className="flex items-center gap-1.5 mt-1.5 text-xs text-red-600 bg-red-50 px-2 py-1 rounded" data-testid="text-very-high-warning">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    Very high impact events require extra staffing and inventory preparation
+                  </div>
+                )}
               </div>
             </div>
             <div className="grid grid-cols-2 gap-4">
