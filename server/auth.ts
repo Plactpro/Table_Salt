@@ -71,6 +71,19 @@ export function requireAuth(req: any, res: any, next: any) {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ message: "Not authenticated" });
   }
+
+  const now = Date.now();
+  const lastActivity = req.session?.lastActivity || now;
+  const idleTimeoutMs = (req.session?.idleTimeoutMinutes || 30) * 60 * 1000;
+
+  if (now - lastActivity > idleTimeoutMs) {
+    req.logout(() => {
+      req.session?.destroy(() => {});
+    });
+    return res.status(401).json({ message: "Session expired due to inactivity" });
+  }
+
+  req.session.lastActivity = now;
   next();
 }
 

@@ -112,8 +112,14 @@ export async function registerRoutes(
         auditLog({ tenantId: null, action: "login_failed", metadata: { username: req.body.username }, req });
         return res.status(401).json({ message: info?.message || "Invalid credentials" });
       }
-      req.login(user, (loginErr) => {
+      req.login(user, async (loginErr) => {
         if (loginErr) return next(loginErr);
+
+        const tenant = await storage.getTenant(user.tenantId);
+        const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
+        (req.session as any).lastActivity = Date.now();
+        (req.session as any).idleTimeoutMinutes = Number(mc.idleTimeoutMinutes ?? 30);
+
         auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
         const { password: _, ...safeUser } = user;
         return res.json(safeUser);
@@ -607,6 +613,7 @@ export async function registerRoutes(
         await storage.updateTable(orderData.tableId, { status: "occupied" });
       }
       const orderItems = await storage.getOrderItemsByOrder(order.id);
+      auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length } });
       res.json({ ...order, items: orderItems });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

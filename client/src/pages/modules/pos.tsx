@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -106,6 +107,9 @@ export default function POSPage() {
   const [itemNoteText, setItemNoteText] = useState("");
   const [addedItemId, setAddedItemId] = useState<string | null>(null);
   const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
+  const [supervisorDialog, setSupervisorDialog] = useState<{
+    open: boolean; action: string; actionLabel: string;
+  } | null>(null);
 
   const { data: categories = [] } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
   const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
@@ -200,28 +204,50 @@ export default function POSPage() {
     setItemNoteText("");
   };
 
+  const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string }) => {
+    const orderData: Record<string, unknown> = {
+      orderType,
+      tableId: isDineIn ? selectedTable || null : null,
+      subtotal: subtotal.toFixed(2),
+      tax: taxAmount.toFixed(2),
+      discount: totalDiscount.toFixed(2),
+      total: total.toFixed(2),
+      notes: [orderNotes, serviceChargeAmount > 0 ? `Service Charge (${(tenantServiceChargePct * 100).toFixed(1)}%): ${serviceChargeAmount.toFixed(2)}` : null].filter(Boolean).join(" | ") || null,
+      status: isDineIn ? "in_progress" : "new",
+      offerId: selectedOffer?.id || null,
+      discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
+      items: cart.map((c) => ({
+        menuItemId: c.menuItemId, name: c.name, quantity: c.quantity,
+        price: c.price.toFixed(2), notes: c.notes || null,
+      })),
+    };
+    if (!isDineIn) {
+      orderData.paymentMethod = paymentMethod;
+    }
+    if (supervisorOverride) {
+      orderData.supervisorOverride = supervisorOverride;
+    }
+    return orderData;
+  }, [orderType, isDineIn, selectedTable, subtotal, taxAmount, totalDiscount, total, orderNotes, serviceChargeAmount, selectedOffer, cart, paymentMethod]);
+
   const placeOrderMutation = useMutation({
-    mutationFn: async () => {
-      const orderData: Record<string, unknown> = {
-        orderType,
-        tableId: isDineIn ? selectedTable || null : null,
-        subtotal: subtotal.toFixed(2),
-        tax: taxAmount.toFixed(2),
-        discount: totalDiscount.toFixed(2),
-        total: total.toFixed(2),
-        notes: [orderNotes, serviceChargeAmount > 0 ? `Service Charge (${(tenantServiceChargePct * 100).toFixed(1)}%): ${serviceChargeAmount.toFixed(2)}` : null].filter(Boolean).join(" | ") || null,
-        status: isDineIn ? "in_progress" : "new",
-        offerId: selectedOffer?.id || null,
-        discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
-        items: cart.map((c) => ({
-          menuItemId: c.menuItemId, name: c.name, quantity: c.quantity,
-          price: c.price.toFixed(2), notes: c.notes || null,
-        })),
-      };
-      if (!isDineIn) {
-        orderData.paymentMethod = paymentMethod;
+    mutationFn: async (supervisorOverride?: { username: string; password: string }) => {
+      const orderData = buildOrderData(supervisorOverride);
+      const res = await fetch("/api/orders", {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify(orderData),
+      });
+      if (res.status === 403) {
+        const errData = await res.json();
+        if (errData.requiresSupervisor) {
+          const err = new Error(errData.message) as any;
+          err.requiresSupervisor = true;
+          err.action = errData.action;
+          throw err;
+        }
+        throw new Error(errData.message || "Permission denied");
       }
-      const res = await apiRequest("POST", "/api/orders", orderData);
+      if (!res.ok) throw new Error((await res.json()).message || "Failed");
       return res.json();
     },
     onSuccess: () => {
@@ -235,10 +261,19 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/offers"] });
     },
-    onError: (err: Error) => {
+    onError: (err: any) => {
+      if (err.requiresSupervisor) {
+        setSupervisorDialog({ open: true, action: err.action || "apply_large_discount", actionLabel: "Apply Large Discount" });
+        return;
+      }
       toast({ title: "Failed to place order", description: err.message, variant: "destructive" });
     },
   });
+
+  const handlePosSupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string }) => {
+    placeOrderMutation.mutate(credentials);
+    setSupervisorDialog(null);
+  }, [placeOrderMutation]);
 
   const handlePlaceOrder = () => {
     if (cart.length === 0) {
@@ -539,6 +574,15 @@ export default function POSPage() {
           </div>
         </DialogContent>
       </Dialog>
+      {supervisorDialog && (
+        <SupervisorApprovalDialog
+          open={supervisorDialog.open}
+          onOpenChange={(open) => !open && setSupervisorDialog(null)}
+          action={supervisorDialog.action}
+          actionLabel={supervisorDialog.actionLabel}
+          onApproved={handlePosSupervisorApproved}
+        />
+      )}
     </div>
   );
 }

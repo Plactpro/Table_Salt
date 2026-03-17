@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
@@ -57,6 +58,10 @@ function InventoryTab() {
   const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null);
   const [formData, setFormData] = useState({ name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10", costPrice: "0", supplier: "" });
   const [adjustData, setAdjustData] = useState({ type: "in" as "in" | "out", quantity: "", reason: "" });
+  const [supervisorDialog, setSupervisorDialog] = useState<{
+    open: boolean; action: string; actionLabel: string;
+    pendingData: { id: string; data: any } | null;
+  } | null>(null);
 
   const fmt = (v: number) => {
     const tenant = user?.tenant;
@@ -81,10 +86,42 @@ function InventoryTab() {
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
   const adjustMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: typeof adjustData }) => { const res = await apiRequest("POST", `/api/inventory/${id}/adjust`, data); return res.json(); },
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await fetch(`/api/inventory/${id}/adjust`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (res.status === 403) {
+        const errData = await res.json();
+        if (errData.requiresSupervisor) {
+          const err = new Error(errData.message) as any;
+          err.requiresSupervisor = true;
+          err.action = errData.action;
+          err.pendingData = { id, data };
+          throw err;
+        }
+        throw new Error(errData.message || "Permission denied");
+      }
+      if (!res.ok) throw new Error((await res.json()).message || "Failed");
+      return res.json();
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setAdjustDialogOpen(false); setAdjustingItem(null); setAdjustData({ type: "in", quantity: "", reason: "" }); toast({ title: "Stock adjusted" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onError: (err: any) => {
+      if (err.requiresSupervisor && err.pendingData) {
+        setSupervisorDialog({ open: true, action: err.action || "large_stock_adjustment", actionLabel: "Large Stock Adjustment", pendingData: err.pendingData });
+        return;
+      }
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
   });
+
+  const handleInventorySupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string }) => {
+    if (supervisorDialog?.pendingData) {
+      const { id, data } = supervisorDialog.pendingData;
+      adjustMutation.mutate({ id, data: { ...data, supervisorOverride: credentials } });
+    }
+    setSupervisorDialog(null);
+  }, [supervisorDialog, adjustMutation]);
 
   function resetForm() { setFormData({ name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10", costPrice: "0", supplier: "" }); }
   function openEditDialog(item: InventoryItem) {
@@ -223,6 +260,15 @@ function InventoryTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {supervisorDialog && (
+        <SupervisorApprovalDialog
+          open={supervisorDialog.open}
+          onOpenChange={(open) => !open && setSupervisorDialog(null)}
+          action={supervisorDialog.action}
+          actionLabel={supervisorDialog.actionLabel}
+          onApproved={handleInventorySupervisorApproved}
+        />
+      )}
     </div>
   );
 }
