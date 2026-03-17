@@ -80,6 +80,8 @@ function DevicesTab() {
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [newOutletId, setNewOutletId] = useState<string>("none");
+  const [newIdleTimeout, setNewIdleTimeout] = useState("120");
+  const [newConfirmTimeout, setNewConfirmTimeout] = useState("15");
   const [showTokenId, setShowTokenId] = useState<string | null>(null);
 
   const { data: devices = [] } = useQuery<KioskDevice[]>({
@@ -91,7 +93,7 @@ function DevicesTab() {
   });
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; outletId?: string }) => {
+    mutationFn: async (data: { name: string; outletId?: string; settings?: Record<string, unknown> }) => {
       const res = await apiRequest("POST", "/api/kiosk-devices", data);
       return res.json();
     },
@@ -100,6 +102,8 @@ function DevicesTab() {
       setAddDialogOpen(false);
       setNewName("");
       setNewOutletId("none");
+      setNewIdleTimeout("120");
+      setNewConfirmTimeout("15");
       toast({ title: "Device created" });
     },
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
@@ -172,9 +176,33 @@ function DevicesTab() {
                   </SelectContent>
                 </Select>
               </div>
+              <div>
+                <label className="text-sm font-medium">Idle Timeout (seconds)</label>
+                <Input
+                  data-testid="input-idle-timeout"
+                  type="number"
+                  value={newIdleTimeout}
+                  onChange={e => setNewIdleTimeout(e.target.value)}
+                  placeholder="120"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium">Confirmation Screen Timeout (seconds)</label>
+                <Input
+                  data-testid="input-confirm-timeout"
+                  type="number"
+                  value={newConfirmTimeout}
+                  onChange={e => setNewConfirmTimeout(e.target.value)}
+                  placeholder="15"
+                />
+              </div>
               <Button
                 data-testid="button-create-device"
-                onClick={() => createMutation.mutate({ name: newName, outletId: newOutletId === "none" ? undefined : newOutletId })}
+                onClick={() => createMutation.mutate({
+                  name: newName,
+                  outletId: newOutletId === "none" ? undefined : newOutletId,
+                  settings: { idleTimeout: parseInt(newIdleTimeout) || 120, confirmTimeout: parseInt(newConfirmTimeout) || 15 },
+                })}
                 disabled={!newName.trim() || createMutation.isPending}
                 className="w-full"
               >
