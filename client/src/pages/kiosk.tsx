@@ -5,16 +5,22 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ChevronLeft,
   ChevronRight, CreditCard, Wallet, Smartphone, Store, Leaf, CheckCircle,
-  Clock, X, Sparkles,
+  Clock, X, Sparkles, Package, StickyNote, Info,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-type KioskStep = "welcome" | "menu" | "cart" | "payment" | "confirmation";
+type KioskStep = "welcome" | "service-type" | "menu" | "cart" | "payment" | "confirmation";
+type ServiceType = "dine_in" | "takeaway";
 
 interface KioskCartItem {
+  cartLineId: string;
   menuItemId: string;
   name: string;
   price: number;
@@ -22,6 +28,8 @@ interface KioskCartItem {
   isVeg: boolean | null;
   categoryId: string | null;
   image?: string | null;
+  description?: string | null;
+  notes: string;
 }
 
 interface TenantInfo {
@@ -59,14 +67,26 @@ function kioskFetch(url: string, options?: RequestInit) {
   });
 }
 
+const ATTRACTOR_SLIDES = [
+  { title: "Fresh Ingredients", subtitle: "Made with love, served with care", gradient: "from-emerald-600 to-teal-700" },
+  { title: "Daily Specials", subtitle: "Check out today's chef recommendations", gradient: "from-amber-600 to-orange-700" },
+  { title: "Quick & Easy", subtitle: "Order in seconds, ready in minutes", gradient: "from-blue-600 to-indigo-700" },
+  { title: "Combo Deals", subtitle: "Save more with our combo meals", gradient: "from-purple-600 to-pink-700" },
+];
+
 export default function KioskPage() {
   const [step, setStep] = useState<KioskStep>("welcome");
+  const [serviceType, setServiceType] = useState<ServiceType>("takeaway");
   const [cart, setCart] = useState<KioskCartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<string>("card");
   const [orderResult, setOrderResult] = useState<any>(null);
   const [isPlacingOrder, setIsPlacingOrder] = useState(false);
+  const [itemDetailModal, setItemDetailModal] = useState<any>(null);
+  const [itemNoteText, setItemNoteText] = useState("");
+  const [noteEditItem, setNoteEditItem] = useState<string | null>(null);
+  const [noteEditText, setNoteEditText] = useState("");
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const token = getKioskToken();
 
@@ -153,18 +173,22 @@ export default function KioskPage() {
     return suggestions.slice(0, 3);
   }, [cart, upsellRules, menuItems]);
 
+  const resetKiosk = useCallback(() => {
+    setStep("welcome");
+    setCart([]);
+    setSelectedCategory(null);
+    setSearchQuery("");
+    setOrderResult(null);
+    setServiceType("takeaway");
+    setItemDetailModal(null);
+  }, []);
+
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (step !== "welcome" && step !== "confirmation") {
-      idleTimerRef.current = setTimeout(() => {
-        setStep("welcome");
-        setCart([]);
-        setSelectedCategory(null);
-        setSearchQuery("");
-        setOrderResult(null);
-      }, 120000);
+      idleTimerRef.current = setTimeout(resetKiosk, 120000);
     }
-  }, [step]);
+  }, [step, resetKiosk]);
 
   useEffect(() => {
     resetIdleTimer();
@@ -181,13 +205,23 @@ export default function KioskPage() {
     };
   }, [resetIdleTimer]);
 
-  const addToCart = useCallback((item: any) => {
+  const nextCartLineId = useRef(1);
+
+  const addToCart = useCallback((item: any, notes?: string) => {
     setCart(prev => {
-      const existing = prev.find(c => c.menuItemId === item.id);
+      const existing = prev.find(c => c.menuItemId === item.id && c.notes === (notes || ""));
       if (existing) {
-        return prev.map(c => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+        return prev.map(c => c.cartLineId === existing.cartLineId ? { ...c, quantity: c.quantity + 1 } : c);
       }
+      if (!notes) {
+        const existingNoNotes = prev.find(c => c.menuItemId === item.id && !c.notes);
+        if (existingNoNotes) {
+          return prev.map(c => c.cartLineId === existingNoNotes.cartLineId ? { ...c, quantity: c.quantity + 1 } : c);
+        }
+      }
+      const lineId = `line-${nextCartLineId.current++}`;
       return [...prev, {
+        cartLineId: lineId,
         menuItemId: item.id,
         name: item.name,
         price: parseFloat(item.price),
@@ -195,16 +229,22 @@ export default function KioskPage() {
         isVeg: item.isVeg,
         categoryId: item.categoryId,
         image: item.image,
+        description: item.description,
+        notes: notes || "",
       }];
     });
   }, []);
 
-  const updateQuantity = useCallback((menuItemId: string, delta: number) => {
-    setCart(prev => prev.map(c => c.menuItemId === menuItemId ? { ...c, quantity: c.quantity + delta } : c).filter(c => c.quantity > 0));
+  const updateQuantity = useCallback((cartLineId: string, delta: number) => {
+    setCart(prev => prev.map(c => c.cartLineId === cartLineId ? { ...c, quantity: c.quantity + delta } : c).filter(c => c.quantity > 0));
   }, []);
 
-  const removeFromCart = useCallback((menuItemId: string) => {
-    setCart(prev => prev.filter(c => c.menuItemId !== menuItemId));
+  const removeFromCart = useCallback((cartLineId: string) => {
+    setCart(prev => prev.filter(c => c.cartLineId !== cartLineId));
+  }, []);
+
+  const updateCartNotes = useCallback((cartLineId: string, notes: string) => {
+    setCart(prev => prev.map(c => c.cartLineId === cartLineId ? { ...c, notes } : c));
   }, []);
 
   const placeOrder = useCallback(async () => {
@@ -213,8 +253,9 @@ export default function KioskPage() {
       const res = await kioskFetch("/api/kiosk/order", {
         method: "POST",
         body: JSON.stringify({
-          items: cart.map(c => ({ menuItemId: c.menuItemId, quantity: c.quantity })),
+          items: cart.map(c => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: c.notes || undefined })),
           paymentMethod,
+          serviceType,
         }),
       });
       if (!res.ok) throw new Error("Failed to place order");
@@ -222,16 +263,13 @@ export default function KioskPage() {
       setOrderResult(result);
       setStep("confirmation");
       setCart([]);
-      setTimeout(() => {
-        setStep("welcome");
-        setOrderResult(null);
-      }, 15000);
+      setTimeout(() => resetKiosk(), 15000);
     } catch (err) {
       console.error("Order failed", err);
     } finally {
       setIsPlacingOrder(false);
     }
-  }, [cart, paymentMethod]);
+  }, [cart, paymentMethod, serviceType, resetKiosk]);
 
   if (!token) {
     return (
@@ -249,7 +287,14 @@ export default function KioskPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 text-white select-none overflow-hidden" data-testid="kiosk-page" onClick={resetIdleTimer}>
       <AnimatePresence mode="wait">
         {step === "welcome" && (
-          <WelcomeScreen key="welcome" onStart={() => setStep("menu")} tenantName={tenantInfo?.name || "Restaurant"} />
+          <WelcomeScreen key="welcome" onStart={() => setStep("service-type")} tenantName={tenantInfo?.name || "Restaurant"} />
+        )}
+        {step === "service-type" && (
+          <ServiceTypeScreen
+            key="service-type"
+            onSelect={(t) => { setServiceType(t); setStep("menu"); }}
+            onBack={resetKiosk}
+          />
         )}
         {step === "menu" && (
           <MenuScreen
@@ -261,6 +306,7 @@ export default function KioskPage() {
             cart={cart}
             cartCount={cartCount}
             subtotal={subtotal}
+            serviceType={serviceType}
             upsellSuggestions={upsellSuggestions}
             fmt={fmt}
             onSelectCategory={setSelectedCategory}
@@ -269,7 +315,8 @@ export default function KioskPage() {
             onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart}
             onViewCart={() => setStep("cart")}
-            onBack={() => { setStep("welcome"); setCart([]); setSearchQuery(""); setSelectedCategory(null); }}
+            onBack={() => setStep("service-type")}
+            onItemDetail={setItemDetailModal}
           />
         )}
         {step === "cart" && (
@@ -282,9 +329,11 @@ export default function KioskPage() {
             total={total}
             serviceChargeRate={serviceChargeRate}
             taxRate={taxRate}
+            serviceType={serviceType}
             fmt={fmt}
             onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart}
+            onEditNote={(cartLineId) => { setNoteEditItem(cartLineId); setNoteEditText(cart.find(c => c.cartLineId === cartLineId)?.notes || ""); }}
             onBack={() => setStep("menu")}
             onCheckout={() => setStep("payment")}
           />
@@ -305,28 +354,85 @@ export default function KioskPage() {
           <ConfirmationScreen
             key="confirmation"
             orderResult={orderResult}
+            serviceType={serviceType}
             fmt={fmt}
-            onNewOrder={() => { setStep("welcome"); setOrderResult(null); }}
+            onNewOrder={resetKiosk}
           />
         )}
       </AnimatePresence>
+
+      {itemDetailModal && (
+        <ItemDetailModal
+          item={itemDetailModal}
+          fmt={fmt}
+          cart={cart}
+          noteText={itemNoteText}
+          onNoteChange={setItemNoteText}
+          onClose={() => { setItemDetailModal(null); setItemNoteText(""); }}
+          onAddToCart={(item, notes) => { addToCart(item, notes); setItemDetailModal(null); setItemNoteText(""); }}
+        />
+      )}
+
+      {noteEditItem && (
+        <Dialog open={true} onOpenChange={() => setNoteEditItem(null)}>
+          <DialogContent className="bg-slate-800 border-white/10 text-white max-w-md">
+            <DialogHeader>
+              <DialogTitle>Special Instructions</DialogTitle>
+            </DialogHeader>
+            <Textarea
+              data-testid="textarea-kiosk-note"
+              value={noteEditText}
+              onChange={e => setNoteEditText(e.target.value)}
+              placeholder="e.g. No onions, extra spicy..."
+              className="bg-white/10 border-white/20 text-white placeholder:text-slate-400 min-h-[100px]"
+            />
+            <div className="flex gap-2 justify-end">
+              <Button variant="outline" onClick={() => setNoteEditItem(null)} className="text-white border-white/20">Cancel</Button>
+              <Button onClick={() => { updateCartNotes(noteEditItem, noteEditText); setNoteEditItem(null); }} className="bg-teal-500 hover:bg-teal-400" data-testid="button-kiosk-save-note">Save</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
 
 function WelcomeScreen({ onStart, tenantName }: { onStart: () => void; tenantName: string }) {
+  const [slideIndex, setSlideIndex] = useState(0);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setSlideIndex(prev => (prev + 1) % ATTRACTOR_SLIDES.length);
+    }, 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const slide = ATTRACTOR_SLIDES[slideIndex];
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="min-h-screen flex flex-col items-center justify-center p-8"
+      className="min-h-screen flex flex-col items-center justify-center p-8 relative"
       data-testid="kiosk-welcome"
+      onClick={onStart}
     >
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={slideIndex}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -20 }}
+          transition={{ duration: 0.5 }}
+          className={`absolute inset-0 bg-gradient-to-br ${slide.gradient} opacity-20`}
+        />
+      </AnimatePresence>
+
       <motion.div
         animate={{ y: [0, -10, 0] }}
         transition={{ repeat: Infinity, duration: 3, ease: "easeInOut" }}
-        className="mb-8"
+        className="mb-8 z-10"
       >
         <div className="w-32 h-32 rounded-full bg-gradient-to-br from-teal-400 to-emerald-500 flex items-center justify-center shadow-2xl shadow-teal-500/30">
           <UtensilsCrossed className="h-16 w-16 text-white" />
@@ -337,25 +443,36 @@ function WelcomeScreen({ onStart, tenantName }: { onStart: () => void; tenantNam
         initial={{ y: 30, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2 }}
-        className="text-5xl font-bold mb-4 text-center"
+        className="text-5xl font-bold mb-4 text-center z-10"
         data-testid="text-restaurant-name"
       >
         {tenantName}
       </motion.h1>
 
-      <motion.p
-        initial={{ y: 30, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.4 }}
-        className="text-xl text-slate-300 mb-12 text-center"
-      >
-        Self-Ordering Kiosk
-      </motion.p>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={slideIndex}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -10 }}
+          className="text-center mb-8 z-10"
+        >
+          <p className="text-2xl font-semibold text-teal-300">{slide.title}</p>
+          <p className="text-lg text-slate-300 mt-1">{slide.subtitle}</p>
+        </motion.div>
+      </AnimatePresence>
+
+      <div className="flex gap-2 mb-8 z-10">
+        {ATTRACTOR_SLIDES.map((_, i) => (
+          <div key={i} className={`w-2 h-2 rounded-full transition-all ${i === slideIndex ? "bg-teal-400 w-6" : "bg-white/30"}`} />
+        ))}
+      </div>
 
       <motion.div
         initial={{ scale: 0.8, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         transition={{ delay: 0.6 }}
+        className="z-10"
       >
         <Button
           data-testid="button-start-order"
@@ -371,18 +488,132 @@ function WelcomeScreen({ onStart, tenantName }: { onStart: () => void; tenantNam
       <motion.p
         animate={{ opacity: [0.3, 0.7, 0.3] }}
         transition={{ repeat: Infinity, duration: 2 }}
-        className="mt-8 text-slate-400 text-lg"
+        className="mt-8 text-slate-400 text-lg z-10"
       >
-        Touch screen to begin
+        Touch anywhere to begin
       </motion.p>
     </motion.div>
   );
 }
 
+function ServiceTypeScreen({ onSelect, onBack }: { onSelect: (t: ServiceType) => void; onBack: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="min-h-screen flex flex-col items-center justify-center p-8"
+      data-testid="kiosk-service-type"
+    >
+      <Button variant="ghost" onClick={onBack} className="absolute top-6 left-6 text-white hover:bg-white/10 rounded-xl" data-testid="button-kiosk-service-back">
+        <ChevronLeft className="h-6 w-6 mr-1" /> Back
+      </Button>
+
+      <h2 className="text-3xl font-bold mb-12">How would you like your order?</h2>
+
+      <div className="flex gap-8">
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Card
+            data-testid="card-service-dine-in"
+            className="w-64 h-64 cursor-pointer bg-white/5 border-white/10 hover:bg-white/10 transition-all"
+            onClick={() => onSelect("dine_in")}
+          >
+            <CardContent className="flex flex-col items-center justify-center h-full p-8">
+              <UtensilsCrossed className="h-16 w-16 text-teal-400 mb-4" />
+              <p className="text-2xl font-bold text-white">Dine In</p>
+              <p className="text-sm text-slate-400 mt-2 text-center">Eat at the restaurant</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+          <Card
+            data-testid="card-service-takeaway"
+            className="w-64 h-64 cursor-pointer bg-white/5 border-white/10 hover:bg-white/10 transition-all"
+            onClick={() => onSelect("takeaway")}
+          >
+            <CardContent className="flex flex-col items-center justify-center h-full p-8">
+              <Package className="h-16 w-16 text-amber-400 mb-4" />
+              <p className="text-2xl font-bold text-white">Takeaway</p>
+              <p className="text-sm text-slate-400 mt-2 text-center">Take your order to go</p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+    </motion.div>
+  );
+}
+
+function ItemDetailModal({
+  item, fmt, cart, noteText, onNoteChange, onClose, onAddToCart,
+}: {
+  item: any;
+  fmt: (val: number | string) => string;
+  cart: KioskCartItem[];
+  noteText: string;
+  onNoteChange: (v: string) => void;
+  onClose: () => void;
+  onAddToCart: (item: any, notes: string) => void;
+}) {
+  const inCart = cart.find(c => c.menuItemId === item.id);
+  return (
+    <Dialog open={true} onOpenChange={onClose}>
+      <DialogContent className="bg-slate-800 border-white/10 text-white max-w-lg" data-testid="dialog-item-detail">
+        {item.image && (
+          <div className="h-48 -mx-6 -mt-6 overflow-hidden rounded-t-lg">
+            <img src={item.image} alt={item.name} className="w-full h-full object-cover" />
+          </div>
+        )}
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-xl">
+            {item.isVeg && <Leaf className="h-5 w-5 text-green-400" />}
+            {item.name}
+          </DialogTitle>
+        </DialogHeader>
+        {item.description && <p className="text-slate-300">{item.description}</p>}
+        <p className="text-2xl font-bold text-teal-400">{fmt(item.price)}</p>
+
+        {item.spicyLevel > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-sm text-slate-400">Spice Level:</span>
+            {Array.from({ length: item.spicyLevel }).map((_, i) => (
+              <span key={i} className="text-red-400">🌶</span>
+            ))}
+          </div>
+        )}
+
+        <div className="space-y-2">
+          <label className="text-sm text-slate-400 flex items-center gap-1">
+            <StickyNote className="h-3 w-3" /> Special instructions
+          </label>
+          <Textarea
+            data-testid="textarea-item-note"
+            value={noteText}
+            onChange={e => onNoteChange(e.target.value)}
+            placeholder="e.g. No onions, extra spicy, well-done..."
+            className="bg-white/10 border-white/20 text-white placeholder:text-slate-400"
+          />
+        </div>
+
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={onClose} className="flex-1 text-white border-white/20">Cancel</Button>
+          <Button
+            data-testid="button-add-from-detail"
+            onClick={() => onAddToCart(item, noteText)}
+            className="flex-[2] bg-teal-500 hover:bg-teal-400 font-bold"
+          >
+            <Plus className="h-4 w-4 mr-1" /> {inCart ? `Add Another (${inCart.quantity} in cart)` : "Add to Cart"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function MenuScreen({
   categories, items, selectedCategory, searchQuery, cart, cartCount, subtotal,
-  upsellSuggestions, fmt, onSelectCategory, onSearchChange, onAddToCart,
-  onUpdateQuantity, onRemoveFromCart, onViewCart, onBack,
+  serviceType, upsellSuggestions, fmt, onSelectCategory, onSearchChange, onAddToCart,
+  onUpdateQuantity, onRemoveFromCart, onViewCart, onBack, onItemDetail,
 }: {
   categories: any[];
   items: any[];
@@ -391,6 +622,7 @@ function MenuScreen({
   cart: KioskCartItem[];
   cartCount: number;
   subtotal: number;
+  serviceType: ServiceType;
   upsellSuggestions: any[];
   fmt: (val: number | string) => string;
   onSelectCategory: (id: string | null) => void;
@@ -400,6 +632,7 @@ function MenuScreen({
   onRemoveFromCart: (id: string) => void;
   onViewCart: () => void;
   onBack: () => void;
+  onItemDetail: (item: any) => void;
 }) {
   const [addedItemId, setAddedItemId] = useState<string | null>(null);
 
@@ -422,7 +655,13 @@ function MenuScreen({
         <Button variant="ghost" size="icon" onClick={onBack} className="text-white hover:bg-white/10 rounded-xl h-12 w-12" data-testid="button-kiosk-back">
           <ChevronLeft className="h-6 w-6" />
         </Button>
-        <h2 className="text-2xl font-bold flex-1">Menu</h2>
+        <div className="flex-1">
+          <h2 className="text-2xl font-bold">Menu</h2>
+          <p className="text-sm text-slate-400 flex items-center gap-1">
+            {serviceType === "dine_in" ? <UtensilsCrossed className="h-3 w-3" /> : <Package className="h-3 w-3" />}
+            {serviceType === "dine_in" ? "Dine In" : "Takeaway"}
+          </p>
+        </div>
         <div className="relative w-72">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
@@ -503,13 +742,10 @@ function MenuScreen({
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {items.map((item: any) => {
               const inCart = cart.find(c => c.menuItemId === item.id);
+              const totalQty = cart.filter(c => c.menuItemId === item.id).reduce((s, c) => s + c.quantity, 0);
               const justAdded = addedItemId === item.id;
               return (
-                <motion.div
-                  key={item.id}
-                  whileTap={{ scale: 0.95 }}
-                  layout
-                >
+                <motion.div key={item.id} whileTap={{ scale: 0.95 }} layout>
                   <Card
                     data-testid={`card-kiosk-item-${item.id}`}
                     className={`cursor-pointer transition-all duration-200 overflow-hidden relative ${
@@ -529,6 +765,16 @@ function MenuScreen({
                         </motion.div>
                       )}
                     </AnimatePresence>
+
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="absolute top-1 right-1 z-20 h-7 w-7 text-slate-400 hover:text-white hover:bg-white/20 rounded-full"
+                      onClick={e => { e.stopPropagation(); onItemDetail(item); }}
+                      data-testid={`button-item-detail-${item.id}`}
+                    >
+                      <Info className="h-4 w-4" />
+                    </Button>
 
                     {item.image ? (
                       <div className="h-28 overflow-hidden bg-slate-700">
@@ -554,17 +800,17 @@ function MenuScreen({
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-white hover:bg-white/20 rounded-full"
-                              onClick={e => { e.stopPropagation(); onUpdateQuantity(item.id, -1); }}
+                              onClick={e => { e.stopPropagation(); onUpdateQuantity(inCart.cartLineId, -1); }}
                               data-testid={`button-kiosk-decrease-${item.id}`}
                             >
                               <Minus className="h-3 w-3" />
                             </Button>
-                            <Badge className="bg-teal-500 text-white px-2" data-testid={`badge-kiosk-qty-${item.id}`}>{inCart.quantity}</Badge>
+                            <Badge className="bg-teal-500 text-white px-2" data-testid={`badge-kiosk-qty-${item.id}`}>{totalQty}</Badge>
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-7 w-7 text-white hover:bg-white/20 rounded-full"
-                              onClick={e => { e.stopPropagation(); onUpdateQuantity(item.id, 1); }}
+                              onClick={e => { e.stopPropagation(); onUpdateQuantity(inCart.cartLineId, 1); }}
                               data-testid={`button-kiosk-increase-${item.id}`}
                             >
                               <Plus className="h-3 w-3" />
@@ -604,7 +850,7 @@ function MenuScreen({
 
 function CartScreen({
   cart, subtotal, serviceChargeAmount, taxAmount, total, serviceChargeRate, taxRate,
-  fmt, onUpdateQuantity, onRemoveFromCart, onBack, onCheckout,
+  serviceType, fmt, onUpdateQuantity, onRemoveFromCart, onEditNote, onBack, onCheckout,
 }: {
   cart: KioskCartItem[];
   subtotal: number;
@@ -613,9 +859,11 @@ function CartScreen({
   total: number;
   serviceChargeRate: number;
   taxRate: number;
+  serviceType: ServiceType;
   fmt: (val: number | string) => string;
   onUpdateQuantity: (id: string, delta: number) => void;
   onRemoveFromCart: (id: string) => void;
+  onEditNote: (id: string) => void;
   onBack: () => void;
   onCheckout: () => void;
 }) {
@@ -632,7 +880,13 @@ function CartScreen({
         <Button variant="ghost" size="icon" onClick={onBack} className="text-white hover:bg-white/10 rounded-xl h-12 w-12" data-testid="button-kiosk-cart-back">
           <ChevronLeft className="h-6 w-6" />
         </Button>
-        <h2 className="text-2xl font-bold flex-1">Your Order</h2>
+        <div className="flex-1">
+          <h2 className="text-2xl font-bold">Your Order</h2>
+          <p className="text-sm text-slate-400 flex items-center gap-1">
+            {serviceType === "dine_in" ? <UtensilsCrossed className="h-3 w-3" /> : <Package className="h-3 w-3" />}
+            {serviceType === "dine_in" ? "Dine In" : "Takeaway"}
+          </p>
+        </div>
         <ShoppingCart className="h-6 w-6 text-teal-400" />
       </div>
 
@@ -650,12 +904,12 @@ function CartScreen({
             <AnimatePresence>
               {cart.map(item => (
                 <motion.div
-                  key={item.menuItemId}
+                  key={item.cartLineId}
                   initial={{ opacity: 0, x: 40 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -40, height: 0 }}
                   className="bg-white/5 rounded-xl p-4 border border-white/10"
-                  data-testid={`kiosk-cart-item-${item.menuItemId}`}
+                  data-testid={`kiosk-cart-item-${item.cartLineId}`}
                 >
                   <div className="flex items-center gap-4">
                     <div className="flex-1">
@@ -664,6 +918,11 @@ function CartScreen({
                         <h4 className="font-semibold text-white">{item.name}</h4>
                       </div>
                       <p className="text-sm text-slate-400 mt-1">{fmt(item.price)} each</p>
+                      {item.notes && (
+                        <p className="text-xs text-amber-400 mt-1 flex items-center gap-1">
+                          <StickyNote className="h-3 w-3" /> {item.notes}
+                        </p>
+                      )}
                     </div>
 
                     <div className="flex items-center gap-3">
@@ -671,18 +930,18 @@ function CartScreen({
                         variant="ghost"
                         size="icon"
                         className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
-                        onClick={() => onUpdateQuantity(item.menuItemId, -1)}
-                        data-testid={`button-kiosk-cart-decrease-${item.menuItemId}`}
+                        onClick={() => onUpdateQuantity(item.cartLineId, -1)}
+                        data-testid={`button-kiosk-cart-decrease-${item.cartLineId}`}
                       >
                         <Minus className="h-4 w-4" />
                       </Button>
-                      <span className="text-lg font-bold w-8 text-center" data-testid={`text-kiosk-cart-qty-${item.menuItemId}`}>{item.quantity}</span>
+                      <span className="text-lg font-bold w-8 text-center" data-testid={`text-kiosk-cart-qty-${item.cartLineId}`}>{item.quantity}</span>
                       <Button
                         variant="ghost"
                         size="icon"
                         className="h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white"
-                        onClick={() => onUpdateQuantity(item.menuItemId, 1)}
-                        data-testid={`button-kiosk-cart-increase-${item.menuItemId}`}
+                        onClick={() => onUpdateQuantity(item.cartLineId, 1)}
+                        data-testid={`button-kiosk-cart-increase-${item.cartLineId}`}
                       >
                         <Plus className="h-4 w-4" />
                       </Button>
@@ -692,15 +951,26 @@ function CartScreen({
                       <p className="font-bold text-teal-400">{fmt(item.price * item.quantity)}</p>
                     </div>
 
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-10 w-10 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-full"
-                      onClick={() => onRemoveFromCart(item.menuItemId)}
-                      data-testid={`button-kiosk-cart-remove-${item.menuItemId}`}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
+                    <div className="flex flex-col gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-slate-400 hover:text-amber-400 hover:bg-amber-500/20 rounded-full"
+                        onClick={() => onEditNote(item.cartLineId)}
+                        data-testid={`button-kiosk-cart-note-${item.cartLineId}`}
+                      >
+                        <StickyNote className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded-full"
+                        onClick={() => onRemoveFromCart(item.cartLineId)}
+                        data-testid={`button-kiosk-cart-remove-${item.cartLineId}`}
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </Button>
+                    </div>
                   </div>
                 </motion.div>
               ))}
@@ -840,9 +1110,10 @@ function PaymentScreen({
 }
 
 function ConfirmationScreen({
-  orderResult, fmt, onNewOrder,
+  orderResult, serviceType, fmt, onNewOrder,
 }: {
   orderResult: any;
+  serviceType: ServiceType;
   fmt: (val: number | string) => string;
   onNewOrder: () => void;
 }) {
@@ -882,7 +1153,11 @@ function ConfirmationScreen({
         <p className="text-6xl font-bold text-teal-400 font-mono" data-testid="text-kiosk-token-number">
           {orderResult?.tokenNumber || orderResult?.orderNumber || "---"}
         </p>
-        <p className="text-slate-400 mt-4 text-sm">Please remember this number to collect your order</p>
+        <p className="text-slate-400 mt-4 text-sm">
+          {serviceType === "dine_in"
+            ? "Please take a seat. Your order will be served to you."
+            : "Please wait at the counter for your order."}
+        </p>
         {orderResult?.total && (
           <p className="text-lg text-white mt-4">Total: {fmt(orderResult.total)}</p>
         )}
