@@ -20,6 +20,8 @@ export interface EvaluateInput {
   customerSegment?: string;
   dayOfWeek?: number;
   hour?: number;
+  taxRate?: number;
+  serviceChargeRate?: number;
 }
 
 export interface LineItemAdjustment {
@@ -40,6 +42,7 @@ export interface AppliedDiscount {
   discountAmount: number;
   description: string;
   affectedItems?: string[];
+  freeItems?: { menuItemId: string; name: string; quantity: number }[];
 }
 
 export interface EvaluateResult {
@@ -48,6 +51,9 @@ export interface EvaluateResult {
   totalDiscount: number;
   surchargeTotal: number;
   finalSubtotal: number;
+  computedTax: number;
+  computedServiceCharge: number;
+  grandTotal: number;
 }
 
 function isRuleActive(rule: PromotionRule): boolean {
@@ -148,11 +154,77 @@ function getAffectedItems(rule: PromotionRule, input: EvaluateInput): EvaluateIt
   return input.items;
 }
 
-function calculateDiscount(rule: PromotionRule, input: EvaluateInput): { amount: number; lineAdjustments: LineItemAdjustment[] } {
+interface DiscountCalcResult {
+  amount: number;
+  lineAdjustments: LineItemAdjustment[];
+  freeItems?: { menuItemId: string; name: string; quantity: number }[];
+}
+
+function calculateDiscount(rule: PromotionRule, input: EvaluateInput): DiscountCalcResult {
   let disc = 0;
   const value = Number(rule.discountValue);
   const lineAdjustments: LineItemAdjustment[] = [];
   const affectedItems = getAffectedItems(rule, input);
+  const cond = rule.conditions as Record<string, unknown> | null;
+
+  if (rule.ruleType === "bogo") {
+    const buyQty = cond?.buyQuantity ? Number(cond.buyQuantity) : 1;
+    const getQty = cond?.getQuantity ? Number(cond.getQuantity) : 1;
+    const getDiscountPct = cond?.getDiscountPercent ? Number(cond.getDiscountPercent) : 100;
+
+    for (const item of affectedItems) {
+      const sets = Math.floor(item.quantity / (buyQty + getQty));
+      if (sets > 0) {
+        const freeUnits = sets * getQty;
+        const itemDisc = Math.round(freeUnits * item.price * (getDiscountPct / 100) * 100) / 100;
+        disc += itemDisc;
+        lineAdjustments.push({
+          menuItemId: item.menuItemId,
+          itemName: item.name,
+          originalPrice: item.price,
+          adjustedPrice: item.price,
+          discountAmount: itemDisc,
+          ruleId: rule.id,
+          ruleName: rule.name,
+        });
+      }
+    }
+    if (rule.maxDiscount && disc > Number(rule.maxDiscount)) disc = Number(rule.maxDiscount);
+    return { amount: Math.round(disc * 100) / 100, lineAdjustments };
+  }
+
+  if (rule.ruleType === "combo_deal") {
+    const comboItemIds = cond?.comboItems && Array.isArray(cond.comboItems) ? (cond.comboItems as string[]) : [];
+    if (comboItemIds.length > 0) {
+      const cartIds = new Set(input.items.map((i) => i.menuItemId));
+      const allPresent = comboItemIds.every((id) => cartIds.has(id));
+      if (!allPresent) return { amount: 0, lineAdjustments: [] };
+      const comboItems = input.items.filter((i) => comboItemIds.includes(i.menuItemId));
+      const comboTotal = comboItems.reduce((s, i) => s + i.price * i.quantity, 0);
+      if (rule.discountType === "percentage") {
+        disc = Math.round(comboTotal * (value / 100) * 100) / 100;
+      } else if (rule.discountType === "fixed_amount") {
+        disc = value;
+      }
+    } else {
+      if (rule.discountType === "percentage") {
+        const total = affectedItems.reduce((s, i) => s + i.price * i.quantity, 0);
+        disc = Math.round(total * (value / 100) * 100) / 100;
+      } else {
+        disc = value;
+      }
+    }
+    if (rule.maxDiscount && disc > Number(rule.maxDiscount)) disc = Number(rule.maxDiscount);
+    return { amount: Math.round(disc * 100) / 100, lineAdjustments };
+  }
+
+  if (rule.ruleType === "free_item") {
+    const freeItemId = cond?.freeItemId ? String(cond.freeItemId) : null;
+    const freeItemName = cond?.freeItemName ? String(cond.freeItemName) : "Free Item";
+    const freeQty = cond?.freeQuantity ? Number(cond.freeQuantity) : 1;
+    const freeItems = freeItemId ? [{ menuItemId: freeItemId, name: freeItemName, quantity: freeQty }] : [];
+    return { amount: 0, lineAdjustments: [], freeItems };
+  }
 
   if (rule.discountType === "percentage") {
     for (const item of affectedItems) {
@@ -208,8 +280,8 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
 
     if (!rule.stackable && appliedDiscounts.length > 0) continue;
 
-    const { amount: discAmount, lineAdjustments } = calculateDiscount(rule, input);
-    if (discAmount === 0) continue;
+    const { amount: discAmount, lineAdjustments, freeItems } = calculateDiscount(rule, input);
+    if (discAmount === 0 && (!freeItems || freeItems.length === 0)) continue;
 
     const affectedItemNames = getAffectedItems(rule, input).map((i) => i.name);
 
@@ -221,11 +293,12 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
       discountAmount: discAmount,
       description: rule.description || rule.name,
       affectedItems: affectedItemNames.length > 0 && affectedItemNames.length < input.items.length ? affectedItemNames : undefined,
+      freeItems: freeItems && freeItems.length > 0 ? freeItems : undefined,
     });
 
     if (discAmount > 0) {
       totalDiscount += discAmount;
-    } else {
+    } else if (discAmount < 0) {
       surchargeTotal += Math.abs(discAmount);
     }
 
@@ -241,5 +314,20 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
   const netAdjustment = totalDiscount - surchargeTotal;
   const finalSubtotal = Math.max(0, Math.round((input.subtotal - netAdjustment) * 100) / 100);
 
-  return { appliedDiscounts, lineItemAdjustments: allLineAdjustments, totalDiscount, surchargeTotal, finalSubtotal };
+  const taxRate = input.taxRate ?? 0;
+  const serviceChargeRate = input.serviceChargeRate ?? 0;
+  const computedServiceCharge = Math.round(finalSubtotal * serviceChargeRate * 100) / 100;
+  const computedTax = Math.round(finalSubtotal * taxRate * 100) / 100;
+  const grandTotal = Math.round((finalSubtotal + computedServiceCharge + computedTax) * 100) / 100;
+
+  return {
+    appliedDiscounts,
+    lineItemAdjustments: allLineAdjustments,
+    totalDiscount,
+    surchargeTotal,
+    finalSubtotal,
+    computedTax,
+    computedServiceCharge,
+    grandTotal,
+  };
 }

@@ -626,7 +626,7 @@ export async function registerRoutes(
   app.post("/api/orders", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { items, supervisorOverride, ...orderData } = req.body;
+      const { items, supervisorOverride, dismissedRuleIds, ...orderData } = req.body;
 
       const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
@@ -639,14 +639,78 @@ export async function registerRoutes(
         }
       }
 
-      const order = await storage.createOrder({ ...orderData, tenantId: user.tenantId, waiterId: user.id });
+      const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+
+      let serverSubtotal = 0;
+      const serverItems: { menuItemId: string; name: string; price: number; quantity: number; categoryId?: string }[] = [];
       if (items && items.length > 0) {
-        const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
-        const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
         for (const item of items) {
           const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
+          const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
+          const qty = Number(item.quantity) || 1;
+          serverSubtotal += canonicalPrice * qty;
+          serverItems.push({
+            menuItemId: item.menuItemId,
+            name: mi?.name || item.name,
+            price: canonicalPrice,
+            quantity: qty,
+            categoryId: mi?.categoryId || undefined,
+          });
+        }
+      }
+
+      serverSubtotal = Math.round(serverSubtotal * 100) / 100;
+
+      const { evaluateRules } = await import("./promotions-engine");
+      const promotionRules = await storage.getPromotionRulesByTenant(user.tenantId);
+      const tenant = await storage.getTenant(user.tenantId);
+      const taxRate = Number(tenant?.taxRate || 0) / 100;
+      const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
+
+      const channelMap: Record<string, string> = { dine_in: "dine_in", takeaway: "takeaway", delivery: "delivery" };
+      const channel = channelMap[orderData.orderType] || "dine_in";
+
+      const engineResult = evaluateRules(promotionRules, {
+        items: serverItems,
+        subtotal: serverSubtotal,
+        channel,
+        orderType: orderData.orderType,
+        outletId: orderData.outletId,
+        taxRate,
+        serviceChargeRate,
+      });
+
+      const dismissedSet = new Set(Array.isArray(dismissedRuleIds) ? dismissedRuleIds : []);
+      const activeDiscounts = engineResult.appliedDiscounts.filter(d => !dismissedSet.has(d.ruleId));
+      const engineDiscountTotal = activeDiscounts.reduce((s, d) => s + (d.discountAmount > 0 ? d.discountAmount : 0), 0);
+      const engineSurchargeTotal = activeDiscounts.reduce((s, d) => s + (d.discountAmount < 0 ? Math.abs(d.discountAmount) : 0), 0);
+
+      const manualDiscount = Number(orderData.discountAmount || 0);
+      const totalDiscount = Math.round((engineDiscountTotal + manualDiscount) * 100) / 100;
+      const afterDiscount = Math.max(0, serverSubtotal - totalDiscount + engineSurchargeTotal);
+      const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
+      const serverTotal = Math.round((afterDiscount + serverTax) * 100) / 100;
+
+      const serverOrderData = {
+        ...orderData,
+        tenantId: user.tenantId,
+        waiterId: user.id,
+        subtotal: serverSubtotal.toFixed(2),
+        discount: totalDiscount.toFixed(2),
+        discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
+        tax: serverTax.toFixed(2),
+        total: serverTotal.toFixed(2),
+      };
+
+      const order = await storage.createOrder(serverOrderData);
+      if (items && items.length > 0) {
+        for (const item of items) {
+          const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
+          const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
           await storage.createOrderItem({
             ...item,
+            price: canonicalPrice.toFixed(2),
             orderId: order.id,
             station: item.station || mi?.station || null,
             course: item.course || mi?.course || null,
@@ -657,7 +721,7 @@ export async function registerRoutes(
         await storage.updateTable(orderData.tableId, { status: "occupied" });
       }
       const orderItems = await storage.getOrderItemsByOrder(order.id);
-      auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length } });
+      auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length, engineDiscounts: activeDiscounts.length } });
       res.json({ ...order, items: orderItems });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
