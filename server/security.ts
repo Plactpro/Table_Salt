@@ -176,16 +176,30 @@ export function setupIpAllowlistMiddleware(app: Express) {
       if (!tenant) return next();
       const mc = (tenant.moduleConfig || {}) as Record<string, unknown>;
       if (!mc.ipAllowlistEnabled) return next();
+
+      const clientIp = getClientIp(req);
+      const userRole = (req.user as { role?: string })?.role || "";
+
+      const roleRules = mc.ipAllowlistRoles as Record<string, string[]> | undefined;
+      if (roleRules && roleRules[userRole] && roleRules[userRole].length > 0) {
+        const allowed = roleRules[userRole].some(cidr => isIpInCidr(clientIp, cidr));
+        if (!allowed) {
+          return res.status(403).json({ message: "Access denied: IP not in allowlist for your role" });
+        }
+        return next();
+      }
+
       const allowlist = mc.ipAllowlist as string[] | undefined;
       if (!allowlist || allowlist.length === 0) return next();
 
-      const clientIp = getClientIp(req);
       const allowed = allowlist.some(cidr => isIpInCidr(clientIp, cidr));
       if (!allowed) {
         return res.status(403).json({ message: "Access denied: IP not in allowlist" });
       }
-    } catch (_) {}
-
-    next();
+      return next();
+    } catch (err) {
+      console.error("[ip-allowlist] Error evaluating allowlist, denying access:", err);
+      return res.status(403).json({ message: "Access denied: IP allowlist evaluation failed" });
+    }
   });
 }
