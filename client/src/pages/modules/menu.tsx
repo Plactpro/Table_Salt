@@ -566,26 +566,9 @@ export default function MenuPage() {
                 <Input id="item-name" value={itemForm.name} onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })} placeholder="e.g. Margherita Pizza" data-testid="input-item-name" />
               </div>
               <div>
-                <Label htmlFor="item-image">Image</Label>
-                <div className="flex gap-2 items-center">
-                  <Input id="item-image" value={itemForm.image} onChange={(e) => setItemForm({ ...itemForm, image: e.target.value })} placeholder="https://... or upload" className="flex-1" data-testid="input-item-image" />
-                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 h-9 rounded-md border border-input bg-background text-sm font-medium hover:bg-accent hover:text-accent-foreground shrink-0" data-testid="button-upload-image">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                    Upload
-                    <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file) return;
-                      const formData = new FormData();
-                      formData.append("image", file);
-                      try {
-                        const res = await fetch("/api/upload/image", { method: "POST", body: formData, credentials: "include" });
-                        if (!res.ok) { const err = await res.json(); alert(err.message || "Upload failed"); return; }
-                        const { url } = await res.json();
-                        setItemForm({ ...itemForm, image: url });
-                      } catch { alert("Upload failed"); }
-                      e.target.value = "";
-                    }} />
-                  </label>
+                <Label htmlFor="item-image">Image URL</Label>
+                <div className="flex gap-2">
+                  <Input id="item-image" value={itemForm.image} onChange={(e) => setItemForm({ ...itemForm, image: e.target.value })} placeholder="https://..." data-testid="input-item-image" />
                   {itemForm.image && (
                     <div className="h-9 w-9 rounded border overflow-hidden shrink-0">
                       <img src={itemForm.image} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = ""; }} />
