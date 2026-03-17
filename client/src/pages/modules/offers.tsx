@@ -117,6 +117,7 @@ export default function OffersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingOffer, setEditingOffer] = useState<Offer | null>(null);
   const [form, setForm] = useState<OfferForm>(emptyForm);
+  const [linkedEventId, setLinkedEventId] = useState("none");
   type FilterStatus = "all" | "active" | "expired";
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
 
@@ -180,11 +181,13 @@ export default function OffersPage() {
   function openAdd() {
     setEditingOffer(null);
     setForm(emptyForm);
+    setLinkedEventId("none");
     setDialogOpen(true);
   }
 
   function openEdit(offer: Offer) {
     setEditingOffer(offer);
+    setLinkedEventId("none");
     setForm({
       name: offer.name,
       description: offer.description || "",
@@ -533,7 +536,8 @@ export default function OffersPage() {
             </div>
             <div>
               <Label>Linked Event</Label>
-              <Select value="none" onValueChange={(v) => {
+              <Select value={linkedEventId} onValueChange={(v) => {
+                setLinkedEventId(v);
                 if (v === "none") return;
                 const ev = calEvents.find((e) => e.id === v);
                 if (ev) {
