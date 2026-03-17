@@ -140,8 +140,25 @@ function ipToLong(ip: string): number {
   return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
 }
 
+function isValidIpv4(ip: string): boolean {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return false;
+  return parts.every(p => { const n = Number(p); return Number.isInteger(n) && n >= 0 && n <= 255; });
+}
+
+export function isValidCidr(cidr: string): boolean {
+  const [ip, prefixStr] = cidr.split("/");
+  if (!isValidIpv4(ip)) return false;
+  if (prefixStr !== undefined) {
+    const prefix = Number(prefixStr);
+    if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
+  }
+  return true;
+}
+
 function isIpInCidr(ip: string, cidr: string): boolean {
   try {
+    if (!isValidCidr(cidr)) return false;
     const [cidrIp, prefixStr] = cidr.split("/");
     const prefix = prefixStr ? parseInt(prefixStr) : 32;
     const ipLong = ipToLong(ip);
