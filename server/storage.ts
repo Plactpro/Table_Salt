@@ -63,6 +63,8 @@ import {
   type ProcurementApproval, type InsertProcurementApproval,
   labourCostSnapshots,
   type LabourCostSnapshot, type InsertLabourCostSnapshot,
+  auditEvents,
+  type AuditEvent, type InsertAuditEvent,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -318,6 +320,12 @@ export interface IStorage {
 
   getProcurementApprovals(poId: string): Promise<ProcurementApproval[]>;
   createProcurementApproval(data: InsertProcurementApproval): Promise<ProcurementApproval>;
+
+  getAuditEventsByTenant(tenantId: string, filters?: {
+    from?: Date; to?: Date; userId?: string; action?: string; entityType?: string; outletId?: string; entityId?: string; limit?: number; offset?: number;
+  }): Promise<{ events: AuditEvent[]; total: number }>;
+  createAuditEvent(data: InsertAuditEvent): Promise<AuditEvent>;
+  getAuditEventsByEntity(tenantId: string, entityType: string, entityId: string): Promise<AuditEvent[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1399,6 +1407,49 @@ export class DatabaseStorage implements IStorage {
   async createProcurementApproval(data: InsertProcurementApproval) {
     const [a] = await db.insert(procurementApprovals).values(data).returning();
     return a;
+  }
+
+  async getAuditEventsByTenant(tenantId: string, filters?: {
+    from?: Date; to?: Date; userId?: string; action?: string; entityType?: string; outletId?: string; entityId?: string; limit?: number; offset?: number;
+  }) {
+    const conditions = [eq(auditEvents.tenantId, tenantId)];
+    if (filters?.from) conditions.push(gte(auditEvents.createdAt, filters.from));
+    if (filters?.to) conditions.push(lte(auditEvents.createdAt, filters.to));
+    if (filters?.userId) conditions.push(eq(auditEvents.userId, filters.userId));
+    if (filters?.action) conditions.push(eq(auditEvents.action, filters.action));
+    if (filters?.entityType) conditions.push(eq(auditEvents.entityType, filters.entityType));
+    if (filters?.outletId) conditions.push(eq(auditEvents.outletId, filters.outletId));
+    if (filters?.entityId) conditions.push(eq(auditEvents.entityId, filters.entityId));
+
+    const whereClause = and(...conditions);
+    const [totalResult] = await db.select({ count: count() }).from(auditEvents).where(whereClause);
+    const total = totalResult?.count ?? 0;
+
+    const limit = filters?.limit ?? 50;
+    const offset = filters?.offset ?? 0;
+
+    const events = await db.select().from(auditEvents)
+      .where(whereClause)
+      .orderBy(desc(auditEvents.createdAt))
+      .limit(limit)
+      .offset(offset);
+
+    return { events, total };
+  }
+
+  async createAuditEvent(data: InsertAuditEvent) {
+    const [e] = await db.insert(auditEvents).values(data).returning();
+    return e;
+  }
+
+  async getAuditEventsByEntity(tenantId: string, entityType: string, entityId: string) {
+    return db.select().from(auditEvents)
+      .where(and(
+        eq(auditEvents.tenantId, tenantId),
+        eq(auditEvents.entityType, entityType),
+        eq(auditEvents.entityId, entityId),
+      ))
+      .orderBy(desc(auditEvents.createdAt));
   }
 }
 

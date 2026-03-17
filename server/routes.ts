@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
-import { setupAuth, requireAuth, requireRole, hashPassword } from "./auth";
+import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords } from "./auth";
 import { getAdapter } from "./aggregator-adapters";
 import {
   isVoidOrCancelled, filterOrdersByDateRange, filterValidOrders,
@@ -26,6 +26,8 @@ import {
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
+import { can, needsSupervisorApproval, getPermissionsForRole } from "./permissions";
+import { auditLog, auditLogFromReq } from "./audit";
 
 export async function registerRoutes(
   httpServer: Server,
@@ -67,9 +69,12 @@ export async function registerRoutes(
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
-      if (!user) return res.status(401).json({ message: info?.message || "Invalid credentials" });
+      if (!user) {
+        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+      }
       req.login(user, (loginErr) => {
         if (loginErr) return next(loginErr);
+        auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
         const { password: _, ...safeUser } = user;
         return res.json(safeUser);
       });
@@ -77,6 +82,10 @@ export async function registerRoutes(
   });
 
   app.post("/api/auth/logout", (req, res) => {
+    const u = req.user as Record<string, unknown> | undefined;
+    if (u) {
+      auditLog({ tenantId: String(u.tenantId), userId: String(u.id), userName: String(u.name), action: "logout", entityType: "user", entityId: String(u.id), req });
+    }
     req.logout((err) => {
       if (err) return res.status(500).json({ message: "Logout failed" });
       res.json({ message: "Logged out" });
@@ -183,16 +192,21 @@ export async function registerRoutes(
   app.post("/api/menu-items", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
     const item = await storage.createMenuItem({ ...req.body, tenantId: user.tenantId });
+    auditLogFromReq(req, { action: "menu_item_created", entityType: "menu_item", entityId: item.id, entityName: item.name, after: { name: item.name, price: item.price } });
     res.json(item);
   });
 
   app.patch("/api/menu-items/:id", requireRole("owner", "manager"), async (req, res) => {
+    const existing = await storage.getMenuItem(req.params.id);
     const item = await storage.updateMenuItem(req.params.id, req.body);
+    if (existing) auditLogFromReq(req, { action: "menu_item_updated", entityType: "menu_item", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, price: existing.price }, after: req.body });
     res.json(item);
   });
 
   app.delete("/api/menu-items/:id", requireRole("owner", "manager"), async (req, res) => {
+    const existing = await storage.getMenuItem(req.params.id);
     await storage.deleteMenuItem(req.params.id);
+    if (existing) auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
     res.json({ message: "Deleted" });
   });
 
@@ -552,6 +566,18 @@ export async function registerRoutes(
     }
 
     const order = await storage.updateOrder(req.params.id, updateData);
+
+    if (req.body.status === "voided" || req.body.status === "cancelled") {
+      auditLogFromReq(req, {
+        action: req.body.status === "voided" ? "order_voided" : "order_updated",
+        entityType: "order", entityId: req.params.id,
+        before: { status: existing.status, total: existing.total },
+        after: { status: req.body.status },
+      });
+    } else if (existing.status !== req.body.status) {
+      auditLogFromReq(req, { action: "order_updated", entityType: "order", entityId: req.params.id, before: { status: existing.status }, after: { status: req.body.status } });
+    }
+
     if (req.body.status === "paid" && existing.status !== "paid") {
       if (existing.tableId) {
         await storage.updateTable(existing.tableId, { status: "free" });
@@ -657,6 +683,7 @@ export async function registerRoutes(
       quantity: String(quantity),
       reason,
     });
+    auditLogFromReq(req, { action: "inventory_adjusted", entityType: "inventory_item", entityId: req.params.id, entityName: item.name, before: { currentStock: item.currentStock }, after: { currentStock: String(newStock) }, metadata: { type, quantity, reason } });
     res.json({ message: "Stock adjusted" });
   });
 
@@ -963,7 +990,9 @@ export async function registerRoutes(
 
   app.patch("/api/tenant", requireRole("owner"), async (req, res) => {
     const user = req.user as any;
+    const before = await storage.getTenant(user.tenantId);
     const tenant = await storage.updateTenant(user.tenantId, req.body);
+    auditLogFromReq(req, { action: "tenant_settings_updated", entityType: "tenant", entityId: user.tenantId, before: before ? { name: before.name, currency: before.currency, taxRate: before.taxRate } : null, after: req.body });
     res.json(tenant);
   });
 
@@ -3432,6 +3461,186 @@ export async function registerRoutes(
       await storage.updateTenant(tenantId, { moduleConfig: modConfig });
       res.json({ success: true, labourTargetPct: modConfig.labourTargetPct });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/permissions", requireAuth, async (req, res) => {
+    const user = req.user as unknown as Record<string, unknown>;
+    const role = String(user.role);
+    const perms = getPermissionsForRole(role);
+    res.json({ role, permissions: perms });
+  });
+
+  app.post("/api/permissions/check", requireAuth, async (req, res) => {
+    const user = req.user as unknown as Record<string, unknown>;
+    const { action } = req.body;
+    if (!action) return res.status(400).json({ message: "action is required" });
+    const allowed = can(user as { id: string; role: string; tenantId: string }, action);
+    const needsApproval = needsSupervisorApproval(user as { id: string; role: string; tenantId: string }, action);
+    res.json({ action, allowed, needsSupervisorApproval: needsApproval });
+  });
+
+  app.post("/api/supervisor/verify", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      const { username, password, action } = req.body;
+      if (!username || !password) return res.status(400).json({ message: "Supervisor credentials required" });
+
+      const supervisor = await storage.getUserByUsername(username);
+      if (!supervisor || supervisor.tenantId !== tenantId) {
+        await auditLogFromReq(req, { action: "supervisor_verify_failed", metadata: { attemptedUsername: username, forAction: action } });
+        return res.status(401).json({ message: "Invalid supervisor credentials" });
+      }
+      const valid = await comparePasswords(password, supervisor.password);
+      if (!valid) {
+        await auditLogFromReq(req, { action: "supervisor_verify_failed", metadata: { attemptedUsername: username, forAction: action } });
+        return res.status(401).json({ message: "Invalid supervisor credentials" });
+      }
+      if (!can({ id: supervisor.id, role: supervisor.role, tenantId: supervisor.tenantId }, "supervisor_override")) {
+        return res.status(403).json({ message: "User does not have supervisor privileges" });
+      }
+
+      await auditLogFromReq(req, {
+        action: "supervisor_override",
+        metadata: { supervisorId: supervisor.id, supervisorName: supervisor.name, forAction: action, requestedBy: String(user.name) },
+        supervisorId: supervisor.id,
+      });
+
+      const { password: _, ...safeSupervisor } = supervisor;
+      res.json({ verified: true, supervisor: safeSupervisor });
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
+  });
+
+  app.get("/api/audit-log", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      if (!can({ id: String(user.id), role: String(user.role), tenantId }, "view_audit_log")) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const filters: Record<string, unknown> = {};
+      if (req.query.from) filters.from = new Date(String(req.query.from));
+      if (req.query.to) filters.to = new Date(String(req.query.to));
+      if (req.query.userId) filters.userId = String(req.query.userId);
+      if (req.query.action) filters.action = String(req.query.action);
+      if (req.query.entityType) filters.entityType = String(req.query.entityType);
+      if (req.query.outletId) filters.outletId = String(req.query.outletId);
+      if (req.query.entityId) filters.entityId = String(req.query.entityId);
+      if (req.query.limit) filters.limit = parseInt(String(req.query.limit), 10);
+      if (req.query.offset) filters.offset = parseInt(String(req.query.offset), 10);
+
+      const result = await storage.getAuditEventsByTenant(tenantId, filters as {
+        from?: Date; to?: Date; userId?: string; action?: string; entityType?: string; outletId?: string; entityId?: string; limit?: number; offset?: number;
+      });
+      res.json(result);
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
+  });
+
+  app.get("/api/audit-log/entity/:entityType/:entityId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      if (!can({ id: String(user.id), role: String(user.role), tenantId }, "view_audit_log")) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const events = await storage.getAuditEventsByEntity(tenantId, req.params.entityType, req.params.entityId);
+      res.json(events);
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
+  });
+
+  app.get("/api/audit-log/export", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      if (!can({ id: String(user.id), role: String(user.role), tenantId }, "view_audit_log")) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+
+      const filters: Record<string, unknown> = { limit: 5000 };
+      if (req.query.from) filters.from = new Date(String(req.query.from));
+      if (req.query.to) filters.to = new Date(String(req.query.to));
+      if (req.query.userId) filters.userId = String(req.query.userId);
+      if (req.query.action) filters.action = String(req.query.action);
+      if (req.query.entityType) filters.entityType = String(req.query.entityType);
+
+      const result = await storage.getAuditEventsByTenant(tenantId, filters as {
+        from?: Date; to?: Date; userId?: string; action?: string; entityType?: string; limit?: number;
+      });
+
+      const headers = ["Date", "User", "Action", "Entity Type", "Entity Name", "Entity ID", "IP Address", "Supervisor"];
+      const rows = result.events.map(e => [
+        e.createdAt ? new Date(e.createdAt).toISOString() : "",
+        e.userName || "",
+        e.action,
+        e.entityType || "",
+        e.entityName || "",
+        e.entityId || "",
+        e.ipAddress || "",
+        e.supervisorId || "",
+      ]);
+      const csv = [headers.join(","), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(","))].join("\n");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", "attachment; filename=audit-log.csv");
+      res.send(csv);
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
+  });
+
+  app.get("/api/audit-log/actions", requireAuth, async (_req, res) => {
+    const actions = [
+      "login", "logout", "login_failed",
+      "order_created", "order_updated", "order_voided",
+      "menu_item_created", "menu_item_updated", "menu_item_deleted",
+      "menu_category_created", "menu_category_updated", "menu_category_deleted",
+      "inventory_adjusted", "inventory_item_created", "inventory_item_updated",
+      "offer_created", "offer_updated", "offer_deleted",
+      "user_created", "user_updated",
+      "tenant_settings_updated",
+      "recipe_created", "recipe_updated", "recipe_deleted",
+      "supervisor_override", "supervisor_verify_failed",
+      "table_updated", "reservation_created", "reservation_updated",
+    ];
+    res.json(actions);
+  });
+
+  app.get("/api/security/settings", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      const modConfig = (tenant.moduleConfig || {}) as Record<string, unknown>;
+      res.json({
+        idleTimeoutMinutes: modConfig.idleTimeoutMinutes ?? 30,
+        maxConcurrentSessions: modConfig.maxConcurrentSessions ?? 5,
+        requireSupervisorForVoid: modConfig.requireSupervisorForVoid ?? true,
+        requireSupervisorForLargeDiscount: modConfig.requireSupervisorForLargeDiscount ?? true,
+        largeDiscountThreshold: modConfig.largeDiscountThreshold ?? 20,
+        requireSupervisorForPriceChange: modConfig.requireSupervisorForPriceChange ?? true,
+      });
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
+  });
+
+  app.patch("/api/security/settings", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as unknown as Record<string, unknown>;
+      const tenantId = String(user.tenantId);
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      const modConfig = (tenant.moduleConfig || {}) as Record<string, unknown>;
+      const allowed = ["idleTimeoutMinutes", "maxConcurrentSessions", "requireSupervisorForVoid", "requireSupervisorForLargeDiscount", "largeDiscountThreshold", "requireSupervisorForPriceChange"];
+      const before: Record<string, unknown> = {};
+      for (const key of allowed) {
+        if (key in req.body) {
+          before[key] = modConfig[key];
+          modConfig[key] = req.body[key];
+        }
+      }
+      await storage.updateTenant(tenantId, { moduleConfig: modConfig });
+      await auditLogFromReq(req, { action: "security_settings_updated", entityType: "tenant", entityId: tenantId, before, after: req.body });
+      res.json({ success: true });
+    } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
   });
 
   app.get("/api/health", (_req, res) => {

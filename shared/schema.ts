@@ -1009,3 +1009,26 @@ export const labourCostSnapshots = pgTable("labour_cost_snapshots", {
 export const insertLabourCostSnapshotSchema = createInsertSchema(labourCostSnapshots).omit({ id: true, createdAt: true });
 export type LabourCostSnapshot = typeof labourCostSnapshots.$inferSelect;
 export type InsertLabourCostSnapshot = z.infer<typeof insertLabourCostSnapshotSchema>;
+
+export const auditEvents = pgTable("audit_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  userId: varchar("user_id", { length: 36 }).references(() => users.id),
+  userName: text("user_name"),
+  action: text("action").notNull(),
+  entityType: text("entity_type"),
+  entityId: varchar("entity_id", { length: 36 }),
+  entityName: text("entity_name"),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  before: jsonb("before"),
+  after: jsonb("after"),
+  metadata: jsonb("metadata"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  supervisorId: varchar("supervisor_id", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, createdAt: true });
+export type AuditEvent = typeof auditEvents.$inferSelect;
+export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
