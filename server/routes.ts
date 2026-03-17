@@ -32,6 +32,30 @@ import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
 import { can, needsSupervisorApproval, getPermissionsForRole, requirePermission, type PermissionAction } from "./permissions";
 import { auditLog, auditLogFromReq } from "./audit";
+import multer from "multer";
+import path from "path";
+import fs from "fs";
+
+const uploadDir = path.join(process.cwd(), "uploads");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+
+const multerStorage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, uploadDir),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname) || ".jpg";
+    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
+  },
+});
+const upload = multer({
+  storage: multerStorage,
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedExt = /\.(jpg|jpeg|png|gif|webp)$/i;
+    const allowedMime = /^image\/(jpeg|png|gif|webp)$/;
+    if (allowedExt.test(path.extname(file.originalname)) && allowedMime.test(file.mimetype)) cb(null, true);
+    else cb(new Error("Only image files (JPG, PNG, GIF, WEBP) are allowed"));
+  },
+});
 
 async function getSecuritySettings(tenantId: string) {
   const tenant = await storage.getTenant(tenantId);
@@ -97,6 +121,22 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   setupAuth(app);
+
+  app.use("/uploads", (await import("express")).default.static(uploadDir));
+
+  app.post("/api/upload/image", requireAuth, (req: any, res: any, next: any) => {
+    upload.single("image")(req, res, (err: any) => {
+      if (err) {
+        const msg = err.code === "LIMIT_FILE_SIZE" ? "File too large (max 5MB)" : err.message || "Upload failed";
+        return res.status(400).json({ message: msg });
+      }
+      if (!req.file) {
+        return res.status(400).json({ message: "No image file provided" });
+      }
+      const imageUrl = `/uploads/${req.file.filename}`;
+      res.json({ url: imageUrl });
+    });
+  });
 
   app.post("/api/auth/register", async (req, res) => {
     try {
@@ -194,6 +234,19 @@ export async function registerRoutes(
   app.post("/api/users", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
+      if (!req.body.name || !req.body.name.trim()) {
+        return res.status(400).json({ message: "Name is required" });
+      }
+      if (!req.body.username || !req.body.username.trim()) {
+        return res.status(400).json({ message: "Username is required" });
+      }
+      if (!req.body.role) {
+        return res.status(400).json({ message: "Role is required" });
+      }
+      const existingUser = await storage.getUserByUsername(req.body.username);
+      if (existingUser) {
+        return res.status(409).json({ message: "Username already taken. Please choose a different username." });
+      }
       const hashedPw = await hashPassword(req.body.password || "demo123");
       const newUser = await storage.createUser({
         ...req.body,
@@ -204,7 +257,10 @@ export async function registerRoutes(
       auditLogFromReq(req, { action: "user_created", entityType: "user", entityId: newUser.id, entityName: newUser.name, after: { name: newUser.name, role: newUser.role } });
       res.json(safeUser);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      if (err.code === "23505") {
+        return res.status(409).json({ message: "Username already taken. Please choose a different username." });
+      }
+      res.status(500).json({ message: err.message || "Failed to create staff member" });
     }
   });
 
@@ -212,6 +268,9 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const data = { ...req.body };
+      if (data.name !== undefined && (!data.name || !data.name.trim())) {
+        return res.status(400).json({ message: "Name cannot be empty" });
+      }
       if (data.password) {
         data.password = await hashPassword(data.password);
       }
@@ -220,7 +279,10 @@ export async function registerRoutes(
       const { password: _, ...safeUser } = updated;
       res.json(safeUser);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      if (err.code === "23505") {
+        return res.status(409).json({ message: "Username already taken" });
+      }
+      res.status(500).json({ message: err.message || "Failed to update staff member" });
     }
   });
 
@@ -346,10 +408,23 @@ export async function registerRoutes(
   });
 
   app.post("/api/tables", requireRole("owner", "manager"), async (req, res) => {
-    const user = req.user as any;
-    const { tenantId: _t, id: _i, ...body } = req.body;
-    const tbl = await storage.createTable({ ...body, tenantId: user.tenantId });
-    res.json(tbl);
+    try {
+      const user = req.user as any;
+      const { tenantId: _t, id: _i, ...body } = req.body;
+      if (!body.number && body.number !== 0) {
+        return res.status(400).json({ message: "Table number is required" });
+      }
+      const existingTables = await storage.getTablesByTenant(user.tenantId);
+      const zone = body.zone || "Main";
+      const duplicate = existingTables.find(t => t.number === parseInt(body.number) && (t.zone || "Main") === zone);
+      if (duplicate) {
+        return res.status(409).json({ message: `Table ${body.number} already exists in zone "${zone}". Please use a different number.` });
+      }
+      const tbl = await storage.createTable({ ...body, tenantId: user.tenantId });
+      res.json(tbl);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to create table" });
+    }
   });
 
   app.patch("/api/tables/:id", requireAuth, async (req, res) => {
@@ -596,11 +671,33 @@ export async function registerRoutes(
   });
 
   app.post("/api/reservations", requireAuth, async (req, res) => {
-    const user = req.user as any;
-    const { tenantId: _t, id: _i, ...body } = req.body;
-    if (body.dateTime && typeof body.dateTime === "string") body.dateTime = new Date(body.dateTime);
-    const reservation = await storage.createReservation({ ...body, tenantId: user.tenantId });
-    res.json(reservation);
+    try {
+      const user = req.user as any;
+      const { tenantId: _t, id: _i, ...body } = req.body;
+      if (!body.customerName || !body.customerName.trim()) {
+        return res.status(400).json({ message: "Customer name is required" });
+      }
+      if (!body.dateTime) {
+        return res.status(400).json({ message: "Date and time are required" });
+      }
+      if (typeof body.dateTime === "string") {
+        const parsed = new Date(body.dateTime);
+        if (isNaN(parsed.getTime())) {
+          return res.status(400).json({ message: "Invalid date/time format" });
+        }
+        body.dateTime = parsed;
+      }
+      if (body.guests !== undefined) {
+        body.guests = parseInt(body.guests);
+        if (isNaN(body.guests) || body.guests < 1) {
+          return res.status(400).json({ message: "Guests must be a positive number" });
+        }
+      }
+      const reservation = await storage.createReservation({ ...body, tenantId: user.tenantId });
+      res.json(reservation);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to create reservation" });
+    }
   });
 
   app.patch("/api/reservations/:id", requireAuth, async (req, res) => {
@@ -990,9 +1087,23 @@ export async function registerRoutes(
   });
 
   app.post("/api/staff-schedules", requireRole("owner", "manager"), async (req, res) => {
-    const user = req.user as any;
-    const schedule = await storage.createStaffSchedule({ ...req.body, tenantId: user.tenantId });
-    res.json(schedule);
+    try {
+      const user = req.user as any;
+      const { userId, date, startTime, endTime } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "Staff member is required" });
+      }
+      if (!date) {
+        return res.status(400).json({ message: "Date is required" });
+      }
+      if (!startTime || !endTime) {
+        return res.status(400).json({ message: "Start time and end time are required" });
+      }
+      const schedule = await storage.createStaffSchedule({ ...req.body, tenantId: user.tenantId });
+      res.json(schedule);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Failed to create shift" });
+    }
   });
 
   app.get("/api/dashboard", requireAuth, async (req, res) => {
