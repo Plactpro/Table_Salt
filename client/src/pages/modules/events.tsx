@@ -32,12 +32,12 @@ import { Checkbox } from "@/components/ui/checkbox";
 
 type ViewType = "month" | "week" | "day" | "list";
 
-const typeConfig: Record<string, { label: string; icon: LucideIcon; color: string }> = {
-  holiday: { label: "Holiday", icon: Sun, color: "#f97316" },
-  festival: { label: "Festival", icon: PartyPopper, color: "#f59e0b" },
-  sports: { label: "Sports Event", icon: Trophy, color: "#22c55e" },
-  corporate: { label: "Corporate", icon: Building2, color: "#3b82f6" },
-  promotion: { label: "Promotion", icon: Megaphone, color: "#8b5cf6" },
+const typeConfig: Record<string, { label: string; icon: LucideIcon; color: string; emoji: string }> = {
+  holiday: { label: "Holiday", icon: Sun, color: "#f97316", emoji: "🌞" },
+  festival: { label: "Festival", icon: PartyPopper, color: "#f59e0b", emoji: "🎉" },
+  sports: { label: "Sports Event", icon: Trophy, color: "#22c55e", emoji: "🏆" },
+  corporate: { label: "Corporate", icon: Building2, color: "#3b82f6", emoji: "🏢" },
+  promotion: { label: "Promotion", icon: Megaphone, color: "#8b5cf6", emoji: "📣" },
 };
 
 const impactConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -132,6 +132,7 @@ function EventTooltipContent({ ev }: { ev: CalEvent }) {
 }
 
 function EventBar({ ev, onEventClick }: { ev: CalEvent; onEventClick: (e: CalEvent) => void }) {
+  const tc = typeConfig[ev.type] || typeConfig.holiday;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -141,7 +142,7 @@ function EventBar({ ev, onEventClick }: { ev: CalEvent; onEventClick: (e: CalEve
           onClick={(e) => { e.stopPropagation(); onEventClick(ev); }}
           data-testid={`event-bar-${ev.id}`}
         >
-          {ev.title}
+          {tc.emoji} {ev.title}
         </div>
       </TooltipTrigger>
       <TooltipContent side="right">
@@ -272,10 +273,11 @@ function CalendarWeekView({ events, currentDate, onEventClick }: {
   );
 }
 
-function DayView({ events, currentDate, onEventClick }: {
+function DayView({ events, currentDate, onEventClick, onAddEvent }: {
   events: CalEvent[];
   currentDate: Date;
   onEventClick: (e: CalEvent) => void;
+  onAddEvent?: (date: Date) => void;
 }) {
   const dayEvents = events.filter((ev) =>
     isInRange(currentDate, new Date(ev.startDate), new Date(ev.endDate))
@@ -283,11 +285,23 @@ function DayView({ events, currentDate, onEventClick }: {
 
   return (
     <div className="border rounded-lg p-4" data-testid="calendar-day-view">
-      <h3 className="text-lg font-semibold mb-4">{currentDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</h3>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-semibold">{currentDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</h3>
+        {onAddEvent && (
+          <Button size="sm" onClick={() => onAddEvent(currentDate)} data-testid="button-add-event-day">
+            <Plus className="h-4 w-4 mr-1" />Add Event
+          </Button>
+        )}
+      </div>
       {dayEvents.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground" data-testid="text-no-events-day">
           <CalendarIcon className="h-12 w-12 mx-auto mb-3 opacity-30" />
           <p>No events on this day</p>
+          {onAddEvent && (
+            <Button variant="outline" size="sm" className="mt-3" onClick={() => onAddEvent(currentDate)} data-testid="button-add-event-empty-day">
+              <Plus className="h-4 w-4 mr-1" />Add Event for This Day
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -414,6 +428,19 @@ export default function EventsPage() {
   const { data: allEvents = [] } = useQuery<CalEvent[]>({ queryKey: ["/api/events"] });
   const { data: offers = [] } = useQuery<Offer[]>({ queryKey: ["/api/offers"] });
   const { data: outlets = [] } = useQuery<Outlet[]>({ queryKey: ["/api/outlets"] });
+  const { data: staffUsers = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/users"] });
+
+  const userMap = useMemo(() => {
+    const m = new Map<string, string>();
+    staffUsers.forEach((u) => m.set(u.id, u.name));
+    return m;
+  }, [staffUsers]);
+
+  const outletMap = useMemo(() => {
+    const m = new Map<string, string>();
+    outlets.forEach((o) => m.set(o.id, o.name));
+    return m;
+  }, [outlets]);
 
   const filtered = useMemo(() => {
     let result = allEvents;
@@ -698,7 +725,7 @@ export default function EventsPage() {
         {Object.entries(typeConfig).map(([k, v]) => (
           <div key={k} className="flex items-center gap-1.5 text-xs">
             <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: v.color }} />
-            <span className="text-muted-foreground">{v.label}</span>
+            <span className="text-muted-foreground">{v.emoji} {v.label}</span>
           </div>
         ))}
       </div>
@@ -723,6 +750,7 @@ export default function EventsPage() {
           events={filtered}
           currentDate={currentDate}
           onEventClick={(ev) => { if (canEdit) openEdit(ev); }}
+          onAddEvent={canEdit ? (d) => openCreate(d) : undefined}
         />
       )}
 
@@ -743,7 +771,8 @@ export default function EventsPage() {
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("impact")} data-testid="sort-impact">Impact {sortField === "impact" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("startDate")} data-testid="sort-start">Start {sortField === "startDate" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
                     <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("endDate")} data-testid="sort-end">End {sortField === "endDate" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
-                    <TableHead>Tags</TableHead>
+                    <TableHead>Outlets</TableHead>
+                    <TableHead>Created By</TableHead>
                     {canEdit && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
@@ -762,17 +791,18 @@ export default function EventsPage() {
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell><Badge variant="outline" className="text-xs">{tc.label}</Badge></TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs">{tc.emoji} {tc.label}</Badge></TableCell>
                         <TableCell><Badge className={`text-xs ${ic.bg} ${ic.color}`}>{ic.label}</Badge></TableCell>
                         <TableCell className="text-sm">{formatDate(ev.startDate)}</TableCell>
                         <TableCell className="text-sm">{formatDate(ev.endDate)}</TableCell>
                         <TableCell>
                           <div className="flex gap-1 flex-wrap">
-                            {(ev.tags || []).map((t, i) => (
-                              <Badge key={i} variant="secondary" className="text-xs">{t}</Badge>
-                            ))}
+                            {ev.outlets && ev.outlets.length > 0 ? ev.outlets.map((oid) => (
+                              <Badge key={oid} variant="secondary" className="text-xs">{outletMap.get(oid) || oid.slice(0, 8)}</Badge>
+                            )) : <span className="text-xs text-muted-foreground">All</span>}
                           </div>
                         </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{ev.createdBy ? userMap.get(ev.createdBy) || "—" : "—"}</TableCell>
                         {canEdit && (
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-1">
