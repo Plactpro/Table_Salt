@@ -45,39 +45,39 @@ import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
-type Role = "owner" | "manager" | "waiter" | "kitchen" | "accountant";
+import type { UserRole } from "@shared/permissions-config";
 
 interface RouteGuardConfig {
-  roles: Role[];
+  roles: UserRole[];
   featureKey?: FeatureKey;
 }
 
 const routeAccessMap: Record<string, RouteGuardConfig> = {
-  "/pos": { roles: ["owner", "manager", "waiter"], featureKey: "pos" },
-  "/orders": { roles: ["owner", "manager", "waiter", "kitchen"], featureKey: "orders" },
-  "/tables": { roles: ["owner", "manager", "waiter"], featureKey: "tables" },
-  "/menu": { roles: ["owner", "manager"], featureKey: "menu" },
-  "/inventory": { roles: ["owner", "manager"], featureKey: "inventory" },
-  "/outlets": { roles: ["owner", "manager"], featureKey: "outlets" },
-  "/offers": { roles: ["owner", "manager"], featureKey: "offers" },
-  "/crm": { roles: ["owner", "manager"], featureKey: "crm" },
-  "/performance": { roles: ["owner", "manager"], featureKey: "staff" },
-  "/delivery": { roles: ["owner", "manager"], featureKey: "delivery_management" },
-  "/orders-hub": { roles: ["owner", "manager"], featureKey: "delivery_management" },
-  "/cleaning": { roles: ["owner", "manager"], featureKey: "cleaning" },
-  "/audits": { roles: ["owner", "manager"], featureKey: "internal_audits" },
-  "/integrations": { roles: ["owner", "manager"], featureKey: "integrations" },
-  "/staff": { roles: ["owner", "manager"], featureKey: "staff" },
-  "/reports": { roles: ["owner", "manager", "accountant"], featureKey: "reports" },
-  "/billing": { roles: ["owner"], featureKey: "billing" },
-  "/settings": { roles: ["owner"], featureKey: "settings" },
-  "/hq-console": { roles: ["owner"], featureKey: "outlets" },
-  "/suppliers": { roles: ["owner", "manager"], featureKey: "inventory" },
-  "/procurement": { roles: ["owner", "manager"], featureKey: "inventory" },
-  "/workforce": { roles: ["owner", "manager"], featureKey: "staff" },
-  "/bi-dashboard": { roles: ["owner", "manager", "accountant"], featureKey: "reports" },
-  "/audit-log": { roles: ["owner", "manager", "accountant"], featureKey: "reports" },
-  "/security": { roles: ["owner"], featureKey: "settings" },
+  "/pos": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "pos" },
+  "/orders": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen"], featureKey: "orders" },
+  "/tables": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
+  "/menu": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "menu" },
+  "/inventory": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "inventory" },
+  "/outlets": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "outlets" },
+  "/offers": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
+  "/crm": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "crm" },
+  "/performance": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
+  "/delivery": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
+  "/orders-hub": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
+  "/cleaning": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "cleaning" },
+  "/audits": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "auditor"], featureKey: "internal_audits" },
+  "/integrations": { roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "integrations" },
+  "/staff": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
+  "/reports": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
+  "/billing": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "billing" },
+  "/settings": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
+  "/hq-console": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "outlets" },
+  "/suppliers": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
+  "/procurement": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
+  "/workforce": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
+  "/bi-dashboard": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
+  "/audit-log": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
+  "/security": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -110,7 +110,7 @@ function GuardedRoute({ path, component: Component }: { path: string; component:
 
   if (!config) return <Component />;
 
-  const userRole = user?.role as Role;
+  const userRole = user?.role as UserRole;
   if (!config.roles.includes(userRole)) {
     return <AccessDenied reason="role" />;
   }
