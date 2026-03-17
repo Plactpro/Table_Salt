@@ -1085,3 +1085,34 @@ export const promotionRules = pgTable("promotion_rules", {
 export const insertPromotionRuleSchema = createInsertSchema(promotionRules).omit({ id: true, createdAt: true, usageCount: true });
 export type PromotionRule = typeof promotionRules.$inferSelect;
 export type InsertPromotionRule = z.infer<typeof insertPromotionRuleSchema>;
+
+export const kioskDevices = pgTable("kiosk_devices", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  name: text("name").notNull(),
+  deviceToken: text("device_token").notNull(),
+  active: boolean("active").default(true),
+  settings: jsonb("settings").$type<Record<string, unknown>>(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertKioskDeviceSchema = createInsertSchema(kioskDevices).omit({ id: true, createdAt: true });
+export type KioskDevice = typeof kioskDevices.$inferSelect;
+export type InsertKioskDevice = z.infer<typeof insertKioskDeviceSchema>;
+
+export const upsellRules = pgTable("upsell_rules", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).references(() => tenants.id),
+  triggerItemId: varchar("trigger_item_id", { length: 36 }),
+  triggerCategoryId: varchar("trigger_category_id", { length: 36 }),
+  suggestItemId: varchar("suggest_item_id", { length: 36 }).references(() => menuItems.id),
+  label: text("label").notNull(),
+  priority: integer("priority").default(0),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertUpsellRuleSchema = createInsertSchema(upsellRules).omit({ id: true, createdAt: true });
+export type UpsellRule = typeof upsellRules.$inferSelect;
+export type InsertUpsellRule = z.infer<typeof insertUpsellRuleSchema>;

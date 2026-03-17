@@ -25,6 +25,7 @@ import {
   insertSupplierSchema, insertSupplierCatalogItemSchema, insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema, insertGoodsReceivedNoteSchema, insertGrnItemSchema,
   insertTableZoneSchema, insertWaitlistEntrySchema,
+  insertKioskDeviceSchema, insertUpsellRuleSchema,
   deviceSessions,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
@@ -4146,6 +4147,221 @@ export async function registerRoutes(
         after: { role: req.body.role },
       });
       res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Kiosk Device Management (admin) ──
+  app.get("/api/kiosk-devices", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const devices = await storage.getKioskDevicesByTenant(user.tenantId);
+      res.json(devices);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/kiosk-devices", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const data = { ...req.body, tenantId: user.tenantId };
+      const crypto = await import("crypto");
+      if (!data.deviceToken) data.deviceToken = crypto.randomBytes(32).toString("hex");
+      const device = await storage.createKioskDevice(data);
+      res.json(device);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/kiosk-devices/:id", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { name, active, settings, outletId } = req.body;
+      const updates: Record<string, any> = {};
+      if (name !== undefined) updates.name = name;
+      if (active !== undefined) updates.active = active;
+      if (settings !== undefined) updates.settings = settings;
+      if (outletId !== undefined) {
+        const outlet = await storage.getOutlet(outletId);
+        if (!outlet || outlet.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid outlet" });
+        updates.outletId = outletId;
+      }
+      const device = await storage.updateKioskDevice(req.params.id, user.tenantId, updates);
+      if (!device) return res.status(404).json({ message: "Device not found" });
+      res.json(device);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/kiosk-devices/:id", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await storage.deleteKioskDevice(req.params.id, user.tenantId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Upsell Rules Management (admin) ──
+  app.get("/api/upsell-rules", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rules = await storage.getUpsellRulesByTenant(user.tenantId);
+      res.json(rules);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/upsell-rules", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rule = await storage.createUpsellRule({ ...req.body, tenantId: user.tenantId });
+      res.json(rule);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/upsell-rules/:id", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rule = await storage.updateUpsellRule(req.params.id, user.tenantId, req.body);
+      if (!rule) return res.status(404).json({ message: "Rule not found" });
+      res.json(rule);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/upsell-rules/:id", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await storage.deleteUpsellRule(req.params.id, user.tenantId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ── Kiosk Public API (auth via device token) ──
+  app.get("/api/kiosk/menu", async (req, res) => {
+    try {
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+      const categories = await storage.getCategoriesByTenant(device.tenantId!);
+      const items = await storage.getMenuItemsByTenant(device.tenantId!);
+      const activeCategories = categories.filter(c => c.active !== false);
+      const availableItems = items.filter(i => i.available !== false);
+      res.json({ categories: activeCategories, items: availableItems, tenantId: device.tenantId, outletId: device.outletId });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/kiosk/upsells", async (req, res) => {
+    try {
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+      const rules = await storage.getUpsellRulesByTenant(device.tenantId!);
+      res.json(rules.filter(r => r.active));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/kiosk/tenant-info", async (req, res) => {
+    try {
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+      const tenant = await storage.getTenant(device.tenantId!);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      res.json({
+        name: tenant.name,
+        currency: tenant.currency,
+        currencyPosition: (tenant as any).currencyPosition || "before",
+        currencyDecimals: (tenant as any).currencyDecimals ?? 2,
+        taxRate: tenant.taxRate,
+        serviceCharge: tenant.serviceCharge,
+        taxType: (tenant as any).taxType || "vat",
+        compoundTax: (tenant as any).compoundTax ?? false,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/kiosk/order", async (req, res) => {
+    try {
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+
+      const { items, paymentMethod } = req.body;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "Order must have at least one item" });
+      }
+
+      const menuItemsList = await storage.getMenuItemsByTenant(device.tenantId!);
+      const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+      const availableItems = new Set(menuItemsList.filter(m => m.available !== false).map(m => m.id));
+
+      let serverSubtotal = 0;
+      const serverItems: { menuItemId: string; name: string; price: number; quantity: number; categoryId?: string }[] = [];
+      for (const item of items) {
+        if (!item.menuItemId || typeof item.menuItemId !== "string") continue;
+        const mi = menuMap.get(item.menuItemId);
+        if (!mi || !availableItems.has(mi.id)) continue;
+        const canonicalPrice = Number(mi.price);
+        const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
+        serverSubtotal += canonicalPrice * qty;
+        serverItems.push({ menuItemId: mi.id, name: mi.name, price: canonicalPrice, quantity: qty, categoryId: mi.categoryId || undefined });
+      }
+
+      if (serverItems.length === 0) {
+        return res.status(400).json({ message: "No valid items in order" });
+      }
+      serverSubtotal = Math.round(serverSubtotal * 100) / 100;
+
+      const { evaluateRules } = await import("./promotions-engine");
+      const promoRules = await storage.getPromotionRulesByTenant(device.tenantId!);
+      const tenant = await storage.getTenant(device.tenantId!);
+      const taxRate = Number(tenant?.taxRate || 0) / 100;
+      const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
+
+      const engineResult = evaluateRules(promoRules, {
+        items: serverItems,
+        subtotal: serverSubtotal,
+        channel: "kiosk",
+        orderType: "takeaway",
+      });
+
+      const engineDiscountTotal = engineResult.appliedDiscounts.reduce((s, d) => s + (d.discountAmount > 0 ? d.discountAmount : 0), 0);
+      const totalDiscount = Math.round(engineDiscountTotal * 100) / 100;
+      const afterDiscount = Math.max(0, serverSubtotal - totalDiscount);
+      const serverServiceCharge = Math.round(afterDiscount * serviceChargeRate * 100) / 100;
+      const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
+      const serverTotal = Math.round((afterDiscount + serverServiceCharge + serverTax) * 100) / 100;
+
+      const order = await storage.createOrder({
+        tenantId: device.tenantId!,
+        outletId: device.outletId,
+        orderType: "takeaway",
+        channel: "kiosk",
+        status: "new",
+        subtotal: serverSubtotal.toFixed(2),
+        discount: totalDiscount.toFixed(2),
+        tax: serverTax.toFixed(2),
+        total: serverTotal.toFixed(2),
+        paymentMethod: paymentMethod || "card",
+        notes: `Kiosk order from ${device.name}`,
+      });
+
+      for (const item of serverItems) {
+        const mi = menuMap.get(item.menuItemId);
+        await storage.createOrderItem({
+          orderId: order.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price.toFixed(2),
+          station: mi?.station || null,
+          course: mi?.course || null,
+        });
+      }
+
+      const orderItems = await storage.getOrderItemsByOrder(order.id);
+      const tokenNumber = order.orderNumber || order.id.slice(0, 6).toUpperCase();
+
+      res.json({ ...order, items: orderItems, tokenNumber });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

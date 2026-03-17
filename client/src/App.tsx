@@ -35,6 +35,7 @@ import BillingPage from "@/pages/modules/billing";
 import AuditLogPage from "@/pages/modules/audit-log";
 import SecuritySettingsPage from "@/pages/modules/security-settings";
 import PromotionsPage from "@/pages/modules/promotions";
+import KioskPage from "@/pages/kiosk";
 import OwnerDashboard from "@/pages/dashboards/owner";
 import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
@@ -217,6 +218,10 @@ function ProtectedPages() {
 
 function Router() {
   const [location] = useLocation();
+
+  if (location === "/kiosk") {
+    return <KioskPage />;
+  }
 
   if (location === "/login") {
     return (
