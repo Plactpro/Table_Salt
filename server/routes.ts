@@ -26,7 +26,7 @@ import {
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
-import { can, needsSupervisorApproval, getPermissionsForRole } from "./permissions";
+import { can, needsSupervisorApproval, getPermissionsForRole, requirePermission } from "./permissions";
 import { auditLog, auditLogFromReq } from "./audit";
 
 export async function registerRoutes(
@@ -70,6 +70,7 @@ export async function registerRoutes(
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
+        auditLog({ tenantId: null, action: "login_failed", metadata: { username: req.body.username }, req });
         return res.status(401).json({ message: info?.message || "Invalid credentials" });
       }
       req.login(user, (loginErr) => {
@@ -115,6 +116,7 @@ export async function registerRoutes(
         password: hashedPw,
       });
       const { password: _, ...safeUser } = newUser;
+      auditLogFromReq(req, { action: "user_created", entityType: "user", entityId: newUser.id, entityName: newUser.name, after: { name: newUser.name, role: newUser.role } });
       res.json(safeUser);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -189,21 +191,21 @@ export async function registerRoutes(
     res.json(items);
   });
 
-  app.post("/api/menu-items", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/menu-items", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const user = req.user as any;
     const item = await storage.createMenuItem({ ...req.body, tenantId: user.tenantId });
     auditLogFromReq(req, { action: "menu_item_created", entityType: "menu_item", entityId: item.id, entityName: item.name, after: { name: item.name, price: item.price } });
     res.json(item);
   });
 
-  app.patch("/api/menu-items/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/menu-items/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const existing = await storage.getMenuItem(req.params.id);
     const item = await storage.updateMenuItem(req.params.id, req.body);
     if (existing) auditLogFromReq(req, { action: "menu_item_updated", entityType: "menu_item", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, price: existing.price }, after: req.body });
     res.json(item);
   });
 
-  app.delete("/api/menu-items/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.delete("/api/menu-items/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const existing = await storage.getMenuItem(req.params.id);
     await storage.deleteMenuItem(req.params.id);
     if (existing) auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
@@ -546,10 +548,14 @@ export async function registerRoutes(
   });
 
   app.patch("/api/orders/:id", requireAuth, async (req, res) => {
-    const user = req.user as Express.User & { tenantId: string };
+    const user = req.user as Express.User & { tenantId: string; id: string; role: string; name: string };
     const existing = await storage.getOrder(req.params.id);
     if (!existing) return res.status(404).json({ message: "Order not found" });
     if (existing.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+    if (req.body.status === "voided" && !can(user, "void_order")) {
+      return res.status(403).json({ message: "Permission denied", action: "void_order", requiresSupervisor: needsSupervisorApproval(user, "void_order") });
+    }
 
     const updateData = { ...req.body };
 
@@ -653,13 +659,13 @@ export async function registerRoutes(
     res.json(inv);
   });
 
-  app.post("/api/inventory", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/inventory", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
     const user = req.user as any;
     const item = await storage.createInventoryItem({ ...req.body, tenantId: user.tenantId });
     res.json(item);
   });
 
-  app.patch("/api/inventory/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/inventory/:id", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
     const item = await storage.updateInventoryItem(req.params.id, req.body);
     res.json(item);
   });
@@ -1010,26 +1016,31 @@ export async function registerRoutes(
     res.json(offer);
   });
 
-  app.post("/api/offers", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/offers", requireRole("owner", "manager"), requirePermission("manage_offers"), async (req, res) => {
     try {
       const user = req.user as any;
       const offer = await storage.createOffer({ ...req.body, tenantId: user.tenantId });
+      auditLogFromReq(req, { action: "offer_created", entityType: "offer", entityId: offer.id, entityName: offer.name, after: { name: offer.name, type: offer.type, value: offer.value } });
       res.json(offer);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
-  app.patch("/api/offers/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/offers/:id", requireRole("owner", "manager"), requirePermission("manage_offers"), async (req, res) => {
     const user = req.user as any;
+    const existing = await storage.getOfferByTenant(req.params.id, user.tenantId);
     const offer = await storage.updateOfferByTenant(req.params.id, user.tenantId, req.body);
     if (!offer) return res.status(404).json({ message: "Offer not found" });
+    if (existing) auditLogFromReq(req, { action: "offer_updated", entityType: "offer", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, active: existing.active }, after: req.body });
     res.json(offer);
   });
 
-  app.delete("/api/offers/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.delete("/api/offers/:id", requireRole("owner", "manager"), requirePermission("manage_offers"), async (req, res) => {
     const user = req.user as any;
+    const existing = await storage.getOfferByTenant(req.params.id, user.tenantId);
     await storage.deleteOfferByTenant(req.params.id, user.tenantId);
+    if (existing) auditLogFromReq(req, { action: "offer_deleted", entityType: "offer", entityId: req.params.id, entityName: existing.name });
     res.json({ message: "Deleted" });
   });
 
@@ -1824,7 +1835,7 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/recipes", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/recipes", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
       const { ingredients, ...recipeData } = req.body;
@@ -1850,7 +1861,7 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/recipes/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/recipes/:id", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
       const { ingredients, ...recipeData } = req.body;
@@ -1876,7 +1887,7 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/recipes/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.delete("/api/recipes/:id", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
       await storage.deleteRecipe(req.params.id, user.tenantId);
@@ -2057,7 +2068,7 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/stock-takes", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/stock-takes", requireRole("owner", "manager"), requirePermission("adjust_stock"), async (req, res) => {
     try {
       const user = req.user as any;
       const inventory = await storage.getInventoryByTenant(user.tenantId);
@@ -3545,7 +3556,7 @@ export async function registerRoutes(
         return res.status(403).json({ message: "Insufficient permissions" });
       }
       const events = await storage.getAuditEventsByEntity(tenantId, req.params.entityType, req.params.entityId);
-      res.json(events);
+      res.json({ events });
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
   });
 

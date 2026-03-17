@@ -3,7 +3,7 @@ import { auditEvents } from "@shared/schema";
 import type { Request } from "express";
 
 interface AuditLogParams {
-  tenantId: string;
+  tenantId: string | null;
   userId?: string;
   userName?: string;
   action: string;
@@ -26,7 +26,7 @@ export async function auditLog(params: AuditLogParams): Promise<void> {
     const userAgent = params.req?.headers["user-agent"] || null;
 
     await db.insert(auditEvents).values({
-      tenantId: params.tenantId,
+      tenantId: params.tenantId || null,
       userId: params.userId || null,
       userName: params.userName || null,
       action: params.action,

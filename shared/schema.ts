@@ -1012,20 +1012,20 @@ export type InsertLabourCostSnapshot = z.infer<typeof insertLabourCostSnapshotSc
 
 export const auditEvents = pgTable("audit_events", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
-  userId: varchar("user_id", { length: 36 }).references(() => users.id),
+  tenantId: varchar("tenant_id", { length: 36 }),
+  userId: varchar("user_id", { length: 36 }),
   userName: text("user_name"),
   action: text("action").notNull(),
   entityType: text("entity_type"),
   entityId: varchar("entity_id", { length: 36 }),
   entityName: text("entity_name"),
-  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  outletId: varchar("outlet_id", { length: 36 }),
   before: jsonb("before"),
   after: jsonb("after"),
   metadata: jsonb("metadata"),
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
-  supervisorId: varchar("supervisor_id", { length: 36 }).references(() => users.id),
+  supervisorId: varchar("supervisor_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

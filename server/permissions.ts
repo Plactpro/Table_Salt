@@ -102,3 +102,23 @@ export function getAllActions(): PermissionAction[] {
     return acc;
   }, []);
 }
+
+import type { Request, Response, NextFunction } from "express";
+
+export function requirePermission(action: PermissionAction) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const user = req.user as UserLike | undefined;
+    if (!user) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+    if (!can(user, action)) {
+      return res.status(403).json({
+        message: "Permission denied",
+        action,
+        role: user.role,
+        requiresSupervisor: needsSupervisorApproval(user, action),
+      });
+    }
+    next();
+  };
+}
