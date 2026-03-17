@@ -51,7 +51,7 @@ app.use((req, res, next) => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      const sensitiveRoutes = ["/api/gdpr/export", "/api/auth/login", "/api/auth/register"];
+      const sensitiveRoutes = ["/api/gdpr/export", "/api/gdpr/delete-account", "/api/gdpr/anonymize-account", "/api/auth/login", "/api/auth/register", "/api/security"];
       if (capturedJsonResponse && !sensitiveRoutes.some(r => path.startsWith(r))) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
       }

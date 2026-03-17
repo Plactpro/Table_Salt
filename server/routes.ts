@@ -5589,6 +5589,27 @@ export async function registerRoutes(
         }
       }
 
+      const allReservations = await storage.getReservationsByTenant(user.tenantId);
+      for (const r of allReservations) {
+        if (r.customerName === freshUser.name || (r.customerPhone && freshUser.phone && r.customerPhone === freshUser.phone)) {
+          await storage.updateReservationByTenant(r.id, user.tenantId, { customerName: "[deleted]", customerPhone: null } as Partial<typeof r>);
+        }
+      }
+
+      const allWaitlist = await storage.getWaitlistByTenant(user.tenantId);
+      for (const w of allWaitlist) {
+        if (w.customerName === freshUser.name || (w.customerPhone && freshUser.phone && w.customerPhone === freshUser.phone)) {
+          await storage.updateWaitlistEntry(w.id, user.tenantId, { customerName: "[deleted]", customerPhone: null } as Partial<typeof w>);
+        }
+      }
+
+      const allDeliveries = await storage.getDeliveryOrdersByTenant(user.tenantId);
+      for (const d of allDeliveries) {
+        if (d.customerPhone && freshUser.phone && d.customerPhone === freshUser.phone) {
+          await storage.updateDeliveryOrderByTenant(d.id, user.tenantId, { customerPhone: null, customerAddress: "[deleted]" } as Partial<typeof d>);
+        }
+      }
+
       await db.execute(sql`UPDATE orders SET waiter_id = NULL WHERE waiter_id = ${user.id} AND tenant_id = ${user.tenantId}`);
 
       auditLogFromReq(req, { action: "gdpr_account_deleted", entityType: "user", entityId: user.id, entityName: freshUser.name });
