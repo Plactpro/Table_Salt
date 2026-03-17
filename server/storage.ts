@@ -437,11 +437,11 @@ export class DatabaseStorage implements IStorage {
 
   async getUser(id: string) {
     const [u] = await db.select().from(users).where(eq(users.id, id));
-    return u;
+    return u ? decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User : undefined;
   }
   async getUserByUsername(username: string) {
     const [u] = await db.select().from(users).where(eq(users.username, username));
-    return u;
+    return u ? decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User : undefined;
   }
   async createUser(data: InsertUser) {
     const encData = encryptPiiFields(data as Record<string, unknown>, USER_PII_FIELDS) as InsertUser;
@@ -454,7 +454,8 @@ export class DatabaseStorage implements IStorage {
     return u ? decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User : undefined;
   }
   async getUsersByTenant(tenantId: string) {
-    return db.select().from(users).where(eq(users.tenantId, tenantId));
+    const rows = await db.select().from(users).where(eq(users.tenantId, tenantId));
+    return rows.map(u => decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User);
   }
 
   async getOutletsByTenant(tenantId: string) {
@@ -663,7 +664,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCustomersByTenant(tenantId: string) {
-    return db.select().from(customers).where(eq(customers.tenantId, tenantId));
+    const rows = await db.select().from(customers).where(eq(customers.tenantId, tenantId));
+    return rows.map(c => decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer);
   }
   async createCustomer(data: InsertCustomer) {
     const encData = encryptPiiFields(data as Record<string, unknown>, CUSTOMER_PII_FIELDS) as InsertCustomer;
@@ -759,7 +761,7 @@ export class DatabaseStorage implements IStorage {
 
   async getCustomerByTenant(id: string, tenantId: string) {
     const [c] = await db.select().from(customers).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId)));
-    return c;
+    return c ? decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer : undefined;
   }
   async updateCustomerByTenant(id: string, tenantId: string, data: Partial<InsertCustomer>) {
     const encData = encryptPiiFields(data as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Partial<InsertCustomer>;
@@ -770,10 +772,12 @@ export class DatabaseStorage implements IStorage {
     await db.delete(customers).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId)));
   }
   async getCustomersByLoyaltyTier(tenantId: string, tier: string) {
-    return db.select().from(customers).where(and(eq(customers.tenantId, tenantId), eq(customers.loyaltyTier, tier)));
+    const rows = await db.select().from(customers).where(and(eq(customers.tenantId, tenantId), eq(customers.loyaltyTier, tier)));
+    return rows.map(c => decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer);
   }
   async getCustomersByTags(tenantId: string, tag: string) {
-    return db.select().from(customers).where(and(eq(customers.tenantId, tenantId), sql`${tag} = ANY(${customers.tags})`));
+    const rows = await db.select().from(customers).where(and(eq(customers.tenantId, tenantId), sql`${tag} = ANY(${customers.tags})`));
+    return rows.map(c => decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer);
   }
 
   async getOrdersWithOfferDetails(tenantId: string) {

@@ -29,12 +29,8 @@ export async function runRetentionCleanup(): Promise<{ auditRowsDeleted: number;
       alertsDeleted += Number(alertResult.rowCount || 0);
 
       if (mc.autoDeleteAnonymized) {
-        const dataRetentionMonths = (mc.dataRetentionMonths as number) || 36;
-        const dataCutoff = new Date();
-        dataCutoff.setMonth(dataCutoff.getMonth() - dataRetentionMonths);
-
         await db.execute(
-          sql`DELETE FROM customers WHERE tenant_id = ${tenantId} AND anonymized = true AND updated_at < ${dataCutoff}`
+          sql`DELETE FROM customers WHERE tenant_id = ${tenantId} AND anonymized = true`
         );
       }
     }

@@ -735,7 +735,7 @@ function DataPrivacyCard() {
 
   const anonymizeMutation = useMutation({
     mutationFn: async (password: string) => {
-      const res = await apiRequest("POST", "/api/gdpr/anonymize-account", { password });
+      const res = await apiRequest("POST", "/api/gdpr/delete-account", { password });
       return res.json();
     },
     onSuccess: () => {
