@@ -3676,6 +3676,9 @@ export async function registerRoutes(
       if (!can({ id: supervisor.id, role: supervisor.role, tenantId: supervisor.tenantId }, "supervisor_override")) {
         return res.status(403).json({ message: "User does not have supervisor privileges" });
       }
+      if (action && !can({ id: supervisor.id, role: supervisor.role, tenantId: supervisor.tenantId }, action)) {
+        return res.status(403).json({ message: `Supervisor lacks permission for action: ${action}` });
+      }
 
       await auditLogFromReq(req, {
         action: "supervisor_override",
@@ -3803,7 +3806,7 @@ export async function registerRoutes(
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
   });
 
-  app.patch("/api/security/settings", requireRole("owner"), async (req, res) => {
+  app.patch("/api/security/settings", requireRole("owner", "franchise_owner", "hq_admin"), requirePermission("manage_security"), async (req, res) => {
     try {
       const user = req.user as unknown as Record<string, unknown>;
       const tenantId = String(user.tenantId);
