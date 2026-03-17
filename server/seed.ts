@@ -911,6 +911,18 @@ export async function seedDatabase() {
     });
   }
 
+  const { deviceSessions } = await import("@shared/schema");
+  const { db } = await import("./db");
+  const deviceSeeds = [
+    { tenantId: tenant.id, userId: owner.id, deviceFingerprint: "fp_owner_desktop_01", deviceName: "Owner MacBook Pro", browser: "Chrome 121", os: "macOS 14.3", ipAddress: "10.0.1.10", isTrusted: true, lastActive: new Date(), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+    { tenantId: tenant.id, userId: owner.id, deviceFingerprint: "fp_owner_ipad_02", deviceName: "Owner iPad", browser: "Safari 17", os: "iPadOS 17.2", ipAddress: "10.0.1.11", isTrusted: true, lastActive: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+    { tenantId: tenant.id, userId: manager.id, deviceFingerprint: "fp_manager_pos_01", deviceName: "POS Terminal 1", browser: "Chrome 120", os: "Windows 11", ipAddress: "10.0.2.20", isTrusted: true, lastActive: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000), expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) },
+    { tenantId: tenant.id, userId: waiter.id, deviceFingerprint: "fp_waiter_tablet_01", deviceName: "Waiter Tablet", browser: "Chrome 121", os: "Android 14", ipAddress: "10.0.3.30", isTrusted: false, lastActive: new Date(Date.now() - 3 * 60 * 60 * 1000), expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) },
+  ];
+  for (const ds of deviceSeeds) {
+    await db.insert(deviceSessions).values(ds);
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

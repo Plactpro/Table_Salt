@@ -75,12 +75,29 @@ interface UserLike {
   id: string;
   role: string;
   tenantId: string;
+  outletId?: string | null;
 }
 
-export function can(user: UserLike, action: PermissionAction): boolean {
+interface PermissionContext {
+  outletId?: string;
+  resourceOwnerId?: string;
+  amount?: number;
+  threshold?: number;
+}
+
+export function can(user: UserLike, action: PermissionAction, context?: PermissionContext): boolean {
   const perms = rolePermissions[user.role as Role];
   if (!perms) return false;
-  return perms.includes(action);
+  if (!perms.includes(action)) return false;
+  if (context) {
+    if (context.outletId && user.outletId && user.outletId !== context.outletId) {
+      if (user.role !== "owner") return false;
+    }
+    if (context.amount !== undefined && context.threshold !== undefined && context.amount > context.threshold) {
+      if (!perms.includes(action)) return false;
+    }
+  }
+  return true;
 }
 
 export function needsSupervisorApproval(user: UserLike, action: PermissionAction): boolean {

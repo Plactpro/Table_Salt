@@ -60,7 +60,7 @@ function InventoryTab() {
   const [adjustData, setAdjustData] = useState({ type: "in" as "in" | "out", quantity: "", reason: "" });
   const [supervisorDialog, setSupervisorDialog] = useState<{
     open: boolean; action: string; actionLabel: string;
-    pendingData: { id: string; data: any } | null;
+    pendingData: { id: string; data: { type: string; quantity: string; reason: string } } | null;
   } | null>(null);
 
   const fmt = (v: number) => {
@@ -85,8 +85,11 @@ function InventoryTab() {
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); toast({ title: "Deleted" }); },
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
+  const pendingAdjustRef = { current: null as { id: string; data: { type: string; quantity: string; reason: string } } | null };
+
   const adjustMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+    mutationFn: async ({ id, data }: { id: string; data: { type: string; quantity: string; reason: string; supervisorOverride?: { username: string; password: string } } }) => {
+      pendingAdjustRef.current = { id, data: { type: data.type, quantity: data.quantity, reason: data.reason } };
       const res = await fetch(`/api/inventory/${id}/adjust`, {
         method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
         body: JSON.stringify(data),
@@ -94,21 +97,19 @@ function InventoryTab() {
       if (res.status === 403) {
         const errData = await res.json();
         if (errData.requiresSupervisor) {
-          const err = new Error(errData.message) as any;
-          err.requiresSupervisor = true;
-          err.action = errData.action;
-          err.pendingData = { id, data };
-          throw err;
+          throw new Error("__SUPERVISOR_REQUIRED__:" + (errData.action || "large_stock_adjustment"));
         }
         throw new Error(errData.message || "Permission denied");
       }
       if (!res.ok) throw new Error((await res.json()).message || "Failed");
+      pendingAdjustRef.current = null;
       return res.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setAdjustDialogOpen(false); setAdjustingItem(null); setAdjustData({ type: "in", quantity: "", reason: "" }); toast({ title: "Stock adjusted" }); },
-    onError: (err: any) => {
-      if (err.requiresSupervisor && err.pendingData) {
-        setSupervisorDialog({ open: true, action: err.action || "large_stock_adjustment", actionLabel: "Large Stock Adjustment", pendingData: err.pendingData });
+    onError: (err: Error) => {
+      if (err.message.startsWith("__SUPERVISOR_REQUIRED__:") && pendingAdjustRef.current) {
+        const action = err.message.split(":")[1];
+        setSupervisorDialog({ open: true, action: action || "large_stock_adjustment", actionLabel: "Large Stock Adjustment", pendingData: pendingAdjustRef.current });
         return;
       }
       toast({ title: "Error", description: err.message, variant: "destructive" });

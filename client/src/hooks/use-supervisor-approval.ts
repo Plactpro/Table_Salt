@@ -11,11 +11,12 @@ export function useSupervisorApproval() {
   const [state, setState] = useState<SupervisorState | null>(null);
 
   const handleApiError = useCallback(
-    (error: any, retryWithOverride: (credentials: { username: string; password: string }) => void, actionLabel: string) => {
-      if (error?.requiresSupervisor || (error?.message === "Permission denied" && error?.action)) {
+    (error: Error, retryWithOverride: (credentials: { username: string; password: string }) => void, actionLabel: string) => {
+      if (error.message.startsWith("__SUPERVISOR_REQUIRED__:")) {
+        const action = error.message.split(":")[1] || "unknown";
         setState({
           open: true,
-          action: error.action || "unknown",
+          action,
           actionLabel,
           pendingCallback: retryWithOverride,
         });
@@ -46,14 +47,11 @@ export function useSupervisorApproval() {
   };
 }
 
-export async function parseApiError(res: Response): Promise<any> {
+export async function parseApiError(res: Response): Promise<Response> {
   if (res.status === 403) {
     const data = await res.json();
     if (data.requiresSupervisor) {
-      const err = new Error(data.message) as any;
-      err.requiresSupervisor = true;
-      err.action = data.action;
-      throw err;
+      throw new Error("__SUPERVISOR_REQUIRED__:" + (data.action || "unknown"));
     }
     throw new Error(data.message || "Permission denied");
   }
