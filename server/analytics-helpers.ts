@@ -5,6 +5,7 @@ export interface OrderData {
   tax: string | null;
   discount: string | null;
   orderType: string | null;
+  channel: string | null;
   status: string | null;
   outletId: string | null;
   tableId: string | null;
@@ -65,7 +66,7 @@ export function computeChannelMix(orders: OrderData[]): { channel: string; reven
   const mix: Record<string, { channel: string; revenue: number; count: number }> = {};
   for (const o of orders) {
     if (isVoidOrCancelled(o.status)) continue;
-    const ch = o.orderType || "dine_in";
+    const ch = o.channel || o.orderType || "dine_in";
     if (!mix[ch]) mix[ch] = { channel: ch, revenue: 0, count: 0 };
     mix[ch].revenue += Number(o.total) || 0;
     mix[ch].count++;

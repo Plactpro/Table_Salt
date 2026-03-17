@@ -4162,10 +4162,15 @@ export async function registerRoutes(
   app.post("/api/kiosk-devices", requireAuth, requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const data = { ...req.body, tenantId: user.tenantId };
+      const { name, outletId, active, settings } = req.body;
+      if (!name) return res.status(400).json({ message: "Device name is required" });
+      if (outletId) {
+        const outlet = await storage.getOutlet(outletId);
+        if (!outlet || outlet.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid outlet" });
+      }
       const crypto = await import("crypto");
-      if (!data.deviceToken) data.deviceToken = crypto.randomBytes(32).toString("hex");
-      const device = await storage.createKioskDevice(data);
+      const deviceToken = crypto.randomBytes(32).toString("hex");
+      const device = await storage.createKioskDevice({ name, outletId: outletId || null, active: active ?? true, settings: settings || null, tenantId: user.tenantId, deviceToken });
       res.json(device);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -4295,7 +4300,7 @@ export async function registerRoutes(
       const availableItems = new Set(menuItemsList.filter(m => m.available !== false).map(m => m.id));
 
       let serverSubtotal = 0;
-      const serverItems: { menuItemId: string; name: string; price: number; quantity: number; categoryId?: string }[] = [];
+      const serverItems: { menuItemId: string; name: string; price: number; quantity: number; categoryId?: string; notes?: string }[] = [];
       for (const item of items) {
         if (!item.menuItemId || typeof item.menuItemId !== "string") continue;
         const mi = menuMap.get(item.menuItemId);
@@ -4303,7 +4308,7 @@ export async function registerRoutes(
         const canonicalPrice = Number(mi.price);
         const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
         serverSubtotal += canonicalPrice * qty;
-        serverItems.push({ menuItemId: mi.id, name: mi.name, price: canonicalPrice, quantity: qty, categoryId: mi.categoryId || undefined });
+        serverItems.push({ menuItemId: mi.id, name: mi.name, price: canonicalPrice, quantity: qty, categoryId: mi.categoryId || undefined, notes: typeof item.notes === "string" ? item.notes.slice(0, 200) : undefined });
       }
 
       if (serverItems.length === 0) {
@@ -4317,11 +4322,13 @@ export async function registerRoutes(
       const taxRate = Number(tenant?.taxRate || 0) / 100;
       const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
 
+      const requestedServiceType = req.body.serviceType === "dine_in" ? "dine_in" : "takeaway";
+
       const engineResult = evaluateRules(promoRules, {
         items: serverItems,
         subtotal: serverSubtotal,
         channel: "kiosk",
-        orderType: "takeaway",
+        orderType: requestedServiceType,
       });
 
       const engineDiscountTotal = engineResult.appliedDiscounts.reduce((s, d) => s + (d.discountAmount > 0 ? d.discountAmount : 0), 0);
@@ -4334,7 +4341,7 @@ export async function registerRoutes(
       const order = await storage.createOrder({
         tenantId: device.tenantId!,
         outletId: device.outletId,
-        orderType: "takeaway",
+        orderType: requestedServiceType,
         channel: "kiosk",
         status: "new",
         subtotal: serverSubtotal.toFixed(2),
@@ -4355,6 +4362,7 @@ export async function registerRoutes(
           price: item.price.toFixed(2),
           station: mi?.station || null,
           course: mi?.course || null,
+          notes: item.notes || null,
         });
       }
 
