@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Shield, Download, ChevronLeft, ChevronRight, Search, Clock, User, Activity, FileText, Eye } from "lucide-react";
+import { Shield, Download, ChevronLeft, ChevronRight, Search, Clock, User, Activity, FileText, Eye, History, ArrowLeft } from "lucide-react";
 
 interface AuditEvent {
   id: string;
@@ -76,6 +76,7 @@ export default function AuditLogPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selectedEvent, setSelectedEvent] = useState<AuditEvent | null>(null);
+  const [entityHistory, setEntityHistory] = useState<{ entityType: string; entityId: string; entityName: string } | null>(null);
 
   const queryParams = new URLSearchParams();
   queryParams.set("limit", String(PAGE_SIZE));
@@ -109,6 +110,16 @@ export default function AuditLogPage() {
       const res = await fetch("/api/users", { credentials: "include" });
       return res.json();
     },
+  });
+
+  const { data: entityHistoryData, isLoading: entityHistoryLoading } = useQuery<{ events: AuditEvent[] }>({
+    queryKey: ["/api/audit-log/entity", entityHistory?.entityType, entityHistory?.entityId],
+    queryFn: async () => {
+      const res = await fetch(`/api/audit-log/entity/${entityHistory!.entityType}/${entityHistory!.entityId}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch entity history");
+      return res.json();
+    },
+    enabled: !!entityHistory,
   });
 
   const events = data?.events || [];
@@ -276,6 +287,11 @@ export default function AuditLogPage() {
                               {event.entityName && <span className="text-sm font-medium">{event.entityName}</span>}
                               {event.entityType && <span className="text-xs text-muted-foreground ml-1">({event.entityType})</span>}
                             </div>
+                            {event.entityType && event.entityId && (
+                              <Button variant="ghost" size="sm" className="h-6 px-1.5 ml-1" onClick={() => setEntityHistory({ entityType: event.entityType!, entityId: event.entityId!, entityName: event.entityName || event.entityId! })} data-testid={`button-entity-history-${event.id}`}>
+                                <History className="h-3.5 w-3.5" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">{event.ipAddress || "—"}</TableCell>
@@ -351,7 +367,15 @@ export default function AuditLogPage() {
                 {selectedEvent.entityId && (
                   <div className="col-span-2">
                     <span className="text-muted-foreground block text-xs">Entity ID</span>
-                    <span className="text-xs font-mono break-all">{selectedEvent.entityId}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono break-all">{selectedEvent.entityId}</span>
+                      {selectedEvent.entityType && (
+                        <Button variant="outline" size="sm" className="h-6 text-xs" onClick={() => { setEntityHistory({ entityType: selectedEvent.entityType!, entityId: selectedEvent.entityId!, entityName: selectedEvent.entityName || selectedEvent.entityId! }); setSelectedEvent(null); }} data-testid="button-view-entity-history">
+                          <History className="h-3 w-3 mr-1" />
+                          View History
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
                 {selectedEvent.supervisorId && (
@@ -390,6 +414,63 @@ export default function AuditLogPage() {
               )}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+      <Dialog open={!!entityHistory} onOpenChange={(open) => !open && setEntityHistory(null)}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Entity History: {entityHistory?.entityName}
+              <Badge variant="outline" className="text-xs ml-2">{entityHistory?.entityType}</Badge>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="overflow-y-auto flex-1" data-testid="entity-history-panel">
+            {entityHistoryLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+              </div>
+            ) : !entityHistoryData?.events?.length ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <p>No history found for this entity</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {entityHistoryData.events.map((event, idx) => (
+                  <div key={event.id} className="border rounded-lg p-3 text-sm" data-testid={`entity-history-event-${idx}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        {getActionBadge(event.action)}
+                        <span className="text-muted-foreground text-xs">by {event.userName || "System"}</span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">{formatDate(event.createdAt)}</span>
+                    </div>
+                    {(event.before || event.after) && (
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        {event.before && (
+                          <div>
+                            <span className="text-xs font-medium text-red-600 block mb-1">Before</span>
+                            <pre className="text-xs bg-red-50 p-2 rounded overflow-auto max-h-24">{JSON.stringify(event.before, null, 2)}</pre>
+                          </div>
+                        )}
+                        {event.after && (
+                          <div>
+                            <span className="text-xs font-medium text-green-600 block mb-1">After</span>
+                            <pre className="text-xs bg-green-50 p-2 rounded overflow-auto max-h-24">{JSON.stringify(event.after, null, 2)}</pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {event.metadata && (
+                      <div className="mt-2">
+                        <pre className="text-xs bg-muted p-2 rounded overflow-auto max-h-16">{JSON.stringify(event.metadata, null, 2)}</pre>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
