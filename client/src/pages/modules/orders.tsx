@@ -1,10 +1,11 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion } from "framer-motion";
+import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -128,6 +129,7 @@ export default function OrdersPage() {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [billPreviewOrder, setBillPreviewOrder] = useState<OrderWithItems | null>(null);
   const [billPaymentMethod, setBillPaymentMethod] = useState<PaymentMethod>("cash");
+  const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string } | null>(null);
 
   const { data: orders = [], isLoading } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
@@ -144,20 +146,50 @@ export default function OrdersPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, paymentMethod: pm }: { id: string; status: string; paymentMethod?: string }) => {
-      const body: Record<string, string> = { status };
+    mutationFn: async ({ id, status, paymentMethod: pm, supervisorOverride }: { id: string; status: string; paymentMethod?: string; supervisorOverride?: { username: string; password: string } }) => {
+      const body: Record<string, unknown> = { status };
       if (pm) body.paymentMethod = pm;
-      await apiRequest("PATCH", `/api/orders/${id}`, body);
+      if (supervisorOverride) body.supervisorOverride = supervisorOverride;
+      const res = await fetch(`/api/orders/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Request failed" }));
+        if (res.status === 403 && data.requiresSupervisor) {
+          throw Object.assign(new Error(data.message), { requiresSupervisor: true, action: data.action, orderId: id });
+        }
+        throw new Error(data.message || "Request failed");
+      }
+      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       if (selectedOrderId) queryClient.invalidateQueries({ queryKey: ["/api/orders", selectedOrderId] });
       toast({ title: "Order status updated" });
     },
-    onError: (err: Error) => {
-      toast({ variant: "destructive", title: "Failed to update", description: err.message });
+    onError: (err: unknown) => {
+      const error = err as Error & { requiresSupervisor?: boolean; action?: string; orderId?: string };
+      if (error.requiresSupervisor && error.orderId) {
+        setSupervisorDialog({ open: true, orderId: error.orderId, action: error.action || "void_order" });
+        return;
+      }
+      toast({ variant: "destructive", title: "Failed to update", description: error.message });
     },
   });
+
+  const handleSupervisorApproved = useCallback((_supervisorId: string, credentials: { username: string; password: string }) => {
+    if (supervisorDialog) {
+      updateStatusMutation.mutate({
+        id: supervisorDialog.orderId,
+        status: "voided",
+        supervisorOverride: credentials,
+      });
+    }
+    setSupervisorDialog(null);
+  }, [supervisorDialog, updateStatusMutation]);
 
   const tableMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -471,9 +503,14 @@ export default function OrdersPage() {
                     </Button>
                   )}
                   {selectedOrderDetail.status !== "cancelled" && selectedOrderDetail.status !== "voided" && selectedOrderDetail.status !== "paid" && (
-                    <Button variant="destructive" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled" })} disabled={updateStatusMutation.isPending} data-testid="button-cancel-order">
-                      Cancel Order
-                    </Button>
+                    <>
+                      <Button variant="destructive" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "voided" })} disabled={updateStatusMutation.isPending} data-testid="button-void-order">
+                        <Ban className="h-4 w-4 mr-1" /> Void
+                      </Button>
+                      <Button variant="outline" className="text-destructive border-destructive/50" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled" })} disabled={updateStatusMutation.isPending} data-testid="button-cancel-order">
+                        Cancel Order
+                      </Button>
+                    </>
                   )}
                 </div>
               )}
@@ -576,6 +613,15 @@ export default function OrdersPage() {
           )}
         </DialogContent>
       </Dialog>
+      {supervisorDialog && (
+        <SupervisorApprovalDialog
+          open={supervisorDialog.open}
+          onOpenChange={(open) => !open && setSupervisorDialog(null)}
+          action={supervisorDialog.action}
+          actionLabel="Void Order"
+          onApproved={handleSupervisorApproved}
+        />
+      )}
     </motion.div>
   );
 }
