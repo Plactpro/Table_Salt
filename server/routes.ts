@@ -380,8 +380,15 @@ export async function registerRoutes(
       partyName: null,
       partySize: null,
       seatedAt: null,
+      callServerFlag: false,
+      requestBillFlag: false,
     });
     if (!tbl) return res.status(404).json({ message: "Table not found" });
+    const activeSession = await storage.getActiveTableSession(req.params.id);
+    if (activeSession) {
+      await storage.updateTableSession(activeSession.id, { status: "closed", closedAt: new Date() });
+      await storage.clearGuestCart(activeSession.id);
+    }
     res.json(tbl);
   });
 
@@ -4419,6 +4426,43 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/guest/menu/:outletId", async (req, res) => {
+    try {
+      const { outletId } = req.params;
+      const outlet = await storage.getOutlet(outletId);
+      if (!outlet) return res.status(404).json({ message: "Outlet not found" });
+      const tenant = await storage.getTenant(outlet.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Restaurant not found" });
+      const categories = await storage.getCategoriesByTenant(tenant.id);
+      const items = await storage.getMenuItemsByTenant(tenant.id);
+      res.json({
+        categories: categories.filter(c => c.active !== false),
+        items: items.filter(i => i.available !== false).map(i => ({
+          id: i.id, name: i.name, description: i.description, price: i.price,
+          categoryId: i.categoryId, image: i.image, isVeg: i.isVeg,
+          spicyLevel: i.spicyLevel, allergens: (i as any).allergens || null,
+          tags: (i as any).tags || null,
+        })),
+        currency: tenant.currency,
+        currencyPosition: (tenant as any).currencyPosition || "before",
+        currencyDecimals: (tenant as any).currencyDecimals ?? 2,
+        taxRate: tenant.taxRate,
+        restaurantName: tenant.name,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/tables/:tableId/generate-qr-token", requireAuth, async (req, res) => {
+    try {
+      const table = await storage.getTable(req.params.tableId);
+      if (!table) return res.status(404).json({ message: "Table not found" });
+      const crypto = await import("crypto");
+      const token = `tbl-${crypto.randomBytes(8).toString("hex")}`;
+      const updated = await storage.updateTable(table.id, { qrToken: token });
+      res.json({ qrToken: token, table: updated });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/guest/:outletId/:tableToken", async (req, res) => {
     try {
       const { outletId, tableToken } = req.params;
@@ -4575,7 +4619,7 @@ export async function registerRoutes(
         tableId: session.tableId,
         orderType: "dine_in",
         status: "new",
-        channel: "qr_table",
+        channel: "qr_dinein",
         subtotal: subtotal.toFixed(2),
         tax: taxAmount.toFixed(2),
         discount: "0",

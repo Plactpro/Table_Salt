@@ -1189,25 +1189,76 @@ export default function TablesPage() {
                       ))}
                     </div>
                   </div>
-                  {selectedTable.qrToken && selectedTable.outletId && (
+                  {selectedTable.outletId && (
                     <div className="border-t pt-3">
                       <h4 className="text-sm font-medium mb-2">Guest QR Ordering</h4>
                       <div className="bg-muted/50 rounded-lg p-3 space-y-2">
-                        <div className="text-xs text-muted-foreground break-all font-mono" data-testid="text-qr-link">
-                          {window.location.origin}/guest/o/{selectedTable.outletId}/t/{selectedTable.qrToken}
-                        </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="text-xs"
-                          onClick={() => {
-                            navigator.clipboard.writeText(`${window.location.origin}/guest/o/${selectedTable.outletId}/t/${selectedTable.qrToken}`);
-                            toast({ title: "QR link copied to clipboard" });
-                          }}
-                          data-testid="button-copy-qr-link"
-                        >
-                          Copy Link
-                        </Button>
+                        {selectedTable.qrToken ? (
+                          <>
+                            <div className="text-xs text-muted-foreground break-all font-mono" data-testid="text-qr-link">
+                              {window.location.origin}/guest/o/{selectedTable.outletId}/t/{selectedTable.qrToken}
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                                onClick={() => {
+                                  navigator.clipboard.writeText(`${window.location.origin}/guest/o/${selectedTable.outletId}/t/${selectedTable.qrToken}`);
+                                  toast({ title: "QR link copied to clipboard" });
+                                }}
+                                data-testid="button-copy-qr-link"
+                              >
+                                Copy Link
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-xs"
+                                onClick={() => {
+                                  const url = `${window.location.origin}/guest/o/${selectedTable.outletId}/t/${selectedTable.qrToken}`;
+                                  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(url)}`;
+                                  const link = document.createElement("a");
+                                  link.href = qrUrl;
+                                  link.download = `table-${selectedTable.number}-qr.png`;
+                                  link.target = "_blank";
+                                  link.click();
+                                }}
+                                data-testid="button-download-qr"
+                              >
+                                Download QR
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-xs text-muted-foreground"
+                                onClick={() => {
+                                  apiRequest("POST", `/api/tables/${selectedTable.id}/generate-qr-token`).then(() => {
+                                    invalidateAll();
+                                    toast({ title: "QR token regenerated" });
+                                  });
+                                }}
+                                data-testid="button-regenerate-qr"
+                              >
+                                Regenerate
+                              </Button>
+                            </div>
+                          </>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => {
+                              apiRequest("POST", `/api/tables/${selectedTable.id}/generate-qr-token`).then(() => {
+                                invalidateAll();
+                                toast({ title: "QR token generated" });
+                              });
+                            }}
+                            data-testid="button-generate-qr-token"
+                          >
+                            Generate QR Token
+                          </Button>
+                        )}
                       </div>
                     </div>
                   )}

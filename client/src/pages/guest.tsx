@@ -10,7 +10,7 @@ import {
   Wine, Soup, Pizza, Salad, Sandwich,
 } from "lucide-react";
 
-type GuestStep = "menu" | "item-detail" | "cart" | "bill" | "order-placed";
+type GuestStep = "menu" | "item-detail" | "cart" | "bill" | "bill-split" | "payment-confirm" | "order-placed";
 
 interface TenantInfo {
   name: string;
@@ -128,6 +128,11 @@ export default function GuestPage() {
   const [callingServer, setCallingServer] = useState(false);
   const [requestingBill, setRequestingBill] = useState(false);
 
+  const [splitMode, setSplitMode] = useState<"equal" | "by-item">("equal");
+  const [splitCount, setSplitCount] = useState(2);
+  const [selectedSplitItems, setSelectedSplitItems] = useState<Set<number>>(new Set());
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+
   const fmt = useCallback((val: number | string) => {
     if (!tenant) return String(val);
     return sharedFormatCurrency(val, tenant.currency, {
@@ -184,8 +189,6 @@ export default function GuestPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           menuItemId: item.id,
-          name: item.name,
-          price: item.price,
           quantity: qty,
           notes: notes || null,
           guestLabel: "Guest 1",
@@ -256,7 +259,7 @@ export default function GuestPage() {
     } catch { setCallingServer(false); }
   }, [session]);
 
-  const requestBill = useCallback(async () => {
+  const requestBill = useCallback(async (navigateTo?: GuestStep) => {
     if (!session) return;
     setRequestingBill(true);
     try {
@@ -265,7 +268,7 @@ export default function GuestPage() {
       if (res.ok) {
         const data = await res.json();
         setBill(data);
-        setStep("bill");
+        setStep(navigateTo || "bill");
       }
     } catch (err) { console.error(err); }
     finally { setRequestingBill(false); }
@@ -673,7 +676,10 @@ export default function GuestPage() {
 
               <div className="p-4 border-t space-y-2">
                 <button
-                  onClick={requestBill}
+                  onClick={() => {
+                    setPaymentConfirmed(false);
+                    requestBill("payment-confirm");
+                  }}
                   disabled={requestingBill}
                   className="w-full bg-teal-600 text-white py-3 rounded-xl font-medium hover:bg-teal-700 flex items-center justify-center gap-2 disabled:opacity-50"
                   data-testid="button-request-bill-payment"
@@ -681,10 +687,179 @@ export default function GuestPage() {
                   {requestingBill ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
                   Request Bill & Pay
                 </button>
+                <button
+                  onClick={() => { setSplitMode("equal"); setSplitCount(2); setSelectedSplitItems(new Set()); setStep("bill-split"); }}
+                  className="w-full border border-teal-600 text-teal-600 py-3 rounded-xl font-medium hover:bg-teal-50 flex items-center justify-center gap-2"
+                  data-testid="button-split-bill"
+                >
+                  <Users className="h-4 w-4" /> Split Bill
+                </button>
                 <button onClick={() => setStep("menu")} className="w-full text-teal-600 py-2 text-sm font-medium" data-testid="button-back-to-menu">
                   Back to Menu
                 </button>
               </div>
+            </div>
+          </motion.div>
+        )}
+
+        {step === "bill-split" && bill && (
+          <motion.div key="bill-split" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="flex-1 p-4 pb-24">
+            <div className="bg-white rounded-xl border shadow-sm overflow-hidden">
+              <div className="bg-teal-600 text-white p-4 text-center">
+                <Users className="h-8 w-8 mx-auto mb-2" />
+                <h2 className="text-lg font-bold">Split Bill</h2>
+              </div>
+
+              <div className="p-4 space-y-4">
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSplitMode("equal")}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${splitMode === "equal" ? "bg-teal-600 text-white border-teal-600" : "bg-white text-gray-700 border-gray-200"}`}
+                    data-testid="button-split-equal"
+                  >
+                    Split Equally
+                  </button>
+                  <button
+                    onClick={() => setSplitMode("by-item")}
+                    className={`flex-1 py-2 rounded-lg text-sm font-medium border transition-colors ${splitMode === "by-item" ? "bg-teal-600 text-white border-teal-600" : "bg-white text-gray-700 border-gray-200"}`}
+                    data-testid="button-split-by-item"
+                  >
+                    By Item
+                  </button>
+                </div>
+
+                {splitMode === "equal" && (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">Number of people</span>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => setSplitCount(c => Math.max(2, c - 1))} className="w-8 h-8 rounded-full border flex items-center justify-center" data-testid="button-split-minus">
+                          <Minus className="h-4 w-4" />
+                        </button>
+                        <span className="font-bold text-lg w-8 text-center" data-testid="text-split-count">{splitCount}</span>
+                        <button onClick={() => setSplitCount(c => Math.min(20, c + 1))} className="w-8 h-8 rounded-full border flex items-center justify-center" data-testid="button-split-plus">
+                          <Plus className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-teal-50 rounded-xl p-4 text-center space-y-1">
+                      <p className="text-sm text-gray-500">Each person pays</p>
+                      <p className="text-3xl font-bold text-teal-700" data-testid="text-split-amount">{fmt(Number(bill.total) / splitCount)}</p>
+                      <p className="text-xs text-gray-400">Total: {fmt(bill.total)} ÷ {splitCount}</p>
+                    </div>
+                  </div>
+                )}
+
+                {splitMode === "by-item" && (
+                  <div className="space-y-3">
+                    <p className="text-xs text-gray-500">Select items for your share:</p>
+                    {bill.items.map((item: any, idx: number) => {
+                      const selected = selectedSplitItems.has(idx);
+                      return (
+                        <button
+                          key={idx}
+                          onClick={() => {
+                            const next = new Set(selectedSplitItems);
+                            if (selected) next.delete(idx); else next.add(idx);
+                            setSelectedSplitItems(next);
+                          }}
+                          className={`w-full flex justify-between items-center text-sm p-3 rounded-lg border transition-colors text-left ${selected ? "bg-teal-50 border-teal-300" : "border-gray-200"}`}
+                          data-testid={`button-split-item-${idx}`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${selected ? "bg-teal-600 border-teal-600 text-white" : "border-gray-300"}`}>
+                              {selected && <CheckCircle2 className="h-3.5 w-3.5" />}
+                            </div>
+                            <span>{item.name} x{item.quantity}</span>
+                          </div>
+                          <span className="font-medium">{fmt(Number(item.price) * (item.quantity || 1))}</span>
+                        </button>
+                      );
+                    })}
+
+                    {selectedSplitItems.size > 0 && (
+                      <div className="bg-teal-50 rounded-xl p-4 text-center space-y-1">
+                        <p className="text-sm text-gray-500">Your share</p>
+                        <p className="text-3xl font-bold text-teal-700" data-testid="text-split-share">
+                          {fmt(bill.items.reduce((s: number, item: any, idx: number) => selectedSplitItems.has(idx) ? s + Number(item.price) * (item.quantity || 1) : s, 0) * (1 + Number(tenant?.taxRate || 0) / 100))}
+                        </p>
+                        <p className="text-xs text-gray-400">{selectedSplitItems.size} item{selectedSplitItems.size > 1 ? "s" : ""} selected (incl. tax)</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="p-4 border-t space-y-2">
+                <button onClick={() => setStep("bill")} className="w-full text-teal-600 py-2 text-sm font-medium" data-testid="button-back-to-bill">
+                  Back to Full Bill
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
+        {step === "payment-confirm" && bill && (
+          <motion.div key="payment-confirm" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="flex-1 flex items-center justify-center p-6">
+            <div className="bg-white rounded-2xl border shadow-lg p-8 text-center max-w-sm w-full" data-testid="payment-confirm-card">
+              {!paymentConfirmed ? (
+                <>
+                  <div className="w-16 h-16 rounded-full bg-teal-100 flex items-center justify-center mx-auto mb-4">
+                    <CreditCard className="h-8 w-8 text-teal-600" />
+                  </div>
+                  <h2 className="text-xl font-bold mb-2">Payment Requested</h2>
+                  <p className="text-gray-500 text-sm mb-6">Your server has been notified. Please choose a payment method:</p>
+
+                  <div className="bg-teal-50 rounded-xl p-4 mb-6">
+                    <p className="text-sm text-gray-500">Amount Due</p>
+                    <p className="text-3xl font-bold text-teal-700" data-testid="text-payment-total">{fmt(bill.total)}</p>
+                  </div>
+
+                  <div className="space-y-2 mb-6">
+                    <button
+                      onClick={() => setPaymentConfirmed(true)}
+                      className="w-full bg-teal-600 text-white py-3 rounded-xl font-medium hover:bg-teal-700 flex items-center justify-center gap-2"
+                      data-testid="button-pay-card"
+                    >
+                      <CreditCard className="h-4 w-4" /> Pay with Card
+                    </button>
+                    <button
+                      onClick={() => setPaymentConfirmed(true)}
+                      className="w-full border border-gray-200 py-3 rounded-xl font-medium hover:bg-gray-50 flex items-center justify-center gap-2"
+                      data-testid="button-pay-cash"
+                    >
+                      <Banknote className="h-4 w-4" /> Pay with Cash
+                    </button>
+                    <button
+                      onClick={() => setPaymentConfirmed(true)}
+                      className="w-full border border-gray-200 py-3 rounded-xl font-medium hover:bg-gray-50 flex items-center justify-center gap-2"
+                      data-testid="button-pay-mobile"
+                    >
+                      <Smartphone className="h-4 w-4" /> Mobile Payment
+                    </button>
+                  </div>
+
+                  <button onClick={() => setStep("bill")} className="text-teal-600 text-sm font-medium" data-testid="button-back-from-payment">
+                    Back to Bill
+                  </button>
+                </>
+              ) : (
+                <>
+                  <motion.div initial={{ scale: 0 }} animate={{ scale: [0, 1.2, 1] }} transition={{ duration: 0.5 }}>
+                    <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
+                      <CheckCircle2 className="h-10 w-10 text-green-600" />
+                    </div>
+                  </motion.div>
+                  <h2 className="text-2xl font-bold mb-2">Payment Received!</h2>
+                  <p className="text-gray-500 mb-4">Thank you for dining with us at {bill.restaurantName}!</p>
+                  <div className="bg-gray-50 rounded-xl p-4 mb-6">
+                    <p className="text-sm text-gray-500">Amount Paid</p>
+                    <p className="text-2xl font-bold text-green-600" data-testid="text-payment-confirmed-total">{fmt(bill.total)}</p>
+                  </div>
+                  <p className="text-xs text-gray-400">A receipt has been prepared. Please ask your server if you need a printed copy.</p>
+                </>
+              )}
             </div>
           </motion.div>
         )}
