@@ -41,3 +41,15 @@ Key technical implementations include:
 - **framer-motion**: Animation library for React.
 - **TanStack Query**: Data fetching and caching library for React.
 - **IANA Time Zone Database**: Provides timezone data.
+
+## Navigation Architecture
+The sidebar navigation is consolidated from 33 items to 22 using tabbed hub pages. Seven hub pages group related modules:
+- **Promotions** (`/promotions`): Offers & Deals + Promotion Rules tabs
+- **Inventory** (`/inventory`): Stock & Items + Suppliers + Procurement tabs (Suppliers/Procurement tabs hidden for supervisor role)
+- **Staff & Workforce** (`/staff`): Schedule & Staff + Workforce + Performance tabs
+- **Reports & Analytics** (`/reports`): Sales Reports + BI & Forecasting + Audit Log tabs
+- **Delivery & Online** (`/delivery`): Delivery + Online Orders tabs
+- **Locations** (`/outlets`): Outlets + HQ Console tabs (HQ tab restricted to owner/franchise_owner/hq_admin)
+- **Settings** (`/settings`): General + Security tabs
+
+Old standalone routes (`/offers`, `/suppliers`, `/procurement`, `/workforce`, `/performance`, `/bi-dashboard`, `/audit-log`, `/orders-hub`, `/hq-console`, `/security`) redirect to their corresponding hub pages.
