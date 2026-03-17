@@ -1,5 +1,32 @@
 import { eq, and, desc, sql, gte, lte, lt, count, sum } from "drizzle-orm";
 import { db } from "./db";
+import { encryptField, decryptField, isEncrypted } from "./encryption";
+
+function encryptPiiFields<T extends Record<string, unknown>>(data: T, fields: string[]): T {
+  const result = { ...data };
+  for (const field of fields) {
+    const val = result[field];
+    if (typeof val === "string" && val && !isEncrypted(val)) {
+      (result as Record<string, unknown>)[field] = encryptField(val);
+    }
+  }
+  return result;
+}
+
+function decryptPiiFields<T extends Record<string, unknown>>(record: T, fields: string[]): T {
+  if (!record) return record;
+  const result = { ...record };
+  for (const field of fields) {
+    const val = result[field];
+    if (typeof val === "string" && isEncrypted(val)) {
+      (result as Record<string, unknown>)[field] = decryptField(val);
+    }
+  }
+  return result;
+}
+
+const USER_PII_FIELDS = ["email", "phone"];
+const CUSTOMER_PII_FIELDS = ["email", "phone"];
 import {
   tenants, users, outlets, menuCategories, menuItems, tableZones, tables, waitlistEntries,
   reservations, orders, orderItems, inventoryItems, stockMovements,
@@ -417,12 +444,14 @@ export class DatabaseStorage implements IStorage {
     return u;
   }
   async createUser(data: InsertUser) {
-    const [u] = await db.insert(users).values(data).returning();
-    return u;
+    const encData = encryptPiiFields(data as Record<string, unknown>, USER_PII_FIELDS) as InsertUser;
+    const [u] = await db.insert(users).values(encData).returning();
+    return decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User;
   }
   async updateUser(id: string, data: Partial<InsertUser>) {
-    const [u] = await db.update(users).set(data).where(eq(users.id, id)).returning();
-    return u;
+    const encData = encryptPiiFields(data as Record<string, unknown>, USER_PII_FIELDS) as Partial<InsertUser>;
+    const [u] = await db.update(users).set(encData).where(eq(users.id, id)).returning();
+    return u ? decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User : undefined;
   }
   async getUsersByTenant(tenantId: string) {
     return db.select().from(users).where(eq(users.tenantId, tenantId));
@@ -637,12 +666,14 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(customers).where(eq(customers.tenantId, tenantId));
   }
   async createCustomer(data: InsertCustomer) {
-    const [c] = await db.insert(customers).values(data).returning();
-    return c;
+    const encData = encryptPiiFields(data as Record<string, unknown>, CUSTOMER_PII_FIELDS) as InsertCustomer;
+    const [c] = await db.insert(customers).values(encData).returning();
+    return decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer;
   }
   async updateCustomer(id: string, data: Partial<InsertCustomer>) {
-    const [c] = await db.update(customers).set(data).where(eq(customers.id, id)).returning();
-    return c;
+    const encData = encryptPiiFields(data as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Partial<InsertCustomer>;
+    const [c] = await db.update(customers).set(encData).where(eq(customers.id, id)).returning();
+    return c ? decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer : undefined;
   }
 
   async getStaffSchedulesByTenant(tenantId: string) {
@@ -731,8 +762,9 @@ export class DatabaseStorage implements IStorage {
     return c;
   }
   async updateCustomerByTenant(id: string, tenantId: string, data: Partial<InsertCustomer>) {
-    const [c] = await db.update(customers).set(data).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId))).returning();
-    return c;
+    const encData = encryptPiiFields(data as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Partial<InsertCustomer>;
+    const [c] = await db.update(customers).set(encData).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId))).returning();
+    return c ? decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer : undefined;
   }
   async deleteCustomerByTenant(id: string, tenantId: string) {
     await db.delete(customers).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId)));

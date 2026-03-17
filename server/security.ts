@@ -132,3 +132,60 @@ export function setupCsrf(app: Express) {
     next();
   });
 }
+
+function ipToLong(ip: string): number {
+  const parts = ip.split(".").map(Number);
+  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+}
+
+function isIpInCidr(ip: string, cidr: string): boolean {
+  try {
+    const [cidrIp, prefixStr] = cidr.split("/");
+    const prefix = prefixStr ? parseInt(prefixStr) : 32;
+    const ipLong = ipToLong(ip);
+    const cidrLong = ipToLong(cidrIp);
+    const mask = prefix === 0 ? 0 : (~0 << (32 - prefix)) >>> 0;
+    return (ipLong & mask) === (cidrLong & mask);
+  } catch {
+    return false;
+  }
+}
+
+function getClientIp(req: Request): string {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string") {
+    return xff.split(",")[0].trim();
+  }
+  return req.ip || req.socket?.remoteAddress || "0.0.0.0";
+}
+
+export function setupIpAllowlistMiddleware(app: Express) {
+  const adminPaths = ["/api/security", "/api/users", "/api/gdpr", "/api/security-alerts"];
+
+  app.use(async (req: Request, res: Response, next: NextFunction) => {
+    const url = req.originalUrl || req.path;
+    const isAdminRoute = adminPaths.some(p => url.startsWith(p));
+    if (!isAdminRoute) return next();
+
+    const user = req.user as { tenantId?: string } | undefined;
+    if (!user?.tenantId) return next();
+
+    try {
+      const { storage } = await import("./storage");
+      const tenant = await storage.getTenant(user.tenantId);
+      if (!tenant) return next();
+      const mc = (tenant.moduleConfig || {}) as Record<string, unknown>;
+      if (!mc.ipAllowlistEnabled) return next();
+      const allowlist = mc.ipAllowlist as string[] | undefined;
+      if (!allowlist || allowlist.length === 0) return next();
+
+      const clientIp = getClientIp(req);
+      const allowed = allowlist.some(cidr => isIpInCidr(clientIp, cidr));
+      if (!allowed) {
+        return res.status(403).json({ message: "Access denied: IP not in allowlist" });
+      }
+    } catch (_) {}
+
+    next();
+  });
+}
