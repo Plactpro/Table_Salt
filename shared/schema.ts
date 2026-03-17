@@ -1032,3 +1032,22 @@ export const auditEvents = pgTable("audit_events", {
 export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, createdAt: true });
 export type AuditEvent = typeof auditEvents.$inferSelect;
 export type InsertAuditEvent = z.infer<typeof insertAuditEventSchema>;
+
+export const deviceSessions = pgTable("device_sessions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).references(() => tenants.id),
+  userId: varchar("user_id", { length: 36 }).references(() => users.id),
+  deviceFingerprint: text("device_fingerprint").notNull(),
+  deviceName: text("device_name"),
+  browser: text("browser"),
+  os: text("os"),
+  ipAddress: text("ip_address"),
+  isTrusted: boolean("is_trusted").default(false),
+  lastActive: timestamp("last_active").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+  expiresAt: timestamp("expires_at"),
+});
+
+export const insertDeviceSessionSchema = createInsertSchema(deviceSessions).omit({ id: true, createdAt: true });
+export type DeviceSession = typeof deviceSessions.$inferSelect;
+export type InsertDeviceSession = z.infer<typeof insertDeviceSessionSchema>;

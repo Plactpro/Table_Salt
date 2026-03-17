@@ -2,6 +2,8 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
+import { db } from "./db";
+import { eq, and, desc } from "drizzle-orm";
 import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords } from "./auth";
 import { getAdapter } from "./aggregator-adapters";
 import {
@@ -23,11 +25,35 @@ import {
   insertSupplierSchema, insertSupplierCatalogItemSchema, insertPurchaseOrderSchema,
   insertPurchaseOrderItemSchema, insertGoodsReceivedNoteSchema, insertGrnItemSchema,
   insertTableZoneSchema, insertWaitlistEntrySchema,
+  deviceSessions,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
-import { can, needsSupervisorApproval, getPermissionsForRole, requirePermission } from "./permissions";
+import { can, needsSupervisorApproval, getPermissionsForRole, requirePermission, type PermissionAction } from "./permissions";
 import { auditLog, auditLogFromReq } from "./audit";
+
+async function verifySupervisorOverride(
+  override: { username: string; password: string } | undefined,
+  tenantId: string,
+  action: PermissionAction,
+  req: import("express").Request
+): Promise<{ verified: boolean; supervisorId?: string; error?: string }> {
+  if (!override) return { verified: false, error: "No override provided" };
+  const supervisor = await storage.getUserByUsername(override.username);
+  if (!supervisor || supervisor.tenantId !== tenantId) return { verified: false, error: "Supervisor not found" };
+  const validPw = await comparePasswords(override.password, supervisor.password);
+  if (!validPw) return { verified: false, error: "Invalid supervisor credentials" };
+  if (!can({ id: supervisor.id, role: supervisor.role, tenantId: supervisor.tenantId }, action)) {
+    return { verified: false, error: "Supervisor lacks required permission" };
+  }
+  const user = req.user as { id: string; name: string; tenantId: string } | undefined;
+  auditLogFromReq(req, {
+    action: "supervisor_override",
+    metadata: { supervisorId: supervisor.id, supervisorName: supervisor.name, forAction: action, requestedBy: user?.name || "unknown" },
+    supervisorId: supervisor.id,
+  });
+  return { verified: true, supervisorId: supervisor.id };
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -199,9 +225,23 @@ export async function registerRoutes(
   });
 
   app.patch("/api/menu-items/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
+    const user = req.user as any;
     const existing = await storage.getMenuItem(req.params.id);
-    const item = await storage.updateMenuItem(req.params.id, req.body);
-    if (existing) auditLogFromReq(req, { action: "menu_item_updated", entityType: "menu_item", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, price: existing.price }, after: req.body });
+
+    if (existing && req.body.price && String(req.body.price) !== String(existing.price)) {
+      if (!can(user, "change_price")) {
+        if (req.body.supervisorOverride) {
+          const result = await verifySupervisorOverride(req.body.supervisorOverride, user.tenantId, "change_price", req);
+          if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
+        } else {
+          return res.status(403).json({ message: "Permission denied", action: "change_price", requiresSupervisor: true });
+        }
+      }
+    }
+
+    const { supervisorOverride: _so, ...updateData } = req.body;
+    const item = await storage.updateMenuItem(req.params.id, updateData);
+    if (existing) auditLogFromReq(req, { action: "menu_item_updated", entityType: "menu_item", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, price: existing.price }, after: updateData });
     res.json(item);
   });
 
@@ -522,7 +562,18 @@ export async function registerRoutes(
   app.post("/api/orders", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { items, ...orderData } = req.body;
+      const { items, supervisorOverride, ...orderData } = req.body;
+
+      const discountPct = Number(orderData.discount || 0);
+      if (discountPct > 15 && !can(user, "apply_large_discount")) {
+        if (supervisorOverride) {
+          const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "apply_large_discount", req);
+          if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
+        } else {
+          return res.status(403).json({ message: "Permission denied", action: "apply_large_discount", requiresSupervisor: true });
+        }
+      }
+
       const order = await storage.createOrder({ ...orderData, tenantId: user.tenantId, waiterId: user.id });
       if (items && items.length > 0) {
         const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
@@ -555,21 +606,26 @@ export async function registerRoutes(
 
     if (req.body.status === "voided" && !can(user, "void_order")) {
       if (req.body.supervisorOverride) {
-        const supervisor = await storage.getUserByUsername(req.body.supervisorOverride.username);
-        if (!supervisor || supervisor.tenantId !== user.tenantId) {
-          return res.status(403).json({ message: "Supervisor not found" });
-        }
-        const validPw = await comparePasswords(req.body.supervisorOverride.password, supervisor.password);
-        if (!validPw || !can({ id: supervisor.id, role: supervisor.role, tenantId: supervisor.tenantId }, "void_order")) {
-          return res.status(403).json({ message: "Supervisor verification failed" });
-        }
-        auditLogFromReq(req, { action: "supervisor_override", metadata: { supervisorId: supervisor.id, supervisorName: supervisor.name, forAction: "void_order", requestedBy: user.name }, supervisorId: supervisor.id });
+        const result = await verifySupervisorOverride(req.body.supervisorOverride, user.tenantId, "void_order", req);
+        if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
       } else {
         return res.status(403).json({ message: "Permission denied", action: "void_order", requiresSupervisor: needsSupervisorApproval(user, "void_order") });
       }
     }
 
-    const updateData = { ...req.body };
+    if (req.body.discount !== undefined) {
+      const discountPct = Number(req.body.discount);
+      if (discountPct > 15 && !can(user, "apply_large_discount")) {
+        if (req.body.supervisorOverride) {
+          const result = await verifySupervisorOverride(req.body.supervisorOverride, user.tenantId, "apply_large_discount", req);
+          if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
+        } else {
+          return res.status(403).json({ message: "Permission denied", action: "apply_large_discount", requiresSupervisor: true });
+        }
+      }
+    }
+
+    const { supervisorOverride: _svOverride, ...updateData } = req.body as Record<string, any>;
 
     if (req.body.status === "paid" && existing.orderType === "dine_in") {
       const tenant = await storage.getTenant(user.tenantId);
@@ -687,11 +743,22 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
-  app.post("/api/inventory/:id/adjust", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/inventory/:id/adjust", requireRole("owner", "manager"), requirePermission("adjust_stock"), async (req, res) => {
     const user = req.user as any;
-    const { quantity, type, reason } = req.body;
+    const { quantity, type, reason, supervisorOverride } = req.body;
     const item = await storage.getInventoryItem(req.params.id);
     if (!item) return res.status(404).json({ message: "Item not found" });
+
+    const isLargeAdjustment = Number(quantity) >= 50;
+    if (isLargeAdjustment && !can(user, "large_stock_adjustment")) {
+      if (supervisorOverride) {
+        const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "large_stock_adjustment", req);
+        if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
+      } else {
+        return res.status(403).json({ message: "Permission denied", action: "large_stock_adjustment", requiresSupervisor: true });
+      }
+    }
+
     const newStock = Number(item.currentStock) + (type === "in" ? Number(quantity) : -Number(quantity));
     await storage.updateInventoryItem(req.params.id, { currentStock: String(newStock) });
     await storage.createStockMovement({
@@ -3624,10 +3691,12 @@ export async function registerRoutes(
       "menu_category_created", "menu_category_updated", "menu_category_deleted",
       "inventory_adjusted", "inventory_item_created", "inventory_item_updated",
       "offer_created", "offer_updated", "offer_deleted",
-      "user_created", "user_updated",
-      "tenant_settings_updated",
+      "user_created", "user_updated", "user_role_changed",
+      "tenant_settings_updated", "security_settings_updated",
       "recipe_created", "recipe_updated", "recipe_deleted",
       "supervisor_override", "supervisor_verify_failed",
+      "otp_challenge_issued", "otp_verified", "otp_verify_failed",
+      "device_trust_changed", "device_session_revoked",
       "table_updated", "reservation_created", "reservation_updated",
     ];
     res.json(actions);
@@ -3647,6 +3716,8 @@ export async function registerRoutes(
         requireSupervisorForLargeDiscount: modConfig.requireSupervisorForLargeDiscount ?? true,
         largeDiscountThreshold: modConfig.largeDiscountThreshold ?? 20,
         requireSupervisorForPriceChange: modConfig.requireSupervisorForPriceChange ?? true,
+        requireSupervisorForLargeStockAdjustment: modConfig.requireSupervisorForLargeStockAdjustment ?? true,
+        largeStockAdjustmentThreshold: modConfig.largeStockAdjustmentThreshold ?? 50,
       });
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
   });
@@ -3658,7 +3729,7 @@ export async function registerRoutes(
       const tenant = await storage.getTenant(tenantId);
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
       const modConfig = (tenant.moduleConfig || {}) as Record<string, unknown>;
-      const allowed = ["idleTimeoutMinutes", "maxConcurrentSessions", "requireSupervisorForVoid", "requireSupervisorForLargeDiscount", "largeDiscountThreshold", "requireSupervisorForPriceChange"];
+      const allowed = ["idleTimeoutMinutes", "maxConcurrentSessions", "requireSupervisorForVoid", "requireSupervisorForLargeDiscount", "largeDiscountThreshold", "requireSupervisorForPriceChange", "requireSupervisorForLargeStockAdjustment", "largeStockAdjustmentThreshold"];
       const before: Record<string, unknown> = {};
       for (const key of allowed) {
         if (key in req.body) {
@@ -3670,6 +3741,117 @@ export async function registerRoutes(
       await auditLogFromReq(req, { action: "security_settings_updated", entityType: "tenant", entityId: tenantId, before, after: req.body });
       res.json({ success: true });
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
+  });
+
+  // Device Sessions
+  app.get("/api/device-sessions", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const sessions = await db.select().from(deviceSessions)
+        .where(eq(deviceSessions.userId, user.id))
+        .orderBy(desc(deviceSessions.lastActive));
+      res.json(sessions);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/device-sessions", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { deviceFingerprint, deviceName, browser, os } = req.body;
+      const ip = req.headers["x-forwarded-for"] as string || req.socket.remoteAddress || "";
+      const [session] = await db.insert(deviceSessions).values({
+        tenantId: user.tenantId,
+        userId: user.id,
+        deviceFingerprint,
+        deviceName: deviceName || "Unknown Device",
+        browser: browser || "",
+        os: os || "",
+        ipAddress: ip,
+        isTrusted: false,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      }).returning();
+      res.json(session);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/device-sessions/:id/trust", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const [session] = await db.select().from(deviceSessions)
+        .where(and(eq(deviceSessions.id, req.params.id), eq(deviceSessions.userId, user.id)));
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      const [updated] = await db.update(deviceSessions)
+        .set({ isTrusted: req.body.trusted ?? true })
+        .where(eq(deviceSessions.id, req.params.id)).returning();
+      auditLogFromReq(req, { action: "device_trust_changed", entityType: "device_session", entityId: req.params.id, metadata: { trusted: req.body.trusted ?? true, deviceName: session.deviceName } });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/device-sessions/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const [session] = await db.select().from(deviceSessions)
+        .where(and(eq(deviceSessions.id, req.params.id), eq(deviceSessions.userId, user.id)));
+      if (!session) return res.status(404).json({ message: "Session not found" });
+      await db.delete(deviceSessions).where(eq(deviceSessions.id, req.params.id));
+      auditLogFromReq(req, { action: "device_session_revoked", entityType: "device_session", entityId: req.params.id, metadata: { deviceName: session.deviceName } });
+      res.json({ message: "Session revoked" });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Supervisor OTP simulation
+  app.post("/api/supervisor/otp-challenge", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { action } = req.body;
+      const code = String(100000 + Math.floor(Math.random() * 900000));
+      const cacheKey = `otp:${user.tenantId}:${action}:${Date.now()}`;
+      (global as any).__otpCache = (global as any).__otpCache || {};
+      (global as any).__otpCache[cacheKey] = { code, action, userId: user.id, expiresAt: Date.now() + 5 * 60 * 1000 };
+      auditLogFromReq(req, { action: "otp_challenge_issued", metadata: { forAction: action, cacheKey } });
+      res.json({ challengeId: cacheKey, expiresIn: 300, message: `OTP code (simulated): ${code}` });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/supervisor/otp-verify", requireAuth, async (req, res) => {
+    try {
+      const { challengeId, code } = req.body;
+      const cache = (global as any).__otpCache || {};
+      const entry = cache[challengeId];
+      if (!entry) return res.status(400).json({ message: "Challenge not found or expired" });
+      if (entry.expiresAt < Date.now()) {
+        delete cache[challengeId];
+        return res.status(400).json({ message: "OTP expired" });
+      }
+      if (entry.code !== code) {
+        auditLogFromReq(req, { action: "otp_verify_failed", metadata: { challengeId } });
+        return res.status(403).json({ message: "Invalid OTP code" });
+      }
+      delete cache[challengeId];
+      auditLogFromReq(req, { action: "otp_verified", metadata: { challengeId, forAction: entry.action } });
+      res.json({ verified: true, action: entry.action });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // User role change audit
+  app.patch("/api/users/:id/role", requireRole("owner"), requirePermission("manage_users"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const targetUser = await storage.getUser(req.params.id);
+      if (!targetUser || targetUser.tenantId !== user.tenantId) return res.status(404).json({ message: "User not found" });
+      const oldRole = targetUser.role;
+      const updated = await storage.updateUser(req.params.id, { role: req.body.role });
+      auditLogFromReq(req, {
+        action: "user_role_changed",
+        entityType: "user",
+        entityId: req.params.id,
+        entityName: targetUser.name,
+        before: { role: oldRole },
+        after: { role: req.body.role },
+      });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.get("/api/health", (_req, res) => {

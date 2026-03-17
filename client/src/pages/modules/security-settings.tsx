@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
-import { Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2 } from "lucide-react";
+import { Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2, Smartphone, Trash2, CheckCircle } from "lucide-react";
 
 interface SecuritySettings {
   idleTimeoutMinutes: number;
@@ -19,6 +19,8 @@ interface SecuritySettings {
   requireSupervisorForLargeDiscount: boolean;
   largeDiscountThreshold: number;
   requireSupervisorForPriceChange: boolean;
+  requireSupervisorForLargeStockAdjustment: boolean;
+  largeStockAdjustmentThreshold: number;
 }
 
 interface PermissionsData {
@@ -95,6 +97,47 @@ export default function SecuritySettingsPage() {
     queryFn: async () => {
       const res = await fetch("/api/users", { credentials: "include" });
       return res.json();
+    },
+  });
+
+  interface DeviceSession {
+    id: string;
+    deviceName: string | null;
+    browser: string | null;
+    os: string | null;
+    ipAddress: string | null;
+    isTrusted: boolean | null;
+    lastActive: string | null;
+    createdAt: string | null;
+  }
+
+  const { data: deviceSessionsData } = useQuery<DeviceSession[]>({
+    queryKey: ["/api/device-sessions"],
+    queryFn: async () => {
+      const res = await fetch("/api/device-sessions", { credentials: "include" });
+      return res.json();
+    },
+  });
+
+  const trustDeviceMutation = useMutation({
+    mutationFn: async ({ id, trusted }: { id: string; trusted: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/device-sessions/${id}/trust`, { trusted });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/device-sessions"] });
+      toast({ title: "Device trust status updated" });
+    },
+  });
+
+  const revokeDeviceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/device-sessions/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/device-sessions"] });
+      toast({ title: "Device session revoked" });
     },
   });
 
@@ -253,6 +296,33 @@ export default function SecuritySettingsPage() {
                 data-testid="switch-supervisor-price"
               />
             </div>
+            <Separator />
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium">Large Stock Adjustments</p>
+                <p className="text-xs text-muted-foreground">Require approval for stock adjustments above threshold</p>
+              </div>
+              <Switch
+                checked={currentForm.requireSupervisorForLargeStockAdjustment}
+                onCheckedChange={(v) => updateField("requireSupervisorForLargeStockAdjustment", v)}
+                disabled={!isOwner}
+                data-testid="switch-supervisor-stock"
+              />
+            </div>
+            {currentForm.requireSupervisorForLargeStockAdjustment && (
+              <div className="space-y-2 pl-4 border-l-2 border-primary/20">
+                <Label>Stock Adjustment Threshold (units)</Label>
+                <Input
+                  type="number"
+                  value={currentForm.largeStockAdjustmentThreshold}
+                  onChange={(e) => updateField("largeStockAdjustmentThreshold", parseInt(e.target.value) || 50)}
+                  min={1}
+                  max={10000}
+                  disabled={!isOwner}
+                  data-testid="input-stock-threshold"
+                />
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -292,6 +362,65 @@ export default function SecuritySettingsPage() {
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base flex items-center gap-2">
+            <Smartphone className="h-4 w-4" />
+            Trusted Devices
+          </CardTitle>
+          <CardDescription>Manage devices that have accessed your account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {deviceSessionsData && deviceSessionsData.length > 0 ? (
+            <div className="space-y-3" data-testid="device-sessions-list">
+              {deviceSessionsData.map((ds) => (
+                <div key={ds.id} className="flex items-center justify-between p-3 border rounded-lg" data-testid={`device-session-${ds.id}`}>
+                  <div className="flex items-center gap-3">
+                    <Smartphone className="h-5 w-5 text-muted-foreground" />
+                    <div>
+                      <p className="text-sm font-medium">{ds.deviceName || "Unknown Device"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {[ds.browser, ds.os].filter(Boolean).join(" · ") || "Unknown"} · {ds.ipAddress || "N/A"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Last active: {ds.lastActive ? new Date(ds.lastActive).toLocaleString() : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {ds.isTrusted ? (
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        <CheckCircle className="h-3 w-3 mr-1" /> Trusted
+                      </Badge>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => trustDeviceMutation.mutate({ id: ds.id, trusted: true })}
+                        data-testid={`button-trust-device-${ds.id}`}
+                      >
+                        <CheckCircle className="h-3.5 w-3.5 mr-1" /> Trust
+                      </Button>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-red-500 hover:text-red-700"
+                      onClick={() => revokeDeviceMutation.mutate(ds.id)}
+                      data-testid={`button-revoke-device-${ds.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-devices">No device sessions found</p>
+          )}
         </CardContent>
       </Card>
     </div>
