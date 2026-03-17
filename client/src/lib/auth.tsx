@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./queryClient";
 import { SubscriptionTier, BusinessType, hasFeatureAccess, getBusinessBadges, FeatureKey } from "./subscription";
 
-export type Role = "owner" | "manager" | "waiter" | "kitchen" | "accountant" | "customer";
+export type { UserRole as Role } from "@shared/permissions-config";
 
 export interface TenantInfo {
   id: string;
