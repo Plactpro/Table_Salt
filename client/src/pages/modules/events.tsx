@@ -28,6 +28,10 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 
 type ViewType = "month" | "week" | "day" | "list";
@@ -424,6 +428,7 @@ export default function EventsPage() {
     outlets: [], tags: "", linkedOfferId: "none", notes: "",
   };
   const [form, setForm] = useState<EventFormData>(defaultForm);
+  const [deleteConfirm, setDeleteConfirm] = useState<CalEvent | null>(null);
 
   const { data: allEvents = [] } = useQuery<CalEvent[]>({ queryKey: ["/api/events"] });
   const { data: offers = [] } = useQuery<Offer[]>({ queryKey: ["/api/offers"] });
@@ -813,7 +818,7 @@ export default function EventsPage() {
                                 <Button variant="ghost" size="sm" onClick={() => openEdit(ev)} data-testid={`button-edit-event-${ev.id}`}><Edit className="h-4 w-4" /></Button>
                               </TooltipTrigger><TooltipContent>Edit</TooltipContent></Tooltip>
                               <Tooltip><TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(ev.id)} data-testid={`button-delete-event-${ev.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                                <Button variant="ghost" size="sm" onClick={() => setDeleteConfirm(ev)} data-testid={`button-delete-event-${ev.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                               </TooltipTrigger><TooltipContent>Delete</TooltipContent></Tooltip>
                             </div>
                           </TableCell>
@@ -966,6 +971,27 @@ export default function EventsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteConfirm} onOpenChange={(open) => { if (!open) setDeleteConfirm(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Event</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{deleteConfirm?.title}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => { if (deleteConfirm) { deleteMutation.mutate(deleteConfirm.id); setDeleteConfirm(null); } }}
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
