@@ -4350,7 +4350,7 @@ export async function registerRoutes(
 
       const pm = paymentMethod || "card";
       const isDigitalPayment = ["card", "upi", "wallet"].includes(pm);
-      const orderStatus = isDigitalPayment ? "confirmed" : "new";
+      const orderStatus = isDigitalPayment ? "paid" : "new";
 
       const order = await storage.createOrder({
         tenantId: device.tenantId!,
@@ -4363,7 +4363,6 @@ export async function registerRoutes(
         tax: serverTax.toFixed(2),
         total: serverTotal.toFixed(2),
         paymentMethod: pm,
-        paymentStatus: isDigitalPayment ? "paid" : "unpaid",
         notes: `Kiosk order from ${device.name}`,
       });
 
