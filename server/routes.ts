@@ -685,11 +685,28 @@ export async function registerRoutes(
       const engineDiscountTotal = activeDiscounts.reduce((s, d) => s + (d.discountAmount > 0 ? d.discountAmount : 0), 0);
       const engineSurchargeTotal = activeDiscounts.reduce((s, d) => s + (d.discountAmount < 0 ? Math.abs(d.discountAmount) : 0), 0);
 
+      let offerDiscount = 0;
+      if (orderData.offerId) {
+        const offer = await storage.getOfferByTenant(orderData.offerId, user.tenantId);
+        if (offer && offer.active) {
+          if (offer.type === "percentage" || offer.type === "happy_hour") {
+            offerDiscount = serverSubtotal * (Number(offer.value) / 100);
+          } else if (offer.type === "fixed_amount") {
+            offerDiscount = Number(offer.value);
+          }
+          if (offer.maxDiscount && offerDiscount > Number(offer.maxDiscount)) {
+            offerDiscount = Number(offer.maxDiscount);
+          }
+          offerDiscount = Math.round(offerDiscount * 100) / 100;
+        }
+      }
+
       const manualDiscount = Number(manualDiscountAmount || 0);
-      const totalDiscount = Math.round((engineDiscountTotal + manualDiscount) * 100) / 100;
+      const totalDiscount = Math.round((engineDiscountTotal + offerDiscount + manualDiscount) * 100) / 100;
       const afterDiscount = Math.max(0, serverSubtotal - totalDiscount + engineSurchargeTotal);
+      const serverServiceCharge = Math.round(afterDiscount * serviceChargeRate * 100) / 100;
       const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
-      const serverTotal = Math.round((afterDiscount + serverTax) * 100) / 100;
+      const serverTotal = Math.round((afterDiscount + serverServiceCharge + serverTax) * 100) / 100;
 
       const serverOrderData = {
         ...orderData,

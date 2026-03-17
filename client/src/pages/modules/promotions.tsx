@@ -109,6 +109,11 @@ interface RuleForm {
   endHour: string;
   daysOfWeek: number[];
   loyaltyTier: string;
+  buyQuantity: string;
+  getQuantity: string;
+  getDiscountPercent: string;
+  freeItemName: string;
+  freeQuantity: string;
 }
 
 const emptyForm: RuleForm = {
@@ -132,6 +137,11 @@ const emptyForm: RuleForm = {
   endHour: "",
   daysOfWeek: [],
   loyaltyTier: "",
+  buyQuantity: "1",
+  getQuantity: "1",
+  getDiscountPercent: "100",
+  freeItemName: "",
+  freeQuantity: "1",
 };
 
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -247,18 +257,32 @@ export default function PromotionsPage() {
       endHour: cond.endHour !== undefined ? String(cond.endHour) : "",
       daysOfWeek: Array.isArray(cond.daysOfWeek) ? (cond.daysOfWeek as number[]) : [],
       loyaltyTier: (cond.loyaltyTier as string) || "",
+      buyQuantity: cond.buyQuantity ? String(cond.buyQuantity) : "1",
+      getQuantity: cond.getQuantity ? String(cond.getQuantity) : "1",
+      getDiscountPercent: cond.getDiscountPercent ? String(cond.getDiscountPercent) : "100",
+      freeItemName: (cond.freeItemName as string) || "",
+      freeQuantity: cond.freeQuantity ? String(cond.freeQuantity) : "1",
     });
     setDialogOpen(true);
   }
 
   function handleSubmit() {
-    if (!form.name.trim() || !form.discountValue) return;
+    if (!form.name.trim() || (form.ruleType !== "free_item" && !form.discountValue)) return;
 
     const conditions: Record<string, unknown> = {};
     if (form.startHour) conditions.startHour = parseInt(form.startHour);
     if (form.endHour) conditions.endHour = parseInt(form.endHour);
     if (form.daysOfWeek.length > 0) conditions.daysOfWeek = form.daysOfWeek;
     if (form.loyaltyTier) conditions.loyaltyTier = form.loyaltyTier;
+    if (form.ruleType === "bogo") {
+      conditions.buyQuantity = parseInt(form.buyQuantity) || 1;
+      conditions.getQuantity = parseInt(form.getQuantity) || 1;
+      conditions.getDiscountPercent = parseInt(form.getDiscountPercent) || 100;
+    }
+    if (form.ruleType === "free_item") {
+      conditions.freeItemName = form.freeItemName;
+      conditions.freeQuantity = parseInt(form.freeQuantity) || 1;
+    }
 
     const payload: Record<string, unknown> = {
       name: form.name,
@@ -742,6 +766,42 @@ export default function PromotionsPage() {
                 ))}
               </div>
             </div>
+
+            {form.ruleType === "bogo" && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">BOGO Configuration</Label>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <Label htmlFor="bogo-buy" className="text-xs">Buy Qty</Label>
+                    <Input id="bogo-buy" type="number" min="1" value={form.buyQuantity} onChange={(e) => setForm({ ...form, buyQuantity: e.target.value })} data-testid="input-bogo-buy" />
+                  </div>
+                  <div>
+                    <Label htmlFor="bogo-get" className="text-xs">Get Qty</Label>
+                    <Input id="bogo-get" type="number" min="1" value={form.getQuantity} onChange={(e) => setForm({ ...form, getQuantity: e.target.value })} data-testid="input-bogo-get" />
+                  </div>
+                  <div>
+                    <Label htmlFor="bogo-discount" className="text-xs">Discount %</Label>
+                    <Input id="bogo-discount" type="number" min="0" max="100" value={form.getDiscountPercent} onChange={(e) => setForm({ ...form, getDiscountPercent: e.target.value })} data-testid="input-bogo-discount" />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {form.ruleType === "free_item" && (
+              <div className="space-y-3">
+                <Label className="text-sm font-medium">Free Item Configuration</Label>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label htmlFor="free-item-name" className="text-xs">Free Item Name</Label>
+                    <Input id="free-item-name" value={form.freeItemName} onChange={(e) => setForm({ ...form, freeItemName: e.target.value })} placeholder="e.g. Complimentary Dessert" data-testid="input-free-item-name" />
+                  </div>
+                  <div>
+                    <Label htmlFor="free-item-qty" className="text-xs">Quantity</Label>
+                    <Input id="free-item-qty" type="number" min="1" value={form.freeQuantity} onChange={(e) => setForm({ ...form, freeQuantity: e.target.value })} data-testid="input-free-quantity" />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {(form.ruleType === "loyalty_discount") && (
               <div>
