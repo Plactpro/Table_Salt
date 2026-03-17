@@ -186,7 +186,7 @@ export async function registerRoutes(
     passport.authenticate("local", async (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
-        auditLog({ tenantId: null, action: "login_failed", metadata: { username: req.body.username }, req });
+        auditLog({ tenantId: null, action: "login_failed", entityType: "user", entityName: req.body.username, metadata: { username: req.body.username }, req });
         checkFailedLoginAlert(req.body.username, req);
         return res.status(401).json({ message: info?.message || "Invalid credentials" });
       }
@@ -203,7 +203,7 @@ export async function registerRoutes(
           const codes = user.recoveryCodes || [];
           const codeIdx = codes.indexOf(req.body.totpCode);
           if (codeIdx === -1) {
-            auditLog({ tenantId: user.tenantId, action: "login_failed", metadata: { username: req.body.username, reason: "invalid_2fa" }, req });
+            auditLog({ tenantId: user.tenantId, action: "login_failed", entityType: "user", entityName: req.body.username, metadata: { username: req.body.username, reason: "invalid_2fa" }, req });
             return res.status(401).json({ message: "Invalid 2FA code" });
           }
           codes.splice(codeIdx, 1);
@@ -5515,6 +5515,7 @@ export async function registerRoutes(
             phone: null,
             anonymized: true,
           });
+          auditLogFromReq(req, { action: "customer_anonymized", entityType: "customer", entityId: cust.id, entityName: "[deleted]" });
         }
       }
 

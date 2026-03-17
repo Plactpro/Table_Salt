@@ -27,6 +27,9 @@ function decryptPiiFields<T extends Record<string, unknown>>(record: T, fields: 
 
 const USER_PII_FIELDS = ["email", "phone"];
 const CUSTOMER_PII_FIELDS = ["email", "phone"];
+const RESERVATION_PII_FIELDS = ["customerPhone"];
+const DELIVERY_PII_FIELDS = ["customerPhone", "customerAddress"];
+const WAITLIST_PII_FIELDS = ["customerPhone"];
 import {
   tenants, users, outlets, menuCategories, menuItems, tableZones, tables, waitlistEntries,
   reservations, orders, orderItems, inventoryItems, stockMovements,
@@ -560,34 +563,41 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWaitlistByTenant(tenantId: string) {
-    return db.select().from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId)).orderBy(waitlistEntries.priority, waitlistEntries.createdAt);
+    const rows = await db.select().from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId)).orderBy(waitlistEntries.priority, waitlistEntries.createdAt);
+    return rows.map(w => decryptPiiFields(w as Record<string, unknown>, WAITLIST_PII_FIELDS) as WaitlistEntry);
   }
   async createWaitlistEntry(data: InsertWaitlistEntry) {
-    const [w] = await db.insert(waitlistEntries).values(data).returning();
-    return w;
+    const encData = encryptPiiFields(data as Record<string, unknown>, WAITLIST_PII_FIELDS) as InsertWaitlistEntry;
+    const [w] = await db.insert(waitlistEntries).values(encData).returning();
+    return decryptPiiFields(w as Record<string, unknown>, WAITLIST_PII_FIELDS) as WaitlistEntry;
   }
   async updateWaitlistEntry(id: string, tenantId: string, data: Partial<InsertWaitlistEntry>) {
-    const [w] = await db.update(waitlistEntries).set(data).where(and(eq(waitlistEntries.id, id), eq(waitlistEntries.tenantId, tenantId))).returning();
-    return w;
+    const encData = encryptPiiFields(data as Record<string, unknown>, WAITLIST_PII_FIELDS) as Partial<InsertWaitlistEntry>;
+    const [w] = await db.update(waitlistEntries).set(encData).where(and(eq(waitlistEntries.id, id), eq(waitlistEntries.tenantId, tenantId))).returning();
+    return w ? decryptPiiFields(w as Record<string, unknown>, WAITLIST_PII_FIELDS) as WaitlistEntry : undefined;
   }
   async deleteWaitlistEntry(id: string, tenantId: string) {
     await db.delete(waitlistEntries).where(and(eq(waitlistEntries.id, id), eq(waitlistEntries.tenantId, tenantId)));
   }
 
   async getReservationsByTenant(tenantId: string) {
-    return db.select().from(reservations).where(eq(reservations.tenantId, tenantId)).orderBy(desc(reservations.dateTime));
+    const rows = await db.select().from(reservations).where(eq(reservations.tenantId, tenantId)).orderBy(desc(reservations.dateTime));
+    return rows.map(r => decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation);
   }
   async createReservation(data: InsertReservation) {
-    const [r] = await db.insert(reservations).values(data).returning();
-    return r;
+    const encData = encryptPiiFields(data as Record<string, unknown>, RESERVATION_PII_FIELDS) as InsertReservation;
+    const [r] = await db.insert(reservations).values(encData).returning();
+    return decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation;
   }
   async updateReservation(id: string, data: Partial<InsertReservation>) {
-    const [r] = await db.update(reservations).set(data).where(eq(reservations.id, id)).returning();
-    return r;
+    const encData = encryptPiiFields(data as Record<string, unknown>, RESERVATION_PII_FIELDS) as Partial<InsertReservation>;
+    const [r] = await db.update(reservations).set(encData).where(eq(reservations.id, id)).returning();
+    return r ? decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation : undefined;
   }
   async updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>) {
-    const [r] = await db.update(reservations).set(data).where(and(eq(reservations.id, id), eq(reservations.tenantId, tenantId))).returning();
-    return r;
+    const encData = encryptPiiFields(data as Record<string, unknown>, RESERVATION_PII_FIELDS) as Partial<InsertReservation>;
+    const [r] = await db.update(reservations).set(encData).where(and(eq(reservations.id, id), eq(reservations.tenantId, tenantId))).returning();
+    return r ? decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation : undefined;
   }
   async deleteReservationByTenant(id: string, tenantId: string) {
     await db.delete(reservations).where(and(eq(reservations.id, id), eq(reservations.tenantId, tenantId)));
@@ -723,19 +733,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getDeliveryOrdersByTenant(tenantId: string) {
-    return db.select().from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenantId)).orderBy(desc(deliveryOrders.createdAt));
+    const rows = await db.select().from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenantId)).orderBy(desc(deliveryOrders.createdAt));
+    return rows.map(d => decryptPiiFields(d as Record<string, unknown>, DELIVERY_PII_FIELDS) as DeliveryOrder);
   }
   async getDeliveryOrderByTenant(id: string, tenantId: string) {
     const [d] = await db.select().from(deliveryOrders).where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.tenantId, tenantId)));
-    return d;
+    return d ? decryptPiiFields(d as Record<string, unknown>, DELIVERY_PII_FIELDS) as DeliveryOrder : undefined;
   }
   async createDeliveryOrder(data: InsertDeliveryOrder) {
-    const [d] = await db.insert(deliveryOrders).values(data).returning();
-    return d;
+    const encData = encryptPiiFields(data as Record<string, unknown>, DELIVERY_PII_FIELDS) as InsertDeliveryOrder;
+    const [d] = await db.insert(deliveryOrders).values(encData).returning();
+    return decryptPiiFields(d as Record<string, unknown>, DELIVERY_PII_FIELDS) as DeliveryOrder;
   }
   async updateDeliveryOrderByTenant(id: string, tenantId: string, data: Partial<InsertDeliveryOrder>) {
-    const [d] = await db.update(deliveryOrders).set(data).where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.tenantId, tenantId))).returning();
-    return d;
+    const encData = encryptPiiFields(data as Record<string, unknown>, DELIVERY_PII_FIELDS) as Partial<InsertDeliveryOrder>;
+    const [d] = await db.update(deliveryOrders).set(encData).where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.tenantId, tenantId))).returning();
+    return d ? decryptPiiFields(d as Record<string, unknown>, DELIVERY_PII_FIELDS) as DeliveryOrder : undefined;
   }
   async deleteDeliveryOrderByTenant(id: string, tenantId: string) {
     await db.delete(deliveryOrders).where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.tenantId, tenantId)));
