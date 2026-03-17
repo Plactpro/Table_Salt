@@ -10,7 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
-import { Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2, Smartphone, Trash2, CheckCircle } from "lucide-react";
+import { Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2, Smartphone, Trash2, CheckCircle, Lock, QrCode, Copy, Eye, EyeOff } from "lucide-react";
 
 interface SecuritySettings {
   idleTimeoutMinutes: number;
@@ -311,6 +311,11 @@ export default function SecuritySettingsPage() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <TwoFactorCard />
+        <PasswordChangeCard />
+      </div>
+
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -408,6 +413,354 @@ export default function SecuritySettingsPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function TwoFactorCard() {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [step, setStep] = useState<"idle" | "setup" | "verify" | "recovery">("idle");
+  const [qrData, setQrData] = useState<{ qrCodeUrl: string; secret: string } | null>(null);
+  const [verifyCode, setVerifyCode] = useState("");
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
+  const [disablePassword, setDisablePassword] = useState("");
+  const [showDisable, setShowDisable] = useState(false);
+
+  const is2FAEnabled = (user as Record<string, unknown>)?.totpEnabled === true;
+
+  const setupMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/auth/2fa/setup");
+      return res.json();
+    },
+    onSuccess: (data: { qrCodeUrl: string; secret: string }) => {
+      setQrData(data);
+      setStep("setup");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Setup failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: async (code: string) => {
+      const res = await apiRequest("POST", "/api/auth/2fa/verify", { code });
+      return res.json();
+    },
+    onSuccess: (data: { recoveryCodes: string[] }) => {
+      setRecoveryCodes(data.recoveryCodes);
+      setStep("recovery");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Two-factor authentication enabled" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Verification failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const disableMutation = useMutation({
+    mutationFn: async (password: string) => {
+      const res = await apiRequest("POST", "/api/auth/2fa/disable", { password });
+      return res.json();
+    },
+    onSuccess: () => {
+      setShowDisable(false);
+      setDisablePassword("");
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Two-factor authentication disabled" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to disable", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const copyRecoveryCodes = () => {
+    navigator.clipboard.writeText(recoveryCodes.join("\n"));
+    toast({ title: "Recovery codes copied to clipboard" });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <QrCode className="h-5 w-5" />
+          Two-Factor Authentication
+        </CardTitle>
+        <CardDescription>Add an extra layer of security to your account</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {step === "idle" && !is2FAEnabled && (
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              Protect your account with TOTP-based two-factor authentication using apps like Google Authenticator, Authy, or 1Password.
+            </p>
+            <Button
+              onClick={() => setupMutation.mutate()}
+              disabled={setupMutation.isPending}
+              data-testid="button-setup-2fa"
+            >
+              {setupMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Shield className="h-4 w-4 mr-2" />}
+              Set Up 2FA
+            </Button>
+          </div>
+        )}
+
+        {step === "idle" && is2FAEnabled && !showDisable && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 p-3 rounded-lg bg-green-50 border border-green-200">
+              <CheckCircle className="h-5 w-5 text-green-600" />
+              <p className="text-sm font-medium text-green-800">Two-factor authentication is enabled</p>
+            </div>
+            <Button
+              variant="outline"
+              className="text-red-600 hover:text-red-700"
+              onClick={() => setShowDisable(true)}
+              data-testid="button-disable-2fa"
+            >
+              Disable 2FA
+            </Button>
+          </div>
+        )}
+
+        {step === "idle" && is2FAEnabled && showDisable && (
+          <div className="space-y-3">
+            <Label>Enter your password to confirm</Label>
+            <Input
+              type="password"
+              value={disablePassword}
+              onChange={(e) => setDisablePassword(e.target.value)}
+              placeholder="Current password"
+              data-testid="input-disable-2fa-password"
+            />
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                onClick={() => disableMutation.mutate(disablePassword)}
+                disabled={!disablePassword || disableMutation.isPending}
+                data-testid="button-confirm-disable-2fa"
+              >
+                {disableMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Confirm Disable
+              </Button>
+              <Button variant="ghost" onClick={() => { setShowDisable(false); setDisablePassword(""); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "setup" && qrData && (
+          <div className="space-y-4">
+            <p className="text-sm">Scan this QR code with your authenticator app:</p>
+            <div className="flex justify-center">
+              <img src={qrData.qrCodeUrl} alt="2FA QR Code" className="w-48 h-48 border rounded-lg" data-testid="img-2fa-qr" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Or enter this secret manually:</Label>
+              <code className="block text-xs bg-muted p-2 rounded font-mono break-all" data-testid="text-2fa-secret">{qrData.secret}</code>
+            </div>
+            <Separator />
+            <div className="space-y-2">
+              <Label>Enter the 6-digit code from your app to verify</Label>
+              <Input
+                value={verifyCode}
+                onChange={(e) => setVerifyCode(e.target.value)}
+                placeholder="000000"
+                className="text-center text-lg tracking-widest font-mono"
+                maxLength={6}
+                data-testid="input-2fa-verify"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => verifyMutation.mutate(verifyCode)}
+                disabled={verifyCode.length !== 6 || verifyMutation.isPending}
+                data-testid="button-verify-2fa"
+              >
+                {verifyMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                Verify & Enable
+              </Button>
+              <Button variant="ghost" onClick={() => { setStep("idle"); setQrData(null); setVerifyCode(""); }}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === "recovery" && (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-yellow-50 border border-yellow-200">
+              <p className="text-sm font-medium text-yellow-800 mb-1">Save your recovery codes!</p>
+              <p className="text-xs text-yellow-700">Store these codes safely. Each code can only be used once if you lose access to your authenticator app.</p>
+            </div>
+            <div className="grid grid-cols-2 gap-2" data-testid="recovery-codes-list">
+              {recoveryCodes.map((code, i) => (
+                <code key={i} className="text-sm bg-muted p-2 rounded font-mono text-center">{code}</code>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={copyRecoveryCodes} data-testid="button-copy-recovery-codes">
+                <Copy className="h-4 w-4 mr-2" />
+                Copy All
+              </Button>
+              <Button onClick={() => { setStep("idle"); setRecoveryCodes([]); setQrData(null); setVerifyCode(""); }}>
+                Done
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PasswordChangeCard() {
+  const { toast } = useToast();
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+
+  interface PasswordPolicy {
+    minLength: number;
+    requireUppercase: boolean;
+    requireLowercase: boolean;
+    requireDigit: boolean;
+    requireSpecialChar: boolean;
+    preventReuseCount: number;
+    maxAgeDays: number;
+  }
+
+  const { data: policy } = useQuery<PasswordPolicy>({
+    queryKey: ["/api/auth/password-policy"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/password-policy", { credentials: "include" });
+      return res.json();
+    },
+  });
+
+  const changeMutation = useMutation({
+    mutationFn: async (data: { currentPassword: string; newPassword: string }) => {
+      const res = await apiRequest("POST", "/api/auth/change-password", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Password changed successfully" });
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Password change failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleSubmit = () => {
+    if (newPassword !== confirmPassword) {
+      toast({ title: "Passwords don't match", variant: "destructive" });
+      return;
+    }
+    changeMutation.mutate({ currentPassword, newPassword });
+  };
+
+  const checks = policy ? [
+    { label: `At least ${policy.minLength} characters`, met: newPassword.length >= policy.minLength },
+    ...(policy.requireUppercase ? [{ label: "Uppercase letter", met: /[A-Z]/.test(newPassword) }] : []),
+    ...(policy.requireLowercase ? [{ label: "Lowercase letter", met: /[a-z]/.test(newPassword) }] : []),
+    ...(policy.requireDigit ? [{ label: "Number", met: /[0-9]/.test(newPassword) }] : []),
+    ...(policy.requireSpecialChar ? [{ label: "Special character", met: /[^A-Za-z0-9]/.test(newPassword) }] : []),
+  ] : [];
+
+  const allMet = checks.length > 0 && checks.every(c => c.met);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Lock className="h-5 w-5" />
+          Change Password
+        </CardTitle>
+        <CardDescription>Update your account password</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-2">
+          <Label>Current Password</Label>
+          <div className="relative">
+            <Input
+              type={showCurrent ? "text" : "password"}
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              placeholder="Enter current password"
+              data-testid="input-current-password"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowCurrent(!showCurrent)}
+              tabIndex={-1}
+            >
+              {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <Label>New Password</Label>
+          <div className="relative">
+            <Input
+              type={showNew ? "text" : "password"}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="Enter new password"
+              data-testid="input-new-password"
+            />
+            <button
+              type="button"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              onClick={() => setShowNew(!showNew)}
+              tabIndex={-1}
+            >
+              {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+        {newPassword && checks.length > 0 && (
+          <div className="space-y-1 text-xs" data-testid="password-requirements">
+            {checks.map((c, i) => (
+              <div key={i} className={`flex items-center gap-1.5 ${c.met ? "text-green-600" : "text-muted-foreground"}`}>
+                <CheckCircle className={`h-3 w-3 ${c.met ? "text-green-600" : "text-gray-300"}`} />
+                {c.label}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="space-y-2">
+          <Label>Confirm New Password</Label>
+          <Input
+            type="password"
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            placeholder="Confirm new password"
+            data-testid="input-confirm-password"
+          />
+          {confirmPassword && newPassword !== confirmPassword && (
+            <p className="text-xs text-red-500">Passwords don't match</p>
+          )}
+        </div>
+        {policy && policy.preventReuseCount > 0 && (
+          <p className="text-xs text-muted-foreground">Cannot reuse your last {policy.preventReuseCount} passwords</p>
+        )}
+        <Button
+          onClick={handleSubmit}
+          disabled={!currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword || !allMet || changeMutation.isPending}
+          data-testid="button-change-password"
+        >
+          {changeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
+          Change Password
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 

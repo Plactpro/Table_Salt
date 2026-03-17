@@ -872,7 +872,10 @@ export default function MenuPage() {
                       const formData = new FormData();
                       formData.append("image", file);
                       try {
-                        const res = await fetch("/api/upload/image", { method: "POST", body: formData, credentials: "include" });
+                        const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+                        const csrfHeaders: Record<string, string> = {};
+                        if (csrfMatch) csrfHeaders["x-csrf-token"] = decodeURIComponent(csrfMatch[1]);
+                        const res = await fetch("/api/upload/image", { method: "POST", body: formData, credentials: "include", headers: csrfHeaders });
                         if (!res.ok) { const err = await res.json(); alert(err.message || "Upload failed"); return; }
                         const { url } = await res.json();
                         setItemForm({ ...itemForm, image: url });

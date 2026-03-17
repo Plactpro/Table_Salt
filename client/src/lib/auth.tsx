@@ -37,7 +37,7 @@ interface AuthContextType {
   user: AuthUser | null;
   tenant: TenantInfo | null;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<AuthUser>;
+  login: (username: string, password: string, totpCode?: string) => Promise<AuthUser | { requires2FA: true; userId: string }>;
   register: (data: { restaurantName: string; name: string; username: string; password: string }) => Promise<AuthUser>;
   logout: () => Promise<void>;
 }
@@ -101,13 +101,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const loginMutation = useMutation({
-    mutationFn: async ({ username, password }: { username: string; password: string }) => {
-      const res = await apiRequest("POST", "/api/auth/login", { username, password });
+    mutationFn: async ({ username, password, totpCode }: { username: string; password: string; totpCode?: string }) => {
+      const res = await apiRequest("POST", "/api/auth/login", { username, password, totpCode });
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
+    onSuccess: (data) => {
+      if (!data.requires2FA) {
+        queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
+      }
     },
   });
 
@@ -131,8 +133,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     },
   });
 
-  const login = async (username: string, password: string) => {
-    return loginMutation.mutateAsync({ username, password });
+  const login = async (username: string, password: string, totpCode?: string) => {
+    return loginMutation.mutateAsync({ username, password, totpCode });
   };
 
   const register = async (data: { restaurantName: string; name: string; username: string; password: string }) => {

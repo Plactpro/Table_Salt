@@ -1,6 +1,14 @@
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { randomBytes } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
+
+const CSRF_COOKIE = "csrf-token";
+const CSRF_HEADER = "x-csrf-token";
+
+function generateCsrfToken(): string {
+  return randomBytes(32).toString("hex");
+}
 
 export function setupSecurity(app: Express) {
   app.use(
@@ -42,6 +50,7 @@ export function setupSecurity(app: Express) {
       return req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
     },
     skip: () => isTest,
+    validate: { default: true, keyGeneratorIpFallback: false },
   });
 
   app.use("/api/auth/login", authLimiter);
@@ -64,6 +73,7 @@ export function setupSecurity(app: Express) {
       if (p === "/api/auth/login" || p === "/api/auth/register") return true;
       return false;
     },
+    validate: { default: true, keyGeneratorIpFallback: false },
   });
 
   app.use("/api/", apiLimiter);
@@ -79,12 +89,46 @@ export function setupSecurity(app: Express) {
       if (user?.id) return `upload-${user.id}`;
       return req.ip || req.headers["x-forwarded-for"]?.toString() || "unknown";
     },
+    validate: { default: true, keyGeneratorIpFallback: false },
   });
 
   app.use("/api/upload", uploadLimiter);
 
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(self), payment=()");
+    next();
+  });
+}
+
+export function setupCsrf(app: Express) {
+  app.use("/api/", (req: Request, res: Response, next: NextFunction) => {
+    const session = req.session as Record<string, unknown>;
+    if (!session.csrfToken) {
+      session.csrfToken = generateCsrfToken();
+    }
+
+    res.cookie(CSRF_COOKIE, session.csrfToken as string, {
+      httpOnly: false,
+      sameSite: "strict",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+    });
+
+    const method = req.method.toUpperCase();
+    if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+      return next();
+    }
+
+    const url = req.originalUrl || req.path;
+    if (url === "/api/auth/login" || url === "/api/auth/register" || url.startsWith("/api/guest/") || url.startsWith("/api/kiosk/")) {
+      return next();
+    }
+
+    const headerToken = req.headers[CSRF_HEADER] as string | undefined;
+    if (!headerToken || headerToken !== session.csrfToken) {
+      return res.status(403).json({ message: "Invalid CSRF token" });
+    }
+
     next();
   });
 }

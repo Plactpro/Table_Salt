@@ -26,7 +26,8 @@ Key technical implementations include:
 - **Omnichannel Dashboard**: `/omnichannel` page provides a unified view of order analytics across all channels (POS, Kiosk, QR Table, Online, Aggregators) with revenue mix, order counts, peak hours, and top items per channel.
 - **Events & Special Days Calendar**: `/events` page for managing holidays, festivals, sports events, corporate bookings, and promotions. Features month/week/day/list views with color-coded event bars, event CRUD with type, impact level, tags, color, linked offers, and notes. Role-based access: Owner/Manager/Outlet Manager/HQ Admin can create/edit; all roles can view. DB table: `events` with type enum (holiday/festival/sports/corporate/promotion) and impact enum (low/medium/high/very_high).
 - **Combo Offers**: Dedicated combo management system in Menu Management with a "Combo Offers" tab. DB table: `combo_offers` with comboPrice, individualTotal, savingsPercentage, mainItems/sideItems/addonItems (jsonb arrays of `{menuItemId, name, price}`), validity dates, timeSlots, outlets, isActive, orderCount. Business rules: comboPrice < individualTotal, savings 5-50%, max 3 sides, max 2 add-ons, unique name per tenant. Full CRUD + duplicate API at `/api/combo-offers`. Auto-deactivation of expired combos. POS integration with "Combos" tab showing active combos, add-to-cart as single line item with component items listed. Seed data includes 3 sample combos.
-- **Security Hardening** (`server/security.ts`): Enterprise-grade security middleware including Helmet (X-Frame-Options, X-Content-Type-Options, HSTS, XSS protection, DNS prefetch control, referrer policy, permitted cross-domain policies), Permissions-Policy header, and three-tier rate limiting: auth endpoints (15 req/15min per IP), general API (120 req/min per user or IP), and uploads (10 req/min per user).
+- **Security Hardening** (`server/security.ts`): Enterprise-grade security middleware including Helmet (X-Frame-Options, X-Content-Type-Options, HSTS, XSS protection, DNS prefetch control, referrer policy, permitted cross-domain policies), Permissions-Policy header, three-tier rate limiting: auth endpoints (15 req/15min per IP), general API (120 req/min per user or IP), and uploads (10 req/min per user). CSRF double-submit cookie pattern protects all mutating API endpoints (login/register/guest/kiosk exempt).
+- **Authentication Hardening**: TOTP-based 2FA (setup, verify, disable via `/api/auth/2fa/*`), recovery codes (8 one-time codes), login flow with 2FA challenge step. Password change with policy enforcement (min 8 chars, uppercase/lowercase/digit/special, history reuse prevention, same-password guard). Frontend: 2FA management card and password change card in Security settings, login page with 2FA code input step. Sensitive fields (totpSecret, recoveryCodes, passwordHistory) stripped from all API responses. Packages: `otpauth`, `qrcode`.
 - **Design System**: Utilizes Outfit and Plus Jakarta Sans fonts, a professional blue primary theme with light/dark mode support, and Framer Motion for UI animations.
 
 ## External Dependencies
@@ -43,6 +44,8 @@ Key technical implementations include:
 - **TanStack Query**: Data fetching and caching library for React.
 - **helmet**: HTTP security headers middleware.
 - **express-rate-limit**: Rate limiting middleware for Express.
+- **otpauth**: TOTP/HOTP one-time password library for 2FA.
+- **qrcode**: QR code generation for 2FA setup.
 - **IANA Time Zone Database**: Provides timezone data.
 
 ## Navigation Architecture

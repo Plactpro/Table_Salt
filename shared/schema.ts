@@ -100,6 +100,11 @@ export const users = pgTable("users", {
   active: boolean("active").default(true),
   hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
   overtimeRate: decimal("overtime_rate", { precision: 8, scale: 2 }),
+  totpSecret: text("totp_secret"),
+  totpEnabled: boolean("totp_enabled").default(false),
+  recoveryCodes: text("recovery_codes").array(),
+  passwordChangedAt: timestamp("password_changed_at"),
+  passwordHistory: text("password_history").array(),
 });
 
 export const regions = pgTable("regions", {
