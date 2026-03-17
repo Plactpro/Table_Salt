@@ -1146,6 +1146,7 @@ export const guestCartItems = pgTable("guest_cart_items", {
   price: decimal("price", { precision: 10, scale: 2 }).notNull(),
   quantity: integer("quantity").notNull().default(1),
   notes: text("notes"),
+  addOns: jsonb("add_ons"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
