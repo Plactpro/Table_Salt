@@ -255,7 +255,9 @@ export default function POSPage() {
   };
 
   const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
+    const manualDiscountOnly = manualDiscount + offerDiscount;
     const orderData: Record<string, unknown> = {
+      channel: "pos",
       orderType,
       tableId: isDineIn ? selectedTable || null : null,
       subtotal: subtotal.toFixed(2),
@@ -265,7 +267,7 @@ export default function POSPage() {
       notes: [orderNotes, serviceChargeAmount > 0 ? `Service Charge (${(tenantServiceChargePct * 100).toFixed(1)}%): ${serviceChargeAmount.toFixed(2)}` : null].filter(Boolean).join(" | ") || null,
       status: isDineIn ? "in_progress" : "new",
       offerId: selectedOffer?.id || null,
-      discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
+      manualDiscountAmount: manualDiscountOnly > 0 ? manualDiscountOnly.toFixed(2) : null,
       items: cart.map((c) => ({
         menuItemId: c.menuItemId, name: c.name, quantity: c.quantity,
         price: c.price.toFixed(2), notes: c.notes || null,

@@ -23,13 +23,15 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Plus, Pencil, Trash2, Zap, Percent, DollarSign, Clock, ShieldCheck,
   Layers, Calendar, CheckCircle2, XCircle, Play, Pause, Crown, Truck,
-  Monitor, BarChart3, Settings2,
+  Monitor, BarChart3, Settings2, Gift,
 } from "lucide-react";
 import type { PromotionRule } from "@shared/schema";
 
 const ruleTypeLabels: Record<string, string> = {
   happy_hour: "Happy Hour",
   combo_deal: "Combo Deal",
+  bogo: "Buy One Get One",
+  free_item: "Free Item",
   channel_surcharge: "Channel Surcharge",
   loyalty_discount: "Loyalty Discount",
   percentage_off: "Percentage Off",
@@ -41,6 +43,8 @@ const ruleTypeLabels: Record<string, string> = {
 const ruleTypeIcons: Record<string, React.ElementType> = {
   happy_hour: Clock,
   combo_deal: Layers,
+  bogo: Gift,
+  free_item: Gift,
   channel_surcharge: Truck,
   loyalty_discount: Crown,
   percentage_off: Percent,

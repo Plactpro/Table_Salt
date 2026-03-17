@@ -626,7 +626,7 @@ export async function registerRoutes(
   app.post("/api/orders", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { items, supervisorOverride, dismissedRuleIds, ...orderData } = req.body;
+      const { items, supervisorOverride, dismissedRuleIds, manualDiscountAmount, ...orderData } = req.body;
 
       const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
@@ -668,8 +668,7 @@ export async function registerRoutes(
       const taxRate = Number(tenant?.taxRate || 0) / 100;
       const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
 
-      const channelMap: Record<string, string> = { dine_in: "dine_in", takeaway: "takeaway", delivery: "delivery" };
-      const channel = channelMap[orderData.orderType] || "dine_in";
+      const channel = orderData.channel || "pos";
 
       const engineResult = evaluateRules(promotionRules, {
         items: serverItems,
@@ -686,7 +685,7 @@ export async function registerRoutes(
       const engineDiscountTotal = activeDiscounts.reduce((s, d) => s + (d.discountAmount > 0 ? d.discountAmount : 0), 0);
       const engineSurchargeTotal = activeDiscounts.reduce((s, d) => s + (d.discountAmount < 0 ? Math.abs(d.discountAmount) : 0), 0);
 
-      const manualDiscount = Number(orderData.discountAmount || 0);
+      const manualDiscount = Number(manualDiscountAmount || 0);
       const totalDiscount = Math.round((engineDiscountTotal + manualDiscount) * 100) / 100;
       const afterDiscount = Math.max(0, serverSubtotal - totalDiscount + engineSurchargeTotal);
       const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
@@ -1322,6 +1321,9 @@ export async function registerRoutes(
       }
       const { evaluateRules } = await import("./promotions-engine");
       const rules = await storage.getPromotionRulesByTenant(user.tenantId);
+      const tenant = await storage.getTenant(user.tenantId);
+      const tenantTaxRate = Number(tenant?.taxRate || 0) / 100;
+      const tenantServiceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
       const result = evaluateRules(rules, {
         items: body.items,
         subtotal: body.subtotal,
@@ -1334,6 +1336,8 @@ export async function registerRoutes(
         customerSegment: body.customerSegment,
         dayOfWeek: body.dayOfWeek,
         hour: body.hour,
+        taxRate: body.taxRate ?? tenantTaxRate,
+        serviceChargeRate: body.serviceChargeRate ?? tenantServiceChargeRate,
       });
       res.json(result);
     } catch (err: any) {
