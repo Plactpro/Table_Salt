@@ -1,6 +1,6 @@
 import { db } from "./db";
 import { securityAlerts, auditEvents } from "@shared/schema";
-import { eq, and, desc, gte, sql, count } from "drizzle-orm";
+import { eq, and, desc, gte, lte, sql, count } from "drizzle-orm";
 import type { Request } from "express";
 
 function getIpFromReq(req: Request): string {
@@ -46,7 +46,7 @@ export async function checkFailedLoginAlert(username: string, req: Request): Pro
         and(
           eq(auditEvents.action, "login_failed"),
           gte(auditEvents.createdAt, fiveMinutesAgo),
-          eq(auditEvents.ipAddress, ip)
+          eq(auditEvents.entityName, username)
         )
       );
     const failCount = Number(result?.cnt || 0);
@@ -73,6 +73,7 @@ export async function checkFailedLoginAlert(username: string, req: Request): Pro
 export async function checkNewIpLoginAlert(userId: string, tenantId: string, userName: string, req: Request): Promise<void> {
   const ip = getIpFromReq(req);
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const fiveSecondsAgo = new Date(Date.now() - 5000);
   try {
     const [result] = await db
       .select({ cnt: count() })
@@ -82,7 +83,8 @@ export async function checkNewIpLoginAlert(userId: string, tenantId: string, use
           eq(auditEvents.userId, userId),
           eq(auditEvents.action, "login"),
           eq(auditEvents.ipAddress, ip),
-          gte(auditEvents.createdAt, thirtyDaysAgo)
+          gte(auditEvents.createdAt, thirtyDaysAgo),
+          lte(auditEvents.createdAt, fiveSecondsAgo)
         )
       );
     const seenCount = Number(result?.cnt || 0);

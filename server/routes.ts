@@ -5482,7 +5482,7 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/gdpr/anonymize-account", requireAuth, async (req, res) => {
+  async function handleAccountDeletion(req: any, res: any) {
     try {
       const user = req.user as any;
       const { password: confirmPassword } = req.body;
@@ -5491,10 +5491,11 @@ export async function registerRoutes(
       if (!freshUser) return res.status(404).json({ message: "User not found" });
       const valid = await comparePasswords(confirmPassword, freshUser.password);
       if (!valid) return res.status(401).json({ message: "Invalid password" });
-      if (freshUser.role === "owner") return res.status(400).json({ message: "Account owners cannot self-anonymize. Transfer ownership first." });
+      if (freshUser.role === "owner") return res.status(400).json({ message: "Account owners cannot self-delete. Transfer ownership first." });
 
       await storage.updateUser(user.id, {
         name: "[deleted]",
+        username: `deleted_${user.id.slice(0, 8)}`,
         email: null,
         phone: null,
         active: false,
@@ -5502,14 +5503,33 @@ export async function registerRoutes(
         totpEnabled: false,
         recoveryCodes: null,
         passwordHistory: null,
+        password: await hashPassword(randomBytes(32).toString("hex")),
       });
-      auditLogFromReq(req, { action: "gdpr_account_anonymized", entityType: "user", entityId: user.id, entityName: freshUser.name });
+
+      const allCustomers = await storage.getCustomersByTenant(user.tenantId);
+      for (const cust of allCustomers) {
+        if (cust.email === freshUser.email || cust.phone === freshUser.phone) {
+          await storage.updateCustomer(cust.id, {
+            name: "[deleted]",
+            email: null,
+            phone: null,
+            anonymized: true,
+          });
+        }
+      }
+
+      await db.execute(sql`UPDATE orders SET waiter_id = NULL WHERE waiter_id = ${user.id} AND tenant_id = ${user.tenantId}`);
+
+      auditLogFromReq(req, { action: "gdpr_account_deleted", entityType: "user", entityId: user.id, entityName: freshUser.name });
       req.logout(() => {
         req.session?.destroy(() => {});
       });
-      res.json({ message: "Account data has been anonymized" });
+      res.json({ message: "Account data has been deleted and anonymized" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
+  }
+
+  app.post("/api/gdpr/anonymize-account", requireAuth, handleAccountDeletion);
+  app.post("/api/gdpr/delete-account", requireAuth, handleAccountDeletion);
 
   app.get("/api/gdpr/retention-policy", requireAuth, requireRole("owner", "hq_admin"), async (req, res) => {
     try {
