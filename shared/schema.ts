@@ -9,6 +9,7 @@ import {
   decimal,
   pgEnum,
   jsonb,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -189,7 +190,9 @@ export const tables = pgTable("tables", {
   qrToken: text("qr_token"),
   callServerFlag: boolean("call_server_flag").default(false),
   requestBillFlag: boolean("request_bill_flag").default(false),
-});
+}, (table) => [
+  uniqueIndex("tables_tenant_zone_number_idx").on(table.tenantId, table.zone, table.number),
+]);
 
 export const waitlistEntries = pgTable("waitlist_entries", {
   id: varchar("id", { length: 36 })
