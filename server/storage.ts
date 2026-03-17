@@ -74,6 +74,8 @@ import {
   tableSessions, guestCartItems,
   type TableSession, type InsertTableSession,
   type GuestCartItem, type InsertGuestCartItem,
+  events,
+  type Event, type InsertEvent,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -368,6 +370,12 @@ export interface IStorage {
   updateGuestCartItem(id: string, data: Partial<InsertGuestCartItem>): Promise<GuestCartItem | undefined>;
   deleteGuestCartItem(id: string): Promise<void>;
   clearGuestCart(sessionId: string): Promise<void>;
+
+  getEventsByTenant(tenantId: string): Promise<Event[]>;
+  getEvent(id: string, tenantId: string): Promise<Event | undefined>;
+  createEvent(data: InsertEvent): Promise<Event>;
+  updateEvent(id: string, tenantId: string, data: Partial<InsertEvent>): Promise<Event | undefined>;
+  deleteEvent(id: string, tenantId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1600,6 +1608,25 @@ export class DatabaseStorage implements IStorage {
   }
   async clearGuestCart(sessionId: string) {
     await db.delete(guestCartItems).where(eq(guestCartItems.sessionId, sessionId));
+  }
+
+  async getEventsByTenant(tenantId: string) {
+    return db.select().from(events).where(eq(events.tenantId, tenantId)).orderBy(desc(events.startDate));
+  }
+  async getEvent(id: string, tenantId: string) {
+    const [e] = await db.select().from(events).where(and(eq(events.id, id), eq(events.tenantId, tenantId)));
+    return e;
+  }
+  async createEvent(data: InsertEvent) {
+    const [e] = await db.insert(events).values(data).returning();
+    return e;
+  }
+  async updateEvent(id: string, tenantId: string, data: Partial<InsertEvent>) {
+    const [e] = await db.update(events).set({ ...data, updatedAt: new Date() }).where(and(eq(events.id, id), eq(events.tenantId, tenantId))).returning();
+    return e;
+  }
+  async deleteEvent(id: string, tenantId: string) {
+    await db.delete(events).where(and(eq(events.id, id), eq(events.tenantId, tenantId)));
   }
 }
 

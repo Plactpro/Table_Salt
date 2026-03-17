@@ -1152,4 +1152,31 @@ export const guestCartItems = pgTable("guest_cart_items", {
 
 export const insertGuestCartItemSchema = createInsertSchema(guestCartItems).omit({ id: true, createdAt: true });
 export type GuestCartItem = typeof guestCartItems.$inferSelect;
+
+export const eventTypeEnum = pgEnum("event_type", ["holiday", "festival", "sports", "corporate", "promotion"]);
+export const eventImpactEnum = pgEnum("event_impact", ["low", "medium", "high", "very_high"]);
+
+export const events = pgTable("events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  title: text("title").notNull(),
+  description: text("description"),
+  type: eventTypeEnum("type").notNull().default("holiday"),
+  impact: eventImpactEnum("impact").notNull().default("medium"),
+  startDate: timestamp("start_date").notNull(),
+  endDate: timestamp("end_date").notNull(),
+  allDay: boolean("all_day").default(true),
+  color: varchar("color", { length: 7 }).default("#3b82f6"),
+  outlets: text("outlets").array(),
+  tags: text("tags").array(),
+  linkedOfferId: varchar("linked_offer_id", { length: 36 }),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 36 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertEventSchema = createInsertSchema(events).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertEvent = z.infer<typeof insertEventSchema>;
+export type Event = typeof events.$inferSelect;
 export type InsertGuestCartItem = z.infer<typeof insertGuestCartItemSchema>;

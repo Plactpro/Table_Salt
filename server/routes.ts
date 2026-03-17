@@ -26,6 +26,7 @@ import {
   insertPurchaseOrderItemSchema, insertGoodsReceivedNoteSchema, insertGrnItemSchema,
   insertTableZoneSchema, insertWaitlistEntrySchema,
   insertKioskDeviceSchema, insertUpsellRuleSchema,
+  insertEventSchema,
   deviceSessions,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
@@ -4864,6 +4865,57 @@ export async function registerRoutes(
       if (!session) return res.status(404).json({ message: "Session not found" });
       await storage.updateTableSession(session.id, { status: "closed", closedAt: new Date() });
       await storage.clearGuestCart(session.id);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  const eventWriteRoles = ["owner", "franchise_owner", "manager", "outlet_manager", "hq_admin"];
+
+  app.get("/api/events", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allEvents = await storage.getEventsByTenant(user.tenantId);
+      res.json(allEvents);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/events", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!eventWriteRoles.includes(user.role)) return res.status(403).json({ message: "Insufficient permissions" });
+      const body = { ...req.body, tenantId: user.tenantId, createdBy: user.id };
+      if (body.startDate) body.startDate = new Date(body.startDate);
+      if (body.endDate) body.endDate = new Date(body.endDate);
+      const parsed = insertEventSchema.parse(body);
+      const event = await storage.createEvent(parsed);
+      await auditLogFromReq(req, "create", "event", event.id, null, event);
+      res.status(201).json(event);
+    } catch (err: any) { res.status(err.name === "ZodError" ? 400 : 500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/events/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!eventWriteRoles.includes(user.role)) return res.status(403).json({ message: "Insufficient permissions" });
+      const existing = await storage.getEvent(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Event not found" });
+      const body = { ...req.body };
+      if (body.startDate) body.startDate = new Date(body.startDate);
+      if (body.endDate) body.endDate = new Date(body.endDate);
+      const updated = await storage.updateEvent(req.params.id, user.tenantId, body);
+      await auditLogFromReq(req, "update", "event", req.params.id, existing, updated);
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/events/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (!eventWriteRoles.includes(user.role)) return res.status(403).json({ message: "Insufficient permissions" });
+      const existing = await storage.getEvent(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Event not found" });
+      await storage.deleteEvent(req.params.id, user.tenantId);
+      await auditLogFromReq(req, "delete", "event", req.params.id, existing, null);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
