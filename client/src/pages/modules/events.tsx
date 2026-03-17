@@ -33,11 +33,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 type ViewType = "month" | "week" | "day" | "list";
 
 const typeConfig: Record<string, { label: string; icon: LucideIcon; color: string }> = {
-  holiday: { label: "Holiday", icon: Sun, color: "#f59e0b" },
-  festival: { label: "Festival", icon: PartyPopper, color: "#8b5cf6" },
+  holiday: { label: "Holiday", icon: Sun, color: "#f97316" },
+  festival: { label: "Festival", icon: PartyPopper, color: "#f59e0b" },
   sports: { label: "Sports Event", icon: Trophy, color: "#22c55e" },
   corporate: { label: "Corporate", icon: Building2, color: "#3b82f6" },
-  promotion: { label: "Promotion", icon: Megaphone, color: "#ef4444" },
+  promotion: { label: "Promotion", icon: Megaphone, color: "#8b5cf6" },
 };
 
 const impactConfig: Record<string, { label: string; color: string; bg: string }> = {
@@ -397,6 +397,10 @@ export default function EventsPage() {
   const [filterType, setFilterType] = useState("all");
   const [filterImpact, setFilterImpact] = useState("all");
   const [filterOutlet, setFilterOutlet] = useState("all");
+  type SortField = "title" | "startDate" | "endDate" | "type" | "impact";
+  type SortDir = "asc" | "desc";
+  const [sortField, setSortField] = useState<SortField>("startDate");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const canEdit = ["owner", "franchise_owner", "manager", "outlet_manager", "hq_admin"].includes(user?.role || "");
 
@@ -422,6 +426,28 @@ export default function EventsPage() {
     if (filterOutlet !== "all") result = result.filter((e) => !e.outlets || e.outlets.length === 0 || e.outlets.includes(filterOutlet));
     return result;
   }, [allEvents, search, filterType, filterImpact, filterOutlet]);
+
+  const sortedFiltered = useMemo(() => {
+    const impactOrder: Record<string, number> = { low: 0, medium: 1, high: 2, very_high: 3 };
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (sortField === "title") cmp = a.title.localeCompare(b.title);
+      else if (sortField === "startDate") cmp = new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      else if (sortField === "endDate") cmp = new Date(a.endDate).getTime() - new Date(b.endDate).getTime();
+      else if (sortField === "type") cmp = a.type.localeCompare(b.type);
+      else if (sortField === "impact") cmp = (impactOrder[a.impact] ?? 0) - (impactOrder[b.impact] ?? 0);
+      return sortDir === "desc" ? -cmp : cmp;
+    });
+  }, [filtered, sortField, sortDir]);
+
+  function toggleSort(field: SortField) {
+    if (sortField === field) {
+      setSortDir((d) => d === "asc" ? "desc" : "asc");
+    } else {
+      setSortField(field);
+      setSortDir("asc");
+    }
+  }
 
   const upcomingEvents = useMemo(() => {
     const now = new Date();
@@ -712,17 +738,17 @@ export default function EventsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Event</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Impact</TableHead>
-                    <TableHead>Start</TableHead>
-                    <TableHead>End</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("title")} data-testid="sort-title">Event {sortField === "title" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("type")} data-testid="sort-type">Type {sortField === "type" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("impact")} data-testid="sort-impact">Impact {sortField === "impact" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("startDate")} data-testid="sort-start">Start {sortField === "startDate" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
+                    <TableHead className="cursor-pointer select-none" onClick={() => toggleSort("endDate")} data-testid="sort-end">End {sortField === "endDate" ? (sortDir === "asc" ? "↑" : "↓") : ""}</TableHead>
                     <TableHead>Tags</TableHead>
                     {canEdit && <TableHead className="text-right">Actions</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((ev) => {
+                  {sortedFiltered.map((ev) => {
                     const tc = typeConfig[ev.type] || typeConfig.holiday;
                     const ic = impactConfig[ev.impact] || impactConfig.medium;
                     return (

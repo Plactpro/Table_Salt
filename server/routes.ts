@@ -4888,7 +4888,7 @@ export async function registerRoutes(
       if (body.endDate) body.endDate = new Date(body.endDate);
       const parsed = insertEventSchema.parse(body);
       const event = await storage.createEvent(parsed);
-      await auditLogFromReq(req, "create", "event", event.id, null, event);
+      await auditLogFromReq(req, { action: "event_created", entityType: "event", entityId: event.id, entityName: event.title, after: { title: event.title, type: event.type, impact: event.impact } });
       res.status(201).json(event);
     } catch (err: any) { res.status(err.name === "ZodError" ? 400 : 500).json({ message: err.message }); }
   });
@@ -4903,7 +4903,7 @@ export async function registerRoutes(
       if (body.startDate) body.startDate = new Date(body.startDate);
       if (body.endDate) body.endDate = new Date(body.endDate);
       const updated = await storage.updateEvent(req.params.id, user.tenantId, body);
-      await auditLogFromReq(req, "update", "event", req.params.id, existing, updated);
+      await auditLogFromReq(req, { action: "event_updated", entityType: "event", entityId: req.params.id, entityName: existing.title, before: { title: existing.title, type: existing.type, impact: existing.impact }, after: { title: updated.title, type: updated.type, impact: updated.impact } });
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -4915,7 +4915,7 @@ export async function registerRoutes(
       const existing = await storage.getEvent(req.params.id, user.tenantId);
       if (!existing) return res.status(404).json({ message: "Event not found" });
       await storage.deleteEvent(req.params.id, user.tenantId);
-      await auditLogFromReq(req, "delete", "event", req.params.id, existing, null);
+      await auditLogFromReq(req, { action: "event_deleted", entityType: "event", entityId: req.params.id, entityName: existing.title });
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
