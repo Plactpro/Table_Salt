@@ -234,7 +234,8 @@ function calculateDiscount(rule: PromotionRule, input: EvaluateInput): DiscountC
     const freeItemId = cond?.freeItemId ? String(cond.freeItemId) : null;
     const freeItemName = cond?.freeItemName ? String(cond.freeItemName) : "Free Item";
     const freeQty = cond?.freeQuantity ? Number(cond.freeQuantity) : 1;
-    const freeItems = freeItemId ? [{ menuItemId: freeItemId, name: freeItemName, quantity: freeQty }] : [];
+    const hasFreeItem = freeItemId || freeItemName !== "Free Item";
+    const freeItems = hasFreeItem ? [{ menuItemId: freeItemId || "free", name: freeItemName, quantity: freeQty }] : [];
     return { amount: 0, lineAdjustments: [], freeItems };
   }
 
