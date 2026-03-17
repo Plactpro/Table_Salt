@@ -32,6 +32,19 @@ import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
 import { can, needsSupervisorApproval, getPermissionsForRole, requirePermission, type PermissionAction } from "./permissions";
 import { auditLog, auditLogFromReq } from "./audit";
 
+async function getSecuritySettings(tenantId: string) {
+  const tenant = await storage.getTenant(tenantId);
+  const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
+  return {
+    requireSupervisorForVoid: mc.requireSupervisorForVoid ?? true,
+    requireSupervisorForLargeDiscount: mc.requireSupervisorForLargeDiscount ?? true,
+    largeDiscountThreshold: Number(mc.largeDiscountThreshold ?? 20),
+    requireSupervisorForPriceChange: mc.requireSupervisorForPriceChange ?? true,
+    requireSupervisorForLargeStockAdjustment: mc.requireSupervisorForLargeStockAdjustment ?? true,
+    largeStockAdjustmentThreshold: Number(mc.largeStockAdjustmentThreshold ?? 50),
+  };
+}
+
 async function verifySupervisorOverride(
   override: { username: string; password: string } | undefined,
   tenantId: string,
@@ -229,7 +242,8 @@ export async function registerRoutes(
     const existing = await storage.getMenuItem(req.params.id);
 
     if (existing && req.body.price && String(req.body.price) !== String(existing.price)) {
-      if (!can(user, "change_price")) {
+      const secSettings = await getSecuritySettings(user.tenantId);
+      if (secSettings.requireSupervisorForPriceChange && !can(user, "change_price")) {
         if (req.body.supervisorOverride) {
           const result = await verifySupervisorOverride(req.body.supervisorOverride, user.tenantId, "change_price", req);
           if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
@@ -564,8 +578,9 @@ export async function registerRoutes(
       const user = req.user as any;
       const { items, supervisorOverride, ...orderData } = req.body;
 
+      const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
-      if (discountPct > 15 && !can(user, "apply_large_discount")) {
+      if (secSettings.requireSupervisorForLargeDiscount && discountPct > secSettings.largeDiscountThreshold && !can(user, "apply_large_discount")) {
         if (supervisorOverride) {
           const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "apply_large_discount", req);
           if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
@@ -604,7 +619,9 @@ export async function registerRoutes(
     if (!existing) return res.status(404).json({ message: "Order not found" });
     if (existing.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
-    if (req.body.status === "voided" && !can(user, "void_order")) {
+    const secSettings = await getSecuritySettings(user.tenantId);
+
+    if (req.body.status === "voided" && secSettings.requireSupervisorForVoid && !can(user, "void_order")) {
       if (req.body.supervisorOverride) {
         const result = await verifySupervisorOverride(req.body.supervisorOverride, user.tenantId, "void_order", req);
         if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
@@ -615,7 +632,7 @@ export async function registerRoutes(
 
     if (req.body.discount !== undefined) {
       const discountPct = Number(req.body.discount);
-      if (discountPct > 15 && !can(user, "apply_large_discount")) {
+      if (secSettings.requireSupervisorForLargeDiscount && discountPct > secSettings.largeDiscountThreshold && !can(user, "apply_large_discount")) {
         if (req.body.supervisorOverride) {
           const result = await verifySupervisorOverride(req.body.supervisorOverride, user.tenantId, "apply_large_discount", req);
           if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
@@ -749,8 +766,9 @@ export async function registerRoutes(
     const item = await storage.getInventoryItem(req.params.id);
     if (!item) return res.status(404).json({ message: "Item not found" });
 
-    const isLargeAdjustment = Number(quantity) >= 50;
-    if (isLargeAdjustment && !can(user, "large_stock_adjustment")) {
+    const secSettings = await getSecuritySettings(user.tenantId);
+    const isLargeAdjustment = Number(quantity) >= secSettings.largeStockAdjustmentThreshold;
+    if (secSettings.requireSupervisorForLargeStockAdjustment && isLargeAdjustment && !can(user, "large_stock_adjustment")) {
       if (supervisorOverride) {
         const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "large_stock_adjustment", req);
         if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
@@ -1944,10 +1962,22 @@ export async function registerRoutes(
   app.patch("/api/recipes/:id", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
-      const { ingredients, ...recipeData } = req.body;
+      const { ingredients, supervisorOverride, ...recipeData } = req.body;
+
+      if (ingredients && Array.isArray(ingredients) && ingredients.length > 0) {
+        if (!can(user, "change_price")) {
+          if (supervisorOverride) {
+            const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "change_price", req);
+            if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
+          } else {
+            return res.status(403).json({ message: "Permission denied", action: "change_price", requiresSupervisor: true, detail: "Recipe ingredient changes affect cost" });
+          }
+        }
+      }
+
       if (recipeData.menuItemId) {
         const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
-        if (!menuItems.find(m => m.id === recipeData.menuItemId)) {
+        if (!menuItems.find((m: any) => m.id === recipeData.menuItemId)) {
           return res.status(400).json({ message: "Invalid menu item" });
         }
       }
@@ -1955,7 +1985,7 @@ export async function registerRoutes(
       if (!recipe) return res.status(404).json({ message: "Not found" });
       if (ingredients && Array.isArray(ingredients)) {
         const tenantInventory = await storage.getInventoryByTenant(user.tenantId);
-        const tenantInvIds = new Set(tenantInventory.map(i => i.id));
+        const tenantInvIds = new Set(tenantInventory.map((i: any) => i.id));
         await storage.deleteRecipeIngredients(recipe.id);
         for (let i = 0; i < ingredients.length; i++) {
           if (!tenantInvIds.has(ingredients[i].inventoryItemId)) continue;
