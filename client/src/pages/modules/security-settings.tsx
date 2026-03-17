@@ -576,25 +576,35 @@ function SecurityAlertsCard() {
   );
 }
 
+const MANAGEABLE_ROLES = ["owner", "manager", "waiter", "kitchen", "accountant"] as const;
+
 function IpAllowlistCard() {
   const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const isOwner = user?.role === "owner";
   const [newCidr, setNewCidr] = useState("");
+  const [selectedRole, setSelectedRole] = useState("");
+  const [newRoleCidr, setNewRoleCidr] = useState("");
 
-  const { data: ipData } = useQuery<{ ipAllowlist: string[]; ipAllowlistEnabled: boolean }>({
+  interface IpAllowlistData {
+    ipAllowlist: string[];
+    ipAllowlistEnabled: boolean;
+    ipAllowlistRoles: Record<string, string[]>;
+  }
+
+  const { data: ipData } = useQuery<IpAllowlistData>({
     queryKey: ["/api/security/ip-allowlist"],
     queryFn: async () => {
       const res = await fetch("/api/security/ip-allowlist", { credentials: "include" });
-      if (!res.ok) return { ipAllowlist: [], ipAllowlistEnabled: false };
+      if (!res.ok) return { ipAllowlist: [], ipAllowlistEnabled: false, ipAllowlistRoles: {} };
       return res.json();
     },
     enabled: isOwner || user?.role === "hq_admin",
   });
 
   const saveMutation = useMutation({
-    mutationFn: async (data: { ipAllowlist?: string[]; ipAllowlistEnabled?: boolean }) => {
+    mutationFn: async (data: { ipAllowlist?: string[]; ipAllowlistEnabled?: boolean; ipAllowlistRoles?: Record<string, string[]> }) => {
       const res = await apiRequest("PUT", "/api/security/ip-allowlist", data);
       return res.json();
     },
@@ -627,7 +637,29 @@ function IpAllowlistCard() {
     saveMutation.mutate({ ipAllowlistEnabled: enabled });
   };
 
+  const addRoleCidr = () => {
+    if (!selectedRole || !newRoleCidr.trim()) return;
+    const roles = { ...(ipData?.ipAllowlistRoles || {}) };
+    const roleList = roles[selectedRole] || [];
+    if (roleList.includes(newRoleCidr.trim())) {
+      toast({ title: "Already in role list", variant: "destructive" });
+      return;
+    }
+    roles[selectedRole] = [...roleList, newRoleCidr.trim()];
+    saveMutation.mutate({ ipAllowlistRoles: roles });
+    setNewRoleCidr("");
+  };
+
+  const removeRoleCidr = (role: string, cidr: string) => {
+    const roles = { ...(ipData?.ipAllowlistRoles || {}) };
+    roles[role] = (roles[role] || []).filter(c => c !== cidr);
+    if (roles[role].length === 0) delete roles[role];
+    saveMutation.mutate({ ipAllowlistRoles: roles });
+  };
+
   if (!isOwner && user?.role !== "hq_admin") return null;
+
+  const roleRules = ipData?.ipAllowlistRoles || {};
 
   return (
     <Card>
@@ -636,7 +668,7 @@ function IpAllowlistCard() {
           <Globe className="h-5 w-5" />
           IP Access Rules
         </CardTitle>
-        <CardDescription>Restrict admin access to trusted IP addresses</CardDescription>
+        <CardDescription>Restrict admin access to trusted IP addresses (global and per-role)</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex items-center justify-between">
@@ -653,7 +685,8 @@ function IpAllowlistCard() {
         </div>
         <Separator />
         <div className="space-y-2">
-          <Label>Allowed IP Addresses / CIDR Ranges</Label>
+          <Label>Global Allowed IPs / CIDR Ranges</Label>
+          <p className="text-xs text-muted-foreground">Applies to all roles unless overridden by role-specific rules below</p>
           <div className="flex gap-2">
             <Input
               value={newCidr}
@@ -686,7 +719,63 @@ function IpAllowlistCard() {
             ))}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground text-center py-2">No IP rules configured. All IPs are allowed.</p>
+          <p className="text-xs text-muted-foreground text-center py-2">No global IP rules configured. All IPs are allowed.</p>
+        )}
+        <Separator />
+        <div className="space-y-2">
+          <Label>Role-Specific IP Rules</Label>
+          <p className="text-xs text-muted-foreground">Override global rules for specific roles. When set, only these IPs are allowed for that role.</p>
+          <div className="flex gap-2">
+            <select
+              value={selectedRole}
+              onChange={(e) => setSelectedRole(e.target.value)}
+              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
+              disabled={!isOwner}
+              data-testid="select-role-ip"
+            >
+              <option value="">Select role...</option>
+              {MANAGEABLE_ROLES.map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            <Input
+              value={newRoleCidr}
+              onChange={(e) => setNewRoleCidr(e.target.value)}
+              placeholder="e.g., 10.0.0.0/8"
+              disabled={!isOwner || !selectedRole}
+              className="flex-1"
+              data-testid="input-role-cidr"
+            />
+            <Button
+              onClick={addRoleCidr}
+              disabled={!selectedRole || !newRoleCidr.trim() || !isOwner || saveMutation.isPending}
+              size="sm"
+              data-testid="button-add-role-cidr"
+            >
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        {Object.keys(roleRules).length > 0 ? (
+          <div className="space-y-3" data-testid="role-ip-rules">
+            {Object.entries(roleRules).map(([role, cidrs]) => (
+              <div key={role} className="space-y-1">
+                <p className="text-sm font-medium capitalize">{role}</p>
+                {(cidrs as string[]).map((cidr, idx) => (
+                  <div key={idx} className="flex items-center justify-between p-2 border rounded ml-4">
+                    <code className="text-sm font-mono">{cidr}</code>
+                    {isOwner && (
+                      <Button variant="ghost" size="sm" className="text-red-500" onClick={() => removeRoleCidr(role, cidr)} data-testid={`button-remove-role-cidr-${role}-${idx}`}>
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground text-center py-2">No role-specific rules. Global rules apply to all roles.</p>
         )}
       </CardContent>
     </Card>

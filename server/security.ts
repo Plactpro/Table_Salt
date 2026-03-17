@@ -11,6 +11,8 @@ function generateCsrfToken(): string {
 }
 
 export function setupSecurity(app: Express) {
+  app.set("trust proxy", 1);
+
   app.use(
     helmet({
       contentSecurityPolicy: false,
@@ -152,10 +154,6 @@ function isIpInCidr(ip: string, cidr: string): boolean {
 }
 
 function getClientIp(req: Request): string {
-  const xff = req.headers["x-forwarded-for"];
-  if (typeof xff === "string") {
-    return xff.split(",")[0].trim();
-  }
   return req.ip || req.socket?.remoteAddress || "0.0.0.0";
 }
 
