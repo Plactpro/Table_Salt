@@ -7,9 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
   MonitorSmartphone, ShoppingBag, Smartphone, QrCode,
-  TrendingUp, TrendingDown, BarChart3, Clock,
-  DollarSign, ShoppingCart, Users, Layers,
-  ArrowUpRight, ArrowDownRight, Minus,
+  TrendingUp, BarChart3, Clock,
+  DollarSign, ShoppingCart, Layers,
+  CheckCircle, AlertCircle, Circle,
 } from "lucide-react";
 import type { Order, OrderItem } from "@shared/schema";
 
@@ -136,6 +136,25 @@ export default function OmnichannelPage() {
   const totalOrdersWeek = weekStats.reduce((s, c) => s + c.orderCount, 0);
 
   const channelCount = allTimeStats.length;
+
+  const channelStatuses = useMemo(() => {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    const channels = Object.keys(CHANNEL_META);
+    return channels.map(ch => {
+      const meta = CHANNEL_META[ch];
+      const chOrders = allOrders.filter(o => (o as any).channel === ch);
+      const recentOrders = chOrders.filter(o => o.createdAt && new Date(o.createdAt) >= oneHourAgo);
+      const hasRecent = recentOrders.length > 0;
+      const totalOrders = chOrders.length;
+      return { channel: ch, ...meta, hasRecent, recentCount: recentOrders.length, totalOrders };
+    });
+  }, [allOrders]);
+
+  const recentOrdersFeed = useMemo(() => {
+    return [...allOrders]
+      .sort((a, b) => (b.createdAt ? new Date(b.createdAt).getTime() : 0) - (a.createdAt ? new Date(a.createdAt).getTime() : 0))
+      .slice(0, 20);
+  }, [allOrders]);
 
   return (
     <div className="p-6 space-y-6" data-testid="omnichannel-page">
@@ -349,6 +368,100 @@ export default function OmnichannelPage() {
             </Card>
           );
         })}
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card data-testid="card-channel-status">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <BarChart3 className="h-5 w-5" />
+              Channel Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {channelStatuses.map(cs => {
+              const Icon = cs.icon;
+              return (
+                <div key={cs.channel} className="flex items-center justify-between py-2 border-b last:border-b-0" data-testid={`channel-status-${cs.channel}`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`p-1.5 rounded-md ${cs.bgColor}`}>
+                      <Icon className={`h-4 w-4 ${cs.color}`} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium">{cs.label}</p>
+                      <p className="text-xs text-muted-foreground">{cs.totalOrders} total orders</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {cs.hasRecent ? (
+                      <Badge variant="default" className="gap-1 bg-green-100 text-green-700 hover:bg-green-100">
+                        <CheckCircle className="h-3 w-3" />
+                        Active ({cs.recentCount}/hr)
+                      </Badge>
+                    ) : cs.totalOrders > 0 ? (
+                      <Badge variant="secondary" className="gap-1">
+                        <Circle className="h-3 w-3" />
+                        Idle
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="gap-1 text-muted-foreground">
+                        <AlertCircle className="h-3 w-3" />
+                        No Orders
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+
+        <Card data-testid="card-recent-orders-feed">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Clock className="h-5 w-5" />
+              Recent Orders (All Channels)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {recentOrdersFeed.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No orders yet</p>
+            ) : (
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {recentOrdersFeed.map(order => {
+                  const ch = (order as any).channel || "pos";
+                  const meta = CHANNEL_META[ch] || CHANNEL_META.pos;
+                  const ChIcon = meta.icon;
+                  const statusColor: Record<string, string> = {
+                    new: "bg-blue-100 text-blue-700",
+                    sent_to_kitchen: "bg-amber-100 text-amber-700",
+                    in_progress: "bg-orange-100 text-orange-700",
+                    ready: "bg-green-100 text-green-700",
+                    served: "bg-teal-100 text-teal-700",
+                    paid: "bg-emerald-100 text-emerald-700",
+                    cancelled: "bg-red-100 text-red-700",
+                    voided: "bg-gray-100 text-gray-700",
+                  };
+                  return (
+                    <div key={order.id} className="flex items-center justify-between py-1.5 border-b last:border-b-0" data-testid={`recent-order-${order.id}`}>
+                      <div className="flex items-center gap-2">
+                        <ChIcon className={`h-3.5 w-3.5 ${meta.color}`} />
+                        <span className="text-sm font-medium">#{order.tokenNumber || order.id.toString().slice(-4)}</span>
+                        <Badge className={`text-[10px] px-1.5 py-0 ${statusColor[order.status] || "bg-gray-100 text-gray-600"}`}>
+                          {order.status.replace(/_/g, " ")}
+                        </Badge>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{fmt(order.total || 0)}</span>
+                        <span>{order.createdAt ? new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {allTimeStats.length === 0 && (
