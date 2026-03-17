@@ -1325,25 +1325,46 @@ export async function registerRoutes(
     try {
       const user = req.user as any;
       const body = req.body;
-      if (!body || !Array.isArray(body.items) || typeof body.subtotal !== "number") {
-        return res.status(400).json({ message: "Invalid input: requires items (array) and subtotal (number)" });
+      if (!body || !Array.isArray(body.items)) {
+        return res.status(400).json({ message: "Invalid input: requires items (array)" });
       }
       if (!body.channel || typeof body.channel !== "string") {
         return res.status(400).json({ message: "Invalid input: channel (string) is required" });
       }
       for (const item of body.items) {
-        if (!item.menuItemId || typeof item.price !== "number" || typeof item.quantity !== "number") {
-          return res.status(400).json({ message: "Invalid input: each item requires menuItemId, price (number), and quantity (number)" });
+        if (!item.menuItemId || typeof item.quantity !== "number") {
+          return res.status(400).json({ message: "Invalid input: each item requires menuItemId and quantity (number)" });
         }
       }
+
+      const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+
+      let serverSubtotal = 0;
+      const canonicalItems: { menuItemId: string; name: string; price: number; quantity: number; categoryId?: string }[] = [];
+      for (const item of body.items) {
+        const mi = menuMap.get(item.menuItemId);
+        const canonicalPrice = mi ? Number(mi.price) : Number(item.price || 0);
+        const qty = Number(item.quantity) || 1;
+        serverSubtotal += canonicalPrice * qty;
+        canonicalItems.push({
+          menuItemId: item.menuItemId,
+          name: mi?.name || item.name || "",
+          price: canonicalPrice,
+          quantity: qty,
+          categoryId: mi?.categoryId || item.categoryId || undefined,
+        });
+      }
+      serverSubtotal = Math.round(serverSubtotal * 100) / 100;
+
       const { evaluateRules } = await import("./promotions-engine");
       const rules = await storage.getPromotionRulesByTenant(user.tenantId);
       const tenant = await storage.getTenant(user.tenantId);
       const tenantTaxRate = Number(tenant?.taxRate || 0) / 100;
       const tenantServiceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
       const result = evaluateRules(rules, {
-        items: body.items,
-        subtotal: body.subtotal,
+        items: canonicalItems,
+        subtotal: serverSubtotal,
         channel: body.channel,
         orderType: body.orderType,
         outletId: body.outletId,
