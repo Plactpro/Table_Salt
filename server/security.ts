@@ -153,20 +153,33 @@ function isIpInCidr(ip: string, cidr: string): boolean {
   }
 }
 
-function getClientIp(req: Request): string {
-  return req.ip || req.socket?.remoteAddress || "0.0.0.0";
+function normalizeIp(ip: string): string {
+  if (ip.startsWith("::ffff:")) {
+    return ip.slice(7);
+  }
+  if (ip === "::1") {
+    return "127.0.0.1";
+  }
+  return ip;
 }
 
-export function setupIpAllowlistMiddleware(app: Express) {
-  const adminPaths = ["/api/security", "/api/users", "/api/gdpr", "/api/security-alerts"];
+function getClientIp(req: Request): string {
+  const raw = req.ip || req.socket?.remoteAddress || "0.0.0.0";
+  return normalizeIp(raw);
+}
 
+const PRIVILEGED_ROLES = new Set(["owner", "hq_admin", "franchise_owner", "manager", "accountant"]);
+const PUBLIC_PATHS = ["/api/auth/", "/api/guest/", "/api/kiosk/", "/api/health", "/api/qr/"];
+
+export function setupIpAllowlistMiddleware(app: Express) {
   app.use(async (req: Request, res: Response, next: NextFunction) => {
     const url = req.originalUrl || req.path;
-    const isAdminRoute = adminPaths.some(p => url.startsWith(p));
-    if (!isAdminRoute) return next();
+    if (!url.startsWith("/api/")) return next();
+    if (PUBLIC_PATHS.some(p => url.startsWith(p))) return next();
 
-    const user = req.user as { tenantId?: string } | undefined;
+    const user = req.user as { tenantId?: string; role?: string } | undefined;
     if (!user?.tenantId) return next();
+    if (!PRIVILEGED_ROLES.has(user.role || "")) return next();
 
     try {
       const { storage } = await import("./storage");
@@ -176,7 +189,7 @@ export function setupIpAllowlistMiddleware(app: Express) {
       if (!mc.ipAllowlistEnabled) return next();
 
       const clientIp = getClientIp(req);
-      const userRole = (req.user as { role?: string })?.role || "";
+      const userRole = user.role || "";
 
       const roleRules = mc.ipAllowlistRoles as Record<string, string[]> | undefined;
       if (roleRules && roleRules[userRole] && roleRules[userRole].length > 0) {
