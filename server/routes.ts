@@ -1,10 +1,14 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
+import { randomBytes } from "crypto";
+import { TOTP, Secret } from "otpauth";
+import QRCode from "qrcode";
 import { storage } from "./storage";
 import { db, pool } from "./db";
 import { eq, and, desc } from "drizzle-orm";
-import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords } from "./auth";
+import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "./auth";
+import { setupCsrf } from "./security";
 import { getAdapter } from "./aggregator-adapters";
 import {
   isVoidOrCancelled, filterOrdersByDateRange, filterValidOrders,
@@ -29,6 +33,7 @@ import {
   insertEventSchema,
   insertComboOfferSchema,
   deviceSessions,
+  users,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
@@ -123,6 +128,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   setupAuth(app);
+  setupCsrf(app);
 
   app.use("/uploads", (await import("express")).default.static(uploadDir));
 
@@ -172,12 +178,37 @@ export async function registerRoutes(
   });
 
   app.post("/api/auth/login", (req, res, next) => {
-    passport.authenticate("local", (err: any, user: any, info: any) => {
+    passport.authenticate("local", async (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
         auditLog({ tenantId: null, action: "login_failed", metadata: { username: req.body.username }, req });
         return res.status(401).json({ message: info?.message || "Invalid credentials" });
       }
+
+      if (user.totpEnabled && !req.body.totpCode) {
+        return res.status( 200).json({ requires2FA: true, userId: user.id });
+      }
+
+      if (user.totpEnabled && req.body.totpCode) {
+        const totp = new TOTP({ secret: user.totpSecret, algorithm: "SHA1", digits: 6, period: 30 });
+        const valid = totp.validate({ token: req.body.totpCode, window: 1 }) !== null;
+
+        if (!valid) {
+          const codes = user.recoveryCodes || [];
+          const codeIdx = codes.indexOf(req.body.totpCode);
+          if (codeIdx === -1) {
+            auditLog({ tenantId: user.tenantId, action: "login_failed", metadata: { username: req.body.username, reason: "invalid_2fa" }, req });
+            return res.status(401).json({ message: "Invalid 2FA code" });
+          }
+          codes.splice(codeIdx, 1);
+          try {
+            await db.update(users).set({ recoveryCodes: codes }).where(eq(users.id, user.id));
+          } catch {
+            return res.status(500).json({ message: "Failed to consume recovery code" });
+          }
+        }
+      }
+
       req.login(user, async (loginErr) => {
         if (loginErr) return next(loginErr);
 
@@ -203,7 +234,7 @@ export async function registerRoutes(
         } catch (_) { /* concurrent session cleanup best-effort */ }
 
         auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
-        const { password: _, ...safeUser } = user;
+        const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = user;
         return res.json(safeUser);
       });
     })(req, res, next);
@@ -222,15 +253,101 @@ export async function registerRoutes(
 
   app.get("/api/auth/me", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
-    const { password: _, ...safeUser } = req.user as any;
+    const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = req.user as any;
     const tenant = await storage.getTenant(safeUser.tenantId);
     res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge } : null });
+  });
+
+  app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      if (user.totpEnabled) return res.status(400).json({ message: "2FA is already enabled" });
+      const secret = new Secret();
+      const totp = new TOTP({ issuer: "Table Salt", label: user.username, secret, algorithm: "SHA1", digits: 6, period: 30 });
+      const uri = totp.toString();
+      const qrDataUrl = await QRCode.toDataURL(uri);
+      await db.update(users).set({ totpSecret: secret.base32 }).where(eq(users.id, user.id));
+      res.json({ qrCodeUrl: qrDataUrl, secret: secret.base32, uri });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/auth/2fa/verify", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { code } = req.body;
+      if (!code) return res.status(400).json({ message: "Verification code is required" });
+      const freshUser = await storage.getUser(user.id);
+      if (!freshUser || !freshUser.totpSecret) return res.status(400).json({ message: "2FA setup not started" });
+      const totp = new TOTP({ secret: freshUser.totpSecret, algorithm: "SHA1", digits: 6, period: 30 });
+      const valid = totp.validate({ token: code, window: 1 }) !== null;
+      if (!valid) return res.status(400).json({ message: "Invalid verification code" });
+      const recoveryCodes = Array.from({ length: 8 }, () => randomBytes(4).toString("hex"));
+      await db.update(users).set({ totpEnabled: true, recoveryCodes }).where(eq(users.id, user.id));
+      auditLogFromReq(req, { action: "2fa_enabled", entityType: "user", entityId: user.id, entityName: user.name });
+      res.json({ recoveryCodes, message: "2FA has been enabled" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/auth/2fa/disable", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { password: currentPassword } = req.body;
+      if (!currentPassword) return res.status(400).json({ message: "Current password is required" });
+      const freshUser = await storage.getUser(user.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+      const valid = await comparePasswords(currentPassword, freshUser.password);
+      if (!valid) return res.status(401).json({ message: "Invalid password" });
+      await db.update(users).set({ totpEnabled: false, totpSecret: null, recoveryCodes: null }).where(eq(users.id, user.id));
+      auditLogFromReq(req, { action: "2fa_disabled", entityType: "user", entityId: user.id, entityName: user.name });
+      res.json({ message: "2FA has been disabled" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/auth/change-password", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { currentPassword, newPassword } = req.body;
+      if (!currentPassword || !newPassword) return res.status(400).json({ message: "Current and new passwords are required" });
+      const freshUser = await storage.getUser(user.id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+      const valid = await comparePasswords(currentPassword, freshUser.password);
+      if (!valid) return res.status(401).json({ message: "Current password is incorrect" });
+      const sameAsOld = await comparePasswords(newPassword, freshUser.password);
+      if (sameAsOld) return res.status(400).json({ message: "New password must be different from current password" });
+      const tenant = await storage.getTenant(user.tenantId);
+      const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
+      const policy = mc.passwordPolicy || {};
+      const validation = validatePasswordPolicy(newPassword, policy);
+      if (!validation.valid) return res.status(400).json({ message: validation.errors.join(". ") });
+      const canUse = await checkPasswordHistory(newPassword, freshUser.passwordHistory, policy.preventReuseCount ?? 5);
+      if (!canUse) return res.status(400).json({ message: "Cannot reuse a recent password" });
+      const newHash = await hashPassword(newPassword);
+      const history = [...(freshUser.passwordHistory || []), freshUser.password].slice(-10);
+      await db.update(users).set({ password: newHash, passwordChangedAt: new Date(), passwordHistory: history }).where(eq(users.id, user.id));
+      auditLogFromReq(req, { action: "password_changed", entityType: "user", entityId: user.id, entityName: user.name });
+      res.json({ message: "Password changed successfully" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/auth/password-policy", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const tenant = await storage.getTenant(user.tenantId);
+    const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
+    res.json({ ...DEFAULT_PASSWORD_POLICY, ...mc.passwordPolicy });
   });
 
   app.get("/api/users", requireAuth, async (req, res) => {
     const user = req.user as any;
     const users = await storage.getUsersByTenant(user.tenantId);
-    res.json(users.map(({ password: _, ...u }) => u));
+    res.json(users.map(({ password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...u }) => u));
   });
 
   app.post("/api/users", requireRole("owner", "manager"), async (req, res) => {
@@ -278,7 +395,7 @@ export async function registerRoutes(
       }
       const updated = await storage.updateUser(req.params.id, data);
       if (!updated) return res.status(404).json({ message: "User not found" });
-      const { password: _, ...safeUser } = updated;
+      const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = updated;
       res.json(safeUser);
     } catch (err: any) {
       if (err.code === "23505") {
@@ -4386,7 +4503,12 @@ export async function registerRoutes(
         before: { role: oldRole },
         after: { role: req.body.role },
       });
-      res.json(updated);
+      if (updated) {
+        const { password: _, totpSecret: _ts2, recoveryCodes: _rc2, passwordHistory: _ph2, ...safe } = updated;
+        res.json(safe);
+      } else {
+        res.json({});
+      }
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

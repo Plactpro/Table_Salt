@@ -23,6 +23,66 @@ export async function comparePasswords(supplied: string, stored: string): Promis
   return timingSafeEqual(hashedBuf, suppliedBuf);
 }
 
+export interface PasswordPolicyConfig {
+  minLength: number;
+  requireUppercase: boolean;
+  requireLowercase: boolean;
+  requireDigit: boolean;
+  requireSpecialChar: boolean;
+  preventReuseCount: number;
+  expirationDays: number;
+}
+
+export const DEFAULT_PASSWORD_POLICY: PasswordPolicyConfig = {
+  minLength: 8,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireDigit: true,
+  requireSpecialChar: true,
+  preventReuseCount: 5,
+  expirationDays: 90,
+};
+
+export function validatePasswordPolicy(
+  password: string,
+  policy: Partial<PasswordPolicyConfig> = {}
+): { valid: boolean; errors: string[] } {
+  const p = { ...DEFAULT_PASSWORD_POLICY, ...policy };
+  const errors: string[] = [];
+
+  if (password.length < p.minLength) {
+    errors.push(`Password must be at least ${p.minLength} characters`);
+  }
+  if (p.requireUppercase && !/[A-Z]/.test(password)) {
+    errors.push("Password must contain at least one uppercase letter");
+  }
+  if (p.requireLowercase && !/[a-z]/.test(password)) {
+    errors.push("Password must contain at least one lowercase letter");
+  }
+  if (p.requireDigit && !/[0-9]/.test(password)) {
+    errors.push("Password must contain at least one digit");
+  }
+  if (p.requireSpecialChar && !/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(password)) {
+    errors.push("Password must contain at least one special character");
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+export async function checkPasswordHistory(
+  newPassword: string,
+  history: string[] | null,
+  preventReuseCount: number
+): Promise<boolean> {
+  if (!history || history.length === 0 || preventReuseCount === 0) return true;
+  const recentHistory = history.slice(-preventReuseCount);
+  for (const oldHash of recentHistory) {
+    const match = await comparePasswords(newPassword, oldHash);
+    if (match) return false;
+  }
+  return true;
+}
+
 export function setupAuth(app: Express) {
   const PgSession = connectPgSimple(session);
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock } from "lucide-react";
+import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, ShieldCheck, ArrowLeft } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { motion } from "framer-motion";
 
@@ -31,29 +31,44 @@ export default function LoginPage() {
   const { toast } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [totpCode, setTotpCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [needs2FA, setNeeds2FA] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
-      await login(username, password);
+      const result = await login(username, password, needs2FA ? totpCode : undefined);
+      if ("requires2FA" in result && result.requires2FA) {
+        setNeeds2FA(true);
+        setLoading(false);
+        return;
+      }
       navigate("/");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Invalid credentials";
       toast({
         variant: "destructive",
         title: "Login failed",
-        description: err.message || "Invalid credentials",
+        description: message,
       });
     } finally {
       setLoading(false);
     }
   };
 
+  const handleBack = () => {
+    setNeeds2FA(false);
+    setTotpCode("");
+  };
+
   const fillDemo = (user: string, pass: string) => {
     setUsername(user);
     setPassword(pass);
+    setNeeds2FA(false);
+    setTotpCode("");
   };
 
   return (
@@ -145,60 +160,106 @@ export default function LoginPage() {
           </motion.div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
-            <motion.div
-              className="space-y-2"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.5 }}
-            >
-              <Label htmlFor="username">Username</Label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="username"
-                  data-testid="input-username"
-                  placeholder="Enter your username"
-                  className="pl-10"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  required
-                />
-              </div>
-            </motion.div>
-            <motion.div
-              className="space-y-2"
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.6 }}
-            >
-              <Label htmlFor="password">Password</Label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="password"
-                  data-testid="input-password"
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  className="pl-10 pr-10"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-                <button
-                  type="button"
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                  onClick={() => setShowPassword(!showPassword)}
-                  data-testid="button-toggle-password"
-                  tabIndex={-1}
+            {!needs2FA ? (
+              <>
+                <motion.div
+                  className="space-y-2"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.5 }}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </motion.div>
+                  <Label htmlFor="username">Username</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="username"
+                      data-testid="input-username"
+                      placeholder="Enter your username"
+                      className="pl-10"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      required
+                    />
+                  </div>
+                </motion.div>
+                <motion.div
+                  className="space-y-2"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.6 }}
+                >
+                  <Label htmlFor="password">Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="password"
+                      data-testid="input-password"
+                      type={showPassword ? "text" : "password"}
+                      placeholder="Enter your password"
+                      className="pl-10 pr-10"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      onClick={() => setShowPassword(!showPassword)}
+                      data-testid="button-toggle-password"
+                      tabIndex={-1}
+                    >
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </motion.div>
+              </>
+            ) : (
+              <motion.div
+                className="space-y-4"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4 }}
+              >
+                <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                  <ShieldCheck className="h-5 w-5 text-primary flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">Two-Factor Authentication</p>
+                    <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app or a recovery code</p>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="totpCode">Verification Code</Label>
+                  <div className="relative">
+                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      id="totpCode"
+                      data-testid="input-totp-code"
+                      placeholder="Enter 6-digit code"
+                      className="pl-10 text-center text-lg tracking-widest font-mono"
+                      value={totpCode}
+                      onChange={(e) => setTotpCode(e.target.value)}
+                      autoFocus
+                      required
+                    />
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleBack}
+                  className="gap-1"
+                  data-testid="button-2fa-back"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Back to login
+                </Button>
+              </motion.div>
+            )}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.7 }}
+              transition={{ duration: 0.5, delay: needs2FA ? 0.2 : 0.7 }}
             >
               <Button
                 type="submit"
@@ -212,6 +273,11 @@ export default function LoginPage() {
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                   />
+                ) : needs2FA ? (
+                  <>
+                    Verify &amp; Sign In
+                    <ShieldCheck className="h-4 w-4" />
+                  </>
                 ) : (
                   <>
                     Sign In
