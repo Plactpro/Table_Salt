@@ -39,6 +39,7 @@ import {
   Activity,
   ScrollText,
   Shield,
+  Zap,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
@@ -69,6 +70,7 @@ const navItems: NavItem[] = [
   { id: "m-26", name: "BI & Forecasting", icon: Activity, path: "/bi-dashboard", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
   { id: "m-11", name: "Outlets", icon: Store, path: "/outlets", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "outlets" },
   { id: "m-12", name: "Offers", icon: Tag, path: "/offers", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
+  { id: "m-29", name: "Promotions", icon: Zap, path: "/promotions", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
   { id: "m-13", name: "CRM", icon: Heart, path: "/crm", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "crm" },
   { id: "m-19", name: "Cleaning", icon: ClipboardCheck, path: "/cleaning", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "cleaning" },
   { id: "m-20", name: "Internal Audits", icon: ShieldCheck, path: "/audits", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "auditor"], featureKey: "internal_audits" },

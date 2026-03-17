@@ -1192,6 +1192,67 @@ export async function registerRoutes(
     res.json({ message: "Deleted" });
   });
 
+  // Promotion Rules Engine
+  app.get("/api/promotion-rules", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const rules = await storage.getPromotionRulesByTenant(user.tenantId);
+    res.json(rules);
+  });
+
+  app.get("/api/promotion-rules/:id", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const rule = await storage.getPromotionRule(req.params.id, user.tenantId);
+    if (!rule) return res.status(404).json({ message: "Rule not found" });
+    res.json(rule);
+  });
+
+  function parseRuleDates(body: Record<string, any>) {
+    const data = { ...body };
+    if (data.startDate && typeof data.startDate === "string") data.startDate = new Date(data.startDate);
+    if (data.endDate && typeof data.endDate === "string") data.endDate = new Date(data.endDate);
+    return data;
+  }
+
+  app.post("/api/promotion-rules", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rule = await storage.createPromotionRule({ ...parseRuleDates(req.body), tenantId: user.tenantId });
+      auditLogFromReq(req, { action: "promotion_rule_created", entityType: "promotion_rule", entityId: rule.id, entityName: rule.name, after: { name: rule.name, ruleType: rule.ruleType, discountType: rule.discountType, discountValue: rule.discountValue } });
+      res.json(rule);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/promotion-rules/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
+    const user = req.user as any;
+    const existing = await storage.getPromotionRule(req.params.id, user.tenantId);
+    const rule = await storage.updatePromotionRule(req.params.id, user.tenantId, parseRuleDates(req.body));
+    if (!rule) return res.status(404).json({ message: "Rule not found" });
+    if (existing) auditLogFromReq(req, { action: "promotion_rule_updated", entityType: "promotion_rule", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, active: existing.active }, after: req.body });
+    res.json(rule);
+  });
+
+  app.delete("/api/promotion-rules/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
+    const user = req.user as any;
+    const existing = await storage.getPromotionRule(req.params.id, user.tenantId);
+    await storage.deletePromotionRule(req.params.id, user.tenantId);
+    if (existing) auditLogFromReq(req, { action: "promotion_rule_deleted", entityType: "promotion_rule", entityId: req.params.id, entityName: existing.name });
+    res.json({ message: "Deleted" });
+  });
+
+  app.post("/api/promotions/evaluate", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { evaluateRules } = await import("./promotions-engine");
+      const rules = await storage.getPromotionRulesByTenant(user.tenantId);
+      const result = evaluateRules(rules, req.body);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // Delivery Orders CRUD (tenant-scoped)
   app.get("/api/delivery-orders", requireAuth, async (req, res) => {
     const user = req.user as any;
@@ -3775,6 +3836,7 @@ export async function registerRoutes(
       "menu_category_created", "menu_category_updated", "menu_category_deleted",
       "inventory_adjusted", "inventory_item_created", "inventory_item_updated",
       "offer_created", "offer_updated", "offer_deleted",
+      "promotion_rule_created", "promotion_rule_updated", "promotion_rule_deleted",
       "user_created", "user_updated", "user_role_changed",
       "tenant_settings_updated", "security_settings_updated",
       "recipe_created", "recipe_updated", "recipe_deleted",

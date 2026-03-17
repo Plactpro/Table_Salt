@@ -11,7 +11,7 @@ A multi-tenant SaaS Restaurant Management System branded as "Table Salt" (taglin
 - **Auth**: Passport.js with local strategy, session-based (connect-pg-simple)
 
 ## Key Files
-- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, table_zones, tables, waitlist_entries, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots, audit_events, device_sessions)
+- `shared/schema.ts` - Drizzle schema (tenants, users, outlets, menus, orders, table_zones, tables, waitlist_entries, inventory, customers, staff, feedback, offers, delivery_orders, employee_performance_logs, sales_inquiries, support_tickets, attendance_logs, cleaning_templates, cleaning_template_items, cleaning_logs, cleaning_schedules, audit_templates, audit_template_items, audit_schedules, audit_responses, audit_issues, recipes, recipe_ingredients, stock_takes, stock_take_lines, kitchen_stations, regions, franchise_invoices, outlet_menu_overrides, suppliers, supplier_catalog_items, purchase_orders, purchase_order_items, goods_received_notes, grn_items, procurement_approvals, labour_cost_snapshots, audit_events, device_sessions, promotion_rules)
 - `shared/currency.ts` - Multi-currency utility (24 currencies, locale-aware formatting, static conversion rates, configurable symbol position & decimal places)
 - `client/src/lib/timezones.ts` - Timezone data module (75+ IANA zones with UTC offsets, flag emojis, regions, live clock formatting)
 - `server/db.ts` - Database connection (Pool + Drizzle)
@@ -131,6 +131,19 @@ All prefixed with `/api`:
 - **Email**: Stub implementation (logs to console). Configure SMTP via `SALES_EMAIL`, `SUPPORT_EMAIL`, `ENABLE_CONTACT_SALES`, `ENABLE_CONTACT_SUPPORT` env vars.
 - **DB tables**: `sales_inquiries`, `support_tickets`
 - **Mobile**: Support FAB (cyan, bottom-right), Sales FAB on billing page stacks above it.
+
+## Promotion & Pricing Rules Engine
+- **Schema**: `promotion_rules` table with rule_type, discount_type, discount_value, scope, channels, conditions (JSONB), priority, stackable flag
+- **Engine**: `server/promotions-engine.ts` — `evaluateRules()` takes rules + order context (items, subtotal, channel, loyalty tier, time), applies matching rules sorted by priority, respects stackability
+- **Rule Types**: happy_hour, combo_deal, channel_surcharge, loyalty_discount, percentage_off, fixed_discount, time_based, minimum_order
+- **Discount Types**: percentage, fixed_amount, surcharge (adds cost)
+- **Stacking**: Non-stackable rules stop further processing; non-stackable can't apply if prior discounts exist
+- **Conditions**: Time-based (startHour/endHour, daysOfWeek), loyalty tier, channel filtering, min order amount, scope (all_items/category/specific_items/order_total)
+- **API**: CRUD at `/api/promotion-rules`, evaluate at `POST /api/promotions/evaluate`
+- **POS Integration**: POS calls evaluate endpoint with cart data; engine discounts shown in purple in order summary alongside manual/offer discounts
+- **UI**: `/promotions` page — Promotion Center with stat cards, tab filtering (All/Active/Expired/Inactive), CRUD dialog with full rule configuration
+- **Permissions**: Uses `manage_offers` permission; accessible to owner, franchise_owner, hq_admin, manager, outlet_manager roles
+- **Coexistence**: Existing `/offers` system continues working independently; engine rules are additive
 
 ## Design System
 - Fonts: Outfit (headings), Plus Jakarta Sans (body)

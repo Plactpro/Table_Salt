@@ -289,6 +289,69 @@ export async function seedDatabase() {
     usageLimit: 1,
   });
 
+  // Seed promotion rules
+  await storage.createPromotionRule({
+    tenantId: tenant.id,
+    name: "Happy Hour Cocktails",
+    description: "20% off all cocktails between 4-7 PM, Mon-Fri",
+    ruleType: "happy_hour",
+    discountType: "percentage",
+    discountValue: "20",
+    scope: "category",
+    scopeRef: "Cocktails",
+    channels: ["pos"],
+    priority: 10,
+    stackable: false,
+    active: true,
+    conditions: { startHour: 16, endHour: 19, daysOfWeek: [1, 2, 3, 4, 5] },
+    startDate: new Date("2026-01-01"),
+    endDate: new Date("2026-12-31"),
+  });
+
+  await storage.createPromotionRule({
+    tenantId: tenant.id,
+    name: "Combo Meal Discount",
+    description: "15% off when ordering a starter + main course, min order $30",
+    ruleType: "combo_deal",
+    discountType: "percentage",
+    discountValue: "15",
+    scope: "all_items",
+    minOrderAmount: "30",
+    priority: 5,
+    stackable: true,
+    active: true,
+    maxDiscount: "25",
+  });
+
+  await storage.createPromotionRule({
+    tenantId: tenant.id,
+    name: "Delivery Surcharge",
+    description: "Service fee for delivery channel orders",
+    ruleType: "channel_surcharge",
+    discountType: "surcharge",
+    discountValue: "3.50",
+    scope: "order_total",
+    channels: ["delivery"],
+    priority: 1,
+    stackable: true,
+    active: true,
+  });
+
+  await storage.createPromotionRule({
+    tenantId: tenant.id,
+    name: "Gold Loyalty 10% Off",
+    description: "10% discount for Gold-tier and above loyalty members",
+    ruleType: "loyalty_discount",
+    discountType: "percentage",
+    discountValue: "10",
+    scope: "all_items",
+    priority: 3,
+    stackable: true,
+    active: true,
+    maxDiscount: "50",
+    conditions: { loyaltyTier: "gold" },
+  });
+
   // Seed sample delivery orders
   const allCustomers = await storage.getCustomersByTenant(tenant.id);
   const allOrders = await storage.getOrdersByTenant(tenant.id);

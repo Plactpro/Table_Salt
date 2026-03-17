@@ -1057,3 +1057,31 @@ export const deviceSessions = pgTable("device_sessions", {
 export const insertDeviceSessionSchema = createInsertSchema(deviceSessions).omit({ id: true, createdAt: true });
 export type DeviceSession = typeof deviceSessions.$inferSelect;
 export type InsertDeviceSession = z.infer<typeof insertDeviceSessionSchema>;
+
+export const promotionRules = pgTable("promotion_rules", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).references(() => tenants.id),
+  name: text("name").notNull(),
+  description: text("description"),
+  ruleType: text("rule_type").notNull(),
+  discountType: text("discount_type").notNull(),
+  discountValue: text("discount_value").notNull(),
+  scope: text("scope").default("all_items"),
+  scopeRef: text("scope_ref"),
+  conditions: jsonb("conditions").$type<Record<string, unknown>>(),
+  channels: text("channels").array(),
+  priority: integer("priority").default(0),
+  stackable: boolean("stackable").default(false),
+  maxDiscount: text("max_discount"),
+  minOrderAmount: text("min_order_amount"),
+  usageLimit: integer("usage_limit"),
+  usageCount: integer("usage_count").default(0),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertPromotionRuleSchema = createInsertSchema(promotionRules).omit({ id: true, createdAt: true, usageCount: true });
+export type PromotionRule = typeof promotionRules.$inferSelect;
+export type InsertPromotionRule = z.infer<typeof insertPromotionRuleSchema>;
