@@ -11,35 +11,25 @@ import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
 import MenuPage from "@/pages/modules/menu";
 import OrdersPage from "@/pages/modules/orders";
-import StaffPage from "@/pages/modules/staff";
-import ReportsPage from "@/pages/modules/reports";
-import SettingsPage from "@/pages/modules/settings";
 import TablesPage from "@/pages/modules/tables";
 import PosPage from "@/pages/modules/pos";
-import InventoryPage from "@/pages/modules/inventory";
-import OutletsPage from "@/pages/modules/outlets";
-import IntegrationsPage from "@/pages/modules/integrations";
-import OffersPage from "@/pages/modules/offers";
 import CrmPage from "@/pages/modules/crm";
-import PerformancePage from "@/pages/modules/performance";
-import DeliveryPage from "@/pages/modules/delivery";
-import OrdersHubPage from "@/pages/modules/orders-hub";
-import HQConsolePage from "@/pages/modules/hq-console";
-import SuppliersPage from "@/pages/modules/suppliers";
-import ProcurementPage from "@/pages/modules/procurement";
-import WorkforcePage from "@/pages/modules/workforce";
-import BIDashboardPage from "@/pages/modules/bi-dashboard";
 import CleaningPage from "@/pages/modules/cleaning";
 import AuditsPage from "@/pages/modules/audits";
 import BillingPage from "@/pages/modules/billing";
-import AuditLogPage from "@/pages/modules/audit-log";
-import SecuritySettingsPage from "@/pages/modules/security-settings";
-import PromotionsPage from "@/pages/modules/promotions";
+import IntegrationsPage from "@/pages/modules/integrations";
 import KioskPage from "@/pages/kiosk";
 import GuestPage from "@/pages/guest";
 import KioskManagementPage from "@/pages/modules/kiosk-management";
 import OmnichannelPage from "@/pages/modules/omnichannel";
 import EventsPage from "@/pages/modules/events";
+import PromotionsHub from "@/pages/modules/promotions-hub";
+import InventoryHub from "@/pages/modules/inventory-hub";
+import StaffHub from "@/pages/modules/staff-hub";
+import ReportsHub from "@/pages/modules/reports-hub";
+import DeliveryHub from "@/pages/modules/delivery-hub";
+import LocationsHub from "@/pages/modules/locations-hub";
+import SettingsHub from "@/pages/modules/settings-hub";
 import OwnerDashboard from "@/pages/dashboards/owner";
 import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
@@ -65,11 +55,9 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/menu": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "menu" },
   "/inventory": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "inventory" },
   "/outlets": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "outlets" },
-  "/offers": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
+  "/promotions": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
   "/crm": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "crm" },
-  "/performance": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
   "/delivery": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
-  "/orders-hub": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
   "/cleaning": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "cleaning" },
   "/audits": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "auditor"], featureKey: "internal_audits" },
   "/integrations": { roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "integrations" },
@@ -77,14 +65,6 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/reports": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
   "/billing": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "billing" },
   "/settings": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
-  "/hq-console": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "outlets" },
-  "/suppliers": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
-  "/procurement": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
-  "/workforce": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
-  "/bi-dashboard": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
-  "/audit-log": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
-  "/security": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
-  "/promotions": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
   "/kiosk-management": { roles: ["owner", "manager"] },
   "/omnichannel": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
   "/channels": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
@@ -196,32 +176,32 @@ function ProtectedPages() {
         <Route path="/orders">{() => <GuardedRoute path="/orders" component={OrdersPage} />}</Route>
         <Route path="/tables">{() => <GuardedRoute path="/tables" component={TablesPage} />}</Route>
         <Route path="/menu">{() => <GuardedRoute path="/menu" component={MenuPage} />}</Route>
-        <Route path="/inventory">{() => <GuardedRoute path="/inventory" component={InventoryPage} />}</Route>
-        <Route path="/outlets">{() => <GuardedRoute path="/outlets" component={OutletsPage} />}</Route>
-        <Route path="/offers">{() => <GuardedRoute path="/offers" component={OffersPage} />}</Route>
+        <Route path="/inventory">{() => <GuardedRoute path="/inventory" component={InventoryHub} />}</Route>
+        <Route path="/outlets">{() => <GuardedRoute path="/outlets" component={LocationsHub} />}</Route>
+        <Route path="/promotions">{() => <GuardedRoute path="/promotions" component={PromotionsHub} />}</Route>
         <Route path="/crm">{() => <GuardedRoute path="/crm" component={CrmPage} />}</Route>
-        <Route path="/performance">{() => <GuardedRoute path="/performance" component={PerformancePage} />}</Route>
-        <Route path="/delivery">{() => <GuardedRoute path="/delivery" component={DeliveryPage} />}</Route>
-        <Route path="/orders-hub">{() => <GuardedRoute path="/orders-hub" component={OrdersHubPage} />}</Route>
-        <Route path="/hq-console">{() => <GuardedRoute path="/hq-console" component={HQConsolePage} />}</Route>
-        <Route path="/suppliers">{() => <GuardedRoute path="/suppliers" component={SuppliersPage} />}</Route>
-        <Route path="/procurement">{() => <GuardedRoute path="/procurement" component={ProcurementPage} />}</Route>
-        <Route path="/workforce">{() => <GuardedRoute path="/workforce" component={WorkforcePage} />}</Route>
+        <Route path="/delivery">{() => <GuardedRoute path="/delivery" component={DeliveryHub} />}</Route>
         <Route path="/cleaning">{() => <GuardedRoute path="/cleaning" component={CleaningPage} />}</Route>
         <Route path="/audits">{() => <GuardedRoute path="/audits" component={AuditsPage} />}</Route>
         <Route path="/integrations">{() => <GuardedRoute path="/integrations" component={IntegrationsPage} />}</Route>
-        <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffPage} />}</Route>
-        <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsPage} />}</Route>
-        <Route path="/bi-dashboard">{() => <GuardedRoute path="/bi-dashboard" component={BIDashboardPage} />}</Route>
-        <Route path="/audit-log">{() => <GuardedRoute path="/audit-log" component={AuditLogPage} />}</Route>
-        <Route path="/security">{() => <GuardedRoute path="/security" component={SecuritySettingsPage} />}</Route>
-        <Route path="/promotions">{() => <GuardedRoute path="/promotions" component={PromotionsPage} />}</Route>
+        <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffHub} />}</Route>
+        <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsHub} />}</Route>
         <Route path="/kiosk-management">{() => <GuardedRoute path="/kiosk-management" component={KioskManagementPage} />}</Route>
         <Route path="/omnichannel">{() => <GuardedRoute path="/omnichannel" component={OmnichannelPage} />}</Route>
         <Route path="/channels">{() => <GuardedRoute path="/channels" component={OmnichannelPage} />}</Route>
         <Route path="/events">{() => <GuardedRoute path="/events" component={EventsPage} />}</Route>
         <Route path="/billing">{() => <GuardedRoute path="/billing" component={BillingPage} />}</Route>
-        <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsPage} />}</Route>
+        <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsHub} />}</Route>
+        <Route path="/offers">{() => <Redirect to="/promotions" />}</Route>
+        <Route path="/suppliers">{() => <Redirect to="/inventory" />}</Route>
+        <Route path="/procurement">{() => <Redirect to="/inventory" />}</Route>
+        <Route path="/workforce">{() => <Redirect to="/staff" />}</Route>
+        <Route path="/performance">{() => <Redirect to="/staff" />}</Route>
+        <Route path="/bi-dashboard">{() => <Redirect to="/reports" />}</Route>
+        <Route path="/audit-log">{() => <Redirect to="/reports" />}</Route>
+        <Route path="/orders-hub">{() => <Redirect to="/delivery" />}</Route>
+        <Route path="/hq-console">{() => <Redirect to="/outlets" />}</Route>
+        <Route path="/security">{() => <Redirect to="/settings" />}</Route>
         <Route component={NotFound} />
       </Switch>
     </AppLayout>
