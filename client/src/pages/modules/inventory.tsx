@@ -762,6 +762,47 @@ function FoodCostTab() {
   );
 }
 
+function UpcomingEventsSidebar() {
+  const { data: events = [] } = useQuery<{ id: string; title: string; type: string; impact: string; startDate: string; endDate: string; color: string | null }[]>({
+    queryKey: ["/api/events"],
+  });
+
+  const upcoming = events.filter((ev) => {
+    if (ev.impact !== "high" && ev.impact !== "very_high") return false;
+    const d = Math.ceil((new Date(ev.startDate).getTime() - Date.now()) / 86400000);
+    return d >= 0 && d <= 7;
+  }).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+
+  if (upcoming.length === 0) return null;
+
+  return (
+    <Card className="border-l-4 border-l-orange-400" data-testid="upcoming-events-sidebar">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-orange-500" />
+          Upcoming High-Impact Events (7 days)
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {upcoming.map((ev) => {
+          const d = Math.ceil((new Date(ev.startDate).getTime() - Date.now()) / 86400000);
+          return (
+            <div key={ev.id} className="flex items-center gap-2 text-sm" data-testid={`upcoming-event-sidebar-${ev.id}`}>
+              <div className="w-2 h-6 rounded-full shrink-0" style={{ backgroundColor: ev.color || "#ef4444" }} />
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">{ev.title}</div>
+                <div className="text-xs text-muted-foreground">
+                  {d === 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d} days`} · {ev.impact === "very_high" ? "Very High" : "High"} impact
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function InventoryPage() {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-inventory">
@@ -772,6 +813,8 @@ export default function InventoryPage() {
           <p className="text-muted-foreground">Manage stock, recipes, food costing & stock takes</p>
         </div>
       </div>
+
+      <UpcomingEventsSidebar />
 
       <Tabs defaultValue="inventory" className="w-full">
         <TabsList className="grid w-full grid-cols-4">

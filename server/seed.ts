@@ -1093,6 +1093,78 @@ export async function seedDatabase() {
     });
   }
 
+  const now = new Date();
+  const eventSeeds = [
+    {
+      tenantId: tenant.id,
+      title: "New Year's Eve Celebration",
+      description: "Special New Year's Eve dinner service with countdown event",
+      type: "holiday" as const,
+      impact: "very_high" as const,
+      startDate: new Date(now.getFullYear(), 11, 31, 18, 0).toISOString(),
+      endDate: new Date(now.getFullYear() + 1, 0, 1, 2, 0).toISOString(),
+      allDay: false,
+      color: "#f59e0b",
+      outlets: null,
+      tags: ["busy", "extra-staff", "special-menu"],
+      linkedOfferId: null,
+      notes: "Plan for extended hours. All hands required.",
+      createdBy: owner.id,
+    },
+    {
+      tenantId: tenant.id,
+      title: "World Cup Final Screening",
+      description: "Live screening of the World Cup final match with special F&B packages",
+      type: "sports" as const,
+      impact: "high" as const,
+      startDate: new Date(now.getFullYear(), now.getMonth(), 20, 19, 0).toISOString(),
+      endDate: new Date(now.getFullYear(), now.getMonth(), 20, 23, 0).toISOString(),
+      allDay: false,
+      color: "#22c55e",
+      outlets: null,
+      tags: ["sports", "screening", "packages"],
+      linkedOfferId: null,
+      notes: "Set up projector screens in Main Branch and Marina Walk",
+      createdBy: manager.id,
+    },
+    {
+      tenantId: tenant.id,
+      title: "Local Marathon Day",
+      description: "City marathon passing by our outlets - expect road closures and extra foot traffic",
+      type: "corporate" as const,
+      impact: "medium" as const,
+      startDate: new Date(now.getFullYear(), now.getMonth() + 1, 15, 6, 0).toISOString(),
+      endDate: new Date(now.getFullYear(), now.getMonth() + 1, 15, 14, 0).toISOString(),
+      allDay: false,
+      color: "#3b82f6",
+      outlets: null,
+      tags: ["road-closure", "foot-traffic"],
+      linkedOfferId: null,
+      notes: "Coordinate with delivery partners about alternate routes",
+      createdBy: owner.id,
+    },
+    {
+      tenantId: tenant.id,
+      title: "Corporate Team Lunch Booking",
+      description: "Large corporate booking for 50 pax team lunch",
+      type: "corporate" as const,
+      impact: "high" as const,
+      startDate: new Date(now.getFullYear(), now.getMonth(), 25, 12, 0).toISOString(),
+      endDate: new Date(now.getFullYear(), now.getMonth(), 25, 15, 0).toISOString(),
+      allDay: false,
+      color: "#3b82f6",
+      outlets: null,
+      tags: ["corporate", "large-party", "pre-order"],
+      linkedOfferId: null,
+      notes: "Menu pre-selected. Extra kitchen staff needed.",
+      createdBy: manager.id,
+    },
+  ];
+
+  for (const eventData of eventSeeds) {
+    await storage.createEvent(eventData);
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");

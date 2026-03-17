@@ -124,6 +124,10 @@ export default function OffersPage() {
     queryKey: ["/api/offers"],
   });
 
+  const { data: calEvents = [] } = useQuery<{ id: string; title: string; startDate: string; endDate: string }[]>({
+    queryKey: ["/api/events"],
+  });
+
   const filteredOffers = offers.filter((offer) => {
     if (filterStatus === "active") return isOfferActive(offer);
     if (filterStatus === "expired") return isOfferExpired(offer);
@@ -526,6 +530,29 @@ export default function OffersPage() {
                   data-testid="input-offer-max"
                 />
               </div>
+            </div>
+            <div>
+              <Label>Linked Event</Label>
+              <Select value="none" onValueChange={(v) => {
+                if (v === "none") return;
+                const ev = calEvents.find((e) => e.id === v);
+                if (ev) {
+                  setForm({
+                    ...form,
+                    startDate: new Date(ev.startDate).toISOString().split("T")[0],
+                    endDate: new Date(ev.endDate).toISOString().split("T")[0],
+                  });
+                }
+              }}>
+                <SelectTrigger data-testid="select-linked-event"><SelectValue placeholder="Link to an event (pre-fills dates)" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No linked event</SelectItem>
+                  {calEvents.map((ev) => (
+                    <SelectItem key={ev.id} value={ev.id}>{ev.title} ({new Date(ev.startDate).toLocaleDateString()} – {new Date(ev.endDate).toLocaleDateString()})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground mt-1">Selecting an event pre-fills the start and end dates</p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

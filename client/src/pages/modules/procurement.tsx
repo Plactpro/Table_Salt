@@ -134,6 +134,18 @@ export default function ProcurementPage() {
 
   const poTotal = useMemo(() => poItems.reduce((sum, i) => sum + parseFloat(i.quantity || "0") * parseFloat(i.unitCost || "0"), 0), [poItems]);
 
+  const { data: calEvents = [] } = useQuery<{ id: string; title: string; impact: string; startDate: string; endDate: string; color: string | null }[]>({
+    queryKey: ["/api/events"],
+  });
+
+  const upcomingHighEvents = useMemo(() => {
+    return calEvents.filter((ev) => {
+      if (ev.impact !== "high" && ev.impact !== "very_high") return false;
+      const d = Math.ceil((new Date(ev.startDate).getTime() - Date.now()) / 86400000);
+      return d >= 0 && d <= 7;
+    }).sort((a, b) => new Date(a.startDate).getTime() - new Date(b.startDate).getTime());
+  }, [calEvents]);
+
   return (
     <div className="p-6 space-y-6" data-testid="procurement-page">
       <div className="flex items-center justify-between">
@@ -153,6 +165,33 @@ export default function ProcurementPage() {
           <Button onClick={() => { setPoForm({ supplierId: "", notes: "", expectedDelivery: "" }); setPoItems([]); setPoDialog(true); }} data-testid="button-create-po"><Plus className="h-4 w-4 mr-2" />New PO</Button>
         </div>
       </div>
+
+      {upcomingHighEvents.length > 0 && (
+        <Card className="border-l-4 border-l-orange-400" data-testid="procurement-events-sidebar">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-orange-500" />
+              Upcoming High-Impact Events (7 days)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {upcomingHighEvents.map((ev) => {
+              const d = Math.ceil((new Date(ev.startDate).getTime() - Date.now()) / 86400000);
+              return (
+                <div key={ev.id} className="flex items-center gap-2 text-sm" data-testid={`procurement-event-${ev.id}`}>
+                  <div className="w-2 h-6 rounded-full shrink-0" style={{ backgroundColor: ev.color || "#ef4444" }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{ev.title}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {d === 0 ? "Today" : d === 1 ? "Tomorrow" : `In ${d} days`} · {ev.impact === "very_high" ? "Very High" : "High"} impact
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
