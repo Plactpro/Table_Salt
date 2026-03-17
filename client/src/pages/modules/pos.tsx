@@ -277,8 +277,11 @@ export default function POSPage() {
     if (supervisorOverride) {
       orderData.supervisorOverride = supervisorOverride;
     }
+    if (dismissedRuleIds.size > 0) {
+      orderData.dismissedRuleIds = Array.from(dismissedRuleIds);
+    }
     return orderData;
-  }, [orderType, isDineIn, selectedTable, subtotal, taxAmount, totalDiscount, total, orderNotes, serviceChargeAmount, selectedOffer, cart, paymentMethod]);
+  }, [orderType, isDineIn, selectedTable, subtotal, taxAmount, totalDiscount, total, orderNotes, serviceChargeAmount, selectedOffer, cart, paymentMethod, dismissedRuleIds]);
 
   const placeOrderMutation = useMutation({
     mutationFn: async (supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {

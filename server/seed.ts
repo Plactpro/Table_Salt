@@ -298,7 +298,7 @@ export async function seedDatabase() {
     discountType: "percentage",
     discountValue: "20",
     scope: "category",
-    scopeRef: "Cocktails",
+    scopeRef: catMap["Cocktails"],
     channels: ["pos"],
     priority: 10,
     stackable: false,
