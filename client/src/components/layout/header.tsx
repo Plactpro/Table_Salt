@@ -2,6 +2,7 @@ import { useAuth, Role } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { motion } from "framer-motion";
+import SyncStatusIndicator from "@/components/sync-status-indicator";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,6 +94,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-2">
+        <SyncStatusIndicator />
         {onOpenSupport && (
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button

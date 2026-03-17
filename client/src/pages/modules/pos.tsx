@@ -1,9 +1,10 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
+import { syncManager } from "@/lib/sync-manager";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,6 +121,8 @@ export default function POSPage() {
   const [supervisorDialog, setSupervisorDialog] = useState<{
     open: boolean; action: string; actionLabel: string;
   } | null>(null);
+
+  useEffect(() => { syncManager.init(); }, []);
 
   const { data: categories = [] } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
   const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
@@ -255,8 +258,10 @@ export default function POSPage() {
   };
 
   const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
+    const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const orderData: Record<string, unknown> = {
       channel: "pos",
+      clientOrderId,
       orderType,
       tableId: isDineIn ? selectedTable || null : null,
       subtotal: subtotal.toFixed(2),
@@ -287,22 +292,43 @@ export default function POSPage() {
   const placeOrderMutation = useMutation({
     mutationFn: async (supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
       const orderData = buildOrderData(supervisorOverride);
-      const res = await fetch("/api/orders", {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify(orderData),
-      });
-      if (res.status === 403) {
-        const errData = await res.json();
-        if (errData.requiresSupervisor) {
-          throw new Error("__SUPERVISOR_REQUIRED__:" + (errData.action || "apply_large_discount"));
+
+      if (supervisorOverride) {
+        const res = await fetch("/api/orders", {
+          method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+          body: JSON.stringify(orderData),
+        });
+        if (res.status === 403) {
+          const errData = await res.json();
+          if (errData.requiresSupervisor) {
+            throw new Error("__SUPERVISOR_REQUIRED__:" + (errData.action || "apply_large_discount"));
+          }
+          throw new Error(errData.message || "Permission denied");
         }
-        throw new Error(errData.message || "Permission denied");
+        if (res.status === 409) return (await res.json()).order;
+        if (!res.ok) throw new Error((await res.json()).message || "Failed");
+        return res.json();
       }
-      if (!res.ok) throw new Error((await res.json()).message || "Failed");
-      return res.json();
+
+      try {
+        const { queued, orderId } = await syncManager.enqueueOrder(orderData);
+        if (queued) {
+          return { id: orderId, queued: true };
+        }
+        return { id: orderId };
+      } catch (syncErr: any) {
+        if (syncErr.status === 403 && syncErr.data?.requiresSupervisor) {
+          throw new Error("__SUPERVISOR_REQUIRED__:" + (syncErr.data.action || "apply_large_discount"));
+        }
+        throw syncErr;
+      }
     },
-    onSuccess: () => {
-      toast({ title: "Order placed successfully!" });
+    onSuccess: (data: any) => {
+      if (data?.queued) {
+        toast({ title: "Order queued", description: "Will sync when connection is restored" });
+      } else {
+        toast({ title: "Order placed successfully!" });
+      }
       setCart([]);
       setDiscount("");
       setOrderNotes("");

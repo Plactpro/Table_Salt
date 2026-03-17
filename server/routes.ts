@@ -634,7 +634,17 @@ export async function registerRoutes(
   app.post("/api/orders", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { items, supervisorOverride, dismissedRuleIds, manualDiscountAmount, ...orderData } = req.body;
+      const { items, supervisorOverride, dismissedRuleIds, manualDiscountAmount, clientOrderId, ...orderData } = req.body;
+
+      if (clientOrderId) {
+        const existing = await storage.getOrderByClientId(user.tenantId, clientOrderId);
+        if (existing) {
+          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems } });
+        }
+        orderData.channelOrderId = clientOrderId;
+      }
+      const hasClientOrderId = !!clientOrderId;
 
       const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
@@ -727,7 +737,19 @@ export async function registerRoutes(
         total: serverTotal.toFixed(2),
       };
 
-      const order = await storage.createOrder(serverOrderData);
+      let order;
+      try {
+        order = await storage.createOrder(serverOrderData);
+      } catch (dbErr: any) {
+        if (hasClientOrderId && dbErr.code === "23505" && dbErr.constraint?.includes("channel_order_id")) {
+          const dup = await storage.getOrderByClientId(user.tenantId, clientOrderId);
+          if (dup) {
+            const dupItems = await storage.getOrderItemsByOrder(dup.id);
+            return res.status(409).json({ message: "Duplicate order", order: { ...dup, items: dupItems } });
+          }
+        }
+        throw dbErr;
+      }
       if (items && items.length > 0) {
         for (const item of items) {
           const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
