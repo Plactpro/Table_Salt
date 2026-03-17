@@ -1,0 +1,197 @@
+Create a new **“Events & Special Days Calendar”** module inside the Table Salt application so restaurant teams can plan for busy days like festivals, public holidays, corporate events, and important sports matches. The feature must be fully functional, integrated with outlets, and easy for managers to use.
+
+Use HTML/CSS/JavaScript (or TypeScript) with clean, modular code. All text is English only.
+
+***
+
+## 1. Navigation and Placement
+
+Add an item in the main sidebar:
+
+```
+📆 Events & Special Days
+   - Calendar View
+   - List View
+   - Suggestions (optional)
+```
+
+Role access: Managers, Outlet Managers, HQ Admin, and Owners can create/edit events; others can only view.
+
+***
+
+## 2. Data Model
+
+Define a core **Event** model:
+
+```ts
+Event {
+  id: string;
+  title: string;                // e.g., "IPL Final Match", "New Year’s Eve"
+  type: 'holiday' | 'sports' | 'festival' | 'corporate' | 'promotion' | 'other';
+  startDateTime: string;        // ISO, in outlet time zone
+  endDateTime: string;          // ISO
+  allDay: boolean;
+  outlets: string[];            // one or many outletIds
+  expectedImpact: 'low' | 'medium' | 'high' | 'very_high'; // business impact
+  description?: string;
+  tags?: string[];              // e.g., ['family', 'late-night', 'delivery-heavy']
+  createdBy: string;
+  createdAt: string;
+  lastUpdatedAt: string;
+  color?: string;               // override color if needed
+}
+```
+
+Store events in a simple in‑memory store plus localStorage; structure repositories so a backend API can be added later.
+
+***
+
+## 3. Calendar UI
+
+### 3.1 Calendar View
+
+Implement a **monthly/weekly calendar** similar to Google Calendar but simpler:
+
+- Views:
+  - Month view (default).
+  - Week view.
+  - Day view (for detailed planning).
+
+- Features:
+  - Events displayed as color bars on their dates, with type‑based colors:
+    - Holidays/Festivals: orange.
+    - Sports matches: green.
+    - Corporate events: blue.
+    - Promotions: purple.
+  - Hover tooltip: show title, time, outlet(s), and expected impact.
+  - Click on a date:
+    - Show list of events for that date.
+    - “Add Event” button that opens a form.
+
+- Filtering:
+  - Outlet filter (single outlet, multiple outlets, or “All outlets”).
+  - Type filter (holiday/sports/festival/etc.).
+  - Impact filter (high / very_high only to focus on critical days).
+
+### 3.2 List View
+
+Provide a **list/agenda view**:
+
+- Upcoming events sorted by date, with search and filters.
+- Columns: Date, Time, Title, Type, Outlets, Impact, Created By, Last Updated.
+- Quick action buttons: Edit, Duplicate, Delete.
+
+***
+
+## 4. Event Creation & Editing
+
+### 4.1 Event Form
+
+Create a modal or side drawer form:
+
+Fields:
+
+- Title (required).
+- Type (dropdown): Holiday, Sports Match, Festival, Corporate Event, Local Event, Special Promotion, Other.
+- Date & Time:
+  - All‑day toggle.
+  - Start date/time and end date/time, respecting selected outlet’s time zone.
+- Outlets (multi‑select): choose one or more outlets; option “All outlets”.
+- Expected impact (dropdown): Low, Medium, High, Very High.
+- Tags (optional, comma‑separated or chips).
+- Description (multiline text): what is happening, any expectations (e.g., “Expect heavy walk‑in after 7 PM”).
+- Attachments (optional placeholder for PDFs/images, can be skipped for now).
+
+Validation:
+
+- Title, type, date, and at least one outlet are required.
+- End must be after start unless “all day”.
+- If impact = “very_high”, show a warning: “Consider updating staff schedule, inventory, and promos for this day.”
+
+### 4.2 Editing and Deleting
+
+- Click on an event in calendar or list view to open the same form pre‑filled.
+- Allow update and delete with confirmation dialog.
+- Log changes in an existing audit log if available (event id, old values, new values, user, timestamp).
+
+***
+
+## 5. Integration with Other Modules
+
+### 5.1 Staff Scheduling
+
+- When viewing the **Staff Scheduling** module, show an **event banner** or badges on dates that have events marked as `high` or `very_high` impact.
+- Option: “View Events for this Day” link opens the events modal for that date.
+- Simple rule example:
+  - If event impact is high, show a subtle orange banner: “High‑impact event today: [Event Title]”.
+  - If very_high, show red banner: “Very busy day expected – review staff, inventory, and offers.”
+
+### 5.2 Inventory and Procurement
+
+- On the **Inventory / Procurement** screen, display upcoming high‑impact events for the selected outlet in a sidebar:
+  - E.g., “Next 7 days: Holi Festival (Very High), IPL Match (High)”.
+- This helps managers adjust purchase quantities.
+
+### 5.3 Offers & Promotions
+
+- When creating an **Offer/Promotion**, allow linking it to an event:
+  - Add a field “Linked Event” (optional).
+  - If an offer is linked, show the promotion dates pre‑filled with event dates.
+
+***
+
+## 6. Notification & Reminder Logic
+
+Implement basic, client‑side reminders:
+
+- Configurable reminder options per event:
+  - 1 week before, 3 days before, 1 day before, same day (morning).
+- Reminder method (for now, in‑app notifications and banners; email/SMS can be stubbed for future backend).
+- Show a notification center entry:  
+  “Upcoming event in 3 days: ‘IPL Final Match’ – Outlet: Downtown – Impact: Very High.”
+
+Implement a simple notifications panel that reads from events and shows upcoming high‑impact days.
+
+***
+
+## 7. Time Zone Handling
+
+- Use the outlet’s configured time zone from Settings when displaying and saving event times.
+- Convert times correctly if HQ admin is viewing events for outlets in different time zones.
+- For multi‑outlet events in different time zones, store times as ISO UTC plus the “primary outlet” time zone, and display appropriately.
+
+***
+
+## 8. Sample Data and UX Details
+
+Seed sample events:
+
+- “New Year’s Eve” – Festival, All outlets, Very High impact, All‑day.
+- “World Cup Final” – Sports Match, 7 PM–11 PM, specific outlets, Very High impact.
+- “Local Marathon Near Mall” – Local Event, Medium impact, morning only.
+- “Corporate Booking – 80 Pax” – Corporate Event, High impact, specific outlet.
+
+UX polish:
+
+- Color legend at top of calendar.
+- Subtle emoji icons for types (🎉 for festival, ⚽ for sports, 🏢 for corporate, ⭐ for promotions).
+- Responsive design: in mobile, show agenda/list view by default; allow swipe to change dates.
+
+***
+
+## 9. Technical Structure
+
+- Create modules/files:
+  - `eventsCalendar.js` or `events/` folder.
+  - `EventsRepository` to handle CRUD (localStorage + in‑memory).
+  - `EventsService` to integrate with other modules (scheduling, inventory, promotions).
+  - Calendar and list UI components.
+
+- Expose a simple API to other parts of the app:
+  - `getEventsByDate(outletId, date)`
+  - `getUpcomingHighImpactEvents(outletId, daysWindow)`
+  - `createEvent(eventData)`
+  - `updateEvent(id, changes)`
+  - `deleteEvent(id)`
+
+Goal: deliver a **fully functional Events & Special Days Calendar** so restaurant teams can see all important days (festivals, matches, local events, corporate bookings) in one place, plan staff and inventory, and link offers to those dates.
