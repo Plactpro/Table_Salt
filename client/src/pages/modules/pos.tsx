@@ -240,10 +240,7 @@ export default function POSPage() {
       if (res.status === 403) {
         const errData = await res.json();
         if (errData.requiresSupervisor) {
-          const err = new Error(errData.message) as any;
-          err.requiresSupervisor = true;
-          err.action = errData.action;
-          throw err;
+          throw new Error("__SUPERVISOR_REQUIRED__:" + (errData.action || "apply_large_discount"));
         }
         throw new Error(errData.message || "Permission denied");
       }
@@ -261,9 +258,10 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/offers"] });
     },
-    onError: (err: any) => {
-      if (err.requiresSupervisor) {
-        setSupervisorDialog({ open: true, action: err.action || "apply_large_discount", actionLabel: "Apply Large Discount" });
+    onError: (err: Error) => {
+      if (err.message.startsWith("__SUPERVISOR_REQUIRED__:")) {
+        const action = err.message.split(":")[1];
+        setSupervisorDialog({ open: true, action: action || "apply_large_discount", actionLabel: "Apply Large Discount" });
         return;
       }
       toast({ title: "Failed to place order", description: err.message, variant: "destructive" });
@@ -284,7 +282,7 @@ export default function POSPage() {
       toast({ title: "Select a table", description: "Choose a table for dine-in orders", variant: "destructive" });
       return;
     }
-    placeOrderMutation.mutate();
+    placeOrderMutation.mutate(undefined);
   };
 
   return (

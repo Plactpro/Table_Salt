@@ -153,8 +153,11 @@ export default function MenuPage() {
     },
   });
 
+  const pendingUpdateRef = { current: null as { id: string; data: Record<string, unknown> } | null };
+
   const updateItem = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
+      pendingUpdateRef.current = { id, data };
       const res = await fetch(`/api/menu-items/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -164,15 +167,12 @@ export default function MenuPage() {
       if (res.status === 403) {
         const errData = await res.json();
         if (errData.requiresSupervisor) {
-          const err = new Error(errData.message) as any;
-          err.requiresSupervisor = true;
-          err.action = errData.action;
-          err.pendingData = { id, data };
-          throw err;
+          throw new Error("__SUPERVISOR_REQUIRED__:" + (errData.action || "change_price"));
         }
         throw new Error(errData.message || "Permission denied");
       }
       if (!res.ok) throw new Error((await res.json()).message || "Failed");
+      pendingUpdateRef.current = null;
       return res.json();
     },
     onSuccess: () => {
@@ -180,13 +180,14 @@ export default function MenuPage() {
       toast({ title: "Item updated" });
       setItemDialogOpen(false);
     },
-    onError: (err: any) => {
-      if (err.requiresSupervisor && err.pendingData) {
+    onError: (err: Error) => {
+      if (err.message.startsWith("__SUPERVISOR_REQUIRED__:") && pendingUpdateRef.current) {
+        const action = err.message.split(":")[1];
         setSupervisorDialog({
           open: true,
-          action: err.action || "change_price",
+          action: action || "change_price",
           actionLabel: "Change Menu Price",
-          pendingData: err.pendingData,
+          pendingData: pendingUpdateRef.current,
         });
         return;
       }

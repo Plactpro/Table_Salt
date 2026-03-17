@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
 import { storage } from "./storage";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords } from "./auth";
 import { getAdapter } from "./aggregator-adapters";
@@ -117,8 +117,24 @@ export async function registerRoutes(
 
         const tenant = await storage.getTenant(user.tenantId);
         const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
-        (req.session as any).lastActivity = Date.now();
-        (req.session as any).idleTimeoutMinutes = Number(mc.idleTimeoutMinutes ?? 30);
+        const sessionData = req.session as Record<string, unknown>;
+        sessionData.lastActivity = Date.now();
+        sessionData.idleTimeoutMinutes = Number(mc.idleTimeoutMinutes ?? 30);
+
+        const maxSessions = Number(mc.maxConcurrentSessions ?? 5);
+        try {
+          const result = await pool.query(
+            `SELECT COUNT(*) AS cnt FROM "session" WHERE sess->>'passport' LIKE $1`,
+            [`%"user":"${user.id}"%`]
+          );
+          const activeSessions = parseInt(result.rows[0]?.cnt || "0", 10);
+          if (activeSessions > maxSessions) {
+            await pool.query(
+              `DELETE FROM "session" WHERE sid != $1 AND sess->>'passport' LIKE $2 ORDER BY expire ASC LIMIT $3`,
+              [req.sessionID, `%"user":"${user.id}"%`, activeSessions - maxSessions]
+            );
+          }
+        } catch (_) { /* concurrent session cleanup best-effort */ }
 
         auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
         const { password: _, ...safeUser } = user;
