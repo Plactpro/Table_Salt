@@ -195,6 +195,8 @@ function calculateDiscount(rule: PromotionRule, input: EvaluateInput): DiscountC
 
   if (rule.ruleType === "combo_deal") {
     const comboItemIds = cond?.comboItems && Array.isArray(cond.comboItems) ? (cond.comboItems as string[]) : [];
+    const requiredCategories = cond?.requiredCategories && Array.isArray(cond.requiredCategories) ? (cond.requiredCategories as string[]) : [];
+
     if (comboItemIds.length > 0) {
       const cartIds = new Set(input.items.map((i) => i.menuItemId));
       const allPresent = comboItemIds.every((id) => cartIds.has(id));
@@ -204,6 +206,16 @@ function calculateDiscount(rule: PromotionRule, input: EvaluateInput): DiscountC
       if (rule.discountType === "percentage") {
         disc = Math.round(comboTotal * (value / 100) * 100) / 100;
       } else if (rule.discountType === "fixed_amount") {
+        disc = value;
+      }
+    } else if (requiredCategories.length > 0) {
+      const cartCats = new Set(input.items.map((i) => i.categoryId).filter(Boolean));
+      const allCatsPresent = requiredCategories.every((catId) => cartCats.has(catId));
+      if (!allCatsPresent) return { amount: 0, lineAdjustments: [] };
+      if (rule.discountType === "percentage") {
+        const total = affectedItems.reduce((s, i) => s + i.price * i.quantity, 0);
+        disc = Math.round(total * (value / 100) * 100) / 100;
+      } else {
         disc = value;
       }
     } else {
@@ -274,11 +286,16 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
   let totalDiscount = 0;
   let surchargeTotal = 0;
   let hasNonStackable = false;
+  const usedExclusionGroups = new Set<string>();
 
   for (const rule of activeRules) {
     if (hasNonStackable) break;
 
     if (!rule.stackable && appliedDiscounts.length > 0) continue;
+
+    const ruleCond = rule.conditions as Record<string, unknown> | null;
+    const exclusionGroup = ruleCond?.mutualExclusionGroup ? String(ruleCond.mutualExclusionGroup) : null;
+    if (exclusionGroup && usedExclusionGroups.has(exclusionGroup)) continue;
 
     const { amount: discAmount, lineAdjustments, freeItems } = calculateDiscount(rule, input);
     if (discAmount === 0 && (!freeItems || freeItems.length === 0)) continue;
@@ -303,6 +320,10 @@ export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): Eva
     }
 
     allLineAdjustments.push(...lineAdjustments);
+
+    if (exclusionGroup) {
+      usedExclusionGroups.add(exclusionGroup);
+    }
 
     if (!rule.stackable) {
       hasNonStackable = true;
