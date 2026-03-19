@@ -4,8 +4,10 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth, useSubscription } from "@/lib/auth";
+import { ImpersonationProvider } from "@/lib/impersonation-context";
 import { FeatureKey } from "@/lib/subscription";
 import AppLayout from "@/components/layout/app-layout";
+import AdminLayout from "@/components/admin/admin-layout";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
@@ -35,7 +37,13 @@ import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
-import AdminPanel from "@/pages/admin/index";
+
+import AdminDashboard from "@/pages/admin/dashboard";
+import TenantsPage from "@/pages/admin/tenants";
+import TenantDetailPage from "@/pages/admin/tenant-detail";
+import UsersPage from "@/pages/admin/users";
+import AuditLogPage from "@/pages/admin/audit-log";
+import AdminsPage from "@/pages/admin/admins";
 
 import { ReactNode } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -168,6 +176,24 @@ function PublicOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function AdminShell() {
+  return (
+    <ImpersonationProvider>
+      <AdminLayout>
+        <Switch>
+          <Route path="/admin" component={AdminDashboard} />
+          <Route path="/admin/tenants/:id" component={TenantDetailPage} />
+          <Route path="/admin/tenants" component={TenantsPage} />
+          <Route path="/admin/users" component={UsersPage} />
+          <Route path="/admin/audit" component={AuditLogPage} />
+          <Route path="/admin/admins" component={AdminsPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </AdminLayout>
+    </ImpersonationProvider>
+  );
+}
+
 function AdminRoute() {
   const { user, isLoading } = useAuth();
 
@@ -182,7 +208,7 @@ function AdminRoute() {
   if (!user) return <Redirect to="/login" />;
   if ((user.role as string) !== "super_admin") return <Redirect to="/" />;
 
-  return <AdminPanel />;
+  return <AdminShell />;
 }
 
 function ProtectedPages() {
