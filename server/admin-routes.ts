@@ -36,11 +36,12 @@ function deriveUsername(email: string | undefined, name: string): string {
 export function registerAdminRoutes(app: Express) {
 
   // ───────────────────────────────────────────────────────────────────────────
-  // Bootstrap — outside /api/admin/* namespace so it can run without a super
-  // admin session.  Must be one-time: fails if any super admin already exists.
+  // Bootstrap — unauthenticated, one-time-only: fails if super admin exists.
+  // Registered at both /api/platform/setup (canonical) and /api/admin/setup
+  // (alias) so callers can use either path.
   // ───────────────────────────────────────────────────────────────────────────
 
-  app.post("/api/platform/setup", async (req, res) => {
+  const handleSetup: import("express").RequestHandler = async (req, res) => {
     try {
       const existing = await db.select({ id: users.id })
         .from(users)
@@ -93,7 +94,10 @@ export function registerAdminRoutes(app: Express) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
     }
-  });
+  };
+
+  app.post("/api/platform/setup", handleSetup);
+  app.post("/api/admin/setup", handleSetup);
 
   // ───────────────────────────────────────────────────────────────────────────
   // Impersonation session management — outside /api/admin/* namespace because
@@ -101,7 +105,7 @@ export function registerAdminRoutes(app: Express) {
   // *impersonated* user (not a super_admin).  Start still uses requireSuperAdmin.
   // ───────────────────────────────────────────────────────────────────────────
 
-  app.post("/api/session/impersonate/:userId", requireSuperAdmin, async (req, res) => {
+  const handleImpersonateStart: import("express").RequestHandler = async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string; tenantId: string; role: string };
       const [target] = await db.select().from(users).where(eq(users.id, req.params.userId));
@@ -141,9 +145,9 @@ export function registerAdminRoutes(app: Express) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
     }
-  });
+  };
 
-  app.post("/api/session/impersonate/end", requireAuth, async (req, res) => {
+  const handleImpersonateEnd: import("express").RequestHandler = async (req, res) => {
     try {
       const session = req.session as Record<string, unknown>;
       const backup = session.superAdminBackup as {
@@ -186,9 +190,15 @@ export function registerAdminRoutes(app: Express) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
     }
-  });
+  };
 
-  app.get("/api/session/impersonation/status", requireAuth, (req, res) => {
+  app.post("/api/session/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
+  app.post("/api/admin/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
+
+  app.post("/api/session/impersonate/end", requireAuth, handleImpersonateEnd);
+  app.post("/api/admin/impersonate/end", requireAuth, handleImpersonateEnd);
+
+  const handleImpersonationStatus: import("express").RequestHandler = (req, res) => {
     const session = req.session as Record<string, unknown>;
     const backup = session.superAdminBackup as Record<string, unknown> | undefined;
     if (!backup) return res.json({ isImpersonating: false });
@@ -196,7 +206,10 @@ export function registerAdminRoutes(app: Express) {
       isImpersonating: true,
       originalAdmin: { userId: backup.userId, userName: backup.userName, role: backup.role },
     });
-  });
+  };
+
+  app.get("/api/session/impersonation/status", requireAuth, handleImpersonationStatus);
+  app.get("/api/admin/impersonation/status", requireAuth, handleImpersonationStatus);
 
   // ───────────────────────────────────────────────────────────────────────────
   // All routes below this point are under /api/admin/* and use requireSuperAdmin
@@ -691,6 +704,8 @@ export function registerAdminRoutes(app: Express) {
           tenantId: auditEvents.tenantId,
           userId: auditEvents.userId,
           userName: auditEvents.userName,
+          userEmail: users.email,
+          userRole: users.role,
           action: auditEvents.action,
           entityType: auditEvents.entityType,
           entityId: auditEvents.entityId,
@@ -704,6 +719,7 @@ export function registerAdminRoutes(app: Express) {
         })
         .from(auditEvents)
         .leftJoin(tenants, eq(auditEvents.tenantId, tenants.id))
+        .leftJoin(users, eq(auditEvents.userId, users.id))
         .where(
           and(
             tenantId ? eq(auditEvents.tenantId, tenantId) : undefined,
