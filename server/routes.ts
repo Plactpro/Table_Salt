@@ -7,7 +7,8 @@ import QRCode from "qrcode";
 import { storage } from "./storage";
 import { db, pool } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { setupAuth, requireAuth, requireRole, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "./auth";
+import { setupAuth, requireAuth, requireRole, requireSuperAdmin, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "./auth";
+import { registerAdminRoutes } from "./admin-routes";
 import { setupCsrf, setupIpAllowlistMiddleware, isValidCidr } from "./security";
 import { getAdapter } from "./aggregator-adapters";
 import {
@@ -134,6 +135,7 @@ export async function registerRoutes(
   setupAuth(app);
   setupCsrf(app);
   setupIpAllowlistMiddleware(app);
+  registerAdminRoutes(app);
 
   app.use("/uploads", (await import("express")).default.static(uploadDir));
 
@@ -242,7 +244,8 @@ export async function registerRoutes(
         auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
         checkNewIpLoginAlert(user.id, user.tenantId, user.name, req);
         const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = user;
-        return res.json(safeUser);
+        const redirectTo = (user.role as string) === "super_admin" ? "/admin" : undefined;
+        return res.json({ ...safeUser, ...(redirectTo ? { redirectTo } : {}) });
       });
     })(req, res, next);
   });

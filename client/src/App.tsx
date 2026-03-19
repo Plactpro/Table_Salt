@@ -35,6 +35,7 @@ import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
+import AdminPanel from "@/pages/admin/index";
 
 import { ReactNode } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -161,10 +162,27 @@ function PublicOnly({ children }: { children: ReactNode }) {
   }
 
   if (user) {
-    return <Redirect to="/" />;
+    return <Redirect to={(user.role as string) === "super_admin" ? "/admin" : "/"} />;
   }
 
   return <>{children}</>;
+}
+
+function AdminRoute() {
+  const { user, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" data-testid="loading-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) return <Redirect to="/login" />;
+  if ((user.role as string) !== "super_admin") return <Redirect to="/" />;
+
+  return <AdminPanel />;
 }
 
 function ProtectedPages() {
@@ -222,6 +240,10 @@ function Router() {
         <Route component={NotFound} />
       </Switch>
     );
+  }
+
+  if (location.startsWith("/admin")) {
+    return <AdminRoute />;
   }
 
   if (location === "/login") {
