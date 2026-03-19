@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 
 interface KDSOrderItem {
   id: string;
@@ -310,8 +311,15 @@ export default function KitchenDashboard() {
   const { data: tickets = [], isLoading } = useQuery<KDSTicket[]>({
     queryKey: ["/api/kds/tickets", selectedStation],
     queryFn: () => fetch(ticketsUrl, { credentials: "include" }).then(r => r.json()),
-    refetchInterval: 5000,
   });
+
+  const invalidateTickets = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
+  }, [queryClient]);
+
+  useRealtimeEvent("order:new", invalidateTickets);
+  useRealtimeEvent("order:updated", invalidateTickets);
+  useRealtimeEvent("order:item_updated", invalidateTickets);
 
   const { data: stations = [] } = useQuery<KitchenStation[]>({
     queryKey: ["/api/kitchen-stations"],

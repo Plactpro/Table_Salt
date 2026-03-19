@@ -5,6 +5,7 @@ import { setupSecurity } from "./security";
 import { createServer } from "http";
 import { incrementApiRequestCount } from "./api-counter";
 import { discoverPriceIds } from "./stripe";
+import { setupWebSocket } from "./realtime";
 
 const app = express();
 const httpServer = createServer(app);
@@ -139,6 +140,8 @@ app.use((req, res, next) => {
   await discoverPriceIds();
 
   await registerRoutes(httpServer, app);
+
+  setupWebSocket(httpServer);
 
   try {
     const { startRetentionScheduler } = await import("./retention-cleanup");
