@@ -312,8 +312,6 @@ export default function GuestPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           sessionId: session.id,
-          amount: bill.total,
-          currency: bill.currency,
           outletId,
           tableToken,
         }),
