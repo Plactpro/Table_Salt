@@ -344,9 +344,9 @@ export default function SubscriptionSettings() {
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Stripe not configured</p>
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">Payment processing unavailable</p>
                 <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-                  Set <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">STRIPE_SECRET_KEY</code>, <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">STRIPE_PRICE_BASIC</code>, <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">STRIPE_PRICE_STANDARD</code>, and <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">STRIPE_PRICE_PREMIUM</code> environment variables to enable payments.
+                  The Stripe payment integration is not connected. Contact the platform administrator to enable subscription upgrades.
                 </p>
               </div>
             </div>

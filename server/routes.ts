@@ -47,7 +47,7 @@ import { encryptField, decryptField, isEncrypted } from "./encryption";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
-import { stripe, trialEndsAtDate, isStripeConfigured, trialDaysLeft, STRIPE_PRICE_IDS, planFromPriceId } from "./stripe";
+import { trialEndsAtDate, isStripeConfigured, trialDaysLeft, STRIPE_PRICE_IDS, planFromPriceId, getUncachableStripeClient } from "./stripe";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -168,9 +168,10 @@ export async function registerRoutes(
       const trialEnd = trialEndsAtDate();
       const tenant = await storage.createTenant({ name: restaurantName, slug, plan: "standard", subscriptionStatus: "trialing", trialEndsAt: trialEnd });
 
-      if (isStripeConfigured() && stripe) {
+      if (await isStripeConfigured()) {
         try {
-          const customer = await stripe.customers.create({
+          const stripeClient = await getUncachableStripeClient();
+          const customer = await stripeClient.customers.create({
             name: restaurantName,
             metadata: { tenantId: tenant.id },
           });
@@ -1684,7 +1685,7 @@ export async function registerRoutes(
         trialEndsAt: tenant.trialEndsAt,
         trialDaysLeft: daysLeft,
         stripeCustomerId: tenant.stripeCustomerId,
-        stripeConfigured: isStripeConfigured(),
+        stripeConfigured: await isStripeConfigured(),
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -1693,8 +1694,8 @@ export async function registerRoutes(
 
   app.post("/api/billing/create-checkout-session", requireAuth, async (req, res) => {
     try {
-      if (!isStripeConfigured() || !stripe) {
-        return res.status(503).json({ message: "Stripe is not configured. Please set STRIPE_SECRET_KEY." });
+      if (!await isStripeConfigured()) {
+        return res.status(503).json({ message: "Stripe is not configured." });
       }
       const user = req.user as any;
       const { plan } = req.body as { plan: string };
@@ -1708,8 +1709,9 @@ export async function registerRoutes(
       const tenant = await storage.getTenant(user.tenantId);
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
 
+      const stripeClient = await getUncachableStripeClient();
       const origin = `${req.protocol}://${req.get("host")}`;
-      const session = await stripe.checkout.sessions.create({
+      const session = await stripeClient.checkout.sessions.create({
         mode: "subscription",
         customer: tenant.stripeCustomerId ?? undefined,
         customer_creation: tenant.stripeCustomerId ? undefined : "always",
@@ -1727,7 +1729,7 @@ export async function registerRoutes(
 
   app.post("/api/billing/portal", requireAuth, async (req, res) => {
     try {
-      if (!isStripeConfigured() || !stripe) {
+      if (!await isStripeConfigured()) {
         return res.status(503).json({ message: "Stripe is not configured." });
       }
       const user = req.user as any;
@@ -1736,8 +1738,9 @@ export async function registerRoutes(
       if (!tenant.stripeCustomerId) {
         return res.status(400).json({ message: "No Stripe customer found. Please upgrade first." });
       }
+      const stripeClient = await getUncachableStripeClient();
       const origin = `${req.protocol}://${req.get("host")}`;
-      const session = await stripe.billingPortal.sessions.create({
+      const session = await stripeClient.billingPortal.sessions.create({
         customer: tenant.stripeCustomerId,
         return_url: `${origin}/settings?tab=subscription`,
       });
@@ -1748,7 +1751,7 @@ export async function registerRoutes(
   });
 
   app.post("/api/webhooks/stripe", async (req, res) => {
-    if (!isStripeConfigured() || !stripe) {
+    if (!await isStripeConfigured()) {
       return res.status(503).json({ message: "Stripe not configured" });
     }
     const rawSig = req.headers["stripe-signature"];
@@ -1757,10 +1760,11 @@ export async function registerRoutes(
     if (!sig || !webhookSecret) {
       return res.status(400).json({ message: "Missing signature or webhook secret" });
     }
+    const stripeClient = await getUncachableStripeClient();
     let event: import("stripe").Stripe.Event;
     try {
       const rawBody = (req as any).rawBody as Buffer;
-      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+      event = stripeClient.webhooks.constructEvent(rawBody, sig, webhookSecret);
     } catch (err: any) {
       console.error("Stripe webhook signature verification failed:", err.message);
       return res.status(400).json({ message: `Webhook error: ${err.message}` });
@@ -1768,7 +1772,8 @@ export async function registerRoutes(
 
     try {
       async function resolveTenantByCustomer(customerId: string): Promise<string | null> {
-        const customer = await stripe!.customers.retrieve(customerId);
+        const sc = await getUncachableStripeClient();
+        const customer = await sc.customers.retrieve(customerId);
         if (customer.deleted) return null;
         const metaTenantId = (customer as import("stripe").Stripe.Customer).metadata?.tenantId;
         if (metaTenantId) return metaTenantId;
@@ -1791,7 +1796,8 @@ export async function registerRoutes(
             });
             if (newCustomerId) {
               try {
-                await stripe!.customers.update(newCustomerId, { metadata: { tenantId } });
+                const sc2 = await getUncachableStripeClient();
+                await sc2.customers.update(newCustomerId, { metadata: { tenantId } });
               } catch (metaErr: any) {
                 console.warn("Failed to set tenantId metadata on Stripe customer:", metaErr.message);
               }

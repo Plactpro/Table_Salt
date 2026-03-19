@@ -4,6 +4,7 @@ import { serveStatic } from "./static";
 import { setupSecurity } from "./security";
 import { createServer } from "http";
 import { incrementApiRequestCount } from "./api-counter";
+import { discoverPriceIds } from "./stripe";
 
 const app = express();
 const httpServer = createServer(app);
@@ -15,6 +16,29 @@ declare module "http" {
     rawBody: unknown;
   }
 }
+
+// stripe-replit-sync managed webhook — must be registered BEFORE express.json()
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["stripe-signature"];
+    if (!sig) return res.status(400).json({ error: "Missing stripe-signature" });
+    const signature = Array.isArray(sig) ? sig[0] : sig;
+    if (!Buffer.isBuffer(req.body)) {
+      return res.status(500).json({ error: "Webhook body is not a Buffer" });
+    }
+    try {
+      const { getStripeSync } = await import("./stripeClient");
+      const sync = await getStripeSync();
+      await sync.processWebhook(req.body as Buffer, signature);
+      res.status(200).json({ received: true });
+    } catch (err: any) {
+      console.error("[Stripe] Managed webhook error:", err.message);
+      res.status(400).json({ error: "Webhook processing error" });
+    }
+  }
+);
 
 app.use(
   express.json({
@@ -80,6 +104,33 @@ app.use((req, res, next) => {
     await seedDatabase();
   } catch (e) {
     console.error("Seed error:", e);
+  }
+
+  // Initialize Stripe: run schema migrations, set up managed webhook, sync data, discover price IDs
+  try {
+    const { runMigrations } = await import("stripe-replit-sync");
+    const databaseUrl = process.env.DATABASE_URL;
+    if (databaseUrl) {
+      await runMigrations({ databaseUrl, schema: "stripe" });
+      log("Stripe schema ready", "stripe");
+
+      const { getStripeSync } = await import("./stripeClient");
+      const stripeSync = await getStripeSync();
+
+      const webhookBaseUrl = `https://${process.env.REPLIT_DOMAINS?.split(",")[0]}`;
+      await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/stripe/webhook`);
+      log("Stripe managed webhook configured", "stripe");
+
+      stripeSync.syncBackfill().then(() => {
+        log("Stripe data sync complete", "stripe");
+      }).catch((err: any) => {
+        console.warn("[Stripe] syncBackfill error:", err.message);
+      });
+
+      await discoverPriceIds();
+    }
+  } catch (e: any) {
+    console.warn("[Stripe] Init skipped:", e.message);
   }
 
   await registerRoutes(httpServer, app);

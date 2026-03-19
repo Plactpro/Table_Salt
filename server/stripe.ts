@@ -1,30 +1,30 @@
-import Stripe from "stripe";
+import type Stripe from "stripe";
+import { getUncachableStripeClient } from "./stripeClient";
 
-const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY;
-
-export const stripe: Stripe | null = STRIPE_SECRET_KEY
-  ? new Stripe(STRIPE_SECRET_KEY, { apiVersion: "2025-02-24.acacia" })
-  : null;
+export { getUncachableStripeClient };
 
 export const TRIAL_DAYS = 30;
 
-export const STRIPE_PRICE_IDS: Record<string, string | undefined> = {
-  basic: process.env.STRIPE_PRICE_BASIC,
-  standard: process.env.STRIPE_PRICE_STANDARD,
-  premium: process.env.STRIPE_PRICE_PREMIUM,
-};
+export const STRIPE_PRICE_IDS: Record<string, string | undefined> = {};
 
 const PRICE_TO_PLAN: Record<string, string> = {};
-if (process.env.STRIPE_PRICE_BASIC) PRICE_TO_PLAN[process.env.STRIPE_PRICE_BASIC] = "basic";
-if (process.env.STRIPE_PRICE_STANDARD) PRICE_TO_PLAN[process.env.STRIPE_PRICE_STANDARD] = "standard";
-if (process.env.STRIPE_PRICE_PREMIUM) PRICE_TO_PLAN[process.env.STRIPE_PRICE_PREMIUM] = "premium";
+
+export function setPriceId(plan: string, priceId: string) {
+  STRIPE_PRICE_IDS[plan] = priceId;
+  PRICE_TO_PLAN[priceId] = plan;
+}
 
 export function planFromPriceId(priceId: string): string {
   return PRICE_TO_PLAN[priceId] ?? "basic";
 }
 
-export function isStripeConfigured(): boolean {
-  return !!stripe;
+export async function isStripeConfigured(): Promise<boolean> {
+  try {
+    await getUncachableStripeClient();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function trialEndsAtDate(): Date {
@@ -35,4 +35,22 @@ export function trialDaysLeft(trialEndsAt: Date | null | undefined): number {
   if (!trialEndsAt) return 0;
   const msLeft = trialEndsAt.getTime() - Date.now();
   return Math.max(0, Math.ceil(msLeft / (24 * 60 * 60 * 1000)));
+}
+
+export async function discoverPriceIds(): Promise<void> {
+  try {
+    const stripe = await getUncachableStripeClient();
+    const prices = await stripe.prices.list({ active: true, limit: 100, expand: ["data.product"] });
+    for (const price of prices.data) {
+      const product = price.product as Stripe.Product | null;
+      if (!product || typeof product === "string" || product.deleted) continue;
+      const planKey = product.metadata?.plan_key;
+      if (planKey && ["basic", "standard", "premium"].includes(planKey)) {
+        setPriceId(planKey, price.id);
+      }
+    }
+    console.log("[Stripe] Discovered price IDs:", STRIPE_PRICE_IDS);
+  } catch (err: any) {
+    console.warn("[Stripe] Price discovery skipped:", err.message);
+  }
 }
