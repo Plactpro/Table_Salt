@@ -1241,6 +1241,49 @@ export async function registerRoutes(
     res.json(item);
   });
 
+  app.post("/api/orders/:id/payment-link", requireAuth, async (req, res) => {
+    try {
+      if (!await isStripeConfigured()) {
+        return res.status(503).json({ message: "Stripe is not configured" });
+      }
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Order not found" });
+      }
+      const stripeClient = await getUncachableStripeClient();
+      const tenant = await storage.getTenant(user.tenantId);
+      const currency = (tenant?.currency || "usd").toLowerCase();
+      const amountInCents = Math.round(Number(order.total) * 100);
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const session = await stripeClient.checkout.sessions.create({
+        mode: "payment",
+        line_items: [{
+          price_data: {
+            currency,
+            product_data: { name: `Order Payment — ${tenant?.name || "Restaurant"}` },
+            unit_amount: amountInCents,
+          },
+          quantity: 1,
+        }],
+        success_url: `${origin}/app/orders?payment_success=1&orderId=${order.id}`,
+        cancel_url: `${origin}/app/orders?payment_cancelled=1&orderId=${order.id}`,
+        metadata: {
+          orderPayment: "true",
+          orderId: order.id,
+          tenantId: user.tenantId,
+          channel: "pos",
+        },
+      });
+      await pool.query(
+        `UPDATE orders SET stripe_payment_session_id = $1 WHERE id = $2`,
+        [session.id, order.id]
+      );
+      const qrDataUrl = await QRCode.toDataURL(session.url!, { width: 256, margin: 2 });
+      res.json({ url: session.url, sessionId: session.id, qrDataUrl });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/inventory", requireAuth, async (req, res) => {
     const user = req.user as any;
     const inv = await storage.getInventoryByTenant(user.tenantId);
@@ -1784,6 +1827,19 @@ export async function registerRoutes(
       switch (event.type) {
         case "checkout.session.completed": {
           const session = event.data.object as import("stripe").Stripe.Checkout.Session;
+          if (session.metadata?.orderPayment === "true") {
+            const orderId = session.metadata?.orderId;
+            if (orderId) {
+              const orderToUpdate = await storage.getOrder(orderId);
+              if (orderToUpdate && orderToUpdate.status !== "paid") {
+                await storage.updateOrder(orderId, { status: "paid", paymentMethod: "card" });
+                if (orderToUpdate.tableId) {
+                  try { await storage.updateTable(orderToUpdate.tableId, { status: "free" }); } catch (_) {}
+                }
+              }
+            }
+            break;
+          }
           const tenantId = session.metadata?.tenantId ?? null;
           const plan = session.metadata?.plan ?? "basic";
           const newCustomerId = session.customer && typeof session.customer === "string" ? session.customer : null;
@@ -5096,6 +5152,141 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/kiosk/payment-session", async (req, res) => {
+    try {
+      if (!await isStripeConfigured()) {
+        return res.status(503).json({ message: "Stripe is not configured" });
+      }
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+
+      const { items, serviceType, clientOrderId } = req.body;
+      if (!items || !Array.isArray(items) || items.length === 0) {
+        return res.status(400).json({ message: "Order must have at least one item" });
+      }
+
+      if (clientOrderId) {
+        const existing = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
+        if (existing) {
+          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems } });
+        }
+      }
+
+      const menuItemsList = await storage.getMenuItemsByTenant(device.tenantId!);
+      const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+      const availableItems = new Set(menuItemsList.filter(m => m.available !== false).map(m => m.id));
+
+      let serverSubtotal = 0;
+      const serverItems: { menuItemId: string; name: string; price: number; quantity: number; notes?: string }[] = [];
+      for (const item of items) {
+        if (!item.menuItemId || typeof item.menuItemId !== "string") continue;
+        const mi = menuMap.get(item.menuItemId);
+        if (!mi || !availableItems.has(mi.id)) continue;
+        const canonicalPrice = Number(mi.price);
+        const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
+        serverSubtotal += canonicalPrice * qty;
+        serverItems.push({ menuItemId: mi.id, name: mi.name, price: canonicalPrice, quantity: qty, notes: typeof item.notes === "string" ? item.notes.slice(0, 200) : undefined });
+      }
+      if (serverItems.length === 0) return res.status(400).json({ message: "No valid items in order" });
+      serverSubtotal = Math.round(serverSubtotal * 100) / 100;
+
+      const tenant = await storage.getTenant(device.tenantId!);
+      const taxRate = Number(tenant?.taxRate || 0) / 100;
+      const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
+      const afterDiscount = serverSubtotal;
+      const serverServiceCharge = Math.round(afterDiscount * serviceChargeRate * 100) / 100;
+      const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
+      const serverTotal = Math.round((afterDiscount + serverServiceCharge + serverTax) * 100) / 100;
+      const requestedServiceType = serviceType === "dine_in" ? "dine_in" : "takeaway";
+
+      const order = await storage.createOrder({
+        tenantId: device.tenantId!,
+        outletId: device.outletId,
+        orderType: requestedServiceType,
+        channel: "kiosk",
+        channelOrderId: clientOrderId || undefined,
+        status: "pending_payment",
+        subtotal: serverSubtotal.toFixed(2),
+        discount: "0.00",
+        tax: serverTax.toFixed(2),
+        total: serverTotal.toFixed(2),
+        paymentMethod: "card",
+        notes: `Kiosk order from ${device.name} (awaiting card payment)`,
+      });
+
+      for (const item of serverItems) {
+        const mi = menuMap.get(item.menuItemId);
+        await storage.createOrderItem({
+          orderId: order.id,
+          menuItemId: item.menuItemId,
+          name: item.name,
+          quantity: item.quantity,
+          price: item.price.toFixed(2),
+          station: mi?.station || null,
+          course: mi?.course || null,
+          notes: item.notes || null,
+        });
+      }
+
+      const stripeClient = await getUncachableStripeClient();
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const currency = (tenant?.currency || "usd").toLowerCase();
+
+      const lineItems = serverItems.map(item => ({
+        price_data: {
+          currency,
+          product_data: { name: item.name },
+          unit_amount: Math.round(item.price * 100),
+        },
+        quantity: item.quantity,
+      }));
+
+      if (serverTax > 0) {
+        lineItems.push({
+          price_data: {
+            currency,
+            product_data: { name: "Tax" },
+            unit_amount: Math.round(serverTax * 100),
+          },
+          quantity: 1,
+        });
+      }
+      if (serverServiceCharge > 0) {
+        lineItems.push({
+          price_data: {
+            currency,
+            product_data: { name: "Service Charge" },
+            unit_amount: Math.round(serverServiceCharge * 100),
+          },
+          quantity: 1,
+        });
+      }
+
+      const session = await stripeClient.checkout.sessions.create({
+        mode: "payment",
+        line_items: lineItems,
+        success_url: `${origin}/kiosk?token=${token}&payment_success=1&orderId=${order.id}`,
+        cancel_url: `${origin}/kiosk?token=${token}&payment_cancelled=1&orderId=${order.id}`,
+        metadata: {
+          orderPayment: "true",
+          orderId: order.id,
+          tenantId: device.tenantId!,
+          channel: "kiosk",
+        },
+      });
+
+      await pool.query(
+        `UPDATE orders SET stripe_payment_session_id = $1 WHERE id = $2`,
+        [session.id, order.id]
+      );
+
+      res.json({ url: session.url, orderId: order.id, sessionId: session.id });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/guest/menu/:outletId", async (req, res) => {
     try {
       const { outletId } = req.params;
@@ -5381,6 +5572,47 @@ export async function registerRoutes(
       await storage.updateTableSession(session.id, { status: "closed", closedAt: new Date() });
       await storage.clearGuestCart(session.id);
       res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/guest/payment-session", async (req, res) => {
+    try {
+      if (!await isStripeConfigured()) {
+        return res.status(503).json({ message: "Stripe is not configured" });
+      }
+      const { sessionId, amount, currency: reqCurrency, outletId, tableToken } = req.body;
+      if (!sessionId || !amount) {
+        return res.status(400).json({ message: "sessionId and amount are required" });
+      }
+      const tableSession = await storage.getTableSession(sessionId);
+      if (!tableSession) return res.status(404).json({ message: "Session not found" });
+      const tenant = await storage.getTenant(tableSession.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      const stripeClient = await getUncachableStripeClient();
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const currency = (reqCurrency || tenant.currency || "usd").toLowerCase();
+      const amountInCents = Math.round(Number(amount) * 100);
+      const session = await stripeClient.checkout.sessions.create({
+        mode: "payment",
+        line_items: [{
+          price_data: {
+            currency,
+            product_data: { name: `Bill Payment — ${tenant.name}` },
+            unit_amount: amountInCents,
+          },
+          quantity: 1,
+        }],
+        success_url: `${origin}/guest/${outletId}/${tableToken}?payment_success=1`,
+        cancel_url: `${origin}/guest/${outletId}/${tableToken}?payment_cancelled=1`,
+        metadata: {
+          orderPayment: "true",
+          guestPayment: "true",
+          sessionId,
+          tenantId: tableSession.tenantId,
+          channel: "guest",
+        },
+      });
+      res.json({ url: session.url, sessionId: session.id });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -133,6 +133,7 @@ export default function GuestPage() {
   const [splitCount, setSplitCount] = useState(2);
   const [selectedSplitItems, setSelectedSplitItems] = useState<Set<number>>(new Set());
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [stripeRedirecting, setStripeRedirecting] = useState(false);
 
   const fmt = useCallback((val: number | string) => {
     if (!tenant) return String(val);
@@ -141,6 +142,21 @@ export default function GuestPage() {
       decimals: tenant.currencyDecimals,
     });
   }, [tenant]);
+
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get("payment_success") === "1") {
+      setPaymentConfirmed(true);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("payment_success");
+      window.history.replaceState({}, "", url.toString());
+    }
+    if (urlParams.get("payment_cancelled") === "1") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("payment_cancelled");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   useEffect(() => {
     if (!outletId || !tableToken) {
@@ -286,6 +302,37 @@ export default function GuestPage() {
       }
     } catch (err) { console.error(err); }
   }, [session]);
+
+  const payWithStripe = useCallback(async () => {
+    if (!session || !bill) return;
+    setStripeRedirecting(true);
+    try {
+      const res = await fetch("/api/guest/payment-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId: session.id,
+          amount: bill.total,
+          currency: bill.currency,
+          outletId,
+          tableToken,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) {
+          window.location.href = data.url;
+          return;
+        }
+      }
+      setPaymentConfirmed(true);
+    } catch (err) {
+      console.error("Stripe payment error:", err);
+      setPaymentConfirmed(true);
+    } finally {
+      setStripeRedirecting(false);
+    }
+  }, [session, bill, outletId, tableToken]);
 
   if (loading) {
     return (
@@ -836,11 +883,13 @@ export default function GuestPage() {
 
                   <div className="space-y-2 mb-6">
                     <button
-                      onClick={() => setPaymentConfirmed(true)}
-                      className="w-full bg-teal-600 text-white py-3 rounded-xl font-medium hover:bg-teal-700 flex items-center justify-center gap-2"
+                      onClick={payWithStripe}
+                      disabled={stripeRedirecting}
+                      className="w-full bg-teal-600 text-white py-3 rounded-xl font-medium hover:bg-teal-700 flex items-center justify-center gap-2 disabled:opacity-50"
                       data-testid="button-pay-card"
                     >
-                      <CreditCard className="h-4 w-4" /> Pay with Card
+                      {stripeRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
+                      {stripeRedirecting ? "Redirecting to payment..." : "Pay with Card"}
                     </button>
                     <button
                       onClick={() => setPaymentConfirmed(true)}

@@ -23,7 +23,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
-  Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent,
+  Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 
@@ -148,6 +148,9 @@ export default function POSPage() {
   const [dismissedRuleIds, setDismissedRuleIds] = useState<Set<string>>(new Set());
   const [supervisorDialog, setSupervisorDialog] = useState<{
     open: boolean; action: string; actionLabel: string;
+  } | null>(null);
+  const [paymentLinkModal, setPaymentLinkModal] = useState<{
+    open: boolean; url: string; qrDataUrl: string; copied: boolean;
   } | null>(null);
 
   useEffect(() => { syncManager.init(); }, []);
@@ -449,6 +452,33 @@ export default function POSPage() {
     }
     placeOrderMutation.mutate(undefined);
   };
+
+  const sendPaymentLinkMutation = useMutation({
+    mutationFn: async () => {
+      if (cart.length === 0) throw new Error("Cart is empty");
+      const orderData = buildOrderData(undefined);
+      const orderRes = await apiRequest("POST", "/api/orders", orderData);
+      if (!orderRes.ok) throw new Error((await orderRes.json()).message || "Failed to place order");
+      const order = await orderRes.json();
+      const linkRes = await apiRequest("POST", `/api/orders/${order.id}/payment-link`, {});
+      if (!linkRes.ok) throw new Error("Stripe not configured or failed to create payment link");
+      return await linkRes.json() as { url: string; qrDataUrl: string };
+    },
+    onSuccess: (data) => {
+      setPaymentLinkModal({ open: true, url: data.url, qrDataUrl: data.qrDataUrl, copied: false });
+      setCart([]);
+      setDiscount("");
+      setOrderNotes("");
+      setSelectedTable("");
+      setSelectedOffer(null);
+      setDismissedRuleIds(new Set());
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Payment link failed", description: err.message, variant: "destructive" });
+    },
+  });
 
   return (
     <div className="flex h-full gap-0" data-testid="pos-page">
@@ -845,8 +875,64 @@ export default function POSPage() {
           <Button data-testid="button-place-order" className="w-full transition-all duration-200 hover:scale-[1.02]" size="lg" onClick={handlePlaceOrder} disabled={cart.length === 0 || placeOrderMutation.isPending}>
             {placeOrderMutation.isPending ? "Placing Order..." : isDineIn ? "Send to Kitchen" : "Place Order"}
           </Button>
+
+          {!isDineIn && paymentMethod === "card" && (
+            <Button
+              data-testid="button-send-payment-link"
+              variant="outline"
+              className="w-full transition-all duration-200"
+              size="sm"
+              onClick={() => sendPaymentLinkMutation.mutate()}
+              disabled={cart.length === 0 || sendPaymentLinkMutation.isPending}
+            >
+              {sendPaymentLinkMutation.isPending ? (
+                "Generating Link..."
+              ) : (
+                <><QrCode className="h-3.5 w-3.5 mr-1.5" /> Send Payment Link</>
+              )}
+            </Button>
+          )}
         </div>
       </div>
+
+      <Dialog open={!!paymentLinkModal?.open} onOpenChange={(o) => !o && setPaymentLinkModal(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><QrCode className="h-5 w-5 text-teal-600" /> Payment Link Ready</DialogTitle></DialogHeader>
+          <div className="text-center space-y-4">
+            <p className="text-sm text-muted-foreground">Share this QR code or link with the customer to collect payment via Stripe.</p>
+            {paymentLinkModal?.qrDataUrl && (
+              <div className="flex justify-center">
+                <img src={paymentLinkModal.qrDataUrl} alt="Payment QR code" className="w-48 h-48 rounded-lg border" data-testid="img-payment-qr" />
+              </div>
+            )}
+            <div className="bg-muted rounded-lg p-3 break-all text-xs text-left font-mono" data-testid="text-payment-link-url">
+              {paymentLinkModal?.url}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                variant={paymentLinkModal?.copied ? "secondary" : "default"}
+                onClick={() => {
+                  if (paymentLinkModal?.url) {
+                    navigator.clipboard.writeText(paymentLinkModal.url);
+                    setPaymentLinkModal(prev => prev ? { ...prev, copied: true } : null);
+                    setTimeout(() => setPaymentLinkModal(prev => prev ? { ...prev, copied: false } : null), 2000);
+                  }
+                }}
+                data-testid="button-copy-payment-link"
+              >
+                <Link className="h-4 w-4 mr-1.5" />
+                {paymentLinkModal?.copied ? "Copied!" : "Copy Link"}
+              </Button>
+              {paymentLinkModal?.url && (
+                <Button variant="outline" asChild>
+                  <a href={paymentLinkModal.url} target="_blank" rel="noopener noreferrer" data-testid="button-open-payment-link">Open</a>
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={noteDialogItem !== null} onOpenChange={() => setNoteDialogItem(null)}>
         <DialogContent>

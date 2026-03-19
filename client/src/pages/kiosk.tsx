@@ -265,9 +265,48 @@ export default function KioskPage() {
     setCart(prev => prev.map(c => c.cartLineId === cartLineId ? { ...c, notes } : c));
   }, []);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("payment_success") === "1") {
+      const orderId = params.get("orderId") || "";
+      setOrderResult({ tokenNumber: orderId.slice(0, 6).toUpperCase(), stripePayment: true });
+      setStep("confirmation");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("payment_success");
+      url.searchParams.delete("orderId");
+      window.history.replaceState({}, "", url.toString());
+      setTimeout(() => resetKiosk(), confirmResetMs);
+    }
+    if (params.get("payment_cancelled") === "1") {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("payment_cancelled");
+      url.searchParams.delete("orderId");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
+
   const placeOrder = useCallback(async () => {
     setIsPlacingOrder(true);
     try {
+      if (paymentMethod === "card") {
+        const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const res = await kioskFetch("/api/kiosk/payment-session", {
+          method: "POST",
+          body: JSON.stringify({
+            items: cart.map(c => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: c.notes || undefined })),
+            serviceType,
+            clientOrderId,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.url) {
+            window.location.href = data.url;
+            return;
+          }
+        }
+      }
+
       const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const payload = {
         items: cart.map(c => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: c.notes || undefined })),
