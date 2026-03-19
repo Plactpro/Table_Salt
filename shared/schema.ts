@@ -759,6 +759,7 @@ export const recipes = pgTable("recipes", {
   yield: decimal("yield", { precision: 10, scale: 2 }).default("1"),
   yieldUnit: text("yield_unit").default("portion"),
   prepTimeMinutes: integer("prep_time_minutes"),
+  wastePct: decimal("waste_pct", { precision: 5, scale: 2 }).default("0"),
   notes: text("notes"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),

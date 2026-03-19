@@ -2969,7 +2969,7 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/recipes", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
+  app.post("/api/recipes", requireAuth, requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
       const { ingredients, ...recipeData } = req.body;
@@ -3001,7 +3001,7 @@ export async function registerRoutes(
   // { menuItemId } — this is intentional: a recipe "belongs to" one menu item, and the
   // menu item may optionally display recipe cost data. This avoids a separate join table
   // while keeping the relationship navigable from both sides.
-  app.patch("/api/recipes/:id", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
+  app.patch("/api/recipes/:id", requireAuth, requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
       const { ingredients, supervisorOverride, ...recipeData } = req.body;
@@ -3040,7 +3040,7 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/recipes/:id", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
+  app.delete("/api/recipes/:id", requireAuth, requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
       await storage.deleteRecipe(req.params.id, user.tenantId);

@@ -69,6 +69,7 @@ export default function RecipeEditorPage() {
   const [yieldQty, setYieldQty] = useState("1");
   const [yieldUnit, setYieldUnit] = useState("portion");
   const [prepTime, setPrepTime] = useState("");
+  const [wastePct, setWastePct] = useState("0");
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<IngredientRow[]>([]);
   const [isDirty, setIsDirty] = useState(false);
@@ -118,6 +119,7 @@ export default function RecipeEditorPage() {
       setYieldQty(existingRecipe.yield?.toString() || "1");
       setYieldUnit(existingRecipe.yieldUnit || "portion");
       setPrepTime(existingRecipe.prepTimeMinutes?.toString() || "");
+      setWastePct(existingRecipe.wastePct?.toString() || "0");
       setNotes(existingRecipe.notes || "");
       setRows(existingRecipe.ingredients.map(ing => ({
         inventoryItemId: ing.inventoryItemId,
@@ -228,6 +230,7 @@ export default function RecipeEditorPage() {
       yield: yieldQty || "1",
       yieldUnit: yieldUnit || "portion",
       prepTimeMinutes: prepTime ? Number(prepTime) : null,
+      wastePct: wastePct ? Number(wastePct) : 0,
       notes: notes || null,
       ingredients: validRows.map((r, i) => ({ ...r, sortOrder: i })),
     };
@@ -350,20 +353,39 @@ export default function RecipeEditorPage() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="prep-time" className="flex items-center gap-1.5">
-                  <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Prep Time (minutes)
-                </Label>
-                <Input
-                  id="prep-time"
-                  type="number"
-                  min="0"
-                  value={prepTime}
-                  onChange={(e) => { setPrepTime(e.target.value); markDirty(); }}
-                  placeholder="e.g. 15"
-                  disabled={!canEdit}
-                  data-testid="input-recipe-prep-time"
-                />
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="prep-time" className="flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-muted-foreground" /> Prep Time (min)
+                  </Label>
+                  <Input
+                    id="prep-time"
+                    type="number"
+                    min="0"
+                    value={prepTime}
+                    onChange={(e) => { setPrepTime(e.target.value); markDirty(); }}
+                    placeholder="e.g. 15"
+                    disabled={!canEdit}
+                    data-testid="input-recipe-prep-time"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="waste-pct" className="flex items-center gap-1.5">
+                    <span className="text-muted-foreground text-xs">%</span> Recipe Waste %
+                  </Label>
+                  <Input
+                    id="waste-pct"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={wastePct}
+                    onChange={(e) => { setWastePct(e.target.value); markDirty(); }}
+                    placeholder="0"
+                    disabled={!canEdit}
+                    data-testid="input-recipe-waste-pct"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
