@@ -18,6 +18,8 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { DishInfoPanel } from "@/components/widgets/dish-info-panel";
 import { can } from "@/lib/permissions";
@@ -79,11 +81,14 @@ interface RecipeLinkSectionProps {
   onNavigate: (path: string) => void;
   queryClient: { invalidateQueries: (opts: { queryKey: string[] }) => void };
   toast: (opts: { title: string; description?: string; variant?: string }) => void;
+  userRole: string;
 }
 
-function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCost, sp, foodCostPct, fmt, onNavigate, queryClient, toast }: RecipeLinkSectionProps) {
+function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCost, sp, foodCostPct, fmt, onNavigate, queryClient, toast, userRole }: RecipeLinkSectionProps) {
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>("none");
   const [linking, setLinking] = useState(false);
+  const [comboOpen, setComboOpen] = useState(false);
+  const canEditRecipe = can(userRole, "edit_recipe");
 
   const handleLinkRecipe = async () => {
     if (selectedRecipeId === "none") return;
@@ -176,27 +181,48 @@ function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCo
       ) : (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">No recipe linked to this menu item.</p>
-          {unlinkedRecipes.length > 0 && (
+          {canEditRecipe && unlinkedRecipes.length > 0 && (
             <div className="flex items-center gap-2">
-              <Select value={selectedRecipeId} onValueChange={setSelectedRecipeId}>
-                <SelectTrigger className="flex-1" data-testid="select-link-recipe">
-                  <SelectValue placeholder="Select existing recipe..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">— Select recipe —</SelectItem>
-                  {unlinkedRecipes.map(r => (
-                    <SelectItem key={r.id} value={r.id}>{r.name} ({r.ingredients?.length || 0} ingredients)</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Popover open={comboOpen} onOpenChange={setComboOpen}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" role="combobox" className="flex-1 justify-between font-normal" data-testid="combobox-link-recipe">
+                    {selectedRecipeId !== "none"
+                      ? (unlinkedRecipes.find(r => r.id === selectedRecipeId)?.name ?? "Select recipe...")
+                      : "Search & select recipe..."}
+                    <ChefHat className="ml-2 h-3.5 w-3.5 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[340px] p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search recipes..." data-testid="input-recipe-search" />
+                    <CommandList>
+                      <CommandEmpty>No recipes found.</CommandEmpty>
+                      <CommandGroup>
+                        {unlinkedRecipes.map(r => (
+                          <CommandItem key={r.id} value={r.name} onSelect={() => { setSelectedRecipeId(r.id); setComboOpen(false); }} data-testid={`recipe-option-${r.id}`}>
+                            <ChefHat className="mr-2 h-3.5 w-3.5" />
+                            <span>{r.name}</span>
+                            <span className="ml-auto text-xs text-muted-foreground">{r.ingredients?.length || 0} ing.</span>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
               <Button size="sm" onClick={handleLinkRecipe} disabled={selectedRecipeId === "none" || linking} data-testid="button-link-recipe">
                 {linking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Link"}
               </Button>
             </div>
           )}
-          <Button variant="outline" size="sm" onClick={() => onNavigate(`/recipes/new?menuItemId=${editingItem.id}`)} data-testid="button-create-recipe-for-item">
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> Create New Recipe for this Item
-          </Button>
+          {canEditRecipe && (
+            <Button variant="outline" size="sm" onClick={() => onNavigate(`/recipes/new?menuItemId=${editingItem.id}&menuItemName=${encodeURIComponent(editingItem.name)}`)} data-testid="button-create-recipe-for-item">
+              <Plus className="h-3.5 w-3.5 mr-1.5" /> Create New Recipe for this Item
+            </Button>
+          )}
+          {!canEditRecipe && (
+            <p className="text-xs text-muted-foreground italic">You do not have permission to create or link recipes.</p>
+          )}
         </div>
       )}
     </div>
@@ -1217,6 +1243,7 @@ export default function MenuPage() {
                 onNavigate={(path) => { setItemDialogOpen(false); navigate(path); }}
                 queryClient={queryClient}
                 toast={toast}
+                userRole={user?.role || ""}
               />
             </TabsContent>
           )}
