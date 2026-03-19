@@ -150,10 +150,30 @@ export default function POSPage() {
     open: boolean; action: string; actionLabel: string;
   } | null>(null);
   const [paymentLinkModal, setPaymentLinkModal] = useState<{
-    open: boolean; url: string; qrDataUrl: string; copied: boolean;
+    open: boolean; url: string; qrDataUrl: string; copied: boolean; orderId?: string;
   } | null>(null);
 
   useEffect(() => { syncManager.init(); }, []);
+
+  useEffect(() => {
+    if (!paymentLinkModal?.open || !paymentLinkModal.orderId) return;
+    const orderId = paymentLinkModal.orderId;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/orders/${orderId}`, { credentials: "include" });
+        if (res.ok) {
+          const order = await res.json();
+          if (order.status === "paid") {
+            setPaymentLinkModal(null);
+            queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+            toast({ title: "Payment received!", description: "Order has been marked as paid." });
+          }
+        }
+      } catch (_) {}
+    }, 4000);
+    return () => clearInterval(interval);
+  }, [paymentLinkModal?.open, paymentLinkModal?.orderId]);
 
   const { data: categories = [] } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
   const { data: menuItems = [] } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");
@@ -462,10 +482,11 @@ export default function POSPage() {
       const order = await orderRes.json();
       const linkRes = await apiRequest("POST", `/api/orders/${order.id}/payment-link`, {});
       if (!linkRes.ok) throw new Error("Stripe not configured or failed to create payment link");
-      return await linkRes.json() as { url: string; qrDataUrl: string };
+      const linkData = await linkRes.json() as { url: string; qrDataUrl: string; orderId: string };
+      return { ...linkData, orderId: linkData.orderId ?? order.id };
     },
     onSuccess: (data) => {
-      setPaymentLinkModal({ open: true, url: data.url, qrDataUrl: data.qrDataUrl, copied: false });
+      setPaymentLinkModal({ open: true, url: data.url, qrDataUrl: data.qrDataUrl, copied: false, orderId: data.orderId });
       setCart([]);
       setDiscount("");
       setOrderNotes("");

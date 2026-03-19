@@ -1251,6 +1251,10 @@ export async function registerRoutes(
       if (!order || order.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Order not found" });
       }
+      const eligibleStatuses = ["new", "in_progress", "ready_to_pay", "pending_payment"] as const;
+      if (!eligibleStatuses.includes(order.status as any)) {
+        return res.status(400).json({ message: `Order status '${order.status}' is not eligible for a payment link` });
+      }
       const stripeClient = await getUncachableStripeClient();
       const tenant = await storage.getTenant(user.tenantId);
       const currency = (tenant?.currency || "usd").toLowerCase();
@@ -1275,12 +1279,13 @@ export async function registerRoutes(
           channel: "pos",
         },
       });
+      await storage.updateOrder(order.id, { status: "pending_payment" });
       await pool.query(
         `UPDATE orders SET stripe_payment_session_id = $1 WHERE id = $2`,
         [session.id, order.id]
       );
       const qrDataUrl = await QRCode.toDataURL(session.url!, { width: 256, margin: 2 });
-      res.json({ url: session.url, sessionId: session.id, qrDataUrl });
+      res.json({ url: session.url, sessionId: session.id, orderId: order.id, qrDataUrl });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -1836,6 +1841,22 @@ export async function registerRoutes(
                 if (orderToUpdate.tableId) {
                   try { await storage.updateTable(orderToUpdate.tableId, { status: "free" }); } catch (_) {}
                 }
+              }
+            } else if (session.metadata?.guestPayment === "true" && session.metadata?.sessionId) {
+              const guestSession = await storage.getTableSession(session.metadata.sessionId);
+              if (guestSession) {
+                const allOrders = await storage.getOrdersByTenant(guestSession.tenantId);
+                const unpaidTableOrders = allOrders.filter(o =>
+                  o.tableId === guestSession.tableId &&
+                  o.status !== "cancelled" &&
+                  o.status !== "voided" &&
+                  o.status !== "paid"
+                );
+                for (const order of unpaidTableOrders) {
+                  await storage.updateOrder(order.id, { status: "paid", paymentMethod: "card" });
+                }
+                try { await storage.updateTable(guestSession.tableId, { status: "free" }); } catch (_) {}
+                try { await storage.updateTableSession(guestSession.id, { status: "closed", closedAt: new Date() }); } catch (_) {}
               }
             }
             break;
@@ -5580,18 +5601,31 @@ export async function registerRoutes(
       if (!await isStripeConfigured()) {
         return res.status(503).json({ message: "Stripe is not configured" });
       }
-      const { sessionId, amount, currency: reqCurrency, outletId, tableToken } = req.body;
-      if (!sessionId || !amount) {
-        return res.status(400).json({ message: "sessionId and amount are required" });
+      const { sessionId, outletId, tableToken } = req.body;
+      if (!sessionId) {
+        return res.status(400).json({ message: "sessionId is required" });
       }
       const tableSession = await storage.getTableSession(sessionId);
       if (!tableSession) return res.status(404).json({ message: "Session not found" });
       const tenant = await storage.getTenant(tableSession.tenantId);
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+
+      const allOrders = await storage.getOrdersByTenant(tableSession.tenantId);
+      const unpaidTableOrders = allOrders.filter(o =>
+        o.tableId === tableSession.tableId &&
+        o.status !== "cancelled" &&
+        o.status !== "voided" &&
+        o.status !== "paid"
+      );
+      const billTotal = unpaidTableOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+      const amountInCents = Math.round(billTotal * 100);
+      if (amountInCents <= 0) {
+        return res.status(400).json({ message: "No unpaid bill found for this session" });
+      }
+
       const stripeClient = await getUncachableStripeClient();
       const origin = `${req.protocol}://${req.get("host")}`;
-      const currency = (reqCurrency || tenant.currency || "usd").toLowerCase();
-      const amountInCents = Math.round(Number(amount) * 100);
+      const currency = (tenant.currency || "usd").toLowerCase();
       const session = await stripeClient.checkout.sessions.create({
         mode: "payment",
         line_items: [{
@@ -5612,7 +5646,7 @@ export async function registerRoutes(
           channel: "guest",
         },
       });
-      res.json({ url: session.url, sessionId: session.id });
+      res.json({ url: session.url, sessionId: session.id, amount: (billTotal).toFixed(2) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

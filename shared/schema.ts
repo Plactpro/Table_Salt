@@ -39,6 +39,7 @@ export const orderStatusEnum = pgEnum("order_status", [
   "paid",
   "cancelled",
   "voided",
+  "pending_payment",
 ]);
 
 export const orderTypeEnum = pgEnum("order_type", [
@@ -264,6 +265,7 @@ export const orders = pgTable("orders", {
   channel: text("channel"),
   channelOrderId: text("channel_order_id"),
   channelData: jsonb("channel_data"),
+  stripePaymentSessionId: text("stripe_payment_session_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
