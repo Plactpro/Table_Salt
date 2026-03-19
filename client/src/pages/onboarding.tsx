@@ -719,7 +719,7 @@ export default function OnboardingPage() {
       invalidateTenant();
       toast({
         title: "Welcome to Table Salt!",
-        description: "Your restaurant is ready. Let's get started!",
+        description: "Your restaurant is ready.",
       });
       navigate("/");
     } catch (err: unknown) {
