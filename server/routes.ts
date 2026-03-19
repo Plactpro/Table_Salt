@@ -1713,7 +1713,6 @@ export async function registerRoutes(
         mode: "subscription",
         customer: tenant.stripeCustomerId ?? undefined,
         customer_creation: tenant.stripeCustomerId ? undefined : "always",
-        customer_email: tenant.stripeCustomerId ? undefined : undefined,
         line_items: [{ price: priceId, quantity: 1 }],
         metadata: { tenantId: tenant.id, plan },
         success_url: `${origin}/settings?tab=subscription&upgraded=1`,

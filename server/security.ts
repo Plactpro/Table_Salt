@@ -122,7 +122,13 @@ export function setupCsrf(app: Express) {
     }
 
     const url = req.originalUrl || req.path;
-    if (url === "/api/auth/login" || url === "/api/auth/register" || url.startsWith("/api/guest/") || url.startsWith("/api/kiosk/")) {
+    if (
+      url === "/api/auth/login" ||
+      url === "/api/auth/register" ||
+      url === "/api/webhooks/stripe" ||
+      url.startsWith("/api/guest/") ||
+      url.startsWith("/api/kiosk/")
+    ) {
       return next();
     }
 
