@@ -40,6 +40,7 @@ interface SuperAdmin {
   email: string | null;
   active: boolean | null;
   totpEnabled: boolean | null;
+  lastActive: string | null;
 }
 
 interface CreateForm {
@@ -134,11 +135,12 @@ export default function AdminsPage() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              <div className="grid grid-cols-[2fr_1fr_2fr_1fr_auto] gap-4 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+              <div className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_auto] gap-4 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
                 <span>Name</span>
                 <span>Username</span>
                 <span>Email</span>
                 <span>Status</span>
+                <span>Last Active</span>
                 <span></span>
               </div>
               {admins.map((a) => {
@@ -146,7 +148,7 @@ export default function AdminsPage() {
                 return (
                   <div
                     key={a.id}
-                    className="grid grid-cols-[2fr_1fr_2fr_1fr_auto] gap-4 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
+                    className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
                     data-testid={`row-admin-${a.id}`}
                   >
                     <div className="min-w-0">
@@ -182,6 +184,11 @@ export default function AdminsPage() {
                           Active
                         </Badge>
                       )}
+                    </span>
+                    <span className="text-xs text-slate-400 truncate" data-testid={`admin-last-active-${a.id}`}>
+                      {a.lastActive
+                        ? new Date(a.lastActive).toLocaleDateString()
+                        : <span className="italic">Never</span>}
                     </span>
                     <Button
                       variant="ghost"

@@ -31,31 +31,52 @@ interface HeaderProps {
   onOpenSupport?: () => void;
 }
 
-const roleLabels: Record<Role, string> = {
+const roleLabels: Partial<Record<Role, string>> = {
   owner: "Owner",
   manager: "Manager",
   waiter: "Waiter",
   kitchen: "Kitchen",
   accountant: "Accountant",
   customer: "Customer",
+  cashier: "Cashier",
+  supervisor: "Supervisor",
+  outlet_manager: "Outlet Manager",
+  hq_admin: "HQ Admin",
+  franchise_owner: "Franchise Owner",
+  auditor: "Auditor",
+  super_admin: "Super Admin",
 };
 
-const roleBadgeColors: Record<Role, string> = {
+const roleBadgeColors: Partial<Record<Role, string>> = {
   owner: "bg-amber-100 text-amber-800 border-amber-200",
   manager: "bg-teal-100 text-teal-800 border-teal-200",
   waiter: "bg-green-100 text-green-800 border-green-200",
   kitchen: "bg-orange-100 text-orange-800 border-orange-200",
   accountant: "bg-gray-100 text-gray-800 border-gray-200",
   customer: "bg-stone-100 text-stone-800 border-stone-200",
+  cashier: "bg-blue-100 text-blue-800 border-blue-200",
+  supervisor: "bg-violet-100 text-violet-800 border-violet-200",
+  outlet_manager: "bg-cyan-100 text-cyan-800 border-cyan-200",
+  hq_admin: "bg-rose-100 text-rose-800 border-rose-200",
+  franchise_owner: "bg-orange-100 text-orange-800 border-orange-200",
+  auditor: "bg-slate-100 text-slate-800 border-slate-200",
+  super_admin: "bg-red-100 text-red-800 border-red-200",
 };
 
-const roleIcons: Record<Role, LucideIcon> = {
+const roleIcons: Partial<Record<Role, LucideIcon>> = {
   owner: Crown,
   manager: Briefcase,
   waiter: Coffee,
   kitchen: ChefHat,
   accountant: Calculator,
   customer: UserCircle,
+  cashier: Calculator,
+  supervisor: Briefcase,
+  outlet_manager: Briefcase,
+  hq_admin: Crown,
+  franchise_owner: Crown,
+  auditor: User,
+  super_admin: Crown,
 };
 
 export default function Header({ onOpenSupport }: HeaderProps) {
@@ -76,7 +97,9 @@ export default function Header({ onOpenSupport }: HeaderProps) {
     navigate("/login");
   };
 
-  const RoleIcon = roleIcons[user.role];
+  const RoleIcon = roleIcons[user.role] ?? User;
+  const badgeColor = roleBadgeColors[user.role] ?? "bg-slate-100 text-slate-800 border-slate-200";
+  const roleLabel = roleLabels[user.role] ?? user.role.replace(/_/g, " ");
 
   return (
     <header className="h-14 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-10" data-testid="header">
@@ -85,11 +108,11 @@ export default function Header({ onOpenSupport }: HeaderProps) {
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${roleBadgeColors[user.role]}`}
+          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${badgeColor}`}
           data-testid="badge-role"
         >
           <RoleIcon className="h-3.5 w-3.5" />
-          {roleLabels[user.role]}
+          {roleLabel}
         </motion.span>
       </div>
 

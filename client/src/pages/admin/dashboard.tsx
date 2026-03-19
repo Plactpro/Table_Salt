@@ -8,6 +8,7 @@ import {
   Activity,
   TrendingUp,
   AlertCircle,
+  PauseCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +51,7 @@ function StatCard({
   icon: Icon,
   loading,
   testId,
+  highlight,
 }: {
   title: string;
   value: number | string;
@@ -57,7 +59,9 @@ function StatCard({
   icon: React.ComponentType<{ className?: string }>;
   loading: boolean;
   testId: string;
+  highlight?: "red" | "amber";
 }) {
+  const valueColor = highlight === "red" ? "text-red-600" : highlight === "amber" ? "text-amber-600" : "text-slate-900";
   return (
     <Card data-testid={testId}>
       <CardHeader className="pb-2">
@@ -70,7 +74,7 @@ function StatCard({
         {loading ? (
           <Skeleton className="h-9 w-20" />
         ) : (
-          <div className="text-3xl font-bold text-slate-900" data-testid={`${testId}-value`}>
+          <div className={`text-3xl font-bold ${valueColor}`} data-testid={`${testId}-value`}>
             {value}
           </div>
         )}
@@ -79,6 +83,36 @@ function StatCard({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function NewTenantsSparkline({ data }: { data: { date: string; count: number }[] }) {
+  if (!data || data.length === 0) {
+    return <p className="text-sm text-slate-400 text-center py-4">No data</p>;
+  }
+  const maxCount = Math.max(...data.map(d => d.count), 1);
+  const total = data.reduce((s, d) => s + d.count, 0);
+
+  return (
+    <div className="space-y-2" data-testid="new-tenants-sparkline">
+      <div className="flex items-end gap-0.5 h-16">
+        {data.map((d, i) => {
+          const heightPct = Math.max((d.count / maxCount) * 100, d.count > 0 ? 4 : 0);
+          return (
+            <div
+              key={i}
+              className="flex-1 rounded-sm bg-emerald-400 hover:bg-emerald-500 transition-colors"
+              style={{ height: `${heightPct}%` }}
+              title={`${d.date}: ${d.count} new tenant${d.count !== 1 ? "s" : ""}`}
+              data-testid={`sparkline-bar-${i}`}
+            />
+          );
+        })}
+      </div>
+      <p className="text-xs text-slate-400 text-center">
+        {total} new tenant{total !== 1 ? "s" : ""} in the last 30 days
+      </p>
+    </div>
   );
 }
 
@@ -119,21 +153,31 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard
           title="Total Tenants"
           value={stats?.tenants.total ?? 0}
-          sub={`${stats?.tenants.active ?? 0} active · ${stats?.tenants.suspended ?? 0} suspended`}
+          sub={`${stats?.tenants.active ?? 0} active`}
           icon={Building2}
           loading={statsLoading}
-          testId="stat-card-tenants"
+          testId="card-kpi-tenants"
         />
         <StatCard
           title="Active Tenants"
           value={stats?.tenants.active ?? 0}
           icon={TrendingUp}
           loading={statsLoading}
-          testId="stat-card-tenants-active"
+          testId="card-kpi-tenants-active"
+        />
+        <StatCard
+          title="Suspended"
+          value={stats?.tenants.suspended ?? 0}
+          sub="tenants suspended"
+          icon={PauseCircle}
+          loading={statsLoading}
+          testId="card-kpi-tenants-suspended"
+          highlight={stats?.tenants.suspended && stats.tenants.suspended > 0 ? "red" : undefined}
         />
         <StatCard
           title="Total Users"
@@ -141,19 +185,11 @@ export default function AdminDashboard() {
           sub="across all tenants"
           icon={Users}
           loading={statsLoading}
-          testId="stat-card-users"
-        />
-        <StatCard
-          title="Orders Today"
-          value={stats?.orders.today ?? 0}
-          sub={`${stats?.orders.thisMonth ?? 0} this month`}
-          icon={ShoppingBag}
-          loading={statsLoading}
-          testId="stat-card-orders-today"
+          testId="card-kpi-users"
         />
       </div>
 
-      <div className="grid md:grid-cols-2 gap-4">
+      <div className="grid md:grid-cols-3 gap-4">
         {/* Plan Distribution */}
         <Card data-testid="card-plan-distribution">
           <CardHeader>
@@ -216,12 +252,59 @@ export default function AdminDashboard() {
             )}
           </CardContent>
         </Card>
+
+        {/* New Tenants Sparkline */}
+        <Card data-testid="card-new-tenants-sparkline">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-slate-700">New Tenants (Last 30 Days)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {statsLoading ? (
+              <Skeleton className="h-16 w-full" />
+            ) : (
+              <NewTenantsSparkline data={stats?.newTenantsLast30Days ?? []} />
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      {/* Orders summary */}
+      <Card data-testid="card-orders-summary">
+        <CardHeader>
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <ShoppingBag className="h-4 w-4" />
+            Orders Summary
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {statsLoading ? (
+            <Skeleton className="h-16 w-full" />
+          ) : (
+            <div className="grid grid-cols-3 gap-4 text-center">
+              <div>
+                <div className="text-2xl font-bold text-slate-900" data-testid="orders-today">{stats?.orders.today ?? 0}</div>
+                <div className="text-xs text-slate-500">Today</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-slate-900" data-testid="orders-this-week">{stats?.orders.thisWeek ?? 0}</div>
+                <div className="text-xs text-slate-500">This Week</div>
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-slate-900" data-testid="orders-this-month">{stats?.orders.thisMonth ?? 0}</div>
+                <div className="text-xs text-slate-500">This Month</div>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Recent Activity */}
       <Card data-testid="card-recent-activity">
         <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle className="text-sm font-semibold text-slate-700">Recent Platform Activity</CardTitle>
+          <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+            <Activity className="h-4 w-4" />
+            Recent Platform Activity
+          </CardTitle>
           <Button
             variant="outline"
             size="sm"
@@ -269,34 +352,6 @@ export default function AdminDashboard() {
           )}
         </CardContent>
       </Card>
-
-      {/* Orders summary */}
-      {!statsLoading && stats && (
-        <Card data-testid="card-orders-summary">
-          <CardHeader>
-            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-              <Activity className="h-4 w-4" />
-              Orders Summary
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-3 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold text-slate-900" data-testid="orders-today">{stats.orders.today}</div>
-                <div className="text-xs text-slate-500">Today</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-slate-900" data-testid="orders-this-week">{stats.orders.thisWeek}</div>
-                <div className="text-xs text-slate-500">This Week</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-slate-900" data-testid="orders-this-month">{stats.orders.thisMonth}</div>
-                <div className="text-xs text-slate-500">This Month</div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

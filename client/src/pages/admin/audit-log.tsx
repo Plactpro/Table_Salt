@@ -76,7 +76,7 @@ function EventRow({ event }: { event: AuditEvent }) {
   return (
     <div data-testid={`row-audit-${event.id}`}>
       <button
-        className="w-full grid grid-cols-[auto_1.5fr_1fr_1.5fr_1.5fr_1fr] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors text-left"
+        className="w-full grid grid-cols-[auto_1.5fr_1fr_1.5fr_1.5fr_1fr_1fr] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors text-left"
         onClick={() => hasDetails && setExpanded((p) => !p)}
         data-testid={`button-expand-audit-${event.id}`}
         disabled={!hasDetails}
@@ -103,6 +103,10 @@ function EventRow({ event }: { event: AuditEvent }) {
         <Badge variant="outline" className="text-xs font-mono w-fit">
           {event.action}
         </Badge>
+        <span className="text-xs text-slate-500 truncate" data-testid={`audit-entity-${event.id}`}>
+          <span className="font-medium text-slate-600">{event.entityType}</span>
+          {event.entityName && <span className="text-slate-400"> / {event.entityName}</span>}
+        </span>
         <span className="text-xs text-slate-400 truncate">
           {event.ipAddress ?? "—"}
         </span>
@@ -265,12 +269,13 @@ export default function AuditLogPage() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-[auto_1.5fr_1fr_1.5fr_1.5fr_1fr] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+              <div className="grid grid-cols-[auto_1.5fr_1fr_1.5fr_1.5fr_1fr_1fr] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
                 <span className="w-4" />
                 <span>Timestamp</span>
                 <span>Tenant</span>
                 <span>User</span>
                 <span>Action</span>
+                <span>Entity</span>
                 <span>IP</span>
               </div>
               <div className="divide-y divide-slate-100">

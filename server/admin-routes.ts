@@ -142,12 +142,15 @@ export function registerAdminRoutes(app: Express) {
         return res.status(403).json({ message: "Cannot impersonate a deactivated user" });
       }
 
-      const session = req.session as Record<string, unknown>;
-      session.superAdminBackup = {
+      const [targetTenant] = await db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, target.tenantId));
+
+      // Capture backup values before session regeneration
+      const backupData = {
         userId: adminUser.id,
         userName: adminUser.name,
         tenantId: adminUser.tenantId,
         role: adminUser.role,
+        impersonatedTenantName: targetTenant?.name ?? null,
       };
 
       await auditLog({
@@ -162,9 +165,17 @@ export function registerAdminRoutes(app: Express) {
         req,
       });
 
-      req.login(target, (loginErr) => {
+      // Passport 0.6+ regenerates the session on req.login() by default.
+      // We use keepSessionInfo:true to preserve existing session data (backup).
+      req.login(target, { keepSessionInfo: true }, (loginErr) => {
         if (loginErr) return res.status(500).json({ message: "Failed to switch session" });
-        return res.json({ message: "Impersonation started", user: stripSensitiveFields(target as Record<string, unknown>) });
+        // Write backup AFTER login to ensure it survives any session handling
+        const sess = req.session as Record<string, unknown>;
+        sess.superAdminBackup = backupData;
+        req.session.save((saveErr) => {
+          if (saveErr) return res.status(500).json({ message: "Failed to save session" });
+          return res.json({ message: "Impersonation started", user: stripSensitiveFields(target as Record<string, unknown>) });
+        });
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -217,21 +228,24 @@ export function registerAdminRoutes(app: Express) {
     }
   };
 
-  app.post("/api/session/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
-  app.post("/api/admin/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
-
-  // End and status use requireAuth because during impersonation the session
-  // belongs to the impersonated (tenant) user, not super_admin.
+  // End must be registered BEFORE /:userId to prevent Express matching "end" as userId param
   app.post("/api/session/impersonate/end", requireAuth, handleImpersonateEnd);
   app.post("/api/admin/impersonate/end", requireAuth, handleImpersonateEnd);
+  // Extra alias with "impersonation" spelling (no conflict risk)
+  app.post("/api/admin/impersonation/end", requireAuth, handleImpersonateEnd);
+
+  app.post("/api/session/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
+  app.post("/api/admin/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
 
   const handleImpersonationStatus: import("express").RequestHandler = (req, res) => {
     const session = req.session as Record<string, unknown>;
     const backup = session.superAdminBackup as Record<string, unknown> | undefined;
     if (!backup) return res.json({ isImpersonating: false });
+    const backup2 = backup as Record<string, unknown>;
     return res.json({
       isImpersonating: true,
       originalAdmin: { userId: backup.userId, userName: backup.userName, role: backup.role },
+      tenantName: backup2.impersonatedTenantName ?? null,
     });
   };
 
@@ -343,24 +357,28 @@ export function registerAdminRoutes(app: Express) {
       if (filtered.length === 0) return res.json([]);
 
       const tenantIds = filtered.map(t => t.id);
-      const [userCounts, outletCounts, orderCounts] = await Promise.all([
+      const [userCounts, outletCounts, orderCounts, ownerUsers] = await Promise.all([
         db.select({ tenantId: users.tenantId, count: sql<number>`count(*)::int` })
           .from(users).where(inArray(users.tenantId, tenantIds)).groupBy(users.tenantId),
         db.select({ tenantId: outlets.tenantId, count: sql<number>`count(*)::int` })
           .from(outlets).where(inArray(outlets.tenantId, tenantIds)).groupBy(outlets.tenantId),
         db.select({ tenantId: orders.tenantId, count: sql<number>`count(*)::int` })
           .from(orders).where(inArray(orders.tenantId, tenantIds)).groupBy(orders.tenantId),
+        db.select({ tenantId: users.tenantId, id: users.id })
+          .from(users).where(and(inArray(users.tenantId, tenantIds), eq(users.role, "owner" as UserRoleValue))),
       ]);
 
       const ucMap = new Map(userCounts.map(r => [r.tenantId, r.count]));
       const ocMap = new Map(outletCounts.map(r => [r.tenantId, r.count]));
       const ordMap = new Map(orderCounts.map(r => [r.tenantId, r.count]));
+      const ownerMap = new Map(ownerUsers.map(u => [u.tenantId, u.id]));
 
       return res.json(filtered.map(t => ({
         ...t,
         userCount: ucMap.get(t.id) ?? 0,
         outletCount: ocMap.get(t.id) ?? 0,
         orderCount: ordMap.get(t.id) ?? 0,
+        ownerUserId: ownerMap.get(t.id) ?? null,
       })));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -793,7 +811,26 @@ export function registerAdminRoutes(app: Express) {
         active: users.active,
         totpEnabled: users.totpEnabled,
       }).from(users).where(eq(users.role, "super_admin" as UserRoleValue)).orderBy(users.name);
-      return res.json(admins.map(a => decryptPiiFields(a as Record<string, unknown>, USER_PII_FIELDS)));
+
+      // Derive lastActive from most recent audit event per super-admin user
+      const adminIds = admins.map(a => a.id);
+      const lastActiveMap: Record<string, string | null> = {};
+      if (adminIds.length > 0) {
+        const rows = await db
+          .select({ userId: auditEvents.userId, lastActive: sql<string>`max(${auditEvents.createdAt})` })
+          .from(auditEvents)
+          .where(inArray(auditEvents.userId, adminIds))
+          .groupBy(auditEvents.userId);
+        for (const row of rows) {
+          if (row.userId) lastActiveMap[row.userId] = row.lastActive;
+        }
+      }
+
+      const result = admins.map(a => ({
+        ...decryptPiiFields(a as Record<string, unknown>, USER_PII_FIELDS),
+        lastActive: lastActiveMap[a.id] ?? null,
+      }));
+      return res.json(result);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });

@@ -54,6 +54,7 @@ interface Tenant {
   outletCount: number;
   orderCount: number;
   createdAt: string | null;
+  ownerUserId: string | null;
 }
 
 const PLANS = ["basic", "standard", "premium", "enterprise"] as const;
@@ -270,8 +271,8 @@ export default function TenantsPage() {
                 <span>Name / Slug</span>
                 <span>Plan</span>
                 <span>Status</span>
-                <span>Users / Outlets</span>
-                <span>Orders</span>
+                <span>Business Type</span>
+                <span>Created</span>
                 <span></span>
               </div>
               {filtered.map((t) => (
@@ -292,10 +293,12 @@ export default function TenantsPage() {
                   </div>
                   <PlanBadge plan={t.plan} />
                   <StatusBadge active={t.active} />
-                  <span className="text-sm text-slate-600">
-                    {t.userCount}u / {t.outletCount}o
+                  <span className="text-sm text-slate-600 capitalize truncate" data-testid={`tenant-business-type-${t.id}`}>
+                    {t.businessType?.replace(/_/g, " ") ?? "—"}
                   </span>
-                  <span className="text-sm text-slate-600">{t.orderCount}</span>
+                  <span className="text-xs text-slate-500" data-testid={`tenant-created-${t.id}`}>
+                    {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}
+                  </span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
@@ -315,6 +318,16 @@ export default function TenantsPage() {
                         <Eye className="h-4 w-4 mr-2" />
                         View Details
                       </DropdownMenuItem>
+                      {t.ownerUserId && (
+                        <DropdownMenuItem
+                          onClick={() => impersonateMutation.mutate(t.ownerUserId!)}
+                          data-testid={`menu-impersonate-owner-${t.id}`}
+                          className="text-amber-700"
+                        >
+                          <UserCheck className="h-4 w-4 mr-2" />
+                          Impersonate Owner
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuSeparator />
                       {PLANS.map((p) => (
                         <DropdownMenuItem

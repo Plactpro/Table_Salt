@@ -6,17 +6,20 @@ import { apiRequest } from "./queryClient";
 interface ImpersonationStatus {
   isImpersonating: boolean;
   originalAdmin?: { userId: string; userName: string; role: string };
+  tenantName?: string | null;
 }
 
 interface ImpersonationContextType {
   isImpersonating: boolean;
   originalAdmin: { userId: string; userName: string; role: string } | undefined;
+  tenantName: string | null;
   endImpersonation: () => Promise<void>;
 }
 
 const ImpersonationContext = createContext<ImpersonationContextType>({
   isImpersonating: false,
   originalAdmin: undefined,
+  tenantName: null,
   endImpersonation: async () => {},
 });
 
@@ -31,8 +34,10 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
       if (!res.ok) return { isImpersonating: false };
       return res.json();
     },
-    refetchInterval: 15000,
-    staleTime: 10000,
+    refetchInterval: 10000,
+    staleTime: 0,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: "always",
   });
 
   const endImpersonation = useCallback(async () => {
@@ -56,6 +61,7 @@ export function ImpersonationProvider({ children }: { children: ReactNode }) {
       value={{
         isImpersonating: data?.isImpersonating ?? false,
         originalAdmin: data?.originalAdmin,
+        tenantName: data?.tenantName ?? null,
         endImpersonation,
       }}
     >
