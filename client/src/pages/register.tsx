@@ -33,7 +33,7 @@ export default function RegisterPage() {
     setLoading(true);
     try {
       await register({ restaurantName, name, username, password });
-      navigate("/");
+      navigate("/onboarding");
     } catch (err: any) {
       toast({
         variant: "destructive",
