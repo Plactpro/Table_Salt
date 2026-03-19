@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Package2, BookOpen, ShoppingCart, ChefHat } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import InventoryPage from "./inventory";
 import SuppliersPage from "./suppliers";
 import ProcurementPage from "./procurement";
@@ -60,7 +61,7 @@ function RecipesTab() {
     }, 0);
   }
 
-  const canEdit = user?.role === "owner" || user?.role === "manager";
+  const canEdit = can(user?.role || "", "edit_recipe");
 
   const linkedCount = allRecipes.filter(r => r.menuItemId).length;
   const avgFoodCostPct = (() => {

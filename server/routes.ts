@@ -3048,13 +3048,22 @@ export async function registerRoutes(
   app.get("/api/food-cost-report", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
+      const { dateFrom, dateTo, outletId } = req.query as { dateFrom?: string; dateTo?: string; outletId?: string };
       const allRecipes = await storage.getRecipesByTenant(user.tenantId);
       const inventory = await storage.getInventoryByTenant(user.tenantId);
       const invMap = new Map(inventory.map(i => [i.id, i]));
       const menuItemsAll = await storage.getMenuItemsByTenant(user.tenantId);
       const menuMap = new Map(menuItemsAll.map(m => [m.id, m]));
       const orders = await storage.getOrdersByTenant(user.tenantId);
-      const paidOrders = orders.filter(o => o.status === "paid");
+      const fromDate = dateFrom ? new Date(dateFrom) : null;
+      const toDate = dateTo ? new Date(dateTo + "T23:59:59.999Z") : null;
+      const paidOrders = orders.filter(o => {
+        if (o.status !== "paid") return false;
+        if (fromDate && new Date(o.createdAt) < fromDate) return false;
+        if (toDate && new Date(o.createdAt) > toDate) return false;
+        if (outletId && o.outletId !== outletId) return false;
+        return true;
+      });
 
       const menuItemSales = new Map<string, number>();
       for (const order of paidOrders) {
@@ -3110,7 +3119,7 @@ export async function registerRoutes(
           recipeName: recipe.name,
           menuItemName: menuItem?.name || null,
           menuItemId: recipe.menuItemId,
-          categoryId: (menuItem as any)?.categoryId || null,
+          categoryId: menuItem?.categoryId || null,
           sellingPrice: Math.round(sellingPrice * 100) / 100,
           plateCost: Math.round(plateCost * 100) / 100,
           margin: Math.round(margin * 100) / 100,
