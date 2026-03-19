@@ -51,11 +51,27 @@ const STEPS = [
   { id: 4, label: "Outlet", icon: Store },
 ];
 
-interface StepProps {
-  onNext: () => void;
-  onBack?: () => void;
-  onSkip?: () => void;
-  loading: boolean;
+interface ProfileData {
+  businessType: string;
+  cuisineStyle: string;
+  phone: string;
+}
+
+interface LocationData {
+  address: string;
+  country: string;
+  timezone: string;
+}
+
+interface ConfigData {
+  currency: string;
+  taxRate: string;
+  serviceCharge: string;
+}
+
+interface OutletData {
+  name: string;
+  address: string;
 }
 
 function StepIndicator({ currentStep }: { currentStep: number }) {
@@ -110,30 +126,38 @@ function StepIndicator({ currentStep }: { currentStep: number }) {
 }
 
 function Step1Profile({
+  data,
+  onChange,
   onNext,
   onSkip,
   loading,
-  initialData,
-}: StepProps & { initialData: { businessType: string; cuisineStyle: string; phone: string } }) {
-  const [businessType, setBusinessType] = useState(initialData.businessType || "casual_dining");
-  const [cuisineStyle, setCuisineStyle] = useState(initialData.cuisineStyle || "");
-  const [phone, setPhone] = useState(initialData.phone || "");
-
-  const handleNext = () => {
-    onNext();
-  };
-
+}: {
+  data: ProfileData;
+  onChange: (d: ProfileData) => void;
+  onNext: () => void;
+  onSkip: () => void;
+  loading: boolean;
+}) {
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="businessType">Business Type <span className="text-destructive">*</span></Label>
-        <Select value={businessType} onValueChange={setBusinessType}>
+        <Label htmlFor="businessType">
+          Business Type <span className="text-destructive">*</span>
+        </Label>
+        <Select
+          value={data.businessType}
+          onValueChange={(v) => onChange({ ...data, businessType: v })}
+        >
           <SelectTrigger id="businessType" data-testid="select-business-type">
             <SelectValue placeholder="Select business type" />
           </SelectTrigger>
           <SelectContent>
             {BUSINESS_TYPES.map((bt) => (
-              <SelectItem key={bt.value} value={bt.value} data-testid={`option-business-type-${bt.value}`}>
+              <SelectItem
+                key={bt.value}
+                value={bt.value}
+                data-testid={`option-business-type-${bt.value}`}
+              >
                 {bt.label}
               </SelectItem>
             ))}
@@ -143,7 +167,8 @@ function Step1Profile({
 
       <div className="space-y-2">
         <Label htmlFor="cuisineStyle">
-          Cuisine Style <span className="text-muted-foreground text-xs">(optional)</span>
+          Cuisine Style{" "}
+          <span className="text-muted-foreground text-xs">(optional)</span>
         </Label>
         <div className="relative">
           <UtensilsCrossed className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -152,15 +177,16 @@ function Step1Profile({
             data-testid="input-cuisine-style"
             placeholder="e.g. Italian, Asian Fusion, Mediterranean"
             className="pl-10"
-            value={cuisineStyle}
-            onChange={(e) => setCuisineStyle(e.target.value)}
+            value={data.cuisineStyle}
+            onChange={(e) => onChange({ ...data, cuisineStyle: e.target.value })}
           />
         </div>
       </div>
 
       <div className="space-y-2">
         <Label htmlFor="phone">
-          Phone Number <span className="text-muted-foreground text-xs">(optional)</span>
+          Phone Number{" "}
+          <span className="text-muted-foreground text-xs">(optional)</span>
         </Label>
         <div className="relative">
           <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -170,8 +196,8 @@ function Step1Profile({
             placeholder="+1 (555) 000-0000"
             className="pl-10"
             type="tel"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            value={data.phone}
+            onChange={(e) => onChange({ ...data, phone: e.target.value })}
           />
         </div>
       </div>
@@ -186,10 +212,7 @@ function Step1Profile({
           Skip setup for now
         </button>
         <Button
-          onClick={() => {
-            (window as any).__onboardingStep1 = { businessType, cuisineStyle, phone };
-            handleNext();
-          }}
+          onClick={onNext}
           className="gap-2"
           data-testid="button-next-step1"
           disabled={loading}
@@ -203,14 +226,18 @@ function Step1Profile({
 }
 
 function Step2Location({
+  data,
+  onChange,
   onNext,
   onBack,
   loading,
-  initialData,
-}: StepProps & { initialData: { address: string; country: string; timezone: string } }) {
-  const [address, setAddress] = useState(initialData.address || "");
-  const [country, setCountry] = useState(initialData.country || "");
-  const [timezone, setTimezone] = useState(initialData.timezone || "UTC");
+}: {
+  data: LocationData;
+  onChange: (d: LocationData) => void;
+  onNext: () => void;
+  onBack: () => void;
+  loading: boolean;
+}) {
   const [tzSearch, setTzSearch] = useState("");
 
   const filteredTimezones = tzSearch
@@ -222,7 +249,7 @@ function Step2Location({
       )
     : timezones;
 
-  const selectedTz = timezones.find((tz) => tz.iana === timezone);
+  const selectedTz = timezones.find((tz) => tz.iana === data.timezone);
 
   return (
     <div className="space-y-5">
@@ -235,8 +262,8 @@ function Step2Location({
             data-testid="input-address"
             placeholder="123 Main Street"
             className="pl-10"
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
+            value={data.address}
+            onChange={(e) => onChange({ ...data, address: e.target.value })}
           />
         </div>
       </div>
@@ -250,18 +277,25 @@ function Step2Location({
             data-testid="input-country"
             placeholder="e.g. New York, USA"
             className="pl-10"
-            value={country}
-            onChange={(e) => setCountry(e.target.value)}
+            value={data.country}
+            onChange={(e) => onChange({ ...data, country: e.target.value })}
           />
         </div>
       </div>
 
       <div className="space-y-2">
-        <Label>Timezone <span className="text-destructive">*</span></Label>
-        <Select value={timezone} onValueChange={setTimezone}>
+        <Label>
+          Timezone <span className="text-destructive">*</span>
+        </Label>
+        <Select
+          value={data.timezone}
+          onValueChange={(v) => onChange({ ...data, timezone: v })}
+        >
           <SelectTrigger data-testid="select-timezone">
             <SelectValue>
-              {selectedTz ? `${selectedTz.flag} ${selectedTz.label} (${selectedTz.offset})` : timezone}
+              {selectedTz
+                ? `${selectedTz.flag} ${selectedTz.label} (${selectedTz.offset})`
+                : data.timezone}
             </SelectValue>
           </SelectTrigger>
           <SelectContent>
@@ -276,7 +310,11 @@ function Step2Location({
             </div>
             <div className="max-h-48 overflow-y-auto">
               {filteredTimezones.map((tz) => (
-                <SelectItem key={tz.iana} value={tz.iana} data-testid={`option-timezone-${tz.iana}`}>
+                <SelectItem
+                  key={tz.iana}
+                  value={tz.iana}
+                  data-testid={`option-timezone-${tz.iana}`}
+                >
                   {tz.flag} {tz.label} ({tz.offset})
                 </SelectItem>
               ))}
@@ -286,17 +324,19 @@ function Step2Location({
       </div>
 
       <div className="flex items-center justify-between pt-2">
-        <Button variant="outline" onClick={onBack} className="gap-2" data-testid="button-back-step2">
+        <Button
+          variant="outline"
+          onClick={onBack}
+          className="gap-2"
+          data-testid="button-back-step2"
+        >
           <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
         <Button
-          onClick={() => {
-            (window as any).__onboardingStep2 = { address, country, timezone };
-            onNext();
-          }}
+          onClick={onNext}
           className="gap-2"
-          disabled={loading || !timezone}
+          disabled={loading || !data.timezone}
           data-testid="button-next-step2"
         >
           Continue
@@ -308,34 +348,45 @@ function Step2Location({
 }
 
 function Step3Config({
+  data,
+  onChange,
   onNext,
   onBack,
   loading,
-  initialData,
-}: StepProps & { initialData: { currency: string; taxRate: string; serviceCharge: string } }) {
-  const [currency, setCurrency] = useState(initialData.currency || "USD");
-  const [taxRate, setTaxRate] = useState(initialData.taxRate || "0");
-  const [serviceCharge, setServiceCharge] = useState(initialData.serviceCharge || "0");
-
+}: {
+  data: ConfigData;
+  onChange: (d: ConfigData) => void;
+  onNext: () => void;
+  onBack: () => void;
+  loading: boolean;
+}) {
   const sampleAmount = 100;
-  const tax = (sampleAmount * parseFloat(taxRate || "0")) / 100;
-  const sc = (sampleAmount * parseFloat(serviceCharge || "0")) / 100;
+  const tax = (sampleAmount * parseFloat(data.taxRate || "0")) / 100;
+  const sc = (sampleAmount * parseFloat(data.serviceCharge || "0")) / 100;
   const total = sampleAmount + tax + sc;
-
   const currencies = Object.values(currencyMap);
 
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label>Currency <span className="text-destructive">*</span></Label>
-        <Select value={currency} onValueChange={setCurrency}>
+        <Label>
+          Currency <span className="text-destructive">*</span>
+        </Label>
+        <Select
+          value={data.currency}
+          onValueChange={(v) => onChange({ ...data, currency: v })}
+        >
           <SelectTrigger data-testid="select-currency">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
             <div className="max-h-56 overflow-y-auto">
               {currencies.map((c) => (
-                <SelectItem key={c.code} value={c.code} data-testid={`option-currency-${c.code}`}>
+                <SelectItem
+                  key={c.code}
+                  value={c.code}
+                  data-testid={`option-currency-${c.code}`}
+                >
                   {c.symbol} — {c.name} ({c.code})
                 </SelectItem>
               ))}
@@ -358,8 +409,8 @@ function Step3Config({
               step="0.1"
               placeholder="0"
               className="pl-10"
-              value={taxRate}
-              onChange={(e) => setTaxRate(e.target.value)}
+              value={data.taxRate}
+              onChange={(e) => onChange({ ...data, taxRate: e.target.value })}
             />
           </div>
         </div>
@@ -376,49 +427,60 @@ function Step3Config({
               step="0.1"
               placeholder="0"
               className="pl-10"
-              value={serviceCharge}
-              onChange={(e) => setServiceCharge(e.target.value)}
+              value={data.serviceCharge}
+              onChange={(e) =>
+                onChange({ ...data, serviceCharge: e.target.value })
+              }
             />
           </div>
         </div>
       </div>
 
-      <div className="rounded-lg border bg-muted/30 p-4 space-y-2" data-testid="price-preview">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Live Preview</p>
+      <div
+        className="rounded-lg border bg-muted/30 p-4 space-y-2"
+        data-testid="price-preview"
+      >
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+          Live Preview
+        </p>
         <div className="space-y-1 text-sm">
           <div className="flex justify-between">
             <span className="text-muted-foreground">Subtotal</span>
-            <span>{formatCurrency(sampleAmount, currency)}</span>
+            <span>{formatCurrency(sampleAmount, data.currency)}</span>
           </div>
-          {parseFloat(taxRate) > 0 && (
+          {parseFloat(data.taxRate) > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Tax ({taxRate}%)</span>
-              <span>{formatCurrency(tax, currency)}</span>
+              <span className="text-muted-foreground">Tax ({data.taxRate}%)</span>
+              <span>{formatCurrency(tax, data.currency)}</span>
             </div>
           )}
-          {parseFloat(serviceCharge) > 0 && (
+          {parseFloat(data.serviceCharge) > 0 && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Service ({serviceCharge}%)</span>
-              <span>{formatCurrency(sc, currency)}</span>
+              <span className="text-muted-foreground">
+                Service ({data.serviceCharge}%)
+              </span>
+              <span>{formatCurrency(sc, data.currency)}</span>
             </div>
           )}
           <div className="flex justify-between font-semibold border-t pt-1 mt-1">
             <span>Total</span>
-            <span className="text-primary">{formatCurrency(total, currency)}</span>
+            <span className="text-primary">{formatCurrency(total, data.currency)}</span>
           </div>
         </div>
       </div>
 
       <div className="flex items-center justify-between pt-2">
-        <Button variant="outline" onClick={onBack} className="gap-2" data-testid="button-back-step3">
+        <Button
+          variant="outline"
+          onClick={onBack}
+          className="gap-2"
+          data-testid="button-back-step3"
+        >
           <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
         <Button
-          onClick={() => {
-            (window as any).__onboardingStep3 = { currency, taxRate, serviceCharge };
-            onNext();
-          }}
+          onClick={onNext}
           className="gap-2"
           disabled={loading}
           data-testid="button-next-step3"
@@ -432,18 +494,26 @@ function Step3Config({
 }
 
 function Step4Outlet({
+  data,
+  onChange,
   onNext,
   onBack,
   onSkip,
   loading,
-}: StepProps) {
-  const [outletName, setOutletName] = useState("Main Branch");
-  const [outletAddress, setOutletAddress] = useState("");
-
+}: {
+  data: OutletData;
+  onChange: (d: OutletData) => void;
+  onNext: () => void;
+  onBack: () => void;
+  onSkip: () => void;
+  loading: boolean;
+}) {
   return (
     <div className="space-y-5">
       <div className="space-y-2">
-        <Label htmlFor="outletName">Outlet Name <span className="text-destructive">*</span></Label>
+        <Label htmlFor="outletName">
+          Outlet Name <span className="text-destructive">*</span>
+        </Label>
         <div className="relative">
           <Store className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -451,8 +521,8 @@ function Step4Outlet({
             data-testid="input-outlet-name"
             placeholder="e.g. Main Branch"
             className="pl-10"
-            value={outletName}
-            onChange={(e) => setOutletName(e.target.value)}
+            value={data.name}
+            onChange={(e) => onChange({ ...data, name: e.target.value })}
             required
           />
         </div>
@@ -460,7 +530,8 @@ function Step4Outlet({
 
       <div className="space-y-2">
         <Label htmlFor="outletAddress">
-          Outlet Address <span className="text-muted-foreground text-xs">(optional)</span>
+          Outlet Address{" "}
+          <span className="text-muted-foreground text-xs">(optional)</span>
         </Label>
         <div className="relative">
           <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -469,14 +540,19 @@ function Step4Outlet({
             data-testid="input-outlet-address"
             placeholder="123 Main Street, City"
             className="pl-10"
-            value={outletAddress}
-            onChange={(e) => setOutletAddress(e.target.value)}
+            value={data.address}
+            onChange={(e) => onChange({ ...data, address: e.target.value })}
           />
         </div>
       </div>
 
       <div className="flex items-center justify-between pt-2">
-        <Button variant="outline" onClick={onBack} className="gap-2" data-testid="button-back-step4">
+        <Button
+          variant="outline"
+          onClick={onBack}
+          className="gap-2"
+          data-testid="button-back-step4"
+        >
           <ChevronLeft className="h-4 w-4" />
           Back
         </Button>
@@ -490,12 +566,9 @@ function Step4Outlet({
             Skip
           </button>
           <Button
-            onClick={() => {
-              (window as any).__onboardingStep4 = { name: outletName, address: outletAddress };
-              onNext();
-            }}
+            onClick={onNext}
             className="gap-2"
-            disabled={loading || !outletName.trim()}
+            disabled={loading || !data.name.trim()}
             data-testid="button-finish-setup"
           >
             {loading ? (
@@ -518,18 +591,9 @@ function Step4Outlet({
 }
 
 const slideVariants = {
-  enter: (direction: number) => ({
-    x: direction > 0 ? 60 : -60,
-    opacity: 0,
-  }),
-  center: {
-    x: 0,
-    opacity: 1,
-  },
-  exit: (direction: number) => ({
-    x: direction < 0 ? 60 : -60,
-    opacity: 0,
-  }),
+  enter: (direction: number) => ({ x: direction > 0 ? 60 : -60, opacity: 0 }),
+  center: { x: 0, opacity: 1 },
+  exit: (direction: number) => ({ x: direction < 0 ? 60 : -60, opacity: 0 }),
 };
 
 export default function OnboardingPage() {
@@ -537,9 +601,33 @@ export default function OnboardingPage() {
   const { toast } = useToast();
   const { tenant } = useAuth();
   const queryClient = useQueryClient();
+
   const [step, setStep] = useState(1);
   const [direction, setDirection] = useState(1);
   const [loading, setLoading] = useState(false);
+
+  const [profileData, setProfileData] = useState<ProfileData>({
+    businessType: tenant?.businessType || "casual_dining",
+    cuisineStyle: tenant?.cuisineStyle || "",
+    phone: tenant?.phone || "",
+  });
+
+  const [locationData, setLocationData] = useState<LocationData>({
+    address: tenant?.address || "",
+    country: tenant?.country || "",
+    timezone: tenant?.timezone || "UTC",
+  });
+
+  const [configData, setConfigData] = useState<ConfigData>({
+    currency: tenant?.currency || "USD",
+    taxRate: tenant?.taxRate || "0",
+    serviceCharge: tenant?.serviceCharge || "0",
+  });
+
+  const [outletData, setOutletData] = useState<OutletData>({
+    name: "Main Branch",
+    address: "",
+  });
 
   const goNext = useCallback(() => {
     setDirection(1);
@@ -551,93 +639,96 @@ export default function OnboardingPage() {
     setStep((s) => s - 1);
   }, []);
 
+  const invalidateTenant = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+  }, [queryClient]);
+
   const handleSkip = useCallback(async () => {
     setLoading(true);
     try {
       await apiRequest("POST", "/api/onboarding/complete", {});
-      queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      invalidateTenant();
       navigate("/");
     } catch {
       navigate("/");
     } finally {
       setLoading(false);
     }
-  }, [navigate, queryClient]);
+  }, [navigate, invalidateTenant]);
 
   const handleStep1Next = useCallback(async () => {
-    const data = (window as any).__onboardingStep1 || {};
     setLoading(true);
     try {
       await apiRequest("PATCH", "/api/onboarding/profile", {
-        businessType: data.businessType || "casual_dining",
-        cuisineStyle: data.cuisineStyle || "",
-        phone: data.phone || "",
+        businessType: profileData.businessType,
+        cuisineStyle: profileData.cuisineStyle,
+        phone: profileData.phone,
       });
       goNext();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "Failed to save" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save";
+      toast({ variant: "destructive", title: "Error", description: msg });
     } finally {
       setLoading(false);
     }
-  }, [goNext, toast]);
+  }, [profileData, goNext, toast]);
 
   const handleStep2Next = useCallback(async () => {
-    const data = (window as any).__onboardingStep2 || {};
     setLoading(true);
     try {
       await apiRequest("PATCH", "/api/onboarding/location", {
-        address: data.address || "",
-        country: data.country || "",
-        timezone: data.timezone || "UTC",
+        address: locationData.address,
+        country: locationData.country,
+        timezone: locationData.timezone,
       });
       goNext();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "Failed to save" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save";
+      toast({ variant: "destructive", title: "Error", description: msg });
     } finally {
       setLoading(false);
     }
-  }, [goNext, toast]);
+  }, [locationData, goNext, toast]);
 
   const handleStep3Next = useCallback(async () => {
-    const data = (window as any).__onboardingStep3 || {};
     setLoading(true);
     try {
       await apiRequest("PATCH", "/api/onboarding/config", {
-        currency: data.currency || "USD",
-        taxRate: data.taxRate || "0",
-        serviceCharge: data.serviceCharge || "0",
+        currency: configData.currency,
+        taxRate: configData.taxRate,
+        serviceCharge: configData.serviceCharge,
       });
       goNext();
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "Failed to save" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to save";
+      toast({ variant: "destructive", title: "Error", description: msg });
     } finally {
       setLoading(false);
     }
-  }, [goNext, toast]);
+  }, [configData, goNext, toast]);
 
   const handleStep4Next = useCallback(async () => {
-    const data = (window as any).__onboardingStep4 || {};
     setLoading(true);
     try {
       await apiRequest("PATCH", "/api/onboarding/outlet", {
-        name: data.name || "Main Branch",
-        address: data.address || "",
+        name: outletData.name,
+        address: outletData.address,
       });
       await apiRequest("POST", "/api/onboarding/complete", {});
-      queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      invalidateTenant();
       toast({
         title: "Welcome to Table Salt!",
         description: "Your restaurant is ready. Let's get started!",
       });
       navigate("/");
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Error", description: err.message || "Failed to complete setup" });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to complete setup";
+      toast({ variant: "destructive", title: "Error", description: msg });
     } finally {
       setLoading(false);
     }
-  }, [navigate, queryClient, toast]);
+  }, [outletData, navigate, invalidateTenant, toast]);
 
   const stepTitles: Record<number, { title: string; subtitle: string }> = {
     1: { title: "Tell us about your restaurant", subtitle: "Help us personalise your experience" },
@@ -668,7 +759,10 @@ export default function OnboardingPage() {
             transition={{ duration: 0.4 }}
           >
             <div className="mb-6">
-              <h1 className="text-xl font-heading font-bold" data-testid={`text-step-${step}-title`}>
+              <h1
+                className="text-xl font-heading font-bold"
+                data-testid={`text-step-${step}-title`}
+              >
                 {current.title}
               </h1>
               <p className="text-sm text-muted-foreground mt-1">{current.subtitle}</p>
@@ -686,42 +780,35 @@ export default function OnboardingPage() {
               >
                 {step === 1 && (
                   <Step1Profile
+                    data={profileData}
+                    onChange={setProfileData}
                     onNext={handleStep1Next}
                     onSkip={handleSkip}
                     loading={loading}
-                    initialData={{
-                      businessType: tenant?.businessType || "casual_dining",
-                      cuisineStyle: tenant?.cuisineStyle || "",
-                      phone: tenant?.phone || "",
-                    }}
                   />
                 )}
                 {step === 2 && (
                   <Step2Location
+                    data={locationData}
+                    onChange={setLocationData}
                     onNext={handleStep2Next}
                     onBack={goBack}
                     loading={loading}
-                    initialData={{
-                      address: tenant?.address || "",
-                      country: tenant?.country || "",
-                      timezone: tenant?.timezone || "UTC",
-                    }}
                   />
                 )}
                 {step === 3 && (
                   <Step3Config
+                    data={configData}
+                    onChange={setConfigData}
                     onNext={handleStep3Next}
                     onBack={goBack}
                     loading={loading}
-                    initialData={{
-                      currency: tenant?.currency || "USD",
-                      taxRate: tenant?.taxRate || "0",
-                      serviceCharge: tenant?.serviceCharge || "0",
-                    }}
                   />
                 )}
                 {step === 4 && (
                   <Step4Outlet
+                    data={outletData}
+                    onChange={setOutletData}
                     onNext={handleStep4Next}
                     onBack={goBack}
                     onSkip={handleSkip}

@@ -245,7 +245,7 @@ export async function registerRoutes(
         checkNewIpLoginAlert(user.id, user.tenantId, user.name, req);
         const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = user;
         const redirectTo = (user.role as string) === "super_admin" ? "/admin" : undefined;
-        return res.json({ ...safeUser, ...(redirectTo ? { redirectTo } : {}) });
+        return res.json({ ...safeUser, onboardingCompleted: tenant?.onboardingCompleted ?? false, ...(redirectTo ? { redirectTo } : {}) });
       });
     })(req, res, next);
   });
@@ -265,7 +265,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = req.user as any;
     const tenant = await storage.getTenant(safeUser.tenantId);
-    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge } : null });
+    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge, onboardingCompleted: tenant.onboardingCompleted } : null });
   });
 
   app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
