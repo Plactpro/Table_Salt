@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import passport from "passport";
+import { emitToTenant } from "./realtime";
 import { randomBytes } from "crypto";
 import { TOTP, Secret } from "otpauth";
 import QRCode from "qrcode";
@@ -583,6 +584,7 @@ export async function registerRoutes(
     const { tenantId: _t, id: _i, ...body } = req.body;
     const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, body);
     if (!tbl) return res.status(404).json({ message: "Table not found" });
+    if (body.status) emitToTenant(user.tenantId, "table:updated", { tableId: req.params.id, status: body.status });
     res.json(tbl);
   });
 
@@ -596,6 +598,7 @@ export async function registerRoutes(
       seatedAt: new Date(),
     });
     if (!tbl) return res.status(404).json({ message: "Table not found" });
+    emitToTenant(user.tenantId, "table:updated", { tableId: req.params.id, status: "occupied" });
     res.json(tbl);
   });
 
@@ -615,6 +618,7 @@ export async function registerRoutes(
       await storage.updateTableSession(activeSession.id, { status: "closed", closedAt: new Date() });
       await storage.clearGuestCart(activeSession.id);
     }
+    emitToTenant(user.tenantId, "table:updated", { tableId: req.params.id, status: "cleaning" });
     res.json(tbl);
   });
 
@@ -1106,9 +1110,11 @@ export async function registerRoutes(
       }
       if (orderData.tableId) {
         await storage.updateTable(orderData.tableId, { status: "occupied" });
+        emitToTenant(user.tenantId, "table:updated", { tableId: orderData.tableId, status: "occupied" });
       }
       const orderItems = await storage.getOrderItemsByOrder(order.id);
       auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length, engineDiscounts: activeDiscounts.length } });
+      emitToTenant(user.tenantId, "order:new", { orderId: order.id, status: order.status, tableId: order.tableId, orderType: order.orderType });
       res.json({ ...order, items: orderItems });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -1271,11 +1277,17 @@ export async function registerRoutes(
     // Free table after successful transaction
     if (req.body.status === "paid" && existing.status !== "paid" && existing.tableId) {
       await storage.updateTable(existing.tableId, { status: "free" });
+      emitToTenant(user.tenantId, "table:updated", { tableId: existing.tableId, status: "free" });
     } else if (
       (req.body.status === "voided" || req.body.status === "cancelled") &&
       existing.tableId
     ) {
       await storage.updateTable(existing.tableId, { status: "free" });
+      emitToTenant(user.tenantId, "table:updated", { tableId: existing.tableId, status: "free" });
+    }
+
+    if (req.body.status && req.body.status !== existing.status) {
+      emitToTenant(user.tenantId, "order:updated", { orderId: req.params.id, status: req.body.status, tableId: existing.tableId });
     }
 
     if (req.body.status === "voided" || req.body.status === "cancelled") {
@@ -3418,19 +3430,23 @@ export async function registerRoutes(
       if (status === "ready") updates.readyAt = new Date();
       if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
       const updated = await storage.updateOrderItem(req.params.id, updates);
+      let newOrderStatus: string | null = null;
       if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) {
         await storage.updateOrder(item.orderId, { status: "in_progress" });
+        newOrderStatus = "in_progress";
       }
       if (status === "recalled" && order.status === "ready") {
         await storage.updateOrder(item.orderId, { status: "in_progress" });
+        newOrderStatus = "in_progress";
       }
       if (status === "ready" || status === "served") {
         const freshItems = await storage.getOrderItemsByOrder(item.orderId);
         const allServed = freshItems.every(i => i.status === "served");
         const allReadyOrServed = freshItems.every(i => i.status === "ready" || i.status === "served");
-        if (allServed) await storage.updateOrder(item.orderId, { status: "served" });
-        else if (allReadyOrServed) await storage.updateOrder(item.orderId, { status: "ready" });
+        if (allServed) { await storage.updateOrder(item.orderId, { status: "served" }); newOrderStatus = "served"; }
+        else if (allReadyOrServed) { await storage.updateOrder(item.orderId, { status: "ready" }); newOrderStatus = "ready"; }
       }
+      emitToTenant(user.tenantId, "order:item_updated", { itemId: req.params.id, orderId: item.orderId, status: updated.status, orderStatus: newOrderStatus || order.status });
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -3463,11 +3479,13 @@ export async function registerRoutes(
       const freshItems = await storage.getOrderItemsByOrder(req.params.id);
       const allServed = freshItems.every(i => i.status === "served");
       const allReadyOrServed = freshItems.every(i => i.status === "ready" || i.status === "served");
-      if (allServed) await storage.updateOrder(req.params.id, { status: "served" });
-      else if (allReadyOrServed) await storage.updateOrder(req.params.id, { status: "ready" });
+      let bulkOrderStatus = order.status;
+      if (allServed) { await storage.updateOrder(req.params.id, { status: "served" }); bulkOrderStatus = "served"; }
+      else if (allReadyOrServed) { await storage.updateOrder(req.params.id, { status: "ready" }); bulkOrderStatus = "ready"; }
       if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) {
-        await storage.updateOrder(req.params.id, { status: "in_progress" });
+        await storage.updateOrder(req.params.id, { status: "in_progress" }); bulkOrderStatus = "in_progress";
       }
+      emitToTenant(user.tenantId, "order:item_updated", { orderId: req.params.id, status, orderStatus: bulkOrderStatus });
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

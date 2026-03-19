@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -6,6 +6,7 @@ import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { syncManager } from "@/lib/sync-manager";
 import { useCachedQuery } from "@/hooks/use-cached-query";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -155,25 +156,20 @@ export default function POSPage() {
 
   useEffect(() => { syncManager.init(); }, []);
 
-  useEffect(() => {
-    if (!paymentLinkModal?.open || !paymentLinkModal.orderId) return;
-    const orderId = paymentLinkModal.orderId;
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/orders/${orderId}`, { credentials: "include" });
-        if (res.ok) {
-          const order = await res.json();
-          if (order.status === "paid") {
-            setPaymentLinkModal(null);
-            queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-            queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
-            toast({ title: "Payment received!", description: "Order has been marked as paid." });
-          }
-        }
-      } catch (_) {}
-    }, 4000);
-    return () => clearInterval(interval);
-  }, [paymentLinkModal?.open, paymentLinkModal?.orderId]);
+  const paymentModalRef = useRef(paymentLinkModal);
+  paymentModalRef.current = paymentLinkModal;
+
+  useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
+    const p = payload as { orderId?: string; status?: string } | null;
+    const modal = paymentModalRef.current;
+    if (!modal?.open || !modal.orderId) return;
+    if (p?.orderId === modal.orderId && p?.status === "paid") {
+      setPaymentLinkModal(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+      toast({ title: "Payment received!", description: "Order has been marked as paid." });
+    }
+  }, [queryClient, toast]));
 
   const { data: categories = [] } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
   const { data: menuItems = [] } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");

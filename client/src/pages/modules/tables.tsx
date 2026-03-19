@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus, Edit2, Trash2, Users, MapPin, Clock, CalendarDays,
@@ -184,6 +185,14 @@ export default function TablesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dragTableId, setDragTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  useRealtimeEvent("table:updated", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+  }, [queryClient]));
+
+  useRealtimeEvent("order:updated", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+  }, [queryClient]));
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
     const d = new Date();
