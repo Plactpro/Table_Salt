@@ -3968,7 +3968,7 @@ export async function registerRoutes(
       if (poBody.expectedDelivery && typeof poBody.expectedDelivery === "string") {
         poBody.expectedDelivery = new Date(poBody.expectedDelivery);
       }
-      const poCount = (await storage.getPurchaseOrdersByTenant(user.tenantId)).length;
+      const poCount = await storage.countPurchaseOrdersByTenant(user.tenantId);
       const poNumber = poBody.poNumber || `PO-${String(poCount + 1).padStart(4, "0")}`;
       const data = insertPurchaseOrderSchema.parse({ ...poBody, tenantId: user.tenantId, poNumber, createdBy: user.id });
       const po = await storage.createPurchaseOrder(data);
