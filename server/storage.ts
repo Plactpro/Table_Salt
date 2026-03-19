@@ -351,6 +351,7 @@ export interface IStorage {
   deleteSupplierCatalogItem(id: string, tenantId: string): Promise<void>;
 
   getPurchaseOrdersByTenant(tenantId: string): Promise<PurchaseOrder[]>;
+  countPurchaseOrdersByTenant(tenantId: string): Promise<number>;
   getPurchaseOrder(id: string, tenantId: string): Promise<PurchaseOrder | undefined>;
   createPurchaseOrder(data: InsertPurchaseOrder): Promise<PurchaseOrder>;
   updatePurchaseOrder(id: string, tenantId: string, data: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder | undefined>;
@@ -469,7 +470,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOutletsByTenant(tenantId: string) {
-    return db.select().from(outlets).where(eq(outlets.tenantId, tenantId));
+    return db.select().from(outlets).where(eq(outlets.tenantId, tenantId)).limit(500);
   }
   async getOutlet(id: string) {
     const [o] = await db.select().from(outlets).where(eq(outlets.id, id));
@@ -488,7 +489,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getCategoriesByTenant(tenantId: string) {
-    return db.select().from(menuCategories).where(eq(menuCategories.tenantId, tenantId)).orderBy(menuCategories.sortOrder);
+    return db.select().from(menuCategories).where(eq(menuCategories.tenantId, tenantId)).orderBy(menuCategories.sortOrder).limit(500);
   }
   async getCategory(id: string) {
     const [c] = await db.select().from(menuCategories).where(eq(menuCategories.id, id));
@@ -507,7 +508,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getMenuItemsByTenant(tenantId: string) {
-    return db.select().from(menuItems).where(eq(menuItems.tenantId, tenantId));
+    return db.select().from(menuItems).where(eq(menuItems.tenantId, tenantId)).limit(500);
   }
   async getMenuItemsByCategory(categoryId: string) {
     return db.select().from(menuItems).where(eq(menuItems.categoryId, categoryId));
@@ -529,7 +530,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTableZonesByTenant(tenantId: string) {
-    return db.select().from(tableZones).where(eq(tableZones.tenantId, tenantId)).orderBy(tableZones.sortOrder);
+    return db.select().from(tableZones).where(eq(tableZones.tenantId, tenantId)).orderBy(tableZones.sortOrder).limit(500);
   }
   async createTableZone(data: InsertTableZone) {
     const [z] = await db.insert(tableZones).values(data).returning();
@@ -544,7 +545,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTablesByTenant(tenantId: string) {
-    return db.select().from(tables).where(eq(tables.tenantId, tenantId)).orderBy(tables.number);
+    return db.select().from(tables).where(eq(tables.tenantId, tenantId)).orderBy(tables.number).limit(500);
   }
   async getTable(id: string) {
     const [t] = await db.select().from(tables).where(eq(tables.id, id));
@@ -570,7 +571,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getWaitlistByTenant(tenantId: string) {
-    const rows = await db.select().from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId)).orderBy(waitlistEntries.priority, waitlistEntries.createdAt);
+    const rows = await db.select().from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenantId)).orderBy(waitlistEntries.priority, waitlistEntries.createdAt).limit(200);
     return rows.map(w => decryptPiiFields(w as Record<string, unknown>, WAITLIST_PII_FIELDS) as WaitlistEntry);
   }
   async createWaitlistEntry(data: InsertWaitlistEntry) {
@@ -719,7 +720,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getStaffSchedulesByTenant(tenantId: string) {
-    return db.select().from(staffSchedules).where(eq(staffSchedules.tenantId, tenantId));
+    return db.select().from(staffSchedules).where(eq(staffSchedules.tenantId, tenantId)).limit(500);
   }
   async createStaffSchedule(data: InsertStaffSchedule) {
     const [s] = await db.insert(staffSchedules).values(data).returning();
@@ -744,7 +745,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getOffersByTenant(tenantId: string) {
-    return db.select().from(offers).where(eq(offers.tenantId, tenantId)).orderBy(desc(offers.createdAt));
+    return db.select().from(offers).where(eq(offers.tenantId, tenantId)).orderBy(desc(offers.createdAt)).limit(200);
   }
   async getOfferByTenant(id: string, tenantId: string) {
     const [o] = await db.select().from(offers).where(and(eq(offers.id, id), eq(offers.tenantId, tenantId)));
@@ -1179,7 +1180,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getRecipesByTenant(tenantId: string) {
-    return db.select().from(recipes).where(eq(recipes.tenantId, tenantId)).orderBy(recipes.name);
+    return db.select().from(recipes).where(eq(recipes.tenantId, tenantId)).orderBy(recipes.name).limit(200);
   }
   async getRecipe(id: string) {
     const [r] = await db.select().from(recipes).where(eq(recipes.id, id));
@@ -1251,7 +1252,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getKitchenStationsByTenant(tenantId: string) {
-    return db.select().from(kitchenStations).where(eq(kitchenStations.tenantId, tenantId)).orderBy(kitchenStations.sortOrder);
+    return db.select().from(kitchenStations).where(eq(kitchenStations.tenantId, tenantId)).orderBy(kitchenStations.sortOrder).limit(200);
   }
   async getKitchenStation(id: string) {
     const [s] = await db.select().from(kitchenStations).where(eq(kitchenStations.id, id));
@@ -1470,7 +1471,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getSuppliersByTenant(tenantId: string) {
-    return db.select().from(suppliers).where(eq(suppliers.tenantId, tenantId)).orderBy(suppliers.name);
+    return db.select().from(suppliers).where(eq(suppliers.tenantId, tenantId)).orderBy(suppliers.name).limit(200);
   }
   async getSupplier(id: string, tenantId: string) {
     const [s] = await db.select().from(suppliers).where(and(eq(suppliers.id, id), eq(suppliers.tenantId, tenantId)));
@@ -1507,7 +1508,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getPurchaseOrdersByTenant(tenantId: string) {
-    return db.select().from(purchaseOrders).where(eq(purchaseOrders.tenantId, tenantId)).orderBy(desc(purchaseOrders.createdAt));
+    return db.select().from(purchaseOrders).where(eq(purchaseOrders.tenantId, tenantId)).orderBy(desc(purchaseOrders.createdAt)).limit(200);
+  }
+  async countPurchaseOrdersByTenant(tenantId: string) {
+    const [row] = await db.select({ total: count() }).from(purchaseOrders).where(eq(purchaseOrders.tenantId, tenantId));
+    return row?.total ?? 0;
   }
   async getPurchaseOrder(id: string, tenantId: string) {
     const [po] = await db.select().from(purchaseOrders).where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.tenantId, tenantId)));
@@ -1726,7 +1731,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getComboOffersByTenant(tenantId: string) {
-    return db.select().from(comboOffers).where(eq(comboOffers.tenantId, tenantId)).orderBy(desc(comboOffers.createdAt));
+    return db.select().from(comboOffers).where(eq(comboOffers.tenantId, tenantId)).orderBy(desc(comboOffers.createdAt)).limit(200);
   }
   async getComboOffer(id: string, tenantId: string) {
     const [c] = await db.select().from(comboOffers).where(and(eq(comboOffers.id, id), eq(comboOffers.tenantId, tenantId)));
