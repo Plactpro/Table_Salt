@@ -250,9 +250,12 @@ function ProtectedPages() {
         <Route path="/tables">{() => <GuardedRoute path="/tables" component={TablesPage} />}</Route>
         <Route path="/menu">{() => <GuardedRoute path="/menu" component={MenuPage} />}</Route>
         <Route path="/inventory">{() => <GuardedRoute path="/inventory" component={InventoryHub} />}</Route>
-        {/* Recipe editor routes — canonical path is /recipes/* (no /app/ prefix, consistent with all other module routes in this app) */}
+        {/* Recipe editor routes — canonical path is /recipes/* (no /app/ prefix, consistent with all other module routes in this app).
+            /app/recipes/* aliases are provided below for compatibility with any external references. */}
         <Route path="/recipes/new">{() => <GuardedRoute path="/inventory" component={RecipeEditorPage} />}</Route>
         <Route path="/recipes/:id">{() => <GuardedRoute path="/inventory" component={RecipeEditorPage} />}</Route>
+        <Route path="/app/recipes/new">{() => <Redirect to="/recipes/new" />}</Route>
+        <Route path="/app/recipes/:id">{({ id }: { id: string }) => <Redirect to={`/recipes/${id}`} />}</Route>
         <Route path="/outlets">{() => <GuardedRoute path="/outlets" component={LocationsHub} />}</Route>
         <Route path="/promotions">{() => <GuardedRoute path="/promotions" component={PromotionsHub} />}</Route>
         <Route path="/crm">{() => <GuardedRoute path="/crm" component={CrmPage} />}</Route>
