@@ -3,6 +3,7 @@ import { useLocation, useParams, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { can } from "@/lib/permissions";
 import { formatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
@@ -98,7 +99,7 @@ export default function RecipeEditorPage() {
         quantity: ing.quantity?.toString() || "0",
         unit: ing.unit || "kg",
         wastePct: ing.wastePct?.toString() || "0",
-        notes: (ing as any).notes || "",
+        notes: ing.notes || "",
       })));
       setInitialized(true);
       setIsDirty(false);
@@ -217,7 +218,7 @@ export default function RecipeEditorPage() {
   }
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
-  const canEdit = user?.role === "owner" || user?.role === "manager";
+  const canEdit = can(user?.role || "", "edit_recipe");
 
   const filteredInventory = ingSearch.trim()
     ? inventory.filter(i => i.name.toLowerCase().includes(ingSearch.toLowerCase()))

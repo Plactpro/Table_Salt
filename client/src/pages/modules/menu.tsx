@@ -17,8 +17,10 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { DishInfoPanel } from "@/components/widgets/dish-info-panel";
+import { can } from "@/lib/permissions";
 import {
   Plus, Pencil, Trash2, UtensilsCrossed, Leaf, Drumstick, Coffee, Beef,
   IceCream, Wine, Soup, Pizza, Salad, Sandwich, Eye, X, ImageIcon, Flame,
@@ -100,8 +102,8 @@ function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCo
       queryClient.invalidateQueries({ queryKey: ["/api/recipes"] });
       toast({ title: "Recipe linked to menu item" });
       setSelectedRecipeId("none");
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : "Link failed", variant: "destructive" });
     } finally {
       setLinking(false);
     }
@@ -123,8 +125,8 @@ function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCo
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Unlink failed"); }
       queryClient.invalidateQueries({ queryKey: ["/api/recipes"] });
       toast({ title: "Recipe unlinked" });
-    } catch (e: any) {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      toast({ title: "Error", description: e instanceof Error ? e.message : "Unlink failed", variant: "destructive" });
     } finally {
       setLinking(false);
     }
@@ -227,6 +229,7 @@ export default function MenuPage() {
   const [categorySortOrder, setCategorySortOrder] = useState(0);
 
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
+  const [itemDialogTab, setItemDialogTab] = useState("details");
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [itemForm, setItemForm] = useState({
     name: "", description: "", price: "", categoryId: "",
@@ -497,6 +500,7 @@ export default function MenuPage() {
 
   function openAddItem() {
     setEditingItem(null);
+    setItemDialogTab("details");
     setItemForm({
       name: "", description: "", price: "", categoryId: selectedCategoryId || "",
       isVeg: false, available: true, image: "", spicyLevel: 0,
@@ -509,6 +513,7 @@ export default function MenuPage() {
 
   function openEditItem(item: MenuItem) {
     setEditingItem(item);
+    setItemDialogTab("details");
     const ing = parseIngredients(item);
     setItemForm({
       name: item.name,
@@ -670,6 +675,24 @@ export default function MenuPage() {
   }
 
   const TIME_SLOTS = ["breakfast", "lunch", "dinner", "late_night"];
+
+  const dialogLinkedRecipe = editingItem ? allRecipes.find(r => r.menuItemId === editingItem.id) : undefined;
+  const dialogPlateCost = dialogLinkedRecipe
+    ? (dialogLinkedRecipe.ingredients || []).reduce((sum, ing) => {
+        const invItem = invMap.get(ing.inventoryItemId);
+        if (!invItem) return sum;
+        const qty = Number(ing.quantity) || 0;
+        const waste = Number(ing.wastePct || 0) / 100;
+        const effectiveQty = waste >= 1 ? qty : qty / (1 - waste);
+        const converted = convertUnits(effectiveQty, ing.unit || invItem.unit || "pcs", invItem.unit || "pcs");
+        return sum + converted * Number(invItem.costPrice || 0);
+      }, 0)
+    : null;
+  const dialogSp = Number(editingItem?.price || 0);
+  const dialogFoodCostPct = dialogPlateCost !== null && dialogSp > 0 ? (dialogPlateCost / dialogSp) * 100 : null;
+  const dialogUnlinkedRecipes = editingItem
+    ? allRecipes.filter(r => !r.menuItemId || r.menuItemId === editingItem.id)
+    : [];
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col h-full" data-testid="menu-page">
@@ -997,6 +1020,12 @@ export default function MenuPage() {
           <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Menu Item" : "Add Menu Item"}</DialogTitle>
           </DialogHeader>
+          <Tabs value={itemDialogTab} onValueChange={setItemDialogTab} data-testid="dialog-item-tabs">
+            <TabsList className="mb-2">
+              <TabsTrigger value="details" data-testid="tab-item-details">Details</TabsTrigger>
+              {editingItem && <TabsTrigger value="recipe" data-testid="tab-item-recipe"><ChefHat className="h-3.5 w-3.5 mr-1.5" />Recipe & Food Cost</TabsTrigger>}
+            </TabsList>
+          <TabsContent value="details">
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
@@ -1173,38 +1202,25 @@ export default function MenuPage() {
               </div>
             </div>
           </div>
+          </TabsContent>
 
-          {editingItem && (() => {
-            const linkedRecipe = allRecipes.find(r => r.menuItemId === editingItem.id);
-            const plateCost = linkedRecipe
-              ? (linkedRecipe.ingredients || []).reduce((sum, ing) => {
-                  const item = invMap.get(ing.inventoryItemId);
-                  if (!item) return sum;
-                  const qty = Number(ing.quantity) || 0;
-                  const waste = Number(ing.wastePct || 0) / 100;
-                  const effectiveQty = waste >= 1 ? qty : qty / (1 - waste);
-                  const converted = convertUnits(effectiveQty, ing.unit || item.unit || "pcs", item.unit || "pcs");
-                  return sum + converted * Number(item.costPrice || 0);
-                }, 0)
-              : null;
-            const sp = Number(editingItem.price || 0);
-            const foodCostPct = plateCost !== null && sp > 0 ? (plateCost / sp) * 100 : null;
-            const unlinkedRecipes = allRecipes.filter(r => !r.menuItemId || r.menuItemId === editingItem.id);
-            return (
+          {editingItem && (
+            <TabsContent value="recipe" data-testid="tab-content-recipe">
               <RecipeLinkSection
                 editingItem={editingItem}
-                linkedRecipe={linkedRecipe}
-                unlinkedRecipes={unlinkedRecipes}
-                plateCost={plateCost}
-                sp={sp}
-                foodCostPct={foodCostPct}
+                linkedRecipe={dialogLinkedRecipe}
+                unlinkedRecipes={dialogUnlinkedRecipes}
+                plateCost={dialogPlateCost}
+                sp={dialogSp}
+                foodCostPct={dialogFoodCostPct}
                 fmt={fmt}
                 onNavigate={(path) => { setItemDialogOpen(false); navigate(path); }}
                 queryClient={queryClient}
                 toast={toast}
               />
-            );
-          })()}
+            </TabsContent>
+          )}
+          </Tabs>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setItemDialogOpen(false)} data-testid="button-cancel-item">Cancel</Button>

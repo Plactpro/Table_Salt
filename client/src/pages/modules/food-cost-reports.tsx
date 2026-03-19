@@ -86,9 +86,11 @@ export default function FoodCostReports() {
   };
 
   const { data: report, isLoading } = useQuery<FoodCostReport>({
-    queryKey: ["/api/food-cost-report"],
+    queryKey: ["/api/food-cost-report", dateFrom, dateTo, outletFilter],
     queryFn: async () => {
-      const res = await fetch("/api/food-cost-report", { credentials: "include" });
+      const params = new URLSearchParams({ dateFrom, dateTo });
+      if (outletFilter !== "all") params.set("outletId", outletFilter);
+      const res = await fetch(`/api/food-cost-report?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load food cost report");
       return res.json();
     },
