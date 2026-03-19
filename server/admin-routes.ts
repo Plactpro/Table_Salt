@@ -1071,14 +1071,15 @@ export function registerAdminRoutes(app: Express) {
         .groupBy(sql`date_trunc('month', created_at)`)
         .orderBy(sql`date_trunc('month', created_at)`);
 
-      // Monthly user registrations — last 12 months (via audit events: action = 'user_created')
+      // Monthly user registrations — last 12 months (from users.createdAt, excluding platform/super_admin)
       const userRegistrationsRaw = await db.select({
         month: sql<string>`to_char(date_trunc('month', created_at), 'YYYY-MM')`,
         count: sql<number>`count(*)::int`,
-      }).from(auditEvents)
+      }).from(users)
         .where(and(
-          eq(auditEvents.action, "user_created"),
-          gte(auditEvents.createdAt, twelveMonthsAgo)
+          ne(users.tenantId, platformTenantId),
+          ne(users.role, "super_admin" as UserRoleValue),
+          gte(users.createdAt, twelveMonthsAgo)
         ))
         .groupBy(sql`date_trunc('month', created_at)`)
         .orderBy(sql`date_trunc('month', created_at)`);

@@ -107,6 +107,7 @@ export const users = pgTable("users", {
   recoveryCodes: text("recovery_codes").array(),
   passwordChangedAt: timestamp("password_changed_at"),
   passwordHistory: text("password_history").array(),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const regions = pgTable("regions", {
@@ -456,7 +457,7 @@ export const salesInquiries = pgTable("sales_inquiries", {
 });
 
 export const insertTenantSchema = createInsertSchema(tenants).omit({ id: true });
-export const insertUserSchema = createInsertSchema(users).omit({ id: true });
+export const insertUserSchema = createInsertSchema(users).omit({ id: true, createdAt: true });
 export const insertOutletSchema = createInsertSchema(outlets).omit({ id: true });
 export const insertMenuCategorySchema = createInsertSchema(menuCategories).omit({ id: true });
 export const insertMenuItemSchema = createInsertSchema(menuItems).omit({ id: true });
