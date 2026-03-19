@@ -865,7 +865,9 @@ export async function registerRoutes(
 
   app.get("/api/orders", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const ordersList = await storage.getOrdersByTenant(user.tenantId);
+    const limit = Math.min(parseInt(req.query.limit as string) || 200, 500);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const ordersList = await storage.getOrdersByTenant(user.tenantId, { limit, offset });
     res.json(ordersList);
   });
 
@@ -1413,7 +1415,9 @@ export async function registerRoutes(
 
   app.get("/api/customers", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const custs = await storage.getCustomersByTenant(user.tenantId);
+    const limit = Math.min(parseInt(req.query.limit as string) || 500, 1000);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const custs = await storage.getCustomersByTenant(user.tenantId, { limit, offset });
     res.json(custs);
   });
 
@@ -2181,7 +2185,9 @@ export async function registerRoutes(
   // Delivery Orders CRUD (tenant-scoped)
   app.get("/api/delivery-orders", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const deliveries = await storage.getDeliveryOrdersByTenant(user.tenantId);
+    const limit = Math.min(parseInt(req.query.limit as string) || 200, 500);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const deliveries = await storage.getDeliveryOrdersByTenant(user.tenantId, { limit, offset });
     res.json(deliveries);
   });
 
@@ -3299,8 +3305,9 @@ export async function registerRoutes(
   app.get("/api/stock-movements", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const limit = req.query.limit ? Number(req.query.limit) : 50;
-      const movements = await storage.getStockMovementsByTenant(user.tenantId, limit);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const movements = await storage.getStockMovementsByTenant(user.tenantId, limit, offset);
       res.json(movements);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
