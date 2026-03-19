@@ -6,7 +6,7 @@ import { formatCurrency, type FormatCurrencyOptions } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Search, Plus, Edit, Trash2, Phone, Mail, Star,
-  Tag, Award, DollarSign, ShoppingBag, ChevronRight, X,
+  Tag, Award, DollarSign, ShoppingBag, ChevronLeft, ChevronRight, X,
   UserPlus, Filter, Megaphone, MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -94,6 +94,8 @@ export default function CrmPage() {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
+  const [customersPage, setCustomersPage] = useState(0);
+  const CUSTOMERS_LIMIT = 50;
 
   const [formData, setFormData] = useState({
     name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "",
@@ -103,13 +105,20 @@ export default function CrmPage() {
     customerId: "", orderId: "", rating: "5", comment: "",
   });
 
-  const { data: customers = [], isLoading } = useQuery<CustomerData[]>({
-    queryKey: ["/api/customers"],
+  const { data: customersRes, isLoading } = useQuery<{ data: CustomerData[]; total: number }>({
+    queryKey: ["/api/customers", customersPage],
+    queryFn: async () => {
+      const res = await fetch(`/api/customers?limit=${CUSTOMERS_LIMIT}&offset=${customersPage * CUSTOMERS_LIMIT}`, { credentials: "include" });
+      return res.json();
+    },
   });
+  const customers = customersRes?.data ?? [];
+  const customersTotal = customersRes?.total ?? 0;
 
-  const { data: orders = [] } = useQuery<OrderData[]>({
+  const { data: ordersRes } = useQuery<{ data: OrderData[]; total: number }>({
     queryKey: ["/api/orders"],
   });
+  const orders = ordersRes?.data ?? [];
 
   const { data: feedback = [] } = useQuery<FeedbackData[]>({
     queryKey: ["/api/feedback"],
@@ -275,7 +284,7 @@ export default function CrmPage() {
     });
   };
 
-  const totalCustomers = customers.length;
+  const totalCustomers = customersTotal || customers.length;
   const totalRevenue = customers.reduce((sum, c) => sum + Number(c.totalSpent || 0), 0);
   const avgSpend = totalCustomers > 0 ? totalRevenue / totalCustomers : 0;
 
@@ -442,6 +451,25 @@ export default function CrmPage() {
               </motion.div>
             ))}
           </AnimatePresence>
+        </div>
+      )}
+
+      {customersTotal > CUSTOMERS_LIMIT && (
+        <div className="flex items-center justify-between py-2" data-testid="pagination-controls-customers">
+          <p className="text-sm text-muted-foreground">
+            Showing {customersPage * CUSTOMERS_LIMIT + 1}–{Math.min((customersPage + 1) * CUSTOMERS_LIMIT, customersTotal)} of {customersTotal} customers
+          </p>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setCustomersPage((p) => Math.max(0, p - 1))} disabled={customersPage === 0} data-testid="button-prev-page-customers">
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </Button>
+            <span className="text-sm font-medium px-2" data-testid="text-page-customers">Page {customersPage + 1}</span>
+            <Button variant="outline" size="sm" onClick={() => setCustomersPage((p) => p + 1)} disabled={(customersPage + 1) * CUSTOMERS_LIMIT >= customersTotal} data-testid="button-next-page-customers">
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       )}
 

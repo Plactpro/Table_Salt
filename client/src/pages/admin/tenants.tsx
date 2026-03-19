@@ -125,13 +125,14 @@ export default function TenantsPage() {
     businessType: "casual_dining",
   });
 
-  const { data: tenants, isLoading, error } = useQuery<Tenant[]>({
+  const { data: tenantsRes, isLoading, error } = useQuery<{ data: Tenant[]; total: number }>({
     queryKey: ["/api/admin/tenants"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/tenants");
       return r.json();
     },
   });
+  const tenants = tenantsRes?.data;
 
   const suspendMutation = useMutation({
     mutationFn: async ({ id, suspend }: { id: string; suspend: boolean }) => {

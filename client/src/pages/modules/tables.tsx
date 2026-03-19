@@ -213,7 +213,8 @@ export default function TablesPage() {
   const { data: waitlist = [] } = useQuery<WaitlistData[]>({ queryKey: ["/api/waitlist"] });
   const { data: reservations = [] } = useQuery<ReservationData[]>({ queryKey: ["/api/reservations"] });
   const { data: analytics } = useQuery<AnalyticsData>({ queryKey: ["/api/table-analytics"] });
-  const { data: customers = [] } = useQuery<CustomerData[]>({ queryKey: ["/api/customers"] });
+  const { data: customersRes } = useQuery<{ data: CustomerData[]; total: number }>({ queryKey: ["/api/customers"] });
+  const customers = customersRes?.data ?? [];
 
   const activeWaitlist = useMemo(() => waitlist.filter(w => w.status === "waiting"), [waitlist]);
 

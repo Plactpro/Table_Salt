@@ -101,15 +101,17 @@ export default function DeliveryPage() {
     },
   });
 
-  const { data: deliveries = [], isLoading } = useQuery<DeliveryOrder[]>({
+  const { data: deliveriesRes, isLoading } = useQuery<{ data: DeliveryOrder[]; total: number }>({
     queryKey: ["/api/delivery-orders"],
     enabled: deliveryEnabled,
   });
+  const deliveries = deliveriesRes?.data ?? [];
 
-  const { data: customers = [] } = useQuery<CustomerData[]>({
+  const { data: customersRes } = useQuery<{ data: CustomerData[]; total: number }>({
     queryKey: ["/api/customers"],
     enabled: deliveryEnabled,
   });
+  const customers = customersRes?.data ?? [];
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {

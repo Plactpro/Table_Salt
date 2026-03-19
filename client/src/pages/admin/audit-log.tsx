@@ -203,21 +203,23 @@ export default function AuditLogPage() {
     }
   };
 
-  const { data: events, isLoading, error } = useQuery<AuditEvent[]>({
+  const { data: eventsRes, isLoading, error } = useQuery<{ data: AuditEvent[]; total: number }>({
     queryKey: ["/api/admin/audit-log", tenantFilter, actionFilter, fromDate, toDate, limit],
     queryFn: async () => {
       const r = await apiRequest("GET", `/api/admin/audit-log?${params.toString()}`);
       return r.json();
     },
   });
+  const events = eventsRes?.data;
 
-  const { data: tenants } = useQuery<Tenant[]>({
+  const { data: tenantsRes } = useQuery<{ data: Tenant[]; total: number }>({
     queryKey: ["/api/admin/tenants"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/tenants");
       return r.json();
     },
   });
+  const tenants = tenantsRes?.data;
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="admin-audit-log-page">

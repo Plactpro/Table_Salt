@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Package, Plus, Search, AlertTriangle, Edit, Trash2, ArrowUpDown,
   Warehouse, BoxIcon, TrendingDown, TrendingUp, ChefHat, ClipboardList, DollarSign,
-  BookOpen, X, Percent, Activity,
+  BookOpen, X, Percent, Activity, ChevronLeft, ChevronRight,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -62,13 +62,23 @@ function InventoryTab() {
     open: boolean; action: string; actionLabel: string;
     pendingData: { id: string; data: { type: string; quantity: string; reason: string } } | null;
   } | null>(null);
+  const [inventoryPage, setInventoryPage] = useState(0);
+  const INVENTORY_LIMIT = 50;
 
   const fmt = (v: number) => {
     const tenant = user?.tenant;
     return formatCurrency(v, tenant?.currency || "AED", tenant?.currencyPosition || "before", tenant?.currencyDecimals ?? 2);
   };
 
-  const { data: inventory = [], isLoading } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: inventoryRes, isLoading } = useQuery<{ data: InventoryItem[]; total: number }>({
+    queryKey: ["/api/inventory", inventoryPage],
+    queryFn: async () => {
+      const res = await fetch(`/api/inventory?limit=${INVENTORY_LIMIT}&offset=${inventoryPage * INVENTORY_LIMIT}`, { credentials: "include" });
+      return res.json();
+    },
+  });
+  const inventory = inventoryRes?.data ?? [];
+  const inventoryTotal = inventoryRes?.total ?? 0;
 
   const createMutation = useMutation({
     mutationFn: async (data: typeof formData) => { const res = await apiRequest("POST", "/api/inventory", data); return res.json(); },
@@ -205,6 +215,24 @@ function InventoryTab() {
                 ))}
               </TableBody>
             </Table>
+          )}
+          {inventoryTotal > INVENTORY_LIMIT && (
+            <div className="flex items-center justify-between px-4 py-3 border-t" data-testid="pagination-controls-inventory">
+              <p className="text-sm text-muted-foreground">
+                Showing {inventoryPage * INVENTORY_LIMIT + 1}–{Math.min((inventoryPage + 1) * INVENTORY_LIMIT, inventoryTotal)} of {inventoryTotal} items
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setInventoryPage((p) => Math.max(0, p - 1))} disabled={inventoryPage === 0} data-testid="button-prev-page-inventory">
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </Button>
+                <span className="text-sm font-medium px-2" data-testid="text-page-inventory">Page {inventoryPage + 1}</span>
+                <Button variant="outline" size="sm" onClick={() => setInventoryPage((p) => p + 1)} disabled={(inventoryPage + 1) * INVENTORY_LIMIT >= inventoryTotal} data-testid="button-next-page-inventory">
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           )}
         </CardContent>
       </Card>

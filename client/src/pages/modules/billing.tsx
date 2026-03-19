@@ -49,9 +49,11 @@ export default function BillingPage() {
   };
 
   const { data: tenant } = useQuery<{ id: string; name: string }>({ queryKey: ["/api/tenant"] });
-  const { data: orders = [] } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
+  const { data: ordersRes } = useQuery<{ data: Order[]; total: number }>({ queryKey: ["/api/orders"] });
+  const orders = ordersRes?.data ?? [];
   const { data: tables = [] } = useQuery<TableType[]>({ queryKey: ["/api/tables"] });
-  const { data: customers = [] } = useQuery<Customer[]>({ queryKey: ["/api/customers"] });
+  const { data: customersRes } = useQuery<{ data: Customer[]; total: number }>({ queryKey: ["/api/customers"] });
+  const customers = customersRes?.data ?? [];
 
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceDateFrom, setInvoiceDateFrom] = useState("");

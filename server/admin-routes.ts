@@ -368,7 +368,9 @@ export function registerAdminRoutes(app: Express) {
   app.get("/api/admin/tenants", requireSuperAdmin, async (req, res) => {
     try {
       const platformTenantId = await getPlatformTenantId();
-      const { search, plan, active } = req.query as Record<string, string>;
+      const { search, plan, active, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
+      const limit = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
+      const offset = Math.max(parseInt(offsetStr ?? "0", 10) || 0, 0);
 
       const allTenants = await db.select().from(tenants)
         .where(ne(tenants.id, platformTenantId))
@@ -383,9 +385,12 @@ export function registerAdminRoutes(app: Express) {
       if (active !== undefined && active !== "") {
         filtered = filtered.filter(t => String(t.active) === active);
       }
-      if (filtered.length === 0) return res.json([]);
 
-      const tenantIds = filtered.map(t => t.id);
+      const total = filtered.length;
+      const page = filtered.slice(offset, offset + limit);
+      if (page.length === 0) return res.json({ data: [], total, limit, offset });
+
+      const tenantIds = page.map(t => t.id);
       const [userCounts, outletCounts, orderCounts, ownerUsers, lastActivityRows] = await Promise.all([
         db.select({ tenantId: users.tenantId, count: sql<number>`count(*)::int` })
           .from(users).where(inArray(users.tenantId, tenantIds)).groupBy(users.tenantId),
@@ -405,14 +410,15 @@ export function registerAdminRoutes(app: Express) {
       const ownerMap = new Map(ownerUsers.map(u => [u.tenantId, u.id]));
       const lastActMap = new Map(lastActivityRows.map(r => [r.tenantId, r.lastActivity]));
 
-      return res.json(filtered.map(t => ({
+      const data = page.map(t => ({
         ...t,
         userCount: ucMap.get(t.id) ?? 0,
         outletCount: ocMap.get(t.id) ?? 0,
         orderCount: ordMap.get(t.id) ?? 0,
         ownerUserId: ownerMap.get(t.id) ?? null,
         lastActivity: lastActMap.get(t.id) ?? null,
-      })));
+      }));
+      return res.json({ data, total, limit, offset });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
@@ -795,48 +801,53 @@ export function registerAdminRoutes(app: Express) {
 
   app.get("/api/admin/audit-log", requireSuperAdmin, async (req, res) => {
     try {
-      const { tenantId, userId, action, from, to, limit } = req.query as Record<string, string>;
-      const limitNum = Math.min(parseInt(limit || "100"), 500);
+      const { tenantId, userId, action, from, to, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
+      const limitNum = Math.min(parseInt(limitStr || "50"), 200);
+      const offsetNum = Math.max(parseInt(offsetStr || "0"), 0);
 
-      const events = await db
-        .select({
-          id: auditEvents.id,
-          tenantId: auditEvents.tenantId,
-          userId: auditEvents.userId,
-          userName: auditEvents.userName,
-          userEmail: users.email,
-          userRole: users.role,
-          action: auditEvents.action,
-          entityType: auditEvents.entityType,
-          entityId: auditEvents.entityId,
-          entityName: auditEvents.entityName,
-          ipAddress: auditEvents.ipAddress,
-          metadata: auditEvents.metadata,
-          before: auditEvents.before,
-          after: auditEvents.after,
-          createdAt: auditEvents.createdAt,
-          tenantName: tenants.name,
-        })
-        .from(auditEvents)
-        .leftJoin(tenants, eq(auditEvents.tenantId, tenants.id))
-        .leftJoin(users, eq(auditEvents.userId, users.id))
-        .where(
-          and(
-            tenantId ? eq(auditEvents.tenantId, tenantId) : undefined,
-            userId ? eq(auditEvents.userId, userId) : undefined,
-            action ? eq(auditEvents.action, action) : undefined,
-            from ? gte(auditEvents.createdAt, new Date(from)) : undefined,
-            to ? lte(auditEvents.createdAt, new Date(to)) : undefined,
-          )
-        )
-        .orderBy(desc(auditEvents.createdAt))
-        .limit(limitNum);
+      const whereClause = and(
+        tenantId ? eq(auditEvents.tenantId, tenantId) : undefined,
+        userId ? eq(auditEvents.userId, userId) : undefined,
+        action ? eq(auditEvents.action, action) : undefined,
+        from ? gte(auditEvents.createdAt, new Date(from)) : undefined,
+        to ? lte(auditEvents.createdAt, new Date(to)) : undefined,
+      );
 
-      const decryptedEvents = events.map(e => {
+      const [events, [{ total }]] = await Promise.all([
+        db
+          .select({
+            id: auditEvents.id,
+            tenantId: auditEvents.tenantId,
+            userId: auditEvents.userId,
+            userName: auditEvents.userName,
+            userEmail: users.email,
+            userRole: users.role,
+            action: auditEvents.action,
+            entityType: auditEvents.entityType,
+            entityId: auditEvents.entityId,
+            entityName: auditEvents.entityName,
+            ipAddress: auditEvents.ipAddress,
+            metadata: auditEvents.metadata,
+            before: auditEvents.before,
+            after: auditEvents.after,
+            createdAt: auditEvents.createdAt,
+            tenantName: tenants.name,
+          })
+          .from(auditEvents)
+          .leftJoin(tenants, eq(auditEvents.tenantId, tenants.id))
+          .leftJoin(users, eq(auditEvents.userId, users.id))
+          .where(whereClause)
+          .orderBy(desc(auditEvents.createdAt))
+          .limit(limitNum)
+          .offset(offsetNum),
+        db.select({ total: sql<number>`count(*)::int` }).from(auditEvents).where(whereClause),
+      ]);
+
+      const data = events.map(e => {
         if (!e.userEmail) return e;
         return { ...e, userEmail: isEncrypted(e.userEmail) ? decryptField(e.userEmail) : e.userEmail };
       });
-      return res.json(decryptedEvents);
+      return res.json({ data, total: Number(total), limit: limitNum, offset: offsetNum });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
@@ -1237,8 +1248,8 @@ export function registerAdminRoutes(app: Express) {
   app.get("/api/admin/security-alerts", requireSuperAdmin, async (req, res) => {
     try {
       const { tenantId, severity, type, acknowledged, from, to, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
-      const limitVal = Math.min(parseInt(limitStr ?? "100", 10) || 100, 500);
-      const offsetVal = parseInt(offsetStr ?? "0", 10) || 0;
+      const limitVal = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
+      const offsetVal = Math.max(parseInt(offsetStr ?? "0", 10) || 0, 0);
 
       const conditions = [];
       if (tenantId) conditions.push(eq(securityAlerts.tenantId, tenantId));
@@ -1254,31 +1265,36 @@ export function registerAdminRoutes(app: Express) {
         conditions.push(lte(securityAlerts.createdAt, toDate));
       }
 
-      const rows = await db
-        .select({
-          id: securityAlerts.id,
-          tenantId: securityAlerts.tenantId,
-          userId: securityAlerts.userId,
-          type: securityAlerts.type,
-          severity: securityAlerts.severity,
-          title: securityAlerts.title,
-          description: securityAlerts.description,
-          ipAddress: securityAlerts.ipAddress,
-          metadata: securityAlerts.metadata,
-          acknowledged: securityAlerts.acknowledged,
-          acknowledgedBy: securityAlerts.acknowledgedBy,
-          acknowledgedAt: securityAlerts.acknowledgedAt,
-          createdAt: securityAlerts.createdAt,
-          tenantName: tenants.name,
-        })
-        .from(securityAlerts)
-        .leftJoin(tenants, eq(securityAlerts.tenantId, tenants.id))
-        .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(securityAlerts.createdAt))
-        .limit(limitVal)
-        .offset(offsetVal);
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
 
-      return res.json(rows);
+      const [rows, [{ total }]] = await Promise.all([
+        db
+          .select({
+            id: securityAlerts.id,
+            tenantId: securityAlerts.tenantId,
+            userId: securityAlerts.userId,
+            type: securityAlerts.type,
+            severity: securityAlerts.severity,
+            title: securityAlerts.title,
+            description: securityAlerts.description,
+            ipAddress: securityAlerts.ipAddress,
+            metadata: securityAlerts.metadata,
+            acknowledged: securityAlerts.acknowledged,
+            acknowledgedBy: securityAlerts.acknowledgedBy,
+            acknowledgedAt: securityAlerts.acknowledgedAt,
+            createdAt: securityAlerts.createdAt,
+            tenantName: tenants.name,
+          })
+          .from(securityAlerts)
+          .leftJoin(tenants, eq(securityAlerts.tenantId, tenants.id))
+          .where(whereClause)
+          .orderBy(desc(securityAlerts.createdAt))
+          .limit(limitVal)
+          .offset(offsetVal),
+        db.select({ total: sql<number>`count(*)::int` }).from(securityAlerts).where(whereClause),
+      ]);
+
+      return res.json({ data: rows, total: Number(total), limit: limitVal, offset: offsetVal });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });

@@ -108,21 +108,23 @@ export default function SecurityConsolePage() {
   if (fromDate) params.set("from", fromDate);
   if (toDate) params.set("to", toDate);
 
-  const { data: alerts, isLoading, error } = useQuery<SecurityAlert[]>({
+  const { data: alertsRes, isLoading, error } = useQuery<{ data: SecurityAlert[]; total: number }>({
     queryKey: ["/api/admin/security-alerts", severityFilter, typeFilter, tenantFilter, acknowledgedFilter, fromDate, toDate],
     queryFn: async () => {
       const r = await apiRequest("GET", `/api/admin/security-alerts?${params.toString()}`);
       return r.json();
     },
   });
+  const alerts = alertsRes?.data;
 
-  const { data: tenants } = useQuery<Tenant[]>({
+  const { data: tenantsRes } = useQuery<{ data: Tenant[]; total: number }>({
     queryKey: ["/api/admin/tenants"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/tenants");
       return r.json();
     },
   });
+  const tenants = tenantsRes?.data;
 
   const acknowledgeMutation = useMutation({
     mutationFn: async (id: string) => {
