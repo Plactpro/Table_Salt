@@ -975,4 +975,123 @@ export function registerAdminRoutes(app: Express) {
       return res.status(500).json({ message });
     }
   });
+
+  // ─── Analytics ─────────────────────────────────────────────────────────────
+
+  app.get("/api/admin/analytics", requireSuperAdmin, async (_req, res) => {
+    try {
+      const platformTenantId = await getPlatformTenantId();
+
+      // Monthly tenant growth — last 12 months
+      const twelveMonthsAgo = new Date();
+      twelveMonthsAgo.setMonth(twelveMonthsAgo.getMonth() - 11);
+      twelveMonthsAgo.setDate(1);
+      twelveMonthsAgo.setHours(0, 0, 0, 0);
+
+      const tenantGrowthRaw = await db.select({
+        month: sql<string>`to_char(date_trunc('month', created_at), 'YYYY-MM')`,
+        count: sql<number>`count(*)::int`,
+      }).from(tenants)
+        .where(and(ne(tenants.id, platformTenantId), gte(tenants.createdAt, twelveMonthsAgo)))
+        .groupBy(sql`date_trunc('month', created_at)`)
+        .orderBy(sql`date_trunc('month', created_at)`);
+
+      // Monthly user registrations — last 12 months (via audit events: action = 'user_created')
+      const userRegistrationsRaw = await db.select({
+        month: sql<string>`to_char(date_trunc('month', created_at), 'YYYY-MM')`,
+        count: sql<number>`count(*)::int`,
+      }).from(auditEvents)
+        .where(and(
+          eq(auditEvents.action, "user_created"),
+          gte(auditEvents.createdAt, twelveMonthsAgo)
+        ))
+        .groupBy(sql`date_trunc('month', created_at)`)
+        .orderBy(sql`date_trunc('month', created_at)`);
+
+      // Weekly order volume — last 8 weeks
+      const eightWeeksAgo = new Date();
+      eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 56);
+
+      const weeklyOrdersRaw = await db.select({
+        week: sql<string>`to_char(date_trunc('week', created_at), 'YYYY-MM-DD')`,
+        count: sql<number>`count(*)::int`,
+      }).from(orders)
+        .where(gte(orders.createdAt, eightWeeksAgo))
+        .groupBy(sql`date_trunc('week', created_at)`)
+        .orderBy(sql`date_trunc('week', created_at)`);
+
+      // Plan distribution with assumed price proxy
+      const planPrices: Record<string, number> = {
+        basic: 29,
+        standard: 79,
+        premium: 149,
+        enterprise: 399,
+      };
+      const planDistributionRaw = await db.select({
+        plan: tenants.plan,
+        count: sql<number>`count(*)::int`,
+      }).from(tenants)
+        .where(ne(tenants.id, platformTenantId))
+        .groupBy(tenants.plan);
+
+      const planRevenue = planDistributionRaw.map((p) => ({
+        plan: p.plan,
+        count: p.count,
+        price: planPrices[p.plan] ?? 0,
+        revenue: (planPrices[p.plan] ?? 0) * p.count,
+      }));
+
+      // Top 5 tenants by order count
+      const topTenantRows = await db.select({
+        tenantId: orders.tenantId,
+        orderCount: sql<number>`count(*)::int`,
+      }).from(orders)
+        .groupBy(orders.tenantId)
+        .orderBy(sql`count(*) desc`)
+        .limit(5);
+
+      const topTenantIds = topTenantRows.map((r) => r.tenantId).filter(Boolean) as string[];
+      const topTenantDetails = topTenantIds.length > 0
+        ? await db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug, plan: tenants.plan })
+            .from(tenants).where(inArray(tenants.id, topTenantIds))
+        : [];
+
+      const topTenantsByOrders = topTenantRows.map((r) => {
+        const detail = topTenantDetails.find((t) => t.id === r.tenantId);
+        return {
+          id: r.tenantId,
+          name: detail?.name ?? "Unknown",
+          slug: detail?.slug ?? "",
+          plan: detail?.plan ?? "",
+          orderCount: r.orderCount,
+        };
+      });
+
+      // Platform health
+      let dbOk = false;
+      try {
+        await db.execute(sql`SELECT 1`);
+        dbOk = true;
+      } catch {
+        dbOk = false;
+      }
+
+      const uptimeSeconds = Math.floor(process.uptime());
+
+      return res.json({
+        tenantGrowth: tenantGrowthRaw,
+        userRegistrations: userRegistrationsRaw,
+        weeklyOrderVolume: weeklyOrdersRaw,
+        planRevenue,
+        topTenantsByOrders,
+        platformHealth: {
+          dbOk,
+          uptimeSeconds,
+        },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
 }

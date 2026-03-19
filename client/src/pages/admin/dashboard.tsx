@@ -9,6 +9,12 @@ import {
   TrendingUp,
   AlertCircle,
   PauseCircle,
+  Plus,
+  UserPlus,
+  ShieldAlert,
+  Database,
+  Clock,
+  BarChart2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +28,11 @@ interface AdminStats {
   planDistribution: { plan: string; count: number }[];
   businessTypes: { businessType: string; count: number }[];
   newTenantsLast30Days: { date: string; count: number }[];
+}
+
+interface AnalyticsData {
+  topTenantsByOrders: { id: string; name: string; slug: string; plan: string; orderCount: number }[];
+  platformHealth: { dbOk: boolean; uptimeSeconds: number };
 }
 
 interface AuditEvent {
@@ -42,6 +53,13 @@ const planColors: Record<string, string> = {
   standard: "bg-blue-400",
   premium: "bg-violet-400",
   enterprise: "bg-emerald-400",
+};
+
+const planBadgeColors: Record<string, string> = {
+  basic: "bg-slate-100 text-slate-700",
+  standard: "bg-blue-50 text-blue-700",
+  premium: "bg-violet-50 text-violet-700",
+  enterprise: "bg-emerald-50 text-emerald-700",
 };
 
 function StatCard({
@@ -116,6 +134,14 @@ function NewTenantsSparkline({ data }: { data: { date: string; count: number }[]
   );
 }
 
+function formatUptime(seconds: number): string {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  return `${h}h ${m}m`;
+}
+
 export default function AdminDashboard() {
   const [, navigate] = useLocation();
 
@@ -123,6 +149,14 @@ export default function AdminDashboard() {
     queryKey: ["/api/admin/stats"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/stats");
+      return r.json();
+    },
+  });
+
+  const { data: analytics, isLoading: analyticsLoading } = useQuery<AnalyticsData>({
+    queryKey: ["/api/admin/analytics"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/admin/analytics");
       return r.json();
     },
   });
@@ -144,6 +178,49 @@ export default function AdminDashboard() {
           Platform Overview
         </h1>
         <p className="text-sm text-slate-500 mt-0.5">Real-time metrics across all tenants</p>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="flex flex-wrap gap-3" data-testid="quick-actions-bar">
+        <Button
+          size="sm"
+          className="gap-2 bg-emerald-700 hover:bg-emerald-800 text-white"
+          onClick={() => navigate("/admin/tenants")}
+          data-testid="button-quick-new-tenant"
+        >
+          <Plus className="h-4 w-4" />
+          New Tenant
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-2"
+          onClick={() => navigate("/admin/admins")}
+          data-testid="button-quick-create-admin"
+        >
+          <UserPlus className="h-4 w-4" />
+          Create Admin
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-2"
+          onClick={() => navigate("/admin/audit")}
+          data-testid="button-quick-security-alerts"
+        >
+          <ShieldAlert className="h-4 w-4" />
+          View Security Alerts
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-2"
+          onClick={() => navigate("/admin/analytics")}
+          data-testid="button-quick-analytics"
+        >
+          <BarChart2 className="h-4 w-4" />
+          Analytics
+        </Button>
       </div>
 
       {statsError && (
@@ -187,6 +264,108 @@ export default function AdminDashboard() {
           loading={statsLoading}
           testId="card-kpi-users"
         />
+      </div>
+
+      {/* Platform Health + Top Tenants */}
+      <div className="grid md:grid-cols-2 gap-4">
+        {/* Platform Health */}
+        <Card data-testid="card-platform-health">
+          <CardHeader>
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <Database className="h-4 w-4" />
+              Platform Health
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {analyticsLoading ? (
+              <div className="space-y-3">
+                {[...Array(2)].map((_, i) => <Skeleton key={i} className="h-6 w-full" />)}
+              </div>
+            ) : (
+              <>
+                <div className="flex items-center justify-between" data-testid="health-db-status">
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Database className="h-4 w-4 text-slate-400" />
+                    Database Connection
+                  </div>
+                  <Badge
+                    className={analytics?.platformHealth.dbOk
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : "bg-red-50 text-red-700 border-red-200"}
+                    variant="outline"
+                    data-testid="badge-db-status"
+                  >
+                    {analytics?.platformHealth.dbOk ? "Healthy" : "Error"}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between" data-testid="health-uptime">
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Clock className="h-4 w-4 text-slate-400" />
+                    Server Uptime
+                  </div>
+                  <span className="text-sm font-mono text-slate-700" data-testid="text-uptime">
+                    {analytics?.platformHealth.uptimeSeconds !== undefined
+                      ? formatUptime(analytics.platformHealth.uptimeSeconds)
+                      : "—"}
+                  </span>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top 5 Tenants by Orders */}
+        <Card data-testid="card-top-tenants">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+              <ShoppingBag className="h-4 w-4" />
+              Top 5 Tenants by Activity
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs h-7 text-slate-500"
+              onClick={() => navigate("/admin/tenants")}
+              data-testid="button-view-all-tenants"
+            >
+              View All
+            </Button>
+          </CardHeader>
+          <CardContent>
+            {analyticsLoading ? (
+              <div className="space-y-2">
+                {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
+              </div>
+            ) : analytics?.topTenantsByOrders && analytics.topTenantsByOrders.length > 0 ? (
+              <div className="divide-y divide-slate-100" data-testid="top-tenants-list">
+                {analytics.topTenantsByOrders.map((t, idx) => (
+                  <div
+                    key={t.id}
+                    className="py-2 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50 -mx-2 px-2 rounded transition-colors"
+                    onClick={() => navigate(`/admin/tenants/${t.id}`)}
+                    data-testid={`top-tenant-row-${t.id}`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-xs font-mono text-slate-400 w-4 shrink-0">#{idx + 1}</span>
+                      <span className="text-sm font-medium text-slate-800 truncate">{t.name}</span>
+                      <Badge
+                        variant="outline"
+                        className={`text-xs capitalize shrink-0 ${planBadgeColors[t.plan] ?? ""}`}
+                      >
+                        {t.plan}
+                      </Badge>
+                    </div>
+                    <span className="text-sm font-semibold text-emerald-700 shrink-0">
+                      {t.orderCount.toLocaleString()} orders
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-400 text-center py-6">No order data yet</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid md:grid-cols-3 gap-4">
