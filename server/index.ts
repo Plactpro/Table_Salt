@@ -106,32 +106,37 @@ app.use((req, res, next) => {
     console.error("Seed error:", e);
   }
 
-  // Initialize Stripe: run schema migrations, set up managed webhook, sync data, discover price IDs
+  // Initialize Stripe schema (stripe-replit-sync manages the stripe.* tables)
   try {
     const { runMigrations } = await import("stripe-replit-sync");
     const databaseUrl = process.env.DATABASE_URL;
     if (databaseUrl) {
       await runMigrations({ databaseUrl, schema: "stripe" });
       log("Stripe schema ready", "stripe");
-
-      const { getStripeSync } = await import("./stripeClient");
-      const stripeSync = await getStripeSync();
-
-      const webhookBaseUrl = `https://${process.env.REPLIT_DOMAINS?.split(",")[0]}`;
-      await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/stripe/webhook`);
-      log("Stripe managed webhook configured", "stripe");
-
-      stripeSync.syncBackfill().then(() => {
-        log("Stripe data sync complete", "stripe");
-      }).catch((err: any) => {
-        console.warn("[Stripe] syncBackfill error:", err.message);
-      });
-
-      await discoverPriceIds();
     }
   } catch (e: any) {
-    console.warn("[Stripe] Init skipped:", e.message);
+    console.warn("[Stripe] Schema migration skipped:", e.message);
   }
+
+  // Set up managed webhook + backfill (non-fatal: price discovery runs independently)
+  try {
+    const { getStripeSync } = await import("./stripeClient");
+    const stripeSync = await getStripeSync();
+    const webhookBaseUrl = `https://${process.env.REPLIT_DOMAINS?.split(",")[0]}`;
+    await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/stripe/webhook`);
+    log("Stripe managed webhook configured at /api/stripe/webhook", "stripe");
+
+    stripeSync.syncBackfill().then(() => {
+      log("Stripe data sync complete", "stripe");
+    }).catch((err: any) => {
+      console.warn("[Stripe] syncBackfill error:", err.message);
+    });
+  } catch (e: any) {
+    console.warn("[Stripe] Managed webhook setup skipped:", e.message);
+  }
+
+  // Price ID discovery runs independently — checkout still works even if webhook setup failed
+  await discoverPriceIds();
 
   await registerRoutes(httpServer, app);
 

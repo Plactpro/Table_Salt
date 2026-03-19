@@ -49,7 +49,15 @@ export async function discoverPriceIds(): Promise<void> {
         setPriceId(planKey, price.id);
       }
     }
-    console.log("[Stripe] Discovered price IDs:", STRIPE_PRICE_IDS);
+    const discovered = Object.keys(STRIPE_PRICE_IDS);
+    if (discovered.length > 0) {
+      for (const plan of ["basic", "standard", "premium"]) {
+        const priceId = STRIPE_PRICE_IDS[plan];
+        console.log(`[Stripe] Price discovered: ${plan} → ${priceId ?? "NOT FOUND"}`);
+      }
+    } else {
+      console.warn("[Stripe] No plan price IDs discovered. Run scripts/seed-stripe-plans.ts to create plans.");
+    }
   } catch (err: any) {
     console.warn("[Stripe] Price discovery skipped:", err.message);
   }
