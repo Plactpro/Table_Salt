@@ -38,6 +38,7 @@ import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
 
+import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
 import TenantsPage from "@/pages/admin/tenants";
 import TenantDetailPage from "@/pages/admin/tenant-detail";
@@ -144,7 +145,12 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 function RoleDashboard() {
-  const { user } = useAuth();
+  const { user, tenant, isLoading } = useAuth();
+
+  if (!isLoading && tenant && tenant.onboardingCompleted === false) {
+    return <Redirect to="/onboarding" />;
+  }
+
   switch (user?.role) {
     case "owner":
       return <OwnerDashboard />;
@@ -159,6 +165,24 @@ function RoleDashboard() {
     default:
       return <OwnerDashboard />;
   }
+}
+
+function OnboardingRoute() {
+  const { user, tenant, isLoading } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" data-testid="loading-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user) return <Redirect to="/login" />;
+  if ((user.role as string) === "super_admin") return <Redirect to="/admin" />;
+  if (tenant?.onboardingCompleted) return <Redirect to="/" />;
+
+  return <OnboardingPage />;
 }
 
 function PublicOnly({ children }: { children: ReactNode }) {
@@ -290,6 +314,10 @@ function Router() {
         <RegisterPage />
       </PublicOnly>
     );
+  }
+
+  if (location === "/onboarding") {
+    return <OnboardingRoute />;
   }
 
   return (

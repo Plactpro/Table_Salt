@@ -83,8 +83,12 @@ export const tenants = pgTable("tenants", {
   serviceCharge: decimal("service_charge", { precision: 5, scale: 2 }).default("0"),
   plan: text("plan").default("basic"),
   businessType: text("business_type").default("casual_dining"),
+  phone: text("phone"),
+  cuisineStyle: text("cuisine_style"),
+  country: text("country"),
   active: boolean("active").default(true),
   moduleConfig: jsonb("module_config").default({}),
+  onboardingCompleted: boolean("onboarding_completed").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

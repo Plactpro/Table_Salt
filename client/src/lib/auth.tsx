@@ -19,6 +19,11 @@ export interface TenantInfo {
   taxType?: string;
   compoundTax?: boolean;
   serviceCharge?: string;
+  onboardingCompleted?: boolean;
+  phone?: string;
+  cuisineStyle?: string;
+  country?: string;
+  address?: string;
 }
 
 export interface AuthUser {
@@ -90,6 +95,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           taxType: data.taxType || "vat",
           compoundTax: data.compoundTax ?? false,
           serviceCharge: data.serviceCharge || "0",
+          onboardingCompleted: data.onboardingCompleted ?? false,
+          phone: data.phone,
+          cuisineStyle: data.cuisineStyle,
+          country: data.country,
+          address: data.address,
         };
       } catch {
         return null;

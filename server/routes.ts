@@ -1586,6 +1586,65 @@ export async function registerRoutes(
     });
   });
 
+  // ── Onboarding Wizard ─────────────────────────────────────────────────────
+  app.get("/api/onboarding/status", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const tenant = await storage.getTenant(user.tenantId);
+    res.json({ completed: tenant?.onboardingCompleted ?? false });
+  });
+
+  app.patch("/api/onboarding/profile", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { businessType, cuisineStyle, phone } = req.body;
+    const tenant = await storage.updateTenant(user.tenantId, {
+      ...(businessType !== undefined && { businessType }),
+      ...(cuisineStyle !== undefined && { cuisineStyle }),
+      ...(phone !== undefined && { phone }),
+    });
+    res.json(tenant);
+  });
+
+  app.patch("/api/onboarding/location", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { address, country, timezone } = req.body;
+    const tenant = await storage.updateTenant(user.tenantId, {
+      ...(address !== undefined && { address }),
+      ...(country !== undefined && { country }),
+      ...(timezone !== undefined && { timezone }),
+    });
+    res.json(tenant);
+  });
+
+  app.patch("/api/onboarding/config", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { currency, taxRate, serviceCharge } = req.body;
+    const tenant = await storage.updateTenant(user.tenantId, {
+      ...(currency !== undefined && { currency }),
+      ...(taxRate !== undefined && { taxRate }),
+      ...(serviceCharge !== undefined && { serviceCharge }),
+    });
+    res.json(tenant);
+  });
+
+  app.patch("/api/onboarding/outlet", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const { name, address } = req.body;
+    const outlets = await storage.getOutletsByTenant(user.tenantId);
+    if (!outlets.length) return res.status(404).json({ message: "No outlet found" });
+    const outlet = await storage.updateOutlet(outlets[0].id, user.tenantId, {
+      ...(name !== undefined && { name }),
+      ...(address !== undefined && { address }),
+    });
+    res.json(outlet);
+  });
+
+  app.post("/api/onboarding/complete", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const tenant = await storage.updateTenant(user.tenantId, { onboardingCompleted: true });
+    res.json({ completed: true, tenant });
+  });
+  // ── End Onboarding ─────────────────────────────────────────────────────────
+
   app.get("/api/tenant", requireAuth, async (req, res) => {
     const user = req.user as any;
     const tenant = await storage.getTenant(user.tenantId);

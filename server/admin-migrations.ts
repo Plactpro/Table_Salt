@@ -34,4 +34,9 @@ export async function runAdminMigrations(): Promise<void> {
     VALUES ('singleton')
     ON CONFLICT (id) DO NOTHING
   `);
+
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone TEXT`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS cuisine_style TEXT`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS country TEXT`);
 }
