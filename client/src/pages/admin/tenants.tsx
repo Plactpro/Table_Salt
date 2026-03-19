@@ -267,18 +267,19 @@ export default function TenantsPage() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
                 <span>Name / Slug</span>
                 <span>Plan</span>
                 <span>Status</span>
                 <span>Business Type</span>
+                <span>Users / Outlets</span>
                 <span>Created</span>
                 <span></span>
               </div>
               {filtered.map((t) => (
                 <div
                   key={t.id}
-                  className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
+                  className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
                   data-testid={`row-tenant-${t.id}`}
                 >
                   <div className="min-w-0">
@@ -295,6 +296,9 @@ export default function TenantsPage() {
                   <StatusBadge active={t.active} />
                   <span className="text-sm text-slate-600 capitalize truncate" data-testid={`tenant-business-type-${t.id}`}>
                     {t.businessType?.replace(/_/g, " ") ?? "—"}
+                  </span>
+                  <span className="text-sm text-slate-600" data-testid={`tenant-users-outlets-${t.id}`}>
+                    {t.userCount}u / {t.outletCount}o
                   </span>
                   <span className="text-xs text-slate-500" data-testid={`tenant-created-${t.id}`}>
                     {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}

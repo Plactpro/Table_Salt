@@ -43,23 +43,17 @@ export default function AdminSettingsPage() {
   const { data: settings, isLoading, error } = useQuery<PlatformSettings>({
     queryKey: ["/api/admin/platform-settings"],
     queryFn: async () => {
-      try {
-        const r = await apiRequest("GET", "/api/admin/platform-settings");
-        return r.json();
-      } catch {
-        return DEFAULT_SETTINGS;
-      }
+      const r = await apiRequest("GET", "/api/admin/platform-settings");
+      if (!r.ok) throw new Error(`Failed to load settings: ${r.status}`);
+      return r.json();
     },
   });
 
   const saveMutation = useMutation({
     mutationFn: async (data: Partial<PlatformSettings>) => {
-      try {
-        const r = await apiRequest("PATCH", "/api/admin/platform-settings", data);
-        return r.json();
-      } catch {
-        return data;
-      }
+      const r = await apiRequest("PATCH", "/api/admin/platform-settings", data);
+      if (!r.ok) throw new Error(`Failed to save settings: ${r.status}`);
+      return r.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/platform-settings"] });
@@ -68,7 +62,7 @@ export default function AdminSettingsPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const current = settings ?? DEFAULT_SETTINGS;
+  const current = settings ?? DEFAULT_SETTINGS; // DEFAULT_SETTINGS used only during initial load
 
   const toggle = (key: keyof PlatformSettings, value: boolean) => {
     saveMutation.mutate({ [key]: value });
