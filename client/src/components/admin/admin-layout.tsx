@@ -13,6 +13,7 @@ import {
   LogOut,
   ArrowLeft,
   AlertTriangle,
+  Settings,
 } from "lucide-react";
 
 interface NavItem {
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { id: "users", label: "Users", icon: Users, path: "/admin/users" },
   { id: "audit", label: "Audit Log", icon: ScrollText, path: "/admin/audit" },
   { id: "admins", label: "Admins", icon: ShieldCheck, path: "/admin/admins" },
+  { id: "settings", label: "Settings", icon: Settings, path: "/admin/settings" },
 ];
 
 function NavLink({ item }: { item: NavItem }) {
@@ -60,7 +62,7 @@ function NavLink({ item }: { item: NavItem }) {
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
-  const { isImpersonating, originalAdmin, endImpersonation } = useImpersonation();
+  const { isImpersonating, originalAdmin, tenantName, endImpersonation } = useImpersonation();
   const [, navigate] = useLocation();
 
   const handleLogout = async () => {
@@ -78,8 +80,8 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-2 text-sm font-medium">
             <AlertTriangle className="h-4 w-4 shrink-0" />
             <span>
-              Impersonating as tenant user
-              {originalAdmin ? ` (admin: ${originalAdmin.userName})` : ""}
+              Impersonating: {tenantName ?? "Tenant"}
+              {originalAdmin ? ` (as ${originalAdmin.userName})` : ""}
             </span>
           </div>
           <Button

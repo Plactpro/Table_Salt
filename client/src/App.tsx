@@ -44,6 +44,7 @@ import TenantDetailPage from "@/pages/admin/tenant-detail";
 import UsersPage from "@/pages/admin/users";
 import AuditLogPage from "@/pages/admin/audit-log";
 import AdminsPage from "@/pages/admin/admins";
+import AdminSettingsPage from "@/pages/admin/settings";
 
 import { ReactNode } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -178,19 +179,18 @@ function PublicOnly({ children }: { children: ReactNode }) {
 
 function AdminShell() {
   return (
-    <ImpersonationProvider>
-      <AdminLayout>
-        <Switch>
-          <Route path="/admin" component={AdminDashboard} />
-          <Route path="/admin/tenants/:id" component={TenantDetailPage} />
-          <Route path="/admin/tenants" component={TenantsPage} />
-          <Route path="/admin/users" component={UsersPage} />
-          <Route path="/admin/audit" component={AuditLogPage} />
-          <Route path="/admin/admins" component={AdminsPage} />
-          <Route component={NotFound} />
-        </Switch>
-      </AdminLayout>
-    </ImpersonationProvider>
+    <AdminLayout>
+      <Switch>
+        <Route path="/admin" component={AdminDashboard} />
+        <Route path="/admin/tenants/:id" component={TenantDetailPage} />
+        <Route path="/admin/tenants" component={TenantsPage} />
+        <Route path="/admin/users" component={UsersPage} />
+        <Route path="/admin/audit" component={AuditLogPage} />
+        <Route path="/admin/admins" component={AdminsPage} />
+        <Route path="/admin/settings" component={AdminSettingsPage} />
+        <Route component={NotFound} />
+      </Switch>
+    </AdminLayout>
   );
 }
 
@@ -300,8 +300,10 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
         <AuthProvider>
-          <Toaster />
-          <Router />
+          <ImpersonationProvider>
+            <Toaster />
+            <Router />
+          </ImpersonationProvider>
         </AuthProvider>
       </TooltipProvider>
     </QueryClientProvider>
