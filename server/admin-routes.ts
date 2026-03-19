@@ -7,11 +7,13 @@ import {
 } from "@shared/schema";
 import { requireSuperAdmin, requireAuth, hashPassword } from "./auth";
 import { auditLog } from "./audit";
+import { encryptField, decryptField, isEncrypted } from "./encryption";
 import { randomBytes } from "crypto";
 
 type UserRoleValue = typeof roleEnum.enumValues[number];
 
 const PLATFORM_SLUG = "platform";
+const USER_PII_FIELDS = ["email", "phone"] as const;
 
 async function getPlatformTenantId(): Promise<string> {
   const [pt] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, PLATFORM_SLUG));
@@ -19,9 +21,32 @@ async function getPlatformTenantId(): Promise<string> {
   return pt.id;
 }
 
+function encryptPiiFields<T extends Record<string, unknown>>(data: T, fields: readonly string[]): T {
+  const result = { ...data };
+  for (const field of fields) {
+    const val = result[field];
+    if (typeof val === "string" && val && !isEncrypted(val)) {
+      (result as Record<string, unknown>)[field] = encryptField(val);
+    }
+  }
+  return result;
+}
+
+function decryptPiiFields<T extends Record<string, unknown>>(record: T, fields: readonly string[]): T {
+  if (!record) return record;
+  const result = { ...record };
+  for (const field of fields) {
+    const val = result[field];
+    if (typeof val === "string" && isEncrypted(val)) {
+      (result as Record<string, unknown>)[field] = decryptField(val);
+    }
+  }
+  return result;
+}
+
 function stripSensitiveFields(u: Record<string, unknown>): Record<string, unknown> {
   const { password, totpSecret, recoveryCodes, passwordHistory, ...safe } = u;
-  return safe;
+  return decryptPiiFields(safe, USER_PII_FIELDS);
 }
 
 /** Derive a safe username from an email address or a display name */
@@ -195,7 +220,10 @@ export function registerAdminRoutes(app: Express) {
   app.post("/api/session/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
   app.post("/api/admin/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
 
+  // End and status use requireAuth because during impersonation the session
+  // belongs to the impersonated (tenant) user, not super_admin.
   app.post("/api/session/impersonate/end", requireAuth, handleImpersonateEnd);
+  app.post("/api/admin/impersonate/end", requireAuth, handleImpersonateEnd);
 
   const handleImpersonationStatus: import("express").RequestHandler = (req, res) => {
     const session = req.session as Record<string, unknown>;
@@ -208,9 +236,12 @@ export function registerAdminRoutes(app: Express) {
   };
 
   app.get("/api/session/impersonation/status", requireAuth, handleImpersonationStatus);
+  app.get("/api/admin/impersonation/status", requireAuth, handleImpersonationStatus);
 
   // ───────────────────────────────────────────────────────────────────────────
   // All routes below this point are under /api/admin/* and use requireSuperAdmin
+  // (exception: impersonate/end and impersonation/status use requireAuth because
+  //  during impersonation the active session belongs to the impersonated user)
   // ───────────────────────────────────────────────────────────────────────────
 
   app.get("/api/admin/stats", requireSuperAdmin, async (_req, res) => {
@@ -421,7 +452,7 @@ export function registerAdminRoutes(app: Express) {
           active: true,
         });
 
-        const [newOwner] = await tx.insert(users).values({
+        const ownerValues = encryptPiiFields({
           tenantId: newTenant.id,
           username: rawUsername,
           password: hashedPw,
@@ -429,7 +460,8 @@ export function registerAdminRoutes(app: Express) {
           email: ownerEmail,
           role: "owner" as UserRoleValue,
           active: true,
-        }).returning();
+        }, USER_PII_FIELDS);
+        const [newOwner] = await tx.insert(users).values(ownerValues).returning();
 
         return { newTenant, newOwner };
       });
@@ -602,15 +634,17 @@ export function registerAdminRoutes(app: Express) {
         .where(ne(users.tenantId, platformTenantId))
         .orderBy(users.name);
 
-      let filtered = allUsers;
+      const decrypted = allUsers.map(u => decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS));
+
+      let filtered = decrypted;
       if (tenantId) filtered = filtered.filter(u => u.tenantId === tenantId);
       if (role) filtered = filtered.filter(u => u.role === role);
       if (search) {
         const q = search.toLowerCase();
         filtered = filtered.filter(u =>
-          u.name.toLowerCase().includes(q) ||
-          u.username.toLowerCase().includes(q) ||
-          (u.email || "").toLowerCase().includes(q)
+          (u.name as string || "").toLowerCase().includes(q) ||
+          (u.username as string || "").toLowerCase().includes(q) ||
+          (u.email as string || "").toLowerCase().includes(q)
         );
       }
 
@@ -736,7 +770,11 @@ export function registerAdminRoutes(app: Express) {
         .orderBy(desc(auditEvents.createdAt))
         .limit(limitNum);
 
-      return res.json(events);
+      const decryptedEvents = events.map(e => {
+        if (!e.userEmail) return e;
+        return { ...e, userEmail: isEncrypted(e.userEmail) ? decryptField(e.userEmail) : e.userEmail };
+      });
+      return res.json(decryptedEvents);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
@@ -755,7 +793,7 @@ export function registerAdminRoutes(app: Express) {
         active: users.active,
         totpEnabled: users.totpEnabled,
       }).from(users).where(eq(users.role, "super_admin" as UserRoleValue)).orderBy(users.name);
-      return res.json(admins);
+      return res.json(admins.map(a => decryptPiiFields(a as Record<string, unknown>, USER_PII_FIELDS)));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
@@ -783,7 +821,7 @@ export function registerAdminRoutes(app: Express) {
       if (existing) return res.status(409).json({ message: "Username already taken" });
 
       const hashedPw = await hashPassword(parsed.data.password);
-      const [newAdmin] = await db.insert(users).values({
+      const newAdminValues = encryptPiiFields({
         tenantId: platformTenantId,
         username: parsed.data.username,
         password: hashedPw,
@@ -791,7 +829,8 @@ export function registerAdminRoutes(app: Express) {
         email: parsed.data.email,
         role: "super_admin" as UserRoleValue,
         active: true,
-      }).returning();
+      }, USER_PII_FIELDS);
+      const [newAdmin] = await db.insert(users).values(newAdminValues).returning();
 
       await auditLog({
         tenantId: null,
