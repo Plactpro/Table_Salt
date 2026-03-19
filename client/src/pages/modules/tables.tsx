@@ -203,14 +203,6 @@ export default function TablesPage() {
     });
   }, [queryClient]));
 
-  useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
-    const p = payload as { tableId?: string; status?: string } | null;
-    if (!p?.tableId || !p.status) return;
-    queryClient.setQueryData(["/api/tables"], (old: TableData[] | undefined) => {
-      if (!old) return old;
-      return old.map(t => t.id === p.tableId ? { ...t, status: (p.status ?? t.status) as TableStatus | null } : t);
-    });
-  }, [queryClient]));
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
