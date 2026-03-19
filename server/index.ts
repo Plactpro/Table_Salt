@@ -65,6 +65,13 @@ app.use((req, res, next) => {
 
 (async () => {
   try {
+    const { runAdminMigrations } = await import("./admin-migrations");
+    await runAdminMigrations();
+  } catch (e) {
+    console.error("Admin migrations error:", e);
+  }
+
+  try {
     const { seedDatabase } = await import("./seed");
     await seedDatabase();
   } catch (e) {
