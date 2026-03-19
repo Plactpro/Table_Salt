@@ -306,7 +306,9 @@ export default function TenantsPage() {
                     {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}
                   </span>
                   <span className="text-xs text-slate-500" data-testid={`tenant-last-active-${t.id}`}>
-                    {t.lastActivity ? new Date(t.lastActivity).toLocaleDateString() : "—"}
+                    {t.lastActivity
+                      ? new Date(t.lastActivity).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
+                      : "—"}
                   </span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
