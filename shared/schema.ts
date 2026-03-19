@@ -771,6 +771,7 @@ export const recipeIngredients = pgTable("recipe_ingredients", {
   quantity: decimal("quantity", { precision: 10, scale: 4 }).notNull(),
   unit: text("unit").notNull(),
   wastePct: decimal("waste_pct", { precision: 5, scale: 2 }).default("0"),
+  notes: text("notes"),
   sortOrder: integer("sort_order").default(0),
 });
 

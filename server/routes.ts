@@ -3110,6 +3110,7 @@ export async function registerRoutes(
           recipeName: recipe.name,
           menuItemName: menuItem?.name || null,
           menuItemId: recipe.menuItemId,
+          categoryId: (menuItem as any)?.categoryId || null,
           sellingPrice: Math.round(sellingPrice * 100) / 100,
           plateCost: Math.round(plateCost * 100) / 100,
           margin: Math.round(margin * 100) / 100,

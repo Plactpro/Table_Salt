@@ -2,35 +2,28 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency } from "@shared/currency";
-import { Loader2, TrendingDown, TrendingUp, DollarSign, AlertTriangle, CheckCircle, BarChart3, Activity } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, BarChart3, Activity, Filter } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import type { MenuCategory } from "@shared/schema";
 
 interface FoodCostRecipe {
   recipeId: string;
   recipeName: string;
   menuItemName: string | null;
   menuItemId: string | null;
+  categoryId: string | null;
   sellingPrice: number;
   plateCost: number;
   margin: number;
   foodCostPct: number;
   soldQty: number;
   totalIdealCost: number;
-  ingredients: Array<{
-    name: string;
-    inventoryItemId: string;
-    quantity: number;
-    unit: string;
-    wastePct: number;
-    costPerUnit: number;
-    totalCost: number;
-    idealUsage: number;
-  }>;
 }
 
 interface VarianceRow {
@@ -69,12 +62,23 @@ function foodCostBadge(pct: number) {
   return <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">{pct.toFixed(1)}%</Badge>;
 }
 
+function variancePct(row: VarianceRow): number {
+  return row.idealUsage > 0 ? ((row.varianceQty / row.idealUsage) * 100) : 0;
+}
+
 export default function FoodCostReports() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("profitability");
-  const [sortBy, setSortBy] = useState<"foodCostPct" | "soldQty" | "margin" | "plateCost">("foodCostPct");
+  const [sortBy, setSortBy] = useState<"foodCostPct" | "soldQty" | "margin" | "plateCost" | "sellingPrice">("foodCostPct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [searchTerm, setSearchTerm] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const today = new Date();
+  const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate() - 30);
+  const [dateFrom, setDateFrom] = useState(thirtyDaysAgo.toISOString().split("T")[0]);
+  const [dateTo, setDateTo] = useState(today.toISOString().split("T")[0]);
+  const [outletFilter, setOutletFilter] = useState("all");
 
   const fmt = (v: number) => {
     const tenant = user?.tenant;
@@ -90,6 +94,9 @@ export default function FoodCostReports() {
     },
   });
 
+  const { data: categories = [] } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
+  const { data: outlets = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/outlets"] });
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -103,7 +110,11 @@ export default function FoodCostReports() {
   const { recipes, summary, varianceByIngredient, topMovers } = report;
 
   const filteredRecipes = recipes
-    .filter(r => !searchTerm || r.recipeName.toLowerCase().includes(searchTerm.toLowerCase()) || (r.menuItemName || "").toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter(r => {
+      if (searchTerm && !r.recipeName.toLowerCase().includes(searchTerm.toLowerCase()) && !(r.menuItemName || "").toLowerCase().includes(searchTerm.toLowerCase())) return false;
+      if (categoryFilter !== "all" && r.categoryId !== categoryFilter) return false;
+      return true;
+    })
     .sort((a, b) => {
       const valA = a[sortBy] ?? 0;
       const valB = b[sortBy] ?? 0;
@@ -115,7 +126,7 @@ export default function FoodCostReports() {
     else { setSortBy(col); setSortDir("desc"); }
   };
 
-  const negVar = varianceByIngredient.filter(v => v.varianceCost > 0);
+  const negVar = varianceByIngredient.filter(v => v.varianceQty > 0);
   const totalVarianceCost = varianceByIngredient.reduce((s, v) => s + v.varianceCost, 0);
 
   return (
@@ -153,38 +164,62 @@ export default function FoodCostReports() {
         </TabsList>
 
         <TabsContent value="profitability" className="mt-4 space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <Input
-              placeholder="Search recipes..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-52"
-              data-testid="input-search-recipes"
-            />
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
-              <SelectTrigger className="w-44" data-testid="select-sort-recipes">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="foodCostPct">Sort: Food Cost %</SelectItem>
-                <SelectItem value="soldQty">Sort: Qty Sold</SelectItem>
-                <SelectItem value="margin">Sort: Margin</SelectItem>
-                <SelectItem value="plateCost">Sort: Plate Cost</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={sortDir} onValueChange={(v) => setSortDir(v as "asc" | "desc")}>
-              <SelectTrigger className="w-32" data-testid="select-sort-dir">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="desc">High → Low</SelectItem>
-                <SelectItem value="asc">Low → High</SelectItem>
-              </SelectContent>
-            </Select>
-            <div className="text-xs text-muted-foreground ml-auto">
-              <span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-300 mr-1" />{">"} 50%
-              <span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-300 mx-1 ml-2" />{"> 35%"}
-              <span className="inline-block w-3 h-3 rounded bg-green-100 border border-green-300 mx-1 ml-2" /> OK
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Search</Label>
+              <Input
+                placeholder="Recipe or menu item..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-48"
+                data-testid="input-search-recipes"
+              />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Category</Label>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-44" data-testid="select-category-filter">
+                  <SelectValue placeholder="All categories" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Categories</SelectItem>
+                  {categories.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Sort by</Label>
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                <SelectTrigger className="w-44" data-testid="select-sort-recipes">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="foodCostPct">Food Cost %</SelectItem>
+                  <SelectItem value="soldQty">Qty Sold</SelectItem>
+                  <SelectItem value="margin">Margin</SelectItem>
+                  <SelectItem value="plateCost">Plate Cost</SelectItem>
+                  <SelectItem value="sellingPrice">Selling Price</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">Direction</Label>
+              <Select value={sortDir} onValueChange={(v) => setSortDir(v as "asc" | "desc")}>
+                <SelectTrigger className="w-32" data-testid="select-sort-dir">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desc">High → Low</SelectItem>
+                  <SelectItem value="asc">Low → High</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="text-xs text-muted-foreground ml-auto self-end flex items-center gap-2 pb-1">
+              <span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-300" />{">"} 50%
+              <span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-300 ml-1" />{"> 35%"}
+              <span className="inline-block w-3 h-3 rounded bg-green-100 border border-green-300 ml-1" /> OK
             </div>
           </div>
 
@@ -203,6 +238,9 @@ export default function FoodCostReports() {
                       <TableHead>Menu Item</TableHead>
                       <TableHead className="cursor-pointer hover:text-foreground" onClick={() => toggleSort("plateCost")}>
                         Plate Cost {sortBy === "plateCost" ? (sortDir === "desc" ? "↓" : "↑") : ""}
+                      </TableHead>
+                      <TableHead className="cursor-pointer hover:text-foreground" onClick={() => toggleSort("sellingPrice")}>
+                        Selling Price {sortBy === "sellingPrice" ? (sortDir === "desc" ? "↓" : "↑") : ""}
                       </TableHead>
                       <TableHead className="cursor-pointer hover:text-foreground" onClick={() => toggleSort("foodCostPct")}>
                         Food Cost % {sortBy === "foodCostPct" ? (sortDir === "desc" ? "↓" : "↑") : ""}
@@ -224,6 +262,7 @@ export default function FoodCostReports() {
                           <TableCell className="font-medium">{r.recipeName}</TableCell>
                           <TableCell>{r.menuItemName || <span className="text-muted-foreground text-xs">Not linked</span>}</TableCell>
                           <TableCell className="font-medium">{fmt(r.plateCost)}</TableCell>
+                          <TableCell>{r.sellingPrice > 0 ? fmt(r.sellingPrice) : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
                           <TableCell>{foodCostBadge(r.foodCostPct)}</TableCell>
                           <TableCell>
                             {r.sellingPrice > 0 ? (
@@ -245,6 +284,38 @@ export default function FoodCostReports() {
         </TabsContent>
 
         <TabsContent value="usage" className="mt-4 space-y-4">
+          <div className="flex flex-wrap items-end gap-3">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">From</Label>
+              <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-40" data-testid="input-date-from" />
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1 block">To</Label>
+              <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-40" data-testid="input-date-to" />
+            </div>
+            {outlets.length > 0 && (
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">Outlet</Label>
+                <Select value={outletFilter} onValueChange={setOutletFilter}>
+                  <SelectTrigger className="w-44" data-testid="select-outlet-filter">
+                    <SelectValue placeholder="All outlets" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Outlets</SelectItem>
+                    {outlets.map(o => (
+                      <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <div className="text-xs text-muted-foreground ml-auto self-end pb-1 flex items-center gap-2">
+              <Filter className="h-3 w-3" />
+              <span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-300" />{">"} 15% variance
+              <span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-300 ml-1" />{">"} 5% variance
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <Card>
               <CardHeader className="pb-2">
@@ -269,22 +340,25 @@ export default function FoodCostReports() {
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">High Variance Items</CardTitle>
-                <CardDescription className="text-xs">Actual usage exceeds theoretical by most</CardDescription>
+                <CardDescription className="text-xs">Actual usage exceeds theoretical by most cost</CardDescription>
               </CardHeader>
               <CardContent className="space-y-2">
                 {negVar.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-green-600">No over-usage detected</p>
-                ) : negVar.sort((a, b) => b.varianceCost - a.varianceCost).slice(0, 8).map(v => (
-                  <div key={v.itemId} className="flex items-center justify-between text-sm" data-testid={`variance-${v.itemId}`}>
-                    <span>{v.itemName}</span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="text-red-600 border-red-200 bg-red-50 text-xs">
-                        +{v.varianceQty.toFixed(2)} {v.unit}
-                      </Badge>
-                      <span className="text-xs text-red-600 font-medium">{fmt(v.varianceCost)}</span>
+                ) : negVar.sort((a, b) => b.varianceCost - a.varianceCost).slice(0, 8).map(v => {
+                  const pct = variancePct(v);
+                  return (
+                    <div key={v.itemId} className="flex items-center justify-between text-sm" data-testid={`variance-${v.itemId}`}>
+                      <span>{v.itemName}</span>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className={`text-xs ${pct > 15 ? "text-red-600 border-red-200 bg-red-50" : "text-amber-600 border-amber-200 bg-amber-50"}`}>
+                          +{v.varianceQty.toFixed(2)} {v.unit} ({pct.toFixed(0)}%)
+                        </Badge>
+                        <span className="text-xs text-red-600 font-medium">{fmt(v.varianceCost)}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </CardContent>
             </Card>
           </div>
@@ -293,8 +367,8 @@ export default function FoodCostReports() {
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Ingredient Usage: Ideal vs. Actual</CardTitle>
               <CardDescription>
-                Ideal usage is calculated from recipes × sold quantities. Actual usage comes from stock movements.
-                Positive variance (Actual &gt; Ideal) indicates waste or unaccounted consumption.
+                Ideal usage calculated from recipes × sold quantities. Actual usage from stock movements.
+                Rows highlighted red (&gt;15% variance) or amber (&gt;5% variance).
               </CardDescription>
             </CardHeader>
             <CardContent className="p-0">
@@ -311,6 +385,7 @@ export default function FoodCostReports() {
                       <TableHead className="text-right">Ideal Usage</TableHead>
                       <TableHead className="text-right">Actual Usage</TableHead>
                       <TableHead className="text-right">Variance (Qty)</TableHead>
+                      <TableHead className="text-right">Variance %</TableHead>
                       <TableHead className="text-right">Variance (Cost)</TableHead>
                       <TableHead className="text-right">Current Stock</TableHead>
                     </TableRow>
@@ -318,7 +393,8 @@ export default function FoodCostReports() {
                   <TableBody>
                     {varianceByIngredient.map(v => {
                       const isOver = v.varianceQty > 0;
-                      const rowBg = isOver && v.varianceCost > 10 ? "bg-red-50" : isOver ? "bg-amber-50/50" : "";
+                      const pct = variancePct(v);
+                      const rowBg = isOver && pct > 15 ? "bg-red-50" : isOver && pct > 5 ? "bg-amber-50/60" : "";
                       return (
                         <TableRow key={v.itemId} className={rowBg} data-testid={`variance-row-${v.itemId}`}>
                           <TableCell className="font-medium">{v.itemName}</TableCell>
@@ -326,6 +402,9 @@ export default function FoodCostReports() {
                           <TableCell className="text-right">{v.actualUsage.toFixed(2)} {v.unit}</TableCell>
                           <TableCell className={`text-right font-medium ${isOver ? "text-red-600" : "text-green-600"}`}>
                             {isOver ? "+" : ""}{v.varianceQty.toFixed(2)} {v.unit}
+                          </TableCell>
+                          <TableCell className={`text-right font-medium ${isOver && pct > 15 ? "text-red-600" : isOver && pct > 5 ? "text-amber-600" : "text-green-600"}`}>
+                            {isOver ? "+" : ""}{pct.toFixed(1)}%
                           </TableCell>
                           <TableCell className={`text-right font-medium ${isOver ? "text-red-600" : "text-green-600"}`}>
                             {isOver ? "+" : ""}{fmt(v.varianceCost)}
