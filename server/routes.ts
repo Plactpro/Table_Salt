@@ -2996,6 +2996,11 @@ export async function registerRoutes(
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // Recipe linking contract: recipe-to-menu-item association is stored on the recipe record
+  // (recipes.menuItemId). Linking from the Menu UI calls PATCH /api/recipes/:id with
+  // { menuItemId } — this is intentional: a recipe "belongs to" one menu item, and the
+  // menu item may optionally display recipe cost data. This avoids a separate join table
+  // while keeping the relationship navigable from both sides.
   app.patch("/api/recipes/:id", requireRole("owner", "manager"), requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
