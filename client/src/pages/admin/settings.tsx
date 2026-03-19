@@ -95,9 +95,9 @@ export default function AdminSettingsPage() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+        <div className="flex items-center gap-2 text-red-700 bg-red-50 border border-red-200 rounded-lg p-3">
           <AlertCircle className="h-4 w-4 shrink-0" />
-          <span className="text-sm">Using default settings — platform settings endpoint not yet configured.</span>
+          <span className="text-sm">Failed to load platform settings. Please refresh or contact your system administrator.</span>
         </div>
       )}
 

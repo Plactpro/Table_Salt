@@ -14,7 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2,
   Smartphone, Trash2, CheckCircle, Lock, QrCode, Copy, Eye, EyeOff,
-  AlertTriangle, Bell, Globe, Download, UserX, Database, Plus, X,
+  AlertTriangle, Bell, Globe, Download, UserX, Database, Plus, X, Info,
 } from "lucide-react";
 
 interface SecuritySettings {
@@ -187,6 +187,18 @@ export default function SecuritySettingsPage() {
             Save Changes
           </Button>
         )}
+      </div>
+
+      <div
+        className="flex items-center gap-3 p-3 rounded-lg border border-primary/20 bg-primary/5 text-sm"
+        data-testid="banner-encryption-info"
+      >
+        <Info className="h-4 w-4 text-primary shrink-0" />
+        <span className="text-muted-foreground">
+          All sensitive data is encrypted at rest using <strong className="text-foreground">AES-256-GCM</strong>.
+          Authentication uses <strong className="text-foreground">Session + TOTP</strong>.
+          TLS enforced in production via HSTS.
+        </span>
       </div>
 
       <SecurityAlertsCard />
@@ -730,18 +742,17 @@ function IpAllowlistCard() {
           <Label>Role-Specific IP Rules</Label>
           <p className="text-xs text-muted-foreground">Override global rules for specific roles. When set, only these IPs are allowed for that role.</p>
           <div className="flex gap-2">
-            <select
-              value={selectedRole}
-              onChange={(e) => setSelectedRole(e.target.value)}
-              className="flex h-9 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm"
-              disabled={!isOwner}
-              data-testid="select-role-ip"
-            >
-              <option value="">Select role...</option>
-              {MANAGEABLE_ROLES.map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
+            <Select value={selectedRole || "__none__"} onValueChange={(v) => setSelectedRole(v === "__none__" ? "" : v)} disabled={!isOwner}>
+              <SelectTrigger className="w-36" data-testid="select-role-ip">
+                <SelectValue placeholder="Select role..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__">Select role...</SelectItem>
+                {MANAGEABLE_ROLES.map(r => (
+                  <SelectItem key={r} value={r}>{r}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <Input
               value={newRoleCidr}
               onChange={(e) => setNewRoleCidr(e.target.value)}

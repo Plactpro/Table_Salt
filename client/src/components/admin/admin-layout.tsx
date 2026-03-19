@@ -1,9 +1,10 @@
-import { ReactNode } from "react";
-import { useLocation, useRoute } from "wouter";
+import { ReactNode, useState } from "react";
+import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import {
   LayoutDashboard,
   Building2,
@@ -14,6 +15,7 @@ import {
   ArrowLeft,
   AlertTriangle,
   Settings,
+  Menu,
 } from "lucide-react";
 
 interface NavItem {
@@ -32,7 +34,7 @@ const navItems: NavItem[] = [
   { id: "settings", label: "Settings", icon: Settings, path: "/admin/settings" },
 ];
 
-function NavLink({ item }: { item: NavItem }) {
+function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
   const [location, navigate] = useLocation();
   const isActive =
     item.path === "/admin"
@@ -43,7 +45,10 @@ function NavLink({ item }: { item: NavItem }) {
   return (
     <button
       data-testid={`nav-admin-${item.id}`}
-      onClick={() => navigate(item.path)}
+      onClick={() => {
+        navigate(item.path);
+        onNavigate?.();
+      }}
       className={cn(
         "flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
         isActive
@@ -60,10 +65,51 @@ function NavLink({ item }: { item: NavItem }) {
   );
 }
 
+function SidebarContent({ onNavigate, user, onLogout }: {
+  onNavigate?: () => void;
+  user: { name?: string; username?: string } | null;
+  onLogout: () => void;
+}) {
+  return (
+    <div className="flex flex-col h-full bg-slate-900">
+      <div className="px-4 py-5 border-b border-white/10">
+        <p className="font-heading text-white text-xl font-semibold leading-tight" data-testid="admin-logo">
+          Table Salt
+        </p>
+        <p className="text-slate-400 text-xs mt-0.5 font-medium tracking-wide uppercase" data-testid="admin-platform-label">
+          Platform Admin
+        </p>
+      </div>
+
+      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
+        {navItems.map((item) => (
+          <NavLink key={item.id} item={item} onNavigate={onNavigate} />
+        ))}
+      </nav>
+
+      <div className="px-3 py-4 border-t border-white/10 space-y-2">
+        <div className="px-3 py-2">
+          <p className="text-xs text-slate-400 truncate" data-testid="admin-user-name">{user?.name}</p>
+          <p className="text-xs text-slate-500 truncate">{user?.username}</p>
+        </div>
+        <button
+          data-testid="button-admin-logout"
+          onClick={onLogout}
+          className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function AdminLayout({ children }: { children: ReactNode }) {
   const { user, logout } = useAuth();
   const { isImpersonating, originalAdmin, tenantName, endImpersonation } = useImpersonation();
   const [, navigate] = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const handleLogout = async () => {
     await logout();
@@ -97,40 +143,37 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         </div>
       )}
 
+      {/* Mobile top bar */}
+      <div className="md:hidden flex items-center gap-3 bg-slate-900 px-4 py-3 shrink-0">
+        <Sheet open={mobileOpen} onOpenChange={setMobileOpen}>
+          <SheetTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-slate-400 hover:text-white hover:bg-white/10 h-9 w-9"
+              data-testid="button-admin-mobile-menu"
+            >
+              <Menu className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="p-0 w-56 bg-slate-900 border-slate-700">
+            <SidebarContent
+              onNavigate={() => setMobileOpen(false)}
+              user={user}
+              onLogout={handleLogout}
+            />
+          </SheetContent>
+        </Sheet>
+        <span className="text-white font-semibold text-sm">Table Salt Admin</span>
+      </div>
+
       <div className="flex flex-1 min-h-0">
+        {/* Desktop sidebar */}
         <aside
-          className="w-56 shrink-0 flex flex-col bg-slate-900 h-screen sticky top-0"
+          className="hidden md:flex w-56 shrink-0 flex-col bg-slate-900 h-screen sticky top-0"
           data-testid="admin-sidebar"
         >
-          <div className="px-4 py-5 border-b border-white/10">
-            <p className="font-heading text-white text-xl font-semibold leading-tight" data-testid="admin-logo">
-              Table Salt
-            </p>
-            <p className="text-slate-400 text-xs mt-0.5 font-medium tracking-wide uppercase" data-testid="admin-platform-label">
-              Platform Admin
-            </p>
-          </div>
-
-          <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-            {navItems.map((item) => (
-              <NavLink key={item.id} item={item} />
-            ))}
-          </nav>
-
-          <div className="px-3 py-4 border-t border-white/10 space-y-2">
-            <div className="px-3 py-2">
-              <p className="text-xs text-slate-400 truncate" data-testid="admin-user-name">{user?.name}</p>
-              <p className="text-xs text-slate-500 truncate">{user?.username}</p>
-            </div>
-            <button
-              data-testid="button-admin-logout"
-              onClick={handleLogout}
-              className="flex items-center gap-2 w-full rounded-lg px-3 py-2 text-sm text-slate-400 hover:text-white hover:bg-white/5 transition-colors"
-            >
-              <LogOut className="h-4 w-4" />
-              Sign out
-            </button>
-          </div>
+          <SidebarContent user={user} onLogout={handleLogout} />
         </aside>
 
         <main className="flex-1 min-w-0 overflow-auto bg-slate-50" data-testid="admin-main">
