@@ -292,6 +292,7 @@ export interface IStorage {
   createStockTakeLine(data: InsertStockTakeLine): Promise<StockTakeLine>;
   updateStockTakeLine(id: string, data: Partial<InsertStockTakeLine>): Promise<StockTakeLine | undefined>;
   getStockMovementsByTenant(tenantId: string, limit?: number): Promise<StockMovement[]>;
+  getStockMovementsByOrder(orderId: string): Promise<StockMovement[]>;
 
   getKitchenStationsByTenant(tenantId: string): Promise<KitchenStation[]>;
   getKitchenStation(id: string): Promise<KitchenStation | undefined>;
@@ -1229,6 +1230,9 @@ export class DatabaseStorage implements IStorage {
     const q = db.select().from(stockMovements).where(eq(stockMovements.tenantId, tenantId)).orderBy(desc(stockMovements.createdAt));
     if (limit) return q.limit(limit);
     return q;
+  }
+  async getStockMovementsByOrder(orderId: string) {
+    return db.select().from(stockMovements).where(eq(stockMovements.orderId, orderId)).orderBy(desc(stockMovements.createdAt));
   }
 
   async getKitchenStationsByTenant(tenantId: string) {
