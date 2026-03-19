@@ -86,6 +86,10 @@ export default function FoodCostReports() {
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
+  // API contract: both the Profitability view and Theoretical Usage (variance) view
+  // are served by a single consolidated endpoint: GET /api/food-cost-report.
+  // The response includes profitabilityByItem (recipe-level) and varianceByIngredient
+  // (ingredient-level actual vs. ideal usage). Date and outlet filters apply to both.
   const today = new Date();
   const thirtyDaysAgo = new Date(today); thirtyDaysAgo.setDate(today.getDate() - 30);
   const [dateFrom, setDateFrom] = useState(thirtyDaysAgo.toISOString().split("T")[0]);
