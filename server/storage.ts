@@ -167,7 +167,7 @@ export interface IStorage {
   updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
   deleteReservationByTenant(id: string, tenantId: string): Promise<void>;
 
-  getOrdersByTenant(tenantId: string): Promise<Order[]>;
+  getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Order[]>;
   getOrder(id: string): Promise<Order | undefined>;
   getOrderByClientId(tenantId: string, clientOrderId: string): Promise<Order | undefined>;
   getOrderByStripeSessionId(sessionId: string): Promise<Order | undefined>;
@@ -185,7 +185,7 @@ export interface IStorage {
   deleteInventoryItem(id: string): Promise<void>;
   createStockMovement(data: InsertStockMovement): Promise<StockMovement>;
 
-  getCustomersByTenant(tenantId: string): Promise<Customer[]>;
+  getCustomersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Customer[]>;
   createCustomer(data: InsertCustomer): Promise<Customer>;
   updateCustomer(id: string, data: Partial<InsertCustomer>): Promise<Customer | undefined>;
 
@@ -201,7 +201,7 @@ export interface IStorage {
   updateOfferByTenant(id: string, tenantId: string, data: Partial<InsertOffer>): Promise<Offer | undefined>;
   deleteOfferByTenant(id: string, tenantId: string): Promise<void>;
 
-  getDeliveryOrdersByTenant(tenantId: string): Promise<DeliveryOrder[]>;
+  getDeliveryOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<DeliveryOrder[]>;
   getDeliveryOrderByTenant(id: string, tenantId: string): Promise<DeliveryOrder | undefined>;
   createDeliveryOrder(data: InsertDeliveryOrder): Promise<DeliveryOrder>;
   updateDeliveryOrderByTenant(id: string, tenantId: string, data: Partial<InsertDeliveryOrder>): Promise<DeliveryOrder | undefined>;
@@ -291,7 +291,7 @@ export interface IStorage {
   getStockTakeLines(stockTakeId: string): Promise<StockTakeLine[]>;
   createStockTakeLine(data: InsertStockTakeLine): Promise<StockTakeLine>;
   updateStockTakeLine(id: string, data: Partial<InsertStockTakeLine>): Promise<StockTakeLine | undefined>;
-  getStockMovementsByTenant(tenantId: string, limit?: number): Promise<StockMovement[]>;
+  getStockMovementsByTenant(tenantId: string, limit?: number, offset?: number): Promise<StockMovement[]>;
   getStockMovementsByOrder(orderId: string): Promise<StockMovement[]>;
 
   getKitchenStationsByTenant(tenantId: string): Promise<KitchenStation[]>;
@@ -610,8 +610,11 @@ export class DatabaseStorage implements IStorage {
     await db.delete(reservations).where(and(eq(reservations.id, id), eq(reservations.tenantId, tenantId)));
   }
 
-  async getOrdersByTenant(tenantId: string) {
-    return db.select().from(orders).where(eq(orders.tenantId, tenantId)).orderBy(desc(orders.createdAt));
+  async getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }) {
+    const q = db.select().from(orders).where(eq(orders.tenantId, tenantId)).orderBy(desc(orders.createdAt));
+    if (opts?.limit !== undefined && opts?.offset !== undefined) return q.limit(opts.limit).offset(opts.offset);
+    if (opts?.limit !== undefined) return q.limit(opts.limit);
+    return q;
   }
   async getOrder(id: string) {
     const [o] = await db.select().from(orders).where(eq(orders.id, id));
@@ -693,8 +696,12 @@ export class DatabaseStorage implements IStorage {
     return m;
   }
 
-  async getCustomersByTenant(tenantId: string) {
-    const rows = await db.select().from(customers).where(eq(customers.tenantId, tenantId));
+  async getCustomersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }) {
+    const q = db.select().from(customers).where(eq(customers.tenantId, tenantId));
+    let rows: typeof customers.$inferSelect[];
+    if (opts?.limit !== undefined && opts?.offset !== undefined) rows = await q.limit(opts.limit).offset(opts.offset);
+    else if (opts?.limit !== undefined) rows = await q.limit(opts.limit);
+    else rows = await q;
     return rows.map(c => decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer);
   }
   async createCustomer(data: InsertCustomer) {
@@ -752,8 +759,12 @@ export class DatabaseStorage implements IStorage {
     await db.delete(offers).where(and(eq(offers.id, id), eq(offers.tenantId, tenantId)));
   }
 
-  async getDeliveryOrdersByTenant(tenantId: string) {
-    const rows = await db.select().from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenantId)).orderBy(desc(deliveryOrders.createdAt));
+  async getDeliveryOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }) {
+    const q = db.select().from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenantId)).orderBy(desc(deliveryOrders.createdAt));
+    let rows: typeof deliveryOrders.$inferSelect[];
+    if (opts?.limit !== undefined && opts?.offset !== undefined) rows = await q.limit(opts.limit).offset(opts.offset);
+    else if (opts?.limit !== undefined) rows = await q.limit(opts.limit);
+    else rows = await q;
     return rows.map(d => decryptPiiFields(d as Record<string, unknown>, DELIVERY_PII_FIELDS) as DeliveryOrder);
   }
   async getDeliveryOrderByTenant(id: string, tenantId: string) {
@@ -1226,8 +1237,9 @@ export class DatabaseStorage implements IStorage {
     const [line] = await db.update(stockTakeLines).set(data).where(eq(stockTakeLines.id, id)).returning();
     return line;
   }
-  async getStockMovementsByTenant(tenantId: string, limit?: number) {
+  async getStockMovementsByTenant(tenantId: string, limit?: number, offset?: number) {
     const q = db.select().from(stockMovements).where(eq(stockMovements.tenantId, tenantId)).orderBy(desc(stockMovements.createdAt));
+    if (limit && offset !== undefined) return q.limit(limit).offset(offset);
     if (limit) return q.limit(limit);
     return q;
   }
