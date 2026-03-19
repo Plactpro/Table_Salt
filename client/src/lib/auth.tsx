@@ -24,6 +24,9 @@ export interface TenantInfo {
   cuisineStyle?: string;
   country?: string;
   address?: string;
+  subscriptionStatus?: string;
+  trialEndsAt?: string | null;
+  stripeCustomerId?: string | null;
 }
 
 export interface AuthUser {
@@ -100,6 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           cuisineStyle: data.cuisineStyle,
           country: data.country,
           address: data.address,
+          subscriptionStatus: data.subscriptionStatus ?? "trialing",
+          trialEndsAt: data.trialEndsAt ?? null,
+          stripeCustomerId: data.stripeCustomerId ?? null,
         };
       } catch {
         return null;

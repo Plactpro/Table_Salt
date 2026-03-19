@@ -8,6 +8,7 @@ import { Headset, AlertTriangle, ArrowLeft } from "lucide-react";
 import ContactSupportModal from "@/components/widgets/contact-support-modal";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { Button } from "@/components/ui/button";
+import TrialBanner from "@/components/billing/trial-banner";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -28,6 +29,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="flex flex-col min-h-screen" data-testid="app-layout">
+      <TrialBanner />
       {isImpersonating && (
         <div
           className="w-full bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-between z-50 shrink-0"
