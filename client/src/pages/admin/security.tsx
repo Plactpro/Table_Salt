@@ -10,10 +10,12 @@ import {
   Filter,
   Building2,
   AlertCircle,
+  Clock,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Label } from "@/components/ui/label";
 import {
@@ -23,6 +25,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+function toDateStr(d: Date) {
+  return d.toISOString().split("T")[0];
+}
+
+function applySecurityPreset(
+  days: number,
+  setFrom: (v: string) => void,
+  setTo: (v: string) => void
+) {
+  const now = new Date();
+  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  setFrom(toDateStr(from));
+  setTo(toDateStr(now));
+}
 
 interface SecurityAlert {
   id: string;
@@ -80,15 +97,19 @@ export default function SecurityConsolePage() {
   const [typeFilter, setTypeFilter] = useState("all");
   const [tenantFilter, setTenantFilter] = useState("all");
   const [acknowledgedFilter, setAcknowledgedFilter] = useState("unacknowledged");
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
 
   const params = new URLSearchParams();
   if (severityFilter !== "all") params.set("severity", severityFilter);
   if (typeFilter !== "all") params.set("type", typeFilter);
   if (tenantFilter !== "all") params.set("tenantId", tenantFilter);
   if (acknowledgedFilter !== "all") params.set("acknowledged", acknowledgedFilter === "acknowledged" ? "true" : "false");
+  if (fromDate) params.set("from", fromDate);
+  if (toDate) params.set("to", toDate);
 
   const { data: alerts, isLoading, error } = useQuery<SecurityAlert[]>({
-    queryKey: ["/api/admin/security-alerts", severityFilter, typeFilter, tenantFilter, acknowledgedFilter],
+    queryKey: ["/api/admin/security-alerts", severityFilter, typeFilter, tenantFilter, acknowledgedFilter, fromDate, toDate],
     queryFn: async () => {
       const r = await apiRequest("GET", `/api/admin/security-alerts?${params.toString()}`);
       return r.json();
@@ -143,12 +164,56 @@ export default function SecurityConsolePage() {
 
       {/* Filters */}
       <Card data-testid="card-security-filters">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Filter className="h-4 w-4 text-slate-500" />
-            <span className="text-sm font-medium text-slate-700">Filters</span>
+        <CardContent className="p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-slate-500" />
+              <span className="text-sm font-medium text-slate-700">Filters</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-slate-400" />
+              <span className="text-xs text-slate-400 mr-1">Quick:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => applySecurityPreset(1, setFromDate, setToDate)}
+                data-testid="button-security-preset-24h"
+              >
+                Last 24h
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => applySecurityPreset(7, setFromDate, setToDate)}
+                data-testid="button-security-preset-7d"
+              >
+                Last 7 days
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => applySecurityPreset(30, setFromDate, setToDate)}
+                data-testid="button-security-preset-30d"
+              >
+                Last 30 days
+              </Button>
+              {(fromDate || toDate) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs px-2 text-slate-400"
+                  onClick={() => { setFromDate(""); setToDate(""); }}
+                  data-testid="button-security-clear-dates"
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
             <div className="space-y-1">
               <Label className="text-xs">Tenant</Label>
               <Select value={tenantFilter} onValueChange={setTenantFilter}>
@@ -204,6 +269,26 @@ export default function SecurityConsolePage() {
                   <SelectItem value="acknowledged">Acknowledged</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">From Date</Label>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="text-sm"
+                data-testid="input-security-from-date"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">To Date</Label>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="text-sm"
+                data-testid="input-security-to-date"
+              />
             </div>
           </div>
         </CardContent>
