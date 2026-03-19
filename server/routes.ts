@@ -37,6 +37,9 @@ import {
   users,
   securityAlerts,
   customers,
+  orders as ordersTable,
+  inventoryItems as inventoryItemsTable,
+  stockMovements as stockMovementsTable,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
@@ -1147,7 +1150,124 @@ export async function registerRoutes(
       }
     }
 
-    const order = await storage.updateOrder(req.params.id, updateData);
+    // --- Phase 1: collect recipe writes (reads only, no DB mutations yet) ---
+    type DepletionWrite = {
+      inventoryItemId: string; currentStock: string;
+      tenantId: string; menuItemId: string; recipeId: string;
+      qty: string; reason: string;
+    };
+    type ReversalEntry = { tenantId: string; itemId: string; qty: number; menuItemId: string | null; recipeId: string | null };
+
+    let depletionWrites: DepletionWrite[] = [];
+    let reversalEntries: ReversalEntry[] = [];
+
+    if (req.body.status === "paid" && existing.status !== "paid") {
+      const oItems = await storage.getOrderItemsByOrder(req.params.id);
+      type DepletionTarget = { menuItemId: string; name: string; quantity: number };
+      const depletionTargets: DepletionTarget[] = [];
+      for (const oi of oItems) {
+        if (oi.menuItemId) {
+          depletionTargets.push({ menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity || 1 });
+        } else if (oi.metadata && typeof oi.metadata === "object" && (oi.metadata as Record<string, unknown>).isCombo) {
+          const meta = oi.metadata as { components?: { menuItemId: string; name: string }[] };
+          if (meta.components) {
+            for (const comp of meta.components) {
+              depletionTargets.push({ menuItemId: comp.menuItemId, name: comp.name, quantity: oi.quantity || 1 });
+            }
+          }
+        }
+      }
+      for (const dt of depletionTargets) {
+        const recipe = await storage.getRecipeByMenuItem(dt.menuItemId);
+        if (!recipe) continue;
+        const recipeIngs = await storage.getRecipeIngredients(recipe.id);
+        for (const ing of recipeIngs) {
+          const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+          if (!invItem) continue;
+          const ingUnit = ing.unit || invItem.unit || "pcs";
+          const invUnit = invItem.unit || "pcs";
+          const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
+          const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
+          const qty = convertedQty * dt.quantity;
+          const newStock = Math.max(0, Number(invItem.currentStock) - qty);
+          depletionWrites.push({
+            inventoryItemId: ing.inventoryItemId,
+            currentStock: String(Math.round(newStock * 100) / 100),
+            tenantId: user.tenantId,
+            menuItemId: dt.menuItemId,
+            recipeId: recipe.id,
+            qty: String(Math.round(qty * 100) / 100),
+            reason: `Recipe consumption: ${dt.name} x${dt.quantity}`,
+          });
+        }
+      }
+    } else if (
+      (req.body.status === "voided" || req.body.status === "cancelled") &&
+      existing.status === "paid"
+    ) {
+      const consumptions = await storage.getStockMovementsByOrder(req.params.id);
+      for (const mv of consumptions) {
+        if (mv.type === "RECIPE_CONSUMPTION") {
+          reversalEntries.push({ tenantId: mv.tenantId, itemId: mv.itemId, qty: Number(mv.quantity), menuItemId: mv.menuItemId, recipeId: mv.recipeId });
+        }
+      }
+    }
+
+    // --- Phase 2: atomic writes (order status update + stock mutations in one transaction) ---
+    let order;
+    if (depletionWrites.length > 0) {
+      order = await db.transaction(async (tx) => {
+        const [updated] = await tx.update(ordersTable).set(updateData).where(eq(ordersTable.id, req.params.id)).returning();
+        for (const w of depletionWrites) {
+          await tx.update(inventoryItemsTable)
+            .set({ currentStock: w.currentStock })
+            .where(eq(inventoryItemsTable.id, w.inventoryItemId));
+          await tx.insert(stockMovementsTable).values({
+            tenantId: w.tenantId,
+            itemId: w.inventoryItemId,
+            type: "RECIPE_CONSUMPTION",
+            quantity: w.qty,
+            reason: w.reason,
+            orderId: req.params.id,
+            menuItemId: w.menuItemId,
+            recipeId: w.recipeId,
+          });
+        }
+        return updated;
+      });
+    } else if (reversalEntries.length > 0) {
+      order = await db.transaction(async (tx) => {
+        const [updated] = await tx.update(ordersTable).set(updateData).where(eq(ordersTable.id, req.params.id)).returning();
+        for (const rv of reversalEntries) {
+          await tx.update(inventoryItemsTable)
+            .set({ currentStock: sql`LEAST(${inventoryItemsTable.currentStock}::numeric + ${rv.qty}, 999999999)` })
+            .where(eq(inventoryItemsTable.id, rv.itemId));
+          await tx.insert(stockMovementsTable).values({
+            tenantId: rv.tenantId,
+            itemId: rv.itemId,
+            type: "RECIPE_REVERSAL",
+            quantity: String(rv.qty),
+            reason: `Reversal (${req.body.status}): order ${req.params.id}`,
+            orderId: req.params.id,
+            menuItemId: rv.menuItemId,
+            recipeId: rv.recipeId,
+          });
+        }
+        return updated;
+      });
+    } else {
+      order = await storage.updateOrder(req.params.id, updateData);
+    }
+
+    // Free table after successful transaction
+    if (req.body.status === "paid" && existing.status !== "paid" && existing.tableId) {
+      await storage.updateTable(existing.tableId, { status: "free" });
+    } else if (
+      (req.body.status === "voided" || req.body.status === "cancelled") &&
+      existing.tableId
+    ) {
+      await storage.updateTable(existing.tableId, { status: "free" });
+    }
 
     if (req.body.status === "voided" || req.body.status === "cancelled") {
       auditLogFromReq(req, {
@@ -1160,124 +1280,6 @@ export async function registerRoutes(
       auditLogFromReq(req, { action: "order_updated", entityType: "order", entityId: req.params.id, before: { status: existing.status }, after: { status: req.body.status } });
     }
 
-    if (req.body.status === "paid" && existing.status !== "paid") {
-      if (existing.tableId) {
-        await storage.updateTable(existing.tableId, { status: "free" });
-      }
-      try {
-        const oItems = await storage.getOrderItemsByOrder(req.params.id);
-        type DepletionTarget = { menuItemId: string; name: string; quantity: number };
-        const depletionTargets: DepletionTarget[] = [];
-        for (const oi of oItems) {
-          if (oi.menuItemId) {
-            depletionTargets.push({ menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity || 1 });
-          } else if (oi.metadata && typeof oi.metadata === "object" && (oi.metadata as Record<string, unknown>).isCombo) {
-            const meta = oi.metadata as { components?: { menuItemId: string; name: string }[] };
-            if (meta.components) {
-              for (const comp of meta.components) {
-                depletionTargets.push({ menuItemId: comp.menuItemId, name: comp.name, quantity: oi.quantity || 1 });
-              }
-            }
-          }
-        }
-        type DepletionWrite = {
-          inventoryItemId: string; currentStock: string;
-          tenantId: string; menuItemId: string; recipeId: string;
-          qty: string; reason: string;
-        };
-        const writes: DepletionWrite[] = [];
-        for (const dt of depletionTargets) {
-          const recipe = await storage.getRecipeByMenuItem(dt.menuItemId);
-          if (!recipe) continue;
-          const recipeIngs = await storage.getRecipeIngredients(recipe.id);
-          for (const ing of recipeIngs) {
-            const invItem = await storage.getInventoryItem(ing.inventoryItemId);
-            if (!invItem) continue;
-            const ingUnit = ing.unit || invItem.unit || "pcs";
-            const invUnit = invItem.unit || "pcs";
-            const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
-            const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
-            const qty = convertedQty * dt.quantity;
-            const newStock = Math.max(0, Number(invItem.currentStock) - qty);
-            writes.push({
-              inventoryItemId: ing.inventoryItemId,
-              currentStock: String(Math.round(newStock * 100) / 100),
-              tenantId: user.tenantId,
-              menuItemId: dt.menuItemId,
-              recipeId: recipe.id,
-              qty: String(Math.round(qty * 100) / 100),
-              reason: `Recipe consumption: ${dt.name} x${dt.quantity}`,
-            });
-          }
-        }
-        if (writes.length > 0) {
-          const client = await pool.connect();
-          try {
-            await client.query("BEGIN");
-            for (const w of writes) {
-              await client.query(
-                `UPDATE inventory_items SET current_stock = $1 WHERE id = $2`,
-                [w.currentStock, w.inventoryItemId]
-              );
-              await client.query(
-                `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason, order_id, menu_item_id, recipe_id)
-                 VALUES ($1, $2, 'RECIPE_CONSUMPTION', $3, $4, $5, $6, $7)`,
-                [w.tenantId, w.inventoryItemId, w.qty, w.reason, req.params.id, w.menuItemId, w.recipeId]
-              );
-            }
-            await client.query("COMMIT");
-          } catch (txErr) {
-            await client.query("ROLLBACK");
-            throw txErr;
-          } finally {
-            client.release();
-          }
-        }
-      } catch (depErr) {
-        console.error("Recipe consumption error:", depErr);
-      }
-    } else if (
-      (req.body.status === "voided" || req.body.status === "cancelled") &&
-      existing.status === "paid"
-    ) {
-      if (existing.tableId) {
-        await storage.updateTable(existing.tableId, { status: "free" });
-      }
-      try {
-        const consumptions = await storage.getStockMovementsByOrder(req.params.id);
-        const recipeConsumptions = consumptions.filter((m) => m.type === "RECIPE_CONSUMPTION");
-        if (recipeConsumptions.length > 0) {
-          const client = await pool.connect();
-          try {
-            await client.query("BEGIN");
-            for (const mv of recipeConsumptions) {
-              const qty = Number(mv.quantity);
-              await client.query(
-                `UPDATE inventory_items SET current_stock = LEAST(current_stock + $1, 999999999) WHERE id = $2`,
-                [qty, mv.itemId]
-              );
-              await client.query(
-                `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason, order_id, menu_item_id, recipe_id)
-                 VALUES ($1, $2, 'RECIPE_REVERSAL', $3, $4, $5, $6, $7)`,
-                [mv.tenantId, mv.itemId, String(qty), `Reversal (${req.body.status}): order ${req.params.id}`, req.params.id, mv.menuItemId, mv.recipeId]
-              );
-            }
-            await client.query("COMMIT");
-          } catch (txErr) {
-            await client.query("ROLLBACK");
-            throw txErr;
-          } finally {
-            client.release();
-          }
-        }
-      } catch (revErr) {
-        console.error("Recipe reversal error:", revErr);
-      }
-    } else if (req.body.status === "cancelled") {
-      if (existing.tableId) {
-        await storage.updateTable(existing.tableId, { status: "free" });
-      }
-    }
     res.json(order);
   });
 
@@ -5205,34 +5207,51 @@ export async function registerRoutes(
       const tokenNumber = order.orderNumber || order.id.slice(0, 6).toUpperCase();
 
       if (isDigitalPayment) {
-        try {
-          for (const oi of orderItems) {
-            if (!oi.menuItemId) continue;
-            const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
-            if (!recipe) continue;
-            const recipeIngs = await storage.getRecipeIngredients(recipe.id);
-            for (const ing of recipeIngs) {
-              const invItem = await storage.getInventoryItem(ing.inventoryItemId);
-              const ingUnit = ing.unit || invItem?.unit || "pcs";
-              const invUnit = invItem?.unit || "pcs";
-              const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
-              const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
-              const qty = convertedQty * (oi.quantity || 1);
-              if (invItem) {
-                const newStock = Math.max(0, Number(invItem.currentStock) - qty);
-                await storage.updateInventoryItem(ing.inventoryItemId, { currentStock: String(Math.round(newStock * 100) / 100) });
-                await storage.createStockMovement({
-                  tenantId: device.tenantId!,
-                  itemId: ing.inventoryItemId,
-                  type: "out",
-                  quantity: String(Math.round(qty * 100) / 100),
-                  reason: `Auto-depletion (kiosk): ${oi.name} x${oi.quantity}`,
-                });
-              }
-            }
+        type KioskWrite = { inventoryItemId: string; currentStock: string; tenantId: string; menuItemId: string; recipeId: string; qty: string; reason: string };
+        const kioskWrites: KioskWrite[] = [];
+        for (const oi of orderItems) {
+          if (!oi.menuItemId) continue;
+          const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
+          if (!recipe) continue;
+          const recipeIngs = await storage.getRecipeIngredients(recipe.id);
+          for (const ing of recipeIngs) {
+            const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+            if (!invItem) continue;
+            const ingUnit = ing.unit || invItem.unit || "pcs";
+            const invUnit = invItem.unit || "pcs";
+            const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
+            const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
+            const qty = convertedQty * (oi.quantity || 1);
+            const newStock = Math.max(0, Number(invItem.currentStock) - qty);
+            kioskWrites.push({
+              inventoryItemId: ing.inventoryItemId,
+              currentStock: String(Math.round(newStock * 100) / 100),
+              tenantId: device.tenantId!,
+              menuItemId: oi.menuItemId,
+              recipeId: recipe.id,
+              qty: String(Math.round(qty * 100) / 100),
+              reason: `Recipe consumption (kiosk): ${oi.name} x${oi.quantity || 1}`,
+            });
           }
-        } catch (depErr) {
-          console.error("Kiosk auto-depletion error:", depErr);
+        }
+        if (kioskWrites.length > 0) {
+          await db.transaction(async (tx) => {
+            for (const w of kioskWrites) {
+              await tx.update(inventoryItemsTable)
+                .set({ currentStock: w.currentStock })
+                .where(eq(inventoryItemsTable.id, w.inventoryItemId));
+              await tx.insert(stockMovementsTable).values({
+                tenantId: w.tenantId,
+                itemId: w.inventoryItemId,
+                type: "RECIPE_CONSUMPTION",
+                quantity: w.qty,
+                reason: w.reason,
+                orderId: order.id,
+                menuItemId: w.menuItemId,
+                recipeId: w.recipeId,
+              });
+            }
+          });
         }
       }
 
