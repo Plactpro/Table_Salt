@@ -8,7 +8,7 @@ import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
 import {
   ChefHat, Plus, Trash2, ArrowLeft, Save, Link2, Loader2, X,
-  DollarSign, TrendingUp, Clock, Package, AlertTriangle,
+  DollarSign, TrendingUp, Clock, Package, AlertTriangle, Copy, Search,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ interface IngredientRow {
   quantity: string;
   unit: string;
   wastePct: string;
+  notes: string;
 }
 
 const UNITS = ["kg", "g", "ltr", "ml", "pcs", "bottles", "bunches", "cups", "tbsp", "tsp"];
@@ -70,6 +71,19 @@ export default function RecipeEditorPage() {
   const [rows, setRows] = useState<IngredientRow[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [ingSearch, setIngSearch] = useState("");
+
+  // Browser-level navigation guard
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
 
   useEffect(() => {
     if (existingRecipe && !initialized) {
@@ -84,6 +98,7 @@ export default function RecipeEditorPage() {
         quantity: ing.quantity?.toString() || "0",
         unit: ing.unit || "kg",
         wastePct: ing.wastePct?.toString() || "0",
+        notes: (ing as any).notes || "",
       })));
       setInitialized(true);
       setIsDirty(false);
@@ -111,9 +126,19 @@ export default function RecipeEditorPage() {
   const costPerPortion = totalCost / yieldQtyNum;
   const margin = sellingPrice > 0 ? sellingPrice - costPerPortion : 0;
   const foodCostPct = sellingPrice > 0 ? (costPerPortion / sellingPrice) * 100 : 0;
+  const suggestedSellingPrice = costPerPortion > 0 ? costPerPortion / 0.30 : 0;
 
   function addRow() {
-    setRows(prev => [...prev, { inventoryItemId: "", quantity: "1", unit: "kg", wastePct: "0" }]);
+    setRows(prev => [...prev, { inventoryItemId: "", quantity: "1", unit: "kg", wastePct: "0", notes: "" }]);
+    markDirty();
+  }
+
+  function duplicateRow(idx: number) {
+    setRows(prev => {
+      const next = [...prev];
+      next.splice(idx + 1, 0, { ...next[idx] });
+      return next;
+    });
     markDirty();
   }
 
@@ -124,6 +149,7 @@ export default function RecipeEditorPage() {
       if (field === "inventoryItemId") {
         const item = invMap.get(value);
         if (item) next[idx].unit = item.unit || "kg";
+        setIngSearch("");
       }
       return next;
     });
@@ -176,7 +202,7 @@ export default function RecipeEditorPage() {
       yieldUnit: yieldUnit || "portion",
       prepTimeMinutes: prepTime ? Number(prepTime) : null,
       notes: notes || null,
-      ingredients: validRows,
+      ingredients: validRows.map((r, i) => ({ ...r, sortOrder: i })),
     };
     if (isNew) {
       createMutation.mutate(payload);
@@ -192,6 +218,10 @@ export default function RecipeEditorPage() {
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const canEdit = user?.role === "owner" || user?.role === "manager";
+
+  const filteredInventory = ingSearch.trim()
+    ? inventory.filter(i => i.name.toLowerCase().includes(ingSearch.toLowerCase()))
+    : inventory;
 
   if (!isNew && loadingRecipe) {
     return (
@@ -359,10 +389,19 @@ export default function RecipeEditorPage() {
                   {sellingPrice > 0 ? fmt(margin) : "—"}
                 </span>
               </div>
+              <Separator />
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground flex items-center gap-1">
+                  <TrendingUp className="h-3 w-3" /> Suggested Price <span className="text-xs opacity-70">(30% target)</span>
+                </span>
+                <span className="font-semibold text-blue-600" data-testid="text-suggested-price">
+                  {suggestedSellingPrice > 0 ? fmt(suggestedSellingPrice) : "—"}
+                </span>
+              </div>
               {sellingPrice === 0 && rows.length > 0 && (
                 <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5 mt-1">
                   <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                  <span>Link a menu item to calculate food cost %</span>
+                  <span>Link a menu item above to calculate food cost % vs actual selling price</span>
                 </div>
               )}
             </CardContent>
@@ -400,12 +439,28 @@ export default function RecipeEditorPage() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="min-w-[200px]">Ingredient</TableHead>
+                        <TableHead className="min-w-[200px]">
+                          <div className="flex items-center gap-1.5">Ingredient
+                            {canEdit && (
+                              <div className="relative ml-1">
+                                <Search className="h-3 w-3 absolute left-1.5 top-1/2 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+                                <Input
+                                  placeholder="Search..."
+                                  value={ingSearch}
+                                  onChange={(e) => setIngSearch(e.target.value)}
+                                  className="h-6 pl-6 w-28 text-xs"
+                                  data-testid="input-ingredient-search"
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </TableHead>
                         <TableHead className="w-24">Quantity</TableHead>
                         <TableHead className="w-28">Unit</TableHead>
                         <TableHead className="w-24">Waste %</TableHead>
+                        <TableHead className="min-w-[140px]">Notes</TableHead>
                         <TableHead className="w-28 text-right">Line Cost</TableHead>
-                        {canEdit && <TableHead className="w-10" />}
+                        {canEdit && <TableHead className="w-16" />}
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -425,11 +480,14 @@ export default function RecipeEditorPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                   <SelectItem value="none">— Select —</SelectItem>
-                                  {inventory.map(i => (
+                                  {filteredInventory.map(i => (
                                     <SelectItem key={i.id} value={i.id}>
                                       {i.name} ({i.unit}) · {fmt(Number(i.costPrice || 0))}/{i.unit}
                                     </SelectItem>
                                   ))}
+                                  {filteredInventory.length === 0 && (
+                                    <SelectItem value="_none" disabled>No matches</SelectItem>
+                                  )}
                                 </SelectContent>
                               </Select>
                             </TableCell>
@@ -475,20 +533,42 @@ export default function RecipeEditorPage() {
                                 data-testid={`input-ingredient-waste-${idx}`}
                               />
                             </TableCell>
+                            <TableCell>
+                              <Input
+                                className="h-8"
+                                value={row.notes}
+                                onChange={(e) => updateRow(idx, "notes", e.target.value)}
+                                placeholder="e.g. pre-sliced"
+                                disabled={!canEdit}
+                                data-testid={`input-ingredient-notes-${idx}`}
+                              />
+                            </TableCell>
                             <TableCell className="text-right font-medium text-sm" data-testid={`text-line-cost-${idx}`}>
                               {row.inventoryItemId ? fmt(lineCost) : "—"}
                             </TableCell>
                             {canEdit && (
                               <TableCell>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                                  onClick={() => removeRow(idx)}
-                                  data-testid={`button-remove-ingredient-${idx}`}
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </Button>
+                                <div className="flex items-center gap-0.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                    onClick={() => duplicateRow(idx)}
+                                    title="Duplicate row"
+                                    data-testid={`button-duplicate-ingredient-${idx}`}
+                                  >
+                                    <Copy className="h-3.5 w-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                    onClick={() => removeRow(idx)}
+                                    data-testid={`button-remove-ingredient-${idx}`}
+                                  >
+                                    <X className="h-3.5 w-3.5" />
+                                  </Button>
+                                </div>
                               </TableCell>
                             )}
                           </TableRow>
@@ -496,7 +576,7 @@ export default function RecipeEditorPage() {
                       })}
                       {rows.some(r => r.inventoryItemId) && (
                         <TableRow className="bg-muted/30 font-semibold">
-                          <TableCell colSpan={4} className="text-right text-sm">Total Recipe Cost</TableCell>
+                          <TableCell colSpan={5} className="text-right text-sm">Total Recipe Cost</TableCell>
                           <TableCell className="text-right text-primary" data-testid="text-footer-total">{fmt(totalCost)}</TableCell>
                           {canEdit && <TableCell />}
                         </TableRow>
@@ -509,16 +589,17 @@ export default function RecipeEditorPage() {
           </Card>
 
           {rows.some(r => r.inventoryItemId) && (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               {[
                 { label: "Recipe Cost", value: fmt(totalCost), color: "text-foreground", testId: "stat-recipe-cost" },
                 { label: `Cost / ${yieldUnit || "portion"}`, value: fmt(costPerPortion), color: "text-primary", testId: "stat-cost-per-portion" },
                 { label: "Selling Price", value: sellingPrice > 0 ? fmt(sellingPrice) : "—", color: "text-foreground", testId: "stat-selling-price" },
                 { label: "Food Cost %", value: sellingPrice > 0 ? `${foodCostPct.toFixed(1)}%` : "—", color: foodCostPct > 40 ? "text-red-600" : foodCostPct > 30 ? "text-amber-600" : "text-green-600", testId: "stat-food-cost-pct" },
+                { label: "Suggested (30%)", value: suggestedSellingPrice > 0 ? fmt(suggestedSellingPrice) : "—", color: "text-blue-600", testId: "stat-suggested-price" },
               ].map(stat => (
-                <Card key={stat.label} className="text-center p-4">
+                <Card key={stat.label} className="text-center p-3">
                   <div className="text-xs text-muted-foreground">{stat.label}</div>
-                  <div className={`text-lg font-bold mt-1 ${stat.color}`} data-testid={stat.testId}>{stat.value}</div>
+                  <div className={`text-base font-bold mt-1 ${stat.color}`} data-testid={stat.testId}>{stat.value}</div>
                 </Card>
               ))}
             </div>

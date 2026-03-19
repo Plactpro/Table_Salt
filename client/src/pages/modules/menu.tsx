@@ -22,7 +22,7 @@ import { DishInfoPanel } from "@/components/widgets/dish-info-panel";
 import {
   Plus, Pencil, Trash2, UtensilsCrossed, Leaf, Drumstick, Coffee, Beef,
   IceCream, Wine, Soup, Pizza, Salad, Sandwich, Eye, X, ImageIcon, Flame,
-  Package, Copy, Calendar, Clock, Store, TrendingUp, Percent, ChefHat, ExternalLink,
+  Package, Copy, Calendar, Clock, Store, TrendingUp, Percent, ChefHat, ExternalLink, Loader2,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, KitchenStation, ComboOffer } from "@shared/schema";
 
@@ -65,6 +65,141 @@ interface ComboItemRef {
 }
 
 type RecipeWithIngredients = Recipe & { ingredients: RecipeIngredient[] };
+
+interface RecipeLinkSectionProps {
+  editingItem: MenuItem;
+  linkedRecipe: RecipeWithIngredients | undefined;
+  unlinkedRecipes: RecipeWithIngredients[];
+  plateCost: number | null;
+  sp: number;
+  foodCostPct: number | null;
+  fmt: (v: string | number) => string;
+  onNavigate: (path: string) => void;
+  queryClient: { invalidateQueries: (opts: { queryKey: string[] }) => void };
+  toast: (opts: { title: string; description?: string; variant?: string }) => void;
+}
+
+function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCost, sp, foodCostPct, fmt, onNavigate, queryClient, toast }: RecipeLinkSectionProps) {
+  const [selectedRecipeId, setSelectedRecipeId] = useState<string>("none");
+  const [linking, setLinking] = useState(false);
+
+  const handleLinkRecipe = async () => {
+    if (selectedRecipeId === "none") return;
+    setLinking(true);
+    try {
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+      const csrfHeaders: Record<string, string> = {};
+      if (csrfMatch) csrfHeaders["x-csrf-token"] = decodeURIComponent(csrfMatch[1]);
+      const res = await fetch(`/api/recipes/${selectedRecipeId}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
+        body: JSON.stringify({ menuItemId: editingItem.id }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Link failed"); }
+      queryClient.invalidateQueries({ queryKey: ["/api/recipes"] });
+      toast({ title: "Recipe linked to menu item" });
+      setSelectedRecipeId("none");
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const handleUnlinkRecipe = async () => {
+    if (!linkedRecipe) return;
+    setLinking(true);
+    try {
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+      const csrfHeaders: Record<string, string> = {};
+      if (csrfMatch) csrfHeaders["x-csrf-token"] = decodeURIComponent(csrfMatch[1]);
+      const res = await fetch(`/api/recipes/${linkedRecipe.id}`, {
+        method: "PATCH",
+        credentials: "include",
+        headers: { "Content-Type": "application/json", ...csrfHeaders },
+        body: JSON.stringify({ menuItemId: null }),
+      });
+      if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Unlink failed"); }
+      queryClient.invalidateQueries({ queryKey: ["/api/recipes"] });
+      toast({ title: "Recipe unlinked" });
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  return (
+    <div className="border rounded-lg p-4 space-y-3 bg-muted/30" data-testid="section-recipe-link">
+      <h4 className="font-medium text-sm flex items-center gap-2">
+        <ChefHat className="h-4 w-4" />
+        Recipe & Food Cost
+      </h4>
+      {linkedRecipe ? (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-foreground">{linkedRecipe.name}</p>
+              <p className="text-xs text-muted-foreground">{linkedRecipe.ingredients?.length || 0} ingredients</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => onNavigate(`/recipes/${linkedRecipe.id}`)} data-testid="button-view-recipe">
+                <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View / Edit
+              </Button>
+              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleUnlinkRecipe} disabled={linking} data-testid="button-unlink-recipe">
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-background rounded-md p-2 text-center border">
+              <p className="text-xs text-muted-foreground">Plate Cost</p>
+              <p className="text-sm font-bold text-foreground mt-0.5" data-testid="text-plate-cost">{fmt(plateCost ?? 0)}</p>
+            </div>
+            <div className="bg-background rounded-md p-2 text-center border">
+              <p className="text-xs text-muted-foreground">Food Cost %</p>
+              <p className={`text-sm font-bold mt-0.5 ${foodCostPct !== null && foodCostPct > 40 ? "text-red-600" : foodCostPct !== null && foodCostPct > 30 ? "text-amber-600" : "text-green-600"}`} data-testid="text-food-cost-pct">
+                {foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
+              </p>
+            </div>
+            <div className="bg-background rounded-md p-2 text-center border">
+              <p className="text-xs text-muted-foreground">Margin</p>
+              <p className={`text-sm font-bold mt-0.5 ${plateCost !== null && sp - plateCost >= 0 ? "text-green-600" : "text-red-600"}`} data-testid="text-margin">
+                {plateCost !== null && sp > 0 ? fmt(sp - plateCost) : "—"}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">No recipe linked to this menu item.</p>
+          {unlinkedRecipes.length > 0 && (
+            <div className="flex items-center gap-2">
+              <Select value={selectedRecipeId} onValueChange={setSelectedRecipeId}>
+                <SelectTrigger className="flex-1" data-testid="select-link-recipe">
+                  <SelectValue placeholder="Select existing recipe..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">— Select recipe —</SelectItem>
+                  {unlinkedRecipes.map(r => (
+                    <SelectItem key={r.id} value={r.id}>{r.name} ({r.ingredients?.length || 0} ingredients)</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button size="sm" onClick={handleLinkRecipe} disabled={selectedRecipeId === "none" || linking} data-testid="button-link-recipe">
+                {linking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Link"}
+              </Button>
+            </div>
+          )}
+          <Button variant="outline" size="sm" onClick={() => onNavigate(`/recipes/new?menuItemId=${editingItem.id}`)} data-testid="button-create-recipe-for-item">
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Create New Recipe for this Item
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function MenuPage() {
   const { toast } = useToast();
@@ -1054,61 +1189,20 @@ export default function MenuPage() {
               : null;
             const sp = Number(editingItem.price || 0);
             const foodCostPct = plateCost !== null && sp > 0 ? (plateCost / sp) * 100 : null;
+            const unlinkedRecipes = allRecipes.filter(r => !r.menuItemId || r.menuItemId === editingItem.id);
             return (
-              <div className="border rounded-lg p-4 space-y-3 bg-muted/30" data-testid="section-recipe-link">
-                <h4 className="font-medium text-sm flex items-center gap-2">
-                  <ChefHat className="h-4 w-4" />
-                  Recipe & Food Cost
-                </h4>
-                {linkedRecipe ? (
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{linkedRecipe.name}</p>
-                        <p className="text-xs text-muted-foreground">{linkedRecipe.ingredients?.length || 0} ingredients</p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => { setItemDialogOpen(false); navigate(`/recipes/${linkedRecipe.id}`); }}
-                        data-testid="button-view-recipe"
-                      >
-                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View Recipe
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      <div className="bg-background rounded-md p-2 text-center border">
-                        <p className="text-xs text-muted-foreground">Plate Cost</p>
-                        <p className="text-sm font-bold text-foreground mt-0.5" data-testid="text-plate-cost">{fmt(plateCost ?? 0)}</p>
-                      </div>
-                      <div className="bg-background rounded-md p-2 text-center border">
-                        <p className="text-xs text-muted-foreground">Food Cost %</p>
-                        <p className={`text-sm font-bold mt-0.5 ${foodCostPct !== null && foodCostPct > 40 ? "text-red-600" : foodCostPct !== null && foodCostPct > 30 ? "text-amber-600" : "text-green-600"}`} data-testid="text-food-cost-pct">
-                          {foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
-                        </p>
-                      </div>
-                      <div className="bg-background rounded-md p-2 text-center border">
-                        <p className="text-xs text-muted-foreground">Margin</p>
-                        <p className={`text-sm font-bold mt-0.5 ${plateCost !== null && sp - plateCost >= 0 ? "text-green-600" : "text-red-600"}`} data-testid="text-margin">
-                          {plateCost !== null && sp > 0 ? fmt(sp - plateCost) : "—"}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs text-muted-foreground">No recipe linked — create one to track food cost & ingredient usage.</p>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => { setItemDialogOpen(false); navigate(`/recipes/new?menuItemId=${editingItem.id}`); }}
-                      data-testid="button-create-recipe-for-item"
-                    >
-                      <Plus className="h-3.5 w-3.5 mr-1.5" /> Create Recipe
-                    </Button>
-                  </div>
-                )}
-              </div>
+              <RecipeLinkSection
+                editingItem={editingItem}
+                linkedRecipe={linkedRecipe}
+                unlinkedRecipes={unlinkedRecipes}
+                plateCost={plateCost}
+                sp={sp}
+                foodCostPct={foodCostPct}
+                fmt={fmt}
+                onNavigate={(path) => { setItemDialogOpen(false); navigate(path); }}
+                queryClient={queryClient}
+                toast={toast}
+              />
             );
           })()}
 
