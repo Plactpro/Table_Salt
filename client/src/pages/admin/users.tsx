@@ -11,6 +11,7 @@ import {
   KeyRound,
   Users,
   AlertCircle,
+  ShieldCheck,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,7 @@ interface AdminUser {
   totpEnabled: boolean | null;
   tenantName: string | null;
   tenantPlan: string | null;
+  lastLogin: string | null;
 }
 
 interface Tenant {
@@ -234,17 +236,19 @@ export default function UsersPage() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_80px_1fr_auto] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
                 <span>User</span>
                 <span>Role</span>
                 <span>Tenant</span>
                 <span>Status</span>
+                <span>2FA</span>
+                <span>Last Login</span>
                 <span></span>
               </div>
               {filtered.map((u) => (
                 <div
                   key={u.id}
-                  className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
+                  className="grid grid-cols-[2fr_1fr_1fr_1fr_80px_1fr_auto] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
                   data-testid={`row-user-${u.id}`}
                 >
                   <div className="min-w-0">
@@ -267,6 +271,19 @@ export default function UsersPage() {
                     ) : (
                       <Badge variant="outline" className="text-xs text-green-600 border-green-200 bg-green-50">Active</Badge>
                     )}
+                  </span>
+                  <span data-testid={`text-2fa-${u.id}`}>
+                    {u.totpEnabled ? (
+                      <Badge variant="outline" className="text-xs text-emerald-700 border-emerald-200 bg-emerald-50 gap-1">
+                        <ShieldCheck className="h-3 w-3" />
+                        On
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-slate-400">Off</span>
+                    )}
+                  </span>
+                  <span className="text-xs text-slate-500" data-testid={`text-last-login-${u.id}`}>
+                    {u.lastLogin ? new Date(u.lastLogin).toLocaleDateString() : "—"}
                   </span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>

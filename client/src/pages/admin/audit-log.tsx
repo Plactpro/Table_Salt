@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useSearch } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import {
   ChevronDown,
@@ -7,6 +8,8 @@ import {
   ScrollText,
   AlertCircle,
   Filter,
+  Download,
+  Clock,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -150,12 +153,26 @@ function EventRow({ event }: { event: AuditEvent }) {
   );
 }
 
+function toDateStr(d: Date) {
+  return d.toISOString().split("T")[0];
+}
+
+function applyPreset(days: number, setFromDate: (v: string) => void, setToDate: (v: string) => void) {
+  const now = new Date();
+  const from = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  setFromDate(toDateStr(from));
+  setToDate(toDateStr(now));
+}
+
 export default function AuditLogPage() {
-  const [tenantFilter, setTenantFilter] = useState("all");
+  const searchStr = useSearch();
+  const urlParams = new URLSearchParams(searchStr);
+  const [tenantFilter, setTenantFilter] = useState(urlParams.get("tenantId") ?? "all");
   const [actionFilter, setActionFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [limit, setLimit] = useState(50);
+  const [exporting, setExporting] = useState(false);
 
   const params = new URLSearchParams();
   params.set("limit", String(limit));
@@ -163,6 +180,28 @@ export default function AuditLogPage() {
   if (actionFilter) params.set("action", actionFilter);
   if (fromDate) params.set("from", fromDate);
   if (toDate) params.set("to", toDate);
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const exportParams = new URLSearchParams();
+      if (tenantFilter !== "all") exportParams.set("tenantId", tenantFilter);
+      if (actionFilter) exportParams.set("action", actionFilter);
+      if (fromDate) exportParams.set("from", fromDate);
+      if (toDate) exportParams.set("to", toDate);
+      const r = await apiRequest("GET", `/api/admin/audit-log/export?${exportParams.toString()}`);
+      if (!r.ok) throw new Error("Export failed");
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `audit-log-${toDateStr(new Date())}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const { data: events, isLoading, error } = useQuery<AuditEvent[]>({
     queryKey: ["/api/admin/audit-log", tenantFilter, actionFilter, fromDate, toDate, limit],
@@ -182,11 +221,24 @@ export default function AuditLogPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="admin-audit-log-page">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900" data-testid="page-title-audit-log">
-          Audit Log
-        </h1>
-        <p className="text-sm text-slate-500 mt-0.5">Cross-tenant audit trail</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold text-slate-900" data-testid="page-title-audit-log">
+            Audit Log
+          </h1>
+          <p className="text-sm text-slate-500 mt-0.5">Cross-tenant audit trail</p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={handleExport}
+          disabled={exporting}
+          data-testid="button-export-audit-log"
+          className="gap-2"
+        >
+          <Download className="h-4 w-4" />
+          {exporting ? "Exporting..." : "Export CSV"}
+        </Button>
       </div>
 
       {error && (
@@ -199,9 +251,53 @@ export default function AuditLogPage() {
       {/* Filters */}
       <Card data-testid="card-audit-filters">
         <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <Filter className="h-4 w-4 text-slate-500" />
-            <span className="text-sm font-medium text-slate-700">Filters</span>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-slate-500" />
+              <span className="text-sm font-medium text-slate-700">Filters</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5 text-slate-400" />
+              <span className="text-xs text-slate-400 mr-1">Quick:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => applyPreset(1, setFromDate, setToDate)}
+                data-testid="button-preset-24h"
+              >
+                24h
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => applyPreset(7, setFromDate, setToDate)}
+                data-testid="button-preset-7d"
+              >
+                7d
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-6 text-xs px-2"
+                onClick={() => applyPreset(30, setFromDate, setToDate)}
+                data-testid="button-preset-30d"
+              >
+                30d
+              </Button>
+              {(fromDate || toDate) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs px-2 text-slate-400"
+                  onClick={() => { setFromDate(""); setToDate(""); }}
+                  data-testid="button-clear-dates"
+                >
+                  Clear
+                </Button>
+              )}
+            </div>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div className="space-y-1">

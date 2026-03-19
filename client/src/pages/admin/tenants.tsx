@@ -55,6 +55,7 @@ interface Tenant {
   orderCount: number;
   createdAt: string | null;
   ownerUserId: string | null;
+  lastActivity: string | null;
 }
 
 const PLANS = ["basic", "standard", "premium", "enterprise"] as const;
@@ -267,19 +268,20 @@ export default function TenantsPage() {
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
-              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
                 <span>Name / Slug</span>
                 <span>Plan</span>
                 <span>Status</span>
                 <span>Business Type</span>
                 <span>Users / Outlets</span>
                 <span>Created</span>
+                <span>Last Active</span>
                 <span></span>
               </div>
               {filtered.map((t) => (
                 <div
                   key={t.id}
-                  className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
+                  className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
                   data-testid={`row-tenant-${t.id}`}
                 >
                   <div className="min-w-0">
@@ -302,6 +304,9 @@ export default function TenantsPage() {
                   </span>
                   <span className="text-xs text-slate-500" data-testid={`tenant-created-${t.id}`}>
                     {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}
+                  </span>
+                  <span className="text-xs text-slate-500" data-testid={`tenant-last-active-${t.id}`}>
+                    {t.lastActivity ? new Date(t.lastActivity).toLocaleDateString() : "—"}
                   </span>
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
