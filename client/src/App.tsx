@@ -13,6 +13,7 @@ import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
 import MenuPage from "@/pages/modules/menu";
 import OrdersPage from "@/pages/modules/orders";
+import RecipeEditorPage from "@/pages/modules/recipe-editor";
 import TablesPage from "@/pages/modules/tables";
 import PosPage from "@/pages/modules/pos";
 import CrmPage from "@/pages/modules/crm";
@@ -249,6 +250,8 @@ function ProtectedPages() {
         <Route path="/tables">{() => <GuardedRoute path="/tables" component={TablesPage} />}</Route>
         <Route path="/menu">{() => <GuardedRoute path="/menu" component={MenuPage} />}</Route>
         <Route path="/inventory">{() => <GuardedRoute path="/inventory" component={InventoryHub} />}</Route>
+        <Route path="/recipes/new">{() => <GuardedRoute path="/inventory" component={RecipeEditorPage} />}</Route>
+        <Route path="/recipes/:id">{() => <GuardedRoute path="/inventory" component={RecipeEditorPage} />}</Route>
         <Route path="/outlets">{() => <GuardedRoute path="/outlets" component={LocationsHub} />}</Route>
         <Route path="/promotions">{() => <GuardedRoute path="/promotions" component={PromotionsHub} />}</Route>
         <Route path="/crm">{() => <GuardedRoute path="/crm" component={CrmPage} />}</Route>

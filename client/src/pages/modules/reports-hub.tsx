@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, Activity, ScrollText } from "lucide-react";
+import { BarChart3, Activity, ScrollText, ChefHat } from "lucide-react";
 import ReportsPage from "./reports";
 import BIDashboard from "./bi-dashboard";
 import AuditLogPage from "./audit-log";
+import FoodCostReports from "./food-cost-reports";
 
 export default function ReportsHub() {
   const [tab, setTab] = useState("reports");
@@ -15,6 +16,9 @@ export default function ReportsHub() {
           <TabsTrigger value="reports" data-testid="tab-reports">
             <BarChart3 className="h-4 w-4 mr-1.5" />Sales Reports
           </TabsTrigger>
+          <TabsTrigger value="food-cost" data-testid="tab-food-cost">
+            <ChefHat className="h-4 w-4 mr-1.5" />Food Cost
+          </TabsTrigger>
           <TabsTrigger value="bi" data-testid="tab-bi-forecasting">
             <Activity className="h-4 w-4 mr-1.5" />BI & Forecasting
           </TabsTrigger>
@@ -24,6 +28,9 @@ export default function ReportsHub() {
         </TabsList>
         <TabsContent value="reports" className="mt-4">
           <ReportsPage />
+        </TabsContent>
+        <TabsContent value="food-cost" className="mt-4">
+          <FoodCostReports />
         </TabsContent>
         <TabsContent value="bi" className="mt-4">
           <BIDashboard />

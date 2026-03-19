@@ -1,9 +1,12 @@
 import { useState, useCallback, useMemo } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
+import { convertUnits } from "@shared/units";
+import type { Recipe, RecipeIngredient, InventoryItem } from "@shared/schema";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +22,7 @@ import { DishInfoPanel } from "@/components/widgets/dish-info-panel";
 import {
   Plus, Pencil, Trash2, UtensilsCrossed, Leaf, Drumstick, Coffee, Beef,
   IceCream, Wine, Soup, Pizza, Salad, Sandwich, Eye, X, ImageIcon, Flame,
-  Package, Copy, Calendar, Clock, Store, TrendingUp, Percent,
+  Package, Copy, Calendar, Clock, Store, TrendingUp, Percent, ChefHat, ExternalLink,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, KitchenStation, ComboOffer } from "@shared/schema";
 
@@ -61,10 +64,13 @@ interface ComboItemRef {
   price: string;
 }
 
+type RecipeWithIngredients = Recipe & { ingredients: RecipeIngredient[] };
+
 export default function MenuPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
   const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
@@ -118,6 +124,9 @@ export default function MenuPage() {
   const { data: stations = [] } = useQuery<KitchenStation[]>({ queryKey: ["/api/kitchen-stations"] });
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
   const { data: outletsList = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/outlets"] });
+  const { data: allRecipes = [] } = useQuery<RecipeWithIngredients[]>({ queryKey: ["/api/recipes"] });
+  const { data: allInventory = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const invMap = new Map(allInventory.map(i => [i.id, i]));
 
   const filteredItems = selectedCategoryId
     ? allItems.filter((item) => item.categoryId === selectedCategoryId)
@@ -1029,6 +1038,80 @@ export default function MenuPage() {
               </div>
             </div>
           </div>
+
+          {editingItem && (() => {
+            const linkedRecipe = allRecipes.find(r => r.menuItemId === editingItem.id);
+            const plateCost = linkedRecipe
+              ? (linkedRecipe.ingredients || []).reduce((sum, ing) => {
+                  const item = invMap.get(ing.inventoryItemId);
+                  if (!item) return sum;
+                  const qty = Number(ing.quantity) || 0;
+                  const waste = Number(ing.wastePct || 0) / 100;
+                  const effectiveQty = waste >= 1 ? qty : qty / (1 - waste);
+                  const converted = convertUnits(effectiveQty, ing.unit || item.unit || "pcs", item.unit || "pcs");
+                  return sum + converted * Number(item.costPrice || 0);
+                }, 0)
+              : null;
+            const sp = Number(editingItem.price || 0);
+            const foodCostPct = plateCost !== null && sp > 0 ? (plateCost / sp) * 100 : null;
+            return (
+              <div className="border rounded-lg p-4 space-y-3 bg-muted/30" data-testid="section-recipe-link">
+                <h4 className="font-medium text-sm flex items-center gap-2">
+                  <ChefHat className="h-4 w-4" />
+                  Recipe & Food Cost
+                </h4>
+                {linkedRecipe ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{linkedRecipe.name}</p>
+                        <p className="text-xs text-muted-foreground">{linkedRecipe.ingredients?.length || 0} ingredients</p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => { setItemDialogOpen(false); navigate(`/recipes/${linkedRecipe.id}`); }}
+                        data-testid="button-view-recipe"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View Recipe
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="bg-background rounded-md p-2 text-center border">
+                        <p className="text-xs text-muted-foreground">Plate Cost</p>
+                        <p className="text-sm font-bold text-foreground mt-0.5" data-testid="text-plate-cost">{fmt(plateCost ?? 0)}</p>
+                      </div>
+                      <div className="bg-background rounded-md p-2 text-center border">
+                        <p className="text-xs text-muted-foreground">Food Cost %</p>
+                        <p className={`text-sm font-bold mt-0.5 ${foodCostPct !== null && foodCostPct > 40 ? "text-red-600" : foodCostPct !== null && foodCostPct > 30 ? "text-amber-600" : "text-green-600"}`} data-testid="text-food-cost-pct">
+                          {foodCostPct !== null ? `${foodCostPct.toFixed(1)}%` : "—"}
+                        </p>
+                      </div>
+                      <div className="bg-background rounded-md p-2 text-center border">
+                        <p className="text-xs text-muted-foreground">Margin</p>
+                        <p className={`text-sm font-bold mt-0.5 ${plateCost !== null && sp - plateCost >= 0 ? "text-green-600" : "text-red-600"}`} data-testid="text-margin">
+                          {plateCost !== null && sp > 0 ? fmt(sp - plateCost) : "—"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs text-muted-foreground">No recipe linked — create one to track food cost & ingredient usage.</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { setItemDialogOpen(false); navigate(`/recipes/new?menuItemId=${editingItem.id}`); }}
+                      data-testid="button-create-recipe-for-item"
+                    >
+                      <Plus className="h-3.5 w-3.5 mr-1.5" /> Create Recipe
+                    </Button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setItemDialogOpen(false)} data-testid="button-cancel-item">Cancel</Button>
             <Button onClick={handleItemSubmit} disabled={createItem.isPending || updateItem.isPending} data-testid="button-save-item">
