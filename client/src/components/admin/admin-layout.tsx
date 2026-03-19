@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Settings,
   Menu,
+  BarChart2,
 } from "lucide-react";
 
 interface NavItem {
@@ -27,6 +28,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard, path: "/admin" },
+  { id: "analytics", label: "Analytics", icon: BarChart2, path: "/admin/analytics" },
   { id: "tenants", label: "Tenants", icon: Building2, path: "/admin/tenants" },
   { id: "users", label: "Users", icon: Users, path: "/admin/users" },
   { id: "audit", label: "Audit Log", icon: ScrollText, path: "/admin/audit" },

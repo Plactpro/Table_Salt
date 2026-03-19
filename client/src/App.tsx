@@ -45,6 +45,7 @@ import UsersPage from "@/pages/admin/users";
 import AuditLogPage from "@/pages/admin/audit-log";
 import AdminsPage from "@/pages/admin/admins";
 import AdminSettingsPage from "@/pages/admin/settings";
+import AnalyticsPage from "@/pages/admin/analytics";
 
 import { ReactNode } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
@@ -182,6 +183,7 @@ function AdminShell() {
     <AdminLayout>
       <Switch>
         <Route path="/admin" component={AdminDashboard} />
+        <Route path="/admin/analytics" component={AnalyticsPage} />
         <Route path="/admin/tenants/:id" component={TenantDetailPage} />
         <Route path="/admin/tenants" component={TenantsPage} />
         <Route path="/admin/users" component={UsersPage} />
