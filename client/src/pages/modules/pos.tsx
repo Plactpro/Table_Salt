@@ -174,6 +174,18 @@ export default function POSPage() {
   useRealtimeEvent("order:updated", handleOrderTerminal);
   useRealtimeEvent("order:completed", handleOrderTerminal);
 
+  useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
+    const p = payload as { status?: string } | null;
+    const kitchenStatuses = ["in_progress", "ready", "served"];
+    if (p?.status && kitchenStatuses.includes(p.status)) {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+    }
+  }, [queryClient]));
+
+  useRealtimeEvent("order:item_updated", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+  }, [queryClient]));
+
   const { data: categories = [] } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
   const { data: menuItems = [] } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
