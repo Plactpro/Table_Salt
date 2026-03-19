@@ -49,7 +49,7 @@ export default function RecipeEditorPage() {
 
   const fmt = useCallback((v: number) => {
     const tenant = user?.tenant;
-    return formatCurrency(v, tenant?.currency || "AED", tenant?.currencyPosition || "before", tenant?.currencyDecimals ?? 2);
+    return formatCurrency(v, tenant?.currency || "AED", { position: (tenant?.currencyPosition as "before" | "after") || "before", decimals: tenant?.currencyDecimals ?? 2 });
   }, [user]);
 
   const { data: existingRecipe, isLoading: loadingRecipe } = useQuery<RecipeWithIngredients>({
