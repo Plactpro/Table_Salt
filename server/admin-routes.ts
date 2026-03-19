@@ -919,4 +919,60 @@ export function registerAdminRoutes(app: Express) {
       return res.status(500).json({ message });
     }
   });
+
+  // ─── Platform Settings ─────────────────────────────────────────────────────
+  // In-memory store; persisted across requests within a server process.
+  // A future enhancement can persist this to a DB table.
+  const platformSettings = {
+    maintenanceMode: false,
+    registrationOpen: true,
+    platformName: "Table Salt",
+    maxTenantsPerPlan: { basic: 100, standard: 50, premium: 20, enterprise: 5 } as Record<string, number>,
+    alertEmailRecipients: [] as string[],
+  };
+
+  const platformSettingsSchema = z.object({
+    maintenanceMode: z.boolean().optional(),
+    registrationOpen: z.boolean().optional(),
+    platformName: z.string().min(1).optional(),
+    maxTenantsPerPlan: z.record(z.string(), z.number().int().positive()).optional(),
+    alertEmailRecipients: z.array(z.string().email()).optional(),
+  });
+
+  app.get("/api/admin/platform-settings", requireSuperAdmin, (_req, res) => {
+    return res.json(platformSettings);
+  });
+
+  app.patch("/api/admin/platform-settings", requireSuperAdmin, async (req, res) => {
+    try {
+      const adminUser = req.user as { id: string; name: string };
+      const parsed = platformSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const updates = parsed.data;
+      if (updates.maintenanceMode !== undefined) platformSettings.maintenanceMode = updates.maintenanceMode;
+      if (updates.registrationOpen !== undefined) platformSettings.registrationOpen = updates.registrationOpen;
+      if (updates.platformName !== undefined) platformSettings.platformName = updates.platformName;
+      if (updates.maxTenantsPerPlan !== undefined) platformSettings.maxTenantsPerPlan = { ...platformSettings.maxTenantsPerPlan, ...updates.maxTenantsPerPlan };
+      if (updates.alertEmailRecipients !== undefined) platformSettings.alertEmailRecipients = updates.alertEmailRecipients;
+
+      await auditLog({
+        tenantId: null,
+        userId: adminUser.id,
+        userName: adminUser.name,
+        action: "platform_settings_updated",
+        entityType: "platform",
+        entityId: "settings",
+        entityName: "Platform Settings",
+        metadata: updates as Record<string, unknown>,
+        req,
+      });
+
+      return res.json(platformSettings);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
 }

@@ -8,6 +8,7 @@ import {
   Plus,
   UserX,
   AlertCircle,
+  Search,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +59,8 @@ export default function AdminsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [confirmDeactivate, setConfirmDeactivate] = useState<SuperAdmin | null>(null);
   const [form, setForm] = useState<CreateForm>({ username: "", name: "", email: "", password: "" });
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const { data: admins, isLoading, error } = useQuery<SuperAdmin[]>({
     queryKey: ["/api/admin/super-admins"],
@@ -94,6 +97,13 @@ export default function AdminsPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const filtered = (admins ?? []).filter((a) => {
+    if (search && !a.name.toLowerCase().includes(search.toLowerCase()) && !a.username.toLowerCase().includes(search.toLowerCase()) && !a.email?.toLowerCase().includes(search.toLowerCase())) return false;
+    if (statusFilter === "active" && a.active === false) return false;
+    if (statusFilter === "inactive" && a.active !== false) return false;
+    return true;
+  });
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-4" data-testid="admin-admins-page">
       <div className="flex items-center justify-between">
@@ -115,6 +125,29 @@ export default function AdminsPage() {
         </Button>
       </div>
 
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Input
+            placeholder="Search by name, username, or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+            data-testid="input-search-admins"
+          />
+        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as "all" | "active" | "inactive")}
+          className="h-10 rounded-md border border-input bg-background px-3 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+          data-testid="select-admin-status-filter"
+        >
+          <option value="all">All statuses</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+      </div>
+
       {error && (
         <div className="flex items-center gap-2 text-red-600 bg-red-50 border border-red-200 rounded-lg p-4">
           <AlertCircle className="h-4 w-4 shrink-0" />
@@ -128,10 +161,12 @@ export default function AdminsPage() {
             <div className="p-4 space-y-3">
               {[...Array(3)].map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
             </div>
-          ) : !admins || admins.length === 0 ? (
+          ) : filtered.length === 0 ? (
             <div className="py-12 text-center">
               <ShieldCheck className="h-10 w-10 text-slate-300 mx-auto mb-3" />
-              <p className="text-sm text-slate-400">No super admins found</p>
+              <p className="text-sm text-slate-400">
+                {search || statusFilter !== "all" ? "No admins match your filters" : "No super admins found"}
+              </p>
             </div>
           ) : (
             <div className="divide-y divide-slate-100">
@@ -143,7 +178,7 @@ export default function AdminsPage() {
                 <span>Last Active</span>
                 <span></span>
               </div>
-              {admins.map((a) => {
+              {filtered.map((a) => {
                 const isSelf = a.id === user?.id;
                 return (
                   <div
