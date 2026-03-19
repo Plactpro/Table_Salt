@@ -803,7 +803,7 @@ export function registerAdminRoutes(app: Express) {
   const createSuperAdminSchema = z.object({
     username: z.string().min(3).regex(/^[a-z0-9_]+$/, "Username must be lowercase alphanumeric with underscores"),
     name: z.string().min(2),
-    email: z.string().email().optional(),
+    email: z.string().email(),
     password: z.string().min(8),
   });
 
