@@ -1751,7 +1751,8 @@ export async function registerRoutes(
     if (!isStripeConfigured() || !stripe) {
       return res.status(503).json({ message: "Stripe not configured" });
     }
-    const sig = req.headers["stripe-signature"];
+    const rawSig = req.headers["stripe-signature"];
+    const sig = Array.isArray(rawSig) ? rawSig[0] : rawSig;
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
     if (!sig || !webhookSecret) {
       return res.status(400).json({ message: "Missing signature or webhook secret" });

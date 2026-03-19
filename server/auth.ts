@@ -128,8 +128,6 @@ export function setupAuth(app: Express) {
   });
 }
 
-const _trialExpiryChecked = new Set<string>();
-
 export function requireAuth(req: any, res: any, next: any) {
   if (!req.isAuthenticated()) {
     return res.status(401).json({ message: "Not authenticated" });
@@ -149,15 +147,13 @@ export function requireAuth(req: any, res: any, next: any) {
   req.session.lastActivity = now;
 
   const tenantId: string | undefined = req.user?.tenantId;
-  if (tenantId && !_trialExpiryChecked.has(tenantId)) {
-    _trialExpiryChecked.add(tenantId);
+  if (tenantId) {
     import("./db").then(({ pool }) => {
       pool.query(
         `UPDATE tenants SET subscription_status = 'canceled', plan = 'basic' WHERE id = $1 AND subscription_status = 'trialing' AND trial_ends_at IS NOT NULL AND trial_ends_at < now()`,
         [tenantId]
       ).catch(() => {});
     }).catch(() => {});
-    setTimeout(() => _trialExpiryChecked.delete(tenantId), 5 * 60 * 1000);
   }
 
   next();
