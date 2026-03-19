@@ -30,17 +30,28 @@ export function encryptField(plaintext: string): string {
 
 export function decryptField(ciphertext: string): string {
   if (!ciphertext || !ciphertext.startsWith("enc:")) return ciphertext;
-  const key = getKey();
-  const parts = ciphertext.split(":");
-  if (parts.length !== 4) return ciphertext;
-  const iv = Buffer.from(parts[1], "hex");
-  const authTag = Buffer.from(parts[2], "hex");
-  const encrypted = parts[3];
-  const decipher = createDecipheriv(ALGORITHM, key, iv);
-  decipher.setAuthTag(authTag);
-  let decrypted = decipher.update(encrypted, "hex", "utf8");
-  decrypted += decipher.final("utf8");
-  return decrypted;
+  try {
+    const parts = ciphertext.split(":");
+    if (parts.length !== 4) return ciphertext;
+    const ivHex = parts[1];
+    const authTagHex = parts[2];
+    const encryptedHex = parts[3];
+    if (ivHex.length !== IV_LENGTH * 2 || authTagHex.length !== AUTH_TAG_LENGTH * 2) {
+      console.warn("decryptField: malformed ciphertext — invalid IV or auth tag length");
+      return ciphertext;
+    }
+    const key = getKey();
+    const iv = Buffer.from(ivHex, "hex");
+    const authTag = Buffer.from(authTagHex, "hex");
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    let decrypted = decipher.update(encryptedHex, "hex", "utf8");
+    decrypted += decipher.final("utf8");
+    return decrypted;
+  } catch (err) {
+    console.error("decryptField: decryption failed — returning ciphertext as-is", err instanceof Error ? err.message : String(err));
+    return ciphertext;
+  }
 }
 
 export function isEncrypted(value: string | null | undefined): boolean {

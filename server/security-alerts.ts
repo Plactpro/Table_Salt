@@ -1,10 +1,15 @@
 import { db } from "./db";
 import { securityAlerts, auditEvents } from "@shared/schema";
-import { eq, and, desc, gte, lte, sql, count } from "drizzle-orm";
+import { eq, and, gte, lte, count } from "drizzle-orm";
 import type { Request } from "express";
 
 function getIpFromReq(req: Request): string {
-  return (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
+  const forwarded = req.headers["x-forwarded-for"] as string | undefined;
+  if (forwarded) {
+    const firstIp = forwarded.split(",")[0]?.trim();
+    if (firstIp) return firstIp;
+  }
+  return req.socket?.remoteAddress || "unknown";
 }
 
 interface CreateAlertParams {
@@ -31,7 +36,7 @@ export async function createSecurityAlert(params: CreateAlertParams): Promise<vo
       metadata: params.metadata || null,
     });
   } catch (err) {
-    console.error("Security alert write failed:", err);
+    console.error("Security alert write failed:", err instanceof Error ? err.message : String(err));
   }
 }
 
@@ -46,7 +51,8 @@ export async function checkFailedLoginAlert(username: string, req: Request): Pro
         and(
           eq(auditEvents.action, "login_failed"),
           gte(auditEvents.createdAt, fiveMinutesAgo),
-          eq(auditEvents.entityName, username)
+          eq(auditEvents.entityName, username),
+          eq(auditEvents.ipAddress, ip)
         )
       );
     const failCount = Number(result?.cnt || 0);
@@ -56,18 +62,22 @@ export async function checkFailedLoginAlert(username: string, req: Request): Pro
         const { storage } = await import("./storage");
         const targetUser = await storage.getUserByUsername(username);
         if (targetUser) tenantId = targetUser.tenantId;
-      } catch (_) {}
+      } catch (lookupErr) {
+        console.warn("checkFailedLoginAlert: could not look up tenant for user", username, lookupErr instanceof Error ? lookupErr.message : String(lookupErr));
+      }
       await createSecurityAlert({
         tenantId,
         type: "brute_force_attempt",
         severity: "critical",
         title: "Possible brute force attack detected",
-        description: `${failCount} failed login attempts from IP ${ip} in the last 5 minutes (username: ${username})`,
+        description: `${failCount} failed login attempts for username "${username}" from IP ${ip} in the last 5 minutes`,
         ipAddress: ip,
         metadata: { username, failCount, ip },
       });
     }
-  } catch (_) {}
+  } catch (err) {
+    console.error("checkFailedLoginAlert error:", err instanceof Error ? err.message : String(err));
+  }
 }
 
 export async function checkNewIpLoginAlert(userId: string, tenantId: string, userName: string, req: Request): Promise<void> {
@@ -100,7 +110,9 @@ export async function checkNewIpLoginAlert(userId: string, tenantId: string, use
         metadata: { userName, ip },
       });
     }
-  } catch (_) {}
+  } catch (err) {
+    console.error("checkNewIpLoginAlert error:", err instanceof Error ? err.message : String(err));
+  }
 }
 
 export async function alertPasswordChanged(userId: string, tenantId: string, userName: string, req: Request): Promise<void> {

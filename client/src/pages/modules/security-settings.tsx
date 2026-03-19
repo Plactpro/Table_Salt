@@ -69,6 +69,7 @@ export default function SecuritySettingsPage() {
     queryKey: ["/api/security/settings"],
     queryFn: async () => {
       const res = await fetch("/api/security/settings", { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load security settings: ${res.status}`);
       return res.json();
     },
   });
@@ -77,6 +78,7 @@ export default function SecuritySettingsPage() {
     queryKey: ["/api/permissions"],
     queryFn: async () => {
       const res = await fetch("/api/permissions", { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load permissions: ${res.status}`);
       return res.json();
     },
   });
@@ -85,6 +87,7 @@ export default function SecuritySettingsPage() {
     queryKey: ["/api/users"],
     queryFn: async () => {
       const res = await fetch("/api/users", { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load users: ${res.status}`);
       return res.json();
     },
   });
@@ -104,6 +107,7 @@ export default function SecuritySettingsPage() {
     queryKey: ["/api/device-sessions"],
     queryFn: async () => {
       const res = await fetch("/api/device-sessions", { credentials: "include" });
+      if (!res.ok) throw new Error(`Failed to load device sessions: ${res.status}`);
       return res.json();
     },
   });
@@ -449,7 +453,7 @@ function SecurityAlertsCard() {
     queryKey: ["/api/security-alerts"],
     queryFn: async () => {
       const res = await fetch("/api/security-alerts?limit=20", { credentials: "include" });
-      if (!res.ok) return { alerts: [], total: 0 };
+      if (!res.ok) throw new Error(`Failed to load security alerts: ${res.status}`);
       return res.json();
     },
     enabled: isOwner,
@@ -597,7 +601,7 @@ function IpAllowlistCard() {
     queryKey: ["/api/security/ip-allowlist"],
     queryFn: async () => {
       const res = await fetch("/api/security/ip-allowlist", { credentials: "include" });
-      if (!res.ok) return { ipAllowlist: [], ipAllowlistEnabled: false, ipAllowlistRoles: {} };
+      if (!res.ok) throw new Error(`Failed to load IP allowlist: ${res.status}`);
       return res.json();
     },
     enabled: isOwner || user?.role === "hq_admin",
@@ -794,7 +798,7 @@ function DataPrivacyCard() {
     queryKey: ["/api/gdpr/retention-policy"],
     queryFn: async () => {
       const res = await fetch("/api/gdpr/retention-policy", { credentials: "include" });
-      if (!res.ok) return { dataRetentionMonths: 36, autoDeleteAnonymized: false, auditLogRetentionMonths: 24 };
+      if (!res.ok) throw new Error(`Failed to load retention policy: ${res.status}`);
       return res.json();
     },
     enabled: isOwner || user?.role === "hq_admin",
