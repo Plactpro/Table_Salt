@@ -16,4 +16,22 @@ export async function runAdminMigrations(): Promise<void> {
     SELECT 'Table Salt Platform', 'platform', 'enterprise', true
     WHERE NOT EXISTS (SELECT 1 FROM tenants WHERE slug = 'platform')
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS platform_settings (
+      id TEXT PRIMARY KEY DEFAULT 'singleton',
+      maintenance_mode BOOLEAN NOT NULL DEFAULT false,
+      registration_open BOOLEAN NOT NULL DEFAULT true,
+      platform_name TEXT NOT NULL DEFAULT 'Table Salt Platform',
+      max_tenants_per_plan JSONB NOT NULL DEFAULT '{"basic":10,"standard":50,"premium":200,"enterprise":1000}'::jsonb,
+      alert_email_recipients JSONB NOT NULL DEFAULT '[]'::jsonb,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    INSERT INTO platform_settings (id)
+    VALUES ('singleton')
+    ON CONFLICT (id) DO NOTHING
+  `);
 }
