@@ -159,7 +159,11 @@ function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCo
               </Button>
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-2">
+            <div className="bg-background rounded-md p-2 text-center border">
+              <p className="text-xs text-muted-foreground">Selling Price</p>
+              <p className="text-sm font-bold text-foreground mt-0.5" data-testid="text-selling-price">{sp > 0 ? fmt(sp) : "—"}</p>
+            </div>
             <div className="bg-background rounded-md p-2 text-center border">
               <p className="text-xs text-muted-foreground">Plate Cost</p>
               <p className="text-sm font-bold text-foreground mt-0.5" data-testid="text-plate-cost">{fmt(plateCost ?? 0)}</p>

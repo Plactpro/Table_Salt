@@ -66,6 +66,18 @@ function variancePct(row: VarianceRow): number {
   return row.idealUsage > 0 ? ((row.varianceQty / row.idealUsage) * 100) : 0;
 }
 
+function varianceColorClass(absPct: number): string {
+  if (absPct > 15) return "text-red-600";
+  if (absPct > 5) return "text-amber-600";
+  return "text-green-600";
+}
+
+function varianceRowBg(absPct: number): string {
+  if (absPct > 15) return "bg-red-50";
+  if (absPct > 5) return "bg-amber-50/60";
+  return "";
+}
+
 export default function FoodCostReports() {
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("profitability");
@@ -396,19 +408,21 @@ export default function FoodCostReports() {
                     {varianceByIngredient.map(v => {
                       const isOver = v.varianceQty > 0;
                       const pct = variancePct(v);
-                      const rowBg = isOver && pct > 15 ? "bg-red-50" : isOver && pct > 5 ? "bg-amber-50/60" : "";
+                      const absPct = Math.abs(pct);
+                      const colorCls = varianceColorClass(absPct);
+                      const rowBg = varianceRowBg(absPct);
                       return (
                         <TableRow key={v.itemId} className={rowBg} data-testid={`variance-row-${v.itemId}`}>
                           <TableCell className="font-medium">{v.itemName}</TableCell>
                           <TableCell className="text-right">{v.idealUsage.toFixed(2)} {v.unit}</TableCell>
                           <TableCell className="text-right">{v.actualUsage.toFixed(2)} {v.unit}</TableCell>
-                          <TableCell className={`text-right font-medium ${isOver ? "text-red-600" : "text-green-600"}`}>
+                          <TableCell className={`text-right font-medium ${colorCls}`}>
                             {isOver ? "+" : ""}{v.varianceQty.toFixed(2)} {v.unit}
                           </TableCell>
-                          <TableCell className={`text-right font-medium ${isOver && pct > 15 ? "text-red-600" : isOver && pct > 5 ? "text-amber-600" : "text-green-600"}`}>
+                          <TableCell className={`text-right font-medium ${colorCls}`}>
                             {isOver ? "+" : ""}{pct.toFixed(1)}%
                           </TableCell>
-                          <TableCell className={`text-right font-medium ${isOver ? "text-red-600" : "text-green-600"}`}>
+                          <TableCell className={`text-right font-medium ${colorCls}`}>
                             {isOver ? "+" : ""}{fmt(v.varianceCost)}
                           </TableCell>
                           <TableCell className="text-right">{v.currentStock.toFixed(2)} {v.unit}</TableCell>
