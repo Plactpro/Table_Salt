@@ -84,17 +84,30 @@ export default function RecipeEditorPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  // In-app navigation guard (intercept wouter pushState-based navigation)
+  // In-app navigation guard (intercept wouter pushState-based navigation + browser back button)
   useEffect(() => {
     if (!isDirty) return;
+
     const originalPushState = window.history.pushState.bind(window.history);
     window.history.pushState = function (...args: Parameters<typeof window.history.pushState>) {
       if (!window.confirm("You have unsaved changes. Leave without saving?")) return;
       setIsDirty(false);
       originalPushState(...args);
     };
+
+    const handlePopState = () => {
+      if (!window.confirm("You have unsaved changes. Leave without saving?")) {
+        // Cancel back navigation by going forward again
+        window.history.go(1);
+      } else {
+        setIsDirty(false);
+      }
+    };
+    window.addEventListener("popstate", handlePopState);
+
     return () => {
       window.history.pushState = originalPushState;
+      window.removeEventListener("popstate", handlePopState);
     };
   }, [isDirty]);
 
