@@ -1236,7 +1236,7 @@ export function registerAdminRoutes(app: Express) {
 
   app.get("/api/admin/security-alerts", requireSuperAdmin, async (req, res) => {
     try {
-      const { tenantId, severity, type, acknowledged, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
+      const { tenantId, severity, type, acknowledged, from, to, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
       const limitVal = Math.min(parseInt(limitStr ?? "100", 10) || 100, 500);
       const offsetVal = parseInt(offsetStr ?? "0", 10) || 0;
 
@@ -1246,6 +1246,12 @@ export function registerAdminRoutes(app: Express) {
       if (type) conditions.push(eq(securityAlerts.type, type));
       if (acknowledged !== undefined && acknowledged !== "") {
         conditions.push(eq(securityAlerts.acknowledged, acknowledged === "true"));
+      }
+      if (from) conditions.push(gte(securityAlerts.createdAt, new Date(from)));
+      if (to) {
+        const toDate = new Date(to);
+        toDate.setHours(23, 59, 59, 999);
+        conditions.push(lte(securityAlerts.createdAt, toDate));
       }
 
       const rows = await db

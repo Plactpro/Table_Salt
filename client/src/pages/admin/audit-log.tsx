@@ -266,7 +266,7 @@ export default function AuditLogPage() {
                 onClick={() => applyPreset(1, setFromDate, setToDate)}
                 data-testid="button-preset-24h"
               >
-                24h
+                Last 24h
               </Button>
               <Button
                 variant="outline"
@@ -275,7 +275,7 @@ export default function AuditLogPage() {
                 onClick={() => applyPreset(7, setFromDate, setToDate)}
                 data-testid="button-preset-7d"
               >
-                7d
+                Last 7 days
               </Button>
               <Button
                 variant="outline"
@@ -284,7 +284,7 @@ export default function AuditLogPage() {
                 onClick={() => applyPreset(30, setFromDate, setToDate)}
                 data-testid="button-preset-30d"
               >
-                30d
+                Last 30 days
               </Button>
               {(fromDate || toDate) && (
                 <Button
