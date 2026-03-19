@@ -196,7 +196,6 @@ export function registerAdminRoutes(app: Express) {
   app.post("/api/admin/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
 
   app.post("/api/session/impersonate/end", requireAuth, handleImpersonateEnd);
-  app.post("/api/admin/impersonate/end", requireAuth, handleImpersonateEnd);
 
   const handleImpersonationStatus: import("express").RequestHandler = (req, res) => {
     const session = req.session as Record<string, unknown>;
@@ -209,7 +208,6 @@ export function registerAdminRoutes(app: Express) {
   };
 
   app.get("/api/session/impersonation/status", requireAuth, handleImpersonationStatus);
-  app.get("/api/admin/impersonation/status", requireAuth, handleImpersonationStatus);
 
   // ───────────────────────────────────────────────────────────────────────────
   // All routes below this point are under /api/admin/* and use requireSuperAdmin
@@ -344,10 +342,15 @@ export function registerAdminRoutes(app: Express) {
       const [tenant] = await db.select().from(tenants).where(eq(tenants.id, req.params.id));
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
 
-      const [tenantUsers, tenantOutlets, [orderStats], recentAudit] = await Promise.all([
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+
+      const [tenantUsers, tenantOutlets, [orderStats], [recentOrderStats], recentAudit] = await Promise.all([
         db.select().from(users).where(eq(users.tenantId, tenant.id)).orderBy(users.name),
         db.select().from(outlets).where(eq(outlets.tenantId, tenant.id)),
         db.select({ total: sql<number>`count(*)::int` }).from(orders).where(eq(orders.tenantId, tenant.id)),
+        db.select({ total: sql<number>`count(*)::int` }).from(orders).where(
+          and(eq(orders.tenantId, tenant.id), gte(orders.createdAt, thirtyDaysAgo))
+        ),
         db.select().from(auditEvents).where(eq(auditEvents.tenantId, tenant.id))
           .orderBy(desc(auditEvents.createdAt)).limit(20),
       ]);
@@ -357,6 +360,7 @@ export function registerAdminRoutes(app: Express) {
         users: tenantUsers.map(u => stripSensitiveFields(u as Record<string, unknown>)),
         outlets: tenantOutlets,
         orderCount: orderStats?.total ?? 0,
+        recentOrderCount: recentOrderStats?.total ?? 0,
         recentAuditEvents: recentAudit,
       });
     } catch (err: unknown) {
