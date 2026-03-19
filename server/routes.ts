@@ -5602,11 +5602,17 @@ export async function registerRoutes(
         return res.status(503).json({ message: "Stripe is not configured" });
       }
       const { sessionId, outletId, tableToken } = req.body;
-      if (!sessionId) {
-        return res.status(400).json({ message: "sessionId is required" });
+      if (!sessionId || !outletId || !tableToken) {
+        return res.status(400).json({ message: "sessionId, outletId, and tableToken are required" });
       }
       const tableSession = await storage.getTableSession(sessionId);
       if (!tableSession) return res.status(404).json({ message: "Session not found" });
+
+      const validTable = await storage.getTableByQrToken(outletId, tableToken);
+      if (!validTable || validTable.id !== tableSession.tableId) {
+        return res.status(403).json({ message: "Session does not match the provided table credentials" });
+      }
+
       const tenant = await storage.getTenant(tableSession.tenantId);
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
 
@@ -5646,7 +5652,7 @@ export async function registerRoutes(
           channel: "guest",
         },
       });
-      res.json({ url: session.url, sessionId: session.id, amount: (billTotal).toFixed(2) });
+      res.json({ url: session.url, sessionId: session.id, amount: billTotal.toFixed(2) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
