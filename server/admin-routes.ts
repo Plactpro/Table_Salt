@@ -19,16 +19,28 @@ async function getPlatformTenantId(): Promise<string> {
   return pt.id;
 }
 
-function stripSensitiveFields(u: Record<string, unknown>) {
+function stripSensitiveFields(u: Record<string, unknown>): Record<string, unknown> {
   const { password, totpSecret, recoveryCodes, passwordHistory, ...safe } = u;
   return safe;
 }
 
+/** Derive a safe username from an email address or a display name */
+function deriveUsername(email: string | undefined, name: string): string {
+  if (email) {
+    const local = email.split("@")[0] ?? "";
+    return local.toLowerCase().replace(/[^a-z0-9_]/g, "_").slice(0, 30) || name.toLowerCase().replace(/\s+/g, "_").slice(0, 30);
+  }
+  return name.toLowerCase().replace(/[^a-z0-9]/g, "_").replace(/_+/g, "_").slice(0, 30);
+}
+
 export function registerAdminRoutes(app: Express) {
 
-  // ─── Bootstrap (one-time, CSRF-exempt by being idempotent) ───────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // Bootstrap — outside /api/admin/* namespace so it can run without a super
+  // admin session.  Must be one-time: fails if any super admin already exists.
+  // ───────────────────────────────────────────────────────────────────────────
 
-  app.post("/api/admin/setup", async (req, res) => {
+  app.post("/api/platform/setup", async (req, res) => {
     try {
       const existing = await db.select({ id: users.id })
         .from(users)
@@ -50,9 +62,9 @@ export function registerAdminRoutes(app: Express) {
       const { username, password, name } = parsed.data;
 
       const platformTenantId = await getPlatformTenantId();
-      const existingUser = await db.select({ id: users.id }).from(users)
+      const [existingUser] = await db.select({ id: users.id }).from(users)
         .where(eq(users.username, username)).limit(1);
-      if (existingUser.length > 0) {
+      if (existingUser) {
         return res.status(409).json({ message: "Username already taken" });
       }
 
@@ -83,7 +95,112 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  // ─── Stats ────────────────────────────────────────────────────────────────
+  // ───────────────────────────────────────────────────────────────────────────
+  // Impersonation session management — outside /api/admin/* namespace because
+  // the "end" and "status" routes are called while the session belongs to the
+  // *impersonated* user (not a super_admin).  Start still uses requireSuperAdmin.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  app.post("/api/session/impersonate/:userId", requireSuperAdmin, async (req, res) => {
+    try {
+      const adminUser = req.user as { id: string; name: string; tenantId: string; role: string };
+      const [target] = await db.select().from(users).where(eq(users.id, req.params.userId));
+      if (!target) return res.status(404).json({ message: "User not found" });
+      if (target.role === "super_admin" as UserRoleValue) {
+        return res.status(403).json({ message: "Cannot impersonate another super admin" });
+      }
+      if (!target.active) {
+        return res.status(403).json({ message: "Cannot impersonate a deactivated user" });
+      }
+
+      const session = req.session as Record<string, unknown>;
+      session.superAdminBackup = {
+        userId: adminUser.id,
+        userName: adminUser.name,
+        tenantId: adminUser.tenantId,
+        role: adminUser.role,
+      };
+
+      await auditLog({
+        tenantId: null,
+        userId: adminUser.id,
+        userName: adminUser.name,
+        action: "impersonation_start",
+        entityType: "platform",
+        entityId: target.id,
+        entityName: target.name,
+        metadata: { targetTenantId: target.tenantId, targetRole: target.role },
+        req,
+      });
+
+      req.login(target, (loginErr) => {
+        if (loginErr) return res.status(500).json({ message: "Failed to switch session" });
+        return res.json({ message: "Impersonation started", user: stripSensitiveFields(target as Record<string, unknown>) });
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.post("/api/session/impersonate/end", requireAuth, async (req, res) => {
+    try {
+      const session = req.session as Record<string, unknown>;
+      const backup = session.superAdminBackup as {
+        userId: string;
+        userName: string;
+        tenantId: string;
+        role: string;
+      } | undefined;
+
+      if (!backup) {
+        return res.status(400).json({ message: "Not currently impersonating" });
+      }
+
+      const [originalAdmin] = await db.select().from(users).where(eq(users.id, backup.userId));
+      if (!originalAdmin) return res.status(404).json({ message: "Original admin session not found" });
+
+      const currentUser = req.user as { id?: string; name?: string; tenantId?: string; role?: string };
+      await auditLog({
+        tenantId: null,
+        userId: backup.userId,
+        userName: backup.userName,
+        action: "impersonation_end",
+        entityType: "platform",
+        entityId: currentUser.id ?? "",
+        entityName: currentUser.name ?? "",
+        metadata: { impersonatedTenantId: currentUser.tenantId, impersonatedRole: currentUser.role },
+        req,
+      });
+
+      delete session.superAdminBackup;
+
+      req.login(originalAdmin, (loginErr) => {
+        if (loginErr) return res.status(500).json({ message: "Failed to restore session" });
+        return res.json({
+          message: "Returned to admin session",
+          user: stripSensitiveFields(originalAdmin as Record<string, unknown>),
+        });
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.get("/api/session/impersonation/status", requireAuth, (req, res) => {
+    const session = req.session as Record<string, unknown>;
+    const backup = session.superAdminBackup as Record<string, unknown> | undefined;
+    if (!backup) return res.json({ isImpersonating: false });
+    return res.json({
+      isImpersonating: true,
+      originalAdmin: { userId: backup.userId, userName: backup.userName, role: backup.role },
+    });
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // All routes below this point are under /api/admin/* and use requireSuperAdmin
+  // ───────────────────────────────────────────────────────────────────────────
 
   app.get("/api/admin/stats", requireSuperAdmin, async (_req, res) => {
     try {
@@ -98,16 +215,12 @@ export function registerAdminRoutes(app: Express) {
       const planDistribution = await db.select({
         plan: tenants.plan,
         count: sql<number>`count(*)::int`,
-      }).from(tenants)
-        .where(ne(tenants.id, platformTenantId))
-        .groupBy(tenants.plan);
+      }).from(tenants).where(ne(tenants.id, platformTenantId)).groupBy(tenants.plan);
 
       const businessTypes = await db.select({
         businessType: tenants.businessType,
         count: sql<number>`count(*)::int`,
-      }).from(tenants)
-        .where(ne(tenants.id, platformTenantId))
-        .groupBy(tenants.businessType);
+      }).from(tenants).where(ne(tenants.id, platformTenantId)).groupBy(tenants.businessType);
 
       const [userStats] = await db.select({
         total: sql<number>`count(*)::int`,
@@ -165,7 +278,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  // ─── Tenant Management ────────────────────────────────────────────────────
+  // ─── Tenant CRUD ──────────────────────────────────────────────────────────
 
   app.get("/api/admin/tenants", requireSuperAdmin, async (req, res) => {
     try {
@@ -185,11 +298,9 @@ export function registerAdminRoutes(app: Express) {
       if (active !== undefined && active !== "") {
         filtered = filtered.filter(t => String(t.active) === active);
       }
-
       if (filtered.length === 0) return res.json([]);
 
       const tenantIds = filtered.map(t => t.id);
-
       const [userCounts, outletCounts, orderCounts] = await Promise.all([
         db.select({ tenantId: users.tenantId, count: sql<number>`count(*)::int` })
           .from(users).where(inArray(users.tenantId, tenantIds)).groupBy(users.tenantId),
@@ -245,8 +356,8 @@ export function registerAdminRoutes(app: Express) {
     tenantName: z.string().min(2),
     slug: z.string().min(2).regex(/^[a-z0-9-]+$/, "Slug must be lowercase alphanumeric with dashes"),
     ownerName: z.string().min(2),
-    ownerUsername: z.string().min(3).regex(/^[a-z0-9_]+$/, "Username must be lowercase alphanumeric with underscores"),
     ownerEmail: z.string().email().optional(),
+    ownerUsername: z.string().min(3).regex(/^[a-z0-9_]+$/, "Username must be lowercase alphanumeric with underscores").optional(),
     ownerPassword: z.string().min(8),
     plan: z.enum(["basic", "standard", "premium", "enterprise"]).default("basic"),
     currency: z.string().default("USD"),
@@ -261,14 +372,17 @@ export function registerAdminRoutes(app: Express) {
       if (!parsed.success) {
         return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten() });
       }
-      const { tenantName, slug, ownerName, ownerUsername, ownerEmail, ownerPassword, plan, currency, timezone, businessType } = parsed.data;
+      const { tenantName, slug, ownerName, ownerEmail, ownerPassword, plan, currency, timezone, businessType } = parsed.data;
+
+      // Derive username from email or name if not provided
+      const rawUsername = parsed.data.ownerUsername ?? deriveUsername(ownerEmail, ownerName);
 
       const [existingSlug] = await db.select({ id: tenants.id }).from(tenants).where(eq(tenants.slug, slug)).limit(1);
       if (existingSlug) return res.status(409).json({ message: "Slug already taken" });
 
       const [existingUsername] = await db.select({ id: users.id }).from(users)
-        .where(eq(users.username, ownerUsername)).limit(1);
-      if (existingUsername) return res.status(409).json({ message: "Username already taken" });
+        .where(eq(users.username, rawUsername)).limit(1);
+      if (existingUsername) return res.status(409).json({ message: `Username '${rawUsername}' already taken` });
 
       const hashedPw = await hashPassword(ownerPassword);
 
@@ -292,7 +406,7 @@ export function registerAdminRoutes(app: Express) {
 
         const [newOwner] = await tx.insert(users).values({
           tenantId: newTenant.id,
-          username: ownerUsername,
+          username: rawUsername,
           password: hashedPw,
           name: ownerName,
           email: ownerEmail,
@@ -311,7 +425,7 @@ export function registerAdminRoutes(app: Express) {
         entityType: "platform",
         entityId: result.newTenant.id,
         entityName: result.newTenant.name,
-        after: { tenantName, slug, plan, ownerUsername },
+        after: { tenantName, slug, plan, ownerUsername: rawUsername },
         req,
       });
 
@@ -353,7 +467,8 @@ export function registerAdminRoutes(app: Express) {
       const [before] = await db.select().from(tenants).where(eq(tenants.id, req.params.id));
       if (!before) return res.status(404).json({ message: "Tenant not found" });
 
-      const [updated] = await db.update(tenants).set(parsed.data).where(eq(tenants.id, req.params.id)).returning();
+      const [updated] = await db.update(tenants).set(parsed.data)
+        .where(eq(tenants.id, req.params.id)).returning();
 
       await auditLog({
         tenantId: null,
@@ -381,6 +496,10 @@ export function registerAdminRoutes(app: Express) {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = suspendSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten() });
+      }
+
       const platformTenantId = await getPlatformTenantId();
       if (req.params.id === platformTenantId) {
         return res.status(403).json({ message: "Cannot suspend platform tenant" });
@@ -390,7 +509,8 @@ export function registerAdminRoutes(app: Express) {
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
       if (!tenant.active) return res.status(400).json({ message: "Tenant is already suspended" });
 
-      const [updated] = await db.update(tenants).set({ active: false }).where(eq(tenants.id, req.params.id)).returning();
+      const [updated] = await db.update(tenants).set({ active: false })
+        .where(eq(tenants.id, req.params.id)).returning();
 
       await auditLog({
         tenantId: null,
@@ -400,7 +520,7 @@ export function registerAdminRoutes(app: Express) {
         entityType: "platform",
         entityId: req.params.id,
         entityName: tenant.name,
-        metadata: { reason: parsed.success ? (parsed.data.reason ?? null) : null },
+        metadata: { reason: parsed.data.reason ?? null },
         req,
       });
 
@@ -418,7 +538,8 @@ export function registerAdminRoutes(app: Express) {
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
       if (tenant.active) return res.status(400).json({ message: "Tenant is already active" });
 
-      const [updated] = await db.update(tenants).set({ active: true }).where(eq(tenants.id, req.params.id)).returning();
+      const [updated] = await db.update(tenants).set({ active: true })
+        .where(eq(tenants.id, req.params.id)).returning();
 
       await auditLog({
         tenantId: null,
@@ -550,113 +671,11 @@ export function registerAdminRoutes(app: Express) {
         req,
       });
 
-      return res.json({ tempPassword, message: "Password has been reset. Share this temporary password securely." });
+      return res.json({ tempPassword, message: "Password reset. Share this temporary password securely." });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
     }
-  });
-
-  // ─── Impersonation ────────────────────────────────────────────────────────
-
-  app.post("/api/admin/impersonate/:userId", requireSuperAdmin, async (req, res) => {
-    try {
-      const adminUser = req.user as { id: string; name: string; tenantId: string; role: string };
-      const [target] = await db.select().from(users).where(eq(users.id, req.params.userId));
-      if (!target) return res.status(404).json({ message: "User not found" });
-      if (target.role === "super_admin" as UserRoleValue) {
-        return res.status(403).json({ message: "Cannot impersonate another super admin" });
-      }
-      if (!target.active) {
-        return res.status(403).json({ message: "Cannot impersonate a deactivated user" });
-      }
-
-      const session = req.session as Record<string, unknown>;
-      session.superAdminBackup = {
-        userId: adminUser.id,
-        userName: adminUser.name,
-        tenantId: adminUser.tenantId,
-        role: adminUser.role,
-      };
-
-      await auditLog({
-        tenantId: null,
-        userId: adminUser.id,
-        userName: adminUser.name,
-        action: "impersonation_start",
-        entityType: "platform",
-        entityId: target.id,
-        entityName: target.name,
-        metadata: { targetTenantId: target.tenantId, targetRole: target.role },
-        req,
-      });
-
-      req.login(target, (loginErr) => {
-        if (loginErr) return res.status(500).json({ message: "Failed to switch session" });
-        return res.json({ message: "Impersonation started", user: stripSensitiveFields(target as Record<string, unknown>) });
-      });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      return res.status(500).json({ message });
-    }
-  });
-
-  // End impersonation — uses requireAuth since the active user is the impersonated user, not a super_admin
-  app.post("/api/admin/impersonate/end", requireAuth, async (req, res) => {
-    try {
-      const session = req.session as Record<string, unknown>;
-      const backup = session.superAdminBackup as {
-        userId: string;
-        userName: string;
-        tenantId: string;
-        role: string;
-      } | undefined;
-
-      if (!backup) {
-        return res.status(400).json({ message: "Not currently impersonating" });
-      }
-
-      const [originalAdmin] = await db.select().from(users).where(eq(users.id, backup.userId));
-      if (!originalAdmin) return res.status(404).json({ message: "Original admin session not found" });
-
-      const currentUser = req.user as { id?: string; name?: string; tenantId?: string; role?: string };
-      await auditLog({
-        tenantId: null,
-        userId: backup.userId,
-        userName: backup.userName,
-        action: "impersonation_end",
-        entityType: "platform",
-        entityId: currentUser.id ?? "",
-        entityName: currentUser.name ?? "",
-        metadata: { impersonatedTenantId: currentUser.tenantId, impersonatedRole: currentUser.role },
-        req,
-      });
-
-      delete session.superAdminBackup;
-
-      req.login(originalAdmin, (loginErr) => {
-        if (loginErr) return res.status(500).json({ message: "Failed to restore session" });
-        return res.json({ message: "Returned to admin session", user: stripSensitiveFields(originalAdmin as Record<string, unknown>) });
-      });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      return res.status(500).json({ message });
-    }
-  });
-
-  // Status is readable by any authenticated user (used by impersonated users to see they're being impersonated)
-  app.get("/api/admin/impersonation/status", requireAuth, (req, res) => {
-    const session = req.session as Record<string, unknown>;
-    const backup = session.superAdminBackup as Record<string, unknown> | undefined;
-    if (!backup) return res.json({ isImpersonating: false });
-    return res.json({
-      isImpersonating: true,
-      originalAdmin: {
-        userId: backup.userId,
-        userName: backup.userName,
-        role: backup.role,
-      },
-    });
   });
 
   // ─── Audit Log ────────────────────────────────────────────────────────────
