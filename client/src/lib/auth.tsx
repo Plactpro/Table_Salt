@@ -27,6 +27,7 @@ export interface TenantInfo {
   subscriptionStatus?: string;
   trialEndsAt?: string | null;
   stripeCustomerId?: string | null;
+  stripeSubscriptionId?: string | null;
 }
 
 export interface AuthUser {
@@ -106,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           subscriptionStatus: data.subscriptionStatus ?? "trialing",
           trialEndsAt: data.trialEndsAt ?? null,
           stripeCustomerId: data.stripeCustomerId ?? null,
+          stripeSubscriptionId: data.stripeSubscriptionId ?? null,
         };
       } catch {
         return null;
