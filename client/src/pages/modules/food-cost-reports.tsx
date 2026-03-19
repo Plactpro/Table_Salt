@@ -94,7 +94,7 @@ export default function FoodCostReports() {
 
   const fmt = (v: number) => {
     const tenant = user?.tenant;
-    return formatCurrency(v, tenant?.currency || "AED", tenant?.currencyPosition || "before", tenant?.currencyDecimals ?? 2);
+    return formatCurrency(v, tenant?.currency || "AED", { position: (tenant?.currencyPosition as "before" | "after") || "before", decimals: tenant?.currencyDecimals ?? 2 });
   };
 
   const { data: report, isLoading } = useQuery<FoodCostReport>({

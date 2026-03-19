@@ -154,9 +154,11 @@ function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCo
               <Button variant="outline" size="sm" onClick={() => onNavigate(`/recipes/${linkedRecipe.id}`)} data-testid="button-view-recipe">
                 <ExternalLink className="h-3.5 w-3.5 mr-1.5" /> View / Edit
               </Button>
-              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleUnlinkRecipe} disabled={linking} data-testid="button-unlink-recipe">
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              {canEditRecipe && (
+                <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={handleUnlinkRecipe} disabled={linking} data-testid="button-unlink-recipe">
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-4 gap-2">
