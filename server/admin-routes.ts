@@ -1036,7 +1036,7 @@ export function registerAdminRoutes(app: Express) {
            max_tenants_per_plan = EXCLUDED.max_tenants_per_plan,
            alert_email_recipients = EXCLUDED.alert_email_recipients,
            updated_at = now()`,
-        [next.maintenanceMode, next.registrationOpen, next.platformName, JSON.stringify(next.maxTenantsPerPlan), next.alertEmailRecipients]
+        [next.maintenanceMode, next.registrationOpen, next.platformName, JSON.stringify(next.maxTenantsPerPlan), JSON.stringify(next.alertEmailRecipients)]
       );
 
       await auditLog({
