@@ -295,7 +295,11 @@ export default function MenuPage() {
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
   const { data: outletsList = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/outlets"] });
   const { data: allRecipes = [] } = useQuery<RecipeWithIngredients[]>({ queryKey: ["/api/recipes"] });
-  const { data: allInventory = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: allInventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({
+    queryKey: ["/api/inventory", "all"],
+    queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
+  });
+  const allInventory = allInventoryRes?.data ?? [];
   const invMap = new Map(allInventory.map(i => [i.id, i]));
 
   const filteredItems = selectedCategoryId

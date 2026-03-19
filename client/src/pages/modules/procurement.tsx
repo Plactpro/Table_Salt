@@ -44,7 +44,11 @@ export default function ProcurementPage() {
   };
 
   const { data: suppliersList = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
-  const { data: inventoryItems = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({
+    queryKey: ["/api/inventory", "all"],
+    queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
+  });
+  const inventoryItems = inventoryRes?.data ?? [];
   const { data: purchaseOrders = [] } = useQuery<PurchaseOrder[]>({ queryKey: ["/api/purchase-orders"] });
   const { data: lowStock = [] } = useQuery<LowStockItem[]>({ queryKey: ["/api/procurement/low-stock"] });
   const { data: analytics } = useQuery<Analytics>({ queryKey: ["/api/procurement/analytics"] });
