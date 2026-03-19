@@ -1204,9 +1204,12 @@ export async function registerRoutes(
       existing.status === "paid"
     ) {
       const consumptions = await storage.getStockMovementsByOrder(req.params.id);
-      for (const mv of consumptions) {
-        if (mv.type === "RECIPE_CONSUMPTION") {
-          reversalEntries.push({ tenantId: mv.tenantId, itemId: mv.itemId, qty: Number(mv.quantity), menuItemId: mv.menuItemId, recipeId: mv.recipeId });
+      const alreadyReversed = consumptions.some((m) => m.type === "RECIPE_REVERSAL");
+      if (!alreadyReversed) {
+        for (const mv of consumptions) {
+          if (mv.type === "RECIPE_CONSUMPTION") {
+            reversalEntries.push({ tenantId: mv.tenantId, itemId: mv.itemId, qty: Number(mv.quantity), menuItemId: mv.menuItemId, recipeId: mv.recipeId });
+          }
         }
       }
     }
