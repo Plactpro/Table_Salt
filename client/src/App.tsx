@@ -250,6 +250,7 @@ function ProtectedPages() {
         <Route path="/tables">{() => <GuardedRoute path="/tables" component={TablesPage} />}</Route>
         <Route path="/menu">{() => <GuardedRoute path="/menu" component={MenuPage} />}</Route>
         <Route path="/inventory">{() => <GuardedRoute path="/inventory" component={InventoryHub} />}</Route>
+        {/* Recipe editor routes — canonical path is /recipes/* (no /app/ prefix, consistent with all other module routes in this app) */}
         <Route path="/recipes/new">{() => <GuardedRoute path="/inventory" component={RecipeEditorPage} />}</Route>
         <Route path="/recipes/:id">{() => <GuardedRoute path="/inventory" component={RecipeEditorPage} />}</Route>
         <Route path="/outlets">{() => <GuardedRoute path="/outlets" component={LocationsHub} />}</Route>
