@@ -185,12 +185,31 @@ export default function TablesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [dragTableId, setDragTableId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  useRealtimeEvent("table:updated", useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+  useRealtimeEvent("table:updated", useCallback((payload: unknown) => {
+    const p = payload as { tableId?: string; status?: string } | null;
+    if (!p?.tableId) { queryClient.invalidateQueries({ queryKey: ["/api/tables"] }); return; }
+    queryClient.setQueryData(["/api/tables"], (old: TableData[] | undefined) => {
+      if (!old) return old;
+      return old.map(t => t.id === p.tableId ? { ...t, status: (p.status ?? t.status) as TableStatus | null } : t);
+    });
   }, [queryClient]));
 
-  useRealtimeEvent("order:updated", useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+  useRealtimeEvent("order:completed", useCallback((payload: unknown) => {
+    const p = payload as { tableId?: string } | null;
+    if (!p?.tableId) return;
+    queryClient.setQueryData(["/api/tables"], (old: TableData[] | undefined) => {
+      if (!old) return old;
+      return old.map(t => t.id === p.tableId ? { ...t, status: "cleaning" as TableStatus } : t);
+    });
+  }, [queryClient]));
+
+  useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
+    const p = payload as { tableId?: string; status?: string } | null;
+    if (!p?.tableId || !p.status) return;
+    queryClient.setQueryData(["/api/tables"], (old: TableData[] | undefined) => {
+      if (!old) return old;
+      return old.map(t => t.id === p.tableId ? { ...t, status: (p.status ?? t.status) as TableStatus | null } : t);
+    });
   }, [queryClient]));
 
   const canvasRef = useRef<HTMLDivElement>(null);

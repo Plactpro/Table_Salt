@@ -159,7 +159,7 @@ export default function POSPage() {
   const paymentModalRef = useRef(paymentLinkModal);
   paymentModalRef.current = paymentLinkModal;
 
-  useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
+  const handleOrderTerminal = useCallback((payload: unknown) => {
     const p = payload as { orderId?: string; status?: string } | null;
     const modal = paymentModalRef.current;
     if (!modal?.open || !modal.orderId) return;
@@ -169,7 +169,10 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       toast({ title: "Payment received!", description: "Order has been marked as paid." });
     }
-  }, [queryClient, toast]));
+  }, [queryClient, toast]);
+
+  useRealtimeEvent("order:updated", handleOrderTerminal);
+  useRealtimeEvent("order:completed", handleOrderTerminal);
 
   const { data: categories = [] } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
   const { data: menuItems = [] } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");

@@ -313,13 +313,43 @@ export default function KitchenDashboard() {
     queryFn: () => fetch(ticketsUrl, { credentials: "include" }).then(r => r.json()),
   });
 
-  const invalidateTickets = useCallback(() => {
+  useRealtimeEvent("order:new", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
-  }, [queryClient]);
+  }, [queryClient]));
 
-  useRealtimeEvent("order:new", invalidateTickets);
-  useRealtimeEvent("order:updated", invalidateTickets);
-  useRealtimeEvent("order:item_updated", invalidateTickets);
+  useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
+    const p = payload as { orderId?: string; status?: string } | null;
+    if (!p?.orderId) return;
+    queryClient.setQueryData(["/api/kds/tickets", selectedStation], (old: KDSTicket[] | undefined) => {
+      if (!old) return old;
+      return old.map(t => t.id === p.orderId ? { ...t, status: p.status ?? t.status } : t);
+    });
+  }, [queryClient, selectedStation]));
+
+  useRealtimeEvent("order:completed", useCallback((payload: unknown) => {
+    const p = payload as { orderId?: string; status?: string } | null;
+    if (!p?.orderId) return;
+    queryClient.setQueryData(["/api/kds/tickets", selectedStation], (old: KDSTicket[] | undefined) => {
+      if (!old) return old;
+      return old.filter(t => t.id !== p.orderId);
+    });
+  }, [queryClient, selectedStation]));
+
+  useRealtimeEvent("order:item_updated", useCallback((payload: unknown) => {
+    const p = payload as { itemId?: string; orderId?: string; status?: string; orderStatus?: string } | null;
+    if (!p?.orderId) return;
+    queryClient.setQueryData(["/api/kds/tickets", selectedStation], (old: KDSTicket[] | undefined) => {
+      if (!old) return old;
+      return old.map(t => {
+        if (t.id !== p.orderId) return t;
+        const updatedStatus = p.orderStatus ?? t.status;
+        const updatedItems = p.itemId
+          ? t.items.map(i => i.id === p.itemId ? { ...i, status: p.status ?? i.status } : i)
+          : t.items;
+        return { ...t, status: updatedStatus, items: updatedItems };
+      });
+    });
+  }, [queryClient, selectedStation]));
 
   const { data: stations = [] } = useQuery<KitchenStation[]>({
     queryKey: ["/api/kitchen-stations"],

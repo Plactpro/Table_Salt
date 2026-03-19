@@ -1287,7 +1287,12 @@ export async function registerRoutes(
     }
 
     if (req.body.status && req.body.status !== existing.status) {
-      emitToTenant(user.tenantId, "order:updated", { orderId: req.params.id, status: req.body.status, tableId: existing.tableId });
+      const terminalStatuses = ["served", "paid", "voided", "cancelled"];
+      if (terminalStatuses.includes(req.body.status)) {
+        emitToTenant(user.tenantId, "order:completed", { orderId: req.params.id, status: req.body.status, tableId: existing.tableId });
+      } else {
+        emitToTenant(user.tenantId, "order:updated", { orderId: req.params.id, status: req.body.status, tableId: existing.tableId });
+      }
     }
 
     if (req.body.status === "voided" || req.body.status === "cancelled") {
