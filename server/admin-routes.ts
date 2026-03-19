@@ -1006,6 +1006,53 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Analytics ─────────────────────────────────────────────────────────────
 
+  /** Build a zero-filled 12-month array of { month: "YYYY-MM", count: 0 } */
+  function buildMonthSeries(monthsBack: number): { month: string; count: number }[] {
+    const series: { month: string; count: number }[] = [];
+    const now = new Date();
+    for (let i = monthsBack - 1; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, "0");
+      series.push({ month: `${y}-${m}`, count: 0 });
+    }
+    return series;
+  }
+
+  /** Build a zero-filled N-week array of { week: "YYYY-MM-DD", count: 0 } */
+  function buildWeekSeries(weeksBack: number): { week: string; count: number }[] {
+    const series: { week: string; count: number }[] = [];
+    const now = new Date();
+    // Align to current week's Monday
+    const dayOfWeek = now.getDay(); // 0 = Sun
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday);
+    for (let i = weeksBack - 1; i >= 0; i--) {
+      const d = new Date(thisMonday);
+      d.setDate(thisMonday.getDate() - i * 7);
+      const iso = d.toISOString().slice(0, 10);
+      series.push({ week: iso, count: 0 });
+    }
+    return series;
+  }
+
+  /** Merge raw DB results into a pre-built series by key */
+  function mergeIntoMonthSeries(
+    series: { month: string; count: number }[],
+    raw: { month: string; count: number }[]
+  ): { month: string; count: number }[] {
+    const map = new Map(raw.map((r) => [r.month, r.count]));
+    return series.map((s) => ({ ...s, count: map.get(s.month) ?? 0 }));
+  }
+
+  function mergeIntoWeekSeries(
+    series: { week: string; count: number }[],
+    raw: { week: string; count: number }[]
+  ): { week: string; count: number }[] {
+    const map = new Map(raw.map((r) => [r.week, r.count]));
+    return series.map((s) => ({ ...s, count: map.get(s.week) ?? 0 }));
+  }
+
   app.get("/api/admin/analytics", requireSuperAdmin, async (_req, res) => {
     try {
       const platformTenantId = await getPlatformTenantId();
@@ -1107,10 +1154,15 @@ export function registerAdminRoutes(app: Express) {
       const uptimeSeconds = Math.floor(process.uptime());
       const apiRequestCount = getApiRequestCount();
 
+      // Zero-fill time series to always return full windows
+      const tenantGrowth = mergeIntoMonthSeries(buildMonthSeries(12), tenantGrowthRaw);
+      const userRegistrations = mergeIntoMonthSeries(buildMonthSeries(12), userRegistrationsRaw);
+      const weeklyOrderVolume = mergeIntoWeekSeries(buildWeekSeries(8), weeklyOrdersRaw);
+
       return res.json({
-        tenantGrowth: tenantGrowthRaw,
-        userRegistrations: userRegistrationsRaw,
-        weeklyOrderVolume: weeklyOrdersRaw,
+        tenantGrowth,
+        userRegistrations,
+        weeklyOrderVolume,
         planRevenue,
         topTenantsByOrders,
         platformHealth: {
