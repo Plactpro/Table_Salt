@@ -347,30 +347,40 @@ export default function AdminDashboard() {
                 {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
               </div>
             ) : stats?.topTenantsByOrders && stats.topTenantsByOrders.length > 0 ? (
-              <div className="divide-y divide-slate-100" data-testid="top-tenants-list">
-                {stats.topTenantsByOrders.map((t, idx) => (
-                  <div
-                    key={t.id}
-                    className="py-2 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50 -mx-2 px-2 rounded transition-colors"
-                    onClick={() => navigate(`/admin/tenants/${t.id}`)}
-                    data-testid={`top-tenant-row-${t.id}`}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-xs font-mono text-slate-400 w-4 shrink-0">#{idx + 1}</span>
-                      <span className="text-sm font-medium text-slate-800 truncate">{t.name}</span>
-                      <Badge
-                        variant="outline"
-                        className={`text-xs capitalize shrink-0 ${planBadgeColors[t.plan] ?? ""}`}
-                      >
-                        {t.plan}
-                      </Badge>
-                    </div>
-                    <span className="text-sm font-semibold text-emerald-700 shrink-0">
-                      {t.orderCount.toLocaleString()} orders
-                    </span>
-                  </div>
-                ))}
-              </div>
+              <table className="w-full text-sm" data-testid="top-tenants-list">
+                <thead>
+                  <tr className="border-b border-slate-100">
+                    <th className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide pb-2 w-6">#</th>
+                    <th className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide pb-2">Tenant</th>
+                    <th className="text-left text-xs font-medium text-slate-400 uppercase tracking-wide pb-2">Plan</th>
+                    <th className="text-right text-xs font-medium text-slate-400 uppercase tracking-wide pb-2">Orders</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {stats.topTenantsByOrders.map((t, idx) => (
+                    <tr
+                      key={t.id}
+                      className="cursor-pointer hover:bg-slate-50 transition-colors"
+                      onClick={() => navigate(`/admin/tenants/${t.id}`)}
+                      data-testid={`top-tenant-row-${t.id}`}
+                    >
+                      <td className="py-2 pr-2 text-xs font-mono text-slate-400">{idx + 1}</td>
+                      <td className="py-2 font-medium text-slate-800 truncate max-w-[120px]">{t.name}</td>
+                      <td className="py-2">
+                        <Badge
+                          variant="outline"
+                          className={`text-xs capitalize ${planBadgeColors[t.plan] ?? ""}`}
+                        >
+                          {t.plan}
+                        </Badge>
+                      </td>
+                      <td className="py-2 text-right font-semibold text-emerald-700">
+                        {t.orderCount.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             ) : (
               <p className="text-sm text-slate-400 text-center py-6">No order data yet</p>
             )}
