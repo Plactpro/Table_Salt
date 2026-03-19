@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { setupSecurity } from "./security";
 import { createServer } from "http";
+import { incrementApiRequestCount } from "./api-counter";
 
 const app = express();
 const httpServer = createServer(app);
@@ -39,6 +40,9 @@ export function log(message: string, source = "express") {
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
+  if (path.startsWith("/api")) {
+    incrementApiRequestCount();
+  }
   let capturedJsonResponse: Record<string, any> | undefined = undefined;
 
   const originalResJson = res.json;

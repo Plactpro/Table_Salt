@@ -15,6 +15,7 @@ import {
   Database,
   Clock,
   BarChart2,
+  Globe,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -28,11 +29,11 @@ interface AdminStats {
   planDistribution: { plan: string; count: number }[];
   businessTypes: { businessType: string; count: number }[];
   newTenantsLast30Days: { date: string; count: number }[];
+  topTenantsByOrders: { id: string; name: string; slug: string; plan: string; orderCount: number }[];
 }
 
 interface AnalyticsData {
-  topTenantsByOrders: { id: string; name: string; slug: string; plan: string; orderCount: number }[];
-  platformHealth: { dbOk: boolean; uptimeSeconds: number };
+  platformHealth: { dbOk: boolean; uptimeSeconds: number; apiRequestCount: number };
 }
 
 interface AuditEvent {
@@ -309,6 +310,15 @@ export default function AdminDashboard() {
                       : "—"}
                   </span>
                 </div>
+                <div className="flex items-center justify-between" data-testid="health-api-requests">
+                  <div className="flex items-center gap-2 text-sm text-slate-600">
+                    <Globe className="h-4 w-4 text-slate-400" />
+                    API Requests (session)
+                  </div>
+                  <span className="text-sm font-mono text-slate-700" data-testid="text-api-request-count">
+                    {analytics?.platformHealth.apiRequestCount?.toLocaleString() ?? "—"}
+                  </span>
+                </div>
               </>
             )}
           </CardContent>
@@ -332,13 +342,13 @@ export default function AdminDashboard() {
             </Button>
           </CardHeader>
           <CardContent>
-            {analyticsLoading ? (
+            {statsLoading ? (
               <div className="space-y-2">
                 {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
               </div>
-            ) : analytics?.topTenantsByOrders && analytics.topTenantsByOrders.length > 0 ? (
+            ) : stats?.topTenantsByOrders && stats.topTenantsByOrders.length > 0 ? (
               <div className="divide-y divide-slate-100" data-testid="top-tenants-list">
-                {analytics.topTenantsByOrders.map((t, idx) => (
+                {stats.topTenantsByOrders.map((t, idx) => (
                   <div
                     key={t.id}
                     className="py-2 flex items-center justify-between gap-3 cursor-pointer hover:bg-slate-50 -mx-2 px-2 rounded transition-colors"
