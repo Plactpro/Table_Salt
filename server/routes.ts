@@ -1440,6 +1440,7 @@ export async function registerRoutes(
       reason,
     });
     auditLogFromReq(req, { action: "inventory_adjusted", entityType: "inventory_item", entityId: req.params.id, entityName: item.name, before: { currentStock: item.currentStock }, after: { currentStock: String(newStock) }, metadata: { type, quantity, reason } });
+    emitToTenant(user.tenantId, "stock:updated", { itemId: req.params.id, itemName: item.name, currentStock: newStock, type, quantity });
     res.json({ message: "Stock adjusted" });
   });
 
@@ -3337,6 +3338,7 @@ export async function registerRoutes(
       }
       const updated = await storage.updateStockTake(req.params.id, user.tenantId, { status: "completed", completedAt: new Date() });
       auditLogFromReq(req, { action: "inventory_adjusted", entityType: "stock_take", entityId: req.params.id, metadata: { type: "stock_take_complete", linesCount: lines.length, adjustments: adjustmentCount } });
+      emitToTenant(user.tenantId, "stock:updated", { stockTakeId: req.params.id, adjustmentCount, source: "stock_take" });
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -3452,6 +3454,14 @@ export async function registerRoutes(
         else if (allReadyOrServed) { await storage.updateOrder(item.orderId, { status: "ready" }); newOrderStatus = "ready"; }
       }
       emitToTenant(user.tenantId, "order:item_updated", { itemId: req.params.id, orderId: item.orderId, status: updated.status, orderStatus: newOrderStatus || order.status });
+      if (newOrderStatus && newOrderStatus !== order.status) {
+        const terminalKds = ["served"];
+        if (terminalKds.includes(newOrderStatus)) {
+          emitToTenant(user.tenantId, "order:completed", { orderId: item.orderId, status: newOrderStatus, tableId: order.tableId });
+        } else {
+          emitToTenant(user.tenantId, "order:updated", { orderId: item.orderId, status: newOrderStatus, tableId: order.tableId });
+        }
+      }
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -3491,6 +3501,14 @@ export async function registerRoutes(
         await storage.updateOrder(req.params.id, { status: "in_progress" }); bulkOrderStatus = "in_progress";
       }
       emitToTenant(user.tenantId, "order:item_updated", { orderId: req.params.id, status, orderStatus: bulkOrderStatus });
+      if (bulkOrderStatus !== order.status) {
+        const terminalKds = ["served"];
+        if (terminalKds.includes(bulkOrderStatus)) {
+          emitToTenant(user.tenantId, "order:completed", { orderId: req.params.id, status: bulkOrderStatus, tableId: order.tableId });
+        } else {
+          emitToTenant(user.tenantId, "order:updated", { orderId: req.params.id, status: bulkOrderStatus, tableId: order.tableId });
+        }
+      }
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -4108,6 +4126,7 @@ export async function registerRoutes(
         await storage.updatePurchaseOrder(po.id, user.tenantId, { status: newStatus });
       }
 
+      emitToTenant(user.tenantId, "stock:updated", { grnId: grn.id, grnNumber, poNumber: po.poNumber, itemCount: items.length, source: "grn" });
       res.json(grn);
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
