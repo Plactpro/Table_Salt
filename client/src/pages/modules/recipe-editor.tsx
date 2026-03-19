@@ -225,6 +225,12 @@ export default function RecipeEditorPage() {
     onSuccess: (recipe: RecipeWithIngredients) => {
       queryClient.invalidateQueries({ queryKey: ["/api/recipes"] });
       toast({ title: "Recipe created" });
+      // Restore original pushState synchronously before navigating so the guard
+      // doesn't intercept the post-save redirect (setIsDirty batches async in React 18)
+      if (originalPushStateRef.current) {
+        window.history.pushState = originalPushStateRef.current;
+        originalPushStateRef.current = null;
+      }
       setIsDirty(false);
       navigate(`/recipes/${recipe.id}`);
     },
