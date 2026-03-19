@@ -9,6 +9,7 @@ import { requireSuperAdmin, requireAuth, hashPassword } from "./auth";
 import { auditLog } from "./audit";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
 import { randomBytes } from "crypto";
+import { getApiRequestCount } from "./api-counter";
 
 type UserRoleValue = typeof roleEnum.enumValues[number];
 
@@ -311,6 +312,32 @@ export function registerAdminRoutes(app: Express) {
         .groupBy(sql`date(created_at)`)
         .orderBy(sql`date(created_at)`);
 
+      // Top 5 tenants by order count
+      const topTenantRows = await db.select({
+        tenantId: orders.tenantId,
+        orderCount: sql<number>`count(*)::int`,
+      }).from(orders)
+        .groupBy(orders.tenantId)
+        .orderBy(sql`count(*) desc`)
+        .limit(5);
+
+      const topTenantIds = topTenantRows.map((r) => r.tenantId).filter(Boolean) as string[];
+      const topTenantDetails = topTenantIds.length > 0
+        ? await db.select({ id: tenants.id, name: tenants.name, slug: tenants.slug, plan: tenants.plan })
+            .from(tenants).where(inArray(tenants.id, topTenantIds))
+        : [];
+
+      const topTenantsByOrders = topTenantRows.map((r) => {
+        const detail = topTenantDetails.find((t) => t.id === r.tenantId);
+        return {
+          id: r.tenantId,
+          name: detail?.name ?? "Unknown",
+          slug: detail?.slug ?? "",
+          plan: detail?.plan ?? "",
+          orderCount: r.orderCount,
+        };
+      });
+
       return res.json({
         tenants: {
           total: tenantStats?.total ?? 0,
@@ -327,6 +354,7 @@ export function registerAdminRoutes(app: Express) {
           total: orderStats?.total ?? 0,
         },
         newTenantsLast30Days: newTenantsRaw,
+        topTenantsByOrders,
       });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -1077,6 +1105,7 @@ export function registerAdminRoutes(app: Express) {
       }
 
       const uptimeSeconds = Math.floor(process.uptime());
+      const apiRequestCount = getApiRequestCount();
 
       return res.json({
         tenantGrowth: tenantGrowthRaw,
@@ -1087,6 +1116,7 @@ export function registerAdminRoutes(app: Express) {
         platformHealth: {
           dbOk,
           uptimeSeconds,
+          apiRequestCount,
         },
       });
     } catch (err: unknown) {
