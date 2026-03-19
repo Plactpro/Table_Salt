@@ -34,14 +34,16 @@ export default function AdminPanel() {
     queryKey: ["/api/admin/stats"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/stats");
+      if (!r.ok) throw new Error("Failed to load stats");
       return r.json();
     },
   });
 
-  const { data: tenants, isLoading: tenantsLoading } = useQuery<Tenant[]>({
+  const { data: tenantList, isLoading: tenantsLoading } = useQuery<Tenant[]>({
     queryKey: ["/api/admin/tenants"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/tenants");
+      if (!r.ok) throw new Error("Failed to load tenants");
       return r.json();
     },
   });
@@ -150,7 +152,7 @@ export default function AdminPanel() {
             </div>
           ) : (
             <div className="bg-white rounded-lg border divide-y">
-              {tenants && tenants.length > 0 ? tenants.map((t) => (
+              {tenantList && tenantList.length > 0 ? tenantList.map((t) => (
                 <div key={t.id} className="px-4 py-3 flex items-center justify-between" data-testid={`row-tenant-${t.id}`}>
                   <div>
                     <p className="font-medium text-gray-900 text-sm">{t.name}</p>
