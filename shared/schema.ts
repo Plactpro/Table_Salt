@@ -145,7 +145,10 @@ export const outlets = pgTable("outlets", {
   royaltyRate: decimal("royalty_rate", { precision: 5, scale: 2 }).default("0"),
   minimumGuarantee: decimal("minimum_guarantee", { precision: 10, scale: 2 }).default("0"),
   active: boolean("active").default(true),
-});
+}, (t) => [
+  index("idx_outlets_tenant_id").on(t.tenantId),
+  index("idx_outlets_tenant_active").on(t.tenantId, t.active),
+]);
 
 export const menuCategories = pgTable("menu_categories", {
   id: varchar("id", { length: 36 })
@@ -155,7 +158,9 @@ export const menuCategories = pgTable("menu_categories", {
   name: text("name").notNull(),
   sortOrder: integer("sort_order").default(0),
   active: boolean("active").default(true),
-});
+}, (t) => [
+  index("idx_menu_categories_tenant_id").on(t.tenantId),
+]);
 
 export const menuItems = pgTable("menu_items", {
   id: varchar("id", { length: 36 })
@@ -189,7 +194,9 @@ export const tableZones = pgTable("table_zones", {
   color: text("color").default("#6366f1"),
   sortOrder: integer("sort_order").default(0),
   isActive: boolean("is_active").default(true),
-});
+}, (t) => [
+  index("idx_table_zones_tenant_id").on(t.tenantId),
+]);
 
 export const tables = pgTable("tables", {
   id: varchar("id", { length: 36 })
@@ -212,7 +219,11 @@ export const tables = pgTable("tables", {
   qrToken: text("qr_token"),
   callServerFlag: boolean("call_server_flag").default(false),
   requestBillFlag: boolean("request_bill_flag").default(false),
-});
+}, (t) => [
+  index("idx_tables_tenant_id").on(t.tenantId),
+  index("idx_tables_tenant_status").on(t.tenantId, t.status),
+  index("idx_tables_tenant_outlet").on(t.tenantId, t.outletId),
+]);
 
 export const waitlistEntries = pgTable("waitlist_entries", {
   id: varchar("id", { length: 36 })
@@ -232,7 +243,11 @@ export const waitlistEntries = pgTable("waitlist_entries", {
   seatedTableId: varchar("seated_table_id", { length: 36 }).references(() => tables.id),
   createdAt: timestamp("created_at").defaultNow(),
   seatedAt: timestamp("seated_at"),
-});
+}, (t) => [
+  index("idx_waitlist_tenant_id").on(t.tenantId),
+  index("idx_waitlist_tenant_status").on(t.tenantId, t.status),
+  index("idx_waitlist_tenant_created").on(t.tenantId, t.createdAt),
+]);
 
 export const reservations = pgTable("reservations", {
   id: varchar("id", { length: 36 })
@@ -447,7 +462,10 @@ export const offers = pgTable("offers", {
   usageCount: integer("usage_count").default(0),
   conditions: jsonb("conditions"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_offers_tenant_id").on(t.tenantId),
+  index("idx_offers_tenant_active").on(t.tenantId, t.active),
+]);
 
 export const deliveryOrders = pgTable("delivery_orders", {
   id: varchar("id", { length: 36 })
@@ -538,7 +556,11 @@ export const attendanceLogs = pgTable("attendance_logs", {
   lateMinutes: integer("late_minutes").default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_attendance_tenant_id").on(t.tenantId),
+  index("idx_attendance_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_attendance_tenant_user").on(t.tenantId, t.userId),
+]);
 
 export const insertStaffScheduleSchema = createInsertSchema(staffSchedules).omit({ id: true });
 export const insertAttendanceLogSchema = createInsertSchema(attendanceLogs).omit({ id: true, createdAt: true });
@@ -833,7 +855,10 @@ export const stockTakes = pgTable("stock_takes", {
   notes: text("notes"),
   completedAt: timestamp("completed_at"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_stock_takes_tenant_id").on(t.tenantId),
+  index("idx_stock_takes_tenant_created").on(t.tenantId, t.createdAt),
+]);
 
 export const stockTakeLines = pgTable("stock_take_lines", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -1096,7 +1121,10 @@ export const labourCostSnapshots = pgTable("labour_cost_snapshots", {
   labourPct: decimal("labour_pct", { precision: 5, scale: 2 }).default("0"),
   headcount: integer("headcount").default(0),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_labour_cost_tenant_id").on(t.tenantId),
+  index("idx_labour_cost_tenant_date").on(t.tenantId, t.date),
+]);
 
 export const insertLabourCostSnapshotSchema = createInsertSchema(labourCostSnapshots).omit({ id: true, createdAt: true });
 export type LabourCostSnapshot = typeof labourCostSnapshots.$inferSelect;
@@ -1288,7 +1316,10 @@ export const comboOffers = pgTable("combo_offers", {
   createdBy: varchar("created_by", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_combo_offers_tenant_id").on(t.tenantId),
+  index("idx_combo_offers_tenant_active").on(t.tenantId, t.isActive),
+]);
 
 export const insertComboOfferSchema = createInsertSchema(comboOffers).omit({ id: true, createdAt: true, updatedAt: true });
 export type ComboOffer = typeof comboOffers.$inferSelect;

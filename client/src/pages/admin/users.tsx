@@ -90,21 +90,23 @@ export default function UsersPage() {
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [resetForUser, setResetForUser] = useState<string | null>(null);
 
-  const { data: users, isLoading, error } = useQuery<AdminUser[]>({
+  const { data: usersRes, isLoading, error } = useQuery<{ data: AdminUser[]; total: number }>({
     queryKey: ["/api/admin/users"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/users");
       return r.json();
     },
   });
+  const users = usersRes?.data;
 
-  const { data: tenants } = useQuery<Tenant[]>({
+  const { data: tenantsRes } = useQuery<{ data: Tenant[]; total: number }>({
     queryKey: ["/api/admin/tenants"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/tenants");
       return r.json();
     },
   });
+  const tenants = tenantsRes?.data;
 
   const toggleActiveMutation = useMutation({
     mutationFn: async ({ id, active }: { id: string; active: boolean }) => {

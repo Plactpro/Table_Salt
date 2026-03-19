@@ -6060,7 +6060,7 @@ export async function registerRoutes(
             : eq(securityAlerts.tenantId, user.tenantId)
         );
 
-      res.json({ alerts: allAlerts, total: Number(totalResult?.cnt || 0) });
+      res.json({ data: allAlerts, total: Number(totalResult?.cnt || 0), limit, offset });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
