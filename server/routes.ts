@@ -1713,6 +1713,7 @@ export async function registerRoutes(
         mode: "subscription",
         customer: tenant.stripeCustomerId ?? undefined,
         customer_creation: tenant.stripeCustomerId ? undefined : "always",
+        ...(tenant.stripeCustomerId ? {} : { customer_data: { metadata: { tenantId: tenant.id } } }),
         line_items: [{ price: priceId, quantity: 1 }],
         metadata: { tenantId: tenant.id, plan },
         success_url: `${origin}/settings?tab=subscription&upgraded=1`,
@@ -1768,7 +1769,10 @@ export async function registerRoutes(
       async function resolveTenantByCustomer(customerId: string): Promise<string | null> {
         const customer = await stripe!.customers.retrieve(customerId);
         if (customer.deleted) return null;
-        return (customer as import("stripe").Stripe.Customer).metadata?.tenantId ?? null;
+        const metaTenantId = (customer as import("stripe").Stripe.Customer).metadata?.tenantId;
+        if (metaTenantId) return metaTenantId;
+        const tenant = await storage.getTenantByStripeCustomerId(customerId);
+        return tenant?.id ?? null;
       }
 
       switch (event.type) {
@@ -1776,13 +1780,21 @@ export async function registerRoutes(
           const session = event.data.object as import("stripe").Stripe.Checkout.Session;
           const tenantId = session.metadata?.tenantId ?? null;
           const plan = session.metadata?.plan ?? "basic";
+          const newCustomerId = session.customer && typeof session.customer === "string" ? session.customer : null;
           if (tenantId) {
             await storage.updateTenant(tenantId, {
               plan,
               stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : undefined,
               subscriptionStatus: "active",
-              ...(session.customer && typeof session.customer === "string" ? { stripeCustomerId: session.customer } : {}),
+              ...(newCustomerId ? { stripeCustomerId: newCustomerId } : {}),
             });
+            if (newCustomerId) {
+              try {
+                await stripe!.customers.update(newCustomerId, { metadata: { tenantId } });
+              } catch (metaErr: any) {
+                console.warn("Failed to set tenantId metadata on Stripe customer:", metaErr.message);
+              }
+            }
           }
           break;
         }

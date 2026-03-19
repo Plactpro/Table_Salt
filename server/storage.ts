@@ -113,6 +113,7 @@ import {
 export interface IStorage {
   getTenant(id: string): Promise<Tenant | undefined>;
   getTenantBySlug(slug: string): Promise<Tenant | undefined>;
+  getTenantByStripeCustomerId(stripeCustomerId: string): Promise<Tenant | undefined>;
   createTenant(data: InsertTenant): Promise<Tenant>;
   updateTenant(id: string, data: Partial<InsertTenant>): Promise<Tenant | undefined>;
   getAllTenants(): Promise<Tenant[]>;
@@ -424,6 +425,10 @@ export class DatabaseStorage implements IStorage {
   }
   async getTenantBySlug(slug: string) {
     const [t] = await db.select().from(tenants).where(eq(tenants.slug, slug));
+    return t;
+  }
+  async getTenantByStripeCustomerId(stripeCustomerId: string) {
+    const [t] = await db.select().from(tenants).where(eq(tenants.stripeCustomerId, stripeCustomerId));
     return t;
   }
   async createTenant(data: InsertTenant) {
