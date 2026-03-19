@@ -186,6 +186,7 @@ function getClientIp(req: Request): string {
 }
 
 const PRIVILEGED_ROLES = new Set(["owner", "hq_admin", "franchise_owner", "manager", "accountant"]);
+const SUPER_ADMIN_ROLE = "super_admin";
 const PUBLIC_PATHS = ["/api/auth/", "/api/guest/", "/api/kiosk/", "/api/health", "/api/qr/"];
 
 export function setupIpAllowlistMiddleware(app: Express) {
@@ -196,6 +197,7 @@ export function setupIpAllowlistMiddleware(app: Express) {
 
     const user = req.user as { tenantId?: string; role?: string } | undefined;
     if (!user?.tenantId) return next();
+    if (user.role === SUPER_ADMIN_ROLE) return next();
     if (!PRIVILEGED_ROLES.has(user.role || "")) return next();
 
     try {

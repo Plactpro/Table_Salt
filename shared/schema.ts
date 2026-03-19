@@ -26,6 +26,7 @@ export const roleEnum = pgEnum("user_role", [
   "accountant",
   "auditor",
   "customer",
+  "super_admin",
 ]);
 
 export const orderStatusEnum = pgEnum("order_status", [
@@ -84,6 +85,7 @@ export const tenants = pgTable("tenants", {
   businessType: text("business_type").default("casual_dining"),
   active: boolean("active").default(true),
   moduleConfig: jsonb("module_config").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const users = pgTable("users", {

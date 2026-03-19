@@ -46,7 +46,11 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
-      navigate("/");
+      if ("redirectTo" in result && typeof result.redirectTo === "string") {
+        navigate(result.redirectTo);
+      } else {
+        navigate("/");
+      }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Invalid credentials";
       toast({
