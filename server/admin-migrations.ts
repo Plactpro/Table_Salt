@@ -39,4 +39,15 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS phone TEXT`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS cuisine_style TEXT`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS country TEXT`);
+
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_customer_id TEXT`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS stripe_subscription_id TEXT`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS subscription_status TEXT DEFAULT 'trialing'`);
+  await pool.query(`
+    UPDATE tenants
+    SET subscription_status = 'active'
+    WHERE trial_ends_at IS NULL
+      AND subscription_status = 'trialing'
+  `);
 }

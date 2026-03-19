@@ -89,6 +89,10 @@ export const tenants = pgTable("tenants", {
   active: boolean("active").default(true),
   moduleConfig: jsonb("module_config").default({}),
   onboardingCompleted: boolean("onboarding_completed").default(false),
+  stripeCustomerId: text("stripe_customer_id"),
+  stripeSubscriptionId: text("stripe_subscription_id"),
+  trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  subscriptionStatus: text("subscription_status").default("trialing"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

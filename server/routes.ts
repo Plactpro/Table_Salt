@@ -47,6 +47,7 @@ import { encryptField, decryptField, isEncrypted } from "./encryption";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { stripe, trialEndsAtDate, isStripeConfigured, trialDaysLeft, STRIPE_PRICE_IDS, planFromPriceId } from "./stripe";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -164,7 +165,21 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Username already taken" });
       }
       const slug = restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, "");
-      const tenant = await storage.createTenant({ name: restaurantName, slug });
+      const trialEnd = trialEndsAtDate();
+      const tenant = await storage.createTenant({ name: restaurantName, slug, subscriptionStatus: "trialing", trialEndsAt: trialEnd });
+
+      if (isStripeConfigured() && stripe) {
+        try {
+          const customer = await stripe.customers.create({
+            name: restaurantName,
+            metadata: { tenantId: tenant.id },
+          });
+          await storage.updateTenant(tenant.id, { stripeCustomerId: customer.id });
+        } catch (stripeErr) {
+          console.error("Stripe customer creation failed (non-fatal):", stripeErr);
+        }
+      }
+
       const outlet = await storage.createOutlet({ tenantId: tenant.id, name: "Main Branch" });
       const hashedPw = await hashPassword(password);
       const user = await storage.createUser({
@@ -265,7 +280,7 @@ export async function registerRoutes(
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = req.user as any;
     const tenant = await storage.getTenant(safeUser.tenantId);
-    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge, onboardingCompleted: tenant.onboardingCompleted } : null });
+    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge, onboardingCompleted: tenant.onboardingCompleted, subscriptionStatus: tenant.subscriptionStatus, trialEndsAt: tenant.trialEndsAt, stripeCustomerId: tenant.stripeCustomerId } : null });
   });
 
   app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
@@ -1644,6 +1659,191 @@ export async function registerRoutes(
     res.json({ completed: true, tenant });
   });
   // ── End Onboarding ─────────────────────────────────────────────────────────
+
+  // ── Billing / Stripe ───────────────────────────────────────────────────────
+
+  async function checkTrialExpiry(tenantId: string) {
+    const tenant = await storage.getTenant(tenantId);
+    if (!tenant) return;
+    if (tenant.subscriptionStatus === "trialing" && tenant.trialEndsAt && new Date(tenant.trialEndsAt) < new Date()) {
+      await storage.updateTenant(tenantId, { subscriptionStatus: "canceled", plan: "basic" });
+    }
+  }
+
+  app.get("/api/billing/status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      await checkTrialExpiry(user.tenantId);
+      const tenant = await storage.getTenant(user.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      const trialEnd = tenant.trialEndsAt ? new Date(tenant.trialEndsAt) : null;
+      const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (24 * 60 * 60 * 1000))) : 0;
+      res.json({
+        plan: tenant.plan,
+        subscriptionStatus: tenant.subscriptionStatus,
+        trialEndsAt: tenant.trialEndsAt,
+        trialDaysLeft: daysLeft,
+        stripeCustomerId: tenant.stripeCustomerId,
+        stripeConfigured: isStripeConfigured(),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/billing/create-checkout-session", requireAuth, async (req, res) => {
+    try {
+      if (!isStripeConfigured() || !stripe) {
+        return res.status(503).json({ message: "Stripe is not configured. Please set STRIPE_SECRET_KEY." });
+      }
+      const user = req.user as any;
+      const { plan } = req.body as { plan: string };
+      if (!plan || !["basic", "standard", "premium"].includes(plan)) {
+        return res.status(400).json({ message: "Invalid plan. Must be basic, standard, or premium." });
+      }
+      const priceId = STRIPE_PRICE_IDS[plan];
+      if (!priceId) {
+        return res.status(503).json({ message: `Stripe price ID for plan '${plan}' is not configured.` });
+      }
+      const tenant = await storage.getTenant(user.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        customer: tenant.stripeCustomerId ?? undefined,
+        customer_creation: tenant.stripeCustomerId ? undefined : "always",
+        customer_email: tenant.stripeCustomerId ? undefined : undefined,
+        line_items: [{ price: priceId, quantity: 1 }],
+        metadata: { tenantId: tenant.id, plan },
+        success_url: `${origin}/settings?tab=subscription&upgraded=1`,
+        cancel_url: `${origin}/settings?tab=subscription`,
+      });
+      res.json({ url: session.url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/billing/portal", requireAuth, async (req, res) => {
+    try {
+      if (!isStripeConfigured() || !stripe) {
+        return res.status(503).json({ message: "Stripe is not configured." });
+      }
+      const user = req.user as any;
+      const tenant = await storage.getTenant(user.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      if (!tenant.stripeCustomerId) {
+        return res.status(400).json({ message: "No Stripe customer found. Please upgrade first." });
+      }
+      const origin = `${req.protocol}://${req.get("host")}`;
+      const session = await stripe.billingPortal.sessions.create({
+        customer: tenant.stripeCustomerId,
+        return_url: `${origin}/settings?tab=subscription`,
+      });
+      res.json({ url: session.url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/webhooks/stripe", async (req, res) => {
+    if (!isStripeConfigured() || !stripe) {
+      return res.status(503).json({ message: "Stripe not configured" });
+    }
+    const sig = req.headers["stripe-signature"];
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!sig || !webhookSecret) {
+      return res.status(400).json({ message: "Missing signature or webhook secret" });
+    }
+    let event: import("stripe").Stripe.Event;
+    try {
+      const rawBody = (req as any).rawBody as Buffer;
+      event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+    } catch (err: any) {
+      console.error("Stripe webhook signature verification failed:", err.message);
+      return res.status(400).json({ message: `Webhook error: ${err.message}` });
+    }
+
+    try {
+      async function resolveTenantByCustomer(customerId: string): Promise<string | null> {
+        const customer = await stripe!.customers.retrieve(customerId);
+        if (customer.deleted) return null;
+        return (customer as import("stripe").Stripe.Customer).metadata?.tenantId ?? null;
+      }
+
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object as import("stripe").Stripe.Checkout.Session;
+          const tenantId = session.metadata?.tenantId ?? null;
+          const plan = session.metadata?.plan ?? "basic";
+          if (tenantId) {
+            await storage.updateTenant(tenantId, {
+              plan,
+              stripeSubscriptionId: typeof session.subscription === "string" ? session.subscription : undefined,
+              subscriptionStatus: "active",
+              ...(session.customer && typeof session.customer === "string" ? { stripeCustomerId: session.customer } : {}),
+            });
+          }
+          break;
+        }
+        case "customer.subscription.updated": {
+          const sub = event.data.object as import("stripe").Stripe.Subscription;
+          const tenantId = await resolveTenantByCustomer(sub.customer as string);
+          if (tenantId) {
+            const priceId = sub.items.data[0]?.price?.id;
+            const plan = priceId ? planFromPriceId(priceId) : "basic";
+            const statusMap: Record<string, string> = {
+              active: "active",
+              past_due: "past_due",
+              canceled: "canceled",
+              unpaid: "past_due",
+              paused: "paused",
+              incomplete: "trialing",
+              incomplete_expired: "canceled",
+              trialing: "trialing",
+            };
+            await storage.updateTenant(tenantId, {
+              plan,
+              subscriptionStatus: statusMap[sub.status] ?? sub.status,
+            });
+          }
+          break;
+        }
+        case "customer.subscription.deleted": {
+          const sub = event.data.object as import("stripe").Stripe.Subscription;
+          const tenantId = await resolveTenantByCustomer(sub.customer as string);
+          if (tenantId) {
+            await storage.updateTenant(tenantId, {
+              plan: "basic",
+              subscriptionStatus: "canceled",
+              stripeSubscriptionId: null,
+            });
+          }
+          break;
+        }
+        case "invoice.payment_failed": {
+          const invoice = event.data.object as import("stripe").Stripe.Invoice;
+          const customerId = typeof invoice.customer === "string" ? invoice.customer : null;
+          if (customerId) {
+            const tenantId = await resolveTenantByCustomer(customerId);
+            if (tenantId) {
+              await storage.updateTenant(tenantId, { subscriptionStatus: "past_due" });
+            }
+          }
+          break;
+        }
+        default:
+          break;
+      }
+    } catch (processErr: any) {
+      console.error("Stripe webhook processing error:", processErr);
+    }
+
+    res.json({ received: true });
+  });
+
+  // ── End Billing ────────────────────────────────────────────────────────────
 
   app.get("/api/tenant", requireAuth, async (req, res) => {
     const user = req.user as any;
