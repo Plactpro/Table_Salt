@@ -1,5 +1,6 @@
 import { ReactNode, useState } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { cn } from "@/lib/utils";
@@ -17,7 +18,9 @@ import {
   Settings,
   Menu,
   BarChart2,
+  Shield,
 } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
 
 interface NavItem {
   id: string;
@@ -32,11 +35,12 @@ const navItems: NavItem[] = [
   { id: "tenants", label: "Tenants", icon: Building2, path: "/admin/tenants" },
   { id: "users", label: "Users", icon: Users, path: "/admin/users" },
   { id: "audit", label: "Audit Log", icon: ScrollText, path: "/admin/audit" },
+  { id: "security", label: "Security", icon: Shield, path: "/admin/security" },
   { id: "admins", label: "Admins", icon: ShieldCheck, path: "/admin/admins" },
   { id: "settings", label: "Settings", icon: Settings, path: "/admin/settings" },
 ];
 
-function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void }) {
+function NavLink({ item, unreadCount, onNavigate }: { item: NavItem; unreadCount?: number; onNavigate?: () => void }) {
   const [location, navigate] = useLocation();
   const isActive =
     item.path === "/admin"
@@ -60,9 +64,16 @@ function NavLink({ item, onNavigate }: { item: NavItem; onNavigate?: () => void 
     >
       <Icon className="h-4 w-4 shrink-0" />
       {item.label}
-      {isActive && (
+      {unreadCount && unreadCount > 0 ? (
+        <span
+          className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-red-500 text-white"
+          data-testid="badge-admin-security-alerts"
+        >
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      ) : isActive ? (
         <div className="ml-auto w-1 h-4 rounded-full bg-emerald-400" />
-      )}
+      ) : null}
     </button>
   );
 }
@@ -72,6 +83,17 @@ function SidebarContent({ onNavigate, user, onLogout }: {
   user: { name?: string; username?: string } | null;
   onLogout: () => void;
 }) {
+  const { data: alertCountData } = useQuery<{ count: number }>({
+    queryKey: ["/api/admin/security-alerts-count"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/admin/security-alerts?acknowledged=false&limit=500");
+      const rows = await r.json();
+      return { count: Array.isArray(rows) ? rows.length : 0 };
+    },
+    refetchInterval: 60000,
+  });
+  const unreadAlerts = alertCountData?.count ?? 0;
+
   return (
     <div className="flex flex-col h-full bg-slate-900">
       <div className="px-4 py-5 border-b border-white/10">
@@ -85,7 +107,12 @@ function SidebarContent({ onNavigate, user, onLogout }: {
 
       <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
         {navItems.map((item) => (
-          <NavLink key={item.id} item={item} onNavigate={onNavigate} />
+          <NavLink
+            key={item.id}
+            item={item}
+            onNavigate={onNavigate}
+            unreadCount={item.id === "security" ? unreadAlerts : undefined}
+          />
         ))}
       </nav>
 

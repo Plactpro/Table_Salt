@@ -1,15 +1,16 @@
 import type { Express } from "express";
 import { db } from "./db";
-import { eq, and, desc, sql, ne, gte, lte, inArray } from "drizzle-orm";
+import { eq, and, desc, sql, ne, gte, lte, inArray, max } from "drizzle-orm";
 import { z } from "zod";
 import {
-  tenants, users, outlets, orders, auditEvents, roleEnum,
+  tenants, users, outlets, orders, auditEvents, roleEnum, securityAlerts,
 } from "@shared/schema";
 import { requireSuperAdmin, requireAuth, hashPassword } from "./auth";
 import { auditLog } from "./audit";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
 import { randomBytes } from "crypto";
 import { getApiRequestCount } from "./api-counter";
+import { pool } from "./db";
 
 type UserRoleValue = typeof roleEnum.enumValues[number];
 
@@ -385,7 +386,7 @@ export function registerAdminRoutes(app: Express) {
       if (filtered.length === 0) return res.json([]);
 
       const tenantIds = filtered.map(t => t.id);
-      const [userCounts, outletCounts, orderCounts, ownerUsers] = await Promise.all([
+      const [userCounts, outletCounts, orderCounts, ownerUsers, lastActivityRows] = await Promise.all([
         db.select({ tenantId: users.tenantId, count: sql<number>`count(*)::int` })
           .from(users).where(inArray(users.tenantId, tenantIds)).groupBy(users.tenantId),
         db.select({ tenantId: outlets.tenantId, count: sql<number>`count(*)::int` })
@@ -394,12 +395,15 @@ export function registerAdminRoutes(app: Express) {
           .from(orders).where(inArray(orders.tenantId, tenantIds)).groupBy(orders.tenantId),
         db.select({ tenantId: users.tenantId, id: users.id })
           .from(users).where(and(inArray(users.tenantId, tenantIds), eq(users.role, "owner" as UserRoleValue))),
+        db.select({ tenantId: auditEvents.tenantId, lastActivity: max(auditEvents.createdAt) })
+          .from(auditEvents).where(inArray(auditEvents.tenantId, tenantIds)).groupBy(auditEvents.tenantId),
       ]);
 
       const ucMap = new Map(userCounts.map(r => [r.tenantId, r.count]));
       const ocMap = new Map(outletCounts.map(r => [r.tenantId, r.count]));
       const ordMap = new Map(orderCounts.map(r => [r.tenantId, r.count]));
       const ownerMap = new Map(ownerUsers.map(u => [u.tenantId, u.id]));
+      const lastActMap = new Map(lastActivityRows.map(r => [r.tenantId, r.lastActivity]));
 
       return res.json(filtered.map(t => ({
         ...t,
@@ -407,6 +411,7 @@ export function registerAdminRoutes(app: Express) {
         outletCount: ocMap.get(t.id) ?? 0,
         orderCount: ordMap.get(t.id) ?? 0,
         ownerUserId: ownerMap.get(t.id) ?? null,
+        lastActivity: lastActMap.get(t.id) ?? null,
       })));
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -661,26 +666,37 @@ export function registerAdminRoutes(app: Express) {
       const platformTenantId = await getPlatformTenantId();
       const { tenantId, role, search } = req.query as Record<string, string>;
 
-      const allUsers = await db
-        .select({
-          id: users.id,
-          tenantId: users.tenantId,
-          username: users.username,
-          name: users.name,
-          email: users.email,
-          role: users.role,
-          active: users.active,
-          totpEnabled: users.totpEnabled,
-          passwordChangedAt: users.passwordChangedAt,
-          tenantName: tenants.name,
-          tenantPlan: tenants.plan,
-        })
-        .from(users)
-        .innerJoin(tenants, eq(users.tenantId, tenants.id))
-        .where(ne(users.tenantId, platformTenantId))
-        .orderBy(users.name);
+      const [allUsers, lastLogins] = await Promise.all([
+        db
+          .select({
+            id: users.id,
+            tenantId: users.tenantId,
+            username: users.username,
+            name: users.name,
+            email: users.email,
+            role: users.role,
+            active: users.active,
+            totpEnabled: users.totpEnabled,
+            passwordChangedAt: users.passwordChangedAt,
+            tenantName: tenants.name,
+            tenantPlan: tenants.plan,
+          })
+          .from(users)
+          .innerJoin(tenants, eq(users.tenantId, tenants.id))
+          .where(ne(users.tenantId, platformTenantId))
+          .orderBy(users.name),
+        db
+          .select({ userId: auditEvents.userId, lastLogin: max(auditEvents.createdAt) })
+          .from(auditEvents)
+          .where(eq(auditEvents.action, "login"))
+          .groupBy(auditEvents.userId),
+      ]);
 
-      const decrypted = allUsers.map(u => decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS));
+      const loginMap = new Map(lastLogins.map(r => [r.userId, r.lastLogin]));
+      const decrypted = allUsers.map(u => ({
+        ...decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS),
+        lastLogin: loginMap.get(u.id) ?? null,
+      }));
 
       let filtered = decrypted;
       if (tenantId) filtered = filtered.filter(u => u.tenantId === tenantId);
@@ -949,15 +965,7 @@ export function registerAdminRoutes(app: Express) {
   });
 
   // ─── Platform Settings ─────────────────────────────────────────────────────
-  // In-memory store; persisted across requests within a server process.
-  // A future enhancement can persist this to a DB table.
-  const platformSettings = {
-    maintenanceMode: false,
-    registrationOpen: true,
-    platformName: "Table Salt",
-    maxTenantsPerPlan: { basic: 100, standard: 50, premium: 20, enterprise: 5 } as Record<string, number>,
-    alertEmailRecipients: [] as string[],
-  };
+  // Persisted to the platform_settings DB table (single-row singleton).
 
   const platformSettingsSchema = z.object({
     maintenanceMode: z.boolean().optional(),
@@ -967,8 +975,37 @@ export function registerAdminRoutes(app: Express) {
     alertEmailRecipients: z.array(z.string().email()).optional(),
   });
 
-  app.get("/api/admin/platform-settings", requireSuperAdmin, (_req, res) => {
-    return res.json(platformSettings);
+  async function loadPlatformSettings() {
+    const { rows } = await pool.query(
+      `SELECT maintenance_mode, registration_open, platform_name, max_tenants_per_plan, alert_email_recipients
+       FROM platform_settings WHERE id = 'singleton' LIMIT 1`
+    );
+    if (rows.length === 0) {
+      return {
+        maintenanceMode: false,
+        registrationOpen: true,
+        platformName: "Table Salt",
+        maxTenantsPerPlan: { basic: 100, standard: 50, premium: 20, enterprise: 5 },
+        alertEmailRecipients: [] as string[],
+      };
+    }
+    const r = rows[0];
+    return {
+      maintenanceMode: r.maintenance_mode ?? false,
+      registrationOpen: r.registration_open ?? true,
+      platformName: r.platform_name ?? "Table Salt",
+      maxTenantsPerPlan: r.max_tenants_per_plan ?? { basic: 100, standard: 50, premium: 20, enterprise: 5 },
+      alertEmailRecipients: r.alert_email_recipients ?? [],
+    };
+  }
+
+  app.get("/api/admin/platform-settings", requireSuperAdmin, async (_req, res) => {
+    try {
+      return res.json(await loadPlatformSettings());
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
   });
 
   app.patch("/api/admin/platform-settings", requireSuperAdmin, async (req, res) => {
@@ -979,11 +1016,28 @@ export function registerAdminRoutes(app: Express) {
         return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten() });
       }
       const updates = parsed.data;
-      if (updates.maintenanceMode !== undefined) platformSettings.maintenanceMode = updates.maintenanceMode;
-      if (updates.registrationOpen !== undefined) platformSettings.registrationOpen = updates.registrationOpen;
-      if (updates.platformName !== undefined) platformSettings.platformName = updates.platformName;
-      if (updates.maxTenantsPerPlan !== undefined) platformSettings.maxTenantsPerPlan = { ...platformSettings.maxTenantsPerPlan, ...updates.maxTenantsPerPlan };
-      if (updates.alertEmailRecipients !== undefined) platformSettings.alertEmailRecipients = updates.alertEmailRecipients;
+      const current = await loadPlatformSettings();
+
+      const next = {
+        maintenanceMode: updates.maintenanceMode ?? current.maintenanceMode,
+        registrationOpen: updates.registrationOpen ?? current.registrationOpen,
+        platformName: updates.platformName ?? current.platformName,
+        maxTenantsPerPlan: updates.maxTenantsPerPlan ? { ...current.maxTenantsPerPlan, ...updates.maxTenantsPerPlan } : current.maxTenantsPerPlan,
+        alertEmailRecipients: updates.alertEmailRecipients ?? current.alertEmailRecipients,
+      };
+
+      await pool.query(
+        `INSERT INTO platform_settings (id, maintenance_mode, registration_open, platform_name, max_tenants_per_plan, alert_email_recipients, updated_at)
+         VALUES ('singleton', $1, $2, $3, $4, $5, now())
+         ON CONFLICT (id) DO UPDATE SET
+           maintenance_mode = EXCLUDED.maintenance_mode,
+           registration_open = EXCLUDED.registration_open,
+           platform_name = EXCLUDED.platform_name,
+           max_tenants_per_plan = EXCLUDED.max_tenants_per_plan,
+           alert_email_recipients = EXCLUDED.alert_email_recipients,
+           updated_at = now()`,
+        [next.maintenanceMode, next.registrationOpen, next.platformName, JSON.stringify(next.maxTenantsPerPlan), next.alertEmailRecipients]
+      );
 
       await auditLog({
         tenantId: null,
@@ -997,7 +1051,7 @@ export function registerAdminRoutes(app: Express) {
         req,
       });
 
-      return res.json(platformSettings);
+      return res.json(next);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
@@ -1172,6 +1226,134 @@ export function registerAdminRoutes(app: Express) {
           apiRequestCount,
         },
       });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  // ─── Cross-Tenant Security Alerts ─────────────────────────────────────────
+
+  app.get("/api/admin/security-alerts", requireSuperAdmin, async (req, res) => {
+    try {
+      const { tenantId, severity, type, acknowledged, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
+      const limitVal = Math.min(parseInt(limitStr ?? "100", 10) || 100, 500);
+      const offsetVal = parseInt(offsetStr ?? "0", 10) || 0;
+
+      const conditions = [];
+      if (tenantId) conditions.push(eq(securityAlerts.tenantId, tenantId));
+      if (severity) conditions.push(eq(securityAlerts.severity, severity as "info" | "warning" | "critical"));
+      if (type) conditions.push(eq(securityAlerts.type, type));
+      if (acknowledged !== undefined && acknowledged !== "") {
+        conditions.push(eq(securityAlerts.acknowledged, acknowledged === "true"));
+      }
+
+      const rows = await db
+        .select({
+          id: securityAlerts.id,
+          tenantId: securityAlerts.tenantId,
+          userId: securityAlerts.userId,
+          type: securityAlerts.type,
+          severity: securityAlerts.severity,
+          title: securityAlerts.title,
+          description: securityAlerts.description,
+          ipAddress: securityAlerts.ipAddress,
+          metadata: securityAlerts.metadata,
+          acknowledged: securityAlerts.acknowledged,
+          acknowledgedBy: securityAlerts.acknowledgedBy,
+          acknowledgedAt: securityAlerts.acknowledgedAt,
+          createdAt: securityAlerts.createdAt,
+          tenantName: tenants.name,
+        })
+        .from(securityAlerts)
+        .leftJoin(tenants, eq(securityAlerts.tenantId, tenants.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(securityAlerts.createdAt))
+        .limit(limitVal)
+        .offset(offsetVal);
+
+      return res.json(rows);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.patch("/api/admin/security-alerts/:id/acknowledge", requireSuperAdmin, async (req, res) => {
+    try {
+      const adminUser = req.user as { id: string; name: string };
+      const [alert] = await db.select().from(securityAlerts).where(eq(securityAlerts.id, req.params.id));
+      if (!alert) return res.status(404).json({ message: "Alert not found" });
+
+      const [updated] = await db.update(securityAlerts)
+        .set({ acknowledged: true, acknowledgedBy: adminUser.id, acknowledgedAt: new Date() })
+        .where(eq(securityAlerts.id, req.params.id))
+        .returning();
+
+      return res.json(updated);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  // ─── Audit Log CSV Export ─────────────────────────────────────────────────
+
+  app.get("/api/admin/audit-log/export", requireSuperAdmin, async (req, res) => {
+    try {
+      const { tenantId, action, from, to } = req.query as Record<string, string>;
+
+      const conditions = [];
+      if (tenantId) conditions.push(eq(auditEvents.tenantId, tenantId));
+      if (action) conditions.push(eq(auditEvents.action, action));
+      if (from) conditions.push(gte(auditEvents.createdAt, new Date(from)));
+      if (to) {
+        const toDate = new Date(to);
+        toDate.setDate(toDate.getDate() + 1);
+        conditions.push(lte(auditEvents.createdAt, toDate));
+      }
+
+      const rows = await db
+        .select({
+          id: auditEvents.id,
+          createdAt: auditEvents.createdAt,
+          tenantName: tenants.name,
+          userName: auditEvents.userName,
+          userEmail: users.email,
+          action: auditEvents.action,
+          entityType: auditEvents.entityType,
+          entityName: auditEvents.entityName,
+          ipAddress: auditEvents.ipAddress,
+        })
+        .from(auditEvents)
+        .leftJoin(tenants, eq(auditEvents.tenantId, tenants.id))
+        .leftJoin(users, eq(auditEvents.userId, users.id))
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(auditEvents.createdAt))
+        .limit(10000);
+
+      const escape = (v: unknown) => {
+        const s = v == null ? "" : String(v);
+        return `"${s.replace(/"/g, '""')}"`;
+      };
+
+      const header = ["Timestamp", "Tenant", "User", "Email", "Action", "Entity Type", "Entity Name", "IP Address"];
+      const csvRows = rows.map(r => [
+        r.createdAt ? new Date(r.createdAt).toISOString() : "",
+        r.tenantName ?? "",
+        r.userName ?? "",
+        r.userEmail ? decryptField(r.userEmail) : "",
+        r.action ?? "",
+        r.entityType ?? "",
+        r.entityName ?? "",
+        r.ipAddress ?? "",
+      ].map(escape).join(","));
+
+      const csv = [header.join(","), ...csvRows].join("\n");
+
+      res.setHeader("Content-Type", "text/csv");
+      res.setHeader("Content-Disposition", `attachment; filename="audit-log-${new Date().toISOString().split("T")[0]}.csv"`);
+      return res.send(csv);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });

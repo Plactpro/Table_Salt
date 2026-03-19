@@ -14,12 +14,25 @@ import {
   ChevronDown,
   AlertCircle,
   UserCheck,
+  Pencil,
+  Layers,
+  ExternalLink,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -29,6 +42,30 @@ import {
 } from "@/components/ui/select";
 
 const PLANS = ["basic", "standard", "premium", "enterprise"] as const;
+
+const BUSINESS_TYPES = [
+  "casual_dining",
+  "fast_food",
+  "cafe",
+  "bar",
+  "fine_dining",
+  "food_truck",
+  "bakery",
+  "buffet",
+  "cloud_kitchen",
+  "other",
+] as const;
+
+const MODULES: { key: string; label: string; description: string }[] = [
+  { key: "inventory", label: "Inventory Management", description: "Track stock levels, low-stock alerts, and ingredient usage." },
+  { key: "procurement", label: "Procurement", description: "Purchase orders, supplier management, and receiving." },
+  { key: "delivery", label: "Delivery", description: "Delivery zones, driver assignment, and order tracking." },
+  { key: "events", label: "Events & Reservations", description: "Table bookings, private events, and capacity management." },
+  { key: "kiosk", label: "Self-Service Kiosk", description: "Customer-facing ordering kiosks at the counter." },
+  { key: "online_ordering", label: "Online Ordering", description: "Web/app-based ordering with payment integration." },
+  { key: "loyalty", label: "Loyalty & Rewards", description: "Points system, tiers, and customer retention tools." },
+  { key: "analytics", label: "Advanced Analytics", description: "Revenue trends, staff performance, and predictive insights." },
+];
 
 interface TenantDetail {
   id: string;
@@ -43,6 +80,7 @@ interface TenantDetail {
   createdAt: string | null;
   orderCount: number;
   recentOrderCount: number;
+  moduleConfig: Record<string, boolean> | null;
   users: {
     id: string;
     name: string;
@@ -68,12 +106,29 @@ interface TenantDetail {
   }[];
 }
 
+interface EditForm {
+  name: string;
+  address: string;
+  currency: string;
+  timezone: string;
+  businessType: string;
+}
+
 export default function TenantDetailPage() {
   const [, navigate] = useLocation();
   const [, params] = useRoute("/admin/tenants/:id");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const tenantId = params?.id ?? "";
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<EditForm>({
+    name: "",
+    address: "",
+    currency: "",
+    timezone: "",
+    businessType: "",
+  });
 
   const { data: tenant, isLoading, error } = useQuery<TenantDetail>({
     queryKey: ["/api/admin/tenants", tenantId],
@@ -113,6 +168,34 @@ export default function TenantDetailPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const editMutation = useMutation({
+    mutationFn: async (data: EditForm) => {
+      const r = await apiRequest("PATCH", `/api/admin/tenants/${tenantId}`, data);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/tenants", tenantId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/tenants"] });
+      setEditOpen(false);
+      toast({ title: "Tenant updated" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleModuleMutation = useMutation({
+    mutationFn: async ({ module, enabled }: { module: string; enabled: boolean }) => {
+      const currentConfig = (tenant?.moduleConfig ?? {}) as Record<string, boolean>;
+      const r = await apiRequest("PATCH", `/api/admin/tenants/${tenantId}`, {
+        moduleConfig: { ...currentConfig, [module]: enabled },
+      });
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/tenants", tenantId] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
   const impersonateMutation = useMutation({
     mutationFn: async (userId: string) => {
       const r = await apiRequest("POST", `/api/admin/impersonate/${userId}`);
@@ -125,6 +208,18 @@ export default function TenantDetailPage() {
     },
     onError: (e: Error) => toast({ title: "Impersonation failed", description: e.message, variant: "destructive" }),
   });
+
+  const openEdit = () => {
+    if (!tenant) return;
+    setEditForm({
+      name: tenant.name,
+      address: tenant.address ?? "",
+      currency: tenant.currency ?? "USD",
+      timezone: tenant.timezone ?? "UTC",
+      businessType: tenant.businessType ?? "",
+    });
+    setEditOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -149,6 +244,8 @@ export default function TenantDetailPage() {
       </div>
     );
   }
+
+  const moduleConfig = (tenant.moduleConfig ?? {}) as Record<string, boolean>;
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-4" data-testid="tenant-detail-page">
@@ -177,6 +274,16 @@ export default function TenantDetailPage() {
             <Badge variant="outline" className="text-green-700 border-green-200 bg-green-50">Active</Badge>
           )}
           <Badge variant="outline" className="capitalize">{tenant.plan ?? "basic"}</Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={openEdit}
+            data-testid="button-edit-tenant"
+            className="gap-1.5"
+          >
+            <Pencil className="h-3.5 w-3.5" />
+            Edit
+          </Button>
         </div>
       </div>
 
@@ -290,6 +397,10 @@ export default function TenantDetailPage() {
             <Store className="h-4 w-4 mr-1.5" />
             Outlets ({tenant.outlets.length})
           </TabsTrigger>
+          <TabsTrigger value="modules" data-testid="tab-tenant-modules">
+            <Layers className="h-4 w-4 mr-1.5" />
+            Modules
+          </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-tenant-audit">
             <ScrollText className="h-4 w-4 mr-1.5" />
             Audit Events
@@ -368,8 +479,71 @@ export default function TenantDetailPage() {
           </Card>
         </TabsContent>
 
+        <TabsContent value="modules">
+          <Card data-testid="card-modules">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <Layers className="h-4 w-4" />
+                Feature Modules
+              </CardTitle>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Enable or disable feature modules for this tenant. Changes take effect immediately.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-slate-100">
+                {MODULES.map((mod) => {
+                  const enabled = moduleConfig[mod.key] === true;
+                  return (
+                    <div
+                      key={mod.key}
+                      className="flex items-center justify-between px-6 py-4"
+                      data-testid={`row-module-${mod.key}`}
+                    >
+                      <div className="space-y-0.5">
+                        <Label
+                          htmlFor={`module-${mod.key}`}
+                          className="text-sm font-medium text-slate-800 cursor-pointer"
+                        >
+                          {mod.label}
+                        </Label>
+                        <p className="text-xs text-slate-400">{mod.description}</p>
+                      </div>
+                      <Switch
+                        id={`module-${mod.key}`}
+                        checked={enabled}
+                        onCheckedChange={(checked) =>
+                          toggleModuleMutation.mutate({ module: mod.key, enabled: checked })
+                        }
+                        disabled={toggleModuleMutation.isPending}
+                        data-testid={`switch-module-${mod.key}`}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="audit">
           <Card>
+            <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <ScrollText className="h-4 w-4" />
+                Recent Audit Events
+              </CardTitle>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-xs gap-1.5 text-emerald-700 hover:text-emerald-800"
+                onClick={() => navigate(`/admin/audit?tenantId=${tenantId}`)}
+                data-testid="button-view-all-audit"
+              >
+                View all in Audit Log
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </CardHeader>
             <CardContent className="p-0">
               {tenant.recentAuditEvents.length === 0 ? (
                 <p className="text-sm text-slate-400 text-center py-8">No audit events</p>
@@ -400,6 +574,94 @@ export default function TenantDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Edit Tenant Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent aria-describedby={undefined} data-testid="dialog-edit-tenant">
+          <DialogHeader>
+            <DialogTitle>Edit Tenant</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input
+                id="edit-name"
+                value={editForm.name}
+                onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                placeholder="Tenant name"
+                data-testid="input-edit-name"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-business-type">Business Type</Label>
+              <Select
+                value={editForm.businessType}
+                onValueChange={(v) => setEditForm((f) => ({ ...f, businessType: v }))}
+              >
+                <SelectTrigger id="edit-business-type" data-testid="select-edit-business-type">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {BUSINESS_TYPES.map((bt) => (
+                    <SelectItem key={bt} value={bt} className="capitalize">
+                      {bt.replace(/_/g, " ")}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-currency">Currency</Label>
+                <Input
+                  id="edit-currency"
+                  value={editForm.currency}
+                  onChange={(e) => setEditForm((f) => ({ ...f, currency: e.target.value.toUpperCase() }))}
+                  placeholder="USD"
+                  maxLength={3}
+                  data-testid="input-edit-currency"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-timezone">Timezone</Label>
+                <Input
+                  id="edit-timezone"
+                  value={editForm.timezone}
+                  onChange={(e) => setEditForm((f) => ({ ...f, timezone: e.target.value }))}
+                  placeholder="UTC"
+                  data-testid="input-edit-timezone"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-address">Address</Label>
+              <Input
+                id="edit-address"
+                value={editForm.address}
+                onChange={(e) => setEditForm((f) => ({ ...f, address: e.target.value }))}
+                placeholder="123 Main St, City, Country"
+                data-testid="input-edit-address"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              data-testid="button-cancel-edit"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => editMutation.mutate(editForm)}
+              disabled={editMutation.isPending || !editForm.name.trim()}
+              data-testid="button-save-edit"
+            >
+              {editMutation.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
