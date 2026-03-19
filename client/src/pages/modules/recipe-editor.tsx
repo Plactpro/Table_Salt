@@ -230,7 +230,7 @@ export default function RecipeEditorPage() {
       yield: yieldQty || "1",
       yieldUnit: yieldUnit || "portion",
       prepTimeMinutes: prepTime ? Number(prepTime) : null,
-      wastePct: wastePct ? Number(wastePct) : 0,
+      wastePct: wastePct || "0",
       notes: notes || null,
       ingredients: validRows.map((r, i) => ({ ...r, sortOrder: i })),
     };
