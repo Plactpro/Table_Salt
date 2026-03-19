@@ -58,4 +58,14 @@ export async function runAdminMigrations(): Promise<void> {
   } catch (_) {
     // Enum value may already exist
   }
+
+  // Task #51: Recipe–Inventory traceability columns on stock_movements
+  await pool.query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS order_id TEXT`);
+  await pool.query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS menu_item_id TEXT`);
+  await pool.query(`ALTER TABLE stock_movements ADD COLUMN IF NOT EXISTS recipe_id TEXT`);
+
+  // Task #51: Procurement cost-tracking columns on inventory_items
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS purchase_unit TEXT`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS purchase_unit_conversion NUMERIC(10,4)`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS average_cost NUMERIC(10,4)`);
 }

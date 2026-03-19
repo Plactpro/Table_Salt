@@ -1166,7 +1166,8 @@ export async function registerRoutes(
       }
       try {
         const oItems = await storage.getOrderItemsByOrder(req.params.id);
-        const depletionTargets: { menuItemId: string; name: string; quantity: number }[] = [];
+        type DepletionTarget = { menuItemId: string; name: string; quantity: number };
+        const depletionTargets: DepletionTarget[] = [];
         for (const oi of oItems) {
           if (oi.menuItemId) {
             depletionTargets.push({ menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity || 1 });
@@ -1179,32 +1180,98 @@ export async function registerRoutes(
             }
           }
         }
+        type DepletionWrite = {
+          inventoryItemId: string; currentStock: string;
+          tenantId: string; menuItemId: string; recipeId: string;
+          qty: string; reason: string;
+        };
+        const writes: DepletionWrite[] = [];
         for (const dt of depletionTargets) {
           const recipe = await storage.getRecipeByMenuItem(dt.menuItemId);
           if (!recipe) continue;
           const recipeIngs = await storage.getRecipeIngredients(recipe.id);
           for (const ing of recipeIngs) {
             const invItem = await storage.getInventoryItem(ing.inventoryItemId);
-            const ingUnit = ing.unit || invItem?.unit || "pcs";
-            const invUnit = invItem?.unit || "pcs";
+            if (!invItem) continue;
+            const ingUnit = ing.unit || invItem.unit || "pcs";
+            const invUnit = invItem.unit || "pcs";
             const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
             const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
             const qty = convertedQty * dt.quantity;
-            if (invItem) {
-              const newStock = Math.max(0, Number(invItem.currentStock) - qty);
-              await storage.updateInventoryItem(ing.inventoryItemId, { currentStock: String(Math.round(newStock * 100) / 100) });
-              await storage.createStockMovement({
-                tenantId: user.tenantId,
-                itemId: ing.inventoryItemId,
-                type: "out",
-                quantity: String(Math.round(qty * 100) / 100),
-                reason: `Auto-depletion: ${dt.name} x${dt.quantity}`,
-              });
+            const newStock = Math.max(0, Number(invItem.currentStock) - qty);
+            writes.push({
+              inventoryItemId: ing.inventoryItemId,
+              currentStock: String(Math.round(newStock * 100) / 100),
+              tenantId: user.tenantId,
+              menuItemId: dt.menuItemId,
+              recipeId: recipe.id,
+              qty: String(Math.round(qty * 100) / 100),
+              reason: `Recipe consumption: ${dt.name} x${dt.quantity}`,
+            });
+          }
+        }
+        if (writes.length > 0) {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            for (const w of writes) {
+              await client.query(
+                `UPDATE inventory_items SET current_stock = $1 WHERE id = $2`,
+                [w.currentStock, w.inventoryItemId]
+              );
+              await client.query(
+                `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason, order_id, menu_item_id, recipe_id)
+                 VALUES ($1, $2, 'RECIPE_CONSUMPTION', $3, $4, $5, $6, $7)`,
+                [w.tenantId, w.inventoryItemId, w.qty, w.reason, req.params.id, w.menuItemId, w.recipeId]
+              );
             }
+            await client.query("COMMIT");
+          } catch (txErr) {
+            await client.query("ROLLBACK");
+            throw txErr;
+          } finally {
+            client.release();
           }
         }
       } catch (depErr) {
-        console.error("Auto-depletion error:", depErr);
+        console.error("Recipe consumption error:", depErr);
+      }
+    } else if (
+      (req.body.status === "voided" || req.body.status === "cancelled") &&
+      existing.status === "paid"
+    ) {
+      if (existing.tableId) {
+        await storage.updateTable(existing.tableId, { status: "free" });
+      }
+      try {
+        const consumptions = await storage.getStockMovementsByOrder(req.params.id);
+        const recipeConsumptions = consumptions.filter((m) => m.type === "RECIPE_CONSUMPTION");
+        if (recipeConsumptions.length > 0) {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            for (const mv of recipeConsumptions) {
+              const qty = Number(mv.quantity);
+              await client.query(
+                `UPDATE inventory_items SET current_stock = LEAST(current_stock + $1, 999999999) WHERE id = $2`,
+                [qty, mv.itemId]
+              );
+              await client.query(
+                `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason, order_id, menu_item_id, recipe_id)
+                 VALUES ($1, $2, 'RECIPE_REVERSAL', $3, $4, $5, $6, $7)`,
+                [mv.tenantId, mv.itemId, String(qty), `Reversal (${req.body.status}): order ${req.params.id}`, req.params.id, mv.menuItemId, mv.recipeId]
+              );
+            }
+            await client.query("COMMIT");
+          } catch (txErr) {
+            await client.query("ROLLBACK");
+            throw txErr;
+          } finally {
+            client.release();
+          }
+        }
+      } catch (revErr) {
+        console.error("Recipe reversal error:", revErr);
       }
     } else if (req.body.status === "cancelled") {
       if (existing.tableId) {

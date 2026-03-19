@@ -305,6 +305,9 @@ export const inventoryItems = pgTable("inventory_items", {
   costPrice: decimal("cost_price", { precision: 10, scale: 2 }).default("0"),
   costPerBaseUnit: decimal("cost_per_base_unit", { precision: 10, scale: 4 }),
   supplier: text("supplier"),
+  purchaseUnit: text("purchase_unit"),
+  purchaseUnitConversion: decimal("purchase_unit_conversion", { precision: 10, scale: 4 }),
+  averageCost: decimal("average_cost", { precision: 10, scale: 4 }),
 });
 
 export const stockMovements = pgTable("stock_movements", {
@@ -316,6 +319,9 @@ export const stockMovements = pgTable("stock_movements", {
   type: text("type").notNull(),
   quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
   reason: text("reason"),
+  orderId: text("order_id"),
+  menuItemId: text("menu_item_id"),
+  recipeId: text("recipe_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
