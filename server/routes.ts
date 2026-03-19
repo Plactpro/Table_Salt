@@ -1152,9 +1152,9 @@ export async function registerRoutes(
 
     // --- Phase 1: collect recipe writes (reads only, no DB mutations yet) ---
     type DepletionWrite = {
-      inventoryItemId: string; currentStock: string;
+      inventoryItemId: string;
       tenantId: string; menuItemId: string; recipeId: string;
-      qty: string; reason: string;
+      qty: number; reason: string;
     };
     type ReversalEntry = { tenantId: string; itemId: string; qty: number; menuItemId: string | null; recipeId: string | null };
 
@@ -1188,15 +1188,13 @@ export async function registerRoutes(
           const invUnit = invItem.unit || "pcs";
           const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
           const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
-          const qty = convertedQty * dt.quantity;
-          const newStock = Math.max(0, Number(invItem.currentStock) - qty);
+          const qty = Math.round(convertedQty * dt.quantity * 100) / 100;
           depletionWrites.push({
             inventoryItemId: ing.inventoryItemId,
-            currentStock: String(Math.round(newStock * 100) / 100),
             tenantId: user.tenantId,
             menuItemId: dt.menuItemId,
             recipeId: recipe.id,
-            qty: String(Math.round(qty * 100) / 100),
+            qty,
             reason: `Recipe consumption: ${dt.name} x${dt.quantity}`,
           });
         }
@@ -1220,13 +1218,13 @@ export async function registerRoutes(
         const [updated] = await tx.update(ordersTable).set(updateData).where(eq(ordersTable.id, req.params.id)).returning();
         for (const w of depletionWrites) {
           await tx.update(inventoryItemsTable)
-            .set({ currentStock: w.currentStock })
+            .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)` })
             .where(eq(inventoryItemsTable.id, w.inventoryItemId));
           await tx.insert(stockMovementsTable).values({
             tenantId: w.tenantId,
             itemId: w.inventoryItemId,
             type: "RECIPE_CONSUMPTION",
-            quantity: w.qty,
+            quantity: String(w.qty),
             reason: w.reason,
             orderId: req.params.id,
             menuItemId: w.menuItemId,
@@ -5207,7 +5205,7 @@ export async function registerRoutes(
       const tokenNumber = order.orderNumber || order.id.slice(0, 6).toUpperCase();
 
       if (isDigitalPayment) {
-        type KioskWrite = { inventoryItemId: string; currentStock: string; tenantId: string; menuItemId: string; recipeId: string; qty: string; reason: string };
+        type KioskWrite = { inventoryItemId: string; tenantId: string; menuItemId: string; recipeId: string; qty: number; reason: string };
         const kioskWrites: KioskWrite[] = [];
         for (const oi of orderItems) {
           if (!oi.menuItemId) continue;
@@ -5221,15 +5219,13 @@ export async function registerRoutes(
             const invUnit = invItem.unit || "pcs";
             const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
             const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
-            const qty = convertedQty * (oi.quantity || 1);
-            const newStock = Math.max(0, Number(invItem.currentStock) - qty);
+            const qty = Math.round(convertedQty * (oi.quantity || 1) * 100) / 100;
             kioskWrites.push({
               inventoryItemId: ing.inventoryItemId,
-              currentStock: String(Math.round(newStock * 100) / 100),
               tenantId: device.tenantId!,
               menuItemId: oi.menuItemId,
               recipeId: recipe.id,
-              qty: String(Math.round(qty * 100) / 100),
+              qty,
               reason: `Recipe consumption (kiosk): ${oi.name} x${oi.quantity || 1}`,
             });
           }
@@ -5238,13 +5234,13 @@ export async function registerRoutes(
           await db.transaction(async (tx) => {
             for (const w of kioskWrites) {
               await tx.update(inventoryItemsTable)
-                .set({ currentStock: w.currentStock })
+                .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)` })
                 .where(eq(inventoryItemsTable.id, w.inventoryItemId));
               await tx.insert(stockMovementsTable).values({
                 tenantId: w.tenantId,
                 itemId: w.inventoryItemId,
                 type: "RECIPE_CONSUMPTION",
-                quantity: w.qty,
+                quantity: String(w.qty),
                 reason: w.reason,
                 orderId: order.id,
                 menuItemId: w.menuItemId,
