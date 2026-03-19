@@ -3059,8 +3059,9 @@ export async function registerRoutes(
       const toDate = dateTo ? new Date(dateTo + "T23:59:59.999Z") : null;
       const paidOrders = orders.filter(o => {
         if (o.status !== "paid") return false;
-        if (fromDate && new Date(o.createdAt) < fromDate) return false;
-        if (toDate && new Date(o.createdAt) > toDate) return false;
+        const oDate = o.createdAt instanceof Date ? o.createdAt : new Date(o.createdAt);
+        if (fromDate && oDate < fromDate) return false;
+        if (toDate && oDate > toDate) return false;
         if (outletId && o.outletId !== outletId) return false;
         return true;
       });
@@ -3133,9 +3134,12 @@ export async function registerRoutes(
       const movements = await storage.getStockMovementsByTenant(user.tenantId, 10000);
       const actualUsageByItem = new Map<string, number>();
       for (const mv of movements) {
-        if (mv.type === "out") {
-          actualUsageByItem.set(mv.itemId, (actualUsageByItem.get(mv.itemId) || 0) + Number(mv.quantity));
-        }
+        if (mv.type !== "out") continue;
+        const mvDate = mv.createdAt instanceof Date ? mv.createdAt : new Date(mv.createdAt);
+        if (fromDate && mvDate < fromDate) continue;
+        if (toDate && mvDate > toDate) continue;
+        if (outletId && mv.outletId !== outletId) continue;
+        actualUsageByItem.set(mv.itemId, (actualUsageByItem.get(mv.itemId) || 0) + Number(mv.quantity));
       }
 
       const varianceByIngredient = Array.from(ingredientIdealUsage.entries()).map(([itemId, idealQty]) => {

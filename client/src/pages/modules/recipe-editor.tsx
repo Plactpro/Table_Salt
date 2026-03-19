@@ -45,6 +45,7 @@ export default function RecipeEditorPage() {
   const search = useSearch();
   const searchParams = new URLSearchParams(search);
   const preselectedMenuItemId = searchParams.get("menuItemId") || "none";
+  const prefilledName = searchParams.get("menuItemName") || "";
 
   const fmt = useCallback((v: number) => {
     const tenant = user?.tenant;
@@ -74,16 +75,27 @@ export default function RecipeEditorPage() {
   const [initialized, setInitialized] = useState(false);
   const [ingSearch, setIngSearch] = useState("");
 
-  // Browser-level navigation guard
+  // Browser-level navigation guard (external tab close / refresh)
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
-      if (isDirty) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
+      if (isDirty) { e.preventDefault(); e.returnValue = ""; }
     };
     window.addEventListener("beforeunload", handler);
     return () => window.removeEventListener("beforeunload", handler);
+  }, [isDirty]);
+
+  // In-app navigation guard (intercept wouter pushState-based navigation)
+  useEffect(() => {
+    if (!isDirty) return;
+    const originalPushState = window.history.pushState.bind(window.history);
+    window.history.pushState = function (...args: Parameters<typeof window.history.pushState>) {
+      if (!window.confirm("You have unsaved changes. Leave without saving?")) return;
+      setIsDirty(false);
+      originalPushState(...args);
+    };
+    return () => {
+      window.history.pushState = originalPushState;
+    };
   }, [isDirty]);
 
   useEffect(() => {
@@ -104,9 +116,10 @@ export default function RecipeEditorPage() {
       setInitialized(true);
       setIsDirty(false);
     } else if (isNew && !initialized) {
+      if (prefilledName) setName(prefilledName);
       setInitialized(true);
     }
-  }, [existingRecipe, isNew, initialized]);
+  }, [existingRecipe, isNew, initialized, prefilledName]);
 
   function markDirty() { setIsDirty(true); }
 
