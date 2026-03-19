@@ -213,9 +213,9 @@ export default function AuditLogPage() {
   const events = eventsRes?.data;
 
   const { data: tenantsRes } = useQuery<{ data: Tenant[]; total: number }>({
-    queryKey: ["/api/admin/tenants"],
+    queryKey: ["/api/admin/tenants", "all"],
     queryFn: async () => {
-      const r = await apiRequest("GET", "/api/admin/tenants");
+      const r = await apiRequest("GET", "/api/admin/tenants?limit=200");
       return r.json();
     },
   });
