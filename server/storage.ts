@@ -170,6 +170,7 @@ export interface IStorage {
   getOrdersByTenant(tenantId: string): Promise<Order[]>;
   getOrder(id: string): Promise<Order | undefined>;
   getOrderByClientId(tenantId: string, clientOrderId: string): Promise<Order | undefined>;
+  getOrderByStripeSessionId(sessionId: string): Promise<Order | undefined>;
   createOrder(data: InsertOrder): Promise<Order>;
   updateOrder(id: string, data: Partial<InsertOrder>): Promise<Order | undefined>;
   getOrderItemsByOrder(orderId: string): Promise<OrderItem[]>;
@@ -619,6 +620,19 @@ export class DatabaseStorage implements IStorage {
     const [o] = await db.select().from(orders)
       .where(and(eq(orders.tenantId, tenantId), eq(orders.channelOrderId, clientOrderId)));
     return o;
+  }
+  async getOrderByStripeSessionId(sessionId: string) {
+    const { pool } = await import("./db");
+    const result = await pool.query(
+      `SELECT * FROM orders WHERE stripe_payment_session_id = $1 LIMIT 1`,
+      [sessionId]
+    );
+    if (!result.rows[0]) return undefined;
+    const row = result.rows[0];
+    return {
+      ...row,
+      stripePaymentSessionId: row.stripe_payment_session_id,
+    } as Order;
   }
   async createOrder(data: InsertOrder) {
     const [o] = await db.insert(orders).values(data).returning();

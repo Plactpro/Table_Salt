@@ -50,4 +50,12 @@ export async function runAdminMigrations(): Promise<void> {
     WHERE trial_ends_at IS NULL
       AND subscription_status = 'trialing'
   `);
+
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS stripe_payment_session_id TEXT`);
+
+  try {
+    await pool.query(`ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'pending_payment'`);
+  } catch (_) {
+    // Enum value may already exist
+  }
 }
