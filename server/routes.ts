@@ -40,6 +40,7 @@ import {
   orders as ordersTable,
   inventoryItems as inventoryItemsTable,
   stockMovements as stockMovementsTable,
+  deliveryOrders as deliveryOrdersTable,
 } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "./email";
@@ -864,11 +865,16 @@ export async function registerRoutes(
   });
 
   app.get("/api/orders", requireAuth, async (req, res) => {
-    const user = req.user as any;
-    const limit = Math.min(parseInt(req.query.limit as string) || 200, 500);
-    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-    const ordersList = await storage.getOrdersByTenant(user.tenantId, { limit, offset });
-    res.json(ordersList);
+    try {
+      const user = req.user as any;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const [data, [{ total }]] = await Promise.all([
+        storage.getOrdersByTenant(user.tenantId, { limit, offset }),
+        db.select({ total: sql<number>`count(*)::int` }).from(ordersTable).where(eq(ordersTable.tenantId, user.tenantId)),
+      ]);
+      res.json({ data, total: Number(total), limit, offset });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.get("/api/orders/:id", requireAuth, async (req, res) => {
@@ -1362,9 +1368,16 @@ export async function registerRoutes(
   });
 
   app.get("/api/inventory", requireAuth, async (req, res) => {
-    const user = req.user as any;
-    const inv = await storage.getInventoryByTenant(user.tenantId);
-    res.json(inv);
+    try {
+      const user = req.user as any;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const [data, [{ total }]] = await Promise.all([
+        storage.getInventoryByTenant(user.tenantId, { limit, offset }),
+        db.select({ total: sql<number>`count(*)::int` }).from(inventoryItemsTable).where(eq(inventoryItemsTable.tenantId, user.tenantId)),
+      ]);
+      res.json({ data, total: Number(total), limit, offset });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.post("/api/inventory", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
@@ -1414,11 +1427,16 @@ export async function registerRoutes(
   });
 
   app.get("/api/customers", requireAuth, async (req, res) => {
-    const user = req.user as any;
-    const limit = Math.min(parseInt(req.query.limit as string) || 500, 1000);
-    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-    const custs = await storage.getCustomersByTenant(user.tenantId, { limit, offset });
-    res.json(custs);
+    try {
+      const user = req.user as any;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const [data, [{ total }]] = await Promise.all([
+        storage.getCustomersByTenant(user.tenantId, { limit, offset }),
+        db.select({ total: sql<number>`count(*)::int` }).from(customers).where(eq(customers.tenantId, user.tenantId)),
+      ]);
+      res.json({ data, total: Number(total), limit, offset });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.post("/api/customers", requireAuth, async (req, res) => {
@@ -2184,11 +2202,16 @@ export async function registerRoutes(
 
   // Delivery Orders CRUD (tenant-scoped)
   app.get("/api/delivery-orders", requireAuth, async (req, res) => {
-    const user = req.user as any;
-    const limit = Math.min(parseInt(req.query.limit as string) || 200, 500);
-    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-    const deliveries = await storage.getDeliveryOrdersByTenant(user.tenantId, { limit, offset });
-    res.json(deliveries);
+    try {
+      const user = req.user as any;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const [data, [{ total }]] = await Promise.all([
+        storage.getDeliveryOrdersByTenant(user.tenantId, { limit, offset }),
+        db.select({ total: sql<number>`count(*)::int` }).from(deliveryOrdersTable).where(eq(deliveryOrdersTable.tenantId, user.tenantId)),
+      ]);
+      res.json({ data, total: Number(total), limit, offset });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.get("/api/delivery-orders/:id", requireAuth, async (req, res) => {
@@ -3307,8 +3330,11 @@ export async function registerRoutes(
       const user = req.user as any;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-      const movements = await storage.getStockMovementsByTenant(user.tenantId, limit, offset);
-      res.json(movements);
+      const [data, [{ total }]] = await Promise.all([
+        storage.getStockMovementsByTenant(user.tenantId, limit, offset),
+        db.select({ total: sql<number>`count(*)::int` }).from(stockMovementsTable).where(eq(stockMovementsTable.tenantId, user.tenantId)),
+      ]);
+      res.json({ data, total: Number(total), limit, offset });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

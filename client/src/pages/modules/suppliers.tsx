@@ -33,7 +33,8 @@ export default function SuppliersPage() {
   const [catalogForm, setCatalogForm] = useState(emptyCatalog);
 
   const { data: suppliersList = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
-  const { data: inventoryItems = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory"] });
+  const inventoryItems = inventoryRes?.data ?? [];
   const { data: catalog = [] } = useQuery<CatalogItem[]>({
     queryKey: ["/api/suppliers", selectedSupplier, "catalog"],
     queryFn: () => selectedSupplier ? apiRequest("GET", `/api/suppliers/${selectedSupplier}/catalog`).then(r => r.json()) : Promise.resolve([]),

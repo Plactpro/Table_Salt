@@ -9,6 +9,7 @@ import {
   decimal,
   pgEnum,
   jsonb,
+  index,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -117,7 +118,9 @@ export const users = pgTable("users", {
   passwordChangedAt: timestamp("password_changed_at"),
   passwordHistory: text("password_history").array(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_users_tenant_id").on(t.tenantId),
+]);
 
 export const regions = pgTable("regions", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -171,7 +174,10 @@ export const menuItems = pgTable("menu_items", {
   ingredients: jsonb("ingredients"),
   station: text("station"),
   course: text("course"),
-});
+}, (t) => [
+  index("idx_menu_items_tenant_id").on(t.tenantId),
+  index("idx_menu_items_tenant_category").on(t.tenantId, t.categoryId),
+]);
 
 export const tableZones = pgTable("table_zones", {
   id: varchar("id", { length: 36 })
@@ -241,7 +247,10 @@ export const reservations = pgTable("reservations", {
   dateTime: timestamp("date_time").notNull(),
   notes: text("notes"),
   status: reservationStatusEnum("status").default("pending"),
-});
+}, (t) => [
+  index("idx_reservations_tenant_datetime").on(t.tenantId, t.dateTime),
+  index("idx_reservations_tenant_status").on(t.tenantId, t.status),
+]);
 
 export const orders = pgTable("orders", {
   id: varchar("id", { length: 36 })
@@ -267,7 +276,12 @@ export const orders = pgTable("orders", {
   channelData: jsonb("channel_data"),
   stripePaymentSessionId: text("stripe_payment_session_id"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_orders_tenant_id").on(t.tenantId),
+  index("idx_orders_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_orders_tenant_status").on(t.tenantId, t.status),
+  index("idx_orders_tenant_table").on(t.tenantId, t.tableId),
+]);
 
 export const orderItems = pgTable("order_items", {
   id: varchar("id", { length: 36 })
@@ -285,7 +299,9 @@ export const orderItems = pgTable("order_items", {
   startedAt: timestamp("started_at"),
   readyAt: timestamp("ready_at"),
   metadata: jsonb("metadata"),
-});
+}, (t) => [
+  index("idx_order_items_order_id").on(t.orderId),
+]);
 
 export const inventoryItems = pgTable("inventory_items", {
   id: varchar("id", { length: 36 })
@@ -308,7 +324,10 @@ export const inventoryItems = pgTable("inventory_items", {
   purchaseUnit: text("purchase_unit"),
   purchaseUnitConversion: decimal("purchase_unit_conversion", { precision: 10, scale: 4 }),
   averageCost: decimal("average_cost", { precision: 10, scale: 4 }),
-});
+}, (t) => [
+  index("idx_inventory_items_tenant_id").on(t.tenantId),
+  index("idx_inventory_items_tenant_category").on(t.tenantId, t.category),
+]);
 
 export const stockMovements = pgTable("stock_movements", {
   id: varchar("id", { length: 36 })
@@ -323,7 +342,11 @@ export const stockMovements = pgTable("stock_movements", {
   menuItemId: text("menu_item_id"),
   recipeId: text("recipe_id"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_stock_movements_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_stock_movements_item_id").on(t.itemId),
+  index("idx_stock_movements_order_id").on(t.orderId),
+]);
 
 export const customers = pgTable("customers", {
   id: varchar("id", { length: 36 })
@@ -341,7 +364,10 @@ export const customers = pgTable("customers", {
   averageSpend: decimal("average_spend", { precision: 10, scale: 2 }).default("0"),
   privacyConsents: jsonb("privacy_consents"),
   anonymized: boolean("anonymized").default(false),
-});
+}, (t) => [
+  index("idx_customers_tenant_id").on(t.tenantId),
+  index("idx_customers_tenant_loyalty_tier").on(t.tenantId, t.loyaltyTier),
+]);
 
 export const staffSchedules = pgTable("staff_schedules", {
   id: varchar("id", { length: 36 })
@@ -356,7 +382,10 @@ export const staffSchedules = pgTable("staff_schedules", {
   role: text("role"),
   attendance: text("attendance").default("scheduled"),
   hourlyRate: decimal("hourly_rate", { precision: 8, scale: 2 }),
-});
+}, (t) => [
+  index("idx_staff_schedules_tenant_id").on(t.tenantId),
+  index("idx_staff_schedules_tenant_user").on(t.tenantId, t.userId),
+]);
 
 export const feedback = pgTable("feedback", {
   id: varchar("id", { length: 36 })
@@ -368,7 +397,9 @@ export const feedback = pgTable("feedback", {
   rating: integer("rating").notNull(),
   comment: text("comment"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_feedback_tenant_id").on(t.tenantId),
+]);
 
 export const offerTypeEnum = pgEnum("offer_type", [
   "percentage",
@@ -437,7 +468,10 @@ export const deliveryOrders = pgTable("delivery_orders", {
   trackingNotes: text("tracking_notes"),
   createdAt: timestamp("created_at").defaultNow(),
   deliveredAt: timestamp("delivered_at"),
-});
+}, (t) => [
+  index("idx_delivery_orders_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_delivery_orders_tenant_status").on(t.tenantId, t.status),
+]);
 
 export const employeePerformanceLogs = pgTable("employee_performance_logs", {
   id: varchar("id", { length: 36 })
@@ -450,7 +484,10 @@ export const employeePerformanceLogs = pgTable("employee_performance_logs", {
   period: text("period"),
   notes: text("notes"),
   recordedAt: timestamp("recorded_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_emp_perf_tenant_id").on(t.tenantId),
+  index("idx_emp_perf_tenant_user").on(t.tenantId, t.userId),
+]);
 
 export const salesInquiries = pgTable("sales_inquiries", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -656,7 +693,9 @@ export const cleaningLogs = pgTable("cleaning_logs", {
   completedAt: timestamp("completed_at").defaultNow(),
   date: timestamp("date").notNull(),
   notes: text("notes"),
-});
+}, (t) => [
+  index("idx_cleaning_logs_tenant_date").on(t.tenantId, t.date),
+]);
 
 export const cleaningSchedules = pgTable("cleaning_schedules", {
   id: varchar("id", { length: 36 })
@@ -722,7 +761,10 @@ export const auditSchedules = pgTable("audit_schedules", {
   completedAt: timestamp("completed_at"),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_audit_schedules_tenant_status").on(t.tenantId, t.status),
+  index("idx_audit_schedules_tenant_date").on(t.tenantId, t.scheduledDate),
+]);
 
 export const auditResponses = pgTable("audit_responses", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -749,7 +791,10 @@ export const auditIssues = pgTable("audit_issues", {
   resolvedAt: timestamp("resolved_at"),
   resolvedBy: varchar("resolved_by", { length: 36 }).references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_audit_issues_tenant_status").on(t.tenantId, t.status),
+  index("idx_audit_issues_tenant_created").on(t.tenantId, t.createdAt),
+]);
 
 export const recipes = pgTable("recipes", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -763,7 +808,9 @@ export const recipes = pgTable("recipes", {
   notes: text("notes"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_recipes_tenant_id").on(t.tenantId),
+]);
 
 export const recipeIngredients = pgTable("recipe_ingredients", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -774,7 +821,9 @@ export const recipeIngredients = pgTable("recipe_ingredients", {
   wastePct: decimal("waste_pct", { precision: 5, scale: 2 }).default("0"),
   notes: text("notes"),
   sortOrder: integer("sort_order").default(0),
-});
+}, (t) => [
+  index("idx_recipe_ingredients_recipe_id").on(t.recipeId),
+]);
 
 export const stockTakes = pgTable("stock_takes", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -911,7 +960,9 @@ export const suppliers = pgTable("suppliers", {
   notes: text("notes"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_suppliers_tenant_id").on(t.tenantId),
+]);
 
 export const supplierCatalogItems = pgTable("supplier_catalog_items", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -941,7 +992,10 @@ export const purchaseOrders = pgTable("purchase_orders", {
   approvedBy: varchar("approved_by", { length: 36 }).references(() => users.id),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_purchase_orders_tenant_id").on(t.tenantId),
+  index("idx_purchase_orders_tenant_status").on(t.tenantId, t.status),
+]);
 
 export const purchaseOrderItems = pgTable("purchase_order_items", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -1065,7 +1119,11 @@ export const auditEvents = pgTable("audit_events", {
   userAgent: text("user_agent"),
   supervisorId: varchar("supervisor_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_audit_events_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_audit_events_tenant_action").on(t.tenantId, t.action),
+  index("idx_audit_events_user_created").on(t.userId, t.createdAt),
+]);
 
 export const insertAuditEventSchema = createInsertSchema(auditEvents).omit({ id: true, createdAt: true });
 export type AuditEvent = typeof auditEvents.$inferSelect;
@@ -1252,7 +1310,10 @@ export const securityAlerts = pgTable("security_alerts", {
   acknowledgedBy: varchar("acknowledged_by", { length: 36 }),
   acknowledgedAt: timestamp("acknowledged_at"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => [
+  index("idx_security_alerts_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_security_alerts_tenant_ack").on(t.tenantId, t.acknowledged),
+]);
 
 export const insertSecurityAlertSchema = createInsertSchema(securityAlerts).omit({ id: true, createdAt: true });
 export type SecurityAlert = typeof securityAlerts.$inferSelect;

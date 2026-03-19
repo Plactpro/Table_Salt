@@ -17,7 +17,7 @@ import {
   Table as UITable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Search, Eye, ChevronUp, ChevronDown, ClipboardList, Clock, CheckCircle2,
+  Search, Eye, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, CheckCircle2,
   XCircle, CircleDot, Send, ChefHat, Bell, UtensilsCrossed, CreditCard, Ban,
   Receipt, Banknote, Wallet, DollarSign,
 } from "lucide-react";
@@ -130,8 +130,18 @@ export default function OrdersPage() {
   const [billPreviewOrder, setBillPreviewOrder] = useState<OrderWithItems | null>(null);
   const [billPaymentMethod, setBillPaymentMethod] = useState<PaymentMethod>("cash");
   const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string } | null>(null);
+  const [ordersPage, setOrdersPage] = useState(0);
+  const ORDERS_LIMIT = 50;
 
-  const { data: orders = [], isLoading } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
+  const { data: ordersRes, isLoading } = useQuery<{ data: Order[]; total: number; limit: number; offset: number }>({
+    queryKey: ["/api/orders", ordersPage],
+    queryFn: async () => {
+      const res = await fetch(`/api/orders?limit=${ORDERS_LIMIT}&offset=${ordersPage * ORDERS_LIMIT}`, { credentials: "include" });
+      return res.json();
+    },
+  });
+  const orders = ordersRes?.data ?? [];
+  const ordersTotal = ordersRes?.total ?? 0;
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const { data: tenantData } = useQuery<{ serviceCharge?: string; name?: string }>({ queryKey: ["/api/tenant"] });
 
@@ -397,6 +407,24 @@ export default function OrdersPage() {
                   })}
                 </TableBody>
               </UITable>
+            </div>
+          )}
+          {ordersTotal > ORDERS_LIMIT && (
+            <div className="flex items-center justify-between px-4 py-3 border-t" data-testid="pagination-controls-orders">
+              <p className="text-sm text-muted-foreground">
+                Showing {ordersPage * ORDERS_LIMIT + 1}–{Math.min((ordersPage + 1) * ORDERS_LIMIT, ordersTotal)} of {ordersTotal} orders
+              </p>
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setOrdersPage((p) => Math.max(0, p - 1))} disabled={ordersPage === 0} data-testid="button-prev-page-orders">
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </Button>
+                <span className="text-sm font-medium px-2" data-testid="text-page-orders">Page {ordersPage + 1}</span>
+                <Button variant="outline" size="sm" onClick={() => setOrdersPage((p) => p + 1)} disabled={(ordersPage + 1) * ORDERS_LIMIT >= ordersTotal} data-testid="button-next-page-orders">
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>

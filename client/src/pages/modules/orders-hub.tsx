@@ -107,7 +107,8 @@ export default function OrdersHub() {
     return sharedFormatCurrency(amount, currency, { position, decimals });
   };
 
-  const { data: orders = [] } = useQuery<OrderWithItems[]>({ queryKey: ["/api/orders"] });
+  const { data: ordersRes } = useQuery<{ data: OrderWithItems[]; total: number }>({ queryKey: ["/api/orders"] });
+  const orders = ordersRes?.data ?? [];
   const { data: channels = [] } = useQuery<OrderChannel[]>({ queryKey: ["/api/order-channels"] });
   const { data: configs = [] } = useQuery<ChannelConfig[]>({ queryKey: ["/api/channel-configs"] });
   const { data: mappings = [] } = useQuery<OnlineMenuMapping[]>({ queryKey: ["/api/online-menu-mappings"] });

@@ -116,7 +116,8 @@ export default function OmnichannelPage() {
   const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: number | string) => sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
 
-  const { data: allOrders = [] } = useQuery<Order[]>({ queryKey: ["/api/orders"] });
+  const { data: allOrdersRes } = useQuery<{ data: Order[]; total: number }>({ queryKey: ["/api/orders"] });
+  const allOrders = allOrdersRes?.data ?? [];
   const { data: allOrderItems = [] } = useQuery<OrderItem[]>({ queryKey: ["/api/order-items"] });
 
   const now = new Date();

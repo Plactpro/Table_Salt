@@ -162,13 +162,14 @@ export default function AdminDashboard() {
     },
   });
 
-  const { data: recentEvents, isLoading: eventsLoading } = useQuery<AuditEvent[]>({
+  const { data: recentEventsRes, isLoading: eventsLoading } = useQuery<{ data: AuditEvent[]; total: number }>({
     queryKey: ["/api/admin/audit-log", "recent"],
     queryFn: async () => {
       const r = await apiRequest("GET", "/api/admin/audit-log?limit=10");
       return r.json();
     },
   });
+  const recentEvents = recentEventsRes?.data;
 
   const planTotal = stats?.planDistribution.reduce((s, p) => s + p.count, 0) || 1;
 

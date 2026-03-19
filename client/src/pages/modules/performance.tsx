@@ -132,9 +132,10 @@ export default function PerformancePage() {
     queryKey: ["/api/users"],
   });
 
-  const { data: orders = [] } = useQuery<OrderData[]>({
+  const { data: ordersRes } = useQuery<{ data: OrderData[]; total: number }>({
     queryKey: ["/api/orders"],
   });
+  const orders = ordersRes?.data ?? [];
 
   const { data: schedules = [] } = useQuery<ScheduleEntry[]>({
     queryKey: ["/api/staff-schedules"],

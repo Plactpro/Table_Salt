@@ -178,7 +178,7 @@ export interface IStorage {
   createOrderItem(data: InsertOrderItem): Promise<OrderItem>;
   updateOrderItem(id: string, data: Record<string, any>): Promise<OrderItem | undefined>;
 
-  getInventoryByTenant(tenantId: string): Promise<InventoryItem[]>;
+  getInventoryByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<InventoryItem[]>;
   getInventoryItem(id: string): Promise<InventoryItem | undefined>;
   createInventoryItem(data: InsertInventoryItem): Promise<InventoryItem>;
   updateInventoryItem(id: string, data: Partial<InsertInventoryItem>): Promise<InventoryItem | undefined>;
@@ -673,8 +673,11 @@ export class DatabaseStorage implements IStorage {
     return i;
   }
 
-  async getInventoryByTenant(tenantId: string) {
-    return db.select().from(inventoryItems).where(eq(inventoryItems.tenantId, tenantId));
+  async getInventoryByTenant(tenantId: string, opts?: { limit?: number; offset?: number }) {
+    const q = db.select().from(inventoryItems).where(eq(inventoryItems.tenantId, tenantId));
+    if (opts?.limit !== undefined && opts?.offset !== undefined) return q.limit(opts.limit).offset(opts.offset);
+    if (opts?.limit !== undefined) return q.limit(opts.limit);
+    return q;
   }
   async getInventoryItem(id: string) {
     const [i] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id));

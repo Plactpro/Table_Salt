@@ -180,9 +180,10 @@ export default function WaiterDashboard() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
 
-  const { data: orders = [], isLoading: ordersLoading } = useQuery<any[]>({
+  const { data: ordersRes, isLoading: ordersLoading } = useQuery<{ data: any[]; total: number }>({
     queryKey: ["/api/orders"],
   });
+  const orders = ordersRes?.data ?? [];
 
   const { data: tables = [] } = useQuery<any[]>({
     queryKey: ["/api/tables"],
