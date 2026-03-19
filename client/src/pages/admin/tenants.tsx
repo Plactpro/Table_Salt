@@ -13,6 +13,8 @@ import {
   PauseCircle,
   PlayCircle,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   AlertCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -111,7 +113,9 @@ export default function TenantsPage() {
   const [search, setSearch] = useState("");
   const [planFilter, setPlanFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
+  const PAGE_SIZE = 50;
   const [form, setForm] = useState<CreateTenantForm>({
     tenantName: "",
     slug: "",
@@ -125,14 +129,20 @@ export default function TenantsPage() {
     businessType: "casual_dining",
   });
 
-  const { data: tenantsRes, isLoading, error } = useQuery<{ data: Tenant[]; total: number }>({
-    queryKey: ["/api/admin/tenants"],
+  const tenantParams = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(page * PAGE_SIZE) });
+  if (search.trim()) tenantParams.set("search", search.trim());
+  if (planFilter !== "all") tenantParams.set("plan", planFilter);
+
+  const { data: tenantsRes, isLoading, error } = useQuery<{ data: Tenant[]; total: number; limit: number; offset: number }>({
+    queryKey: ["/api/admin/tenants", search, planFilter, page],
     queryFn: async () => {
-      const r = await apiRequest("GET", "/api/admin/tenants");
+      const r = await apiRequest("GET", `/api/admin/tenants?${tenantParams}`);
       return r.json();
     },
   });
   const tenants = tenantsRes?.data;
+  const tenantsTotal = tenantsRes?.total ?? 0;
+  const tenantsTotalPages = Math.ceil(tenantsTotal / PAGE_SIZE);
 
   const suspendMutation = useMutation({
     mutationFn: async ({ id, suspend }: { id: string; suspend: boolean }) => {
@@ -187,8 +197,6 @@ export default function TenantsPage() {
   });
 
   const filtered = (tenants ?? []).filter((t) => {
-    if (search && !t.name.toLowerCase().includes(search.toLowerCase()) && !t.slug.toLowerCase().includes(search.toLowerCase())) return false;
-    if (planFilter !== "all" && (t.plan ?? "basic") !== planFilter) return false;
     if (statusFilter === "active" && t.active === false) return false;
     if (statusFilter === "suspended" && t.active !== false) return false;
     return true;
@@ -199,8 +207,8 @@ export default function TenantsPage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900" data-testid="page-title-tenants">Tenants</h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            {tenants?.length ?? 0} total tenants
+          <p className="text-sm text-slate-500 mt-0.5" data-testid="text-tenants-total">
+            {tenantsTotal} total tenants
           </p>
         </div>
         <Button
@@ -226,12 +234,12 @@ export default function TenantsPage() {
           <Input
             placeholder="Search tenants..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
             className="pl-9"
             data-testid="input-search-tenants"
           />
         </div>
-        <Select value={planFilter} onValueChange={setPlanFilter}>
+        <Select value={planFilter} onValueChange={(v) => { setPlanFilter(v); setPage(0); }}>
           <SelectTrigger className="w-36" data-testid="select-plan-filter">
             <SelectValue placeholder="All plans" />
           </SelectTrigger>
@@ -373,6 +381,37 @@ export default function TenantsPage() {
           )}
         </CardContent>
       </Card>
+
+      {tenantsTotalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-slate-500" data-testid="tenants-pagination">
+          <span>
+            Showing {page * PAGE_SIZE + 1}–{Math.min((page + 1) * PAGE_SIZE, tenantsTotal)} of {tenantsTotal}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              data-testid="button-tenants-prev"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </Button>
+            <span className="text-xs">Page {page + 1} of {tenantsTotalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(tenantsTotalPages - 1, p + 1))}
+              disabled={page >= tenantsTotalPages - 1}
+              data-testid="button-tenants-next"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Create Tenant Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>

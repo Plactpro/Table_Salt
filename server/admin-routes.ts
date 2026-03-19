@@ -372,12 +372,12 @@ export function registerAdminRoutes(app: Express) {
       const limit = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
       const offset = Math.max(parseInt(offsetStr ?? "0", 10) || 0, 0);
 
-      const whereConditions = [ne(tenants.id, platformTenantId)];
-      if (search) whereConditions.push(or(ilike(tenants.name, `%${search}%`), ilike(tenants.slug, `%${search}%`)) as any);
-      if (plan) whereConditions.push(eq(tenants.plan, plan));
-      if (active !== undefined && active !== "") whereConditions.push(eq(tenants.active, active === "true"));
-
-      const whereClause = and(...whereConditions);
+      const whereClause = and(
+        ne(tenants.id, platformTenantId),
+        search ? or(ilike(tenants.name, `%${search}%`), ilike(tenants.slug, `%${search}%`)) : undefined,
+        plan ? eq(tenants.plan, plan) : undefined,
+        active !== undefined && active !== "" ? eq(tenants.active, active === "true") : undefined,
+      );
 
       const [totalResult, page] = await Promise.all([
         db.select({ cnt: sql<number>`count(*)::int` }).from(tenants).where(whereClause),
@@ -671,7 +671,17 @@ export function registerAdminRoutes(app: Express) {
       const limit = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
       const offset = Math.max(parseInt(offsetStr ?? "0", 10) || 0, 0);
 
-      const [allUsers, lastLogins] = await Promise.all([
+      const whereClause = and(
+        ne(users.tenantId, platformTenantId),
+        tenantId ? eq(users.tenantId, tenantId) : undefined,
+        role ? eq(users.role, role as UserRoleValue) : undefined,
+        search ? or(
+          ilike(users.name, `%${search}%`),
+          ilike(users.username, `%${search}%`),
+        ) : undefined,
+      );
+
+      const [pageRows, totalResult, lastLogins] = await Promise.all([
         db
           .select({
             id: users.id,
@@ -688,8 +698,14 @@ export function registerAdminRoutes(app: Express) {
           })
           .from(users)
           .innerJoin(tenants, eq(users.tenantId, tenants.id))
-          .where(ne(users.tenantId, platformTenantId))
-          .orderBy(users.name),
+          .where(whereClause)
+          .orderBy(users.name)
+          .limit(limit)
+          .offset(offset),
+        db.select({ cnt: sql<number>`count(*)::int` })
+          .from(users)
+          .innerJoin(tenants, eq(users.tenantId, tenants.id))
+          .where(whereClause),
         db
           .select({ userId: auditEvents.userId, lastLogin: max(auditEvents.createdAt) })
           .from(auditEvents)
@@ -698,25 +714,12 @@ export function registerAdminRoutes(app: Express) {
       ]);
 
       const loginMap = new Map(lastLogins.map(r => [r.userId, r.lastLogin]));
-      const decrypted = allUsers.map(u => ({
+      const data = pageRows.map(u => ({
         ...decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS),
         lastLogin: loginMap.get(u.id) ?? null,
       }));
 
-      let filtered = decrypted;
-      if (tenantId) filtered = filtered.filter(u => u.tenantId === tenantId);
-      if (role) filtered = filtered.filter(u => u.role === role);
-      if (search) {
-        const q = search.toLowerCase();
-        filtered = filtered.filter(u =>
-          (u.name as string || "").toLowerCase().includes(q) ||
-          (u.username as string || "").toLowerCase().includes(q) ||
-          (u.email as string || "").toLowerCase().includes(q)
-        );
-      }
-
-      const total = filtered.length;
-      const data = filtered.slice(offset, offset + limit);
+      const total = totalResult[0]?.cnt ?? 0;
       return res.json({ data, total, limit, offset });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";

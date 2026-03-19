@@ -12,6 +12,8 @@ import {
   Users,
   AlertCircle,
   ShieldCheck,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -59,6 +61,7 @@ interface Tenant {
 }
 
 const ROLES = ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor"] as const;
+const PAGE_SIZE = 50;
 
 function RoleBadge({ role }: { role: string }) {
   const colors: Record<string, string> = {
@@ -87,22 +90,41 @@ export default function UsersPage() {
   const [tenantFilter, setTenantFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [page, setPage] = useState(0);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [resetForUser, setResetForUser] = useState<string | null>(null);
 
-  const { data: usersRes, isLoading, error } = useQuery<{ data: AdminUser[]; total: number }>({
-    queryKey: ["/api/admin/users"],
+  const offset = page * PAGE_SIZE;
+
+  const params = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(offset) });
+  if (search.trim()) params.set("search", search.trim());
+  if (tenantFilter !== "all") params.set("tenantId", tenantFilter);
+  if (roleFilter !== "all") params.set("role", roleFilter);
+
+  const { data: usersRes, isLoading, error } = useQuery<{ data: AdminUser[]; total: number; limit: number; offset: number }>({
+    queryKey: ["/api/admin/users", search, tenantFilter, roleFilter, page],
     queryFn: async () => {
-      const r = await apiRequest("GET", "/api/admin/users");
+      const r = await apiRequest("GET", `/api/admin/users?${params}`);
       return r.json();
     },
   });
-  const users = usersRes?.data;
+
+  const allUsersData = usersRes?.data ?? [];
+  const total = usersRes?.total ?? 0;
+  const totalPages = Math.ceil(total / PAGE_SIZE);
+
+  const filtered = allUsersData.filter((u) => {
+    if (statusFilter === "active" && u.active === false) return false;
+    if (statusFilter === "inactive" && u.active !== false) return false;
+    return true;
+  });
+
+  const resetPage = () => setPage(0);
 
   const { data: tenantsRes } = useQuery<{ data: Tenant[]; total: number }>({
-    queryKey: ["/api/admin/tenants"],
+    queryKey: ["/api/admin/tenants", "all"],
     queryFn: async () => {
-      const r = await apiRequest("GET", "/api/admin/tenants");
+      const r = await apiRequest("GET", "/api/admin/tenants?limit=200");
       return r.json();
     },
   });
@@ -146,28 +168,12 @@ export default function UsersPage() {
     onError: (e: Error) => toast({ title: "Impersonation failed", description: e.message, variant: "destructive" }),
   });
 
-  const filtered = (users ?? []).filter((u) => {
-    if (search) {
-      const q = search.toLowerCase();
-      if (
-        !u.name.toLowerCase().includes(q) &&
-        !u.username.toLowerCase().includes(q) &&
-        !(u.email ?? "").toLowerCase().includes(q)
-      ) return false;
-    }
-    if (tenantFilter !== "all" && u.tenantId !== tenantFilter) return false;
-    if (roleFilter !== "all" && u.role !== roleFilter) return false;
-    if (statusFilter === "active" && u.active === false) return false;
-    if (statusFilter === "inactive" && u.active !== false) return false;
-    return true;
-  });
-
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="admin-users-page">
       <div>
         <h1 className="text-xl font-bold text-slate-900" data-testid="page-title-users">Users</h1>
-        <p className="text-sm text-slate-500 mt-0.5">
-          {users?.length ?? 0} total users across all tenants
+        <p className="text-sm text-slate-500 mt-0.5" data-testid="text-users-total">
+          {total} total users across all tenants
         </p>
       </div>
 
@@ -182,14 +188,14 @@ export default function UsersPage() {
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
           <Input
-            placeholder="Search users..."
+            placeholder="Search by name or username..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => { setSearch(e.target.value); resetPage(); }}
             className="pl-9"
             data-testid="input-search-users"
           />
         </div>
-        <Select value={tenantFilter} onValueChange={setTenantFilter}>
+        <Select value={tenantFilter} onValueChange={(v) => { setTenantFilter(v); resetPage(); }}>
           <SelectTrigger className="w-44" data-testid="select-tenant-filter">
             <SelectValue placeholder="All tenants" />
           </SelectTrigger>
@@ -200,7 +206,7 @@ export default function UsersPage() {
             ))}
           </SelectContent>
         </Select>
-        <Select value={roleFilter} onValueChange={setRoleFilter}>
+        <Select value={roleFilter} onValueChange={(v) => { setRoleFilter(v); resetPage(); }}>
           <SelectTrigger className="w-36" data-testid="select-role-filter">
             <SelectValue placeholder="All roles" />
           </SelectTrigger>
@@ -334,6 +340,37 @@ export default function UsersPage() {
         </CardContent>
       </Card>
 
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between text-sm text-slate-500" data-testid="users-pagination">
+          <span>
+            Showing {offset + 1}–{Math.min(offset + PAGE_SIZE, total)} of {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={page === 0}
+              data-testid="button-users-prev"
+            >
+              <ChevronLeft className="h-4 w-4" />
+              Prev
+            </Button>
+            <span className="text-xs">Page {page + 1} of {totalPages}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))}
+              disabled={page >= totalPages - 1}
+              data-testid="button-users-next"
+            >
+              Next
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Temp Password Dialog */}
       <Dialog open={!!tempPassword} onOpenChange={() => { setTempPassword(null); setResetForUser(null); }}>
         <DialogContent data-testid="dialog-temp-password">
@@ -360,6 +397,8 @@ export default function UsersPage() {
           </Button>
         </DialogContent>
       </Dialog>
+
+      <p className="sr-only" aria-hidden>{resetForUser}</p>
     </div>
   );
 }
