@@ -461,7 +461,7 @@ function SecurityAlertsCard() {
   const { user } = useAuth();
   const isOwner = user?.role === "owner" || user?.role === "hq_admin" || user?.role === "franchise_owner";
 
-  const { data: alertsData } = useQuery<{ alerts: AlertItem[]; total: number }>({
+  const { data: alertsData } = useQuery<{ data: AlertItem[]; total: number }>({
     queryKey: ["/api/security-alerts"],
     queryFn: async () => {
       const res = await fetch("/api/security-alerts?limit=20", { credentials: "include" });
@@ -497,7 +497,7 @@ function SecurityAlertsCard() {
 
   if (!isOwner) return null;
 
-  const alerts = alertsData?.alerts || [];
+  const alerts = alertsData?.data || [];
   const unacknowledged = alerts.filter(a => !a.acknowledged);
 
   const severityColors: Record<string, string> = {

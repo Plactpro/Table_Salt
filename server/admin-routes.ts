@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { db } from "./db";
-import { eq, and, desc, sql, ne, gte, lte, inArray, max } from "drizzle-orm";
+import { eq, and, desc, sql, ne, gte, lte, inArray, max, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import {
   tenants, users, outlets, orders, auditEvents, roleEnum, securityAlerts,
@@ -372,22 +372,19 @@ export function registerAdminRoutes(app: Express) {
       const limit = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
       const offset = Math.max(parseInt(offsetStr ?? "0", 10) || 0, 0);
 
-      const allTenants = await db.select().from(tenants)
-        .where(ne(tenants.id, platformTenantId))
-        .orderBy(desc(tenants.createdAt));
+      const whereConditions = [ne(tenants.id, platformTenantId)];
+      if (search) whereConditions.push(or(ilike(tenants.name, `%${search}%`), ilike(tenants.slug, `%${search}%`)) as any);
+      if (plan) whereConditions.push(eq(tenants.plan, plan));
+      if (active !== undefined && active !== "") whereConditions.push(eq(tenants.active, active === "true"));
 
-      let filtered = allTenants;
-      if (search) {
-        const q = search.toLowerCase();
-        filtered = filtered.filter(t => t.name.toLowerCase().includes(q) || t.slug.toLowerCase().includes(q));
-      }
-      if (plan) filtered = filtered.filter(t => t.plan === plan);
-      if (active !== undefined && active !== "") {
-        filtered = filtered.filter(t => String(t.active) === active);
-      }
+      const whereClause = and(...whereConditions);
 
-      const total = filtered.length;
-      const page = filtered.slice(offset, offset + limit);
+      const [totalResult, page] = await Promise.all([
+        db.select({ cnt: sql<number>`count(*)::int` }).from(tenants).where(whereClause),
+        db.select().from(tenants).where(whereClause).orderBy(desc(tenants.createdAt)).limit(limit).offset(offset),
+      ]);
+      const total = totalResult[0]?.cnt ?? 0;
+
       if (page.length === 0) return res.json({ data: [], total, limit, offset });
 
       const tenantIds = page.map(t => t.id);
@@ -670,7 +667,9 @@ export function registerAdminRoutes(app: Express) {
   app.get("/api/admin/users", requireSuperAdmin, async (req, res) => {
     try {
       const platformTenantId = await getPlatformTenantId();
-      const { tenantId, role, search } = req.query as Record<string, string>;
+      const { tenantId, role, search, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
+      const limit = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
+      const offset = Math.max(parseInt(offsetStr ?? "0", 10) || 0, 0);
 
       const [allUsers, lastLogins] = await Promise.all([
         db
@@ -716,7 +715,9 @@ export function registerAdminRoutes(app: Express) {
         );
       }
 
-      return res.json(filtered);
+      const total = filtered.length;
+      const data = filtered.slice(offset, offset + limit);
+      return res.json({ data, total, limit, offset });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });

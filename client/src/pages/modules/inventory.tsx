@@ -324,10 +324,10 @@ function RecipesTab() {
   };
 
   const { data: allRecipes = [] } = useQuery<RecipeWithIngredients[]>({ queryKey: ["/api/recipes"] });
-  const { data: inventory = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: inventoryAllRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory", "all"], queryFn: async () => { const res = await fetch("/api/inventory?limit=200&offset=0", { credentials: "include" }); return res.json(); } });
   const { data: menuItemsList = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
 
-  const invMap = new Map(inventory.map(i => [i.id, i]));
+  const invMap = new Map((inventoryAllRes?.data ?? []).map(i => [i.id, i]));
   const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
 
   const createMutation = useMutation({
@@ -563,10 +563,10 @@ function StockTakesTab() {
   };
 
   const { data: takes = [] } = useQuery<any[]>({ queryKey: ["/api/stock-takes"] });
-  const { data: inventory = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: stockTakeInventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory", "stock-takes-all"], queryFn: async () => { const res = await fetch("/api/inventory?limit=200&offset=0", { credentials: "include" }); return res.json(); } });
   const { data: takeDetail } = useQuery<any>({ queryKey: ["/api/stock-takes", selectedTakeId], queryFn: async () => { if (!selectedTakeId) return null; const res = await fetch(`/api/stock-takes/${selectedTakeId}`, { credentials: "include" }); return res.json(); }, enabled: !!selectedTakeId });
 
-  const invMap = new Map(inventory.map(i => [i.id, i]));
+  const invMap = new Map((stockTakeInventoryRes?.data ?? []).map(i => [i.id, i]));
 
   const createMutation = useMutation({
     mutationFn: async () => { const res = await apiRequest("POST", "/api/stock-takes", {}); return res.json(); },
