@@ -1849,6 +1849,7 @@ export async function registerRoutes(
       }
     } catch (processErr: any) {
       console.error("Stripe webhook processing error:", processErr);
+      return res.status(500).json({ message: "Webhook processing failed", error: processErr?.message });
     }
 
     res.json({ received: true });
