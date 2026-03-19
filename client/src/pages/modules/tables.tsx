@@ -194,14 +194,6 @@ export default function TablesPage() {
     });
   }, [queryClient]));
 
-  useRealtimeEvent("order:completed", useCallback((payload: unknown) => {
-    const p = payload as { tableId?: string } | null;
-    if (!p?.tableId) return;
-    queryClient.setQueryData(["/api/tables"], (old: TableData[] | undefined) => {
-      if (!old) return old;
-      return old.map(t => t.id === p.tableId ? { ...t, status: "cleaning" as TableStatus } : t);
-    });
-  }, [queryClient]));
 
 
   const canvasRef = useRef<HTMLDivElement>(null);
