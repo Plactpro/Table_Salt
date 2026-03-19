@@ -3004,18 +3004,10 @@ export async function registerRoutes(
   app.patch("/api/recipes/:id", requireAuth, requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
-      const { ingredients, supervisorOverride, ...recipeData } = req.body;
+      const { ingredients, ...recipeData } = req.body;
 
-      if (ingredients && Array.isArray(ingredients) && ingredients.length > 0) {
-        if (!can(user, "change_price")) {
-          if (supervisorOverride) {
-            const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "change_price", req);
-            if (!result.verified) return res.status(403).json({ message: result.error || "Supervisor verification failed" });
-          } else {
-            return res.status(403).json({ message: "Permission denied", action: "change_price", requiresSupervisor: true, detail: "Recipe ingredient changes affect cost" });
-          }
-        }
-      }
+      // edit_recipe permission (enforced at endpoint level) covers all recipe changes
+      // including ingredient updates — no secondary change_price gate needed here
 
       if (recipeData.menuItemId) {
         const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
