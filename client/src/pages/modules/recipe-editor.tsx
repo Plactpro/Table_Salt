@@ -59,7 +59,11 @@ export default function RecipeEditorPage() {
     retry: false,
   });
 
-  const { data: inventory = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({
+    queryKey: ["/api/inventory", "all"],
+    queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
+  });
+  const inventory = inventoryRes?.data ?? [];
   const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
 
   const invMap = new Map(inventory.map(i => [i.id, i]));

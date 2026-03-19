@@ -36,7 +36,11 @@ function RecipesTab() {
   };
 
   const { data: allRecipes = [] } = useQuery<RecipeWithIngredients[]>({ queryKey: ["/api/recipes"] });
-  const { data: inventory = [] } = useQuery<InventoryItem[]>({ queryKey: ["/api/inventory"] });
+  const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({
+    queryKey: ["/api/inventory", "all"],
+    queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
+  });
+  const inventory = inventoryRes?.data ?? [];
   const { data: menuItemsList = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
 
   const invMap = new Map(inventory.map(i => [i.id, i]));
