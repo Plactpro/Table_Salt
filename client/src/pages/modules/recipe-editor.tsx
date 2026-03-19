@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
 
@@ -75,6 +76,9 @@ export default function RecipeEditorPage() {
   const [isDirty, setIsDirty] = useState(false);
   const [initialized, setInitialized] = useState(false);
   const [ingSearch, setIngSearch] = useState("");
+  const [showLeaveDialog, setShowLeaveDialog] = useState(false);
+  const [pendingNav, setPendingNav] = useState<{ args: Parameters<typeof window.history.pushState>; type: "push" | "pop" } | null>(null);
+  const originalPushStateRef = useRef<((...args: Parameters<typeof window.history.pushState>) => void) | null>(null);
 
   // Browser-level navigation guard (external tab close / refresh)
   useEffect(() => {
@@ -85,32 +89,55 @@ export default function RecipeEditorPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [isDirty]);
 
-  // In-app navigation guard (intercept wouter pushState-based navigation + browser back button)
+  // In-app navigation guard: intercept pushState (wouter sidebar nav) and popstate (browser back)
+  // Uses a React state dialog instead of window.confirm() for non-blocking UX
   useEffect(() => {
     if (!isDirty) return;
 
-    const originalPushState = window.history.pushState.bind(window.history);
+    const original = window.history.pushState.bind(window.history);
+    originalPushStateRef.current = original;
+
     window.history.pushState = function (...args: Parameters<typeof window.history.pushState>) {
-      if (!window.confirm("You have unsaved changes. Leave without saving?")) return;
-      setIsDirty(false);
-      originalPushState(...args);
+      setPendingNav({ args, type: "push" });
+      setShowLeaveDialog(true);
+      // Navigation deferred until user confirms in the Leave dialog
     };
 
     const handlePopState = () => {
-      if (!window.confirm("You have unsaved changes. Leave without saving?")) {
-        // Cancel back navigation by going forward again
-        window.history.go(1);
-      } else {
-        setIsDirty(false);
-      }
+      // Use the stored original (bypasses our patch) to re-push a sentinel entry
+      // that cancels the back navigation until the user decides in the dialog
+      originalPushStateRef.current?.(null, "", window.location.href);
+      setPendingNav({ args: [null, "", window.location.href], type: "pop" });
+      setShowLeaveDialog(true);
     };
     window.addEventListener("popstate", handlePopState);
 
     return () => {
-      window.history.pushState = originalPushState;
+      if (originalPushStateRef.current) {
+        window.history.pushState = originalPushStateRef.current;
+        originalPushStateRef.current = null;
+      }
       window.removeEventListener("popstate", handlePopState);
     };
   }, [isDirty]);
+
+  function confirmLeave() {
+    if (!pendingNav) return;
+    const orig = originalPushStateRef.current;
+    setIsDirty(false);
+    setShowLeaveDialog(false);
+    setPendingNav(null);
+    if (pendingNav.type === "pop") {
+      window.history.go(-1);
+    } else if (orig) {
+      orig(...pendingNav.args);
+    }
+  }
+
+  function cancelLeave() {
+    setShowLeaveDialog(false);
+    setPendingNav(null);
+  }
 
   useEffect(() => {
     if (existingRecipe && !initialized) {
@@ -242,8 +269,12 @@ export default function RecipeEditorPage() {
   }
 
   function handleBack() {
-    if (isDirty && !confirm("You have unsaved changes. Leave without saving?")) return;
-    navigate("/inventory");
+    if (isDirty) {
+      setPendingNav({ args: [null, "", "/inventory"], type: "push" });
+      setShowLeaveDialog(true);
+    } else {
+      navigate("/inventory");
+    }
   }
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -262,6 +293,19 @@ export default function RecipeEditorPage() {
   }
 
   return (
+    <>
+    <Dialog open={showLeaveDialog} onOpenChange={cancelLeave}>
+      <DialogContent data-testid="dialog-leave-confirm">
+        <DialogHeader>
+          <DialogTitle>Unsaved Changes</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">You have unsaved changes. Are you sure you want to leave without saving?</p>
+        <DialogFooter className="gap-2">
+          <Button variant="outline" onClick={cancelLeave} data-testid="button-stay-on-page">Stay</Button>
+          <Button variant="destructive" onClick={confirmLeave} data-testid="button-leave-without-saving">Leave Without Saving</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
     <div className="max-w-6xl mx-auto space-y-6 pb-10" data-testid="recipe-editor-page">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -656,5 +700,6 @@ export default function RecipeEditorPage() {
         </div>
       </div>
     </div>
+    </>
   );
 }
