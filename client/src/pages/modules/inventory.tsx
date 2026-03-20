@@ -176,9 +176,10 @@ function InventoryTab() {
                 data-testid="button-download-pdf-inventory"
                 onClick={() => {
                   const tenantName = user?.tenant?.name || "Restaurant";
-                  exportToPdf({
+                  void exportToPdf({
                     title: "Inventory Stock Valuation",
                     restaurantName: tenantName,
+                    logoUrl: user?.tenant?.logo ?? null,
                     dateRange: new Date().toLocaleDateString("en-GB"),
                     subtitle: `Total Stock Value: ${fmt(totalValue)} | Items: ${inventory.length} | Low Stock: ${lowStockItems.length}`,
                     columns: ["Item", "SKU", "Category", "Stock", "Unit", "Reorder Level", "Cost Price", "Stock Value", "Status"],

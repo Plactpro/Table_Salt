@@ -110,9 +110,10 @@ export default function ReportsPage() {
               data-testid="button-download-pdf-sales"
               onClick={() => {
                 const tenantName = user?.tenant?.name || "Restaurant";
-                exportToPdf({
+                void exportToPdf({
                   title: "Sales Summary Report",
                   restaurantName: tenantName,
+                  logoUrl: user?.tenant?.logo ?? null,
                   dateRange: `${fromDate} to ${toDate}`,
                   subtitle: `Total Revenue: ${fmt(Number(totals.revenue || 0))} | Orders: ${Number(totals.orderCount || 0)} | Avg Order: ${fmt(Number(avgOrderValue))}`,
                   columns: ["Date", "Revenue", "Orders"],
