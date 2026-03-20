@@ -411,8 +411,12 @@ export default function POSPage() {
       const orderData = buildOrderData(supervisorOverride);
 
       if (supervisorOverride) {
+        const supervisorCsrfMatch = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+        const supervisorCsrf = supervisorCsrfMatch ? decodeURIComponent(supervisorCsrfMatch[1]) : null;
+        const supervisorHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        if (supervisorCsrf) supervisorHeaders["x-csrf-token"] = supervisorCsrf;
         const res = await fetch("/api/orders", {
-          method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+          method: "POST", headers: supervisorHeaders, credentials: "include",
           body: JSON.stringify(orderData),
         });
         if (res.status === 403) {

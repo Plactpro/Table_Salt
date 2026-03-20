@@ -1,5 +1,14 @@
 import type { SyncService, ConfigCache } from "./sync-interfaces";
 
+function getCsrfToken(): string | null {
+  try {
+    const match = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+    return match ? decodeURIComponent(match[1]) : null;
+  } catch {
+    return null;
+  }
+}
+
 const DB_NAME = "tablesalt_sync";
 const DB_VERSION = 1;
 const QUEUE_STORE = "sync_queue";
@@ -144,9 +153,12 @@ class SyncManager implements SyncService, ConfigCache {
 
     if (this._status === "online") {
       try {
+        const csrfHeaders: Record<string, string> = { "Content-Type": "application/json" };
+        const csrfTok = getCsrfToken();
+        if (csrfTok) csrfHeaders["x-csrf-token"] = csrfTok;
         const res = await fetch("/api/orders", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: csrfHeaders,
           credentials: "include",
           body: JSON.stringify(finalPayload),
         });
@@ -229,7 +241,12 @@ class SyncManager implements SyncService, ConfigCache {
         const endpoint = (item.payload._endpoint as string) || "/api/orders";
         const kioskToken = item.payload._kioskToken as string | undefined;
         const headers: Record<string, string> = { "Content-Type": "application/json" };
-        if (kioskToken) headers["X-Kiosk-Token"] = kioskToken;
+        if (kioskToken) {
+          headers["X-Kiosk-Token"] = kioskToken;
+        } else {
+          const queueCsrf = getCsrfToken();
+          if (queueCsrf) headers["x-csrf-token"] = queueCsrf;
+        }
 
         const { _endpoint: _e, _kioskToken: _k, ...cleanPayload } = item.payload;
         const res = await fetch(endpoint, {
