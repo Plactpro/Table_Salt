@@ -24,8 +24,11 @@ import {
   Calculator,
   UserCircle,
   Headset,
+  PackageOpen,
   type LucideIcon,
 } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 
 interface HeaderProps {
   onOpenSupport?: () => void;
@@ -79,9 +82,52 @@ const roleIcons: Partial<Record<Role, LucideIcon>> = {
   super_admin: Crown,
 };
 
+interface InventoryAlert {
+  id: string;
+  title: string;
+  description: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+}
+
 export default function Header({ onOpenSupport }: HeaderProps) {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
+  const queryClient = useQueryClient();
+
+  const canSeeInventoryAlerts = user && ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "kitchen"].includes(user.role);
+
+  const { data: alertCountData } = useQuery<{ count: number }>({
+    queryKey: ["/api/inventory-alerts/count"],
+    queryFn: async () => {
+      const res = await fetch("/api/inventory-alerts/count", { credentials: "include" });
+      if (!res.ok) return { count: 0 };
+      return res.json();
+    },
+    enabled: !!canSeeInventoryAlerts,
+    refetchInterval: 30000,
+  });
+
+  const { data: alerts = [] } = useQuery<InventoryAlert[]>({
+    queryKey: ["/api/inventory-alerts"],
+    queryFn: async () => {
+      const res = await fetch("/api/inventory-alerts", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!canSeeInventoryAlerts,
+    refetchInterval: 30000,
+  });
+
+  const acknowledgeAll = useMutation({
+    mutationFn: () => apiRequest("PATCH", "/api/inventory-alerts/acknowledge-all", {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory-alerts/count"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory-alerts"] });
+    },
+  });
+
+  const unreadCount = alertCountData?.count || 0;
 
   if (!user) return null;
 
@@ -133,15 +179,76 @@ export default function Header({ onOpenSupport }: HeaderProps) {
           </motion.div>
         )}
 
-        <motion.div
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <Button variant="ghost" size="icon" className="relative h-9 w-9 text-muted-foreground hover:text-foreground" data-testid="button-notifications">
-            <Bell className="h-4 w-4" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-destructive ring-2 ring-card" />
-          </Button>
-        </motion.div>
+        {canSeeInventoryAlerts && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                <Button variant="ghost" size="icon" className="relative h-9 w-9 text-muted-foreground hover:text-foreground" data-testid="button-notifications">
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span
+                      className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card"
+                      data-testid="badge-inventory-alerts"
+                    >
+                      {unreadCount > 9 ? "9+" : unreadCount}
+                    </span>
+                  )}
+                </Button>
+              </motion.div>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-80">
+              <DropdownMenuLabel className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <PackageOpen className="h-4 w-4 text-amber-600" />
+                  <span>Low Stock Alerts</span>
+                  {unreadCount > 0 && (
+                    <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>
+                  )}
+                </div>
+                {unreadCount > 0 && (
+                  <button
+                    className="text-xs text-muted-foreground hover:text-foreground underline"
+                    onClick={() => acknowledgeAll.mutate()}
+                    data-testid="button-acknowledge-all-alerts"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {alerts.length === 0 ? (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  No unacknowledged low-stock alerts
+                </div>
+              ) : (
+                alerts.slice(0, 8).map(alert => (
+                  <DropdownMenuItem
+                    key={alert.id}
+                    className="flex flex-col items-start gap-0.5 py-2 cursor-pointer"
+                    onClick={() => navigate("/inventory")}
+                    data-testid={`alert-item-${alert.id.slice(-4)}`}
+                  >
+                    <div className="flex items-center gap-2 w-full">
+                      <PackageOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                      <span className="font-medium text-sm truncate">{alert.title}</span>
+                    </div>
+                    {alert.description && (
+                      <span className="text-xs text-muted-foreground pl-5 line-clamp-2">{alert.description}</span>
+                    )}
+                  </DropdownMenuItem>
+                ))
+              )}
+              {alerts.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={() => navigate("/inventory")} className="text-xs text-center justify-center text-primary">
+                    View all in Inventory →
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

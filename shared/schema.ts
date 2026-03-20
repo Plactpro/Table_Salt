@@ -361,6 +361,8 @@ export const stockMovements = pgTable("stock_movements", {
   chefName: text("chef_name"),
   station: text("station"),
   shiftId: varchar("shift_id", { length: 36 }),
+  stockBefore: decimal("stock_before", { precision: 10, scale: 4 }),
+  stockAfter: decimal("stock_after", { precision: 10, scale: 4 }),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_stock_movements_tenant_created").on(t.tenantId, t.createdAt),

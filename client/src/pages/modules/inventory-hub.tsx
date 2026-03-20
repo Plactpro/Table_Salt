@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useLocation } from "wouter";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Package2, BookOpen, ShoppingCart, ChefHat, ArrowDownUp } from "lucide-react";
+import { Package2, BookOpen, ShoppingCart, ChefHat, ArrowDownUp, AlertCircle, Plus, Edit, Trash2, Percent } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import InventoryPage from "./inventory";
@@ -13,7 +14,6 @@ import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
-import { Plus, Edit, Trash2, Percent } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +24,29 @@ import { StatCard } from "@/components/widgets/stat-card";
 type RecipeWithIngredients = Recipe & { ingredients: RecipeIngredient[] };
 
 const MANAGEMENT_ROLES = ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"];
+
+class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.label}] tab error:`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <AlertCircle className="h-10 w-10 text-destructive opacity-60" />
+          <p className="text-sm">Something went wrong loading <strong>{this.props.label}</strong>.</p>
+          <button className="text-xs underline" onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function RecipesTab() {
   const { user } = useAuth();
@@ -215,27 +238,37 @@ export default function InventoryHub() {
             </TabsTrigger>
           )}
         </TabsList>
-        <TabsContent value="stock" className="mt-4">
-          <InventoryPage />
+        <TabsContent value="stock" className="mt-4" forceMount>
+          <TabErrorBoundary label="Stock & Items">
+            <InventoryPage />
+          </TabErrorBoundary>
         </TabsContent>
         {canManage && (
-          <TabsContent value="movements" className="mt-4">
-            <StockMovementLog />
+          <TabsContent value="movements" className="mt-4" forceMount>
+            <TabErrorBoundary label="Movements">
+              <StockMovementLog />
+            </TabErrorBoundary>
           </TabsContent>
         )}
         {canManage && (
-          <TabsContent value="recipes" className="mt-4">
-            <RecipesTab />
+          <TabsContent value="recipes" className="mt-4" forceMount>
+            <TabErrorBoundary label="Recipes">
+              <RecipesTab />
+            </TabErrorBoundary>
           </TabsContent>
         )}
         {canManage && (
-          <TabsContent value="suppliers" className="mt-4">
-            <SuppliersPage />
+          <TabsContent value="suppliers" className="mt-4" forceMount>
+            <TabErrorBoundary label="Suppliers">
+              <SuppliersPage />
+            </TabErrorBoundary>
           </TabsContent>
         )}
         {canManage && (
-          <TabsContent value="procurement" className="mt-4">
-            <ProcurementPage />
+          <TabsContent value="procurement" className="mt-4" forceMount>
+            <TabErrorBoundary label="Procurement">
+              <ProcurementPage />
+            </TabErrorBoundary>
           </TabsContent>
         )}
       </Tabs>

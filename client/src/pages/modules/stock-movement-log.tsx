@@ -78,12 +78,18 @@ export default function StockMovementLog() {
     return `/api/stock-movements?${params}`;
   };
 
-  const { data: movements = [], isLoading } = useQuery<StockMovement[]>({
+  const { data: movementsRaw, isLoading } = useQuery({
     queryKey: ["/api/stock-movements", applied],
     queryFn: () => apiRequest("GET", buildUrl(applied)).then(r => r.json()),
   });
+  const movements: StockMovement[] = useMemo(() => {
+    if (!movementsRaw) return [];
+    if (Array.isArray(movementsRaw)) return movementsRaw as StockMovement[];
+    const d = (movementsRaw as any)?.data;
+    return Array.isArray(d) ? d : [];
+  }, [movementsRaw]);
 
-  const { data: inventoryRes } = useQuery<{ data: { id: string; currentStock: string | null; reorderLevel: string | null }[] }>({
+  const { data: inventoryRes } = useQuery<{ data: { id: string; name: string; currentStock: string | null; reorderLevel: string | null }[] }>({
     queryKey: ["/api/inventory", "lowstock"],
     queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
   });

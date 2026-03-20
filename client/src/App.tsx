@@ -38,6 +38,7 @@ import ManagerDashboard from "@/pages/dashboards/manager";
 import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
+import KdsWallScreen from "@/pages/dashboards/kds-wall";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -325,6 +326,10 @@ function Router() {
 
   if (location === "/onboarding") {
     return <OnboardingRoute />;
+  }
+
+  if (location.startsWith("/kds/wall")) {
+    return <KdsWallScreen />;
   }
 
   return (

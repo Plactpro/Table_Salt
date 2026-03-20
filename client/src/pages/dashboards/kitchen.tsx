@@ -21,6 +21,17 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Monitor } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -113,19 +124,19 @@ function formatElapsed(mins: number): string {
 
 function getTimeColor(mins: number): string {
   if (mins < 5) return "text-green-600 dark:text-green-400";
-  if (mins < 10) return "text-orange-500 dark:text-orange-400";
+  if (mins < 15) return "text-amber-500 dark:text-amber-400";
   return "text-red-600 dark:text-red-400";
 }
 
 function getTimeBorder(mins: number): string {
   if (mins < 5) return "border-l-green-500";
-  if (mins < 10) return "border-l-orange-500";
+  if (mins < 15) return "border-l-amber-500";
   return "border-l-red-500";
 }
 
 function getTimeBg(mins: number): string {
-  if (mins >= 10) return "bg-red-50 dark:bg-red-950/30";
-  if (mins >= 5) return "bg-orange-50 dark:bg-orange-950/20";
+  if (mins >= 15) return "bg-red-50 dark:bg-red-950/30";
+  if (mins >= 5) return "bg-amber-50 dark:bg-amber-950/20";
   return "";
 }
 
@@ -430,7 +441,8 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
   const timeBorder = getTimeBorder(mins);
   const timeBg = getTimeBg(mins);
   const isNew = ticket.status === "new" || ticket.status === "sent_to_kitchen";
-  const isLate = mins >= 10;
+  const isLate = mins >= 15;
+  const [confirmReady, setConfirmReady] = useState<string | null>(null);
 
   const filteredItems = stationFilter
     ? ticket.items.filter(i => i.station === stationFilter)
@@ -548,9 +560,34 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
               )
             )}
             {allCooking && (
-              <Button size="sm" className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700" onClick={() => onBulkStatus(ticket.id, "ready", stationFilter || undefined)} data-testid={`btn-ready-all-${ticket.id.slice(-4)}`}>
-                <CheckCircle2 className="h-3 w-3" /> All Ready
-              </Button>
+              <>
+                <Button size="sm" className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700" onClick={() => setConfirmReady(stationFilter || "__all")} data-testid={`btn-ready-all-${ticket.id.slice(-4)}`}>
+                  <CheckCircle2 className="h-3 w-3" /> All Ready
+                </Button>
+                <AlertDialog open={!!confirmReady} onOpenChange={(open) => !open && setConfirmReady(null)}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Mark all as ready?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Confirm that all items for {ticket.tableNumber ? `Table ${ticket.tableNumber}` : `Order ${ticket.id.slice(-6).toUpperCase()}`} are ready to serve.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel data-testid="button-cancel-ready">Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-green-600 hover:bg-green-700"
+                        data-testid="button-confirm-ready"
+                        onClick={() => {
+                          onBulkStatus(ticket.id, "ready", confirmReady === "__all" ? undefined : (confirmReady ?? undefined));
+                          setConfirmReady(null);
+                        }}
+                      >
+                        Yes, Mark Ready
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </>
             )}
             {someReady && !allReady && !allCooking && !allPending && (
               <Badge variant="outline" className="text-xs text-orange-600">Partial</Badge>
@@ -580,7 +617,7 @@ function StatusDot({ status }: { status: string | null }) {
 export default function KitchenDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const [selectedStation, setSelectedStation] = useState<string | null>(() => {
     return localStorage.getItem("kds_station") || null;
   });
@@ -599,9 +636,29 @@ export default function KitchenDashboard() {
     queryFn: () => fetch(ticketsUrl, { credentials: "include" }).then(r => r.json()),
   });
 
+  const playChime = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const notes = [523.25, 659.25, 783.99];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = "sine";
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + i * 0.15);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.15 + 0.3);
+        osc.start(ctx.currentTime + i * 0.15);
+        osc.stop(ctx.currentTime + i * 0.15 + 0.35);
+      });
+    } catch (_) {}
+  }, []);
+
   useRealtimeEvent("order:new", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
-  }, [queryClient]));
+    playChime();
+  }, [queryClient, playChime]));
 
   useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
     const p = payload as { orderId?: string; status?: string } | null;
@@ -799,6 +856,17 @@ export default function KitchenDashboard() {
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             {isFullscreen ? "Exit" : "Full"}
           </Button>
+          {tenant?.id && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.open(`/kds/wall?tenantId=${tenant.id}`, "_blank")}
+              className="h-8 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
+              data-testid="button-wall-screen"
+            >
+              <Monitor className="h-3.5 w-3.5" /> Wall Screen
+            </Button>
+          )}
         </div>
       </div>
 

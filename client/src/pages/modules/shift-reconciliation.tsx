@@ -75,10 +75,16 @@ export default function ShiftReconciliation() {
   const params = new URLSearchParams({ from: fromDate, to: toDate });
   if (selectedShiftId !== "all") params.set("shiftId", selectedShiftId);
 
-  const { data: movements = [], isLoading } = useQuery<StockMovement[]>({
+  const { data: movementsRaw, isLoading } = useQuery({
     queryKey: ["/api/stock-movements", fromDate, toDate, selectedShiftId],
     queryFn: () => apiRequest("GET", `/api/stock-movements?${params}`).then(r => r.json()),
   });
+  const movements: StockMovement[] = useMemo(() => {
+    if (!movementsRaw) return [];
+    if (Array.isArray(movementsRaw)) return movementsRaw as StockMovement[];
+    const d = (movementsRaw as any)?.data;
+    return Array.isArray(d) ? d : [];
+  }, [movementsRaw]);
 
   const shiftSummaries = useMemo(() => {
     const shiftMap = new Map<string, ShiftSummary>();
