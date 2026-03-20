@@ -29,6 +29,8 @@ import {
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
+import { useCallback } from "react";
 
 interface HeaderProps {
   onOpenSupport?: () => void;
@@ -127,6 +129,19 @@ export default function Header({ onOpenSupport }: HeaderProps) {
     },
   });
 
+  const acknowledgeOne = useMutation({
+    mutationFn: (id: string) => apiRequest("PATCH", `/api/inventory-alerts/${id}/acknowledge`, {}),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory-alerts/count"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory-alerts"] });
+    },
+  });
+
+  useRealtimeEvent("low_stock_alert", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/inventory-alerts/count"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/inventory-alerts"] });
+  }, [queryClient]));
+
   const unreadCount = alertCountData?.count || 0;
 
   if (!user) return null;
@@ -221,28 +236,38 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                   No unacknowledged low-stock alerts
                 </div>
               ) : (
-                alerts.slice(0, 8).map(alert => (
-                  <DropdownMenuItem
-                    key={alert.id}
-                    className="flex flex-col items-start gap-0.5 py-2 cursor-pointer"
-                    onClick={() => navigate("/inventory")}
-                    data-testid={`alert-item-${alert.id.slice(-4)}`}
-                  >
-                    <div className="flex items-center gap-2 w-full">
-                      <PackageOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                      <span className="font-medium text-sm truncate">{alert.title}</span>
-                    </div>
-                    {alert.description && (
-                      <span className="text-xs text-muted-foreground pl-5 line-clamp-2">{alert.description}</span>
-                    )}
-                  </DropdownMenuItem>
-                ))
+                alerts.slice(0, 8).map(alert => {
+                  const itemId = (alert.metadata?.itemId as string | undefined) || "";
+                  const href = itemId
+                    ? `/inventory?tab=movements&ingredientId=${encodeURIComponent(itemId)}`
+                    : "/inventory?tab=movements";
+                  return (
+                    <DropdownMenuItem
+                      key={alert.id}
+                      className="flex flex-col items-start gap-0.5 py-2 cursor-pointer"
+                      onClick={() => {
+                        acknowledgeOne.mutate(alert.id);
+                        navigate(href);
+                      }}
+                      data-testid={`alert-item-${alert.id.slice(-4)}`}
+                    >
+                      <div className="flex items-center gap-2 w-full">
+                        <PackageOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                        <span className="font-medium text-sm truncate">{alert.title}</span>
+                      </div>
+                      {alert.description && (
+                        <span className="text-xs text-muted-foreground pl-5 line-clamp-2">{alert.description}</span>
+                      )}
+                      <span className="text-[10px] text-primary pl-5">View in Stock Movements →</span>
+                    </DropdownMenuItem>
+                  );
+                })
               )}
               {alerts.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate("/inventory")} className="text-xs text-center justify-center text-primary">
-                    View all in Inventory →
+                  <DropdownMenuItem onClick={() => navigate("/inventory?tab=movements")} className="text-xs text-center justify-center text-primary">
+                    View all in Stock Movements →
                   </DropdownMenuItem>
                 </>
               )}

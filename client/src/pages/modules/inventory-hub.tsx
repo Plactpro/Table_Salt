@@ -208,7 +208,13 @@ function RecipesTab() {
 export default function InventoryHub() {
   const { user } = useAuth();
   const canManage = MANAGEMENT_ROLES.includes(user?.role || "");
-  const [tab, setTab] = useState("stock");
+
+  const searchParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
+  const urlTab = searchParams.get("tab");
+  const urlIngredientId = searchParams.get("ingredientId");
+
+  const validTabs = ["stock", "movements", "recipes", "suppliers", "procurement"];
+  const [tab, setTab] = useState(urlTab && validTabs.includes(urlTab) ? urlTab : "stock");
 
   return (
     <div className="space-y-6" data-testid="inventory-hub">
@@ -246,7 +252,7 @@ export default function InventoryHub() {
         {canManage && (
           <TabsContent value="movements" className="mt-4" forceMount>
             <TabErrorBoundary label="Movements">
-              <StockMovementLog />
+              <StockMovementLog initialIngredientId={urlIngredientId || undefined} />
             </TabErrorBoundary>
           </TabsContent>
         )}
