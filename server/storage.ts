@@ -108,6 +108,10 @@ import {
   type Event, type InsertEvent,
   comboOffers,
   type ComboOffer, type InsertComboOffer,
+  shifts, menuItemStations, kotEvents,
+  type Shift, type InsertShift,
+  type MenuItemStation, type InsertMenuItemStation,
+  type KotEvent, type InsertKotEvent,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -292,7 +296,27 @@ export interface IStorage {
   createStockTakeLine(data: InsertStockTakeLine): Promise<StockTakeLine>;
   updateStockTakeLine(id: string, data: Partial<InsertStockTakeLine>): Promise<StockTakeLine | undefined>;
   getStockMovementsByTenant(tenantId: string, limit?: number, offset?: number): Promise<StockMovement[]>;
+  getStockMovementsByTenantFiltered(tenantId: string, filters: {
+    from?: Date; to?: Date; chefId?: string; station?: string;
+    type?: string; ingredientId?: string; shiftId?: string;
+    limit?: number; offset?: number;
+  }): Promise<StockMovement[]>;
   getStockMovementsByOrder(orderId: string): Promise<StockMovement[]>;
+
+  getShiftsByTenant(tenantId: string): Promise<Shift[]>;
+  createShift(data: InsertShift): Promise<Shift>;
+  updateShift(id: string, tenantId: string, data: Partial<InsertShift>): Promise<Shift | undefined>;
+  deleteShift(id: string, tenantId: string): Promise<void>;
+  getActiveShift(tenantId: string, outletId?: string): Promise<Shift | undefined>;
+
+  getMenuItemStationsByTenant(tenantId: string): Promise<MenuItemStation[]>;
+  getMenuItemStationsByItem(menuItemId: string): Promise<MenuItemStation[]>;
+  upsertMenuItemStation(data: InsertMenuItemStation): Promise<MenuItemStation>;
+  deleteMenuItemStations(menuItemId: string, tenantId: string): Promise<void>;
+
+  createKotEvent(data: InsertKotEvent): Promise<KotEvent>;
+  getKotEventsByOrder(orderId: string): Promise<KotEvent[]>;
+  getKotEventsByTenant(tenantId: string, limit?: number): Promise<KotEvent[]>;
 
   getKitchenStationsByTenant(tenantId: string): Promise<KitchenStation[]>;
   getKitchenStation(id: string): Promise<KitchenStation | undefined>;
@@ -1750,6 +1774,107 @@ export class DatabaseStorage implements IStorage {
   }
   async incrementComboOrderCount(id: string, tenantId: string) {
     await db.update(comboOffers).set({ orderCount: sql`${comboOffers.orderCount} + 1` }).where(and(eq(comboOffers.id, id), eq(comboOffers.tenantId, tenantId)));
+  }
+
+  async getStockMovementsByTenantFiltered(tenantId: string, filters: {
+    from?: Date; to?: Date; chefId?: string; station?: string;
+    type?: string; ingredientId?: string; shiftId?: string;
+    limit?: number; offset?: number;
+  }) {
+    const conditions = [eq(stockMovements.tenantId, tenantId)];
+    if (filters.from) conditions.push(gte(stockMovements.createdAt, filters.from));
+    if (filters.to) {
+      const endOfDay = new Date(filters.to);
+      endOfDay.setHours(23, 59, 59, 999);
+      conditions.push(lte(stockMovements.createdAt, endOfDay));
+    }
+    if (filters.chefId) conditions.push(eq(stockMovements.chefId, filters.chefId));
+    if (filters.station) conditions.push(eq(stockMovements.station, filters.station));
+    if (filters.type) conditions.push(eq(stockMovements.type, filters.type));
+    if (filters.ingredientId) conditions.push(eq(stockMovements.itemId, filters.ingredientId));
+    if (filters.shiftId) conditions.push(eq(stockMovements.shiftId, filters.shiftId));
+    const limit = filters.limit ?? 200;
+    const offset = filters.offset ?? 0;
+    const rows = await db
+      .select({
+        id: stockMovements.id,
+        tenantId: stockMovements.tenantId,
+        itemId: stockMovements.itemId,
+        ingredientName: inventoryItems.name,
+        ingredientUnit: inventoryItems.unit,
+        ingredientCostPrice: inventoryItems.costPrice,
+        type: stockMovements.type,
+        quantity: stockMovements.quantity,
+        reason: stockMovements.reason,
+        orderId: stockMovements.orderId,
+        orderNumber: stockMovements.orderNumber,
+        menuItemId: stockMovements.menuItemId,
+        chefId: stockMovements.chefId,
+        chefName: stockMovements.chefName,
+        station: stockMovements.station,
+        shiftId: stockMovements.shiftId,
+        createdAt: stockMovements.createdAt,
+      })
+      .from(stockMovements)
+      .leftJoin(inventoryItems, eq(stockMovements.itemId, inventoryItems.id))
+      .where(and(...conditions))
+      .orderBy(desc(stockMovements.createdAt))
+      .limit(limit)
+      .offset(offset);
+    return rows;
+  }
+
+  async getShiftsByTenant(tenantId: string) {
+    return db.select().from(shifts).where(eq(shifts.tenantId, tenantId)).orderBy(shifts.startTime).limit(50);
+  }
+  async createShift(data: InsertShift) {
+    const [s] = await db.insert(shifts).values(data).returning();
+    return s;
+  }
+  async updateShift(id: string, tenantId: string, data: Partial<InsertShift>) {
+    const [s] = await db.update(shifts).set(data).where(and(eq(shifts.id, id), eq(shifts.tenantId, tenantId))).returning();
+    return s;
+  }
+  async deleteShift(id: string, tenantId: string) {
+    await db.delete(shifts).where(and(eq(shifts.id, id), eq(shifts.tenantId, tenantId)));
+  }
+  async getActiveShift(tenantId: string, outletId?: string) {
+    const now = new Date();
+    const timeStr = now.toTimeString().slice(0, 5);
+    const allShifts = await db.select().from(shifts)
+      .where(and(eq(shifts.tenantId, tenantId), eq(shifts.active, true)));
+    return allShifts.find(s => {
+      if (outletId && s.outletId && s.outletId !== outletId) return false;
+      return timeStr >= s.startTime && timeStr <= s.endTime;
+    });
+  }
+
+  async getMenuItemStationsByTenant(tenantId: string) {
+    return db.select().from(menuItemStations).where(eq(menuItemStations.tenantId, tenantId)).limit(500);
+  }
+  async getMenuItemStationsByItem(menuItemId: string) {
+    return db.select().from(menuItemStations).where(eq(menuItemStations.menuItemId, menuItemId));
+  }
+  async upsertMenuItemStation(data: InsertMenuItemStation) {
+    const [existing] = await db.select().from(menuItemStations)
+      .where(and(eq(menuItemStations.menuItemId, data.menuItemId), eq(menuItemStations.station, data.station)));
+    if (existing) return existing;
+    const [s] = await db.insert(menuItemStations).values(data).returning();
+    return s;
+  }
+  async deleteMenuItemStations(menuItemId: string, tenantId: string) {
+    await db.delete(menuItemStations).where(and(eq(menuItemStations.menuItemId, menuItemId), eq(menuItemStations.tenantId, tenantId)));
+  }
+
+  async createKotEvent(data: InsertKotEvent) {
+    const [e] = await db.insert(kotEvents).values(data).returning();
+    return e;
+  }
+  async getKotEventsByOrder(orderId: string) {
+    return db.select().from(kotEvents).where(eq(kotEvents.orderId, orderId)).orderBy(desc(kotEvents.sentAt));
+  }
+  async getKotEventsByTenant(tenantId: string, limit = 100) {
+    return db.select().from(kotEvents).where(eq(kotEvents.tenantId, tenantId)).orderBy(desc(kotEvents.sentAt)).limit(limit);
   }
 }
 

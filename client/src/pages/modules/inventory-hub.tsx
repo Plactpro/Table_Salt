@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Package2, BookOpen, ShoppingCart, ChefHat } from "lucide-react";
+import { Package2, BookOpen, ShoppingCart, ChefHat, ArrowDownUp } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import InventoryPage from "./inventory";
 import SuppliersPage from "./suppliers";
 import ProcurementPage from "./procurement";
+import StockMovementLog from "./stock-movement-log";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@shared/currency";
@@ -194,6 +195,11 @@ export default function InventoryHub() {
             <Package2 className="h-4 w-4 mr-1.5" />Stock & Items
           </TabsTrigger>
           {canManage && (
+            <TabsTrigger value="movements" data-testid="tab-movements">
+              <ArrowDownUp className="h-4 w-4 mr-1.5" />Movements
+            </TabsTrigger>
+          )}
+          {canManage && (
             <TabsTrigger value="recipes" data-testid="tab-recipes">
               <ChefHat className="h-4 w-4 mr-1.5" />Recipes
             </TabsTrigger>
@@ -212,6 +218,11 @@ export default function InventoryHub() {
         <TabsContent value="stock" className="mt-4">
           <InventoryPage />
         </TabsContent>
+        {canManage && (
+          <TabsContent value="movements" className="mt-4">
+            <StockMovementLog />
+          </TabsContent>
+        )}
         {canManage && (
           <TabsContent value="recipes" className="mt-4">
             <RecipesTab />

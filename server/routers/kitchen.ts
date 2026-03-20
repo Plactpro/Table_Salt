@@ -1,7 +1,11 @@
 import type { Express } from "express";
+import { db } from "../db";
+import { eq, and, sql } from "drizzle-orm";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
+import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable } from "@shared/schema";
+import { convertUnits } from "@shared/units";
 
 export function registerKitchenRoutes(app: Express): void {
   app.get("/api/kitchen-stations", requireAuth, async (req, res) => {
@@ -119,10 +123,259 @@ export function registerKitchenRoutes(app: Express): void {
       if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) { await storage.updateOrder(req.params.id, { status: "in_progress" }); bulkOrderStatus = "in_progress"; }
       emitToTenant(user.tenantId, "order:item_updated", { orderId: req.params.id, status, orderStatus: bulkOrderStatus });
       if (bulkOrderStatus !== order.status) {
-        if (["served"].includes(bulkOrderStatus)) { emitToTenant(user.tenantId, "order:completed", { orderId: req.params.id, status: bulkOrderStatus, tableId: order.tableId }); }
+        if (bulkOrderStatus === "served") { emitToTenant(user.tenantId, "order:completed", { orderId: req.params.id, status: bulkOrderStatus, tableId: order.tableId }); }
         else { emitToTenant(user.tenantId, "order:updated", { orderId: req.params.id, status: bulkOrderStatus, tableId: order.tableId }); }
       }
       res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/kds/recipe-check/:orderId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string };
+      const { station } = req.query;
+      const order = await storage.getOrder(req.params.orderId);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const items = await storage.getOrderItemsByOrder(req.params.orderId);
+      const filtered = station ? items.filter(i => i.station === station) : items;
+      const result: any[] = [];
+      for (const oi of filtered) {
+        if (!oi.menuItemId) continue;
+        const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
+        if (!recipe) continue;
+        const recipeIngs = await storage.getRecipeIngredients(recipe.id);
+        const ingredients: any[] = [];
+        for (const ing of recipeIngs) {
+          const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+          if (!invItem) continue;
+          const ingUnit = ing.unit || invItem.unit || "pcs";
+          const invUnit = invItem.unit || "pcs";
+          const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
+          const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
+          const required = Math.round(convertedQty * (oi.quantity || 1) * 100) / 100;
+          const available = Number(invItem.currentStock || 0);
+          ingredients.push({
+            id: ing.id,
+            inventoryItemId: ing.inventoryItemId,
+            name: invItem.name,
+            required,
+            available,
+            unit: invUnit,
+            sufficient: available >= required,
+            status: available >= required ? "ok" : available > 0 ? "low" : "out",
+          });
+        }
+        result.push({
+          orderItemId: oi.id,
+          menuItemId: oi.menuItemId,
+          menuItemName: oi.name,
+          quantity: oi.quantity,
+          recipeId: recipe.id,
+          recipeName: recipe.name,
+          ingredients,
+        });
+      }
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/kds/orders/:id/start", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string; id: string; name?: string; username?: string };
+      const { station, force = false } = req.body;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const items = await storage.getOrderItemsByOrder(req.params.id);
+      const filtered = station ? items.filter(i => i.station === station && (i.status === "pending" || !i.status)) : items.filter(i => i.status === "pending" || !i.status);
+      const activeShift = await storage.getActiveShift(user.tenantId, order.outletId || undefined);
+      const chefName = (user as any).name || (user as any).username || "Chef";
+
+      const stockWrites: Array<{ inventoryItemId: string; qty: number; menuItemId: string; recipeId: string; menuItemName: string }> = [];
+      const insufficientItems: string[] = [];
+
+      for (const oi of filtered) {
+        if (!oi.menuItemId) continue;
+        const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
+        if (!recipe) continue;
+        const recipeIngs = await storage.getRecipeIngredients(recipe.id);
+        for (const ing of recipeIngs) {
+          const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+          if (!invItem) continue;
+          const ingUnit = ing.unit || invItem.unit || "pcs";
+          const invUnit = invItem.unit || "pcs";
+          const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
+          const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
+          const required = Math.round(convertedQty * (oi.quantity || 1) * 100) / 100;
+          const available = Number(invItem.currentStock || 0);
+          if (available < required && !force) {
+            insufficientItems.push(`${invItem.name} (need ${required}${invUnit}, have ${available}${invUnit})`);
+          }
+          stockWrites.push({ inventoryItemId: ing.inventoryItemId, qty: required, menuItemId: oi.menuItemId, recipeId: recipe.id, menuItemName: oi.name });
+        }
+      }
+
+      if (insufficientItems.length > 0 && !force) {
+        return res.status(409).json({ message: "Insufficient stock", insufficientItems });
+      }
+
+      if (order.channel !== "kiosk" && stockWrites.length > 0) {
+        await db.transaction(async (tx) => {
+          for (const w of stockWrites) {
+            const before = await tx.select().from(inventoryItemsTable).where(eq(inventoryItemsTable.id, w.inventoryItemId));
+            const stockBefore = Number(before[0]?.currentStock || 0);
+            await tx.update(inventoryItemsTable)
+              .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)` })
+              .where(eq(inventoryItemsTable.id, w.inventoryItemId));
+            await tx.insert(stockMovementsTable).values({
+              tenantId: user.tenantId,
+              itemId: w.inventoryItemId,
+              type: "RECIPE_CONSUMPTION",
+              quantity: String(-w.qty),
+              reason: `KDS: ${w.menuItemName} prepared by ${chefName}`,
+              orderId: order.id,
+              orderNumber: (order as any).orderNumber || order.id.slice(0, 6).toUpperCase(),
+              menuItemId: w.menuItemId,
+              recipeId: w.recipeId,
+              chefId: user.id,
+              chefName,
+              station: station || null,
+              shiftId: activeShift?.id || null,
+            });
+          }
+        });
+      }
+
+      for (const oi of filtered) {
+        await storage.updateOrderItem(oi.id, { status: "cooking", startedAt: new Date() });
+      }
+
+      if (order.status === "new" || order.status === "sent_to_kitchen") {
+        await storage.updateOrder(order.id, { status: "in_progress" });
+      }
+
+      if (filtered.length > 0) {
+        await storage.createKotEvent({
+          tenantId: user.tenantId,
+          outletId: order.outletId || null,
+          orderId: order.id,
+          station: station || null,
+          items: filtered.map(i => ({ id: i.id, name: i.name, quantity: i.quantity })),
+        });
+      }
+
+      emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", tableId: order.tableId });
+      res.json({ success: true, deducted: order.channel !== "kiosk" ? stockWrites.length : 0 });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/kds/wastage", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as Express.User & { tenantId: string; id: string; name?: string; username?: string };
+      const { inventoryItemId, quantity, reason, station } = req.body;
+      if (!inventoryItemId || !quantity) return res.status(400).json({ message: "inventoryItemId and quantity required" });
+      const invItem = await storage.getInventoryItem(inventoryItemId);
+      if (!invItem || invItem.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const qty = Number(quantity);
+      const chefName = (user as any).name || (user as any).username || "Chef";
+      const activeShift = await storage.getActiveShift(user.tenantId);
+      await db.transaction(async (tx) => {
+        await tx.update(inventoryItemsTable)
+          .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${qty}, 0)` })
+          .where(eq(inventoryItemsTable.id, inventoryItemId));
+        await tx.insert(stockMovementsTable).values({
+          tenantId: user.tenantId,
+          itemId: inventoryItemId,
+          type: "WASTAGE",
+          quantity: String(-qty),
+          reason: reason || `Wastage reported by ${chefName}`,
+          chefId: user.id,
+          chefName,
+          station: station || null,
+          shiftId: activeShift?.id || null,
+        });
+      });
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/shifts", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      res.json(await storage.getShiftsByTenant(user.tenantId));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/shifts", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      res.json(await storage.createShift({ ...req.body, tenantId: user.tenantId }));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/shifts/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const s = await storage.updateShift(req.params.id, user.tenantId, req.body);
+      if (!s) return res.status(404).json({ message: "Shift not found" });
+      res.json(s);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/shifts/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await storage.deleteShift(req.params.id, user.tenantId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/shifts/active", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.query;
+      const shift = await storage.getActiveShift(user.tenantId, outletId as string | undefined);
+      res.json(shift || null);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/menu-item-stations", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      res.json(await storage.getMenuItemStationsByTenant(user.tenantId));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/menu-item-stations", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      res.json(await storage.upsertMenuItemStation({ ...req.body, tenantId: user.tenantId }));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/menu-item-stations/:menuItemId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await storage.deleteMenuItemStations(req.params.menuItemId, user.tenantId);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/stock-movements", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { from, to, chefId, station, type, ingredientId, shiftId, limit, offset } = req.query;
+      const movements = await storage.getStockMovementsByTenantFiltered(user.tenantId, {
+        from: from ? new Date(from as string) : undefined,
+        to: to ? new Date(to as string) : undefined,
+        chefId: chefId as string | undefined,
+        station: station as string | undefined,
+        type: type as string | undefined,
+        ingredientId: ingredientId as string | undefined,
+        shiftId: shiftId as string | undefined,
+        limit: limit ? Number(limit) : 200,
+        offset: offset ? Number(offset) : 0,
+      });
+      res.json(movements);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }
