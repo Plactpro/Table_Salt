@@ -66,12 +66,24 @@ export function setupWebSocket(httpServer: HttpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
   wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
-    const tenantId = await getTenantFromRequest(req);
-    if (!tenantId) {
+    let resolvedTenantId = await getTenantFromRequest(req);
+
+    // Public wall-screen connections may provide tenantId as a query param (read-only access)
+    if (!resolvedTenantId && req.url) {
+      const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
+      const rawId = new URLSearchParams(qs).get("tenantId");
+      if (rawId) {
+        const tenant = await storage.getTenant(rawId).catch(() => null);
+        if (tenant) resolvedTenantId = rawId;
+      }
+    }
+
+    if (!resolvedTenantId) {
       ws.close(4001, "Unauthorized");
       return;
     }
 
+    const tenantId = resolvedTenantId;
     addSocket(tenantId, ws);
 
     try {
