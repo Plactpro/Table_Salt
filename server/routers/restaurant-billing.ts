@@ -164,7 +164,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         const stockBefore = Number(item.currentStock ?? 0);
         const reversalQty = Math.abs(Number(mv.quantity));
         const stockAfter = stockBefore + reversalQty;
-        await storage.updateInventoryItem(mv.itemId, user.tenantId, {
+        await storage.updateInventoryItem(mv.itemId, {
           currentStock: String(stockAfter),
         });
         await storage.createStockMovement({
