@@ -1,12 +1,36 @@
-import { useState } from "react";
+import { useState, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, Activity, ScrollText, ChefHat, Clock } from "lucide-react";
+import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle } from "lucide-react";
 import ReportsPage from "./reports";
 import BIDashboard from "./bi-dashboard";
 import AuditLogPage from "./audit-log";
 import FoodCostReports from "./food-cost-reports";
 import ChefReport from "./chef-report";
 import ShiftReconciliation from "./shift-reconciliation";
+
+class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.label}] tab error:`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <AlertCircle className="h-10 w-10 text-destructive opacity-60" />
+          <p className="text-sm">Something went wrong loading <strong>{this.props.label}</strong>.</p>
+          <button className="text-xs underline" onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export default function ReportsHub() {
   const [tab, setTab] = useState("reports");
@@ -34,23 +58,35 @@ export default function ReportsHub() {
             <ScrollText className="h-4 w-4 mr-1.5" />Audit Log
           </TabsTrigger>
         </TabsList>
-        <TabsContent value="reports" className="mt-4">
-          <ReportsPage />
+        <TabsContent value="reports" className="mt-4" forceMount>
+          <TabErrorBoundary label="Sales Reports">
+            <ReportsPage />
+          </TabErrorBoundary>
         </TabsContent>
-        <TabsContent value="food-cost" className="mt-4">
-          <FoodCostReports />
+        <TabsContent value="food-cost" className="mt-4" forceMount>
+          <TabErrorBoundary label="Food Cost">
+            <FoodCostReports />
+          </TabErrorBoundary>
         </TabsContent>
-        <TabsContent value="chef-report" className="mt-4">
-          <ChefReport />
+        <TabsContent value="chef-report" className="mt-4" forceMount>
+          <TabErrorBoundary label="Chef Report">
+            <ChefReport />
+          </TabErrorBoundary>
         </TabsContent>
-        <TabsContent value="bi" className="mt-4">
-          <BIDashboard />
+        <TabsContent value="bi" className="mt-4" forceMount>
+          <TabErrorBoundary label="BI & Forecasting">
+            <BIDashboard />
+          </TabErrorBoundary>
         </TabsContent>
-        <TabsContent value="shift-report" className="mt-4">
-          <ShiftReconciliation />
+        <TabsContent value="shift-report" className="mt-4" forceMount>
+          <TabErrorBoundary label="Shift Report">
+            <ShiftReconciliation />
+          </TabErrorBoundary>
         </TabsContent>
-        <TabsContent value="audit-log" className="mt-4">
-          <AuditLogPage />
+        <TabsContent value="audit-log" className="mt-4" forceMount>
+          <TabErrorBoundary label="Audit Log">
+            <AuditLogPage />
+          </TabErrorBoundary>
         </TabsContent>
       </Tabs>
     </div>

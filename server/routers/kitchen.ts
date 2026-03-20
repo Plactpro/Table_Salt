@@ -4,7 +4,7 @@ import { eq, and, sql } from "drizzle-orm";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
-import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable } from "@shared/schema";
+import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 
 export function registerKitchenRoutes(app: Express): void {
@@ -219,10 +219,14 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       if (order.channel !== "kiosk" && stockWrites.length > 0) {
+        const lowStockItems: Array<{ id: string; name: string; after: number; reorder: number }> = [];
         await db.transaction(async (tx) => {
           for (const w of stockWrites) {
             const before = await tx.select().from(inventoryItemsTable).where(eq(inventoryItemsTable.id, w.inventoryItemId));
-            const stockBefore = Number(before[0]?.currentStock || 0);
+            const invRow = before[0];
+            const stockBefore = Number(invRow?.currentStock || 0);
+            const stockAfter = Math.max(0, stockBefore - w.qty);
+            const reorderLevel = Number(invRow?.reorderLevel || 0);
             await tx.update(inventoryItemsTable)
               .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)` })
               .where(eq(inventoryItemsTable.id, w.inventoryItemId));
@@ -240,9 +244,25 @@ export function registerKitchenRoutes(app: Express): void {
               chefName,
               station: station || null,
               shiftId: activeShift?.id || null,
+              stockBefore: String(stockBefore),
+              stockAfter: String(stockAfter),
             });
+            if (reorderLevel > 0 && stockBefore > reorderLevel && stockAfter <= reorderLevel) {
+              lowStockItems.push({ id: w.inventoryItemId, name: w.menuItemName, after: stockAfter, reorder: reorderLevel });
+            }
           }
         });
+        for (const item of lowStockItems) {
+          await db.insert(securityAlerts).values({
+            tenantId: user.tenantId,
+            type: "LOW_STOCK",
+            severity: "warning",
+            title: `Low Stock: ${item.name}`,
+            description: `Stock dropped to ${item.after} (reorder level: ${item.reorder}) after order #${(order as any).orderNumber || order.id.slice(0, 6).toUpperCase()}`,
+            metadata: { itemId: item.id, currentStock: item.after, reorderLevel: item.reorder, orderId: order.id },
+          });
+          emitToTenant(user.tenantId, "low_stock_alert", { itemId: item.id, itemName: item.name, currentStock: item.after, reorderLevel: item.reorder });
+        }
       }
 
       for (const oi of filtered) {
@@ -278,6 +298,9 @@ export function registerKitchenRoutes(app: Express): void {
       const qty = Number(quantity);
       const chefName = (user as any).name || (user as any).username || "Chef";
       const activeShift = await storage.getActiveShift(user.tenantId);
+      const stockBefore = Number(invItem.currentStock || 0);
+      const stockAfter = Math.max(0, stockBefore - qty);
+      const reorderLevel = Number(invItem.reorderLevel || 0);
       await db.transaction(async (tx) => {
         await tx.update(inventoryItemsTable)
           .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${qty}, 0)` })
@@ -292,8 +315,21 @@ export function registerKitchenRoutes(app: Express): void {
           chefName,
           station: station || null,
           shiftId: activeShift?.id || null,
+          stockBefore: String(stockBefore),
+          stockAfter: String(stockAfter),
         });
       });
+      if (reorderLevel > 0 && stockBefore > reorderLevel && stockAfter <= reorderLevel) {
+        await db.insert(securityAlerts).values({
+          tenantId: user.tenantId,
+          type: "LOW_STOCK",
+          severity: "warning",
+          title: `Low Stock: ${invItem.name}`,
+          description: `Stock dropped to ${stockAfter} (reorder level: ${reorderLevel}) after wastage report by ${chefName}`,
+          metadata: { itemId: inventoryItemId, currentStock: stockAfter, reorderLevel },
+        });
+        emitToTenant(user.tenantId, "low_stock_alert", { itemId: inventoryItemId, itemName: invItem.name, currentStock: stockAfter, reorderLevel });
+      }
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -376,6 +412,65 @@ export function registerKitchenRoutes(app: Express): void {
         offset: offset ? Number(offset) : 0,
       });
       res.json(movements);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/kds/wall-tickets", async (req, res) => {
+    try {
+      const { tenantId } = req.query;
+      if (!tenantId || typeof tenantId !== "string") return res.status(400).json({ message: "tenantId required" });
+      const tenant = await storage.getTenant(tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      const allOrders = await storage.getOrdersByTenant(tenantId);
+      const allTables = await storage.getTablesByTenant(tenantId);
+      const tableMap = new Map(allTables.map(t => [t.id, t.number]));
+      const activeOrders = allOrders.filter(o => ["new", "sent_to_kitchen", "in_progress", "ready"].includes(o.status || ""));
+      const tickets = [];
+      for (const o of activeOrders) {
+        const items = await storage.getOrderItemsByOrder(o.id);
+        tickets.push({ ...o, tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined, items });
+      }
+      res.json(tickets);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/inventory-alerts", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const alerts = await db.select().from(securityAlerts)
+        .where(and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.type, "LOW_STOCK"), eq(securityAlerts.acknowledged, false)))
+        .orderBy(sql`${securityAlerts.createdAt} desc`)
+        .limit(50);
+      res.json(alerts);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/inventory-alerts/count", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const [row] = await db.select({ cnt: sql<number>`count(*)::int` }).from(securityAlerts)
+        .where(and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.type, "LOW_STOCK"), eq(securityAlerts.acknowledged, false)));
+      res.json({ count: row?.cnt || 0 });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/inventory-alerts/:id/acknowledge", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await db.update(securityAlerts)
+        .set({ acknowledged: true, acknowledgedAt: new Date() })
+        .where(and(eq(securityAlerts.id, req.params.id), eq(securityAlerts.tenantId, user.tenantId)));
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/inventory-alerts/acknowledge-all", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await db.update(securityAlerts)
+        .set({ acknowledged: true, acknowledgedAt: new Date() })
+        .where(and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.type, "LOW_STOCK"), eq(securityAlerts.acknowledged, false)));
+      res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

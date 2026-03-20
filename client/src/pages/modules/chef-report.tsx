@@ -80,10 +80,16 @@ export default function ChefReport() {
   const params = getDateParams();
   const url = `/api/stock-movements?from=${params.from}&to=${params.to}&limit=500`;
 
-  const { data: movements = [], isLoading } = useQuery<StockMovement[]>({
+  const { data: movementsRaw, isLoading } = useQuery({
     queryKey: ["/api/stock-movements/chef-report", params],
     queryFn: () => apiRequest("GET", url).then(r => r.json()),
   });
+  const movements: StockMovement[] = useMemo(() => {
+    if (!movementsRaw) return [];
+    if (Array.isArray(movementsRaw)) return movementsRaw as StockMovement[];
+    const d = (movementsRaw as any)?.data;
+    return Array.isArray(d) ? d : [];
+  }, [movementsRaw]);
 
   const chefSummaries = useMemo<ChefSummary[]>(() => {
     const byChef: Record<string, { name: string; station: string | null; movements: StockMovement[] }> = {};
