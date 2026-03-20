@@ -462,7 +462,7 @@ export function registerKitchenRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/inventory-alerts", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+  app.get("/api/inventory-alerts", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
       const alerts = await db.select().from(securityAlerts)
@@ -473,7 +473,7 @@ export function registerKitchenRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/inventory-alerts/count", requireAuth, async (req, res) => {
+  app.get("/api/inventory-alerts/count", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
       const [row] = await db.select({ cnt: sql<number>`count(*)::int` }).from(securityAlerts)
@@ -482,11 +482,11 @@ export function registerKitchenRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/inventory-alerts/:id/acknowledge", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+  app.patch("/api/inventory-alerts/:id/acknowledge", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
       await db.update(securityAlerts)
-        .set({ acknowledged: true, acknowledgedAt: new Date() })
+        .set({ acknowledged: true, acknowledgedAt: new Date(), acknowledgedBy: user.id })
         .where(and(eq(securityAlerts.id, req.params.id), eq(securityAlerts.tenantId, user.tenantId)));
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -496,7 +496,7 @@ export function registerKitchenRoutes(app: Express): void {
     try {
       const user = req.user as any;
       await db.update(securityAlerts)
-        .set({ acknowledged: true, acknowledgedAt: new Date() })
+        .set({ acknowledged: true, acknowledgedAt: new Date(), acknowledgedBy: user.id })
         .where(and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.type, "LOW_STOCK"), eq(securityAlerts.acknowledged, false)));
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }

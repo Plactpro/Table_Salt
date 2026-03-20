@@ -97,7 +97,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
-  const canSeeInventoryAlerts = user && ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "kitchen"].includes(user.role);
+  const canSeeInventoryAlerts = user && ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"].includes(user.role);
 
   const { data: alertCountData } = useQuery<{ count: number }>({
     queryKey: ["/api/inventory-alerts/count"],
