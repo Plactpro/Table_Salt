@@ -219,7 +219,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       if (order.channel !== "kiosk" && stockWrites.length > 0) {
-        const lowStockItems: Array<{ id: string; name: string; after: number; reorder: number }> = [];
+        const lowStockItems: Array<{ id: string; name: string; after: number; reorder: number; stockMovementId: string }> = [];
         await db.transaction(async (tx) => {
           for (const w of stockWrites) {
             const before = await tx.select().from(inventoryItemsTable).where(eq(inventoryItemsTable.id, w.inventoryItemId));
@@ -230,7 +230,7 @@ export function registerKitchenRoutes(app: Express): void {
             await tx.update(inventoryItemsTable)
               .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)` })
               .where(eq(inventoryItemsTable.id, w.inventoryItemId));
-            await tx.insert(stockMovementsTable).values({
+            const [movement] = await tx.insert(stockMovementsTable).values({
               tenantId: user.tenantId,
               itemId: w.inventoryItemId,
               type: "RECIPE_CONSUMPTION",
@@ -246,9 +246,9 @@ export function registerKitchenRoutes(app: Express): void {
               shiftId: activeShift?.id || null,
               stockBefore: String(stockBefore),
               stockAfter: String(stockAfter),
-            });
+            }).returning({ id: stockMovementsTable.id });
             if (reorderLevel > 0 && stockBefore > reorderLevel && stockAfter <= reorderLevel) {
-              lowStockItems.push({ id: w.inventoryItemId, name: w.menuItemName, after: stockAfter, reorder: reorderLevel });
+              lowStockItems.push({ id: w.inventoryItemId, name: invRow?.name || w.menuItemName, after: stockAfter, reorder: reorderLevel, stockMovementId: movement?.id });
             }
           }
         });
@@ -259,9 +259,9 @@ export function registerKitchenRoutes(app: Express): void {
             severity: "warning",
             title: `Low Stock: ${item.name}`,
             description: `Stock dropped to ${item.after} (reorder level: ${item.reorder}) after order #${(order as any).orderNumber || order.id.slice(0, 6).toUpperCase()}`,
-            metadata: { itemId: item.id, currentStock: item.after, reorderLevel: item.reorder, orderId: order.id },
+            metadata: { itemId: item.id, currentStock: item.after, reorderLevel: item.reorder, orderId: order.id, stockMovementId: item.stockMovementId },
           });
-          emitToTenant(user.tenantId, "low_stock_alert", { itemId: item.id, itemName: item.name, currentStock: item.after, reorderLevel: item.reorder });
+          emitToTenant(user.tenantId, "low_stock_alert", { itemId: item.id, itemName: item.name, currentStock: item.after, reorderLevel: item.reorder, stockMovementId: item.stockMovementId });
         }
       }
 
@@ -301,11 +301,12 @@ export function registerKitchenRoutes(app: Express): void {
       const stockBefore = Number(invItem.currentStock || 0);
       const stockAfter = Math.max(0, stockBefore - qty);
       const reorderLevel = Number(invItem.reorderLevel || 0);
+      let wastageMovementId: string | undefined;
       await db.transaction(async (tx) => {
         await tx.update(inventoryItemsTable)
           .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${qty}, 0)` })
           .where(eq(inventoryItemsTable.id, inventoryItemId));
-        await tx.insert(stockMovementsTable).values({
+        const [movement] = await tx.insert(stockMovementsTable).values({
           tenantId: user.tenantId,
           itemId: inventoryItemId,
           type: "WASTAGE",
@@ -317,7 +318,8 @@ export function registerKitchenRoutes(app: Express): void {
           shiftId: activeShift?.id || null,
           stockBefore: String(stockBefore),
           stockAfter: String(stockAfter),
-        });
+        }).returning({ id: stockMovementsTable.id });
+        wastageMovementId = movement?.id;
       });
       if (reorderLevel > 0 && stockBefore > reorderLevel && stockAfter <= reorderLevel) {
         await db.insert(securityAlerts).values({
@@ -326,9 +328,9 @@ export function registerKitchenRoutes(app: Express): void {
           severity: "warning",
           title: `Low Stock: ${invItem.name}`,
           description: `Stock dropped to ${stockAfter} (reorder level: ${reorderLevel}) after wastage report by ${chefName}`,
-          metadata: { itemId: inventoryItemId, currentStock: stockAfter, reorderLevel },
+          metadata: { itemId: inventoryItemId, currentStock: stockAfter, reorderLevel, stockMovementId: wastageMovementId },
         });
-        emitToTenant(user.tenantId, "low_stock_alert", { itemId: inventoryItemId, itemName: invItem.name, currentStock: stockAfter, reorderLevel });
+        emitToTenant(user.tenantId, "low_stock_alert", { itemId: inventoryItemId, itemName: invItem.name, currentStock: stockAfter, reorderLevel, stockMovementId: wastageMovementId });
       }
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
