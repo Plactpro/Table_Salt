@@ -8,7 +8,7 @@ import {
 import { requireSuperAdmin, requireAuth, hashPassword } from "./auth";
 import { auditLog } from "./audit";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
-import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from "crypto";
+import { deriveKey, encryptWithKey, decryptWithKey, rotateField } from "./encryption-rotation";
 import { getApiRequestCount } from "./api-counter";
 import { pool } from "./db";
 
@@ -1404,46 +1404,6 @@ export function registerAdminRoutes(app: Express) {
   // reminding the operator to do this.
   // ───────────────────────────────────────────────────────────────────────────
 
-  const ROTATION_SALT = "table-salt-encryption-v1";
-  const ROTATION_ALGO = "aes-256-gcm";
-  const ROTATION_IV_LEN = 16;
-  const ROTATION_TAG_LEN = 16;
-
-  function deriveKey(rawKey: string): Buffer {
-    return scryptSync(rawKey, ROTATION_SALT, 32);
-  }
-
-  function decryptWithKey(ciphertext: string, key: Buffer): string {
-    if (!ciphertext || !ciphertext.startsWith("enc:")) return ciphertext;
-    try {
-      const parts = ciphertext.split(":");
-      if (parts.length !== 4) return ciphertext;
-      const ivHex = parts[1];
-      const authTagHex = parts[2];
-      const encHex = parts[3];
-      if (ivHex.length !== ROTATION_IV_LEN * 2 || authTagHex.length !== ROTATION_TAG_LEN * 2) return ciphertext;
-      const iv = Buffer.from(ivHex, "hex");
-      const authTag = Buffer.from(authTagHex, "hex");
-      const decipher = createDecipheriv(ROTATION_ALGO, key, iv);
-      decipher.setAuthTag(authTag);
-      let dec = decipher.update(encHex, "hex", "utf8");
-      dec += decipher.final("utf8");
-      return dec;
-    } catch {
-      return ciphertext;
-    }
-  }
-
-  function encryptWithKey(plaintext: string, key: Buffer): string {
-    if (!plaintext) return plaintext;
-    const iv = randomBytes(ROTATION_IV_LEN);
-    const cipher = createCipheriv(ROTATION_ALGO, key, iv);
-    let enc = cipher.update(plaintext, "utf8", "hex");
-    enc += cipher.final("hex");
-    const authTag = cipher.getAuthTag();
-    return `enc:${iv.toString("hex")}:${authTag.toString("hex")}:${enc}`;
-  }
-
   app.post("/api/admin/encryption/rotate-key", requireSuperAdmin, async (req, res) => {
     const bodySchema = z.object({
       newKey: z.string().min(16, "New key must be at least 16 characters"),
@@ -1469,6 +1429,7 @@ export function registerAdminRoutes(app: Express) {
     const adminUser = req.user as { id: string; name: string };
     let tenantsProcessed = 0;
     let fieldsRotated = 0;
+    let fieldsSkipped = 0;
     const errors: Array<{ tenantId: string; error: string }> = [];
 
     const allTenants = await db.select({ id: tenants.id, name: tenants.name }).from(tenants);
@@ -1476,27 +1437,20 @@ export function registerAdminRoutes(app: Express) {
     for (const tenant of allTenants) {
       try {
         await db.transaction(async (tx) => {
-          let tenantFieldsRotated = 0;
+          let tenantRotated = 0;
+          let tenantSkipped = 0;
 
           const tenantUsers = await tx.select({ id: users.id, email: users.email, phone: users.phone })
             .from(users).where(eq(users.tenantId, tenant.id));
 
           for (const u of tenantUsers) {
             const updates: Record<string, string> = {};
-            if (u.email && isEncrypted(u.email)) {
-              const plain = decryptWithKey(u.email, oldKey);
-              if (!plain.startsWith("enc:")) {
-                updates.email = encryptWithKey(plain, newKey);
-                tenantFieldsRotated++;
-              }
-            }
-            if (u.phone && isEncrypted(u.phone)) {
-              const plain = decryptWithKey(u.phone, oldKey);
-              if (!plain.startsWith("enc:")) {
-                updates.phone = encryptWithKey(plain, newKey);
-                tenantFieldsRotated++;
-              }
-            }
+            const emailRes = rotateField(u.email, oldKey, newKey);
+            if (emailRes.rotated && emailRes.result != null) { updates.email = emailRes.result; tenantRotated++; }
+            else if (emailRes.skipped) tenantSkipped++;
+            const phoneRes = rotateField(u.phone, oldKey, newKey);
+            if (phoneRes.rotated && phoneRes.result != null) { updates.phone = phoneRes.result; tenantRotated++; }
+            else if (phoneRes.skipped) tenantSkipped++;
             if (Object.keys(updates).length > 0) {
               await tx.update(users).set(updates).where(eq(users.id, u.id));
             }
@@ -1507,20 +1461,12 @@ export function registerAdminRoutes(app: Express) {
 
           for (const c of tenantCustomers) {
             const updates: Record<string, string> = {};
-            if (c.email && isEncrypted(c.email)) {
-              const plain = decryptWithKey(c.email, oldKey);
-              if (!plain.startsWith("enc:")) {
-                updates.email = encryptWithKey(plain, newKey);
-                tenantFieldsRotated++;
-              }
-            }
-            if (c.phone && isEncrypted(c.phone)) {
-              const plain = decryptWithKey(c.phone, oldKey);
-              if (!plain.startsWith("enc:")) {
-                updates.phone = encryptWithKey(plain, newKey);
-                tenantFieldsRotated++;
-              }
-            }
+            const emailRes = rotateField(c.email, oldKey, newKey);
+            if (emailRes.rotated && emailRes.result != null) { updates.email = emailRes.result; tenantRotated++; }
+            else if (emailRes.skipped) tenantSkipped++;
+            const phoneRes = rotateField(c.phone, oldKey, newKey);
+            if (phoneRes.rotated && phoneRes.result != null) { updates.phone = phoneRes.result; tenantRotated++; }
+            else if (phoneRes.skipped) tenantSkipped++;
             if (Object.keys(updates).length > 0) {
               await tx.update(customers).set(updates).where(eq(customers.id, c.id));
             }
@@ -1530,42 +1476,36 @@ export function registerAdminRoutes(app: Express) {
             .from(reservations).where(eq(reservations.tenantId, tenant.id));
 
           for (const r of tenantReservations) {
-            if (r.customerPhone && isEncrypted(r.customerPhone)) {
-              const plain = decryptWithKey(r.customerPhone, oldKey);
-              if (!plain.startsWith("enc:")) {
-                await tx.update(reservations)
-                  .set({ customerPhone: encryptWithKey(plain, newKey) })
-                  .where(eq(reservations.id, r.id));
-                tenantFieldsRotated++;
-              }
-            }
+            const phoneRes = rotateField(r.customerPhone, oldKey, newKey);
+            if (phoneRes.rotated && phoneRes.result != null) {
+              await tx.update(reservations)
+                .set({ customerPhone: phoneRes.result })
+                .where(eq(reservations.id, r.id));
+              tenantRotated++;
+            } else if (phoneRes.skipped) tenantSkipped++;
           }
 
-          const tenantDeliveries = await tx.select({ id: deliveryOrders.id, customerPhone: deliveryOrders.customerPhone, driverPhone: deliveryOrders.driverPhone })
-            .from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenant.id));
+          const tenantDeliveries = await tx.select({
+            id: deliveryOrders.id,
+            customerPhone: deliveryOrders.customerPhone,
+            driverPhone: deliveryOrders.driverPhone,
+          }).from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenant.id));
 
           for (const d of tenantDeliveries) {
             const updates: Record<string, string> = {};
-            if (d.customerPhone && isEncrypted(d.customerPhone)) {
-              const plain = decryptWithKey(d.customerPhone, oldKey);
-              if (!plain.startsWith("enc:")) {
-                updates.customerPhone = encryptWithKey(plain, newKey);
-                tenantFieldsRotated++;
-              }
-            }
-            if (d.driverPhone && isEncrypted(d.driverPhone)) {
-              const plain = decryptWithKey(d.driverPhone, oldKey);
-              if (!plain.startsWith("enc:")) {
-                updates.driverPhone = encryptWithKey(plain, newKey);
-                tenantFieldsRotated++;
-              }
-            }
+            const cpRes = rotateField(d.customerPhone, oldKey, newKey);
+            if (cpRes.rotated && cpRes.result != null) { updates.customerPhone = cpRes.result; tenantRotated++; }
+            else if (cpRes.skipped) tenantSkipped++;
+            const dpRes = rotateField(d.driverPhone, oldKey, newKey);
+            if (dpRes.rotated && dpRes.result != null) { updates.driverPhone = dpRes.result; tenantRotated++; }
+            else if (dpRes.skipped) tenantSkipped++;
             if (Object.keys(updates).length > 0) {
               await tx.update(deliveryOrders).set(updates).where(eq(deliveryOrders.id, d.id));
             }
           }
 
-          fieldsRotated += tenantFieldsRotated;
+          fieldsRotated += tenantRotated;
+          fieldsSkipped += tenantSkipped;
         });
 
         tenantsProcessed++;
@@ -1583,13 +1523,14 @@ export function registerAdminRoutes(app: Express) {
       entityType: "platform",
       entityId: "encryption",
       entityName: "Encryption Key Rotation",
-      metadata: { tenantsProcessed, fieldsRotated, errors: errors.length },
+      metadata: { tenantsProcessed, fieldsRotated, fieldsSkipped, errors: errors.length },
       req,
     });
 
     return res.json({
       tenantsProcessed,
       fieldsRotated,
+      fieldsSkipped,
       errors,
       warning: "All PII fields have been re-encrypted with the new key. You MUST now update the ENCRYPTION_KEY secret and restart the server for decryption to work correctly with the new key.",
     });

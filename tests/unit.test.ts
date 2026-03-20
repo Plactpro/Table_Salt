@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { can, needsSupervisorApproval } from "../server/permissions";
 import { isValidCidr, isIpInCidr } from "../server/security";
 import { encryptField, decryptField, isEncrypted } from "../server/encryption";
+import { deriveKey, encryptWithKey, decryptWithKey, rotateField, isEncryptedCipher } from "../server/encryption-rotation";
 
 const owner = { id: "u1", role: "owner", tenantId: "t1" };
 const manager = { id: "u2", role: "manager", tenantId: "t1" };
@@ -393,5 +394,126 @@ describe("Retention cleanup date cutoff logic (pure date math)", () => {
     const cutoff = computeDataCutoff(now, 24);
     const yearDiff = now.getFullYear() - cutoff.getFullYear();
     expect(yearDiff).toBe(2);
+  });
+});
+
+describe("encryption-rotation — deriveKey / encryptWithKey / decryptWithKey / rotateField", () => {
+  const KEY_A = "test-key-alpha-1234567890abcdef";
+  const KEY_B = "test-key-beta-9876543210fedcba";
+
+  it("deriveKey returns a 32-byte Buffer", () => {
+    const key = deriveKey(KEY_A);
+    expect(Buffer.isBuffer(key)).toBe(true);
+    expect(key.length).toBe(32);
+  });
+
+  it("same rawKey always produces the same derived key", () => {
+    const k1 = deriveKey(KEY_A);
+    const k2 = deriveKey(KEY_A);
+    expect(k1.toString("hex")).toBe(k2.toString("hex"));
+  });
+
+  it("different rawKeys produce different derived keys", () => {
+    const k1 = deriveKey(KEY_A);
+    const k2 = deriveKey(KEY_B);
+    expect(k1.toString("hex")).not.toBe(k2.toString("hex"));
+  });
+
+  it("encryptWithKey returns an enc: ciphertext", () => {
+    const key = deriveKey(KEY_A);
+    const ct = encryptWithKey("hello@example.com", key);
+    expect(ct.startsWith("enc:")).toBe(true);
+    const parts = ct.split(":");
+    expect(parts.length).toBe(4);
+  });
+
+  it("encryptWithKey produces different ciphertexts for same plaintext (random IV)", () => {
+    const key = deriveKey(KEY_A);
+    const ct1 = encryptWithKey("hello@example.com", key);
+    const ct2 = encryptWithKey("hello@example.com", key);
+    expect(ct1).not.toBe(ct2);
+  });
+
+  it("decryptWithKey correctly recovers plaintext encrypted with same key", () => {
+    const key = deriveKey(KEY_A);
+    const plaintext = "chef@restaurant.com";
+    const ct = encryptWithKey(plaintext, key);
+    expect(decryptWithKey(ct, key)).toBe(plaintext);
+  });
+
+  it("decryptWithKey returns ciphertext unchanged when key is wrong (decrypt failure)", () => {
+    const keyA = deriveKey(KEY_A);
+    const keyB = deriveKey(KEY_B);
+    const ct = encryptWithKey("secret-phone", keyA);
+    const result = decryptWithKey(ct, keyB);
+    expect(result).toBe(ct);
+  });
+
+  it("decryptWithKey passes through non-encrypted values unchanged", () => {
+    const key = deriveKey(KEY_A);
+    expect(decryptWithKey("plain text", key)).toBe("plain text");
+    expect(decryptWithKey("", key)).toBe("");
+  });
+
+  it("isEncryptedCipher returns true for enc: prefixed values", () => {
+    const key = deriveKey(KEY_A);
+    const ct = encryptWithKey("data", key);
+    expect(isEncryptedCipher(ct)).toBe(true);
+  });
+
+  it("isEncryptedCipher returns false for plain text and null", () => {
+    expect(isEncryptedCipher("plain text")).toBe(false);
+    expect(isEncryptedCipher(null)).toBe(false);
+    expect(isEncryptedCipher(undefined)).toBe(false);
+  });
+
+  it("rotateField — success path: rotates from keyA to keyB and decrypts correctly with keyB", () => {
+    const keyA = deriveKey(KEY_A);
+    const keyB = deriveKey(KEY_B);
+    const plaintext = "rotate-me@example.com";
+    const original = encryptWithKey(plaintext, keyA);
+    const { result, rotated, skipped } = rotateField(original, keyA, keyB);
+    expect(rotated).toBe(true);
+    expect(skipped).toBe(false);
+    expect(result).toBeTruthy();
+    expect(decryptWithKey(result as string, keyB)).toBe(plaintext);
+  });
+
+  it("rotateField — skip path: returns skipped=true when key is wrong and cannot decrypt", () => {
+    const keyA = deriveKey(KEY_A);
+    const keyB = deriveKey(KEY_B);
+    const keyC = deriveKey("completely-different-key-xyz-123456");
+    const original = encryptWithKey("secret", keyC);
+    const { result, rotated, skipped } = rotateField(original, keyA, keyB);
+    expect(rotated).toBe(false);
+    expect(skipped).toBe(true);
+    expect(result).toBe(original);
+  });
+
+  it("rotateField — no-op path: passes through null/undefined/non-encrypted values", () => {
+    const keyA = deriveKey(KEY_A);
+    const keyB = deriveKey(KEY_B);
+    const r1 = rotateField(null, keyA, keyB);
+    expect(r1.rotated).toBe(false);
+    expect(r1.skipped).toBe(false);
+    expect(r1.result).toBe(null);
+    const r2 = rotateField("plain text", keyA, keyB);
+    expect(r2.rotated).toBe(false);
+    expect(r2.skipped).toBe(false);
+    expect(r2.result).toBe("plain text");
+  });
+
+  it("rotateField — tenant isolation: one field's skip does not prevent others from rotating", () => {
+    const keyA = deriveKey(KEY_A);
+    const keyB = deriveKey(KEY_B);
+    const keyC = deriveKey("completely-different-key-xyz-123456");
+    const goodField = encryptWithKey("good@example.com", keyA);
+    const badField = encryptWithKey("bad@example.com", keyC);
+    const goodResult = rotateField(goodField, keyA, keyB);
+    const badResult = rotateField(badField, keyA, keyB);
+    expect(goodResult.rotated).toBe(true);
+    expect(badResult.skipped).toBe(true);
+    expect(decryptWithKey(goodResult.result as string, keyB)).toBe("good@example.com");
+    expect(badResult.result).toBe(badField);
   });
 });

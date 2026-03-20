@@ -7,7 +7,6 @@ export interface PdfExportOptions {
   restaurantName: string;
   logoUrl?: string | null;
   dateRange?: string;
-  currency?: string;
   columns: string[];
   rows: (string | number)[][];
   filename?: string;
