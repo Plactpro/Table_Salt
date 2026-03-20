@@ -150,9 +150,38 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const bill = await storage.getBill(req.params.id);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
-      if (bill.paymentStatus === "paid") return res.status(400).json({ message: "Cannot void a paid bill. Use refund instead." });
+      if (bill.paymentStatus === "voided") return res.status(400).json({ message: "Bill is already voided" });
       const { reason } = req.body;
       if (!reason) return res.status(400).json({ message: "Void reason is required" });
+
+      const existingMovements = await storage.getStockMovementsByOrder(bill.orderId);
+      const consumptionMovements = existingMovements.filter(m => m.type === "RECIPE_CONSUMPTION");
+      for (const mv of consumptionMovements) {
+        const item = await storage.getInventoryItem(mv.itemId);
+        if (!item) continue;
+        const stockBefore = Number(item.currentStock ?? 0);
+        const reversalQty = Math.abs(Number(mv.quantity));
+        const stockAfter = stockBefore + reversalQty;
+        await storage.updateInventoryItem(mv.itemId, user.tenantId, {
+          currentStock: String(stockAfter),
+        });
+        await storage.createStockMovement({
+          tenantId: user.tenantId,
+          itemId: mv.itemId,
+          type: "RECIPE_REVERSAL",
+          quantity: String(reversalQty),
+          reason: `Void bill ${bill.billNumber}: ${reason}`,
+          orderId: bill.orderId,
+          orderNumber: mv.orderNumber,
+          menuItemId: mv.menuItemId,
+          chefId: mv.chefId,
+          chefName: mv.chefName,
+          station: mv.station,
+          shiftId: mv.shiftId,
+          stockBefore: String(stockBefore),
+          stockAfter: String(stockAfter),
+        });
+      }
 
       const updated = await storage.updateBill(bill.id, user.tenantId, {
         paymentStatus: "voided",
@@ -166,7 +195,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
       }
       emitToTenant(user.tenantId, "order:updated", { orderId: bill.orderId, status: "voided" });
-      res.json(updated);
+      res.json({ ...updated, reversalsCreated: consumptionMovements.length });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -223,22 +252,29 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/pos/session/close", requireAuth, async (req, res) => {
+  app.post("/api/pos/session/close", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const session = await storage.getActivePosSession(user.tenantId, user.id);
+      const { sessionId, closingCashCount, notes } = req.body;
+      let session;
+      if (sessionId) {
+        session = await storage.getPosSession(sessionId);
+        if (!session || session.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      } else {
+        session = await storage.getActivePosSession(user.tenantId, user.id);
+      }
       if (!session) return res.status(404).json({ message: "No active session" });
-      const { closingCashCount, notes } = req.body;
+      if (session.status === "closed") return res.status(400).json({ message: "Session already closed" });
       const report = await storage.getPosSessionReport(session.id);
-      const updated = await storage.updatePosSession(session.id, user.tenantId, {
-        status: "closed",
-        closedAt: new Date(),
-        closedBy: user.id,
-        closingCashCount: closingCashCount != null ? String(closingCashCount) : null,
+      await storage.updatePosSession(session.id, user.tenantId, {
         totalOrders: report.billCount,
         totalRevenue: String(report.totalRevenue),
         revenueByMethod: report.revenueByMethod,
-        notes: notes || null,
+      });
+      const updated = await storage.closePosSession(session.id, user.tenantId, {
+        closingCashCount: closingCashCount != null ? closingCashCount : undefined,
+        closedBy: user.id,
+        notes: notes || undefined,
       });
       res.json({ session: updated, report });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
