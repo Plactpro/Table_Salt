@@ -35,7 +35,7 @@ import {
   CalendarDays,
   type LucideIcon,
 } from "lucide-react";
-import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing } from "@/lib/subscription";
+import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
 
 interface NavItem {
   id: string;
@@ -142,11 +142,17 @@ function BusinessBadges({ badges }: { badges: string[] }) {
 
 export default function Sidebar() {
   const { user } = useAuth();
-  const { tier, badges, hasFeatureAccess } = useSubscription();
+  const { tier, badges, hasFeatureAccess, businessType } = useSubscription();
   const [location, navigate] = useLocation();
 
   const role = user?.role ?? "owner";
-  const filteredItems = navItems.filter((item) => item.roles.includes(role));
+  const btConfig = businessConfig[businessType];
+  const filteredItems = navItems.filter((item) => {
+    if (!item.roles.includes(role)) return false;
+    if (btConfig?.excludedFeatureKeys && item.featureKey && btConfig.excludedFeatureKeys.includes(item.featureKey)) return false;
+    if (btConfig?.excludedPaths && btConfig.excludedPaths.includes(item.path)) return false;
+    return true;
+  });
 
   const isSecurityRole = ["owner", "hq_admin", "franchise_owner"].includes(role);
   const { data: alertCountData } = useQuery<{ count: number }>({
