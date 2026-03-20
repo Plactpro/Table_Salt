@@ -162,7 +162,7 @@ export function isValidCidr(cidr: string): boolean {
   return true;
 }
 
-function isIpInCidr(ip: string, cidr: string): boolean {
+export function isIpInCidr(ip: string, cidr: string): boolean {
   try {
     if (!isValidCidr(cidr)) return false;
     const [cidrIp, prefixStr] = cidr.split("/");
