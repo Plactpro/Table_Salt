@@ -448,7 +448,16 @@ export function registerOrdersRoutes(app: Express): void {
       auditLogFromReq(req, { action: "order_updated", entityType: "order", entityId: req.params.id, before: { status: existing.status }, after: { status: req.body.status } });
     }
 
-    res.json(order);
+    const enriched: Record<string, unknown> = { ...(order as object) };
+    if (order?.tableId) {
+      const table = await storage.getTable(order.tableId);
+      if (table) enriched.tableStatus = table.status;
+    }
+    if (order?.customerId) {
+      const customer = await storage.getCustomerByTenant(order.customerId, user.tenantId);
+      if (customer) enriched.loyaltyStatus = { points: customer.loyaltyPoints, tier: customer.loyaltyTier };
+    }
+    res.json(enriched);
   });
 
   app.get("/api/order-items", requireAuth, async (req, res) => {

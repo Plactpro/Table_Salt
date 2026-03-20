@@ -1,4 +1,4 @@
-import { eq, and, desc, sql, gte, lte, lt, count, sum } from "drizzle-orm";
+import { eq, and, desc, sql, gte, lte, lt, count, sum, inArray } from "drizzle-orm";
 import { db } from "./db";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
 
@@ -2003,8 +2003,9 @@ export class DatabaseStorage implements IStorage {
     if (!session) throw new Error("Session not found");
     const sessionBills = await db.select().from(bills).where(eq(bills.posSessionId, sessionId));
     const paidBills = sessionBills.filter(b => b.paymentStatus === "paid");
-    const payments = await db.select().from(billPayments)
-      .where(sql`bill_id IN (${paidBills.map(b => `'${b.id}'`).join(",") || "NULL"})`);
+    const payments = paidBills.length > 0
+      ? await db.select().from(billPayments).where(inArray(billPayments.billId, paidBills.map(b => b.id)))
+      : [];
     const revenueByMethod: Record<string, number> = {};
     let totalRevenue = 0;
     for (const p of payments) {
