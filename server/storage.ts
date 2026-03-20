@@ -449,6 +449,23 @@ export interface IStorage {
   updateComboOffer(id: string, tenantId: string, data: Partial<InsertComboOffer>): Promise<ComboOffer | undefined>;
   deleteComboOffer(id: string, tenantId: string): Promise<void>;
   incrementComboOrderCount(id: string, tenantId: string): Promise<void>;
+
+  generateBillNumber(tenantId: string): Promise<string>;
+  createBill(data: InsertBill): Promise<Bill>;
+  getBill(id: string): Promise<Bill | undefined>;
+  getBillByOrder(orderId: string): Promise<Bill | undefined>;
+  getBillsByOrder(orderId: string): Promise<Bill[]>;
+  getBillsByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string }): Promise<Bill[]>;
+  updateBill(id: string, tenantId: string, data: Partial<InsertBill>): Promise<Bill | undefined>;
+  createBillPayment(data: InsertBillPayment): Promise<BillPayment>;
+  getBillPayments(billId: string): Promise<BillPayment[]>;
+  getBillPaymentsByTenant(tenantId: string, opts?: { limit?: number }): Promise<BillPayment[]>;
+  createPosSession(data: InsertPosSession): Promise<PosSession>;
+  getActivePosSession(tenantId: string, waiterId: string): Promise<PosSession | undefined>;
+  getPosSession(id: string): Promise<PosSession | undefined>;
+  closePosSession(id: string, tenantId: string, data: { closingCashCount?: number; closedBy: string; notes?: string }): Promise<PosSession | undefined>;
+  updatePosSession(id: string, tenantId: string, data: Partial<InsertPosSession>): Promise<PosSession | undefined>;
+  getPosSessionReport(sessionId: string): Promise<{ session: PosSession; billCount: number; totalRevenue: number; revenueByMethod: Record<string, number>; cashSales: number; expectedCash: number }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1897,10 +1914,12 @@ export class DatabaseStorage implements IStorage {
 
   async generateBillNumber(tenantId: string): Promise<string> {
     const year = new Date().getFullYear();
-    const [row] = await db.select({ cnt: count() }).from(bills)
-      .where(and(eq(bills.tenantId, tenantId), sql`EXTRACT(YEAR FROM created_at) = ${year}`));
-    const seq = (Number(row?.cnt ?? 0) + 1).toString().padStart(4, "0");
-    return `INV-${year}-${seq}`;
+    const prefix = `INV-${year}-`;
+    const [row] = await db.select({ maxBill: sql<string>`MAX(bill_number)` }).from(bills)
+      .where(and(eq(bills.tenantId, tenantId), sql`bill_number LIKE ${prefix + "%"}`));
+    const lastNum = row?.maxBill ? parseInt(row.maxBill.slice(prefix.length), 10) : 0;
+    const seq = (lastNum + 1).toString().padStart(4, "0");
+    return `${prefix}${seq}`;
   }
 
   async createBill(data: InsertBill): Promise<Bill> {
@@ -1916,11 +1935,16 @@ export class DatabaseStorage implements IStorage {
     return b;
   }
   async getBillsByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string }): Promise<Bill[]> {
-    let q = db.select().from(bills).where(and(
-      eq(bills.tenantId, tenantId),
-      opts?.status ? eq(bills.paymentStatus, opts.status) : undefined,
-    ));
-    return (q as any).orderBy(desc(bills.createdAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
+    const conditions = [eq(bills.tenantId, tenantId)];
+    if (opts?.status) conditions.push(eq(bills.paymentStatus, opts.status));
+    return db.select().from(bills)
+      .where(and(...conditions))
+      .orderBy(desc(bills.createdAt))
+      .limit(opts?.limit ?? 50)
+      .offset(opts?.offset ?? 0);
+  }
+  async getBillsByOrder(orderId: string): Promise<Bill[]> {
+    return db.select().from(bills).where(eq(bills.orderId, orderId)).orderBy(desc(bills.createdAt));
   }
   async updateBill(id: string, tenantId: string, data: Partial<InsertBill>): Promise<Bill | undefined> {
     const [b] = await db.update(bills).set(data).where(and(eq(bills.id, id), eq(bills.tenantId, tenantId))).returning();
@@ -1951,6 +1975,16 @@ export class DatabaseStorage implements IStorage {
   }
   async getPosSession(id: string): Promise<PosSession | undefined> {
     const [s] = await db.select().from(posSessions).where(eq(posSessions.id, id));
+    return s;
+  }
+  async closePosSession(id: string, tenantId: string, data: { closingCashCount?: number; closedBy: string; notes?: string }): Promise<PosSession | undefined> {
+    const [s] = await db.update(posSessions).set({
+      status: "closed",
+      closingCashCount: data.closingCashCount,
+      closedBy: data.closedBy,
+      closedAt: new Date(),
+      notes: data.notes,
+    }).where(and(eq(posSessions.id, id), eq(posSessions.tenantId, tenantId))).returning();
     return s;
   }
   async updatePosSession(id: string, tenantId: string, data: Partial<InsertPosSession>): Promise<PosSession | undefined> {
