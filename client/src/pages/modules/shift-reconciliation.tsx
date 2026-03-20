@@ -7,7 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Sun, Sunset, Moon, Clock, ChevronDown, ChevronRight, Users, Package, AlertTriangle, TrendingDown } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Sun, Sunset, Moon, Clock, ChevronDown, ChevronRight,
+  Users, Package, AlertTriangle, TrendingDown, CheckCircle2,
+} from "lucide-react";
 import { formatCurrency } from "@shared/currency";
 import type { Shift } from "@shared/schema";
 
@@ -28,6 +32,85 @@ interface StockMovement {
   chefName: string | null;
   station: string | null;
   shiftId: string | null;
+  stockBefore: string | null;
+  stockAfter: string | null;
+}
+
+interface IngredientRecon {
+  itemId: string;
+  name: string;
+  unit: string;
+  costPrice: number;
+  openingStock: number;
+  stockIn: number;
+  used: number;
+  wasted: number;
+  expectedClosing: number;
+  actualClosing: number;
+  variance: number;
+  variancePct: number;
+  varianceValue: number;
+}
+
+function buildIngredientRecon(movements: StockMovement[]): IngredientRecon[] {
+  const byItem = new Map<string, StockMovement[]>();
+  for (const m of movements) {
+    if (!m.itemId) continue;
+    if (!byItem.has(m.itemId)) byItem.set(m.itemId, []);
+    byItem.get(m.itemId)!.push(m);
+  }
+
+  const result: IngredientRecon[] = [];
+  for (const [itemId, rows] of byItem.entries()) {
+    const sorted = [...rows].sort((a, b) =>
+      new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
+    );
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    const costPrice = Number(first.ingredientCostPrice ?? 0);
+
+    const openingStock = Number(first.stockBefore ?? 0);
+    const actualClosing = Number(last.stockAfter ?? 0);
+
+    let stockIn = 0;
+    let used = 0;
+    let wasted = 0;
+
+    for (const m of rows) {
+      const qty = Number(m.quantity);
+      const type = m.type?.toUpperCase();
+      if (type === "RECIPE_CONSUMPTION") {
+        used += Math.abs(qty);
+      } else if (type === "WASTAGE") {
+        wasted += Math.abs(qty);
+      } else if (qty > 0) {
+        stockIn += qty;
+      }
+    }
+
+    const expectedClosing = openingStock + stockIn - used - wasted;
+    const variance = actualClosing - expectedClosing;
+    const variancePct = openingStock > 0 ? (variance / openingStock) * 100 : 0;
+    const varianceValue = variance * costPrice;
+
+    result.push({
+      itemId,
+      name: first.ingredientName ?? itemId,
+      unit: first.ingredientUnit ?? "",
+      costPrice,
+      openingStock,
+      stockIn,
+      used,
+      wasted,
+      expectedClosing,
+      actualClosing,
+      variance,
+      variancePct,
+      varianceValue,
+    });
+  }
+
+  return result.sort((a, b) => Math.abs(b.varianceValue) - Math.abs(a.varianceValue));
 }
 
 function shiftIcon(name: string) {
@@ -45,16 +128,14 @@ function formatTime(t: string) {
   return `${hour % 12 || 12}:${m} ${ampm}`;
 }
 
-interface ShiftSummary {
-  shift: Shift | null;
-  movements: StockMovement[];
-  totalConsumed: number;
-  totalWasted: number;
-  consumedValue: number;
-  wastedValue: number;
-  chefs: Set<string>;
-  ingredientBreakdown: Map<string, { name: string; qty: number; unit: string; value: number }>;
-  stationBreakdown: Map<string, number>;
+function VarianceBadge({ variance, pct }: { variance: number; pct: number }) {
+  if (Math.abs(variance) < 0.001) {
+    return <Badge className="bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400 text-xs gap-1"><CheckCircle2 className="h-3 w-3" />Balanced</Badge>;
+  }
+  if (variance < 0) {
+    return <Badge variant="destructive" className="text-xs"><AlertTriangle className="h-3 w-3 mr-1" />{pct.toFixed(1)}%</Badge>;
+  }
+  return <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400 text-xs">+{pct.toFixed(1)}%</Badge>;
 }
 
 export default function ShiftReconciliation() {
@@ -72,13 +153,14 @@ export default function ShiftReconciliation() {
     queryFn: () => apiRequest("GET", "/api/shifts").then(r => r.json()),
   });
 
-  const params = new URLSearchParams({ from: fromDate, to: toDate });
+  const params = new URLSearchParams({ from: fromDate, to: toDate, limit: "2000" });
   if (selectedShiftId !== "all") params.set("shiftId", selectedShiftId);
 
   const { data: movementsRaw, isLoading } = useQuery({
     queryKey: ["/api/stock-movements", fromDate, toDate, selectedShiftId],
     queryFn: () => apiRequest("GET", `/api/stock-movements?${params}`).then(r => r.json()),
   });
+
   const movements: StockMovement[] = useMemo(() => {
     if (!movementsRaw) return [];
     if (Array.isArray(movementsRaw)) return movementsRaw as StockMovement[];
@@ -86,78 +168,59 @@ export default function ShiftReconciliation() {
     return Array.isArray(d) ? d : [];
   }, [movementsRaw]);
 
-  const shiftSummaries = useMemo(() => {
-    const shiftMap = new Map<string, ShiftSummary>();
+  interface ShiftGroup {
+    key: string;
+    shift: Shift | null;
+    movements: StockMovement[];
+    consumedValue: number;
+    wastedValue: number;
+    chefs: Set<string>;
+    recon: IngredientRecon[];
+  }
 
-    const getOrCreate = (shiftId: string | null, shiftName: string): ShiftSummary => {
-      const key = shiftId ?? "untagged";
-      if (!shiftMap.has(key)) {
-        const matchedShift = shifts.find(s => s.id === shiftId) ?? null;
-        shiftMap.set(key, {
-          shift: matchedShift,
-          movements: [],
-          totalConsumed: 0,
-          totalWasted: 0,
-          consumedValue: 0,
-          wastedValue: 0,
-          chefs: new Set(),
-          ingredientBreakdown: new Map(),
-          stationBreakdown: new Map(),
-        });
-      }
-      return shiftMap.get(key)!;
-    };
+  const shiftGroups = useMemo(() => {
+    const map = new Map<string, ShiftGroup>();
 
     for (const m of movements) {
-      const shiftName = m.shiftId
-        ? (shifts.find(s => s.id === m.shiftId)?.name ?? "Unknown Shift")
-        : "Untagged";
-      const summary = getOrCreate(m.shiftId, shiftName);
-      summary.movements.push(m);
-
-      const qty = Number(m.quantity);
+      const key = m.shiftId ?? "untagged";
+      if (!map.has(key)) {
+        const matchedShift = shifts.find(s => s.id === m.shiftId) ?? null;
+        map.set(key, { key, shift: matchedShift, movements: [], consumedValue: 0, wastedValue: 0, chefs: new Set(), recon: [] });
+      }
+      const g = map.get(key)!;
+      g.movements.push(m);
+      const qty = Math.abs(Number(m.quantity));
       const cost = Number(m.ingredientCostPrice ?? 0) * qty;
-
-      if (m.type === "deduction") {
-        summary.totalConsumed += qty;
-        summary.consumedValue += cost;
-      } else if (m.type === "wastage") {
-        summary.totalWasted += qty;
-        summary.wastedValue += cost;
-      }
-
-      if (m.chefId) summary.chefs.add(m.chefId);
-
-      if (m.itemId) {
-        const existing = summary.ingredientBreakdown.get(m.itemId);
-        if (existing) {
-          existing.qty += qty;
-          existing.value += cost;
-        } else {
-          summary.ingredientBreakdown.set(m.itemId, { name: m.ingredientName ?? m.itemId, qty, unit: m.ingredientUnit ?? "", value: cost });
-        }
-      }
-
-      if (m.station) {
-        summary.stationBreakdown.set(m.station, (summary.stationBreakdown.get(m.station) ?? 0) + qty);
-      }
+      const type = m.type?.toUpperCase();
+      if (type === "RECIPE_CONSUMPTION") g.consumedValue += cost;
+      if (type === "WASTAGE") g.wastedValue += cost;
+      if (m.chefId) g.chefs.add(m.chefId);
     }
 
-    return Array.from(shiftMap.entries()).map(([key, summary]) => ({ key, ...summary }));
+    for (const g of map.values()) {
+      g.recon = buildIngredientRecon(g.movements);
+    }
+
+    return Array.from(map.values());
   }, [movements, shifts]);
 
   const totals = useMemo(() => ({
-    consumed: shiftSummaries.reduce((a, s) => a + s.consumedValue, 0),
-    wasted: shiftSummaries.reduce((a, s) => a + s.wastedValue, 0),
+    consumed: shiftGroups.reduce((a, g) => a + g.consumedValue, 0),
+    wasted: shiftGroups.reduce((a, g) => a + g.wastedValue, 0),
     movements: movements.length,
     chefs: new Set(movements.filter(m => m.chefId).map(m => m.chefId!)).size,
-  }), [shiftSummaries, movements]);
+    variance: shiftGroups.reduce((a, g) => a + g.recon.reduce((b, r) => b + r.varianceValue, 0), 0),
+  }), [shiftGroups, movements]);
+
+  const fmt = (n: number, dp = 2) => n.toFixed(dp);
 
   return (
     <div className="space-y-6" data-testid="shift-reconciliation">
       <div>
         <h2 className="text-xl font-semibold">Shift Reconciliation</h2>
-        <p className="text-sm text-muted-foreground mt-0.5">Stock movement summary per shift — consumption vs wastage</p>
+        <p className="text-sm text-muted-foreground mt-0.5">
+          Per-ingredient stock balance: Opening → +In → −Used → −Waste → Expected vs Actual
+        </p>
       </div>
 
       <div className="flex flex-wrap gap-3 items-end">
@@ -183,36 +246,44 @@ export default function ShiftReconciliation() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card data-testid="card-total-consumed-value">
           <CardContent className="pt-4 pb-3">
-            <p className="text-xs text-muted-foreground">Total Consumption</p>
-            <p className="text-2xl font-bold mt-1">{formatCurrency(totals.consumed)}</p>
+            <p className="text-xs text-muted-foreground">Total Consumed</p>
+            <p className="text-xl font-bold mt-1">{formatCurrency(totals.consumed)}</p>
           </CardContent>
         </Card>
         <Card data-testid="card-total-wasted-value">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Total Wastage</p>
-            <p className="text-2xl font-bold mt-1 text-red-600">{formatCurrency(totals.wasted)}</p>
+            <p className="text-xl font-bold mt-1 text-red-600">{formatCurrency(totals.wasted)}</p>
           </CardContent>
         </Card>
         <Card data-testid="card-total-movements">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Stock Events</p>
-            <p className="text-2xl font-bold mt-1">{totals.movements}</p>
+            <p className="text-xl font-bold mt-1">{totals.movements}</p>
           </CardContent>
         </Card>
         <Card data-testid="card-active-chefs">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Active Chefs</p>
-            <p className="text-2xl font-bold mt-1">{totals.chefs}</p>
+            <p className="text-xl font-bold mt-1">{totals.chefs}</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="card-variance-value">
+          <CardContent className="pt-4 pb-3">
+            <p className="text-xs text-muted-foreground">Unaccounted Loss</p>
+            <p className={`text-xl font-bold mt-1 ${totals.variance < -0.01 ? "text-red-600" : "text-green-600"}`}>
+              {formatCurrency(Math.abs(totals.variance))}
+            </p>
           </CardContent>
         </Card>
       </div>
 
       {isLoading ? (
         <div className="text-center py-12 text-muted-foreground">Loading data…</div>
-      ) : shiftSummaries.length === 0 ? (
+      ) : shiftGroups.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center text-muted-foreground">
             <Clock className="h-10 w-10 mx-auto mb-3 opacity-30" />
@@ -221,30 +292,26 @@ export default function ShiftReconciliation() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {shiftSummaries.map(summary => {
-            const isExpanded = expandedShift === summary.key;
-            const shiftName = summary.shift?.name ?? "Untagged Movements";
-            const topIngredients = Array.from(summary.ingredientBreakdown.values())
-              .sort((a, b) => b.value - a.value)
-              .slice(0, 5);
-            const topStations = Array.from(summary.stationBreakdown.entries())
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 3);
+          {shiftGroups.map(g => {
+            const isExpanded = expandedShift === g.key;
+            const shiftName = g.shift?.name ?? "Untagged Movements";
+            const totalVarianceValue = g.recon.reduce((a, r) => a + r.varianceValue, 0);
+            const hasIssues = g.recon.some(r => Math.abs(r.variance) > 0.01);
 
             return (
-              <Card key={summary.key} data-testid={`card-shift-summary-${summary.key}`}>
+              <Card key={g.key} data-testid={`card-shift-summary-${g.key}`}>
                 <CardHeader
                   className="cursor-pointer select-none py-4"
-                  onClick={() => setExpandedShift(isExpanded ? null : summary.key)}
+                  onClick={() => setExpandedShift(isExpanded ? null : g.key)}
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      {summary.shift ? shiftIcon(shiftName) : <Clock className="h-4 w-4 text-muted-foreground" />}
+                      {g.shift ? shiftIcon(shiftName) : <Clock className="h-4 w-4 text-muted-foreground" />}
                       <div>
                         <CardTitle className="text-base">{shiftName}</CardTitle>
-                        {summary.shift && (
+                        {g.shift && (
                           <p className="text-xs text-muted-foreground mt-0.5">
-                            {formatTime(summary.shift.startTime)} – {formatTime(summary.shift.endTime)}
+                            {formatTime(g.shift.startTime)} – {formatTime(g.shift.endTime)}
                           </p>
                         )}
                       </div>
@@ -252,24 +319,32 @@ export default function ShiftReconciliation() {
                     <div className="flex items-center gap-4">
                       <div className="text-right hidden sm:block">
                         <p className="text-xs text-muted-foreground">Consumed</p>
-                        <p className="font-semibold text-sm">{formatCurrency(summary.consumedValue)}</p>
+                        <p className="font-semibold text-sm">{formatCurrency(g.consumedValue)}</p>
                       </div>
-                      {summary.wastedValue > 0 && (
+                      {g.wastedValue > 0 && (
                         <div className="text-right hidden sm:block">
                           <p className="text-xs text-muted-foreground">Wasted</p>
-                          <p className="font-semibold text-sm text-red-600">{formatCurrency(summary.wastedValue)}</p>
+                          <p className="font-semibold text-sm text-red-600">{formatCurrency(g.wastedValue)}</p>
+                        </div>
+                      )}
+                      {Math.abs(totalVarianceValue) > 0.01 && (
+                        <div className="text-right hidden sm:block">
+                          <p className="text-xs text-muted-foreground">Variance</p>
+                          <p className={`font-semibold text-sm ${totalVarianceValue < 0 ? "text-red-600" : "text-blue-600"}`}>
+                            {totalVarianceValue < 0 ? "-" : "+"}{formatCurrency(Math.abs(totalVarianceValue))}
+                          </p>
                         </div>
                       )}
                       <div className="flex gap-2">
                         <Badge variant="secondary" className="text-xs">
-                          <Package className="h-3 w-3 mr-1" />{summary.movements.length}
+                          <Package className="h-3 w-3 mr-1" />{g.movements.length}
                         </Badge>
                         <Badge variant="secondary" className="text-xs">
-                          <Users className="h-3 w-3 mr-1" />{summary.chefs.size}
+                          <Users className="h-3 w-3 mr-1" />{g.chefs.size}
                         </Badge>
-                        {summary.wastedValue > 0 && (
+                        {hasIssues && (
                           <Badge variant="destructive" className="text-xs">
-                            <AlertTriangle className="h-3 w-3 mr-1" />Wastage
+                            <AlertTriangle className="h-3 w-3 mr-1" />Variance
                           </Badge>
                         )}
                       </div>
@@ -279,103 +354,142 @@ export default function ShiftReconciliation() {
                 </CardHeader>
 
                 {isExpanded && (
-                  <CardContent className="pt-0 space-y-4 border-t">
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-4">
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
-                        <p className="text-xs text-muted-foreground">Consumed</p>
-                        <p className="font-bold">{formatCurrency(summary.consumedValue)}</p>
-                        <p className="text-xs text-muted-foreground">{summary.totalConsumed.toFixed(2)} units</p>
-                      </div>
-                      <div className="text-center p-3 bg-red-50 dark:bg-red-950/20 rounded-lg">
-                        <p className="text-xs text-muted-foreground">Wasted</p>
-                        <p className="font-bold text-red-600">{formatCurrency(summary.wastedValue)}</p>
-                        <p className="text-xs text-muted-foreground">{summary.totalWasted.toFixed(2)} units</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
-                        <p className="text-xs text-muted-foreground">Events</p>
-                        <p className="font-bold">{summary.movements.length}</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
-                        <p className="text-xs text-muted-foreground">Chefs</p>
-                        <p className="font-bold">{summary.chefs.size}</p>
-                      </div>
-                    </div>
+                  <CardContent className="pt-0 border-t">
+                    <Tabs defaultValue="recon" className="mt-4">
+                      <TabsList className="h-8">
+                        <TabsTrigger value="recon" className="text-xs h-7">Stock Reconciliation</TabsTrigger>
+                        <TabsTrigger value="movements" className="text-xs h-7">All Movements</TabsTrigger>
+                      </TabsList>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {topIngredients.length > 0 && (
-                        <div>
-                          <p className="text-sm font-semibold mb-2 flex items-center gap-1.5">
-                            <TrendingDown className="h-3.5 w-3.5" />Top Consumed Ingredients
-                          </p>
-                          <div className="space-y-1">
-                            {topIngredients.map(ing => (
-                              <div key={ing.name} className="flex justify-between text-sm py-1 border-b last:border-0">
-                                <span className="text-muted-foreground truncate">{ing.name}</span>
-                                <span className="font-medium ml-2 shrink-0">
-                                  {ing.qty.toFixed(2)} {ing.unit} · {formatCurrency(ing.value)}
-                                </span>
-                              </div>
-                            ))}
+                      <TabsContent value="recon" className="mt-3">
+                        {g.recon.length === 0 ? (
+                          <p className="text-sm text-muted-foreground py-6 text-center">No ingredient data available.</p>
+                        ) : (
+                          <div className="rounded-md border overflow-x-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow className="bg-muted/40">
+                                  <TableHead className="text-xs font-semibold whitespace-nowrap">Ingredient</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap">Opening</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap text-blue-600">+In</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap text-orange-600">−Used</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap text-red-600">−Waste</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap">Expected</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap">Actual</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap">Variance</TableHead>
+                                  <TableHead className="text-xs font-semibold text-right whitespace-nowrap">Value Impact</TableHead>
+                                  <TableHead className="text-xs font-semibold whitespace-nowrap">Status</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {g.recon.map(r => {
+                                  const isLoss = r.variance < -0.001;
+                                  const isGain = r.variance > 0.001;
+                                  return (
+                                    <TableRow
+                                      key={r.itemId}
+                                      data-testid={`row-recon-${r.itemId}`}
+                                      className={isLoss ? "bg-red-50/50 dark:bg-red-950/10" : isGain ? "bg-blue-50/30 dark:bg-blue-950/10" : ""}
+                                    >
+                                      <TableCell className="font-medium text-sm whitespace-nowrap">
+                                        {r.name}
+                                        <span className="text-xs text-muted-foreground ml-1">{r.unit}</span>
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm tabular-nums">{fmt(r.openingStock)}</TableCell>
+                                      <TableCell className="text-right text-sm tabular-nums text-blue-600">
+                                        {r.stockIn > 0 ? `+${fmt(r.stockIn)}` : "—"}
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm tabular-nums text-orange-600">
+                                        {r.used > 0 ? `−${fmt(r.used)}` : "—"}
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm tabular-nums text-red-600">
+                                        {r.wasted > 0 ? `−${fmt(r.wasted)}` : "—"}
+                                      </TableCell>
+                                      <TableCell className="text-right text-sm tabular-nums text-muted-foreground">{fmt(r.expectedClosing)}</TableCell>
+                                      <TableCell className="text-right text-sm tabular-nums font-medium">{fmt(r.actualClosing)}</TableCell>
+                                      <TableCell className={`text-right text-sm tabular-nums font-semibold ${isLoss ? "text-red-600" : isGain ? "text-blue-600" : "text-muted-foreground"}`}>
+                                        {isLoss ? fmt(r.variance) : isGain ? `+${fmt(r.variance)}` : "0.00"}
+                                      </TableCell>
+                                      <TableCell className={`text-right text-sm tabular-nums ${isLoss ? "text-red-600" : "text-muted-foreground"}`}>
+                                        {Math.abs(r.varianceValue) > 0.01 ? (isLoss ? `-${formatCurrency(Math.abs(r.varianceValue))}` : formatCurrency(r.varianceValue)) : "—"}
+                                      </TableCell>
+                                      <TableCell>
+                                        <VarianceBadge variance={r.variance} pct={Math.abs(r.variancePct)} />
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                              </TableBody>
+                            </Table>
                           </div>
-                        </div>
-                      )}
-                      {topStations.length > 0 && (
-                        <div>
-                          <p className="text-sm font-semibold mb-2">By Station</p>
-                          <div className="space-y-1">
-                            {topStations.map(([station, qty]) => (
-                              <div key={station} className="flex justify-between text-sm py-1 border-b last:border-0">
-                                <span className="text-muted-foreground">{station}</span>
-                                <Badge variant="secondary" className="text-xs">{qty.toFixed(2)} units</Badge>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                        )}
 
-                    <div>
-                      <p className="text-sm font-semibold mb-2">All Movements</p>
-                      <div className="rounded-md border overflow-hidden">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Time</TableHead>
-                              <TableHead>Ingredient</TableHead>
-                              <TableHead>Type</TableHead>
-                              <TableHead>Qty</TableHead>
-                              <TableHead>Chef</TableHead>
-                              <TableHead>Station</TableHead>
-                              <TableHead>Value</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {summary.movements.slice(0, 50).map(m => (
-                              <TableRow key={m.id} data-testid={`row-movement-${m.id}`}>
-                                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                                  {m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
-                                </TableCell>
-                                <TableCell className="font-medium text-sm">{m.ingredientName ?? "—"}</TableCell>
-                                <TableCell>
-                                  <Badge variant={m.type === "wastage" ? "destructive" : "secondary"} className="text-xs capitalize">
-                                    {m.type}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-sm">{Number(m.quantity).toFixed(2)} {m.ingredientUnit ?? ""}</TableCell>
-                                <TableCell className="text-sm text-muted-foreground">{m.chefName ?? "—"}</TableCell>
-                                <TableCell className="text-sm text-muted-foreground">{m.station ?? "—"}</TableCell>
-                                <TableCell className="text-sm">
-                                  {m.ingredientCostPrice ? formatCurrency(Number(m.ingredientCostPrice) * Number(m.quantity)) : "—"}
-                                </TableCell>
+                        <div className="mt-3 flex flex-wrap gap-4 text-xs text-muted-foreground border-t pt-3">
+                          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-500/20 inline-block" />Used = Recipe Consumption</span>
+                          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500/20 inline-block" />Waste = Reported Wastage</span>
+                          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 inline-block dark:bg-red-950/40" />Red row = unaccounted loss</span>
+                          <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-blue-100 inline-block dark:bg-blue-950/40" />Blue row = unaccounted gain</span>
+                        </div>
+                      </TabsContent>
+
+                      <TabsContent value="movements" className="mt-3">
+                        <div className="rounded-md border overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Time</TableHead>
+                                <TableHead className="text-xs">Ingredient</TableHead>
+                                <TableHead className="text-xs">Type</TableHead>
+                                <TableHead className="text-xs text-right">Qty</TableHead>
+                                <TableHead className="text-xs text-right">Before</TableHead>
+                                <TableHead className="text-xs text-right">After</TableHead>
+                                <TableHead className="text-xs">Chef</TableHead>
+                                <TableHead className="text-xs">Station</TableHead>
+                                <TableHead className="text-xs text-right">Value</TableHead>
                               </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                      {summary.movements.length > 50 && (
-                        <p className="text-xs text-muted-foreground text-center mt-2">Showing 50 of {summary.movements.length} movements</p>
-                      )}
-                    </div>
+                            </TableHeader>
+                            <TableBody>
+                              {g.movements.slice(0, 100).map(m => {
+                                const qty = Number(m.quantity);
+                                const type = m.type?.toUpperCase();
+                                const badgeVariant = type === "WASTAGE" ? "destructive" : type === "RECIPE_CONSUMPTION" ? "secondary" : "outline";
+                                const typeLabel = type === "RECIPE_CONSUMPTION" ? "Consumed" : type === "WASTAGE" ? "Waste" : type === "RECIPE_REVERSAL" ? "Reversed" : m.type ?? "—";
+                                return (
+                                  <TableRow key={m.id} data-testid={`row-movement-${m.id}`}>
+                                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
+                                      {m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+                                    </TableCell>
+                                    <TableCell className="font-medium text-sm whitespace-nowrap">{m.ingredientName ?? "—"}</TableCell>
+                                    <TableCell>
+                                      <Badge variant={badgeVariant} className="text-xs">{typeLabel}</Badge>
+                                    </TableCell>
+                                    <TableCell className={`text-right text-sm tabular-nums font-medium ${qty < 0 ? "text-red-600" : "text-green-600"}`}>
+                                      {qty > 0 ? "+" : ""}{fmt(qty)} {m.ingredientUnit ?? ""}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                                      {m.stockBefore != null ? fmt(Number(m.stockBefore)) : "—"}
+                                    </TableCell>
+                                    <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+                                      {m.stockAfter != null ? fmt(Number(m.stockAfter)) : "—"}
+                                    </TableCell>
+                                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{m.chefName ?? "—"}</TableCell>
+                                    <TableCell className="text-sm text-muted-foreground">{m.station ?? "—"}</TableCell>
+                                    <TableCell className="text-right text-sm">
+                                      {m.ingredientCostPrice ? formatCurrency(Math.abs(Number(m.ingredientCostPrice) * qty)) : "—"}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </div>
+                        {g.movements.length > 100 && (
+                          <p className="text-xs text-muted-foreground text-center mt-2">
+                            Showing 100 of {g.movements.length} movements
+                          </p>
+                        )}
+                      </TabsContent>
+                    </Tabs>
                   </CardContent>
                 )}
               </Card>
