@@ -22,7 +22,7 @@ The system employs a modern web architecture with a React-based frontend and an 
     - **Multi-currency Support**: Locale-aware formatting for 24 currencies.
     - **Timezone Management**: Integration of 75+ IANA zones.
     - **Audit Logging**: System for tracking important events.
-    - **KDS (Kitchen Display System)**: Configurable stations, status flow, visual cues.
+    - **KDS (Kitchen Display System)**: Configurable stations, status flow, visual cues. Recipe Card drawer with ingredient stock pre-check (green/amber/red badges), stock deduction on START (POS-only, kiosk deducts at payment), wastage reporting modal, chef station selector persisted in localStorage, KIOSK badge on tickets.
     - **Tenant Configuration**: Customizable settings for timezone, currency, tax, and service charges.
     - **Subscription Tiers & Feature Gating**: Dynamic feature access based on subscription plans (Basic, Standard, Premium, Enterprise).
     - **Promotion & Pricing Rules Engine**: Flexible engine for various discount types and stacking behavior.
@@ -38,6 +38,11 @@ The system employs a modern web architecture with a React-based frontend and an 
     - **Stripe Order Payments**: Real card payments integrated into Kiosk, Guest, and POS ordering flows via Stripe Checkout sessions and webhooks.
     - **Enterprise Data Protection**: AES-256-GCM field-level encryption, security alerts system, IP allowlisting, and GDPR compliance features (export, anonymization, retention policies).
     - **Real-time WebSocket Push**: Replaced HTTP polling in KDS, POS, and Tables with persistent WebSocket connections for real-time updates.
+    - **Shifts Management**: Configurable work shifts (Morning/Evening/Night with time ranges) with active/inactive toggle, preset templates, auto-detection for tagging stock movements. Found under Settings → Shifts tab.
+    - **Stock Movement Log**: Full audit trail of inventory deductions and wastage with filters (date, chef, station, type, ingredient, shift). Summary cards for daily consumption, wastage, alerts, active chef. Found under Inventory → Movements tab.
+    - **Chef Accountability Report**: Per-chef breakdown of consumption value, wastage, order count, and ingredient usage. Found under Reports → Chef Report tab.
+    - **Shift Reconciliation Report**: Per-shift stock movement summary (consumption vs wastage) with expandable detail rows, ingredient and station breakdowns. Found under Reports → Shift Report tab.
+    - **KOT Events**: Audit log table tracking kitchen order ticket events per station with chef attribution.
     - **Super Admin Platform Panel**: Cross-tenant administration for platform stats, tenant/user management, impersonation, and audit logs.
 
 ### Navigation Architecture

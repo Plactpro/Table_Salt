@@ -1,0 +1,297 @@
+Now I have everything I need. Here are **3 focused, sharp prompts** — paste them one by one into Replit AI in order.
+
+***
+
+## PROMPT 1 – Kitchen Display System (Chef-Facing UI)
+
+You are rebuilding the **Kitchen Display System (KDS)** for a multi-tenant restaurant SaaS. The UI must work across **3 hardware scenarios** without code changes — just configuration per outlet:
+
+- **Scenario A**: Wall-mounted kitchen screen only (no chef tablets)
+- **Scenario B**: Chef tablets only (no wall screen)
+- **Scenario C**: Both wall screen + chef tablets simultaneously
+
+The system must **auto-detect or be configured** per outlet which scenario applies and render the correct UI automatically.
+
+***
+
+### Display mode configuration (per outlet setting)
+
+```sql
+CREATE TABLE outlet_display_config (
+  id              UUID PRIMARY KEY,
+  tenant_id       UUID NOT NULL,
+  outlet_id       UUID NOT NULL,
+  display_mode    VARCHAR(20) NOT NULL,
+    -- 'WALL_SCREEN', 'TABLET', 'BOTH'
+  wall_screen_url VARCHAR(255),
+  auto_assign     BOOLEAN DEFAULT false,
+  created_at      TIMESTAMP DEFAULT NOW()
+);
+```
+
+- Manager sets display mode in outlet settings.
+- `WALL_SCREEN` mode: full-screen, no login required, auto-refresh, large fonts.
+- `TABLET` mode: chef logs in, sees only their station tickets.
+- `BOTH` mode: wall screen shows all tickets, tablets show per-chef/station.
+
+***
+
+### Wall-mounted kitchen screen (Scenario A and C)
+
+Design for a **large display viewed from 2–3 meters away**:
+
+- Full-screen layout, no scrollbars, auto-fit to screen size.
+- 3-column board:
+  ```
+  | 🟡 NEW ORDERS     | 🔵 IN PREPARATION  | 🟢 READY          |
+  |-------------------|-------------------|-------------------|
+  | T-5: Burger x2    | T-3: Pizza x1     | T-8: Pasta x1     |
+  | T-7: Salad x1     | T-1: Steak x2     | T-2: Soup x2      |
+  ```
+- Each ticket card shows:
+  - Table number (very large font, bold)
+  - Order type badge (DINE-IN / TAKEAWAY / DELIVERY)
+  - Item list with quantities
+  - Special notes highlighted in red
+  - Timer counting up from when order was placed (turns amber at 10 min, red at 15 min)
+- New ticket arrival: flash animation + sound alert (configurable volume).
+- Auto-scroll if tickets overflow columns.
+- No login required for wall screen; access via a secure outlet-specific URL token.
+- Refresh automatically every 5 seconds via WebSocket or polling fallback.
+
+***
+
+### Chef tablet UI (Scenario B and C)
+
+Design for **close-up tablet use in a busy kitchen**:
+
+- Chef must log in with their own credentials.
+- After login, chef sees their **station selector** (if not pre-assigned):
+  - GRILL / COLD KITCHEN / BAR / DESSERT / FRYER / etc.
+- Main tablet view:
+  - Shows only tickets relevant to the chef's station.
+  - Large touch-friendly ticket cards.
+  - Each card has:
+    - Table number and order type
+    - Items for THIS station only (other station items hidden)
+    - Special notes
+    - Timer
+    - Big **"START"** button (green) or **"DONE"** button (blue)
+- When chef taps "START":
+  - Show **Recipe Card drawer** sliding up from bottom:
+    - Dish name and image
+    - Ingredient checklist with required quantities:
+      ```
+      ☐ Chicken Breast  →  250g   (Stock: 1.2kg ✅)
+      ☐ Cream           →  50ml   (Stock: 30ml  ⚠️ LOW)
+      ☐ Garlic          →  10g    (Stock: 500g  ✅)
+      ```
+    - Stock status color: green/amber/red per ingredient
+    - If any ingredient is RED (insufficient):
+      - Show red warning banner: "⚠️ Insufficient stock for Cream. Only 30ml available, need 50ml."
+      - Buttons: "Proceed Anyway" / "Alert Manager" / "Cancel"
+  - Chef taps "Confirm & Start" → stock deducted, order moves to IN PREPARATION.
+- When chef taps "DONE":
+  - Quick confirm popup: "Mark [Dish] as Ready?"
+  - One tap confirm → ticket moves to READY column.
+- Bottom bar always visible:
+  - Chef name and station
+  - Number of tickets: pending / in-prep / done today
+  - Quick "Report Wastage" button
+
+***
+
+### Real-time sync between wall screen and tablets
+
+- When a chef on tablet starts or completes a ticket:
+  - Wall screen updates in real time via WebSocket.
+- When a new order arrives from POS:
+  - Both wall screen and all relevant chef tablets receive the ticket instantly.
+- In `BOTH` mode: wall screen is the master view, tablets are personal action interfaces.
+
+***
+
+## PROMPT 2 – Auto-Send to Kitchen + Stock Deduction Engine
+
+You are implementing the **order-to-kitchen auto-routing and stock deduction engine** for a multi-tenant restaurant SaaS.
+
+***
+
+### Auto-send to kitchen on order creation
+
+- When a waiter submits an order from POS:
+  - Immediately and automatically route to kitchen — **no manual "send to kitchen" button required**.
+  - Split the order into **KOT lines per station** based on menu item → station mapping:
+    ```
+    Order #045 (Table 5):
+    → GRILL station:   Grilled Chicken x1, Steak x2
+    → BAR station:     Coke x2, Fresh Lime x1
+    → DESSERT station: Chocolate Cake x1
+    ```
+  - Each station receives only its relevant items.
+  - Broadcast to wall screen and relevant chef tablets via WebSocket instantly.
+- Log the KOT event:
+  ```sql
+  CREATE TABLE kot_events (
+    id           UUID PRIMARY KEY,
+    tenant_id    UUID NOT NULL,
+    outlet_id    UUID NOT NULL,
+    order_id     UUID NOT NULL,
+    station      VARCHAR(100),
+    items        JSONB NOT NULL,
+    sent_at      TIMESTAMP DEFAULT NOW(),
+    received_at  TIMESTAMP
+  );
+  ```
+
+***
+
+### Stock deduction engine (when chef confirms preparation)
+
+- Trigger: chef taps "Confirm & Start" on tablet OR manager clicks "Start" on wall screen.
+- For each menu item being prepared:
+  - Look up linked recipe and components.
+  - Calculate required quantities:
+    ```
+    required_qty = component.quantity × (portions / recipe.yield)
+    convert to base unit using conversion_factor
+    ```
+  - Check stock availability **before deducting**:
+    - If sufficient: deduct and log.
+    - If insufficient: show alert (see PROMPT 1) but allow override with reason.
+  - Deduct from `ingredients.current_stock`.
+  - Log full transaction:
+
+```sql
+INSERT INTO inventory_transactions (
+  tenant_id, outlet_id, ingredient_id, ingredient_name,
+  transaction_type,   -- 'RECIPE_CONSUMPTION'
+  quantity_change,    -- negative
+  stock_before, stock_after,
+  order_id, order_number,
+  menu_item_id, menu_item_name,
+  recipe_id,
+  chef_id, chef_name, station,
+  shift_id,
+  created_at
+) VALUES (...);
+```
+
+- Wrap ALL deductions for one order in a **single DB transaction** (atomic — all succeed or all rollback).
+- On order void / cancel / refund:
+  - Reverse all deductions with `type = 'RECIPE_REVERSAL'` and positive quantities.
+
+***
+
+### Menu item → station mapping
+
+```sql
+CREATE TABLE menu_item_stations (
+  id           UUID PRIMARY KEY,
+  tenant_id    UUID NOT NULL,
+  menu_item_id UUID NOT NULL,
+  station      VARCHAR(100) NOT NULL
+    -- 'GRILL', 'BAR', 'COLD_KITCHEN',
+    -- 'DESSERT', 'FRYER', 'MAIN_KITCHEN'
+);
+```
+
+- Manager assigns each menu item to a station in Menu Settings.
+- This drives automatic KOT routing and chef tablet filtering.
+
+***
+
+## PROMPT 3 – "Who Used What" Traceability Dashboard (Manager View)
+
+You are building the **Stock Traceability and Chef Accountability** reporting module for a multi-tenant restaurant SaaS. The core problem to solve: **managers have no visibility on who consumed what stock, when, and for which order.**
+
+***
+
+### Stock movement log page
+
+Build a dedicated **"Stock Movement Log"** page under Inventory → Movements:
+
+- Full-width data table with:
+
+| Time | Ingredient | Change | Before | After | Type | Order | Dish | Chef | Station | Shift |
+|------|-----------|--------|--------|-------|------|-------|------|------|---------|-------|
+| 09:14 | Chicken | −250g | 1.2kg | 0.95kg | 🟠 Consumed | #045 | Grilled Chicken | Ravi K. | Grill | Morning |
+| 09:30 | Cream | −50ml | 30ml | 0ml | 🔴 Low Stock | #046 | Pasta | Anita S. | Main | Morning |
+| 10:00 | Chicken | +5kg | 0.95kg | 5.95kg | 🟢 Stock In | — | — | Store Mgr | — | Morning |
+
+- Color-coded type badges:
+  - 🟠 Consumed (recipe deduction)
+  - 🔴 Wastage
+  - 🟢 Stock In
+  - 🔵 Adjustment
+  - 🟣 Transfer
+  - ⚪ Reversal
+- Filters panel (collapsible on mobile):
+  - Date range picker
+  - Chef selector (multi-select dropdown)
+  - Ingredient search
+  - Station filter
+  - Movement type filter
+  - Shift selector (Morning / Evening / Night)
+- Summary cards at top:
+  - Total consumed (value) today
+  - Total wastage today
+  - Stock alerts (ingredients below reorder level)
+  - Most active chef today
+
+***
+
+### Chef accountability dashboard
+
+Build a **"Chef Report"** page under Reports → Kitchen:
+
+- Top section: summary cards per chef (today / this week / this month toggle):
+  - Chef name + avatar/initials
+  - Number of dishes prepared
+  - Total ingredients consumed (by cost value)
+  - Total wastage reported
+  - Average prep time
+
+- Middle section: ingredient consumption breakdown per chef:
+  ```
+  Chef: Ravi Kumar | Station: Grill | Shift: Morning
+  ─────────────────────────────────────────────────
+  Ingredient      | Used    | Expected | Variance
+  Chicken Breast  | 2.5kg   | 2.3kg    | +200g ⚠️
+  Olive Oil       | 150ml   | 140ml    | +10ml ✅
+  Garlic          | 50g     | 50g      | 0g    ✅
+  ```
+  - Highlight variance in amber if >5%, red if >15%.
+
+- Bottom section: timeline view per chef:
+  - Each dish prepared shown as a timeline event with time, dish name, order number, ingredients used.
+
+***
+
+### Shift-end stock reconciliation report
+
+- At end of each shift, generate automatically:
+  ```
+  SHIFT REPORT – Morning Shift – 20 March 2026
+  ─────────────────────────────────────────────
+  Ingredient     | Opening | +In | −Used | −Waste | Expected | Actual | Variance
+  Chicken Breast | 5.0kg   | 2kg | 3.2kg | 0.1kg  | 3.7kg    | 3.5kg  | −200g ⚠️
+  ```
+- Manager receives this report as:
+  - In-app notification with summary.
+  - Email with full PDF report.
+  - Accessible under Reports → Shift Reports.
+
+***
+
+### Real-time alerts for managers
+
+- In-app notification bell shows:
+  - 🔴 "Stock Alert: Cream below reorder level (20ml remaining)" — with "View" button.
+  - 🟠 "Chef Anita reported wastage: 200g Chicken — Reason: Spoilage" — with "Review" button.
+  - 🟡 "Variance detected: Ravi used 200g more Chicken than expected in Morning Shift."
+- Each alert links directly to the relevant record in the stock log.
+
+***
+
+**Paste Prompt 1 first, test the KDS UI, then Prompt 2 for the engine, then Prompt 3 for reporting.** This order ensures you can see and validate the chef-facing UI before building the background logic and reporting on top of it.

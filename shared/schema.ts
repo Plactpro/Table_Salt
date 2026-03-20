@@ -354,8 +354,13 @@ export const stockMovements = pgTable("stock_movements", {
   quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
   reason: text("reason"),
   orderId: text("order_id"),
+  orderNumber: text("order_number"),
   menuItemId: text("menu_item_id"),
   recipeId: text("recipe_id"),
+  chefId: varchar("chef_id", { length: 36 }),
+  chefName: text("chef_name"),
+  station: text("station"),
+  shiftId: varchar("shift_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_stock_movements_tenant_created").on(t.tenantId, t.createdAt),
@@ -1348,4 +1353,52 @@ export const securityAlerts = pgTable("security_alerts", {
 
 export const insertSecurityAlertSchema = createInsertSchema(securityAlerts).omit({ id: true, createdAt: true });
 export type SecurityAlert = typeof securityAlerts.$inferSelect;
+
+export const shifts = pgTable("shifts", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  name: text("name").notNull(),
+  startTime: text("start_time").notNull(),
+  endTime: text("end_time").notNull(),
+  active: boolean("active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_shifts_tenant_id").on(t.tenantId),
+]);
+
+export const insertShiftSchema = createInsertSchema(shifts).omit({ id: true, createdAt: true });
+export type Shift = typeof shifts.$inferSelect;
+export type InsertShift = z.infer<typeof insertShiftSchema>;
+
+export const menuItemStations = pgTable("menu_item_stations", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull().references(() => menuItems.id),
+  station: text("station").notNull(),
+}, (t) => [
+  index("idx_menu_item_stations_tenant").on(t.tenantId),
+  index("idx_menu_item_stations_item").on(t.menuItemId),
+]);
+
+export const insertMenuItemStationSchema = createInsertSchema(menuItemStations).omit({ id: true });
+export type MenuItemStation = typeof menuItemStations.$inferSelect;
+export type InsertMenuItemStation = z.infer<typeof insertMenuItemStationSchema>;
+
+export const kotEvents = pgTable("kot_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  orderId: varchar("order_id", { length: 36 }).notNull().references(() => orders.id),
+  station: text("station"),
+  items: jsonb("items").notNull().default([]),
+  sentAt: timestamp("sent_at").defaultNow(),
+  receivedAt: timestamp("received_at"),
+}, (t) => [
+  index("idx_kot_events_tenant_order").on(t.tenantId, t.orderId),
+]);
+
+export const insertKotEventSchema = createInsertSchema(kotEvents).omit({ id: true, sentAt: true });
+export type KotEvent = typeof kotEvents.$inferSelect;
+export type InsertKotEvent = z.infer<typeof insertKotEventSchema>;
 export type InsertSecurityAlert = z.infer<typeof insertSecurityAlertSchema>;

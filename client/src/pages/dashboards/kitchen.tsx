@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ChefHat, Flame, CheckCircle2, Utensils, Clock, LogIn, LogOut, CheckCircle, AlertCircle,
   Maximize2, Minimize2, RotateCcw, Coffee, IceCream, Beef, CookingPot, Filter,
+  AlertTriangle, X, Package, Trash2, CheckSquare,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,19 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
+import { useAuth } from "@/lib/auth";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import type { InventoryItem } from "@shared/schema";
 
 interface KDSOrderItem {
   id: string;
@@ -23,6 +37,7 @@ interface KDSOrderItem {
   course: string | null;
   startedAt: string | null;
   readyAt: string | null;
+  menuItemId?: string | null;
 }
 
 interface KDSTicket {
@@ -31,6 +46,7 @@ interface KDSTicket {
   status: string;
   createdAt: string | null;
   orderType: string | null;
+  channel: string | null;
   tableNumber?: number;
   items: KDSOrderItem[];
 }
@@ -42,6 +58,27 @@ interface KitchenStation {
   color: string;
   sortOrder: number;
   active: boolean;
+}
+
+interface RecipeCheckIngredient {
+  id: string;
+  inventoryItemId: string;
+  name: string;
+  required: number;
+  available: number;
+  unit: string;
+  sufficient: boolean;
+  status: "ok" | "low" | "out";
+}
+
+interface RecipeCheckItem {
+  orderItemId: string;
+  menuItemId: string;
+  menuItemName: string;
+  quantity: number;
+  recipeId: string;
+  recipeName: string;
+  ingredients: RecipeCheckIngredient[];
 }
 
 const STATION_ICONS: Record<string, LucideIcon> = {
@@ -154,11 +191,239 @@ function KitchenClockCard() {
   );
 }
 
-function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
+function RecipeCheckDrawer({
+  open, onClose, orderId, station, onConfirm,
+}: {
+  open: boolean;
+  onClose: () => void;
+  orderId: string;
+  station: string | null;
+  onConfirm: (force: boolean) => void;
+}) {
+  const url = station
+    ? `/api/kds/recipe-check/${orderId}?station=${encodeURIComponent(station)}`
+    : `/api/kds/recipe-check/${orderId}`;
+  const { data: recipeItems = [], isLoading } = useQuery<RecipeCheckItem[]>({
+    queryKey: ["/api/kds/recipe-check", orderId, station],
+    queryFn: () => fetch(url, { credentials: "include" }).then(r => r.json()),
+    enabled: open,
+  });
+
+  const allIngredients = recipeItems.flatMap(r => r.ingredients);
+  const hasInsufficient = allIngredients.some(i => !i.sufficient);
+  const outIngredients = allIngredients.filter(i => i.status === "out");
+  const lowIngredients = allIngredients.filter(i => i.status === "low");
+
+  const stockColor = (status: string) => {
+    if (status === "ok") return "text-green-600 dark:text-green-400";
+    if (status === "low") return "text-amber-600 dark:text-amber-400";
+    return "text-red-600 dark:text-red-400";
+  };
+
+  const stockBg = (status: string) => {
+    if (status === "ok") return "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800";
+    if (status === "low") return "bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800";
+    return "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800";
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto" data-testid="dialog-recipe-check">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <ChefHat className="h-5 w-5 text-primary" />
+            Recipe Check — Start Cooking
+          </DialogTitle>
+          <DialogDescription>
+            Review ingredients and stock levels before confirming.
+          </DialogDescription>
+        </DialogHeader>
+
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
+          </div>
+        ) : recipeItems.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Package className="h-10 w-10 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No recipes linked. Chef can proceed directly.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {hasInsufficient && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800" data-testid="warning-insufficient-stock">
+                <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
+                <div className="text-sm text-red-700 dark:text-red-300">
+                  <p className="font-medium">Insufficient stock detected</p>
+                  {outIngredients.length > 0 && (
+                    <p className="text-xs mt-1">Out of stock: {outIngredients.map(i => i.name).join(", ")}</p>
+                  )}
+                  {lowIngredients.length > 0 && (
+                    <p className="text-xs mt-1">Low stock: {lowIngredients.map(i => `${i.name} (${i.available}${i.unit} of ${i.required}${i.unit} needed)`).join(", ")}</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {recipeItems.map(ri => (
+              <div key={ri.orderItemId} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-sm">{ri.quantity}× {ri.menuItemName}</span>
+                  <Badge variant="outline" className="text-xs">{ri.recipeName}</Badge>
+                </div>
+                <div className="space-y-1.5">
+                  {ri.ingredients.map(ing => (
+                    <div key={ing.id} className={`flex items-center justify-between px-3 py-2 rounded-md border text-sm ${stockBg(ing.status)}`} data-testid={`ingredient-row-${ing.inventoryItemId}`}>
+                      <div className="flex items-center gap-2">
+                        <CheckSquare className={`h-3.5 w-3.5 ${stockColor(ing.status)}`} />
+                        <span>{ing.name}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs font-mono tabular-nums">
+                        <span className="text-muted-foreground">Need: <span className="font-semibold text-foreground">{ing.required}{ing.unit}</span></span>
+                        <span className={`font-semibold ${stockColor(ing.status)}`}>
+                          Stock: {ing.available}{ing.unit} {ing.status === "ok" ? "✅" : ing.status === "low" ? "⚠️" : "❌"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2 pt-2 border-t">
+          {hasInsufficient ? (
+            <>
+              <Button
+                className="w-full bg-orange-500 hover:bg-orange-600 gap-2"
+                onClick={() => onConfirm(true)}
+                data-testid="button-proceed-anyway"
+              >
+                <AlertTriangle className="h-4 w-4" /> Proceed Anyway
+              </Button>
+              <Button variant="outline" className="w-full" onClick={onClose} data-testid="button-cancel-start">
+                <X className="h-4 w-4 mr-2" /> Cancel
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                className="w-full bg-green-600 hover:bg-green-700 gap-2"
+                onClick={() => onConfirm(false)}
+                data-testid="button-confirm-start"
+              >
+                <Flame className="h-4 w-4" /> Confirm & Start Cooking
+              </Button>
+              <Button variant="ghost" className="w-full" onClick={onClose} data-testid="button-cancel-start">
+                Cancel
+              </Button>
+            </>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WastageModal({ open, onClose, station }: { open: boolean; onClose: () => void; station: string | null }) {
+  const { toast } = useToast();
+  const [inventoryItemId, setInventoryItemId] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [reason, setReason] = useState("");
+
+  const { data: inventoryRes } = useQuery<{ data: InventoryItem[] }>({
+    queryKey: ["/api/inventory", "all"],
+    queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
+    enabled: open,
+  });
+  const inventory = inventoryRes?.data ?? [];
+
+  const wastageMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/kds/wastage", { inventoryItemId, quantity: Number(quantity), reason, station });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Wastage reported", description: "Stock deducted and logged." });
+      setInventoryItemId(""); setQuantity(""); setReason("");
+      onClose();
+    },
+    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md" data-testid="dialog-wastage">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Trash2 className="h-4 w-4 text-destructive" /> Report Wastage
+          </DialogTitle>
+          <DialogDescription>Log wasted or spoiled ingredients. Stock will be deducted.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="wastage-ingredient">Ingredient</Label>
+            <Select value={inventoryItemId} onValueChange={setInventoryItemId}>
+              <SelectTrigger id="wastage-ingredient" data-testid="select-wastage-ingredient">
+                <SelectValue placeholder="Select ingredient..." />
+              </SelectTrigger>
+              <SelectContent>
+                {inventory.map(item => (
+                  <SelectItem key={item.id} value={item.id}>
+                    {item.name} ({item.unit}) — Stock: {item.currentStock}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="wastage-qty">Quantity Wasted</Label>
+            <Input
+              id="wastage-qty"
+              type="number"
+              min="0"
+              step="0.01"
+              value={quantity}
+              onChange={e => setQuantity(e.target.value)}
+              placeholder="e.g. 250"
+              data-testid="input-wastage-quantity"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="wastage-reason">Reason (optional)</Label>
+            <Textarea
+              id="wastage-reason"
+              value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="e.g. Spoilage, Overcooked, Dropped..."
+              rows={2}
+              data-testid="input-wastage-reason"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 pt-2 border-t">
+          <Button
+            className="flex-1 bg-destructive hover:bg-destructive/90 gap-2"
+            onClick={() => wastageMutation.mutate()}
+            disabled={!inventoryItemId || !quantity || wastageMutation.isPending}
+            data-testid="button-submit-wastage"
+          >
+            <Trash2 className="h-4 w-4" /> Report Wastage
+          </Button>
+          <Button variant="outline" onClick={onClose} data-testid="button-cancel-wastage">Cancel</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck }: {
   ticket: KDSTicket;
   stationFilter: string | null;
   onItemStatus: (itemId: string, status: string) => void;
   onBulkStatus: (orderId: string, status: string, station?: string) => void;
+  onStartWithRecipeCheck: (orderId: string, station: string | null) => void;
 }) {
   const mins = useElapsedMinutes(ticket.createdAt);
   const timeColor = getTimeColor(mins);
@@ -188,6 +453,8 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
 
   if (filteredItems.length === 0) return null;
 
+  const hasRecipe = filteredItems.some(i => i.menuItemId);
+
   return (
     <motion.div
       initial={{ opacity: 0, scale: 0.95, y: 8 }}
@@ -215,6 +482,9 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
                 {ticket.orderType.replace("_", " ")}
               </Badge>
             )}
+            {ticket.channel === "kiosk" && (
+              <Badge className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">KIOSK</Badge>
+            )}
           </div>
           <div className={`flex items-center gap-1 text-xs font-mono tabular-nums font-semibold ${timeColor}`}>
             <Clock className="h-3 w-3" />
@@ -235,7 +505,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
                     <span className={`font-medium ${item.status === "ready" ? "line-through text-muted-foreground" : ""}`}>
                       {item.quantity}× {item.name}
                     </span>
-                    {item.notes && <span className="text-xs text-muted-foreground italic truncate">({item.notes})</span>}
+                    {item.notes && <span className="text-xs text-red-600 dark:text-red-400 font-medium italic truncate">⚠ {item.notes}</span>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
                     {(!item.status || item.status === "pending") && (
@@ -267,9 +537,15 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus }: {
 
           <div className="flex items-center justify-end gap-1.5 pt-1 border-t">
             {allPending && (
-              <Button size="sm" className="h-7 text-xs gap-1 bg-orange-500 hover:bg-orange-600" onClick={() => onBulkStatus(ticket.id, "cooking", stationFilter || undefined)} data-testid={`btn-start-all-${ticket.id.slice(-4)}`}>
-                <Flame className="h-3 w-3" /> Start All
-              </Button>
+              hasRecipe ? (
+                <Button size="sm" className="h-7 text-xs gap-1 bg-orange-500 hover:bg-orange-600" onClick={() => onStartWithRecipeCheck(ticket.id, stationFilter)} data-testid={`btn-start-all-${ticket.id.slice(-4)}`}>
+                  <Flame className="h-3 w-3" /> Start All
+                </Button>
+              ) : (
+                <Button size="sm" className="h-7 text-xs gap-1 bg-orange-500 hover:bg-orange-600" onClick={() => onBulkStatus(ticket.id, "cooking", stationFilter || undefined)} data-testid={`btn-start-all-${ticket.id.slice(-4)}`}>
+                  <Flame className="h-3 w-3" /> Start All
+                </Button>
+              )
             )}
             {allCooking && (
               <Button size="sm" className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700" onClick={() => onBulkStatus(ticket.id, "ready", stationFilter || undefined)} data-testid={`btn-ready-all-${ticket.id.slice(-4)}`}>
@@ -304,8 +580,18 @@ function StatusDot({ status }: { status: string | null }) {
 export default function KitchenDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const [selectedStation, setSelectedStation] = useState<string | null>(null);
+  const { user } = useAuth();
+  const [selectedStation, setSelectedStation] = useState<string | null>(() => {
+    return localStorage.getItem("kds_station") || null;
+  });
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [recipeCheckState, setRecipeCheckState] = useState<{ orderId: string; station: string | null } | null>(null);
+  const [wastageOpen, setWastageOpen] = useState(false);
+
+  useEffect(() => {
+    if (selectedStation) localStorage.setItem("kds_station", selectedStation);
+    else localStorage.removeItem("kds_station");
+  }, [selectedStation]);
 
   const ticketsUrl = selectedStation ? `/api/kds/tickets?station=${encodeURIComponent(selectedStation)}` : "/api/kds/tickets";
   const { data: tickets = [], isLoading } = useQuery<KDSTicket[]>({
@@ -374,6 +660,32 @@ export default function KitchenDashboard() {
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
   });
 
+  const startWithDeductionMutation = useMutation({
+    mutationFn: async ({ orderId, station, force }: { orderId: string; station: string | null; force: boolean }) => {
+      const res = await apiRequest("POST", `/api/kds/orders/${orderId}/start`, { station, force });
+      if (!res.ok) {
+        const data = await res.json();
+        throw Object.assign(new Error(data.message), { status: res.status, data });
+      }
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+      setRecipeCheckState(null);
+      toast({ title: "Cooking started", description: "Stock deducted and KOT logged." });
+    },
+    onError: (e: Error) => {
+      const err = e as any;
+      if (err.status === 409) {
+        toast({ title: "Stock Warning", description: "Some ingredients are insufficient. Check the recipe drawer.", variant: "destructive" });
+      } else {
+        toast({ title: "Error", description: e.message, variant: "destructive" });
+      }
+    },
+  });
+
   const handleItemStatus = useCallback((itemId: string, status: string) => {
     itemStatusMutation.mutate({ itemId, status });
   }, [itemStatusMutation]);
@@ -381,6 +693,15 @@ export default function KitchenDashboard() {
   const handleBulkStatus = useCallback((orderId: string, status: string, station?: string) => {
     bulkStatusMutation.mutate({ orderId, status, station });
   }, [bulkStatusMutation]);
+
+  const handleStartWithRecipeCheck = useCallback((orderId: string, station: string | null) => {
+    setRecipeCheckState({ orderId, station });
+  }, []);
+
+  const handleRecipeConfirm = useCallback((force: boolean) => {
+    if (!recipeCheckState) return;
+    startWithDeductionMutation.mutate({ orderId: recipeCheckState.orderId, station: recipeCheckState.station, force });
+  }, [recipeCheckState, startWithDeductionMutation]);
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -436,6 +757,15 @@ export default function KitchenDashboard() {
 
   return (
     <div className="space-y-3" data-testid="dashboard-kitchen">
+      <RecipeCheckDrawer
+        open={!!recipeCheckState}
+        onClose={() => setRecipeCheckState(null)}
+        orderId={recipeCheckState?.orderId || ""}
+        station={recipeCheckState?.station || null}
+        onConfirm={handleRecipeConfirm}
+      />
+      <WastageModal open={wastageOpen} onClose={() => setWastageOpen(false)} station={selectedStation} />
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <motion.div
           className="flex items-center gap-3"
@@ -456,6 +786,15 @@ export default function KitchenDashboard() {
 
         <div className="flex items-center gap-2">
           <KitchenClockCard />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setWastageOpen(true)}
+            className="h-8 gap-1 border-red-200 text-red-600 hover:bg-red-50"
+            data-testid="button-report-wastage"
+          >
+            <Trash2 className="h-3.5 w-3.5" /> Wastage
+          </Button>
           <Button size="sm" variant="outline" onClick={toggleFullscreen} className="h-8 gap-1" data-testid="button-fullscreen">
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
             {isFullscreen ? "Exit" : "Full"}
@@ -543,6 +882,7 @@ export default function KitchenDashboard() {
                         stationFilter={selectedStation}
                         onItemStatus={handleItemStatus}
                         onBulkStatus={handleBulkStatus}
+                        onStartWithRecipeCheck={handleStartWithRecipeCheck}
                       />
                     ))
                   )}
