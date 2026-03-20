@@ -1826,6 +1826,8 @@ export class DatabaseStorage implements IStorage {
         station: stockMovements.station,
         shiftId: stockMovements.shiftId,
         createdAt: stockMovements.createdAt,
+        stockBefore: stockMovements.stockBefore,
+        stockAfter: stockMovements.stockAfter,
       })
       .from(stockMovements)
       .leftJoin(inventoryItems, eq(stockMovements.itemId, inventoryItems.id))
