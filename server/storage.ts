@@ -1923,6 +1923,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBill(data: InsertBill): Promise<Bill> {
+    if (!data.billNumber) {
+      return db.transaction(async (tx) => {
+        const year = new Date().getFullYear();
+        const prefix = `INV-${year}-`;
+        const [row] = await tx.select({ maxBill: sql<string>`MAX(bill_number)` }).from(bills)
+          .where(and(eq(bills.tenantId, data.tenantId), sql`bill_number LIKE ${prefix + "%"}`));
+        const lastNum = row?.maxBill ? parseInt(row.maxBill.slice(prefix.length), 10) : 0;
+        const billNumber = `${prefix}${(lastNum + 1).toString().padStart(4, "0")}`;
+        const [b] = await tx.insert(bills).values({ ...data, billNumber }).returning();
+        return b;
+      });
+    }
     const [b] = await db.insert(bills).values(data).returning();
     return b;
   }

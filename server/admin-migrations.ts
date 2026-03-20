@@ -192,4 +192,10 @@ export async function runAdminMigrations(): Promise<void> {
       notes TEXT
     )
   `);
+
+  // Unique constraint to prevent duplicate bill numbers per tenant (concurrent creation safety)
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS bills_tenant_bill_number_uidx
+    ON bills (tenant_id, bill_number)
+  `);
 }

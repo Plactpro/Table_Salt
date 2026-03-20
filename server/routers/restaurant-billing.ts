@@ -70,11 +70,10 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (referencedOrder.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const existing = await storage.getBillByOrder(orderId);
       if (existing) return res.json({ ...existing, alreadyExists: true });
-      const billNumber = await storage.generateBillNumber(user.tenantId);
       const bill = await storage.createBill({
         tenantId: user.tenantId,
         outletId: user.outletId || null,
-        billNumber,
+        billNumber: "",
         orderId,
         tableId: tableId || null,
         customerId: customerId || null,
