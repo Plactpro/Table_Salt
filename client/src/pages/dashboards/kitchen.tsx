@@ -803,8 +803,9 @@ export default function KitchenDashboard() {
   }, []);
 
   const filteredTickets = useMemo(() => {
-    if (!selectedStation) return tickets;
-    return tickets.filter(t => t.items.some(i => i.station === selectedStation));
+    const ticketList = Array.isArray(tickets) ? tickets : [];
+    if (!selectedStation) return ticketList;
+    return ticketList.filter(t => t.items.some(i => i.station === selectedStation));
   }, [tickets, selectedStation]);
 
   const newTickets = filteredTickets.filter(t => t.status === "new" || t.status === "sent_to_kitchen");

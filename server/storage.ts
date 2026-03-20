@@ -112,6 +112,10 @@ import {
   type Shift, type InsertShift,
   type MenuItemStation, type InsertMenuItemStation,
   type KotEvent, type InsertKotEvent,
+  bills, billPayments, posSessions,
+  type Bill, type InsertBill,
+  type BillPayment, type InsertBillPayment,
+  type PosSession, type InsertPosSession,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -1889,6 +1893,96 @@ export class DatabaseStorage implements IStorage {
   }
   async getKotEventsByTenant(tenantId: string, limit = 100) {
     return db.select().from(kotEvents).where(eq(kotEvents.tenantId, tenantId)).orderBy(desc(kotEvents.sentAt)).limit(limit);
+  }
+
+  async generateBillNumber(tenantId: string): Promise<string> {
+    const year = new Date().getFullYear();
+    const [row] = await db.select({ cnt: count() }).from(bills)
+      .where(and(eq(bills.tenantId, tenantId), sql`EXTRACT(YEAR FROM created_at) = ${year}`));
+    const seq = (Number(row?.cnt ?? 0) + 1).toString().padStart(4, "0");
+    return `INV-${year}-${seq}`;
+  }
+
+  async createBill(data: InsertBill): Promise<Bill> {
+    const [b] = await db.insert(bills).values(data).returning();
+    return b;
+  }
+  async getBill(id: string): Promise<Bill | undefined> {
+    const [b] = await db.select().from(bills).where(eq(bills.id, id));
+    return b;
+  }
+  async getBillByOrder(orderId: string): Promise<Bill | undefined> {
+    const [b] = await db.select().from(bills).where(eq(bills.orderId, orderId)).orderBy(desc(bills.createdAt));
+    return b;
+  }
+  async getBillsByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string }): Promise<Bill[]> {
+    let q = db.select().from(bills).where(and(
+      eq(bills.tenantId, tenantId),
+      opts?.status ? eq(bills.paymentStatus, opts.status) : undefined,
+    ));
+    return (q as any).orderBy(desc(bills.createdAt)).limit(opts?.limit ?? 50).offset(opts?.offset ?? 0);
+  }
+  async updateBill(id: string, tenantId: string, data: Partial<InsertBill>): Promise<Bill | undefined> {
+    const [b] = await db.update(bills).set(data).where(and(eq(bills.id, id), eq(bills.tenantId, tenantId))).returning();
+    return b;
+  }
+
+  async createBillPayment(data: InsertBillPayment): Promise<BillPayment> {
+    const [p] = await db.insert(billPayments).values(data).returning();
+    return p;
+  }
+  async getBillPayments(billId: string): Promise<BillPayment[]> {
+    return db.select().from(billPayments).where(eq(billPayments.billId, billId)).orderBy(billPayments.createdAt);
+  }
+  async getBillPaymentsByTenant(tenantId: string, opts?: { limit?: number }): Promise<BillPayment[]> {
+    return db.select().from(billPayments).where(eq(billPayments.tenantId, tenantId))
+      .orderBy(desc(billPayments.createdAt)).limit(opts?.limit ?? 100);
+  }
+
+  async createPosSession(data: InsertPosSession): Promise<PosSession> {
+    const [s] = await db.insert(posSessions).values(data).returning();
+    return s;
+  }
+  async getActivePosSession(tenantId: string, waiterId: string): Promise<PosSession | undefined> {
+    const [s] = await db.select().from(posSessions)
+      .where(and(eq(posSessions.tenantId, tenantId), eq(posSessions.waiterId, waiterId), eq(posSessions.status, "open")))
+      .orderBy(desc(posSessions.openedAt));
+    return s;
+  }
+  async getPosSession(id: string): Promise<PosSession | undefined> {
+    const [s] = await db.select().from(posSessions).where(eq(posSessions.id, id));
+    return s;
+  }
+  async updatePosSession(id: string, tenantId: string, data: Partial<InsertPosSession>): Promise<PosSession | undefined> {
+    const [s] = await db.update(posSessions).set(data).where(and(eq(posSessions.id, id), eq(posSessions.tenantId, tenantId))).returning();
+    return s;
+  }
+  async getPosSessionReport(sessionId: string): Promise<{
+    session: PosSession;
+    billCount: number;
+    totalRevenue: number;
+    revenueByMethod: Record<string, number>;
+    cashSales: number;
+    expectedCash: number;
+  }> {
+    const [session] = await db.select().from(posSessions).where(eq(posSessions.id, sessionId));
+    if (!session) throw new Error("Session not found");
+    const sessionBills = await db.select().from(bills).where(eq(bills.posSessionId, sessionId));
+    const paidBills = sessionBills.filter(b => b.paymentStatus === "paid");
+    const payments = await db.select().from(billPayments)
+      .where(sql`bill_id IN (${paidBills.map(b => `'${b.id}'`).join(",") || "NULL"})`);
+    const revenueByMethod: Record<string, number> = {};
+    let totalRevenue = 0;
+    for (const p of payments) {
+      if (!p.isRefund) {
+        const method = p.paymentMethod;
+        revenueByMethod[method] = (revenueByMethod[method] ?? 0) + Number(p.amount);
+        totalRevenue += Number(p.amount);
+      }
+    }
+    const cashSales = revenueByMethod["CASH"] ?? 0;
+    const expectedCash = Number(session.openingFloat ?? 0) + cashSales;
+    return { session, billCount: paidBills.length, totalRevenue, revenueByMethod, cashSales, expectedCash };
   }
 }
 

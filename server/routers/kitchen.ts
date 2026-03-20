@@ -398,6 +398,19 @@ export function registerKitchenRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/kot-events", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { orderId, limit } = req.query;
+      if (orderId) {
+        const events = await storage.getKotEventsByOrder(orderId as string);
+        return res.json(events);
+      }
+      const events = await storage.getKotEventsByTenant(user.tenantId, limit ? Number(limit) : 100);
+      res.json(events);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/stock-movements", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;

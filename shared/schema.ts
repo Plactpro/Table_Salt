@@ -283,14 +283,21 @@ export const orders = pgTable("orders", {
   tax: decimal("tax", { precision: 10, scale: 2 }).default("0"),
   discount: decimal("discount", { precision: 10, scale: 2 }).default("0"),
   total: decimal("total", { precision: 10, scale: 2 }).default("0"),
+  serviceCharge: decimal("service_charge", { precision: 10, scale: 2 }).default("0"),
+  tips: decimal("tips", { precision: 10, scale: 2 }).default("0"),
   paymentMethod: text("payment_method"),
   notes: text("notes"),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
+  discountReason: text("discount_reason"),
   offerId: varchar("offer_id", { length: 36 }),
   channel: text("channel"),
   channelOrderId: text("channel_order_id"),
   channelData: jsonb("channel_data"),
   stripePaymentSessionId: text("stripe_payment_session_id"),
+  posSessionId: varchar("pos_session_id", { length: 36 }),
+  parentOrderId: varchar("parent_order_id", { length: 36 }),
+  isHeld: boolean("is_held").default(false),
+  kitchenSentAt: timestamp("kitchen_sent_at"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_orders_tenant_id").on(t.tenantId),
@@ -315,6 +322,8 @@ export const orderItems = pgTable("order_items", {
   startedAt: timestamp("started_at"),
   readyAt: timestamp("ready_at"),
   metadata: jsonb("metadata"),
+  isAddon: boolean("is_addon").default(false),
+  modifiers: jsonb("modifiers"),
 }, (t) => [
   index("idx_order_items_order_id").on(t.orderId),
 ]);
@@ -1405,3 +1414,87 @@ export const insertKotEventSchema = createInsertSchema(kotEvents).omit({ id: tru
 export type KotEvent = typeof kotEvents.$inferSelect;
 export type InsertKotEvent = z.infer<typeof insertKotEventSchema>;
 export type InsertSecurityAlert = z.infer<typeof insertSecurityAlertSchema>;
+
+export const bills = pgTable("bills", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  billNumber: varchar("bill_number", { length: 50 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }).notNull().references(() => orders.id),
+  tableId: varchar("table_id", { length: 36 }).references(() => tables.id),
+  customerId: varchar("customer_id", { length: 36 }),
+  waiterId: varchar("waiter_id", { length: 36 }).notNull().references(() => users.id),
+  waiterName: varchar("waiter_name", { length: 255 }),
+  subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0"),
+  discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
+  discountReason: varchar("discount_reason", { length: 255 }),
+  serviceCharge: decimal("service_charge", { precision: 10, scale: 2 }).default("0"),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
+  taxBreakdown: jsonb("tax_breakdown"),
+  tips: decimal("tips", { precision: 10, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+  paymentStatus: text("payment_status").default("pending"),
+  voidReason: text("void_reason"),
+  voidedAt: timestamp("voided_at"),
+  voidedBy: varchar("voided_by", { length: 36 }),
+  posSessionId: varchar("pos_session_id", { length: 36 }),
+  covers: integer("covers").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+  paidAt: timestamp("paid_at"),
+}, (t) => [
+  index("idx_bills_tenant_id").on(t.tenantId),
+  index("idx_bills_order_id").on(t.orderId),
+  index("idx_bills_tenant_created").on(t.tenantId, t.createdAt),
+  index("idx_bills_tenant_status").on(t.tenantId, t.paymentStatus),
+]);
+
+export const insertBillSchema = createInsertSchema(bills).omit({ id: true, createdAt: true });
+export type Bill = typeof bills.$inferSelect;
+export type InsertBill = z.infer<typeof insertBillSchema>;
+
+export const billPayments = pgTable("bill_payments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  billId: varchar("bill_id", { length: 36 }).notNull().references(() => bills.id),
+  paymentMethod: varchar("payment_method", { length: 30 }).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
+  referenceNo: varchar("reference_no", { length: 100 }),
+  collectedBy: varchar("collected_by", { length: 36 }).references(() => users.id),
+  isRefund: boolean("is_refund").default(false),
+  refundReason: text("refund_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_bill_payments_bill_id").on(t.billId),
+  index("idx_bill_payments_tenant_id").on(t.tenantId),
+]);
+
+export const insertBillPaymentSchema = createInsertSchema(billPayments).omit({ id: true, createdAt: true });
+export type BillPayment = typeof billPayments.$inferSelect;
+export type InsertBillPayment = z.infer<typeof insertBillPaymentSchema>;
+
+export const posSessions = pgTable("pos_sessions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  waiterId: varchar("waiter_id", { length: 36 }).notNull().references(() => users.id),
+  waiterName: varchar("waiter_name", { length: 255 }),
+  shiftName: varchar("shift_name", { length: 50 }),
+  openingFloat: decimal("opening_float", { precision: 10, scale: 2 }).default("0"),
+  closingCashCount: decimal("closing_cash_count", { precision: 10, scale: 2 }),
+  closedBy: varchar("closed_by", { length: 36 }),
+  status: text("status").default("open"),
+  openedAt: timestamp("opened_at").defaultNow(),
+  closedAt: timestamp("closed_at"),
+  totalOrders: integer("total_orders").default(0),
+  totalRevenue: decimal("total_revenue", { precision: 10, scale: 2 }).default("0"),
+  revenueByMethod: jsonb("revenue_by_method"),
+  notes: text("notes"),
+}, (t) => [
+  index("idx_pos_sessions_tenant_id").on(t.tenantId),
+  index("idx_pos_sessions_waiter_id").on(t.waiterId),
+  index("idx_pos_sessions_tenant_status").on(t.tenantId, t.status),
+]);
+
+export const insertPosSessionSchema = createInsertSchema(posSessions).omit({ id: true, openedAt: true });
+export type PosSession = typeof posSessions.$inferSelect;
+export type InsertPosSession = z.infer<typeof insertPosSessionSchema>;

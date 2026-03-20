@@ -30,6 +30,10 @@ import PromotionsHub from "@/pages/modules/promotions-hub";
 import InventoryHub from "@/pages/modules/inventory-hub";
 import StaffHub from "@/pages/modules/staff-hub";
 import ReportsHub from "@/pages/modules/reports-hub";
+import StockMovementLog from "@/pages/modules/stock-movement-log";
+import ChefReport from "@/pages/modules/chef-report";
+import ShiftsManagement from "@/pages/modules/shifts-management";
+import ShiftReconciliation from "@/pages/modules/shift-reconciliation";
 import DeliveryHub from "@/pages/modules/delivery-hub";
 import LocationsHub from "@/pages/modules/locations-hub";
 import SettingsHub from "@/pages/modules/settings-hub";
@@ -266,6 +270,10 @@ function ProtectedPages() {
         <Route path="/integrations">{() => <GuardedRoute path="/integrations" component={IntegrationsPage} />}</Route>
         <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffHub} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsHub} />}</Route>
+        <Route path="/stock-movements">{() => <GuardedRoute path="/inventory" component={StockMovementLog} />}</Route>
+        <Route path="/chef-report">{() => <GuardedRoute path="/reports" component={ChefReport} />}</Route>
+        <Route path="/shifts">{() => <GuardedRoute path="/settings" component={ShiftsManagement} />}</Route>
+        <Route path="/shift-reconciliation">{() => <GuardedRoute path="/reports" component={ShiftReconciliation} />}</Route>
         <Route path="/kiosk-management">{() => <GuardedRoute path="/kiosk-management" component={KioskManagementPage} />}</Route>
         <Route path="/omnichannel">{() => <GuardedRoute path="/omnichannel" component={OmnichannelPage} />}</Route>
         <Route path="/channels">{() => <GuardedRoute path="/channels" component={OmnichannelPage} />}</Route>
