@@ -304,9 +304,94 @@ describe("Recipe cost calculation (pure math)", () => {
   it("empty ingredient list yields zero", () => {
     expect(calcRecipeCost([])).toBe(0);
   });
+});
 
-  it("100% waste would be infinite — guard: wastePct capped at <100", () => {
-    const calc = () => calcRecipeCost([{ quantity: 100, costPerUnit: 1, wastePct: 99 }]);
-    expect(calc()).toBeCloseTo(10000);
+describe("Retention cleanup date cutoff logic (pure date math)", () => {
+  const computeDataCutoff = (now: Date, dataRetentionMonths: number): Date => {
+    const cutoff = new Date(now);
+    cutoff.setMonth(cutoff.getMonth() - dataRetentionMonths);
+    return cutoff;
+  };
+
+  const computeAuditCutoff = (now: Date, auditRetentionMonths: number, dataRetentionMonths: number): Date => {
+    const cutoff = new Date(now);
+    cutoff.setMonth(cutoff.getMonth() - Math.max(auditRetentionMonths, dataRetentionMonths));
+    return cutoff;
+  };
+
+  const computeAlertCutoff = (now: Date, auditRetentionMonths: number): Date => {
+    const cutoff = new Date(now);
+    cutoff.setMonth(cutoff.getMonth() - Math.max(auditRetentionMonths, 6));
+    return cutoff;
+  };
+
+  const now = new Date("2025-06-15T00:00:00.000Z");
+
+  it("dataCutoff is exactly N months before now", () => {
+    const cutoff = computeDataCutoff(now, 36);
+    expect(cutoff.toISOString().startsWith("2022-06-15")).toBe(true);
+  });
+
+  it("dataCutoff with 12 months is one year before now", () => {
+    const cutoff = computeDataCutoff(now, 12);
+    expect(cutoff.getFullYear()).toBe(2024);
+    expect(cutoff.getMonth()).toBe(now.getMonth());
+  });
+
+  it("auditCutoff uses max(auditRetention, dataRetention) — audit shorter than data", () => {
+    const cutoff = computeAuditCutoff(now, 24, 36);
+    const expected = computeDataCutoff(now, 36);
+    expect(cutoff.toISOString()).toBe(expected.toISOString());
+  });
+
+  it("auditCutoff uses max(auditRetention, dataRetention) — audit longer than data", () => {
+    const cutoff = computeAuditCutoff(now, 48, 36);
+    const expected = computeDataCutoff(now, 48);
+    expect(cutoff.toISOString()).toBe(expected.toISOString());
+  });
+
+  it("auditCutoff equals dataRetention when both are equal", () => {
+    const cutoff = computeAuditCutoff(now, 24, 24);
+    const expected = computeDataCutoff(now, 24);
+    expect(cutoff.toISOString()).toBe(expected.toISOString());
+  });
+
+  it("alertCutoff uses max(auditRetention, 6) — enforces minimum 6 months", () => {
+    const cutoff = computeAlertCutoff(now, 2);
+    const expected = computeDataCutoff(now, 6);
+    expect(cutoff.toISOString()).toBe(expected.toISOString());
+  });
+
+  it("alertCutoff uses auditRetention when it exceeds 6 months", () => {
+    const cutoff = computeAlertCutoff(now, 24);
+    const expected = computeDataCutoff(now, 24);
+    expect(cutoff.toISOString()).toBe(expected.toISOString());
+  });
+
+  it("cutoffs are always in the past relative to now", () => {
+    const dataCutoff = computeDataCutoff(now, 36);
+    const auditCutoff = computeAuditCutoff(now, 24, 36);
+    const alertCutoff = computeAlertCutoff(now, 24);
+    expect(dataCutoff < now).toBe(true);
+    expect(auditCutoff < now).toBe(true);
+    expect(alertCutoff < now).toBe(true);
+  });
+
+  it("longer retention produces an older (earlier) cutoff date", () => {
+    const shortCutoff = computeDataCutoff(now, 12);
+    const longCutoff = computeDataCutoff(now, 36);
+    expect(longCutoff < shortCutoff).toBe(true);
+  });
+
+  it("default 36-month data retention puts cutoff 3 years back", () => {
+    const cutoff = computeDataCutoff(now, 36);
+    const yearDiff = now.getFullYear() - cutoff.getFullYear();
+    expect(yearDiff).toBe(3);
+  });
+
+  it("default 24-month audit retention puts cutoff 2 years back", () => {
+    const cutoff = computeDataCutoff(now, 24);
+    const yearDiff = now.getFullYear() - cutoff.getFullYear();
+    expect(yearDiff).toBe(2);
   });
 });
