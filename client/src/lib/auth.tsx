@@ -28,6 +28,7 @@ export interface TenantInfo {
   trialEndsAt?: string | null;
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
+  logo?: string | null;
 }
 
 export interface AuthUser {

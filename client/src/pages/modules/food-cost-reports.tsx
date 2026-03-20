@@ -247,9 +247,10 @@ export default function FoodCostReports() {
                 data-testid="button-download-pdf-profitability"
                 onClick={() => {
                   const tenantName = user?.tenant?.name || "Restaurant";
-                  exportToPdf({
+                  void exportToPdf({
                     title: "Food Cost & Profitability Report",
                     restaurantName: tenantName,
+                    logoUrl: user?.tenant?.logo ?? null,
                     dateRange: `${dateFrom} to ${dateTo}`,
                     columns: ["Recipe", "Menu Item", "Plate Cost", "Selling Price", "Food Cost %", "Margin", "Sold Qty", "Total Ideal COGS"],
                     rows: filteredRecipes.map(r => [
@@ -369,9 +370,10 @@ export default function FoodCostReports() {
                 data-testid="button-download-pdf-usage"
                 onClick={() => {
                   const tenantName = user?.tenant?.name || "Restaurant";
-                  exportToPdf({
+                  void exportToPdf({
                     title: "Theoretical vs Actual Usage Report",
                     restaurantName: tenantName,
+                    logoUrl: user?.tenant?.logo ?? null,
                     dateRange: `${dateFrom} to ${dateTo}`,
                     columns: ["Ingredient", "Ideal Usage", "Actual Usage", "Variance (Qty)", "Variance %", "Variance (Cost)", "Current Stock"],
                     rows: varianceByIngredient.map(v => {
