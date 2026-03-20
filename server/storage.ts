@@ -1923,20 +1923,31 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createBill(data: InsertBill): Promise<Bill> {
-    if (!data.billNumber) {
-      return db.transaction(async (tx) => {
-        const year = new Date().getFullYear();
-        const prefix = `INV-${year}-`;
-        const [row] = await tx.select({ maxBill: sql<string>`MAX(bill_number)` }).from(bills)
-          .where(and(eq(bills.tenantId, data.tenantId), sql`bill_number LIKE ${prefix + "%"}`));
-        const lastNum = row?.maxBill ? parseInt(row.maxBill.slice(prefix.length), 10) : 0;
-        const billNumber = `${prefix}${(lastNum + 1).toString().padStart(4, "0")}`;
-        const [b] = await tx.insert(bills).values({ ...data, billNumber }).returning();
-        return b;
-      });
+    if (data.billNumber) {
+      const [b] = await db.insert(bills).values(data).returning();
+      return b;
     }
-    const [b] = await db.insert(bills).values(data).returning();
-    return b;
+    const MAX_RETRIES = 5;
+    let lastError: unknown;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        return await db.transaction(async (tx) => {
+          const year = new Date().getFullYear();
+          const prefix = `INV-${year}-`;
+          const [row] = await tx.select({ maxBill: sql<string>`MAX(bill_number)` }).from(bills)
+            .where(and(eq(bills.tenantId, data.tenantId), sql`bill_number LIKE ${prefix + "%"}`));
+          const lastNum = row?.maxBill ? parseInt(row.maxBill.slice(prefix.length), 10) : 0;
+          const billNumber = `${prefix}${(lastNum + 1 + attempt).toString().padStart(4, "0")}`;
+          const [b] = await tx.insert(bills).values({ ...data, billNumber }).returning();
+          return b;
+        });
+      } catch (err: any) {
+        const isUniqueViolation = err?.code === "23505" || (err?.message ?? "").includes("duplicate key");
+        if (!isUniqueViolation) throw err;
+        lastError = err;
+      }
+    }
+    throw lastError ?? new Error("Failed to generate a unique bill number after retries");
   }
   async getBill(id: string): Promise<Bill | undefined> {
     const [b] = await db.select().from(bills).where(eq(bills.id, id));
