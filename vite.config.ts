@@ -40,6 +40,9 @@ export default defineConfig({
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
   },
+  optimizeDeps: {
+    include: ["jspdf", "jspdf-autotable"],
+  },
   server: {
     host: "0.0.0.0",
     allowedHosts: true,
