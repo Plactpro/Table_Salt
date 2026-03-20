@@ -53,13 +53,13 @@ function TypeBadge({ type }: { type: string }) {
   );
 }
 
-export default function StockMovementLog() {
+export default function StockMovementLog({ initialIngredientId }: { initialIngredientId?: string } = {}) {
   const { user } = useAuth();
   const [showFilters, setShowFilters] = useState(true);
   const [filters, setFilters] = useState({
-    from: "", to: "", chefId: "", station: "", type: "", ingredientId: "",
+    from: "", to: "", chefId: "", station: "", type: "", ingredientId: initialIngredientId || "",
   });
-  const [applied, setApplied] = useState<typeof filters>({ from: "", to: "", chefId: "", station: "", type: "", ingredientId: "" });
+  const [applied, setApplied] = useState<typeof filters>({ from: "", to: "", chefId: "", station: "", type: "", ingredientId: initialIngredientId || "" });
 
   const fmt = (v: number) => {
     const tenant = user?.tenant;
