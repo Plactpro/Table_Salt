@@ -68,11 +68,16 @@ export function setupWebSocket(httpServer: HttpServer) {
   wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     let resolvedTenantId = await getTenantFromRequest(req);
 
-    // Public wall-screen connections may provide tenantId as a query param (read-only access)
+    // Public wall-screen connections use a share token or tenantId (read-only access)
     if (!resolvedTenantId && req.url) {
       const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
-      const rawId = new URLSearchParams(qs).get("tenantId");
-      if (rawId) {
+      const qp = new URLSearchParams(qs);
+      const token = qp.get("token");
+      const rawId = qp.get("tenantId");
+      if (token) {
+        const tenant = await storage.getTenantByWallScreenToken(token).catch(() => null);
+        if (tenant) resolvedTenantId = tenant.id;
+      } else if (rawId) {
         const tenant = await storage.getTenant(rawId).catch(() => null);
         if (tenant) resolvedTenantId = rawId;
       }

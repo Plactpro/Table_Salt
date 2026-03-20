@@ -99,13 +99,32 @@ function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
   );
 }
 
-function useWallWebSocket(tenantId: string | null, onEvent: () => void) {
+function buildWsUrl(qp: URLSearchParams): string {
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const base = `${proto}//${window.location.host}/ws`;
+  const token = qp.get("token");
+  const tenantId = qp.get("tenantId");
+  if (token) return `${base}?token=${encodeURIComponent(token)}`;
+  if (tenantId) return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
+  return "";
+}
+
+function buildApiUrl(qp: URLSearchParams): string {
+  const token = qp.get("token");
+  const tenantId = qp.get("tenantId");
+  if (token) return `/api/kds/wall-tickets?token=${encodeURIComponent(token)}`;
+  if (tenantId) return `/api/kds/wall-tickets?tenantId=${encodeURIComponent(tenantId)}`;
+  return "";
+}
+
+function useWallWebSocket(wsUrl: string, onEvent: () => void, onConnected: (v: boolean) => void) {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
+  const onConnectedRef = useRef(onConnected);
+  onConnectedRef.current = onConnected;
 
   useEffect(() => {
-    if (!tenantId) return;
-
+    if (!wsUrl) return;
     let ws: WebSocket | null = null;
     let delay = 1000;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -116,20 +135,23 @@ function useWallWebSocket(tenantId: string | null, onEvent: () => void) {
     function connect() {
       if (unmounted) return;
       try {
-        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-        ws = new WebSocket(`${proto}//${window.location.host}/ws?tenantId=${encodeURIComponent(tenantId)}`);
+        ws = new WebSocket(wsUrl);
 
-        ws.onopen = () => { delay = 1000; };
+        ws.onopen = () => {
+          delay = 1000;
+          onConnectedRef.current(true);
+        };
 
         ws.onmessage = (evt) => {
           try {
-            const { event } = JSON.parse(evt.data as string) as { event: string; payload: unknown };
+            const { event } = JSON.parse(evt.data as string) as { event: string };
             if (ORDER_EVENTS.has(event)) onEventRef.current();
           } catch (_) {}
         };
 
         ws.onclose = () => {
           ws = null;
+          onConnectedRef.current(false);
           if (unmounted) return;
           timer = setTimeout(() => {
             delay = Math.min(delay * 2, 30000);
@@ -148,13 +170,16 @@ function useWallWebSocket(tenantId: string | null, onEvent: () => void) {
       if (timer) clearTimeout(timer);
       if (ws) { ws.onclose = null; ws.close(); }
     };
-  }, [tenantId]);
+  }, [wsUrl]);
 }
 
 export default function KdsWallScreen() {
   const [location] = useLocation();
-  const params = new URLSearchParams(location.split("?")[1] || "");
-  const tenantId = params.get("tenantId") || new URLSearchParams(window.location.search).get("tenantId");
+  const qsRaw = location.includes("?") ? location.split("?")[1] : window.location.search.slice(1);
+  const qp = new URLSearchParams(qsRaw);
+  const hasAccess = !!(qp.get("token") || qp.get("tenantId"));
+  const apiUrl = buildApiUrl(qp);
+  const wsUrl = buildWsUrl(qp);
 
   const [tickets, setTickets] = useState<KDSWallTicket[]>([]);
   const [now, setNow] = useState(new Date());
@@ -180,9 +205,9 @@ export default function KdsWallScreen() {
   }, []);
 
   const fetchTickets = useCallback(async () => {
-    if (!tenantId) return;
+    if (!apiUrl) return;
     try {
-      const res = await fetch(`/api/kds/wall-tickets?tenantId=${encodeURIComponent(tenantId)}`);
+      const res = await fetch(apiUrl);
       if (!res.ok) return;
       const data: KDSWallTicket[] = await res.json();
       if (!Array.isArray(data)) return;
@@ -193,9 +218,9 @@ export default function KdsWallScreen() {
       prevIdsRef.current = newIds;
       setTickets(data);
     } catch (_) {}
-  }, [tenantId, playChime]);
+  }, [apiUrl, playChime]);
 
-  useWallWebSocket(tenantId, fetchTickets);
+  useWallWebSocket(wsUrl, fetchTickets, setWsConnected);
 
   useEffect(() => {
     fetchTickets();
@@ -208,21 +233,11 @@ export default function KdsWallScreen() {
     return () => clearInterval(iv);
   }, []);
 
-  useEffect(() => {
-    if (!tenantId) return;
-    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const probe = new WebSocket(`${proto}//${window.location.host}/ws?tenantId=${encodeURIComponent(tenantId)}`);
-    probe.onopen = () => { setWsConnected(true); probe.close(); };
-    probe.onerror = () => setWsConnected(false);
-    probe.onclose = () => {};
-    return () => { try { probe.close(); } catch (_) {} };
-  }, [tenantId]);
-
   const newTickets = tickets.filter(t => t.status === "new" || t.status === "sent_to_kitchen");
   const cookingTickets = tickets.filter(t => t.status === "in_progress");
   const readyTickets = tickets.filter(t => t.status === "ready");
 
-  if (!tenantId) {
+  if (!hasAccess) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white text-2xl" data-testid="kds-wall-screen">
         Missing tenantId parameter
@@ -247,7 +262,7 @@ export default function KdsWallScreen() {
           <span
             className={`ml-3 text-xs px-2 py-0.5 rounded-full font-medium ${wsConnected ? "bg-green-900 text-green-300" : "bg-gray-700 text-gray-400"}`}
             data-testid="ws-status"
-            title={wsConnected ? "Live WebSocket" : "Polling mode"}
+            title={wsConnected ? "Live WebSocket" : "Polling every 8s"}
           >
             {wsConnected ? "LIVE" : "POLLING"}
           </span>

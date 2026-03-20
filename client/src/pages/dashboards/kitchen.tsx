@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ChefHat, Flame, CheckCircle2, Utensils, Clock, LogIn, LogOut, CheckCircle, AlertCircle,
   Maximize2, Minimize2, RotateCcw, Coffee, IceCream, Beef, CookingPot, Filter,
-  AlertTriangle, X, Package, Trash2, CheckSquare,
+  AlertTriangle, X, Package, Trash2, CheckSquare, Monitor, Copy, RefreshCw, ExternalLink,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Monitor } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -636,6 +635,13 @@ export default function KitchenDashboard() {
     queryFn: () => fetch(ticketsUrl, { credentials: "include" }).then(r => r.json()),
   });
 
+  const { data: wallTokenData, refetch: refetchWallToken } = useQuery<{ token: string }>({
+    queryKey: ["/api/kds/wall-token"],
+    queryFn: () => apiRequest("GET", "/api/kds/wall-token").then(r => r.json()),
+    enabled: !!(user?.role === "owner" || user?.role === "manager"),
+    staleTime: 60000,
+  });
+
   const playChime = useCallback(() => {
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -743,6 +749,29 @@ export default function KitchenDashboard() {
     },
   });
 
+  const [wallPopoverOpen, setWallPopoverOpen] = useState(false);
+
+  const regenerateWallTokenMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/kds/wall-token/regenerate").then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kds/wall-token"] });
+      refetchWallToken();
+      toast({ title: "Wall screen link regenerated", description: "Share the new link. The old link is now invalid." });
+    },
+    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+  });
+
+  const wallScreenUrl = wallTokenData?.token
+    ? `${window.location.origin}/kds/wall?token=${wallTokenData.token}`
+    : undefined;
+
+  const copyWallLink = useCallback(() => {
+    if (wallScreenUrl) {
+      navigator.clipboard.writeText(wallScreenUrl);
+      toast({ title: "Link copied!", description: "Share it with kitchen staff to view the wall screen." });
+    }
+  }, [wallScreenUrl, toast]);
+
   const handleItemStatus = useCallback((itemId: string, status: string) => {
     itemStatusMutation.mutate({ itemId, status });
   }, [itemStatusMutation]);
@@ -823,6 +852,71 @@ export default function KitchenDashboard() {
       />
       <WastageModal open={wastageOpen} onClose={() => setWastageOpen(false)} station={selectedStation} />
 
+      <Dialog open={wallPopoverOpen} onOpenChange={setWallPopoverOpen}>
+        <DialogContent className="max-w-md" data-testid="dialog-wall-link">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Monitor className="h-5 w-5 text-blue-600" />
+              Wall Screen Sharing
+            </DialogTitle>
+            <DialogDescription>
+              Share this secure link with kitchen staff to view the live order display. The link works without login.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            {wallScreenUrl ? (
+              <>
+                <div>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">Shareable Link</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      readOnly
+                      value={wallScreenUrl}
+                      className="font-mono text-xs"
+                      data-testid="input-wall-link"
+                      onClick={e => (e.target as HTMLInputElement).select()}
+                    />
+                    <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={copyWallLink} data-testid="button-copy-wall-link">
+                      <Copy className="h-4 w-4" />
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-blue-600 border-blue-200 hover:bg-blue-50"
+                    onClick={() => window.open(wallScreenUrl, "_blank")}
+                    data-testid="button-open-wall"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    Open Wall Screen
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1 text-red-600 border-red-200 hover:bg-red-50"
+                    onClick={() => regenerateWallTokenMutation.mutate()}
+                    disabled={regenerateWallTokenMutation.isPending}
+                    data-testid="button-regenerate-wall-token"
+                    title="Revoke old link and generate a new one"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${regenerateWallTokenMutation.isPending ? "animate-spin" : ""}`} />
+                    Regenerate Link
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Regenerating creates a new link and immediately invalidates the old one.
+                </p>
+              </>
+            ) : (
+              <div className="text-sm text-muted-foreground text-center py-4">Loading link…</div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex items-center justify-between flex-wrap gap-3">
         <motion.div
           className="flex items-center gap-3"
@@ -857,15 +951,29 @@ export default function KitchenDashboard() {
             {isFullscreen ? "Exit" : "Full"}
           </Button>
           {tenant?.id && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => window.open(`/kds/wall?tenantId=${tenant.id}`, "_blank")}
-              className="h-8 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
-              data-testid="button-wall-screen"
-            >
-              <Monitor className="h-3.5 w-3.5" /> Wall Screen
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => window.open(wallScreenUrl || `/kds/wall?tenantId=${tenant.id}`, "_blank")}
+                className="h-8 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
+                data-testid="button-wall-screen"
+              >
+                <ExternalLink className="h-3.5 w-3.5" /> Wall Screen
+              </Button>
+              {(user?.role === "owner" || user?.role === "manager") && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setWallPopoverOpen(true)}
+                  className="h-8 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
+                  data-testid="button-wall-share"
+                  title="Share wall screen link"
+                >
+                  <Monitor className="h-3.5 w-3.5" /> Share Link
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>

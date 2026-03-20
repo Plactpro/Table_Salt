@@ -95,6 +95,7 @@ export const tenants = pgTable("tenants", {
   stripeSubscriptionId: text("stripe_subscription_id"),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   subscriptionStatus: text("subscription_status").default("trialing"),
+  wallScreenToken: text("wall_screen_token"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

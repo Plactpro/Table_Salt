@@ -415,14 +415,40 @@ export function registerKitchenRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/kds/wall-token", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenant = await storage.getTenant(user.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      let token = tenant.wallScreenToken;
+      if (!token) token = await storage.regenerateWallScreenToken(user.tenantId);
+      res.json({ token });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/kds/wall-token/regenerate", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const token = await storage.regenerateWallScreenToken(user.tenantId);
+      res.json({ token });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/kds/wall-tickets", async (req, res) => {
     try {
-      const { tenantId } = req.query;
-      if (!tenantId || typeof tenantId !== "string") return res.status(400).json({ message: "tenantId required" });
-      const tenant = await storage.getTenant(tenantId);
-      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
-      const allOrders = await storage.getOrdersByTenant(tenantId);
-      const allTables = await storage.getTablesByTenant(tenantId);
+      const { token, tenantId } = req.query;
+      let tenant;
+      if (token && typeof token === "string") {
+        tenant = await storage.getTenantByWallScreenToken(token);
+        if (!tenant) return res.status(403).json({ message: "Invalid wall screen token" });
+      } else if (tenantId && typeof tenantId === "string") {
+        tenant = await storage.getTenant(tenantId);
+        if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+      } else {
+        return res.status(400).json({ message: "token or tenantId required" });
+      }
+      const allOrders = await storage.getOrdersByTenant(tenant.id);
+      const allTables = await storage.getTablesByTenant(tenant.id);
       const tableMap = new Map(allTables.map(t => [t.id, t.number]));
       const activeOrders = allOrders.filter(o => ["new", "sent_to_kitchen", "in_progress", "ready"].includes(o.status || ""));
       const tickets = [];

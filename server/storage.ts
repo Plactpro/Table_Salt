@@ -118,8 +118,10 @@ export interface IStorage {
   getTenant(id: string): Promise<Tenant | undefined>;
   getTenantBySlug(slug: string): Promise<Tenant | undefined>;
   getTenantByStripeCustomerId(stripeCustomerId: string): Promise<Tenant | undefined>;
+  getTenantByWallScreenToken(token: string): Promise<Tenant | undefined>;
   createTenant(data: InsertTenant): Promise<Tenant>;
   updateTenant(id: string, data: Partial<InsertTenant>): Promise<Tenant | undefined>;
+  regenerateWallScreenToken(tenantId: string): Promise<string>;
   getAllTenants(): Promise<Tenant[]>;
 
   getUser(id: string): Promise<User | undefined>;
@@ -457,6 +459,16 @@ export class DatabaseStorage implements IStorage {
   async getTenantByStripeCustomerId(stripeCustomerId: string) {
     const [t] = await db.select().from(tenants).where(eq(tenants.stripeCustomerId, stripeCustomerId));
     return t;
+  }
+  async getTenantByWallScreenToken(token: string) {
+    const [t] = await db.select().from(tenants).where(eq(tenants.wallScreenToken, token));
+    return t;
+  }
+  async regenerateWallScreenToken(tenantId: string): Promise<string> {
+    const { randomBytes } = await import("crypto");
+    const token = randomBytes(24).toString("base64url");
+    await db.update(tenants).set({ wallScreenToken: token }).where(eq(tenants.id, tenantId));
+    return token;
   }
   async createTenant(data: InsertTenant) {
     const [t] = await db.insert(tenants).values(data).returning();
