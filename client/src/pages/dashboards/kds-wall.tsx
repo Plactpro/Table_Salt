@@ -27,7 +27,7 @@ function useElapsedMinutes(createdAt: string | null): number {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!createdAt) return;
-    const iv = setInterval(() => setTick(t => t + 1), 15000);
+    const iv = setInterval(() => setTick(t => t + 1), 30000);
     return () => clearInterval(iv);
   }, [createdAt]);
   if (!createdAt) return 0;
@@ -56,7 +56,11 @@ function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
   const mins = useElapsedMinutes(ticket.createdAt);
   const timeColor = getTimeColor(mins);
   const cardBg = getTimeBg(mins);
-  const label = ticket.tableNumber ? `Table ${ticket.tableNumber}` : ticket.orderType === "takeaway" ? "Takeaway" : `#${ticket.id.slice(-4).toUpperCase()}`;
+  const label = ticket.tableNumber
+    ? `Table ${ticket.tableNumber}`
+    : ticket.orderType === "takeaway"
+    ? "Takeaway"
+    : `#${ticket.id.slice(-4).toUpperCase()}`;
 
   return (
     <motion.div
@@ -95,14 +99,66 @@ function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
   );
 }
 
+function useWallWebSocket(tenantId: string | null, onEvent: () => void) {
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+
+  useEffect(() => {
+    if (!tenantId) return;
+
+    let ws: WebSocket | null = null;
+    let delay = 1000;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let unmounted = false;
+
+    const ORDER_EVENTS = new Set(["order:new", "order:updated", "order:completed", "order:item_updated"]);
+
+    function connect() {
+      if (unmounted) return;
+      try {
+        const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${proto}//${window.location.host}/ws?tenantId=${encodeURIComponent(tenantId)}`);
+
+        ws.onopen = () => { delay = 1000; };
+
+        ws.onmessage = (evt) => {
+          try {
+            const { event } = JSON.parse(evt.data as string) as { event: string; payload: unknown };
+            if (ORDER_EVENTS.has(event)) onEventRef.current();
+          } catch (_) {}
+        };
+
+        ws.onclose = () => {
+          ws = null;
+          if (unmounted) return;
+          timer = setTimeout(() => {
+            delay = Math.min(delay * 2, 30000);
+            connect();
+          }, delay);
+        };
+
+        ws.onerror = () => ws?.close();
+      } catch (_) {}
+    }
+
+    connect();
+
+    return () => {
+      unmounted = true;
+      if (timer) clearTimeout(timer);
+      if (ws) { ws.onclose = null; ws.close(); }
+    };
+  }, [tenantId]);
+}
+
 export default function KdsWallScreen() {
   const [location] = useLocation();
   const params = new URLSearchParams(location.split("?")[1] || "");
   const tenantId = params.get("tenantId") || new URLSearchParams(window.location.search).get("tenantId");
 
   const [tickets, setTickets] = useState<KDSWallTicket[]>([]);
-  const [lastCount, setLastCount] = useState(0);
   const [now, setNow] = useState(new Date());
+  const [wsConnected, setWsConnected] = useState(false);
   const prevIdsRef = useRef<Set<string>>(new Set());
 
   const playChime = useCallback(() => {
@@ -136,13 +192,14 @@ export default function KdsWallScreen() {
       if (hasNewTicket && prevIdsRef.current.size > 0) playChime();
       prevIdsRef.current = newIds;
       setTickets(data);
-      setLastCount(data.filter(t => t.status === "new" || t.status === "sent_to_kitchen").length);
     } catch (_) {}
   }, [tenantId, playChime]);
 
+  useWallWebSocket(tenantId, fetchTickets);
+
   useEffect(() => {
     fetchTickets();
-    const interval = setInterval(fetchTickets, 4000);
+    const interval = setInterval(fetchTickets, 8000);
     return () => clearInterval(interval);
   }, [fetchTickets]);
 
@@ -151,13 +208,23 @@ export default function KdsWallScreen() {
     return () => clearInterval(iv);
   }, []);
 
+  useEffect(() => {
+    if (!tenantId) return;
+    const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const probe = new WebSocket(`${proto}//${window.location.host}/ws?tenantId=${encodeURIComponent(tenantId)}`);
+    probe.onopen = () => { setWsConnected(true); probe.close(); };
+    probe.onerror = () => setWsConnected(false);
+    probe.onclose = () => {};
+    return () => { try { probe.close(); } catch (_) {} };
+  }, [tenantId]);
+
   const newTickets = tickets.filter(t => t.status === "new" || t.status === "sent_to_kitchen");
   const cookingTickets = tickets.filter(t => t.status === "in_progress");
   const readyTickets = tickets.filter(t => t.status === "ready");
 
   if (!tenantId) {
     return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white text-2xl">
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white text-2xl" data-testid="kds-wall-screen">
         Missing tenantId parameter
       </div>
     );
@@ -177,6 +244,13 @@ export default function KdsWallScreen() {
             <ChefHat className="h-7 w-7 text-primary" />
           </div>
           <span className="text-2xl font-black tracking-tight">Kitchen Display</span>
+          <span
+            className={`ml-3 text-xs px-2 py-0.5 rounded-full font-medium ${wsConnected ? "bg-green-900 text-green-300" : "bg-gray-700 text-gray-400"}`}
+            data-testid="ws-status"
+            title={wsConnected ? "Live WebSocket" : "Polling mode"}
+          >
+            {wsConnected ? "LIVE" : "POLLING"}
+          </span>
         </div>
         <div className="text-right">
           <div className="text-3xl font-mono font-bold text-white tabular-nums" data-testid="wall-clock">
@@ -190,7 +264,7 @@ export default function KdsWallScreen() {
         {columns.map((col) => {
           const ColIcon = col.icon;
           return (
-            <div key={col.key} className={`flex flex-col border-t-4 ${col.borderColor}`}>
+            <div key={col.key} className={`flex flex-col border-t-4 ${col.borderColor}`} data-testid={`wall-col-${col.key}`}>
               <div className="px-6 py-4 bg-gray-900 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <ColIcon className={`h-6 w-6 ${col.headerColor}`} />
@@ -198,7 +272,7 @@ export default function KdsWallScreen() {
                     {col.title}
                   </h2>
                 </div>
-                <span className={`text-xl font-bold px-3 py-1 rounded-full ${col.badgeClass}`}>
+                <span className={`text-xl font-bold px-3 py-1 rounded-full ${col.badgeClass}`} data-testid={`wall-count-${col.key}`}>
                   {col.tickets.length}
                 </span>
               </div>
