@@ -65,6 +65,9 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const { orderId, tableId, customerId, subtotal, discountAmount, discountReason,
         serviceCharge, taxAmount, taxBreakdown, tips, totalAmount, covers, posSessionId } = req.body;
       if (!orderId || !totalAmount) return res.status(400).json({ message: "orderId and totalAmount are required" });
+      const referencedOrder = await storage.getOrder(orderId);
+      if (!referencedOrder) return res.status(404).json({ message: "Order not found" });
+      if (referencedOrder.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const existing = await storage.getBillByOrder(orderId);
       if (existing) return res.json({ ...existing, alreadyExists: true });
       const billNumber = await storage.generateBillNumber(user.tenantId);

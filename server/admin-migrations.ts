@@ -125,4 +125,71 @@ export async function runAdminMigrations(): Promise<void> {
 
   // T001/T005: module_config for tenant feature toggles
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS module_config JSONB DEFAULT '{}'`);
+
+  // Task #60: Restaurant billing tables
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bills (
+      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR NOT NULL,
+      outlet_id VARCHAR,
+      bill_number TEXT NOT NULL,
+      order_id VARCHAR NOT NULL,
+      table_id VARCHAR,
+      customer_id VARCHAR,
+      waiter_id VARCHAR,
+      waiter_name TEXT,
+      subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+      discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      discount_reason TEXT,
+      service_charge NUMERIC(12,2) NOT NULL DEFAULT 0,
+      tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      tax_breakdown JSONB,
+      tips NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      payment_status TEXT NOT NULL DEFAULT 'pending',
+      pos_session_id VARCHAR,
+      void_reason TEXT,
+      voided_at TIMESTAMPTZ,
+      voided_by VARCHAR,
+      paid_at TIMESTAMPTZ,
+      covers INTEGER NOT NULL DEFAULT 1,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bill_payments (
+      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR NOT NULL,
+      bill_id VARCHAR NOT NULL,
+      payment_method TEXT NOT NULL,
+      amount NUMERIC(12,2) NOT NULL,
+      reference_no TEXT,
+      is_refund BOOLEAN NOT NULL DEFAULT false,
+      refund_reason TEXT,
+      collected_by VARCHAR,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pos_sessions (
+      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR NOT NULL,
+      outlet_id VARCHAR,
+      waiter_id VARCHAR NOT NULL,
+      waiter_name TEXT,
+      shift_name TEXT,
+      opening_float NUMERIC(12,2) NOT NULL DEFAULT 0,
+      closing_cash_count NUMERIC(12,2),
+      status TEXT NOT NULL DEFAULT 'open',
+      total_orders INTEGER NOT NULL DEFAULT 0,
+      total_revenue NUMERIC(12,2) NOT NULL DEFAULT 0,
+      revenue_by_method JSONB,
+      opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      closed_at TIMESTAMPTZ,
+      closed_by VARCHAR,
+      notes TEXT
+    )
+  `);
 }
