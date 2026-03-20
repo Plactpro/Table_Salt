@@ -2,15 +2,17 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency } from "@shared/currency";
-import { Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, BarChart3, Activity, Filter } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, BarChart3, Activity, Filter, FileDown } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { MenuCategory } from "@shared/schema";
+import { exportToPdf } from "@/lib/pdf-export";
 
 interface FoodCostRecipe {
   recipeId: string;
@@ -238,6 +240,35 @@ export default function FoodCostReports() {
               <span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-300" />{">"} 50%
               <span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-300 ml-1" />{"> 35%"}
               <span className="inline-block w-3 h-3 rounded bg-green-100 border border-green-300 ml-1" /> OK
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-2"
+                data-testid="button-download-pdf-profitability"
+                onClick={() => {
+                  const tenantName = user?.tenant?.name || "Restaurant";
+                  exportToPdf({
+                    title: "Food Cost & Profitability Report",
+                    restaurantName: tenantName,
+                    dateRange: `${dateFrom} to ${dateTo}`,
+                    columns: ["Recipe", "Menu Item", "Plate Cost", "Selling Price", "Food Cost %", "Margin", "Sold Qty", "Total Ideal COGS"],
+                    rows: filteredRecipes.map(r => [
+                      r.recipeName,
+                      r.menuItemName || "Not linked",
+                      fmt(r.plateCost),
+                      r.sellingPrice > 0 ? fmt(r.sellingPrice) : "—",
+                      r.foodCostPct > 0 ? `${r.foodCostPct.toFixed(1)}%` : "—",
+                      r.sellingPrice > 0 ? fmt(r.margin) : "—",
+                      r.soldQty > 0 ? r.soldQty : "—",
+                      r.soldQty > 0 ? fmt(r.totalIdealCost) : "—",
+                    ]),
+                    filename: `food-cost-profitability-${dateFrom}-${dateTo}.pdf`,
+                    footerNote: `Avg Food Cost: ${summary.avgFoodCostPct.toFixed(1)}% | Weighted: ${summary.salesWeightedFoodCostPct.toFixed(1)}%`,
+                  });
+                }}
+              >
+                <FileDown className="h-3.5 w-3.5 mr-1.5" /> Download PDF
+              </Button>
             </div>
           </div>
 
@@ -331,6 +362,37 @@ export default function FoodCostReports() {
               <Filter className="h-3 w-3" />
               <span className="inline-block w-3 h-3 rounded bg-red-100 border border-red-300" />{">"} 15% variance
               <span className="inline-block w-3 h-3 rounded bg-amber-100 border border-amber-300 ml-1" />{">"} 5% variance
+              <Button
+                variant="outline"
+                size="sm"
+                className="ml-2"
+                data-testid="button-download-pdf-usage"
+                onClick={() => {
+                  const tenantName = user?.tenant?.name || "Restaurant";
+                  exportToPdf({
+                    title: "Theoretical vs Actual Usage Report",
+                    restaurantName: tenantName,
+                    dateRange: `${dateFrom} to ${dateTo}`,
+                    columns: ["Ingredient", "Ideal Usage", "Actual Usage", "Variance (Qty)", "Variance %", "Variance (Cost)", "Current Stock"],
+                    rows: varianceByIngredient.map(v => {
+                      const pct = v.idealUsage > 0 ? ((v.varianceQty / v.idealUsage) * 100) : 0;
+                      return [
+                        v.itemName,
+                        `${v.idealUsage.toFixed(2)} ${v.unit}`,
+                        `${v.actualUsage.toFixed(2)} ${v.unit}`,
+                        `${v.varianceQty > 0 ? "+" : ""}${v.varianceQty.toFixed(2)} ${v.unit}`,
+                        `${v.varianceQty > 0 ? "+" : ""}${pct.toFixed(1)}%`,
+                        `${v.varianceQty > 0 ? "+" : ""}${fmt(v.varianceCost)}`,
+                        `${v.currentStock.toFixed(2)} ${v.unit}`,
+                      ];
+                    }),
+                    filename: `theoretical-usage-${dateFrom}-${dateTo}.pdf`,
+                    footerNote: `Total variance cost: ${fmt(Math.abs(totalVarianceCost))}`,
+                  });
+                }}
+              >
+                <FileDown className="h-3.5 w-3.5 mr-1.5" /> Download PDF
+              </Button>
             </div>
           </div>
 
