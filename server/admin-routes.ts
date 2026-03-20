@@ -3,12 +3,12 @@ import { db } from "./db";
 import { eq, and, desc, sql, ne, gte, lte, inArray, max, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import {
-  tenants, users, outlets, orders, auditEvents, roleEnum, securityAlerts,
+  tenants, users, outlets, orders, auditEvents, roleEnum, securityAlerts, customers, reservations, deliveryOrders,
 } from "@shared/schema";
 import { requireSuperAdmin, requireAuth, hashPassword } from "./auth";
 import { auditLog } from "./audit";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
-import { randomBytes } from "crypto";
+import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from "crypto";
 import { getApiRequestCount } from "./api-counter";
 import { pool } from "./db";
 
@@ -1384,5 +1384,214 @@ export function registerAdminRoutes(app: Express) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
     }
+  });
+
+  // ───────────────────────────────────────────────────────────────────────────
+  // Encryption key rotation — super_admin only
+  // POST /api/admin/encryption/rotate-key
+  // Body: { newKey: string }
+  //
+  // Re-encrypts all PII fields (users.email, users.phone, customers.email,
+  // customers.phone, reservations.customerPhone, delivery_orders.customerPhone,
+  // delivery_orders.driver_phone) from the current ENCRYPTION_KEY to the new
+  // key.  Each tenant is committed in its own DB transaction so a failure in
+  // one tenant does not affect others.
+  //
+  // After this completes, the operator MUST update the ENCRYPTION_KEY secret
+  // to match newKey.  Until then decryption will use the old key (from the
+  // running process), so the newly re-encrypted rows will appear garbled until
+  // the process restarts with the new key.  The endpoint returns a warning
+  // reminding the operator to do this.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  const ROTATION_SALT = "table-salt-encryption-v1";
+  const ROTATION_ALGO = "aes-256-gcm";
+  const ROTATION_IV_LEN = 16;
+  const ROTATION_TAG_LEN = 16;
+
+  function deriveKey(rawKey: string): Buffer {
+    return scryptSync(rawKey, ROTATION_SALT, 32);
+  }
+
+  function decryptWithKey(ciphertext: string, key: Buffer): string {
+    if (!ciphertext || !ciphertext.startsWith("enc:")) return ciphertext;
+    try {
+      const parts = ciphertext.split(":");
+      if (parts.length !== 4) return ciphertext;
+      const ivHex = parts[1];
+      const authTagHex = parts[2];
+      const encHex = parts[3];
+      if (ivHex.length !== ROTATION_IV_LEN * 2 || authTagHex.length !== ROTATION_TAG_LEN * 2) return ciphertext;
+      const iv = Buffer.from(ivHex, "hex");
+      const authTag = Buffer.from(authTagHex, "hex");
+      const decipher = createDecipheriv(ROTATION_ALGO, key, iv);
+      decipher.setAuthTag(authTag);
+      let dec = decipher.update(encHex, "hex", "utf8");
+      dec += decipher.final("utf8");
+      return dec;
+    } catch {
+      return ciphertext;
+    }
+  }
+
+  function encryptWithKey(plaintext: string, key: Buffer): string {
+    if (!plaintext) return plaintext;
+    const iv = randomBytes(ROTATION_IV_LEN);
+    const cipher = createCipheriv(ROTATION_ALGO, key, iv);
+    let enc = cipher.update(plaintext, "utf8", "hex");
+    enc += cipher.final("hex");
+    const authTag = cipher.getAuthTag();
+    return `enc:${iv.toString("hex")}:${authTag.toString("hex")}:${enc}`;
+  }
+
+  app.post("/api/admin/encryption/rotate-key", requireSuperAdmin, async (req, res) => {
+    const bodySchema = z.object({
+      newKey: z.string().min(16, "New key must be at least 16 characters"),
+    });
+    const parsed = bodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten() });
+    }
+
+    const oldRaw = process.env.ENCRYPTION_KEY;
+    if (!oldRaw) {
+      return res.status(500).json({ message: "ENCRYPTION_KEY environment variable is not set on this server" });
+    }
+
+    const { newKey: newRaw } = parsed.data;
+    if (oldRaw === newRaw) {
+      return res.status(400).json({ message: "New key is identical to the current key — nothing to rotate" });
+    }
+
+    const oldKey = deriveKey(oldRaw);
+    const newKey = deriveKey(newRaw);
+
+    const adminUser = req.user as { id: string; name: string };
+    let tenantsProcessed = 0;
+    let fieldsRotated = 0;
+    const errors: Array<{ tenantId: string; error: string }> = [];
+
+    const allTenants = await db.select({ id: tenants.id, name: tenants.name }).from(tenants);
+
+    for (const tenant of allTenants) {
+      try {
+        await db.transaction(async (tx) => {
+          let tenantFieldsRotated = 0;
+
+          const tenantUsers = await tx.select({ id: users.id, email: users.email, phone: users.phone })
+            .from(users).where(eq(users.tenantId, tenant.id));
+
+          for (const u of tenantUsers) {
+            const updates: Record<string, string> = {};
+            if (u.email && isEncrypted(u.email)) {
+              const plain = decryptWithKey(u.email, oldKey);
+              if (!plain.startsWith("enc:")) {
+                updates.email = encryptWithKey(plain, newKey);
+                tenantFieldsRotated++;
+              }
+            }
+            if (u.phone && isEncrypted(u.phone)) {
+              const plain = decryptWithKey(u.phone, oldKey);
+              if (!plain.startsWith("enc:")) {
+                updates.phone = encryptWithKey(plain, newKey);
+                tenantFieldsRotated++;
+              }
+            }
+            if (Object.keys(updates).length > 0) {
+              await tx.update(users).set(updates).where(eq(users.id, u.id));
+            }
+          }
+
+          const tenantCustomers = await tx.select({ id: customers.id, email: customers.email, phone: customers.phone })
+            .from(customers).where(eq(customers.tenantId, tenant.id));
+
+          for (const c of tenantCustomers) {
+            const updates: Record<string, string> = {};
+            if (c.email && isEncrypted(c.email)) {
+              const plain = decryptWithKey(c.email, oldKey);
+              if (!plain.startsWith("enc:")) {
+                updates.email = encryptWithKey(plain, newKey);
+                tenantFieldsRotated++;
+              }
+            }
+            if (c.phone && isEncrypted(c.phone)) {
+              const plain = decryptWithKey(c.phone, oldKey);
+              if (!plain.startsWith("enc:")) {
+                updates.phone = encryptWithKey(plain, newKey);
+                tenantFieldsRotated++;
+              }
+            }
+            if (Object.keys(updates).length > 0) {
+              await tx.update(customers).set(updates).where(eq(customers.id, c.id));
+            }
+          }
+
+          const tenantReservations = await tx.select({ id: reservations.id, customerPhone: reservations.customerPhone })
+            .from(reservations).where(eq(reservations.tenantId, tenant.id));
+
+          for (const r of tenantReservations) {
+            if (r.customerPhone && isEncrypted(r.customerPhone)) {
+              const plain = decryptWithKey(r.customerPhone, oldKey);
+              if (!plain.startsWith("enc:")) {
+                await tx.update(reservations)
+                  .set({ customerPhone: encryptWithKey(plain, newKey) })
+                  .where(eq(reservations.id, r.id));
+                tenantFieldsRotated++;
+              }
+            }
+          }
+
+          const tenantDeliveries = await tx.select({ id: deliveryOrders.id, customerPhone: deliveryOrders.customerPhone, driverPhone: deliveryOrders.driverPhone })
+            .from(deliveryOrders).where(eq(deliveryOrders.tenantId, tenant.id));
+
+          for (const d of tenantDeliveries) {
+            const updates: Record<string, string> = {};
+            if (d.customerPhone && isEncrypted(d.customerPhone)) {
+              const plain = decryptWithKey(d.customerPhone, oldKey);
+              if (!plain.startsWith("enc:")) {
+                updates.customerPhone = encryptWithKey(plain, newKey);
+                tenantFieldsRotated++;
+              }
+            }
+            if (d.driverPhone && isEncrypted(d.driverPhone)) {
+              const plain = decryptWithKey(d.driverPhone, oldKey);
+              if (!plain.startsWith("enc:")) {
+                updates.driverPhone = encryptWithKey(plain, newKey);
+                tenantFieldsRotated++;
+              }
+            }
+            if (Object.keys(updates).length > 0) {
+              await tx.update(deliveryOrders).set(updates).where(eq(deliveryOrders.id, d.id));
+            }
+          }
+
+          fieldsRotated += tenantFieldsRotated;
+        });
+
+        tenantsProcessed++;
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push({ tenantId: tenant.id, error: msg });
+      }
+    }
+
+    await auditLog({
+      tenantId: null,
+      userId: adminUser.id,
+      userName: adminUser.name,
+      action: "encryption_key_rotated",
+      entityType: "platform",
+      entityId: "encryption",
+      entityName: "Encryption Key Rotation",
+      metadata: { tenantsProcessed, fieldsRotated, errors: errors.length },
+      req,
+    });
+
+    return res.json({
+      tenantsProcessed,
+      fieldsRotated,
+      errors,
+      warning: "All PII fields have been re-encrypted with the new key. You MUST now update the ENCRYPTION_KEY secret and restart the server for decryption to work correctly with the new key.",
+    });
   });
 }

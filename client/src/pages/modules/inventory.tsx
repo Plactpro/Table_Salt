@@ -10,8 +10,9 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Package, Plus, Search, AlertTriangle, Edit, Trash2, ArrowUpDown,
   Warehouse, BoxIcon, TrendingDown, TrendingUp, ChefHat, ClipboardList, DollarSign,
-  BookOpen, X, Percent, Activity, ChevronLeft, ChevronRight,
+  BookOpen, X, Percent, Activity, ChevronLeft, ChevronRight, FileDown,
 } from "lucide-react";
+import { exportToPdf } from "@/lib/pdf-export";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -169,6 +170,36 @@ function InventoryTab() {
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Search items..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" data-testid="input-search-inventory" />
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="button-download-pdf-inventory"
+                onClick={() => {
+                  const tenantName = user?.tenant?.name || "Restaurant";
+                  exportToPdf({
+                    title: "Inventory Stock Valuation",
+                    restaurantName: tenantName,
+                    dateRange: new Date().toLocaleDateString("en-GB"),
+                    subtitle: `Total Stock Value: ${fmt(totalValue)} | Items: ${inventory.length} | Low Stock: ${lowStockItems.length}`,
+                    columns: ["Item", "SKU", "Category", "Stock", "Unit", "Reorder Level", "Cost Price", "Stock Value", "Status"],
+                    rows: filtered.map(item => [
+                      item.name,
+                      item.sku || "—",
+                      item.category || "—",
+                      Number(item.currentStock).toFixed(2),
+                      item.unit || "pcs",
+                      Number(item.reorderLevel).toFixed(2),
+                      fmt(Number(item.costPrice)),
+                      fmt(Number(item.currentStock) * Number(item.costPrice)),
+                      Number(item.currentStock) <= Number(item.reorderLevel) ? "LOW STOCK" : "OK",
+                    ]),
+                    filename: `inventory-valuation-${new Date().toISOString().split("T")[0]}.pdf`,
+                    footerNote: `Total value: ${fmt(totalValue)}`,
+                  });
+                }}
+              >
+                <FileDown className="h-3.5 w-3.5 mr-1.5" /> Download PDF
+              </Button>
               {canEdit && <Button onClick={() => { setEditingItem(null); resetForm(); setItemDialogOpen(true); }} data-testid="button-add-inventory"><Plus className="h-4 w-4 mr-2" />Add Item</Button>}
             </div>
           </div>

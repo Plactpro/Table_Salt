@@ -10,7 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatCard } from "@/components/widgets/stat-card";
 import { motion } from "framer-motion";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, FileText } from "lucide-react";
+import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, FileText, FileDown } from "lucide-react";
+import { exportToPdf } from "@/lib/pdf-export";
 import { format, subDays } from "date-fns";
 
 export default function ReportsPage() {
@@ -86,22 +87,49 @@ export default function ReportsPage() {
             <p className="text-muted-foreground">Sales analytics and performance insights</p>
           </div>
         </div>
-        <motion.div whileTap={{ scale: 0.95 }}>
-          <Button
-            variant="outline"
-            onClick={handleExport}
-            data-testid="button-export-report"
-            disabled={isExporting}
-          >
-            <motion.div
-              animate={isExporting ? { y: [0, 4, 0] } : {}}
-              transition={{ repeat: isExporting ? Infinity : 0, duration: 0.6 }}
+        <div className="flex items-center gap-2">
+          <motion.div whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="outline"
+              onClick={handleExport}
+              data-testid="button-export-report"
+              disabled={isExporting}
             >
-              <Download className="h-4 w-4 mr-2" />
-            </motion.div>
-            {isExporting ? "Exporting..." : "Export CSV"}
-          </Button>
-        </motion.div>
+              <motion.div
+                animate={isExporting ? { y: [0, 4, 0] } : {}}
+                transition={{ repeat: isExporting ? Infinity : 0, duration: 0.6 }}
+              >
+                <Download className="h-4 w-4 mr-2" />
+              </motion.div>
+              {isExporting ? "Exporting..." : "Export CSV"}
+            </Button>
+          </motion.div>
+          <motion.div whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="outline"
+              data-testid="button-download-pdf-sales"
+              onClick={() => {
+                const tenantName = user?.tenant?.name || "Restaurant";
+                exportToPdf({
+                  title: "Sales Summary Report",
+                  restaurantName: tenantName,
+                  dateRange: `${fromDate} to ${toDate}`,
+                  subtitle: `Total Revenue: ${fmt(Number(totals.revenue || 0))} | Orders: ${Number(totals.orderCount || 0)} | Avg Order: ${fmt(Number(avgOrderValue))}`,
+                  columns: ["Date", "Revenue", "Orders"],
+                  rows: chartData.map((d: { date: string; revenue: number; orders: number }) => [
+                    d.date,
+                    fmt(d.revenue),
+                    d.orders,
+                  ]),
+                  filename: `sales-report-${fromDate}-to-${toDate}.pdf`,
+                  footerNote: `Tax collected: ${fmt(Number(totals.tax || 0))} | Discounts: ${fmt(Number(totals.discount || 0))}`,
+                });
+              }}
+            >
+              <FileDown className="h-4 w-4 mr-2" /> Download PDF
+            </Button>
+          </motion.div>
+        </div>
       </div>
 
       <div className="flex items-end gap-4">
