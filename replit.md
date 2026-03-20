@@ -22,7 +22,12 @@ The system employs a modern web architecture with a React-based frontend and an 
     - **Multi-currency Support**: Locale-aware formatting for 24 currencies.
     - **Timezone Management**: Integration of 75+ IANA zones.
     - **Audit Logging**: System for tracking important events.
-    - **KDS (Kitchen Display System)**: Configurable stations, status flow, visual cues. Recipe Card drawer with ingredient stock pre-check (green/amber/red badges), stock deduction on START (POS-only, kiosk deducts at payment), wastage reporting modal, chef station selector persisted in localStorage, KIOSK badge on tickets.
+    - **KDS (Kitchen Display System)**: Configurable stations, status flow, visual cues. Recipe Card drawer with ingredient stock pre-check (green/amber/red badges), stock deduction on START (POS-only, kiosk deducts at payment), wastage reporting modal, chef station selector persisted in localStorage, KIOSK badge on tickets. KOT event logging (`/api/kot-events`) with chef/station/shift attribution on every cook-start.
+    - **Stock Movement Log**: Full audit trail at `/inventory → Movements` with filters by date, chef, station, type, ingredient, shift. Summary cards for consumed today, wastage, alerts, and active chef.
+    - **Chef Accountability Report**: Chef cards with dish count, consumed value, wastage, ingredient breakdown per chef — at `/reports → Chef Report`.
+    - **Shifts Management**: Create/edit/delete kitchen shifts (Morning/Evening/Night) with active-shift tagging on all stock movements — at `/settings → Shifts`.
+    - **Shift Reconciliation Report**: Per-shift revenue, consumption, and wastage breakdown by ingredient and chef — at `/reports → Shift Reconciliation`.
+    - **Restaurant Billing + POS Session**: Full billing flow: bill preview, multi-method payment (Cash/Card/UPI/Loyalty/Split), tips, change-due calculator, receipt print/WhatsApp. POS session open/close with cash float reconciliation and shift reports. Tables: `bills`, `bill_payments`, `pos_sessions`.
     - **Tenant Configuration**: Customizable settings for timezone, currency, tax, and service charges.
     - **Subscription Tiers & Feature Gating**: Dynamic feature access based on subscription plans (Basic, Standard, Premium, Enterprise).
     - **Promotion & Pricing Rules Engine**: Flexible engine for various discount types and stacking behavior.
