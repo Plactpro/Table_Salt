@@ -33,6 +33,7 @@ const STATUS_OPTIONS = [
   { value: "served", label: "Served" },
   { value: "ready_to_pay", label: "Ready to Pay" },
   { value: "paid", label: "Paid" },
+  { value: "completed", label: "Completed" },
   { value: "cancelled", label: "Cancelled" },
   { value: "voided", label: "Voided" },
 ];
@@ -52,6 +53,7 @@ const statusColors: Record<string, string> = {
   served: "bg-stone-100 text-stone-800 dark:bg-stone-900 dark:text-stone-200",
   ready_to_pay: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   paid: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
+  completed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200",
   cancelled: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200",
   voided: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
 };
@@ -64,6 +66,7 @@ const statusLabels: Record<string, string> = {
   served: "Served",
   ready_to_pay: "Ready to Pay",
   paid: "Paid",
+  completed: "Completed",
   cancelled: "Cancelled",
   voided: "Voided",
 };
@@ -76,6 +79,7 @@ const statusIcons: Record<string, React.ElementType> = {
   served: UtensilsCrossed,
   ready_to_pay: Receipt,
   paid: CreditCard,
+  completed: CheckCircle2,
   cancelled: XCircle,
   voided: Ban,
 };
@@ -94,6 +98,7 @@ const NEXT_STATUS: Record<string, string | null> = {
   served: "ready_to_pay",
   ready_to_pay: "paid",
   paid: null,
+  completed: null,
   cancelled: null,
   voided: null,
 };

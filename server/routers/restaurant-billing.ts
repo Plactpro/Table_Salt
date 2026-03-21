@@ -109,6 +109,27 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       };
       if (!payments || !payments.length) return res.status(400).json({ message: "payments array required" });
 
+      const loyaltyCustomerId = req.body.loyaltyCustomerId as string | undefined;
+      const loyaltyPointsRedeemed = Number(req.body.loyaltyPointsRedeemed ?? 0);
+
+      const loyaltyRows = payments.filter(p => p.paymentMethod === "LOYALTY");
+      if (loyaltyRows.length > 0) {
+        if (!loyaltyCustomerId) {
+          return res.status(400).json({ message: "A customer must be linked to use a Loyalty payment" });
+        }
+        const totalLoyaltyTender = loyaltyRows.reduce((s, p) => s + Number(p.amount), 0);
+        const requiredPoints = Math.ceil(totalLoyaltyTender / 0.01);
+        const loyaltyCustomer = await storage.getCustomerByTenant(loyaltyCustomerId, user.tenantId);
+        if (!loyaltyCustomer) {
+          return res.status(404).json({ message: "Loyalty customer not found" });
+        }
+        if ((loyaltyCustomer.loyaltyPoints ?? 0) < requiredPoints) {
+          return res.status(400).json({
+            message: `Insufficient loyalty points — need ${requiredPoints} pts, customer has ${loyaltyCustomer.loyaltyPoints ?? 0} pts`,
+          });
+        }
+      }
+
       const createdPayments = [];
       for (const p of payments) {
         const payment = await storage.createBillPayment({
@@ -139,17 +160,16 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         if (bill.tableId) {
           try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
         }
-        const loyaltyCustomerId = req.body.loyaltyCustomerId || bill.customerId;
-        const loyaltyPointsRedeemed = Number(req.body.loyaltyPointsRedeemed ?? 0);
-        if (loyaltyCustomerId) {
+        const effectiveLoyaltyCustomerId = loyaltyCustomerId || bill.customerId;
+        if (effectiveLoyaltyCustomerId) {
           try {
-            const customer = await storage.getCustomerByTenant(loyaltyCustomerId, user.tenantId);
+            const customer = await storage.getCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId);
             if (customer) {
               const pointsEarned = Math.floor(billTotal / 10);
               const netChange = pointsEarned - loyaltyPointsRedeemed;
               const newBalance = Math.max(0, (customer.loyaltyPoints ?? 0) + netChange);
               if (netChange !== 0) {
-                await storage.updateCustomerByTenant(loyaltyCustomerId, user.tenantId, {
+                await storage.updateCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId, {
                   loyaltyPoints: newBalance,
                 });
               }
