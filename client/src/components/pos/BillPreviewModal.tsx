@@ -164,6 +164,25 @@ export default function BillPreviewModal({
   // Tracks whether at least one Razorpay link was attempted (enables manual fallback)
   const [rzpAttempted, setRzpAttempted] = useState(false);
 
+  const { data: tenantOffers = [] } = useQuery<{ id: string; name: string; type: string; value: string; maxDiscount?: string | null }[]>({
+    queryKey: ["/api/offers", "active"],
+    queryFn: async () => {
+      const res = await fetch("/api/offers?active=true&limit=200", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data.data ?? []);
+    },
+    enabled: open,
+    staleTime: 60000,
+  });
+
+  const birthdayOffer = tenantOffers.find(o =>
+    /birthday/i.test(o.name) && (o.type === "percentage" || o.type === "fixed_amount")
+  ) ?? null;
+  const anniversaryOffer = tenantOffers.find(o =>
+    /anniversary/i.test(o.name) && (o.type === "percentage" || o.type === "fixed_amount")
+  ) ?? null;
+
   const { data: existingBillData, status: existingBillStatus } = useQuery({
     queryKey: ["/api/restaurant-bills/by-order", orderId],
     queryFn: async () => {
@@ -423,6 +442,7 @@ export default function BillPreviewModal({
     setCrmSearching(false);
     setCrmQuickNote("");
     setCrmNoteSaving(false);
+    setTierDiscountAmount(0);
     // Reset Razorpay gateway state so it doesn't bleed into the next bill session
     setRzpLinkId(null);
     setRzpShortUrl(null);
@@ -469,7 +489,7 @@ export default function BillPreviewModal({
       phone: match.phone ?? null,
     });
     if (isGSTTenant && match.gstin) setCustomerGstinInput(match.gstin);
-    setCrmQuickNote(match.notes ?? "");
+    setCrmQuickNote("");
   }, [isGSTTenant]);
 
   const handleLoyaltySearch = useCallback(async () => {
@@ -742,17 +762,19 @@ export default function BillPreviewModal({
                 {lookedUpCustomer ? (
                   <div className="space-y-2">
                     {(() => {
-                      const today = new Date();
+                      const now = new Date();
+                      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
                       function daysUntil(dateStr: string | null | undefined): number | null {
                         if (!dateStr) return null;
                         const parts = dateStr.split("-");
                         if (parts.length < 3) return null;
                         const mm = parseInt(parts[1], 10);
                         const dd = parseInt(parts[2], 10);
-                        const thisYear = new Date(today.getFullYear(), mm - 1, dd);
-                        const nextYear = new Date(today.getFullYear() + 1, mm - 1, dd);
-                        const target = thisYear >= today ? thisYear : nextYear;
-                        return Math.round((target.getTime() - today.setHours(0,0,0,0)) / 86400000);
+                        if (isNaN(mm) || isNaN(dd)) return null;
+                        const thisYear = new Date(todayMidnight.getFullYear(), mm - 1, dd);
+                        const nextYear = new Date(todayMidnight.getFullYear() + 1, mm - 1, dd);
+                        const target = thisYear.getTime() >= todayMidnight.getTime() ? thisYear : nextYear;
+                        return Math.round((target.getTime() - todayMidnight.getTime()) / 86400000);
                       }
                       const bdDays = daysUntil(lookedUpCustomer.birthday);
                       const annDays = daysUntil(lookedUpCustomer.anniversary);
@@ -762,11 +784,41 @@ export default function BillPreviewModal({
                       const icon = isBirthday ? <Cake className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : <Heart className="h-3.5 w-3.5 shrink-0 text-rose-500" />;
                       const label = isBirthday
                         ? bdDays === 0 ? "Today is this customer's birthday!" : `Birthday in ${bdDays} day${bdDays > 1 ? "s" : ""}!`
-                        : annDays === 0 ? "Today is this customer's anniversary!" : `Anniversary in ${annDays} day${annDays! > 1 ? "s" : ""}!`;
+                        : annDays === 0 ? "Today is this customer's anniversary!" : `Anniversary in ${annDays! > 1 ? `${annDays} days` : "1 day"}!`;
+                      const applicableOffer = isBirthday ? birthdayOffer : anniversaryOffer;
+                      const offerDiscount = applicableOffer
+                        ? applicableOffer.type === "percentage"
+                          ? Math.min(subtotal * (Number(applicableOffer.value) / 100), applicableOffer.maxDiscount ? Number(applicableOffer.maxDiscount) : Infinity)
+                          : Number(applicableOffer.value)
+                        : 0;
+                      const occasionOfferApplied = tierDiscountAmount > 0 && applicableOffer !== null && Math.abs(tierDiscountAmount - offerDiscount) < 0.01;
                       return (
-                        <div className="flex items-center gap-2 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 font-medium" data-testid="crm-occasion-banner">
-                          {icon}{label}
-                          <span className="ml-auto text-amber-500 text-[10px] shrink-0">Consider applying an offer</span>
+                        <div className="rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 font-medium space-y-1.5" data-testid="crm-occasion-banner">
+                          <div className="flex items-center gap-2">
+                            {icon}
+                            <span>{label}</span>
+                          </div>
+                          {applicableOffer ? (
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="text-[10px] text-amber-700 dark:text-amber-400 truncate">
+                                Offer: {applicableOffer.name} ({applicableOffer.type === "percentage" ? `${applicableOffer.value}% off` : fmt(Number(applicableOffer.value))} off)
+                              </span>
+                              <Button
+                                size="sm"
+                                variant={occasionOfferApplied ? "secondary" : "default"}
+                                className="h-5 text-[10px] px-2 shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-0"
+                                onClick={() => {
+                                  setTierDiscountAmount(occasionOfferApplied ? 0 : offerDiscount);
+                                  toast({ title: occasionOfferApplied ? "Offer removed" : "Birthday offer applied", description: occasionOfferApplied ? "Discount removed" : `"${applicableOffer.name}" applied to this bill` });
+                                }}
+                                data-testid="button-crm-apply-occasion-offer"
+                              >
+                                {occasionOfferApplied ? "Remove" : "Apply Offer"}
+                              </Button>
+                            </div>
+                          ) : (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-500">No birthday/anniversary offer configured — consider applying a manual discount</span>
+                          )}
                         </div>
                       );
                     })()}
