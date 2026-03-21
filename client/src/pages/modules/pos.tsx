@@ -25,8 +25,11 @@ import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
+  Receipt, Clock,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
+import BillPreviewModal from "@/components/pos/BillPreviewModal";
+import { StartShiftModal, CloseShiftDialog } from "@/components/pos/PosSessionModal";
 
 interface EngineDiscount {
   ruleId: string;
@@ -153,6 +156,22 @@ export default function POSPage() {
   const [paymentLinkModal, setPaymentLinkModal] = useState<{
     open: boolean; url: string; qrDataUrl: string; copied: boolean; orderId?: string;
   } | null>(null);
+
+  const [posSessionId, setPosSessionId] = useState<string | null>(null);
+  const [showStartShift, setShowStartShift] = useState(false);
+  const [showCloseShift, setShowCloseShift] = useState(false);
+  const [lastPlacedOrder, setLastPlacedOrder] = useState<{
+    orderId: string;
+    cart: CartItem[];
+    subtotal: number;
+    discountAmount: number;
+    serviceChargeAmount: number;
+    taxAmount: number;
+    total: number;
+    tableId?: string;
+    tableNumber?: string | number;
+  } | null>(null);
+  const [showBillModal, setShowBillModal] = useState(false);
 
   useEffect(() => { syncManager.init(); }, []);
 
@@ -448,7 +467,23 @@ export default function POSPage() {
       if (data?.queued) {
         toast({ title: "Order queued", description: "Will sync when connection is restored" });
       } else {
-        toast({ title: "Order placed successfully!" });
+        toast({ title: isDineIn ? "Order sent to kitchen!" : "Order placed!" });
+      }
+      const tableNum = tables.find(t => t.id === selectedTable)?.tableNumber;
+      const snapshot = {
+        orderId: data.id,
+        cart: [...cart],
+        subtotal,
+        discountAmount: totalDiscount,
+        serviceChargeAmount,
+        taxAmount,
+        total,
+        tableId: selectedTable || undefined,
+        tableNumber: tableNum,
+      };
+      setLastPlacedOrder(snapshot);
+      if (!isDineIn) {
+        setShowBillModal(true);
       }
       setCart([]);
       setDiscount("");
@@ -686,7 +721,32 @@ export default function POSPage() {
                 <Badge variant="secondary" data-testid="badge-cart-count">{cart.reduce((s, c) => s + c.quantity, 0)}</Badge>
               </motion.div>
             )}
+            <div className="ml-auto flex items-center gap-1.5">
+              {posSessionId ? (
+                <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowCloseShift(true)} data-testid="button-close-shift">
+                  <Clock className="h-3 w-3 mr-1" /> End Shift
+                </Button>
+              ) : (
+                <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowStartShift(true)} data-testid="button-start-shift">
+                  <Clock className="h-3 w-3 mr-1" /> Start Shift
+                </Button>
+              )}
+            </div>
           </div>
+          {lastPlacedOrder && (
+            <div className="mb-2 flex items-center gap-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg px-3 py-1.5">
+              <Receipt className="h-3.5 w-3.5 text-green-600 shrink-0" />
+              <span className="text-xs text-green-700 dark:text-green-300 flex-1">
+                Order placed · {fmt(lastPlacedOrder.total)}
+              </span>
+              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowBillModal(true)} data-testid="button-open-bill">
+                Bill
+              </Button>
+              <button className="text-green-600 hover:text-green-800 ml-1" onClick={() => setLastPlacedOrder(null)} data-testid="button-dismiss-bill">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
 
           <div className="flex gap-1">
             <Button data-testid="button-order-type-dine-in" variant={orderType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setOrderType("dine_in")}>
@@ -987,6 +1047,48 @@ export default function POSPage() {
           action={supervisorDialog.action}
           actionLabel={supervisorDialog.actionLabel}
           onApproved={handlePosSupervisorApproved}
+        />
+      )}
+
+      {lastPlacedOrder && (
+        <BillPreviewModal
+          open={showBillModal}
+          onClose={() => setShowBillModal(false)}
+          cart={lastPlacedOrder.cart}
+          subtotal={lastPlacedOrder.subtotal}
+          discountAmount={lastPlacedOrder.discountAmount}
+          serviceChargeAmount={lastPlacedOrder.serviceChargeAmount}
+          taxAmount={lastPlacedOrder.taxAmount}
+          total={lastPlacedOrder.total}
+          orderType={orderType}
+          tableId={lastPlacedOrder.tableId}
+          tableNumber={lastPlacedOrder.tableNumber}
+          orderId={lastPlacedOrder.orderId}
+          posSessionId={posSessionId || undefined}
+          onPaymentComplete={() => {
+            setLastPlacedOrder(null);
+            setShowBillModal(false);
+          }}
+        />
+      )}
+
+      <StartShiftModal
+        open={showStartShift}
+        onSessionStarted={(sessionId) => {
+          setPosSessionId(sessionId);
+          setShowStartShift(false);
+        }}
+      />
+
+      {posSessionId && (
+        <CloseShiftDialog
+          open={showCloseShift}
+          onClose={() => setShowCloseShift(false)}
+          sessionId={posSessionId}
+          onClosed={() => {
+            setPosSessionId(null);
+            setShowCloseShift(false);
+          }}
         />
       )}
     </div>
