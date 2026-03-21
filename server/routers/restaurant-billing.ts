@@ -497,7 +497,14 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       if (link.status === "paid") {
         const paymentId = link.payments?.[0]?.payment_id ?? null;
-        const method = (req.query.method as string) || "UPI";
+        // Derive method from Razorpay payload — never trust client query param for reconciliation
+        const rzpMethod = (link.payments?.[0]?.method as string | undefined)?.toLowerCase();
+        const method = rzpMethod === "card" ? "CARD" : rzpMethod === "upi" ? "UPI" : "RAZORPAY";
+        // Idempotency guard: re-fetch bill to check if webhook already finalised it
+        const freshBill = await storage.getBill(bill.id);
+        if (freshBill?.paymentStatus === "paid") {
+          return res.json({ status: "paid", paymentId });
+        }
         await storage.updateBill(bill.id, user.tenantId, { paymentStatus: "paid", paidAt: new Date() });
         await storage.createBillPayment({
           tenantId: bill.tenantId,
