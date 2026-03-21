@@ -182,6 +182,7 @@ export function registerOrdersRoutes(app: Express): void {
       const tenant = await storage.getTenant(user.tenantId);
       const taxRate = Number(tenant?.taxRate || 0) / 100;
       const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
+      const isGST = tenant?.currency === "INR" && tenant?.taxType === "gst";
 
       const channel = orderData.channel || "pos";
 
@@ -223,6 +224,16 @@ export function registerOrdersRoutes(app: Express): void {
       const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
       const serverTotal = Math.round((afterDiscount + serverServiceCharge + serverTax) * 100) / 100;
 
+      let gstNotes: string | undefined;
+      if (isGST && serverTax > 0) {
+        const cgstRate = Number(tenant?.cgstRate || 0);
+        const sgstRate = Number(tenant?.sgstRate || 0);
+        const rateSum = cgstRate + sgstRate;
+        const cgstAmount = rateSum > 0 ? Math.round(serverTax * cgstRate / rateSum * 100) / 100 : serverTax / 2;
+        const sgstAmount = Math.round((serverTax - cgstAmount) * 100) / 100;
+        gstNotes = `CGST(${cgstRate}%): ${cgstAmount.toFixed(2)} | SGST(${sgstRate}%): ${sgstAmount.toFixed(2)}`;
+      }
+
       const serverOrderData = {
         ...orderData,
         tenantId: user.tenantId,
@@ -232,6 +243,7 @@ export function registerOrdersRoutes(app: Express): void {
         discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
         tax: serverTax.toFixed(2),
         total: serverTotal.toFixed(2),
+        ...(gstNotes ? { notes: [orderData.notes, gstNotes].filter(Boolean).join(" | ") } : {}),
       };
 
       let order;

@@ -35,6 +35,9 @@ interface CustomerData {
   loyaltyTier: string | null;
   tags: string[] | null;
   averageSpend: string | null;
+  gstin: string | null;
+  birthday: string | null;
+  anniversary: string | null;
 }
 
 interface OrderData {
@@ -247,9 +250,9 @@ export default function CrmPage() {
       notes: customer.notes || "",
       loyaltyTier: customer.loyaltyTier || "bronze",
       tags: (customer.tags || []).join(", "),
-      gstin: (customer as any).gstin || "",
-      birthday: (customer as any).birthday || "",
-      anniversary: (customer as any).anniversary || "",
+      gstin: customer.gstin || "",
+      birthday: customer.birthday || "",
+      anniversary: customer.anniversary || "",
     });
     setSelectedCustomer(customer);
     setShowEditDialog(true);

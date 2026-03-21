@@ -569,7 +569,7 @@ export default function MenuPage() {
       calories: ing?.calories ? String(ing.calories) : "",
       station: item.station || "",
       course: item.course || "",
-      hsnCode: (item as any).hsnCode || "",
+      hsnCode: item.hsnCode || "",
     });
     setItemDialogOpen(true);
   }
