@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Receipt, CreditCard, Banknote, Smartphone, Gift, Plus, Minus, Printer,
   Share2, ArrowLeft, CheckCircle2, X, AlertTriangle, Mail, RotateCcw, FileDown,
-  Loader2, ExternalLink, QrCode,
+  Loader2, ExternalLink, QrCode, User, Cake, Heart, Star, StickyNote,
 } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -138,8 +138,20 @@ export default function BillPreviewModal({
   const [refundReason, setRefundReason] = useState("");
   const [upiMarkedPaid, setUpiMarkedPaid] = useState(false);
   const [loyaltySearchPhone, setLoyaltySearchPhone] = useState("");
-  const [lookedUpCustomer, setLookedUpCustomer] = useState<{ id: string; name: string; loyaltyPoints: number; gstin?: string | null } | null>(null);
+  const [lookedUpCustomer, setLookedUpCustomer] = useState<{
+    id: string; name: string; loyaltyPoints: number; gstin?: string | null;
+    birthday?: string | null; anniversary?: string | null;
+    totalSpent?: string | null; visitCount?: number | null;
+    lastVisitAt?: string | null; loyaltyTier?: string | null;
+    notes?: string | null; tags?: string[] | null;
+    phone?: string | null;
+  } | null>(null);
   const [loyaltySearching, setLoyaltySearching] = useState(false);
+
+  const [crmPhone, setCrmPhone] = useState("");
+  const [crmSearching, setCrmSearching] = useState(false);
+  const [crmQuickNote, setCrmQuickNote] = useState("");
+  const [crmNoteSaving, setCrmNoteSaving] = useState(false);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
   const [customerGstinInput, setCustomerGstinInput] = useState("");
   const [rzpLinkId, setRzpLinkId] = useState<string | null>(null);
@@ -206,6 +218,7 @@ export default function BillPreviewModal({
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
           queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
           queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
+          performCrmUpdate(grandTotal);
           setStep("receipt");
         } else if (data.status === "cancelled") {
           setRzpPolling(false);
@@ -310,6 +323,7 @@ export default function BillPreviewModal({
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
+      performCrmUpdate(grandTotal);
       setStep("receipt");
     },
     onError: (err: Error) => toast({ title: "Payment failed", description: err.message, variant: "destructive" }),
@@ -404,6 +418,10 @@ export default function BillPreviewModal({
     setLoyaltySearchPhone("");
     setLookedUpCustomer(null);
     setLoyaltySearching(false);
+    setCrmPhone("");
+    setCrmSearching(false);
+    setCrmQuickNote("");
+    setCrmNoteSaving(false);
     // Reset Razorpay gateway state so it doesn't bleed into the next bill session
     setRzpLinkId(null);
     setRzpShortUrl(null);
@@ -417,6 +435,26 @@ export default function BillPreviewModal({
 
   const isManagerOrOwner = user?.role === "manager" || user?.role === "owner";
 
+  const setCustomerFromMatch = useCallback((match: any) => {
+    setLookedUpCustomer({
+      id: match.id,
+      name: match.name,
+      loyaltyPoints: match.loyaltyPoints ?? 0,
+      gstin: match.gstin ?? null,
+      birthday: match.birthday ?? null,
+      anniversary: match.anniversary ?? null,
+      totalSpent: match.totalSpent ?? null,
+      visitCount: match.visitCount ?? null,
+      lastVisitAt: match.lastVisitAt ?? null,
+      loyaltyTier: match.loyaltyTier ?? null,
+      notes: match.notes ?? null,
+      tags: match.tags ?? null,
+      phone: match.phone ?? null,
+    });
+    if (isGSTTenant && match.gstin) setCustomerGstinInput(match.gstin);
+    setCrmQuickNote(match.notes ?? "");
+  }, [isGSTTenant]);
+
   const handleLoyaltySearch = useCallback(async () => {
     if (!loyaltySearchPhone.trim()) return;
     setLoyaltySearching(true);
@@ -426,8 +464,7 @@ export default function BillPreviewModal({
       const customers = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
       const match = customers[0] ?? null;
       if (match) {
-        setLookedUpCustomer({ id: match.id, name: match.name, loyaltyPoints: match.loyaltyPoints ?? 0, gstin: match.gstin ?? null });
-        if (isGSTTenant && match.gstin) setCustomerGstinInput(match.gstin);
+        setCustomerFromMatch(match);
       } else {
         toast({ title: "Customer not found", description: "No customer with that phone number", variant: "destructive" });
       }
@@ -436,7 +473,56 @@ export default function BillPreviewModal({
     } finally {
       setLoyaltySearching(false);
     }
-  }, [loyaltySearchPhone, toast]);
+  }, [loyaltySearchPhone, toast, setCustomerFromMatch]);
+
+  const handleCrmSearch = useCallback(async () => {
+    if (!crmPhone.trim()) return;
+    setCrmSearching(true);
+    try {
+      const res = await apiRequest("GET", `/api/customers?phone=${encodeURIComponent(crmPhone.trim())}`);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
+      const match = list[0] ?? null;
+      if (match) {
+        setCustomerFromMatch(match);
+        setLoyaltySearchPhone(crmPhone.trim());
+      } else {
+        toast({ title: "Customer not found", description: "No CRM profile for that number", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Lookup failed", description: "Could not search customers", variant: "destructive" });
+    } finally {
+      setCrmSearching(false);
+    }
+  }, [crmPhone, toast, setCustomerFromMatch]);
+
+  const handleCrmSaveNote = useCallback(async () => {
+    if (!lookedUpCustomer) return;
+    setCrmNoteSaving(true);
+    try {
+      await apiRequest("PATCH", `/api/customers/${lookedUpCustomer.id}`, { notes: crmQuickNote });
+      setLookedUpCustomer(prev => prev ? { ...prev, notes: crmQuickNote } : prev);
+      toast({ title: "Note saved", description: "Customer note updated" });
+    } catch {
+      toast({ title: "Save failed", description: "Could not save note", variant: "destructive" });
+    } finally {
+      setCrmNoteSaving(false);
+    }
+  }, [lookedUpCustomer, crmQuickNote, toast]);
+
+  const performCrmUpdate = useCallback(async (billTotal: number) => {
+    if (!lookedUpCustomer) return;
+    try {
+      const newTotalSpent = (parseFloat(lookedUpCustomer.totalSpent ?? "0") + billTotal).toFixed(2);
+      const newVisitCount = (lookedUpCustomer.visitCount ?? 0) + 1;
+      await apiRequest("PATCH", `/api/customers/${lookedUpCustomer.id}`, {
+        visitCount: newVisitCount,
+        lastVisitAt: new Date().toISOString(),
+        totalSpent: newTotalSpent,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
+    } catch (_) {}
+  }, [lookedUpCustomer, queryClient]);
   const handleEmailReceipt = () => {
     const subject = encodeURIComponent(`Receipt from ${tenantName} — ${billNumber}`);
     const body = encodeURIComponent(
@@ -641,6 +727,92 @@ export default function BillPreviewModal({
                   <p className="font-medium text-foreground">Quick Pay via UPI</p>
                   <p>Customer can scan QR on payment step</p>
                 </div>
+              </div>
+
+              <div className="rounded-lg border bg-card p-3 space-y-2 no-print" data-testid="crm-customer-section">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                  <User className="h-3.5 w-3.5" />
+                  Customer Profile (CRM)
+                </div>
+                {lookedUpCustomer ? (
+                  <div className="space-y-2">
+                    {(() => {
+                      const today = new Date();
+                      const mmdd = `${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+                      const isBirthday = lookedUpCustomer.birthday && lookedUpCustomer.birthday.slice(5) === mmdd;
+                      const isAnniversary = lookedUpCustomer.anniversary && lookedUpCustomer.anniversary.slice(5) === mmdd;
+                      return (isBirthday || isAnniversary) ? (
+                        <div className="flex items-center gap-2 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 font-medium" data-testid="crm-occasion-banner">
+                          {isBirthday && <Cake className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
+                          {isAnniversary && !isBirthday && <Heart className="h-3.5 w-3.5 shrink-0 text-rose-500" />}
+                          {isBirthday ? "Today is this customer's birthday!" : "Today is this customer's anniversary!"}
+                          <span className="ml-auto text-amber-500 text-[10px]">Consider applying an offer</span>
+                        </div>
+                      ) : null;
+                    })()}
+                    <div className="flex items-start justify-between gap-2 bg-muted/40 rounded-lg p-2.5 border" data-testid="crm-profile-card">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <p className="text-sm font-semibold leading-tight truncate" data-testid="crm-customer-name">{lookedUpCustomer.name}</p>
+                        {lookedUpCustomer.phone && <p className="text-xs text-muted-foreground" data-testid="crm-customer-phone">{lookedUpCustomer.phone}</p>}
+                        <div className="flex items-center gap-2 flex-wrap mt-1">
+                          {lookedUpCustomer.loyaltyTier && (
+                            <Badge variant="outline" className="text-[10px] capitalize px-1.5 py-0" data-testid="crm-loyalty-tier">
+                              <Star className="h-2.5 w-2.5 mr-0.5" />{lookedUpCustomer.loyaltyTier}
+                            </Badge>
+                          )}
+                          <span className="text-[10px] text-muted-foreground" data-testid="crm-visit-count">
+                            {lookedUpCustomer.visitCount ?? 0} visits
+                          </span>
+                          <span className="text-[10px] text-muted-foreground" data-testid="crm-total-spent">
+                            {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0"))} lifetime
+                          </span>
+                        </div>
+                        {lookedUpCustomer.tags && lookedUpCustomer.tags.length > 0 && (
+                          <div className="flex gap-1 flex-wrap mt-1">
+                            {lookedUpCustomer.tags.map(tag => (
+                              <span key={tag} className="text-[10px] bg-primary/10 text-primary rounded px-1.5 py-0.5" data-testid={`crm-tag-${tag}`}>{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs shrink-0" onClick={() => { setLookedUpCustomer(null); setCrmPhone(""); setCrmQuickNote(""); }}>
+                        Change
+                      </Button>
+                    </div>
+                    <div className="space-y-1" data-testid="crm-quick-note-section">
+                      <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
+                        <StickyNote className="h-3 w-3" /> Quick Note
+                      </p>
+                      <div className="flex gap-1.5">
+                        <Textarea
+                          placeholder="Add a note about this visit..."
+                          value={crmQuickNote}
+                          onChange={e => setCrmQuickNote(e.target.value)}
+                          rows={2}
+                          className="text-xs flex-1 min-h-0 resize-none"
+                          data-testid="input-crm-quick-note"
+                        />
+                        <Button size="sm" variant="outline" className="text-xs h-auto self-stretch px-2" onClick={handleCrmSaveNote} disabled={crmNoteSaving} data-testid="button-crm-save-note">
+                          {crmNoteSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex gap-1.5" data-testid="crm-search-area">
+                    <Input
+                      placeholder="Phone number to link customer"
+                      value={crmPhone}
+                      onChange={e => setCrmPhone(e.target.value)}
+                      onKeyDown={e => e.key === "Enter" && handleCrmSearch()}
+                      className="h-8 text-xs flex-1"
+                      data-testid="input-crm-phone"
+                    />
+                    <Button size="sm" className="h-8 text-xs" onClick={handleCrmSearch} disabled={crmSearching} data-testid="button-crm-search">
+                      {crmSearching ? <Loader2 className="h-3 w-3 animate-spin" /> : "Find"}
+                    </Button>
+                  </div>
+                )}
               </div>
 
               {isGSTTenant && (
@@ -1064,6 +1236,26 @@ export default function BillPreviewModal({
                 )}
                 <p className="font-bold text-xl text-primary mt-1">{fmt(grandTotal)}</p>
               </div>
+
+              {lookedUpCustomer && (
+                <div className="rounded-lg border bg-green-50/40 dark:bg-green-950/20 border-green-200 dark:border-green-800 p-3 space-y-1" data-testid="crm-receipt-summary">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-green-600" />
+                    <p className="text-sm font-semibold text-green-700 dark:text-green-300">{lookedUpCustomer.name}</p>
+                    {lookedUpCustomer.loyaltyTier && (
+                      <Badge variant="outline" className="text-[10px] capitalize ml-auto" data-testid="crm-receipt-tier">
+                        <Star className="h-2.5 w-2.5 mr-0.5" />{lookedUpCustomer.loyaltyTier}
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground" data-testid="crm-receipt-points-earned">
+                    +{Math.floor(grandTotal / 10)} loyalty points earned this visit
+                  </p>
+                  <p className="text-xs text-muted-foreground" data-testid="crm-receipt-visit">
+                    Visit #{(lookedUpCustomer.visitCount ?? 0) + 1} · Lifetime: {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0") + grandTotal)}
+                  </p>
+                </div>
+              )}
 
               {isGSTTenant && createdBill && taxAmount > 0 && (
                 <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/20 p-3 text-sm space-y-1">
