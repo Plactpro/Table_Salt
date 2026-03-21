@@ -152,6 +152,7 @@ export default function BillPreviewModal({
   const [crmSearching, setCrmSearching] = useState(false);
   const [crmQuickNote, setCrmQuickNote] = useState("");
   const [crmNoteSaving, setCrmNoteSaving] = useState(false);
+  const [tierDiscountAmount, setTierDiscountAmount] = useState(0);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
   const [customerGstinInput, setCustomerGstinInput] = useState("");
   const [rzpLinkId, setRzpLinkId] = useState<string | null>(null);
@@ -251,7 +252,7 @@ export default function BillPreviewModal({
 
   const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
   const loyaltyRedemptionValue = loyaltyPointsToRedeem * 0.01;
-  const grandTotal = Math.max(0, total + tipAmount - loyaltyRedemptionValue);
+  const grandTotal = Math.max(0, total - tierDiscountAmount + tipAmount - loyaltyRedemptionValue);
 
   const splitPaidTotal = splitRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const splitRemaining = grandTotal - splitPaidTotal;
@@ -267,12 +268,12 @@ export default function BillPreviewModal({
         tableId: tableId || null,
         customerId: lookedUpCustomer?.id || null,
         subtotal: subtotal.toFixed(2),
-        discountAmount: discountAmount.toFixed(2),
+        discountAmount: (discountAmount + tierDiscountAmount).toFixed(2),
         serviceCharge: serviceChargeAmount.toFixed(2),
         taxAmount: taxAmount.toFixed(2),
         taxBreakdown: taxRate > 0 ? { [`Tax (${taxRate}%)`]: taxAmount.toFixed(2) } : null,
         tips: "0",
-        totalAmount: total.toFixed(2),
+        totalAmount: (total - tierDiscountAmount).toFixed(2),
         posSessionId: posSessionId || null,
         customerGstin: isGSTTenant && customerGstinInput ? customerGstinInput : undefined,
       });
@@ -495,16 +496,15 @@ export default function BillPreviewModal({
     if (!crmPhone.trim()) return;
     setCrmSearching(true);
     try {
-      const res = await apiRequest("GET", `/api/customers?phone=${encodeURIComponent(crmPhone.trim())}`);
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
-      const match: CrmCustomerMatch | null = list[0] ?? null;
-      if (match) {
-        setCustomerFromMatch(match);
-        setLoyaltySearchPhone(crmPhone.trim());
-      } else {
+      const res = await apiRequest("GET", `/api/customers/lookup?phone=${encodeURIComponent(crmPhone.trim())}`);
+      if (!res.ok) {
         toast({ title: "Customer not found", description: "No CRM profile for that number", variant: "destructive" });
+        return;
       }
+      const match: CrmCustomerMatch = await res.json();
+      setCustomerFromMatch(match);
+      setLoyaltySearchPhone(crmPhone.trim());
+      setTierDiscountAmount(0);
     } catch {
       toast({ title: "Lookup failed", description: "Could not search customers", variant: "destructive" });
     } finally {
@@ -710,10 +710,11 @@ export default function BillPreviewModal({
                 <div className="space-y-1 text-sm pt-1">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
                   {discountAmount > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span>−{fmt(discountAmount)}</span></div>}
+                  {tierDiscountAmount > 0 && <div className="flex justify-between text-green-600 text-xs" data-testid="preview-tier-discount-row"><span>Loyalty Tier Discount</span><span>−{fmt(tierDiscountAmount)}</span></div>}
                   {serviceChargeAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Service Charge</span><span>{fmt(serviceChargeAmount)}</span></div>}
                   {taxAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Tax ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>}
                   <Separator />
-                  <div className="flex justify-between font-bold text-base"><span>TOTAL</span><span>{fmt(total)}</span></div>
+                  <div className="flex justify-between font-bold text-base"><span>TOTAL</span><span>{fmt(Math.max(0, total - tierDiscountAmount))}</span></div>
                   <p className="text-xs text-muted-foreground italic">{numWords(total)}</p>
                 </div>
               </div>
@@ -787,16 +788,36 @@ export default function BillPreviewModal({
                           </span>
                         </div>
                         {lookedUpCustomer.loyaltyTier && (() => {
-                          const tierBenefits: Record<string, string> = {
-                            bronze: "No tier discount",
-                            silver: "Silver — 5% loyalty discount applicable",
-                            gold: "Gold — 10% loyalty discount applicable",
-                            platinum: "Platinum — 15% loyalty discount applicable",
+                          const tierDiscounts: Record<string, number> = {
+                            bronze: 0,
+                            silver: 5,
+                            gold: 10,
+                            platinum: 15,
                           };
-                          const benefit = tierBenefits[lookedUpCustomer.loyaltyTier!.toLowerCase()];
-                          return benefit ? (
-                            <p className="text-[10px] text-primary/70 mt-0.5" data-testid="crm-tier-benefit">{benefit}</p>
-                          ) : null;
+                          const pct = tierDiscounts[lookedUpCustomer.loyaltyTier!.toLowerCase()] ?? 0;
+                          if (pct === 0) return null;
+                          const tierLabel = lookedUpCustomer.loyaltyTier!.charAt(0).toUpperCase() + lookedUpCustomer.loyaltyTier!.slice(1);
+                          const discountValue = Math.min(subtotal * (pct / 100), subtotal);
+                          const alreadyApplied = tierDiscountAmount > 0;
+                          return (
+                            <div className="flex items-center gap-2 mt-0.5" data-testid="crm-tier-benefit-row">
+                              <p className="text-[10px] text-primary/70 flex-1" data-testid="crm-tier-benefit">
+                                {tierLabel} — {pct}% loyalty discount applicable ({fmt(discountValue)} off)
+                              </p>
+                              <Button
+                                size="sm"
+                                variant={alreadyApplied ? "secondary" : "outline"}
+                                className="h-5 text-[10px] px-2 shrink-0"
+                                onClick={() => {
+                                  setTierDiscountAmount(alreadyApplied ? 0 : discountValue);
+                                  toast({ title: alreadyApplied ? "Tier discount removed" : "Tier discount applied", description: alreadyApplied ? "Discount removed from bill" : `${pct}% ${tierLabel} discount applied` });
+                                }}
+                                data-testid="button-crm-apply-tier-offer"
+                              >
+                                {alreadyApplied ? "Remove" : "Apply Offer"}
+                              </Button>
+                            </div>
+                          );
                         })()}
                         {lookedUpCustomer.tags && lookedUpCustomer.tags.length > 0 && (
                           <div className="flex gap-1 flex-wrap mt-1">
@@ -806,7 +827,7 @@ export default function BillPreviewModal({
                           </div>
                         )}
                       </div>
-                      <Button size="sm" variant="ghost" className="h-6 text-xs shrink-0" onClick={() => { setLookedUpCustomer(null); setCrmPhone(""); setCrmQuickNote(""); }}>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs shrink-0" onClick={() => { setLookedUpCustomer(null); setCrmPhone(""); setCrmQuickNote(""); setTierDiscountAmount(0); }}>
                         Change
                       </Button>
                     </div>

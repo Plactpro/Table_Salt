@@ -32,6 +32,34 @@ export function registerCustomersRoutes(app: Express): void {
     res.json(customer);
   });
 
+  app.get("/api/customers/lookup", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const phone = req.query.phone as string | undefined;
+      if (!phone || !phone.trim()) return res.status(400).json({ message: "phone query param is required" });
+      const all = await storage.getCustomersByTenant(user.tenantId, { limit: 500, offset: 0 });
+      const normalise = (p: string) => String(p ?? "").replace(/[\s\-\(\)]/g, "");
+      const match = all.find(c => normalise(c.phone ?? "") === normalise(phone.trim()));
+      if (!match) return res.status(404).json({ message: "Customer not found" });
+      res.json({
+        id: match.id,
+        name: match.name,
+        email: match.email,
+        phone: match.phone,
+        loyaltyTier: match.loyaltyTier,
+        loyaltyPoints: match.loyaltyPoints,
+        totalSpent: match.totalSpent,
+        visitCount: match.visitCount,
+        lastVisitAt: match.lastVisitAt,
+        birthday: match.birthday,
+        anniversary: match.anniversary,
+        notes: match.notes,
+        tags: match.tags,
+        gstin: match.gstin,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/customers/:id", requireAuth, async (req, res) => {
     const user = req.user as any;
     const customer = await storage.getCustomerByTenant(req.params.id, user.tenantId);
