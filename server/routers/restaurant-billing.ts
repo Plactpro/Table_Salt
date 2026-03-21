@@ -135,7 +135,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       });
 
       if (newStatus === "paid") {
-        await storage.updateOrder(bill.orderId, { status: "paid", paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
+        await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
         if (bill.tableId) {
           try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
         }

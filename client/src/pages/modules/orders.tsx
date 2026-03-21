@@ -1,8 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { apiRequest } from "@/lib/queryClient";
-import BillPreviewModal from "@/components/pos/BillPreviewModal";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
@@ -127,7 +125,6 @@ export default function OrdersPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [, navigate] = useLocation();
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [billPreviewOrder, setBillPreviewOrder] = useState<OrderWithItems | null>(null);
   const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string } | null>(null);
   const [ordersPage, setOrdersPage] = useState(0);
   const ORDERS_LIMIT = 50;
@@ -152,40 +149,6 @@ export default function OrdersPage() {
       return res.json();
     },
     enabled: !!selectedOrderId,
-  });
-
-  const payBillFromOrdersMutation = useMutation({
-    mutationFn: async ({ order, paymentMethod }: { order: OrderWithItems; paymentMethod: string }) => {
-      const subtotal = Number(order.subtotal ?? 0);
-      const tax = Number(order.tax ?? 0);
-      const discount = Number(order.discount ?? 0);
-      const totalAmount = Number(order.total ?? 0);
-      const serviceCharge = Math.max(0, totalAmount - (subtotal - discount + tax));
-
-      const billRes = await apiRequest("POST", "/api/restaurant-bills", {
-        orderId: order.id,
-        tableId: order.tableId ?? null,
-        subtotal: String(subtotal),
-        tax: String(tax),
-        discount: String(discount),
-        serviceCharge: String(serviceCharge),
-        totalAmount: String(totalAmount),
-        notes: null,
-      });
-      const bill = await billRes.json();
-
-      const payRes = await apiRequest("POST", `/api/restaurant-bills/${bill.id}/payments`, {
-        payments: [{ paymentMethod: paymentMethod.toUpperCase(), amount: totalAmount }],
-        tips: 0,
-      });
-      return payRes.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
-      toast({ title: "Payment recorded", description: "Bill settled via billing pipeline" });
-    },
-    onError: (err: Error) => toast({ variant: "destructive", title: "Payment failed", description: err.message }),
   });
 
   const updateStatusMutation = useMutation({
@@ -572,42 +535,6 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      {billPreviewOrder && (() => {
-        const bpSubtotal = Number(billPreviewOrder.subtotal ?? 0);
-        const bpDiscount = Number(billPreviewOrder.discount ?? 0);
-        const bpTax = Number(billPreviewOrder.tax ?? 0);
-        const bpOrderTotal = Number(billPreviewOrder.total ?? 0);
-        const bpServiceCharge = Math.max(0, bpOrderTotal - (bpSubtotal - bpDiscount + bpTax));
-        const bpTotal = bpOrderTotal;
-        const bpCart = (billPreviewOrder.items ?? []).map(item => ({
-          menuItemId: item.menuItemId || item.id,
-          name: item.name || "",
-          price: Number(item.price || 0),
-          quantity: item.quantity || 1,
-          notes: item.notes || "",
-        }));
-        return (
-          <BillPreviewModal
-            open={true}
-            onClose={() => setBillPreviewOrder(null)}
-            cart={bpCart}
-            subtotal={bpSubtotal}
-            discountAmount={bpDiscount}
-            serviceChargeAmount={bpServiceCharge}
-            taxAmount={bpTax}
-            total={bpTotal}
-            orderType={billPreviewOrder.orderType || "dine_in"}
-            tableId={billPreviewOrder.tableId ?? undefined}
-            tableNumber={billPreviewOrder.tableId ? tableMap[billPreviewOrder.tableId] : undefined}
-            orderId={billPreviewOrder.id}
-            posSessionId={undefined}
-            onPaymentComplete={() => {
-              setBillPreviewOrder(null);
-              queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-            }}
-          />
-        );
-      })()}
       {supervisorDialog && (
         <SupervisorApprovalDialog
           open={supervisorDialog.open}
