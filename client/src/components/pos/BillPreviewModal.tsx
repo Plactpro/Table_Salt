@@ -149,8 +149,10 @@ export default function BillPreviewModal({
     if (existingBillData && !createdBill) {
       setCreatedBill(existingBillData);
       setBillNumber(existingBillData.billNumber || "");
-      if (existingBillData.paymentStatus === "paid" || existingBillData.paymentStatus === "partially_paid") {
+      if (existingBillData.paymentStatus === "paid") {
         setStep("receipt");
+      } else if (existingBillData.paymentStatus === "partially_paid") {
+        setStep("payment");
       }
     }
   }, [existingBillData]);
@@ -466,7 +468,7 @@ export default function BillPreviewModal({
                 {tenantAddress && <p className="text-xs text-muted-foreground">{tenantAddress}</p>}
                 <p className="text-xs text-muted-foreground mt-1">{dateStr} · {timeStr}</p>
                 <Badge variant="outline" className="mt-1.5 text-xs font-mono tracking-wide" data-testid="text-invoice-preview-number">
-                  {billNumber || (orderId ? `INV-DRAFT-${orderId.slice(0, 6).toUpperCase()}` : "INV-PENDING")}
+                  {billNumber || "PENDING"}
                 </Badge>
                 {tableNumber && <p className="text-sm mt-1">Table: <strong>{tableNumber}</strong></p>}
                 <p className="text-sm">Waiter: <strong>{user?.name || user?.username}</strong></p>
@@ -699,10 +701,16 @@ export default function BillPreviewModal({
                       Search and link a customer above before confirming a Loyalty payment.
                     </div>
                   )}
-                  {activeMethod === "LOYALTY" && !!lookedUpCustomer && grandTotal > 0.01 && (
+                  {activeMethod === "LOYALTY" && !!lookedUpCustomer && loyaltyPointsToRedeem === 0 && grandTotal > 0.01 && (
+                    <div className="flex items-center gap-1.5 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:text-amber-400" data-testid="loyalty-points-not-set-warning">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      Set the number of points to redeem above, or use Split payment for mixed methods.
+                    </div>
+                  )}
+                  {activeMethod === "LOYALTY" && !!lookedUpCustomer && loyaltyPointsToRedeem > 0 && grandTotal > 0.01 && (
                     <div className="flex items-center gap-1.5 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 px-3 py-2 text-xs text-red-700 dark:text-red-400" data-testid="loyalty-insufficient-points-warning">
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                      Insufficient points — redeem more points or switch to another payment method.
+                      Loyalty covers {fmt(loyaltyRedemptionValue)} ({loyaltyPointsToRedeem} pts) but cannot fully cover the remaining {fmt(grandTotal)}. Use Split payment for mixed-method settlement.
                     </div>
                   )}
                 </div>
