@@ -198,36 +198,40 @@ export function registerKitchenRoutes(app: Express): void {
 
       const existingMovements = await storage.getStockMovementsByOrder(order.id);
       const alreadyDeducted = existingMovements.some((m) => m.type === "RECIPE_CONSUMPTION");
+      const shouldDeduct = order.channel !== "kiosk" && !alreadyDeducted;
 
       const stockWrites: Array<{ inventoryItemId: string; qty: number; menuItemId: string; recipeId: string; menuItemName: string }> = [];
-      const insufficientItems: string[] = [];
 
-      for (const oi of filtered) {
-        if (!oi.menuItemId) continue;
-        const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
-        if (!recipe) continue;
-        const recipeIngs = await storage.getRecipeIngredients(recipe.id);
-        for (const ing of recipeIngs) {
-          const invItem = await storage.getInventoryItem(ing.inventoryItemId);
-          if (!invItem) continue;
-          const ingUnit = ing.unit || invItem.unit || "pcs";
-          const invUnit = invItem.unit || "pcs";
-          const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
-          const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
-          const required = Math.round(convertedQty * (oi.quantity || 1) * 100) / 100;
-          const available = Number(invItem.currentStock || 0);
-          if (available < required && !force) {
-            insufficientItems.push(`${invItem.name} (need ${required}${invUnit}, have ${available}${invUnit})`);
+      if (shouldDeduct) {
+        const insufficientItems: string[] = [];
+
+        for (const oi of filtered) {
+          if (!oi.menuItemId) continue;
+          const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
+          if (!recipe) continue;
+          const recipeIngs = await storage.getRecipeIngredients(recipe.id);
+          for (const ing of recipeIngs) {
+            const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+            if (!invItem) continue;
+            const ingUnit = ing.unit || invItem.unit || "pcs";
+            const invUnit = invItem.unit || "pcs";
+            const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
+            const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
+            const required = Math.round(convertedQty * (oi.quantity || 1) * 100) / 100;
+            const available = Number(invItem.currentStock || 0);
+            if (available < required && !force) {
+              insufficientItems.push(`${invItem.name} (need ${required}${invUnit}, have ${available}${invUnit})`);
+            }
+            stockWrites.push({ inventoryItemId: ing.inventoryItemId, qty: required, menuItemId: oi.menuItemId, recipeId: recipe.id, menuItemName: oi.name });
           }
-          stockWrites.push({ inventoryItemId: ing.inventoryItemId, qty: required, menuItemId: oi.menuItemId, recipeId: recipe.id, menuItemName: oi.name });
+        }
+
+        if (insufficientItems.length > 0 && !force) {
+          return res.status(409).json({ message: "Insufficient stock", insufficientItems });
         }
       }
 
-      if (insufficientItems.length > 0 && !force) {
-        return res.status(409).json({ message: "Insufficient stock", insufficientItems });
-      }
-
-      if (order.channel !== "kiosk" && !alreadyDeducted && stockWrites.length > 0) {
+      if (shouldDeduct && stockWrites.length > 0) {
         const lowStockItems: Array<{ id: string; name: string; after: number; reorder: number; stockMovementId: string }> = [];
         await db.transaction(async (tx) => {
           for (const w of stockWrites) {
@@ -355,7 +359,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", tableId: order.tableId });
-      res.json({ success: true, deducted: (order.channel !== "kiosk" && !alreadyDeducted) ? stockWrites.length : 0 });
+      res.json({ success: true, deducted: shouldDeduct ? stockWrites.length : 0 });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
