@@ -166,7 +166,10 @@ export function registerRestaurantBillingRoutes(app: Express): void {
             const customer = await storage.getCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId);
             if (customer) {
               const pointsEarned = Math.floor(billTotal / 10);
-              const netChange = pointsEarned - loyaltyPointsRedeemed;
+              const serverLoyaltyPointsDeducted = loyaltyRows.length > 0
+                ? Math.ceil(loyaltyRows.reduce((s, p) => s + Number(p.amount), 0) / 0.01)
+                : loyaltyPointsRedeemed;
+              const netChange = pointsEarned - serverLoyaltyPointsDeducted;
               const newBalance = Math.max(0, (customer.loyaltyPoints ?? 0) + netChange);
               if (netChange !== 0) {
                 await storage.updateCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId, {
