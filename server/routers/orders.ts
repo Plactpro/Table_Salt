@@ -430,7 +430,7 @@ export function registerOrdersRoutes(app: Express): void {
       const orderItems = await storage.getOrderItemsByOrder(order.id);
       auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length, engineDiscounts: activeDiscounts.length } });
 
-      if (order.status === "sent_to_kitchen" && orderItems.length > 0) {
+      if ((order.status === "sent_to_kitchen" || order.status === "in_progress") && orderItems.length > 0) {
         const sentAt = new Date().toISOString();
         const tables = orderData.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
         const tableNum = orderData.tableId ? tables.find(t => t.id === orderData.tableId)?.number : undefined;
@@ -630,6 +630,37 @@ export function registerOrdersRoutes(app: Express): void {
       });
     } else {
       order = await storage.updateOrder(req.params.id, updateData);
+    }
+
+    if (req.body.status === "sent_to_kitchen" && existing.status !== "sent_to_kitchen") {
+      const allItems = await storage.getOrderItemsByOrder(req.params.id);
+      if (allItems.length > 0) {
+        const sentAt = new Date().toISOString();
+        const tables = existing.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
+        const tableNum = existing.tableId ? tables.find(t => t.id === existing.tableId)?.number : undefined;
+        const stationsArr = Array.from(new Set(allItems.map(i => i.station).filter((s): s is string => Boolean(s))));
+        if (stationsArr.length === 0) {
+          await storage.createPrintJob({
+            tenantId: user.tenantId, type: "kot", referenceId: req.params.id, station: null, status: "queued",
+            payload: {
+              orderId: req.params.id, orderType: existing.orderType, tableNumber: tableNum ?? null, station: null, sentAt,
+              items: allItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
+            },
+          });
+        } else {
+          for (const stn of stationsArr) {
+            const stnItems = allItems.filter(i => i.station === stn);
+            if (stnItems.length === 0) continue;
+            await storage.createPrintJob({
+              tenantId: user.tenantId, type: "kot", referenceId: req.params.id, station: stn, status: "queued",
+              payload: {
+                orderId: req.params.id, orderType: existing.orderType, tableNumber: tableNum ?? null, station: stn, sentAt,
+                items: stnItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
+              },
+            });
+          }
+        }
+      }
     }
 
     if (req.body.status === "paid" && existing.status !== "paid" && existing.tableId) {

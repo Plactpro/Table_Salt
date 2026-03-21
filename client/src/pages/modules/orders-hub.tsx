@@ -18,6 +18,7 @@ import {
   Table as UITable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useKotAutoDispatch } from "@/hooks/use-kot-auto-dispatch";
 import {
   Globe, Monitor, Bike, Car, UtensilsCrossed, Search, Eye, Clock, CheckCircle2,
   XCircle, ChefHat, Send, Package, Zap, Plus, Settings, RefreshCw, ShoppingBag,
@@ -85,6 +86,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function OrdersHub() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { dispatchKotForOrder } = useKotAutoDispatch();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("live-orders");
   const [channelFilter, setChannelFilter] = useState("all");
@@ -177,9 +179,12 @@ export default function OrdersHub() {
       const res = await apiRequest("PATCH", `/api/orders/${id}`, { status });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any, variables: { id: string; status: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       setSelectedOrder(null);
+      if (variables.status === "sent_to_kitchen") {
+        dispatchKotForOrder(variables.id, user?.tenant?.name || "Kitchen");
+      }
     },
   });
 
