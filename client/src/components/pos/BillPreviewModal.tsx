@@ -184,13 +184,16 @@ export default function BillPreviewModal({
             payments.push({ paymentMethod: row.method, amount: parseFloat(row.amount), referenceNo: row.referenceNo || undefined });
           }
         }
+      } else if (activeMethod === "LOYALTY") {
+        if (loyaltyRedemptionValue > 0) {
+          payments.push({ paymentMethod: "LOYALTY", amount: loyaltyRedemptionValue });
+        }
       } else {
-        const payAmount = grandTotal;
         const refNo = activeMethod === "CARD" ? `${cardLast4}/${cardRef}`.replace(/^\//, "") : undefined;
-        payments.push({ paymentMethod: activeMethod, amount: payAmount, referenceNo: refNo });
-      }
-      if (loyaltyPointsToRedeem > 0 && loyaltyRedemptionValue > 0) {
-        payments.push({ paymentMethod: "LOYALTY", amount: loyaltyRedemptionValue });
+        payments.push({ paymentMethod: activeMethod, amount: grandTotal, referenceNo: refNo });
+        if (loyaltyPointsToRedeem > 0 && loyaltyRedemptionValue > 0) {
+          payments.push({ paymentMethod: "LOYALTY", amount: loyaltyRedemptionValue });
+        }
       }
       const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payments`, {
         payments,
@@ -668,6 +671,12 @@ export default function BillPreviewModal({
                       Search and link a customer above before confirming a Loyalty payment.
                     </div>
                   )}
+                  {activeMethod === "LOYALTY" && !!lookedUpCustomer && grandTotal > 0.01 && (
+                    <div className="flex items-center gap-1.5 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 px-3 py-2 text-xs text-red-700 dark:text-red-400" data-testid="loyalty-insufficient-points-warning">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      Insufficient points — redeem more points or switch to another payment method.
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-2">
@@ -712,7 +721,8 @@ export default function BillPreviewModal({
                       (isSplit && splitRemaining > 0.01) ||
                       (!isSplit && activeMethod === "CASH" && cashTendered !== "" && parseFloat(cashTendered) < grandTotal) ||
                       (!isSplit && activeMethod === "UPI" && !upiMarkedPaid) ||
-                      (!isSplit && activeMethod === "LOYALTY" && !lookedUpCustomer)
+                      (!isSplit && activeMethod === "LOYALTY" && !lookedUpCustomer) ||
+                      (!isSplit && activeMethod === "LOYALTY" && !!lookedUpCustomer && grandTotal > 0.01)
                     }
                     onClick={() => payBillMutation.mutate()}>
                     {payBillMutation.isPending ? "Processing..." : `Confirm Payment · ${fmt(grandTotal)}`}
