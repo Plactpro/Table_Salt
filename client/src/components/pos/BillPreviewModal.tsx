@@ -352,11 +352,12 @@ export default function BillPreviewModal({
     <>
       <style>{`
         @media print {
-          body > * { display: none !important; }
-          .bill-print-root { display: block !important; position: fixed; top: 0; left: 0; width: 80mm; }
-          .no-print { display: none !important; }
+          body * { visibility: hidden; }
+          .bill-print-root, .bill-print-root * { visibility: visible; }
+          .bill-print-root { position: fixed; top: 0; left: 0; width: 80mm; }
         }
         .bill-print-root { display: none; }
+        @media print { .bill-print-root { display: block; } }
       `}</style>
 
       <div className="bill-print-root" ref={printRef}>
