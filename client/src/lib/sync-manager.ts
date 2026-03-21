@@ -163,7 +163,8 @@ class SyncManager implements SyncService, ConfigCache {
           body: JSON.stringify(finalPayload),
         });
         if (res.ok) {
-          return { queued: false, orderId };
+          const data = await res.json();
+          return { queued: false, orderId: data.id || orderId };
         }
         if (res.status === 409) {
           const existing = await res.json();
