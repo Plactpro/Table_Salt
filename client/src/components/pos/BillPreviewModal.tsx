@@ -14,7 +14,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Receipt, CreditCard, Banknote, Smartphone, Gift, Plus, Minus, Printer,
   Share2, ArrowLeft, CheckCircle2, X, AlertTriangle, Mail, RotateCcw, FileDown,
+  Loader2, ExternalLink, QrCode,
 } from "lucide-react";
+import QRCode from "qrcode";
 
 interface CartItem {
   menuItemId: string;
@@ -140,6 +142,12 @@ export default function BillPreviewModal({
   const [loyaltySearching, setLoyaltySearching] = useState(false);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
   const [customerGstinInput, setCustomerGstinInput] = useState("");
+  const [rzpLinkId, setRzpLinkId] = useState<string | null>(null);
+  const [rzpShortUrl, setRzpShortUrl] = useState<string | null>(null);
+  const [rzpQrDataUrl, setRzpQrDataUrl] = useState<string | null>(null);
+  const [rzpPolling, setRzpPolling] = useState(false);
+  const [rzpInitiating, setRzpInitiating] = useState(false);
+  const [rzpPaid, setRzpPaid] = useState(false);
 
   const { data: existingBillData, status: existingBillStatus } = useQuery({
     queryKey: ["/api/restaurant-bills/by-order", orderId],
@@ -169,6 +177,62 @@ export default function BillPreviewModal({
       createBillMutation.mutate();
     }
   }, [fullPage, orderId, existingBillStatus, existingBillData, createdBill]);
+
+  useEffect(() => {
+    if (rzpShortUrl) {
+      QRCode.toDataURL(rzpShortUrl, { width: 200, margin: 2, color: { dark: "#000000", light: "#ffffff" } })
+        .then((url: string) => setRzpQrDataUrl(url))
+        .catch(() => setRzpQrDataUrl(null));
+    } else {
+      setRzpQrDataUrl(null);
+    }
+  }, [rzpShortUrl]);
+
+  useEffect(() => {
+    if (!rzpPolling || !createdBill || rzpPaid) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/restaurant-bills/${createdBill.id}/payment-status?method=${activeMethod}`,
+          { credentials: "include" }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === "paid") {
+          setRzpPaid(true);
+          setRzpPolling(false);
+          queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
+          setStep("receipt");
+        } else if (data.status === "cancelled") {
+          setRzpPolling(false);
+          toast({ title: "Payment cancelled", description: "The payment link expired or was cancelled", variant: "destructive" });
+        }
+      } catch (_) {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [rzpPolling, createdBill, rzpPaid, activeMethod]);
+
+  const handleInitiateRazorpay = async () => {
+    if (!createdBill) return;
+    setRzpInitiating(true);
+    try {
+      const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payment-request`, {
+        method: activeMethod,
+        amountRupees: grandTotal,
+        tips: tipAmount || 0,
+      });
+      const data = await res.json();
+      setRzpLinkId(data.paymentLinkId);
+      setRzpShortUrl(data.shortUrl);
+      setRzpPolling(true);
+    } catch (err: any) {
+      toast({ title: "Could not initiate payment", description: err.message, variant: "destructive" });
+    } finally {
+      setRzpInitiating(false);
+    }
+  };
 
   const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
   const loyaltyRedemptionValue = loyaltyPointsToRedeem * 0.01;
@@ -659,40 +723,133 @@ export default function BillPreviewModal({
                     </div>
                   )}
                   {activeMethod === "CARD" && (
-                    <div className="grid grid-cols-2 gap-2">
-                      <Input placeholder="Last 4 digits" maxLength={4} value={cardLast4} onChange={e => setCardLast4(e.target.value)} />
-                      <Input placeholder="Reference / Approval code" value={cardRef} onChange={e => setCardRef(e.target.value)} />
+                    <div className="space-y-2">
+                      {user?.tenant?.razorpayEnabled && (
+                        <div className="rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 p-3 space-y-3" data-testid="razorpay-card-section">
+                          {!rzpLinkId ? (
+                            <div className="text-center space-y-2">
+                              <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Gateway Payment — {fmt(grandTotal)}</p>
+                              <p className="text-xs text-muted-foreground">Create a Razorpay payment link for the customer to pay online</p>
+                              <Button
+                                size="sm"
+                                className="text-xs"
+                                onClick={handleInitiateRazorpay}
+                                disabled={rzpInitiating}
+                                data-testid="button-razorpay-initiate-card"
+                              >
+                                {rzpInitiating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <QrCode className="h-3 w-3 mr-1" />}
+                                {rzpInitiating ? "Generating…" : "Generate Payment Link"}
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="text-center space-y-2">
+                              {rzpQrDataUrl ? (
+                                <img src={rzpQrDataUrl} alt="Payment QR Code" className="w-28 h-28 mx-auto rounded border" data-testid="razorpay-qr-image" />
+                              ) : (
+                                <div className="w-28 h-28 mx-auto flex items-center justify-center bg-muted rounded border">
+                                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                                </div>
+                              )}
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
+                                <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Waiting for payment…</p>
+                              </div>
+                              <a href={rzpShortUrl!} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline flex items-center justify-center gap-1" data-testid="razorpay-payment-link">
+                                <ExternalLink className="h-3 w-3" /> Open payment link
+                              </a>
+                              <Button size="sm" variant="ghost" className="text-xs text-muted-foreground" onClick={() => { setRzpLinkId(null); setRzpShortUrl(null); setRzpPolling(false); }}>
+                                Cancel link
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {!rzpLinkId && (
+                        <div className={`grid grid-cols-2 gap-2 ${user?.tenant?.razorpayEnabled ? "opacity-60" : ""}`}>
+                          <Input placeholder="Last 4 digits" maxLength={4} value={cardLast4} onChange={e => setCardLast4(e.target.value)} data-testid="input-card-last4" />
+                          <Input placeholder="Reference / Approval code" value={cardRef} onChange={e => setCardRef(e.target.value)} data-testid="input-card-ref" />
+                        </div>
+                      )}
                     </div>
                   )}
                   {activeMethod === "UPI" && (
                     <div className="text-center p-4 bg-muted/50 rounded-lg border space-y-3">
-                      <div className="w-28 h-28 mx-auto rounded-lg bg-white dark:bg-gray-100 border-2 border-dashed border-primary/40 flex flex-col items-center justify-center gap-1" data-testid="upi-qr-placeholder">
-                        <div className="grid grid-cols-3 gap-0.5 opacity-30">
-                          {Array.from({ length: 9 }).map((_, i) => (
-                            <div key={i} className={`w-4 h-4 rounded-sm ${[0,2,6,8].includes(i) ? "bg-primary" : i === 4 ? "bg-primary/50" : "bg-gray-400"}`} />
-                          ))}
-                        </div>
-                        <p className="text-[9px] text-muted-foreground mt-0.5">QR Code</p>
-                      </div>
-                      <Smartphone className="h-5 w-5 mx-auto text-primary" />
-                      <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
-                      <p className="text-xs text-muted-foreground">Show the QR code above or share payment link with the customer, then confirm once received.</p>
-                      <div className="flex gap-2 justify-center">
-                        <Button
-                          size="sm"
-                          variant={upiMarkedPaid ? "secondary" : "default"}
-                          className="text-xs"
-                          onClick={() => setUpiMarkedPaid(true)}
-                          data-testid="button-upi-mark-paid"
-                        >
-                          {upiMarkedPaid ? "✓ UPI Received" : "Mark as Paid"}
-                        </Button>
-                        {upiMarkedPaid && (
-                          <Button size="sm" variant="ghost" className="text-xs" onClick={() => setUpiMarkedPaid(false)}>
-                            Undo
-                          </Button>
-                        )}
-                      </div>
+                      {user?.tenant?.razorpayEnabled ? (
+                        <>
+                          {!rzpLinkId ? (
+                            <>
+                              <div className="w-28 h-28 mx-auto rounded-lg bg-white dark:bg-gray-100 border-2 border-dashed border-primary/40 flex flex-col items-center justify-center gap-1" data-testid="upi-qr-placeholder">
+                                <QrCode className="h-8 w-8 text-primary/40" />
+                                <p className="text-[9px] text-muted-foreground mt-0.5">QR Code</p>
+                              </div>
+                              <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
+                              <Button
+                                size="sm"
+                                className="text-xs"
+                                onClick={handleInitiateRazorpay}
+                                disabled={rzpInitiating}
+                                data-testid="button-razorpay-initiate-upi"
+                              >
+                                {rzpInitiating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <QrCode className="h-3 w-3 mr-1" />}
+                                {rzpInitiating ? "Generating QR…" : "Generate UPI QR"}
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              {rzpQrDataUrl ? (
+                                <img src={rzpQrDataUrl} alt="UPI QR Code" className="w-36 h-36 mx-auto rounded border shadow" data-testid="razorpay-upi-qr-image" />
+                              ) : (
+                                <div className="w-36 h-36 mx-auto flex items-center justify-center bg-muted rounded border">
+                                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                                </div>
+                              )}
+                              <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
+                              <div className="flex items-center justify-center gap-1.5">
+                                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+                                <p className="text-xs text-primary font-medium">Waiting for payment…</p>
+                              </div>
+                              <a href={rzpShortUrl!} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline flex items-center justify-center gap-1" data-testid="razorpay-upi-link">
+                                <ExternalLink className="h-3 w-3" /> Open payment link
+                              </a>
+                              <Button size="sm" variant="ghost" className="text-xs text-muted-foreground" onClick={() => { setRzpLinkId(null); setRzpShortUrl(null); setRzpPolling(false); }}>
+                                Cancel link
+                              </Button>
+                            </>
+                          )}
+                          {!rzpLinkId && (
+                            <div className="pt-1 border-t">
+                              <p className="text-xs text-muted-foreground mb-2">Or mark manually:</p>
+                              <div className="flex gap-2 justify-center">
+                                <Button size="sm" variant={upiMarkedPaid ? "secondary" : "outline"} className="text-xs" onClick={() => setUpiMarkedPaid(!upiMarkedPaid)} data-testid="button-upi-mark-paid">
+                                  {upiMarkedPaid ? "✓ UPI Received" : "Mark as Paid"}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div className="w-28 h-28 mx-auto rounded-lg bg-white dark:bg-gray-100 border-2 border-dashed border-primary/40 flex flex-col items-center justify-center gap-1" data-testid="upi-qr-placeholder">
+                            <div className="grid grid-cols-3 gap-0.5 opacity-30">
+                              {Array.from({ length: 9 }).map((_, i) => (
+                                <div key={i} className={`w-4 h-4 rounded-sm ${[0,2,6,8].includes(i) ? "bg-primary" : i === 4 ? "bg-primary/50" : "bg-gray-400"}`} />
+                              ))}
+                            </div>
+                            <p className="text-[9px] text-muted-foreground mt-0.5">QR Code</p>
+                          </div>
+                          <Smartphone className="h-5 w-5 mx-auto text-primary" />
+                          <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
+                          <p className="text-xs text-muted-foreground">Show the QR code above or share payment link with the customer, then confirm once received.</p>
+                          <div className="flex gap-2 justify-center">
+                            <Button size="sm" variant={upiMarkedPaid ? "secondary" : "default"} className="text-xs" onClick={() => setUpiMarkedPaid(true)} data-testid="button-upi-mark-paid">
+                              {upiMarkedPaid ? "✓ UPI Received" : "Mark as Paid"}
+                            </Button>
+                            {upiMarkedPaid && (
+                              <Button size="sm" variant="ghost" className="text-xs" onClick={() => setUpiMarkedPaid(false)}>Undo</Button>
+                            )}
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
                   {activeMethod === "LOYALTY" && (
@@ -853,12 +1010,17 @@ export default function BillPreviewModal({
                       (isSplit && splitRemaining > 0.01) ||
                       (isSplit && splitRows.some(r => r.method === "LOYALTY") && !lookedUpCustomer) ||
                       (!isSplit && activeMethod === "CASH" && cashTendered !== "" && parseFloat(cashTendered) < grandTotal) ||
-                      (!isSplit && activeMethod === "UPI" && !upiMarkedPaid) ||
+                      (!isSplit && activeMethod === "UPI" && !upiMarkedPaid && !rzpPolling && !rzpPaid) ||
+                      (!isSplit && (activeMethod === "CARD" || activeMethod === "UPI") && !!rzpLinkId && rzpPolling) ||
                       (!isSplit && activeMethod === "LOYALTY" && !lookedUpCustomer) ||
                       (!isSplit && activeMethod === "LOYALTY" && !!lookedUpCustomer && grandTotal > 0.01)
                     }
                     onClick={() => payBillMutation.mutate()}>
-                    {payBillMutation.isPending ? "Processing..." : `Confirm Payment · ${fmt(grandTotal)}`}
+                    {payBillMutation.isPending
+                      ? "Processing..."
+                      : rzpPolling
+                      ? "Awaiting payment verification…"
+                      : `Confirm Payment · ${fmt(grandTotal)}`}
                   </Button>
                   {isManagerOrOwner && createdBill && (
                     <Button variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/40 hover:bg-destructive/10"

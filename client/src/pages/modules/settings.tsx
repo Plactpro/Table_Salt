@@ -97,6 +97,8 @@ export default function SettingsPage() {
   const [cgstRate, setCgstRate] = useState("9");
   const [sgstRate, setSgstRate] = useState("9");
   const [invoicePrefix, setInvoicePrefix] = useState("INV");
+  const [razorpayEnabled, setRazorpayEnabled] = useState(false);
+  const [razorpayKeyId, setRazorpayKeyId] = useState("");
   const [tzSearch, setTzSearch] = useState("");
   const [currencySearch, setCurrencySearch] = useState("");
   const [clockTick, setClockTick] = useState(0);
@@ -121,6 +123,8 @@ export default function SettingsPage() {
       setCgstRate((tenant as any).cgstRate || "9");
       setSgstRate((tenant as any).sgstRate || "9");
       setInvoicePrefix((tenant as any).invoicePrefix || "INV");
+      setRazorpayEnabled(!!(tenant as any).razorpayEnabled);
+      setRazorpayKeyId((tenant as any).razorpayKeyId || "");
     }
   }, [tenant]);
 
@@ -148,6 +152,7 @@ export default function SettingsPage() {
         tax: ["taxRate", "taxType", "compoundTax", "serviceCharge", "gstin", "cgstRate", "sgstRate", "invoicePrefix"],
         currency: ["currency", "currencyPosition", "currencyDecimals"],
         business: ["businessType", "plan"],
+        razorpay: ["razorpayEnabled", "razorpayKeyId"],
       };
       const matchedSections = Object.entries(sectionKeys).filter(([, keys]) =>
         keys.some((k) => variables[k] !== undefined)
@@ -184,6 +189,11 @@ export default function SettingsPage() {
   const handleCurrencySubmit = (e: React.FormEvent) => {
     e.preventDefault();
     updateMutation.mutate({ currency, currencyPosition, currencyDecimals });
+  };
+
+  const handleRazorpaySubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    updateMutation.mutate({ razorpayEnabled, razorpayKeyId: razorpayKeyId.trim() || null });
   };
 
   const handleBusinessConfigSubmit = (e: React.FormEvent) => {
@@ -710,6 +720,60 @@ export default function SettingsPage() {
                       </div>
                       <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-currency" className="transition-all duration-200 hover:scale-[1.02]">
                         <Save className="h-4 w-4 mr-2" /> Save Currency Settings
+                      </Button>
+                    </form>
+                  </CardContent>
+                </Card>
+              </motion.div>
+
+              <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                <Card className="relative overflow-hidden">
+                  <SaveOverlay section="razorpay" />
+                  <CardHeader>
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900">
+                        <CreditCard className="h-5 w-5 text-blue-600 dark:text-blue-300" />
+                      </div>
+                      <CardTitle>Payment Gateway</CardTitle>
+                    </div>
+                    <CardDescription>Enable Razorpay to verify card and UPI payments at POS</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <form onSubmit={handleRazorpaySubmit} className="space-y-4">
+                      <div className="flex items-center justify-between p-3 rounded-lg border">
+                        <div>
+                          <Label className="text-sm font-medium">Enable Razorpay Gateway</Label>
+                          <p className="text-xs text-muted-foreground mt-0.5">Require gateway verification for card and UPI payments</p>
+                        </div>
+                        <Switch
+                          checked={razorpayEnabled}
+                          onCheckedChange={setRazorpayEnabled}
+                          data-testid="switch-razorpay-enabled"
+                        />
+                      </div>
+                      {razorpayEnabled && (
+                        <div className="space-y-3">
+                          <div className="space-y-2">
+                            <Label>Razorpay Key ID</Label>
+                            <Input
+                              placeholder="rzp_live_xxxxxxxxxxxx"
+                              value={razorpayKeyId}
+                              onChange={(e) => setRazorpayKeyId(e.target.value.trim())}
+                              data-testid="input-razorpay-key-id"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              Your Razorpay Key ID (not secret). The API secret must be set as the <code className="text-xs font-mono bg-muted px-1 rounded">RAZORPAY_KEY_SECRET</code> environment variable.
+                            </p>
+                          </div>
+                          <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 text-xs text-blue-700 dark:text-blue-300 space-y-1">
+                            <p className="font-semibold">How it works</p>
+                            <p>When enabled, the POS will generate a Razorpay payment link for card/UPI payments. The customer scans the QR or opens the link to pay. Payment is verified automatically.</p>
+                            <p className="mt-1">For the webhook, register <code className="font-mono bg-blue-100 dark:bg-blue-900 px-1 rounded">/api/webhooks/razorpay</code> in your Razorpay dashboard with secret stored as <code className="font-mono bg-blue-100 dark:bg-blue-900 px-1 rounded">RAZORPAY_WEBHOOK_SECRET</code>.</p>
+                          </div>
+                        </div>
+                      )}
+                      <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-razorpay" className="transition-all duration-200 hover:scale-[1.02]">
+                        <Save className="h-4 w-4 mr-2" /> Save Gateway Settings
                       </Button>
                     </form>
                   </CardContent>
