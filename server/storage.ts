@@ -470,7 +470,7 @@ export interface IStorage {
   getPosSessionReport(sessionId: string): Promise<{ session: PosSession; billCount: number; totalRevenue: number; revenueByMethod: Record<string, number>; cashSales: number; expectedCash: number }>;
 
   createPrintJob(data: InsertPrintJob): Promise<PrintJob>;
-  getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number }): Promise<PrintJob[]>;
+  getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number; referenceId?: string }): Promise<PrintJob[]>;
   updatePrintJob(id: string, tenantId: string, data: Partial<InsertPrintJob>): Promise<PrintJob | undefined>;
 }
 
@@ -2053,12 +2053,11 @@ export class DatabaseStorage implements IStorage {
     const [job] = await db.insert(printJobs).values(data).returning();
     return job;
   }
-  async getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number }): Promise<PrintJob[]> {
-    let q = db.select().from(printJobs).where(
-      opts?.status
-        ? and(eq(printJobs.tenantId, tenantId), eq(printJobs.status, opts.status as any))
-        : eq(printJobs.tenantId, tenantId)
-    ).$dynamic();
+  async getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number; referenceId?: string }): Promise<PrintJob[]> {
+    const conditions = [eq(printJobs.tenantId, tenantId)];
+    if (opts?.status) conditions.push(eq(printJobs.status, opts.status as any));
+    if (opts?.referenceId) conditions.push(eq(printJobs.referenceId, opts.referenceId));
+    let q = db.select().from(printJobs).where(and(...conditions)).$dynamic();
     q = q.orderBy(desc(printJobs.createdAt));
     if (opts?.limit) q = q.limit(opts.limit);
     return q;

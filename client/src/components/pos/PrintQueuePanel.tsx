@@ -119,12 +119,11 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
       }
 
       const printerUrl = getStationPrinterUrl(job.station);
-      const networkSuccess = await dispatchPrint(html, printerUrl, () => {
-        updateStatusMutation.mutate({ id: job.id, status: "printed" });
+      await dispatchPrint(html, printerUrl, {
+        onNetworkSuccess: () => { updateStatusMutation.mutate({ id: job.id, status: "printed" }); },
+        onPopupPrint: () => { updateStatusMutation.mutate({ id: job.id, status: "printed" }); },
+        onFailure: () => { updateStatusMutation.mutate({ id: job.id, status: "failed" }); },
       });
-      if (!networkSuccess) {
-        updateStatusMutation.mutate({ id: job.id, status: "printed" });
-      }
     },
     [restaurantName, getStationPrinterUrl, updateStatusMutation, toast]
   );

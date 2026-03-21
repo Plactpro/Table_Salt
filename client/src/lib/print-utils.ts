@@ -215,9 +215,9 @@ export function renderBillHtml(opts: BillPrintOptions): string {
       `
       : "";
 
-  const qrSection = digitalReceiptUrl
+  const digitalReceiptSection = digitalReceiptUrl
     ? `<div style="text-align:center;margin-top:6px;font-size:10px;">
-        <div>Scan for digital receipt:</div>
+        <div>Scan / visit for digital receipt:</div>
         <div style="font-family:monospace;font-size:9px;word-break:break-all;">${digitalReceiptUrl}</div>
       </div>`
     : "";
@@ -322,7 +322,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 
   ${loyaltyPointsEarned ? `<div class="dashed"></div><div style="text-align:center;font-size:11px;">Loyalty Points Earned: +${loyaltyPointsEarned}</div>` : ""}
 
-  ${qrSection}
+  ${digitalReceiptSection}
 
   <div class="dashed"></div>
   <div style="text-align:center;font-size:11px;">
@@ -334,15 +334,35 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 }
 
 /**
+ * Dispatch print result enum.
+ * - "network": print was sent to a network printer and accepted (HTTP 2xx)
+ * - "popup": browser popup print dialog was used (fallback)
+ * - "failed": network printer returned non-OK and popup was unavailable (popup blocked)
+ */
+export type PrintResult = "network" | "popup" | "failed";
+
+/**
  * Attempt to dispatch a print job to the station's network printer URL.
- * Falls back to browser popup print on failure or if no URL is configured.
- * Returns true if network dispatch succeeded, false if browser fallback was used.
+ * Falls back to browser popup print if no URL is configured or network fails.
+ *
+ * Callbacks:
+ *   onNetworkSuccess  — called only when the network printer accepts the job (HTTP 2xx)
+ *   onPopupPrint      — called after the browser popup print dialog closes (fallback path)
+ *   onFailure         — called if network fails AND popup cannot be opened (blocked)
+ *
+ * Returns the PrintResult indicating which path was taken.
  */
 export async function dispatchPrint(
   html: string,
   printerUrl?: string | null,
-  onSuccess?: () => void
-): Promise<boolean> {
+  options?: {
+    onNetworkSuccess?: () => void;
+    onPopupPrint?: () => void;
+    onFailure?: () => void;
+  }
+): Promise<PrintResult> {
+  const { onNetworkSuccess, onPopupPrint, onFailure } = options ?? {};
+
   if (printerUrl) {
     try {
       const res = await fetch(printerUrl, {
@@ -352,19 +372,28 @@ export async function dispatchPrint(
         signal: AbortSignal.timeout(4000),
       });
       if (res.ok) {
-        onSuccess?.();
-        return true;
+        onNetworkSuccess?.();
+        return "network";
       }
     } catch (_) {
     }
   }
-  printHtmlInPopup(html, onSuccess);
-  return false;
+
+  const opened = printHtmlInPopup(html, onPopupPrint);
+  if (!opened) {
+    onFailure?.();
+    return "failed";
+  }
+  return "popup";
 }
 
-export function printHtmlInPopup(html: string, onAfterPrint?: () => void): void {
+/**
+ * Open a browser popup with the HTML content and trigger the print dialog.
+ * Returns true if the popup was opened, false if it was blocked.
+ */
+export function printHtmlInPopup(html: string, onAfterPrint?: () => void): boolean {
   const win = window.open("", "_blank", "width=420,height=700");
-  if (!win) return;
+  if (!win) return false;
   win.document.write(html);
   win.document.close();
   win.focus();
@@ -373,4 +402,5 @@ export function printHtmlInPopup(html: string, onAfterPrint?: () => void): void 
     win.close();
     onAfterPrint?.();
   }, 300);
+  return true;
 }

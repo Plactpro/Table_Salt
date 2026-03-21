@@ -17,7 +17,7 @@ import {
   Save, Building2, Receipt, Settings, CheckCircle2, Crown, Store,
   Clock, Globe, DollarSign, Percent, Search, Eye, RotateCcw,
   CreditCard, Check, Zap, Star, Shield, ArrowRight,
-  Users, BarChart3, MessageSquare,
+  Users, BarChart3, MessageSquare, Printer,
 } from "lucide-react";
 import PrintQueuePanel from "@/components/pos/PrintQueuePanel";
 import {
@@ -79,6 +79,23 @@ export default function SettingsPage() {
 
   const { data: tenant, isLoading } = useQuery<TenantData>({
     queryKey: ["/api/tenant"],
+  });
+
+  const { data: kitchenStations = [] } = useQuery<Array<{ id: string; name: string; printerUrl: string | null }>>({
+    queryKey: ["/api/kitchen-stations"],
+  });
+  const [stationPrinterUrls, setStationPrinterUrls] = useState<Record<string, string>>({});
+  const updateStationPrinterMutation = useMutation({
+    mutationFn: async ({ id, printerUrl }: { id: string; printerUrl: string }) => {
+      const res = await apiRequest("PATCH", `/api/kitchen-stations/${id}`, { printerUrl: printerUrl || null });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kitchen-stations"] });
+      setSavedSection("kitchen-printers");
+      setTimeout(() => setSavedSection(null), 2000);
+    },
+    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
   });
 
   const [name, setName] = useState("");
@@ -888,6 +905,57 @@ export default function SettingsPage() {
               </motion.div>
             </div>
           </div>
+
+          {kitchenStations.length > 0 && (
+            <div className="mt-8">
+              <Card className="relative overflow-hidden" data-testid="card-kitchen-printers">
+                {savedSection === "kitchen-printers" && (
+                  <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-lg">
+                    <div className="flex flex-col items-center gap-2">
+                      <CheckCircle2 className="h-12 w-12 text-green-500" />
+                      <span className="text-sm font-medium text-green-600">Saved!</span>
+                    </div>
+                  </div>
+                )}
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Printer className="h-5 w-5" />
+                    Kitchen Station Printers
+                  </CardTitle>
+                  <CardDescription>
+                    Configure network printer URLs for each kitchen station. KOT tickets will be sent automatically when orders start cooking.
+                    Leave blank to use browser print dialog as fallback.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {kitchenStations.map((station) => (
+                    <div key={station.id} className="flex items-center gap-3" data-testid={`station-printer-row-${station.id}`}>
+                      <Label className="w-28 shrink-0 font-medium capitalize">{station.name}</Label>
+                      <Input
+                        placeholder="http://192.168.1.100:9100 (optional)"
+                        value={stationPrinterUrls[station.id] ?? (station.printerUrl || "")}
+                        onChange={(e) => setStationPrinterUrls(prev => ({ ...prev, [station.id]: e.target.value }))}
+                        className="flex-1"
+                        data-testid={`input-printer-url-${station.id}`}
+                      />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => updateStationPrinterMutation.mutate({
+                          id: station.id,
+                          printerUrl: stationPrinterUrls[station.id] ?? (station.printerUrl || ""),
+                        })}
+                        disabled={updateStationPrinterMutation.isPending}
+                        data-testid={`button-save-printer-${station.id}`}
+                      >
+                        <Save className="h-3 w-3 mr-1" /> Save
+                      </Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           <div className="mt-8">
             <PrintQueuePanel restaurantName={tenant?.name || "Restaurant"} />

@@ -492,14 +492,17 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
       items: printItems,
     });
 
-    await dispatchPrint(html, stationPrinterUrl, () => {
-      if (jobId) {
-        apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
-      }
+    await dispatchPrint(html, stationPrinterUrl, {
+      onNetworkSuccess: () => {
+        if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+      },
+      onPopupPrint: () => {
+        if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+      },
+      onFailure: () => {
+        if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "failed" }).catch(() => {});
+      },
     });
-    if (!stationPrinterUrl && jobId) {
-      apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
-    }
   }, [ticket, stationFilter, restaurantName, stationPrinterUrl]);
 
   const filteredItems = stationFilter
@@ -807,12 +810,51 @@ export default function KitchenDashboard() {
       }
       return res.json();
     },
-    onSuccess: (_data, vars) => {
+    onSuccess: async (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
       setRecipeCheckState(null);
       toast({ title: "Cooking started", description: "Stock deducted and KOT logged." });
+
+      try {
+        const res = await fetch(
+          `/api/print-jobs?referenceId=${encodeURIComponent(vars.orderId)}&status=queued`,
+          { credentials: "include" }
+        );
+        if (res.ok) {
+          const jobs: Array<{ id: string; type: string; station: string | null; payload: any }> = await res.json();
+          const kotJobs = jobs.filter(j => j.type === "kot");
+          for (const job of kotJobs) {
+            const stationPrinterUrl = job.station
+              ? (queryClient.getQueryData<KitchenStation[]>(["/api/kitchen-stations"]) || [])
+                  .find(s => s.name === job.station)?.printerUrl ?? null
+              : null;
+            const p = job.payload || {};
+            const html = renderKotHtml({
+              restaurantName: user?.tenant?.name || "Kitchen",
+              kotNumber: p.orderId?.slice(-6).toUpperCase(),
+              orderId: p.orderId || vars.orderId,
+              orderType: p.orderType,
+              tableNumber: p.tableNumber,
+              station: p.station || job.station,
+              sentAt: p.sentAt || new Date().toISOString(),
+              items: p.items || [],
+            });
+            await dispatchPrint(html, stationPrinterUrl, {
+              onNetworkSuccess: () => {
+                apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "printed" }).catch(() => {});
+              },
+              onPopupPrint: () => {
+                apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "printed" }).catch(() => {});
+              },
+              onFailure: () => {
+                apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "failed" }).catch(() => {});
+              },
+            });
+          }
+        }
+      } catch (_) {}
     },
     onError: (e: Error) => {
       const err = e as any;
