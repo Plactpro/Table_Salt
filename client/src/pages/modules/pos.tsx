@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -129,6 +130,7 @@ function isComboActive(combo: ComboOffer, userOutletId?: string | null): boolean
 export default function POSPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
@@ -469,7 +471,7 @@ export default function POSPage() {
       } else {
         toast({ title: isDineIn ? "Order sent to kitchen!" : "Order placed!" });
       }
-      const tableNum = tables.find(t => t.id === selectedTable)?.tableNumber;
+      const tableNum = tables.find(t => t.id === selectedTable)?.number;
       const snapshot = {
         orderId: data.id,
         cart: [...cart],
@@ -739,7 +741,7 @@ export default function POSPage() {
               <span className="text-xs text-green-700 dark:text-green-300 flex-1">
                 Order placed · {fmt(lastPlacedOrder.total)}
               </span>
-              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => setShowBillModal(true)} data-testid="button-open-bill">
+              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">
                 Bill
               </Button>
               <button className="text-green-600 hover:text-green-800 ml-1" onClick={() => setLastPlacedOrder(null)} data-testid="button-dismiss-bill">
@@ -936,7 +938,7 @@ export default function POSPage() {
                     className="ml-1 text-purple-400 hover:text-red-500 transition-colors"
                     data-testid={`button-dismiss-rule-${ed.ruleId}`}
                     title="Remove this auto-applied discount"
-                    onClick={() => setDismissedRuleIds((prev) => new Set([...prev, ed.ruleId]))}
+                    onClick={() => setDismissedRuleIds((prev) => new Set(Array.from(prev).concat(ed.ruleId)))}
                   >
                     <X className="h-3 w-3" />
                   </button>
