@@ -29,9 +29,9 @@ import { format, addDays, startOfWeek } from "date-fns";
 interface Counter {
   id: string;
   name: string;
-  label?: string;
-  station?: string;
-  maxChefs?: number;
+  counterCode?: string;
+  maxCapacity?: number;
+  displayColor?: string;
   isActive: boolean;
   sortOrder?: number;
   handlesCategories?: string[];
@@ -78,7 +78,7 @@ function CountersTab() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Counter | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "", label: "", station: "", maxChefs: 3 });
+  const [form, setForm] = useState({ name: "", counterCode: "", maxCapacity: 3 });
 
   const { data: outlets = [] } = useQuery<any[]>({ queryKey: ["/api/outlets"] });
   const [outletId, setOutletId] = useState<string>("");
@@ -114,13 +114,13 @@ function CountersTab() {
 
   function openNew() {
     setEditing(null);
-    setForm({ name: "", label: "", station: "", maxChefs: 3 });
+    setForm({ name: "", counterCode: "", maxCapacity: 3 });
     setOpen(true);
   }
 
   function openEdit(c: Counter) {
     setEditing(c);
-    setForm({ name: c.name, label: c.label ?? "", station: c.station ?? "", maxChefs: c.maxChefs ?? 3 });
+    setForm({ name: c.name, counterCode: c.counterCode ?? "", maxCapacity: c.maxCapacity ?? 3 });
     setOpen(true);
   }
 
@@ -193,14 +193,14 @@ function CountersTab() {
               </CardHeader>
               <CardContent className="space-y-2">
                 <div className="flex items-center gap-2 flex-wrap">
-                  {c.station && (
-                    <Badge variant="secondary" className={stationColors[c.station.toLowerCase()] ?? ""}>
-                      {c.station}
+                  {c.counterCode && (
+                    <Badge variant="secondary" className={stationColors[c.counterCode.toLowerCase()] ?? ""}>
+                      {c.counterCode}
                     </Badge>
                   )}
                   <Badge variant="outline">
                     <Users className="h-3 w-3 mr-1" />
-                    Max {c.maxChefs ?? 3} chefs
+                    Max {c.maxCapacity ?? 3} chefs
                   </Badge>
                 </div>
                 <div className="flex gap-2 pt-1">
@@ -228,12 +228,8 @@ function CountersTab() {
               <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Hot Kitchen, Grill Station" data-testid="input-counter-name" />
             </div>
             <div>
-              <Label>Display Label</Label>
-              <Input value={form.label} onChange={e => setForm(f => ({ ...f, label: e.target.value }))} placeholder="Short label shown on board" data-testid="input-counter-label" />
-            </div>
-            <div>
               <Label>Station Type</Label>
-              <Select value={form.station} onValueChange={v => setForm(f => ({ ...f, station: v }))}>
+              <Select value={form.counterCode} onValueChange={v => setForm(f => ({ ...f, counterCode: v }))}>
                 <SelectTrigger data-testid="select-counter-station">
                   <SelectValue placeholder="Select station type" />
                 </SelectTrigger>
@@ -246,7 +242,7 @@ function CountersTab() {
             </div>
             <div>
               <Label>Max Chefs per Shift</Label>
-              <Input type="number" min={1} max={20} value={form.maxChefs} onChange={e => setForm(f => ({ ...f, maxChefs: +e.target.value }))} data-testid="input-counter-maxchefs" />
+              <Input type="number" min={1} max={20} value={form.maxCapacity} onChange={e => setForm(f => ({ ...f, maxCapacity: +e.target.value }))} data-testid="input-counter-maxchefs" />
             </div>
           </div>
           <DialogFooter>

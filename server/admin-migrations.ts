@@ -439,4 +439,31 @@ export async function runAdminMigrations(): Promise<void> {
 
   // Assignment settings stored in outlets table
   await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS assignment_settings JSONB`);
+
+  // Seed default kitchen counters for existing tenants that have none
+  const tenantsWithoutCounters = await pool.query(`
+    SELECT DISTINCT t.id AS tenant_id, o.id AS outlet_id
+    FROM tenants t
+    JOIN outlets o ON o.tenant_id = t.id
+    WHERE NOT EXISTS (
+      SELECT 1 FROM kitchen_counters kc WHERE kc.tenant_id = t.id
+    )
+    LIMIT 50
+  `);
+  for (const row of tenantsWithoutCounters.rows) {
+    const defaults = [
+      { name: "Hot Counter", counterCode: "hot", displayColor: "#ef4444", sortOrder: 0 },
+      { name: "Cold Counter", counterCode: "cold", displayColor: "#3b82f6", sortOrder: 1 },
+      { name: "Grill Station", counterCode: "grill", displayColor: "#f97316", sortOrder: 2 },
+      { name: "Dessert Bar", counterCode: "dessert", displayColor: "#a855f7", sortOrder: 3 },
+    ];
+    for (const d of defaults) {
+      await pool.query(
+        `INSERT INTO kitchen_counters (id, tenant_id, outlet_id, name, counter_code, display_color, max_capacity, is_active, sort_order)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 4, true, $6)
+         ON CONFLICT DO NOTHING`,
+        [row.tenant_id, row.outlet_id, d.name, d.counterCode, d.displayColor, d.sortOrder]
+      );
+    }
+  }
 }
