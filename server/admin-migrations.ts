@@ -343,4 +343,100 @@ export async function runAdminMigrations(): Promise<void> {
 
   // Task #75: QR Request Settings per outlet
   await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS qr_request_settings JSONB`);
+
+  // Task #76: Smart Chef Assignment & Counter Management
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kitchen_counters (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      name TEXT NOT NULL,
+      counter_code VARCHAR(20),
+      handles_categories JSONB DEFAULT '[]'::jsonb,
+      max_capacity INT DEFAULT 5,
+      display_color VARCHAR(20) DEFAULT '#3B82F6',
+      is_active BOOLEAN DEFAULT true,
+      sort_order INT DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_kitchen_counters_tenant ON kitchen_counters (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_kitchen_counters_outlet ON kitchen_counters (outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chef_roster (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      chef_id VARCHAR(36) REFERENCES users(id),
+      chef_name TEXT,
+      counter_id VARCHAR(36) REFERENCES kitchen_counters(id),
+      counter_name TEXT,
+      shift_date TEXT NOT NULL,
+      shift_start TEXT NOT NULL,
+      shift_end TEXT NOT NULL,
+      shift_type VARCHAR(20) DEFAULT 'morning',
+      status VARCHAR(20) DEFAULT 'scheduled',
+      checked_in_at TIMESTAMPTZ,
+      checked_out_at TIMESTAMPTZ,
+      created_by VARCHAR(36) REFERENCES users(id),
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_chef_roster_tenant ON chef_roster (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_chef_roster_date ON chef_roster (shift_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_chef_roster_counter ON chef_roster (counter_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS chef_availability (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      chef_id VARCHAR(36) NOT NULL REFERENCES users(id),
+      counter_id VARCHAR(36) REFERENCES kitchen_counters(id),
+      shift_date TEXT,
+      status VARCHAR(20) DEFAULT 'available',
+      active_tickets INT DEFAULT 0,
+      last_updated TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_chef_availability_tenant ON chef_availability (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_chef_availability_chef ON chef_availability (chef_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_chef_availability_unique ON chef_availability (tenant_id, chef_id, shift_date)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ticket_assignments (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      order_item_id VARCHAR(36),
+      order_id VARCHAR(36),
+      menu_item_id VARCHAR(36),
+      menu_item_name TEXT,
+      table_number INT,
+      counter_id VARCHAR(36) REFERENCES kitchen_counters(id),
+      counter_name TEXT,
+      chef_id VARCHAR(36) REFERENCES users(id),
+      chef_name TEXT,
+      assignment_type VARCHAR(30) DEFAULT 'UNASSIGNED',
+      assignment_score INT,
+      assigned_at TIMESTAMPTZ,
+      accepted_at TIMESTAMPTZ,
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      status VARCHAR(20) DEFAULT 'unassigned',
+      reassign_reason TEXT,
+      estimated_time_min INT,
+      actual_time_min INT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ticket_assignments_tenant ON ticket_assignments (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ticket_assignments_counter ON ticket_assignments (counter_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ticket_assignments_chef ON ticket_assignments (chef_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ticket_assignments_status ON ticket_assignments (status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ticket_assignments_assigned_at ON ticket_assignments (assigned_at)`);
+
+  // Assignment settings stored in outlets table
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS assignment_settings JSONB`);
 }

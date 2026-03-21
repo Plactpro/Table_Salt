@@ -5,7 +5,7 @@ import {
   ChefHat, Flame, CheckCircle2, Utensils, Clock, LogIn, LogOut, CheckCircle, AlertCircle,
   Maximize2, Minimize2, RotateCcw, Coffee, IceCream, Beef, CookingPot, Filter,
   AlertTriangle, X, Package, Trash2, CheckSquare, Monitor, Copy, RefreshCw, ExternalLink,
-  Printer,
+  Printer, UserCheck, ArrowRightLeft, CircleDot, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { renderKotHtml, dispatchPrint } from "@/lib/print-utils";
 import type { LucideIcon } from "lucide-react";
@@ -728,6 +728,47 @@ export default function KitchenDashboard() {
   const [wastageOpen, setWastageOpen] = useState(false);
   const [stationSettingsOpen, setStationSettingsOpen] = useState(false);
   const [editingPrinterUrl, setEditingPrinterUrl] = useState<Record<string, string>>({});
+  const [showAssignments, setShowAssignments] = useState(false);
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data: myAssignments = [] } = useQuery<any[]>({
+    queryKey: ["/api/assignments/live", "mine"],
+    queryFn: () => apiRequest("GET", "/api/assignments/live").then(r => r.json()),
+    refetchInterval: 20000,
+    enabled: user?.role === "kitchen",
+  });
+
+  const { data: assignmentPool = [] } = useQuery<any[]>({
+    queryKey: ["/api/assignments/board"],
+    queryFn: () => apiRequest("GET", "/api/assignments/board").then(r => r.json()).then(d => d.unassigned ?? []),
+    refetchInterval: 20000,
+    enabled: user?.role === "kitchen" && showAssignments,
+  });
+
+  const selfAssignMut = useMutation({
+    mutationFn: (assignmentId: string) => apiRequest("POST", "/api/assignments/self-assign", { assignmentId }).then(r => r.json()),
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/assignments/live"] }); toast({ title: "Ticket self-assigned" }); },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const startMut = useMutation({
+    mutationFn: (id: string) => apiRequest("PUT", `/api/assignments/${id}/start`).then(r => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/assignments/live"] }),
+  });
+
+  const completeMut = useMutation({
+    mutationFn: (id: string) => apiRequest("PUT", `/api/assignments/${id}/complete`).then(r => r.json()),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["/api/assignments/live"] }),
+  });
+
+  const checkInMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/chef-availability/check-in", { chefId: user?.id }).then(r => r.json()),
+    onSuccess: () => toast({ title: "Checked in for shift" }),
+  });
+
+  const myActiveAssignments = myAssignments.filter((a: any) => a.chefId === user?.id && a.status !== "completed");
+  const myActiveCount = myActiveAssignments.length;
 
   useEffect(() => {
     if (selectedStation) localStorage.setItem("kds_station", selectedStation);
@@ -1213,6 +1254,105 @@ export default function KitchenDashboard() {
           )}
         </div>
       </div>
+
+      {user?.role === "kitchen" && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              size="sm"
+              variant={showAssignments ? "default" : "outline"}
+              className="h-8 text-xs gap-1"
+              onClick={() => setShowAssignments(v => !v)}
+              data-testid="button-toggle-assignments"
+            >
+              <UserCheck className="h-3.5 w-3.5" />
+              My Tickets
+              {myActiveCount > 0 && (
+                <Badge className="ml-1 h-4 min-w-4 px-1 text-[10px] bg-primary text-white">{myActiveCount}</Badge>
+              )}
+              {showAssignments ? <ChevronUp className="h-3 w-3 ml-0.5" /> : <ChevronDown className="h-3 w-3 ml-0.5" />}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs gap-1"
+              onClick={() => checkInMut.mutate()}
+              disabled={checkInMut.isPending}
+              data-testid="button-chef-checkin"
+            >
+              <CircleDot className="h-3.5 w-3.5 text-green-500" />
+              Check In
+            </Button>
+          </div>
+
+          <AnimatePresence>
+            {showAssignments && (
+              <motion.div
+                key="assignment-panel"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="bg-muted/40 rounded-xl p-3 space-y-3">
+                  <div>
+                    <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">My Active Tickets</div>
+                    {myActiveAssignments.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No tickets assigned to you right now.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {myActiveAssignments.map((a: any) => (
+                          <div key={a.id} className={`rounded-lg border p-2.5 text-xs space-y-1.5 ${
+                            a.status === "in_progress" ? "bg-blue-50 border-blue-200" : "bg-yellow-50 border-yellow-200"
+                          }`} data-testid={`my-ticket-${a.id}`}>
+                            <div className="font-medium">{a.menuItemName ?? "Ticket"}</div>
+                            {a.tableNumber && <div className="text-muted-foreground">Table {a.tableNumber}</div>}
+                            <div className="flex items-center gap-1 text-muted-foreground">
+                              <Clock className="h-3 w-3" />
+                              {a.counterName ?? "—"}
+                              {" · "}{a.status}
+                            </div>
+                            <div className="flex gap-1">
+                              {a.status === "assigned" && (
+                                <Button size="sm" className="h-6 text-[10px] px-2" variant="outline" onClick={() => startMut.mutate(a.id)} data-testid={`button-start-${a.id}`}>
+                                  Start
+                                </Button>
+                              )}
+                              {(a.status === "assigned" || a.status === "in_progress") && (
+                                <Button size="sm" className="h-6 text-[10px] px-2" variant="outline" onClick={() => completeMut.mutate(a.id)} data-testid={`button-done-${a.id}`}>
+                                  <CheckCircle2 className="h-3 w-3 mr-0.5" /> Done
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {(assignmentPool as any[]).length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Available Pool</div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                        {(assignmentPool as any[]).slice(0, 6).map((a: any) => (
+                          <div key={a.id} className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs space-y-1.5" data-testid={`pool-ticket-${a.id}`}>
+                            <div className="font-medium">{a.menuItemName ?? "Ticket"}</div>
+                            {a.tableNumber && <div className="text-muted-foreground">Table {a.tableNumber}</div>}
+                            <div className="text-muted-foreground">{a.counterName ?? "—"}</div>
+                            <Button size="sm" className="h-6 text-[10px] px-2" variant="outline" onClick={() => selfAssignMut.mutate(a.id)} data-testid={`button-selfassign-${a.id}`}>
+                              <ArrowRightLeft className="h-3 w-3 mr-0.5" /> Take
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
 
       <div className="flex items-center gap-2 overflow-x-auto pb-1">
         <Button

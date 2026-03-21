@@ -121,6 +121,11 @@ import {
   tableQrTokens, tableRequests,
   type TableQrToken, type InsertTableQrToken,
   type TableRequest, type InsertTableRequest,
+  kitchenCounters, chefRoster, chefAvailability, ticketAssignments,
+  type KitchenCounter, type InsertKitchenCounter,
+  type ChefRoster, type InsertChefRoster,
+  type ChefAvailability, type InsertChefAvailability,
+  type TicketAssignment, type InsertTicketAssignment,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -506,6 +511,44 @@ export interface IStorage {
     byDay: Record<string, number>;
     byStaff: Array<{ name: string; count: number; avgResponseMinutes: number | null }>;
     feedbackByRating: Record<string, number>;
+  }>;
+
+  // Kitchen Counters
+  getCounters(tenantId: string, outletId?: string): Promise<KitchenCounter[]>;
+  getCounter(id: string, tenantId: string): Promise<KitchenCounter | undefined>;
+  createCounter(data: InsertKitchenCounter): Promise<KitchenCounter>;
+  updateCounter(id: string, tenantId: string, data: Partial<InsertKitchenCounter>): Promise<KitchenCounter | undefined>;
+  deleteCounter(id: string, tenantId: string): Promise<void>;
+
+  // Chef Roster
+  getRoster(tenantId: string, outletId?: string, date?: string): Promise<ChefRoster[]>;
+  getRosterEntry(id: string, tenantId: string): Promise<ChefRoster | undefined>;
+  createRosterEntry(data: InsertChefRoster): Promise<ChefRoster>;
+  updateRosterEntry(id: string, tenantId: string, data: Partial<InsertChefRoster>): Promise<ChefRoster | undefined>;
+  deleteRosterEntry(id: string, tenantId: string): Promise<void>;
+  copyLastWeekRoster(tenantId: string, outletId: string, weekStart: string): Promise<ChefRoster[]>;
+
+  // Chef Availability
+  getChefAvailability(tenantId: string, outletId?: string, date?: string): Promise<ChefAvailability[]>;
+  upsertChefAvailability(data: InsertChefAvailability): Promise<ChefAvailability>;
+  updateChefAvailabilityStatus(chefId: string, tenantId: string, date: string, status: string, activeTickets?: number): Promise<void>;
+
+  // Ticket Assignments
+  getAssignment(id: string, tenantId: string): Promise<TicketAssignment | undefined>;
+  getAssignmentByOrderItem(orderItemId: string, tenantId: string): Promise<TicketAssignment | undefined>;
+  getLiveAssignments(tenantId: string, outletId?: string): Promise<TicketAssignment[]>;
+  createAssignment(data: InsertTicketAssignment): Promise<TicketAssignment>;
+  updateAssignment(id: string, tenantId: string, data: Partial<InsertTicketAssignment>): Promise<TicketAssignment | undefined>;
+  getAssignmentBoard(tenantId: string, outletId?: string): Promise<{
+    counter: KitchenCounter;
+    chefs: Array<{ chefId: string; chefName: string; status: string; activeTickets: number }>;
+    assignments: TicketAssignment[];
+    unassignedCount: number;
+  }[]>;
+  getAssignmentAnalytics(tenantId: string, from?: Date, to?: Date): Promise<{
+    perChef: Array<{ chefId: string; chefName: string; total: number; autoAssigned: number; selfAssigned: number; reassigned: number; avgPrepMin: number | null }>;
+    perCounter: Array<{ counterId: string; counterName: string; total: number; unassignedRate: number; avgTicketsPerHour: number }>;
+    efficiency: { autoAssignRate: number; avgOrderToAssignSec: number | null; avgAssignToStartSec: number | null };
   }>;
 }
 
@@ -2308,6 +2351,236 @@ export class DatabaseStorage implements IStorage {
       byStaff,
       feedbackByRating,
       feedbackByDay,
+    };
+  }
+
+  // ─── Kitchen Counters ────────────────────────────────────────────────────────
+  async getCounters(tenantId: string, outletId?: string): Promise<KitchenCounter[]> {
+    let q = db.select().from(kitchenCounters).where(eq(kitchenCounters.tenantId, tenantId));
+    if (outletId) q = q.where(and(eq(kitchenCounters.tenantId, tenantId), eq(kitchenCounters.outletId, outletId))) as typeof q;
+    return q.orderBy(kitchenCounters.sortOrder, kitchenCounters.name);
+  }
+  async getCounter(id: string, tenantId: string): Promise<KitchenCounter | undefined> {
+    const [r] = await db.select().from(kitchenCounters).where(and(eq(kitchenCounters.id, id), eq(kitchenCounters.tenantId, tenantId)));
+    return r;
+  }
+  async createCounter(data: InsertKitchenCounter): Promise<KitchenCounter> {
+    const [r] = await db.insert(kitchenCounters).values(data).returning();
+    return r;
+  }
+  async updateCounter(id: string, tenantId: string, data: Partial<InsertKitchenCounter>): Promise<KitchenCounter | undefined> {
+    const [r] = await db.update(kitchenCounters).set(data).where(and(eq(kitchenCounters.id, id), eq(kitchenCounters.tenantId, tenantId))).returning();
+    return r;
+  }
+  async deleteCounter(id: string, tenantId: string): Promise<void> {
+    await db.delete(kitchenCounters).where(and(eq(kitchenCounters.id, id), eq(kitchenCounters.tenantId, tenantId)));
+  }
+
+  // ─── Chef Roster ────────────────────────────────────────────────────────────
+  async getRoster(tenantId: string, outletId?: string, date?: string): Promise<ChefRoster[]> {
+    const conditions = [eq(chefRoster.tenantId, tenantId)];
+    if (outletId) conditions.push(eq(chefRoster.outletId, outletId));
+    if (date) conditions.push(eq(chefRoster.shiftDate, date));
+    return db.select().from(chefRoster).where(and(...conditions)).orderBy(chefRoster.shiftDate, chefRoster.shiftStart);
+  }
+  async getRosterEntry(id: string, tenantId: string): Promise<ChefRoster | undefined> {
+    const [r] = await db.select().from(chefRoster).where(and(eq(chefRoster.id, id), eq(chefRoster.tenantId, tenantId)));
+    return r;
+  }
+  async createRosterEntry(data: InsertChefRoster): Promise<ChefRoster> {
+    const [r] = await db.insert(chefRoster).values(data).returning();
+    return r;
+  }
+  async updateRosterEntry(id: string, tenantId: string, data: Partial<InsertChefRoster>): Promise<ChefRoster | undefined> {
+    const [r] = await db.update(chefRoster).set(data).where(and(eq(chefRoster.id, id), eq(chefRoster.tenantId, tenantId))).returning();
+    return r;
+  }
+  async deleteRosterEntry(id: string, tenantId: string): Promise<void> {
+    await db.delete(chefRoster).where(and(eq(chefRoster.id, id), eq(chefRoster.tenantId, tenantId)));
+  }
+  async copyLastWeekRoster(tenantId: string, outletId: string, weekStart: string): Promise<ChefRoster[]> {
+    const targetStart = new Date(weekStart);
+    const lastStart = new Date(targetStart);
+    lastStart.setDate(lastStart.getDate() - 7);
+    const lastEnd = new Date(lastStart);
+    lastEnd.setDate(lastEnd.getDate() + 6);
+    const fmt = (d: Date) => d.toISOString().slice(0, 10);
+    const existing = await db.select().from(chefRoster).where(
+      and(
+        eq(chefRoster.tenantId, tenantId),
+        eq(chefRoster.outletId, outletId),
+        sql`${chefRoster.shiftDate} >= ${fmt(lastStart)} AND ${chefRoster.shiftDate} <= ${fmt(lastEnd)}`
+      )
+    );
+    if (existing.length === 0) return [];
+    const newEntries = existing.map(e => {
+      const diff = new Date(e.shiftDate).getTime() - lastStart.getTime();
+      const newDate = new Date(targetStart.getTime() + diff);
+      return {
+        tenantId: e.tenantId,
+        outletId: e.outletId,
+        chefId: e.chefId,
+        chefName: e.chefName,
+        counterId: e.counterId,
+        counterName: e.counterName,
+        shiftDate: fmt(newDate),
+        shiftStart: e.shiftStart,
+        shiftEnd: e.shiftEnd,
+        shiftType: e.shiftType,
+        status: "scheduled" as const,
+        createdBy: e.createdBy,
+      };
+    });
+    return db.insert(chefRoster).values(newEntries).returning();
+  }
+
+  // ─── Chef Availability ───────────────────────────────────────────────────────
+  async getChefAvailability(tenantId: string, outletId?: string, date?: string): Promise<ChefAvailability[]> {
+    const conditions = [eq(chefAvailability.tenantId, tenantId)];
+    if (outletId) conditions.push(eq(chefAvailability.outletId, outletId));
+    if (date) conditions.push(eq(chefAvailability.shiftDate, date));
+    return db.select().from(chefAvailability).where(and(...conditions));
+  }
+  async upsertChefAvailability(data: InsertChefAvailability): Promise<ChefAvailability> {
+    const today = data.shiftDate ?? new Date().toISOString().slice(0, 10);
+    const [existing] = await db.select().from(chefAvailability).where(
+      and(eq(chefAvailability.tenantId, data.tenantId), eq(chefAvailability.chefId, data.chefId!), eq(chefAvailability.shiftDate, today))
+    );
+    if (existing) {
+      const [r] = await db.update(chefAvailability).set({ ...data, lastUpdated: new Date() }).where(eq(chefAvailability.id, existing.id)).returning();
+      return r;
+    }
+    const [r] = await db.insert(chefAvailability).values({ ...data, shiftDate: today }).returning();
+    return r;
+  }
+  async updateChefAvailabilityStatus(chefId: string, tenantId: string, date: string, status: string, activeTickets?: number): Promise<void> {
+    const updates: Partial<InsertChefAvailability> = { status };
+    if (activeTickets !== undefined) updates.activeTickets = activeTickets;
+    await db.update(chefAvailability)
+      .set({ ...updates, lastUpdated: new Date() })
+      .where(and(eq(chefAvailability.chefId, chefId), eq(chefAvailability.tenantId, tenantId), eq(chefAvailability.shiftDate, date)));
+  }
+
+  // ─── Ticket Assignments ──────────────────────────────────────────────────────
+  async getAssignment(id: string, tenantId: string): Promise<TicketAssignment | undefined> {
+    const [r] = await db.select().from(ticketAssignments).where(and(eq(ticketAssignments.id, id), eq(ticketAssignments.tenantId, tenantId)));
+    return r;
+  }
+  async getAssignmentByOrderItem(orderItemId: string, tenantId: string): Promise<TicketAssignment | undefined> {
+    const [r] = await db.select().from(ticketAssignments).where(
+      and(eq(ticketAssignments.orderItemId, orderItemId), eq(ticketAssignments.tenantId, tenantId))
+    );
+    return r;
+  }
+  async getLiveAssignments(tenantId: string, outletId?: string): Promise<TicketAssignment[]> {
+    const conditions = [
+      eq(ticketAssignments.tenantId, tenantId),
+      sql`${ticketAssignments.status} NOT IN ('completed', 'cancelled')`,
+    ];
+    if (outletId) conditions.push(eq(ticketAssignments.outletId, outletId));
+    return db.select().from(ticketAssignments).where(and(...conditions)).orderBy(desc(ticketAssignments.createdAt));
+  }
+  async createAssignment(data: InsertTicketAssignment): Promise<TicketAssignment> {
+    const [r] = await db.insert(ticketAssignments).values(data).returning();
+    return r;
+  }
+  async updateAssignment(id: string, tenantId: string, data: Partial<InsertTicketAssignment>): Promise<TicketAssignment | undefined> {
+    const [r] = await db.update(ticketAssignments).set(data).where(and(eq(ticketAssignments.id, id), eq(ticketAssignments.tenantId, tenantId))).returning();
+    return r;
+  }
+  async getAssignmentBoard(tenantId: string, outletId?: string): Promise<{
+    counter: KitchenCounter;
+    chefs: Array<{ chefId: string; chefName: string; status: string; activeTickets: number }>;
+    assignments: TicketAssignment[];
+    unassignedCount: number;
+  }[]> {
+    const counters = await this.getCounters(tenantId, outletId);
+    const today = new Date().toISOString().slice(0, 10);
+    const availability = await this.getChefAvailability(tenantId, outletId, today);
+    const liveAssignments = await this.getLiveAssignments(tenantId, outletId);
+    return counters.map(counter => {
+      const counterChefs = availability.filter(a => a.counterId === counter.id).map(a => ({
+        chefId: a.chefId,
+        chefName: "",
+        status: a.status ?? "available",
+        activeTickets: a.activeTickets ?? 0,
+      }));
+      const counterAssignments = liveAssignments.filter(a => a.counterId === counter.id);
+      const unassignedCount = counterAssignments.filter(a => a.status === "unassigned").length;
+      return { counter, chefs: counterChefs, assignments: counterAssignments, unassignedCount };
+    });
+  }
+  async getAssignmentAnalytics(tenantId: string, from?: Date, to?: Date): Promise<{
+    perChef: Array<{ chefId: string; chefName: string; total: number; autoAssigned: number; selfAssigned: number; reassigned: number; avgPrepMin: number | null }>;
+    perCounter: Array<{ counterId: string; counterName: string; total: number; unassignedRate: number; avgTicketsPerHour: number }>;
+    efficiency: { autoAssignRate: number; avgOrderToAssignSec: number | null; avgAssignToStartSec: number | null };
+  }> {
+    const conditions = [eq(ticketAssignments.tenantId, tenantId)];
+    if (from) conditions.push(gte(ticketAssignments.createdAt, from));
+    if (to) conditions.push(lte(ticketAssignments.createdAt, to));
+    const all = await db.select().from(ticketAssignments).where(and(...conditions));
+
+    const chefMap = new Map<string, { chefName: string; total: number; autoAssigned: number; selfAssigned: number; reassigned: number; prepMins: number[]; }>();
+    const counterMap = new Map<string, { counterName: string; total: number; unassigned: number; }>();
+    let totalAutoAssign = 0;
+    let totalWithChef = 0;
+    let totalOrderToAssignSec = 0;
+    let orderToAssignCount = 0;
+    let totalAssignToStartSec = 0;
+    let assignToStartCount = 0;
+
+    for (const a of all) {
+      if (a.chefId) {
+        const c = chefMap.get(a.chefId) ?? { chefName: a.chefName ?? "", total: 0, autoAssigned: 0, selfAssigned: 0, reassigned: 0, prepMins: [] };
+        c.total++;
+        if (a.assignmentType === "AUTO_ROSTER" || a.assignmentType === "AUTO_WORKLOAD") { c.autoAssigned++; totalAutoAssign++; }
+        if (a.assignmentType === "SELF_ASSIGNED") c.selfAssigned++;
+        if (a.assignmentType === "REASSIGNED") c.reassigned++;
+        if (a.startedAt && a.completedAt) c.prepMins.push((a.completedAt.getTime() - a.startedAt.getTime()) / 60000);
+        chefMap.set(a.chefId, c);
+        totalWithChef++;
+      }
+      if (a.counterId) {
+        const ct = counterMap.get(a.counterId) ?? { counterName: a.counterName ?? "", total: 0, unassigned: 0 };
+        ct.total++;
+        if (a.status === "unassigned") ct.unassigned++;
+        counterMap.set(a.counterId, ct);
+      }
+      if (a.assignedAt && a.createdAt) {
+        totalOrderToAssignSec += (a.assignedAt.getTime() - a.createdAt.getTime()) / 1000;
+        orderToAssignCount++;
+      }
+      if (a.startedAt && a.assignedAt) {
+        totalAssignToStartSec += (a.startedAt.getTime() - a.assignedAt.getTime()) / 1000;
+        assignToStartCount++;
+      }
+    }
+
+    const perChef = Array.from(chefMap.entries()).map(([chefId, c]) => ({
+      chefId,
+      chefName: c.chefName,
+      total: c.total,
+      autoAssigned: c.autoAssigned,
+      selfAssigned: c.selfAssigned,
+      reassigned: c.reassigned,
+      avgPrepMin: c.prepMins.length > 0 ? Math.round((c.prepMins.reduce((a, b) => a + b, 0) / c.prepMins.length) * 10) / 10 : null,
+    }));
+    const perCounter = Array.from(counterMap.entries()).map(([counterId, c]) => ({
+      counterId,
+      counterName: c.counterName,
+      total: c.total,
+      unassignedRate: c.total > 0 ? Math.round((c.unassigned / c.total) * 100) : 0,
+      avgTicketsPerHour: 0,
+    }));
+
+    return {
+      perChef,
+      perCounter,
+      efficiency: {
+        autoAssignRate: totalWithChef > 0 ? Math.round((totalAutoAssign / totalWithChef) * 100) : 0,
+        avgOrderToAssignSec: orderToAssignCount > 0 ? Math.round(totalOrderToAssignSec / orderToAssignCount) : null,
+        avgAssignToStartSec: assignToStartCount > 0 ? Math.round(totalAssignToStartSec / assignToStartCount) : null,
+      },
     };
   }
 }

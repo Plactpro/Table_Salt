@@ -35,6 +35,7 @@ import {
   CalendarDays,
   Bell,
   ScanQrCode,
+  LayoutGrid,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -73,6 +74,8 @@ const navItems: NavItem[] = [
   { id: "m-17", name: "Billing", icon: CreditCard, path: "/billing", roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "billing" },
   { id: "m-18", name: "Settings", icon: Settings, path: "/settings", roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
   { id: "m-34", name: "QR Settings", icon: ScanQrCode, path: "/qr-settings", roles: ["manager", "outlet_manager"], featureKey: "tables" },
+  { id: "m-35", name: "Kitchen Board", icon: LayoutGrid, path: "/kitchen-board", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
+  { id: "m-36", name: "Kitchen Settings", icon: ChefHat, path: "/kitchen-settings", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
 ];
 
 function SandDecoration() {
