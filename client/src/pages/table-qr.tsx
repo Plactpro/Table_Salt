@@ -225,7 +225,7 @@ const TRANSLATIONS = {
 } as const;
 
 type Lang = keyof typeof TRANSLATIONS;
-type T = (typeof TRANSLATIONS)["en"];
+type T = (typeof TRANSLATIONS)[Lang];
 
 interface QrContext {
   tokenId: string;
@@ -541,11 +541,6 @@ function FoodOrderFlow({
           body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity }),
         });
       }
-      await fetch(`/api/guest/session/${sessionId}/order`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
       const orderItems = cart.map(c => ({
         menuItemId: c.menuItemId,
         name: c.name,
