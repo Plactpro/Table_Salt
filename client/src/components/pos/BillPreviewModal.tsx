@@ -131,9 +131,11 @@ export default function BillPreviewModal({
   const [loyaltySearchPhone, setLoyaltySearchPhone] = useState("");
   const [lookedUpCustomer, setLookedUpCustomer] = useState<{ id: string; name: string; loyaltyPoints: number } | null>(null);
   const [loyaltySearching, setLoyaltySearching] = useState(false);
+  const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
 
   const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
-  const grandTotal = total + tipAmount;
+  const loyaltyRedemptionValue = loyaltyPointsToRedeem * 0.01;
+  const grandTotal = Math.max(0, total + tipAmount - loyaltyRedemptionValue);
 
   const splitPaidTotal = splitRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const splitRemaining = grandTotal - splitPaidTotal;
@@ -182,8 +184,15 @@ export default function BillPreviewModal({
         const refNo = activeMethod === "CARD" ? `${cardLast4}/${cardRef}`.replace(/^\//, "") : undefined;
         payments.push({ paymentMethod: activeMethod, amount: payAmount, referenceNo: refNo });
       }
-      const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payments`, { payments, tips: tipAmount || undefined });
-      if (!res.ok) throw new Error((await res.json()).message || "Payment failed");
+      if (loyaltyPointsToRedeem > 0 && loyaltyRedemptionValue > 0) {
+        payments.push({ paymentMethod: "LOYALTY", amount: loyaltyRedemptionValue });
+      }
+      const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payments`, {
+        payments,
+        tips: tipAmount || undefined,
+        loyaltyPointsRedeemed: loyaltyPointsToRedeem || undefined,
+        loyaltyCustomerId: lookedUpCustomer?.id || undefined,
+      });
       return res.json();
     },
     onSuccess: () => {
@@ -202,7 +211,6 @@ export default function BillPreviewModal({
       const res = await apiRequest("PUT", `/api/restaurant-bills/${createdBill.id}/void`, {
         reason: voidNotes ? `${voidReason} — ${voidNotes}` : voidReason,
       });
-      if (!res.ok) throw new Error((await res.json()).message || "Void failed");
       return res.json();
     },
     onSuccess: () => {
@@ -225,7 +233,6 @@ export default function BillPreviewModal({
         reason: refundReason,
         paymentMethod: "CASH",
       });
-      if (!res.ok) throw new Error((await res.json()).message || "Refund failed");
       return res.json();
     },
     onSuccess: () => {
@@ -521,9 +528,17 @@ export default function BillPreviewModal({
                   )}
                   {activeMethod === "UPI" && (
                     <div className="text-center p-4 bg-muted/50 rounded-lg border space-y-3">
-                      <Smartphone className="h-8 w-8 mx-auto text-primary" />
+                      <div className="w-28 h-28 mx-auto rounded-lg bg-white dark:bg-gray-100 border-2 border-dashed border-primary/40 flex flex-col items-center justify-center gap-1" data-testid="upi-qr-placeholder">
+                        <div className="grid grid-cols-3 gap-0.5 opacity-30">
+                          {Array.from({ length: 9 }).map((_, i) => (
+                            <div key={i} className={`w-4 h-4 rounded-sm ${[0,2,6,8].includes(i) ? "bg-primary" : i === 4 ? "bg-primary/50" : "bg-gray-400"}`} />
+                          ))}
+                        </div>
+                        <p className="text-[9px] text-muted-foreground mt-0.5">QR Code</p>
+                      </div>
+                      <Smartphone className="h-5 w-5 mx-auto text-primary" />
                       <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
-                      <p className="text-xs text-muted-foreground">Show QR or share payment link with the customer, then confirm once received.</p>
+                      <p className="text-xs text-muted-foreground">Show the QR code above or share payment link with the customer, then confirm once received.</p>
                       <div className="flex gap-2 justify-center">
                         <Button
                           size="sm"
@@ -553,11 +568,36 @@ export default function BillPreviewModal({
                           <div className="flex items-center justify-between bg-white dark:bg-amber-900/40 rounded p-2 border border-amber-200 dark:border-amber-700">
                             <div>
                               <p className="text-sm font-semibold">{lookedUpCustomer.name}</p>
-                              <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts · {fmt(lookedUpCustomer.loyaltyPoints / 100)} redeemable</p>
+                              <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts available · {fmt(lookedUpCustomer.loyaltyPoints * 0.01)} max redeemable</p>
                             </div>
-                            <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setLookedUpCustomer(null)}>Change</Button>
+                            <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setLookedUpCustomer(null); setLoyaltyPointsToRedeem(0); }}>Change</Button>
                           </div>
-                          <p className="text-xs text-amber-600 dark:text-amber-400">Points earned this visit will be credited after payment (1 pt per AED 10 spent).</p>
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium">Points to Redeem (100 pts = AED 1)</p>
+                            <div className="flex gap-2">
+                              <Input
+                                type="number"
+                                min={0}
+                                max={Math.min(lookedUpCustomer.loyaltyPoints, Math.floor((total + tipAmount) * 100))}
+                                step={100}
+                                value={loyaltyPointsToRedeem}
+                                onChange={e => setLoyaltyPointsToRedeem(Math.max(0, Math.min(parseInt(e.target.value) || 0, lookedUpCustomer.loyaltyPoints, Math.floor((total + tipAmount) * 100))))}
+                                className="h-8 text-xs flex-1"
+                                data-testid="input-loyalty-points-redeem"
+                              />
+                              <Button size="sm" variant="outline" className="text-xs h-8 whitespace-nowrap"
+                                onClick={() => setLoyaltyPointsToRedeem(Math.min(lookedUpCustomer.loyaltyPoints, Math.floor((total + tipAmount) * 100)))}>
+                                Use All
+                              </Button>
+                              <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => setLoyaltyPointsToRedeem(0)}>Clear</Button>
+                            </div>
+                            {loyaltyPointsToRedeem > 0 && (
+                              <p className="text-xs text-green-700 dark:text-green-400 font-medium">
+                                -{fmt(loyaltyRedemptionValue)} discount applied · New total: {fmt(grandTotal)}
+                              </p>
+                            )}
+                          </div>
+                          <p className="text-xs text-amber-600 dark:text-amber-400">Points earned this visit: +{Math.floor((total + tipAmount) / 10)} pts (1 pt per AED 10 spent).</p>
                         </div>
                       ) : (
                         <div className="flex gap-1.5">

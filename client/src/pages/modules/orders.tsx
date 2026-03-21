@@ -1,6 +1,8 @@
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import BillPreviewModal from "@/components/pos/BillPreviewModal";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
@@ -11,15 +13,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import {
   Table as UITable, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Search, Eye, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, CheckCircle2,
-  XCircle, CircleDot, Send, ChefHat, Bell, UtensilsCrossed, CreditCard, Ban,
-  Receipt, Banknote, Wallet, DollarSign,
+  XCircle, CircleDot, Send, ChefHat, Bell, UtensilsCrossed, CreditCard, Ban, Receipt,
 } from "lucide-react";
 import type { Order, OrderItem, Table } from "@shared/schema";
 
@@ -104,8 +105,6 @@ function formatDate(date: string | Date | null) {
   return new Date(date).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-type PaymentMethod = "cash" | "card" | "upi";
-
 export default function OrdersPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -126,9 +125,9 @@ export default function OrdersPage() {
   const [dateTo, setDateTo] = useState("");
   const [sortField, setSortField] = useState<"createdAt" | "total">("createdAt");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [, navigate] = useLocation();
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [billPreviewOrder, setBillPreviewOrder] = useState<OrderWithItems | null>(null);
-  const [billPaymentMethod, setBillPaymentMethod] = useState<PaymentMethod>("cash");
   const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string } | null>(null);
   const [ordersPage, setOrdersPage] = useState(0);
   const ORDERS_LIMIT = 50;
@@ -173,14 +172,12 @@ export default function OrdersPage() {
         totalAmount: String(totalAmount),
         notes: null,
       });
-      if (!billRes.ok) throw new Error((await billRes.json()).message || "Failed to create bill");
       const bill = await billRes.json();
 
       const payRes = await apiRequest("POST", `/api/restaurant-bills/${bill.id}/payments`, {
         payments: [{ paymentMethod: paymentMethod.toUpperCase(), amount: totalAmount }],
         tips: 0,
       });
-      if (!payRes.ok) throw new Error((await payRes.json()).message || "Failed to record payment");
       return payRes.json();
     },
     onSuccess: () => {
@@ -290,15 +287,7 @@ export default function OrdersPage() {
   }, [filteredOrders]);
 
   const handleBillPreview = async (orderId: string) => {
-    try {
-      const res = await fetch(`/api/orders/${orderId}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch order");
-      const order: OrderWithItems = await res.json();
-      setBillPreviewOrder(order);
-      setBillPaymentMethod("cash");
-    } catch {
-      toast({ variant: "destructive", title: "Error loading bill" });
-    }
+    navigate(`/pos/bill/${orderId}`);
   };
 
   const SERVICE_CHARGE_RATE = Number(tenantData?.serviceCharge || 0) / 100;
@@ -583,100 +572,41 @@ export default function OrdersPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!billPreviewOrder} onOpenChange={(open) => !open && setBillPreviewOrder(null)}>
-        <DialogContent className="max-w-md" data-testid="dialog-bill-preview">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Receipt className="h-5 w-5 text-amber-600" />
-              Bill Preview
-            </DialogTitle>
-            <DialogDescription>Review and settle the bill</DialogDescription>
-          </DialogHeader>
-          {billPreviewOrder && (
-            <div className="space-y-4">
-              <div className="text-center border-b pb-3">
-                <h3 className="font-heading font-bold text-lg" data-testid="text-bill-restaurant">{tenantData?.name || "Restaurant"}</h3>
-                <p className="text-xs text-muted-foreground">Invoice #{billPreviewOrder.id.slice(-6).toUpperCase()}</p>
-                <p className="text-xs text-muted-foreground">{formatDate(billPreviewOrder.createdAt)}</p>
-                {billPreviewOrder.tableId && (
-                  <Badge variant="outline" className="mt-1" data-testid="text-bill-table">{tableMap[billPreviewOrder.tableId] || "—"}</Badge>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                {billPreviewOrder.items?.map((item, idx) => (
-                  <div key={item.id} className="flex justify-between text-sm" data-testid={`bill-item-${idx}`}>
-                    <div className="flex-1">
-                      <span>{item.name}</span>
-                      <span className="text-muted-foreground ml-1">x{item.quantity}</span>
-                    </div>
-                    <span className="font-medium">{fmt(Number(item.price) * (item.quantity || 1))}</span>
-                  </div>
-                ))}
-              </div>
-
-              <Separator />
-
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
-                  <span data-testid="text-bill-subtotal">{fmt(billPreviewOrder.subtotal)}</span>
-                </div>
-                {Number(billPreviewOrder.discount) > 0 && (
-                  <div className="flex justify-between text-green-600">
-                    <span>Discount</span>
-                    <span data-testid="text-bill-discount">-{fmt(billPreviewOrder.discount)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax (5%)</span>
-                  <span data-testid="text-bill-tax">{fmt(billPreviewOrder.tax)}</span>
-                </div>
-                {billPreviewOrder.orderType === "dine_in" && SERVICE_CHARGE_RATE > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Service Charge ({tenantData?.serviceCharge || 0}%)</span>
-                    <span data-testid="text-bill-service">{fmt(Number(billPreviewOrder.subtotal) * SERVICE_CHARGE_RATE)}</span>
-                  </div>
-                )}
-                <Separator />
-                <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
-                  <span data-testid="text-bill-total">
-                    {fmt(
-                      Number(billPreviewOrder.total) +
-                      (billPreviewOrder.orderType === "dine_in" ? Number(billPreviewOrder.subtotal) * SERVICE_CHARGE_RATE : 0)
-                    )}
-                  </span>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
-                <div className="flex gap-1">
-                  <Button variant={billPaymentMethod === "cash" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setBillPaymentMethod("cash")} data-testid="button-bill-cash">
-                    <Banknote className="h-3.5 w-3.5 mr-1" /> Cash
-                  </Button>
-                  <Button variant={billPaymentMethod === "card" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setBillPaymentMethod("card")} data-testid="button-bill-card">
-                    <CreditCard className="h-3.5 w-3.5 mr-1" /> Card
-                  </Button>
-                  <Button variant={billPaymentMethod === "upi" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setBillPaymentMethod("upi")} data-testid="button-bill-upi">
-                    <Wallet className="h-3.5 w-3.5 mr-1" /> UPI
-                  </Button>
-                </div>
-              </div>
-
-              <DialogFooter className="gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => setBillPreviewOrder(null)} data-testid="button-close-bill">
-                  Close
-                </Button>
-                <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => { payBillFromOrdersMutation.mutate({ order: billPreviewOrder, paymentMethod: billPaymentMethod }); setBillPreviewOrder(null); }} disabled={payBillFromOrdersMutation.isPending} data-testid="button-mark-paid">
-                  <DollarSign className="h-4 w-4 mr-1" /> {payBillFromOrdersMutation.isPending ? "Processing..." : "Mark as Paid"}
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {billPreviewOrder && (() => {
+        const bpSubtotal = Number(billPreviewOrder.subtotal ?? 0);
+        const bpDiscount = Number(billPreviewOrder.discount ?? 0);
+        const bpTax = Number(billPreviewOrder.tax ?? 0);
+        const bpServiceCharge = billPreviewOrder.orderType === "dine_in" ? bpSubtotal * SERVICE_CHARGE_RATE : 0;
+        const bpTotal = Number(billPreviewOrder.total ?? 0) + bpServiceCharge;
+        const bpCart = (billPreviewOrder.items ?? []).map(item => ({
+          menuItemId: (item as any).menuItemId || item.id,
+          name: item.name || "",
+          price: Number(item.price || 0),
+          quantity: item.quantity || 1,
+          notes: item.notes || "",
+        }));
+        return (
+          <BillPreviewModal
+            open={true}
+            onClose={() => setBillPreviewOrder(null)}
+            cart={bpCart}
+            subtotal={bpSubtotal}
+            discountAmount={bpDiscount}
+            serviceChargeAmount={bpServiceCharge}
+            taxAmount={bpTax}
+            total={bpTotal}
+            orderType={billPreviewOrder.orderType || "dine_in"}
+            tableId={billPreviewOrder.tableId ?? undefined}
+            tableNumber={billPreviewOrder.tableId ? tableMap[billPreviewOrder.tableId] : undefined}
+            orderId={billPreviewOrder.id}
+            posSessionId={undefined}
+            onPaymentComplete={() => {
+              setBillPreviewOrder(null);
+              queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+            }}
+          />
+        );
+      })()}
       {supervisorDialog && (
         <SupervisorApprovalDialog
           open={supervisorDialog.open}

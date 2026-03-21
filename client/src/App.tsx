@@ -16,6 +16,7 @@ import OrdersPage from "@/pages/modules/orders";
 import RecipeEditorPage from "@/pages/modules/recipe-editor";
 import TablesPage from "@/pages/modules/tables";
 import PosPage from "@/pages/modules/pos";
+import BillViewPage from "@/pages/pos/bill-view";
 import CrmPage from "@/pages/modules/crm";
 import CleaningPage from "@/pages/modules/cleaning";
 import AuditsPage from "@/pages/modules/audits";
@@ -250,6 +251,7 @@ function ProtectedPages() {
     <AppLayout>
       <Switch>
         <Route path="/" component={RoleDashboard} />
+        <Route path="/pos/bill/:orderId">{() => <GuardedRoute path="/pos" component={BillViewPage} />}</Route>
         <Route path="/pos">{() => <GuardedRoute path="/pos" component={PosPage} />}</Route>
         <Route path="/orders">{() => <GuardedRoute path="/orders" component={OrdersPage} />}</Route>
         <Route path="/tables">{() => <GuardedRoute path="/tables" component={TablesPage} />}</Route>
