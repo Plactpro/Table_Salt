@@ -294,8 +294,8 @@ function RecipeCheckDrawer({
                 {unlinkedItems.map(u => (
                   <div key={u.orderItemId} className="flex items-center justify-between px-3 py-2 rounded-md border bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700 text-sm">
                     <span className="text-slate-700 dark:text-slate-300">{u.quantity}× {u.menuItemName}</span>
-                    <Badge variant="outline" className="text-xs text-slate-500 border-slate-300" data-testid={`badge-no-recipe-${u.menuItemId}`}>
-                      No Recipe
+                    <Badge variant="outline" className="text-xs text-slate-500 border-slate-300 gap-1" data-testid={`badge-no-recipe-${u.menuItemId}`}>
+                      <AlertTriangle className="h-2.5 w-2.5" /> No Recipe
                     </Badge>
                   </div>
                 ))}
