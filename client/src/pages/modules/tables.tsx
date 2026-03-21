@@ -4,6 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { motion, AnimatePresence } from "framer-motion";
+import QRCodeLib from "qrcode";
 import {
   Plus, Edit2, Trash2, Users, MapPin, Clock, CalendarDays,
   Filter, ChevronLeft, ChevronRight,
@@ -11,7 +12,7 @@ import {
   Phone, X, LayoutGrid, ListOrdered, BarChart3,
   Merge, Unlink, UserPlus, Bell, Check, Search, Palette,
   Square, Circle, RectangleHorizontal, Move, GripVertical, MessageSquare,
-  TrendingUp, ArrowRightLeft,
+  TrendingUp, ArrowRightLeft, QrCode, Download, RefreshCw, Archive,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -159,6 +160,204 @@ const CANVAS_H = 600;
 
 function snapToGrid(val: number) {
   return Math.round(val / GRID_SIZE) * GRID_SIZE;
+}
+
+interface QrToken {
+  id: string;
+  tenantId: string;
+  outletId: string | null;
+  tableId: string;
+  token: string;
+  active: boolean;
+  label: string | null;
+  tableNumber: number | null;
+  tableZone: string | null;
+  createdAt: string | null;
+}
+
+function QrManagementTab({ tables, toast, queryClient, user }: {
+  tables: TableData[];
+  toast: ReturnType<typeof import("@/hooks/use-toast").useToast>["toast"];
+  queryClient: ReturnType<typeof import("@tanstack/react-query").useQueryClient>;
+  user: ReturnType<typeof import("@/lib/auth").useAuth>["user"];
+}) {
+  const { data: qrTokens = [] } = useQuery<QrToken[]>({
+    queryKey: ["/api/qr/tokens"],
+  });
+
+  const canManage = ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"].includes(user?.role ?? "");
+
+  const generateMutation = useMutation({
+    mutationFn: (tableId: string) => apiRequest("POST", `/api/qr/generate/${tableId}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/qr/tokens"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+      toast({ title: "QR code generated" });
+    },
+    onError: () => toast({ title: "Failed to generate QR code", variant: "destructive" }),
+  });
+
+  const deactivateMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/qr/tokens/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/qr/tokens"] });
+      toast({ title: "QR code deactivated" });
+    },
+    onError: () => toast({ title: "Failed to deactivate", variant: "destructive" }),
+  });
+
+  const handleDownloadPng = async (token: string, tableNum: number | null) => {
+    try {
+      const url = `${window.location.origin}/table?qr=${token}`;
+      const dataUrl = await QRCodeLib.toDataURL(url, { width: 400, margin: 2 });
+      const link = document.createElement("a");
+      link.href = dataUrl;
+      link.download = `table-${tableNum ?? token}-qr.png`;
+      link.click();
+    } catch {
+      toast({ title: "Failed to generate QR image", variant: "destructive" });
+    }
+  };
+
+  const handleDownloadPdf = async (token: string, tableNum: number | null) => {
+    try {
+      const url = `${window.location.origin}/table?qr=${token}`;
+      const dataUrl = await QRCodeLib.toDataURL(url, { width: 400, margin: 2 });
+      const { jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ unit: "mm", format: "a5" });
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.text(`Table ${tableNum ?? ""}`, 74, 25, { align: "center" });
+      doc.addImage(dataUrl, "PNG", 22, 35, 110, 110);
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "normal");
+      doc.text("Scan to order & request service", 74, 155, { align: "center" });
+      doc.save(`table-${tableNum ?? token}-qr.pdf`);
+    } catch {
+      toast({ title: "Failed to generate PDF", variant: "destructive" });
+    }
+  };
+
+  const handleBulkDownload = () => {
+    const link = document.createElement("a");
+    link.href = "/api/qr/bulk-download/all";
+    link.download = "qr-codes.zip";
+    link.click();
+  };
+
+  const tablesWithoutQr = tables.filter(t => !qrTokens.find(q => q.tableId === t.id && q.active));
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            {qrTokens.length} active QR code{qrTokens.length !== 1 ? "s" : ""} · {tablesWithoutQr.length} table{tablesWithoutQr.length !== 1 ? "s" : ""} without QR
+          </p>
+        </div>
+        <div className="flex gap-2 flex-wrap">
+          {canManage && tablesWithoutQr.length > 0 && (
+            <Button size="sm" variant="outline" onClick={() => {
+              tablesWithoutQr.forEach(t => generateMutation.mutate(t.id));
+            }} data-testid="btn-generate-all-qr">
+              <QrCode className="h-4 w-4 mr-1.5" />Generate All
+            </Button>
+          )}
+          {qrTokens.length > 0 && (
+            <Button size="sm" onClick={handleBulkDownload} data-testid="btn-bulk-download">
+              <Archive className="h-4 w-4 mr-1.5" />Bulk Download ZIP
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {qrTokens.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          <QrCode className="h-10 w-10 mx-auto mb-3 opacity-30" />
+          <p className="text-sm">No QR codes yet</p>
+          {canManage && tables.length > 0 && (
+            <Button size="sm" className="mt-3" onClick={() => tables.forEach(t => generateMutation.mutate(t.id))}>
+              Generate for all tables
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {qrTokens.map(qt => (
+            <Card key={qt.id} data-testid={`qr-card-${qt.id}`} className="overflow-hidden">
+              <CardContent className="p-4 space-y-3">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <p className="font-semibold text-sm">Table {qt.tableNumber ?? "?"}</p>
+                    {qt.tableZone && <p className="text-xs text-muted-foreground">{qt.tableZone}</p>}
+                  </div>
+                  <Badge variant="outline" className="text-xs text-green-700 border-green-300">Active</Badge>
+                </div>
+                <QrCodeCanvas token={qt.token} />
+                <div className="text-xs text-muted-foreground font-mono truncate">/table?qr={qt.token.slice(0, 16)}…</div>
+                <div className="flex gap-1.5 flex-wrap">
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2.5"
+                    onClick={() => handleDownloadPng(qt.token, qt.tableNumber)}
+                    data-testid={`btn-download-png-${qt.id}`}>
+                    <Download className="h-3 w-3 mr-1" />PNG
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs px-2.5"
+                    onClick={() => handleDownloadPdf(qt.token, qt.tableNumber)}
+                    data-testid={`btn-download-pdf-${qt.id}`}>
+                    <Download className="h-3 w-3 mr-1" />PDF
+                  </Button>
+                  {canManage && (
+                    <>
+                      <Button size="sm" variant="outline" className="h-7 text-xs px-2.5"
+                        onClick={() => generateMutation.mutate(qt.tableId)}
+                        data-testid={`btn-regen-${qt.id}`}>
+                        <RefreshCw className="h-3 w-3 mr-1" />Regen
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-7 text-xs px-2 text-destructive hover:text-destructive"
+                        onClick={() => deactivateMutation.mutate(qt.id)}
+                        data-testid={`btn-deactivate-${qt.id}`}>
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {canManage && tablesWithoutQr.length > 0 && qrTokens.length > 0 && (
+        <div className="border rounded-lg p-4">
+          <p className="text-sm font-medium mb-2">Tables without QR codes ({tablesWithoutQr.length})</p>
+          <div className="flex flex-wrap gap-2">
+            {tablesWithoutQr.map(t => (
+              <Button key={t.id} size="sm" variant="outline" className="h-7 text-xs"
+                onClick={() => generateMutation.mutate(t.id)}
+                data-testid={`btn-gen-qr-${t.id}`}>
+                <QrCode className="h-3 w-3 mr-1" />Table {t.number}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function QrCodeCanvas({ token }: { token: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const url = `${window.location.origin}/table?qr=${token}`;
+    QRCodeLib.toCanvas(canvasRef.current, url, { width: 140, margin: 1 }).catch(() => {});
+  }, [token]);
+
+  return (
+    <div className="flex justify-center py-1">
+      <canvas ref={canvasRef} className="rounded" data-testid="qr-canvas" />
+    </div>
+  );
 }
 
 export default function TablesPage() {
@@ -503,6 +702,7 @@ export default function TablesPage() {
           <TabsTrigger value="reservations" data-testid="tab-reservations"><CalendarDays className="w-4 h-4 mr-1.5" />Reservations</TabsTrigger>
           <TabsTrigger value="zones" data-testid="tab-zones"><MapPin className="w-4 h-4 mr-1.5" />Zones</TabsTrigger>
           <TabsTrigger value="analytics" data-testid="tab-analytics"><BarChart3 className="w-4 h-4 mr-1.5" />Analytics</TabsTrigger>
+          <TabsTrigger value="qr-management" data-testid="tab-qr-management"><QrCode className="w-4 h-4 mr-1.5" />QR Codes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="floor" className="space-y-4">
@@ -1005,6 +1205,10 @@ export default function TablesPage() {
               </CardContent>
             </Card>
           </div>
+        </TabsContent>
+
+        <TabsContent value="qr-management" className="space-y-4">
+          <QrManagementTab tables={tables} toast={toast} queryClient={queryClient} user={user} />
         </TabsContent>
       </Tabs>
 

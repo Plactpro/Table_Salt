@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { pool } from "../db";
+import QRCode from "qrcode";
 
 const REQUEST_TYPES = ["call_server", "order_food", "request_bill", "feedback", "water_refill", "cleaning", "other"] as const;
 const PRIORITIES = ["low", "medium", "high"] as const;
@@ -278,6 +279,76 @@ export function registerTableRequestRoutes(app: Express): void {
       const user = req.user as any;
       await storage.deactivateQrToken(req.params.id, user.tenantId);
       res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/qr/bulk-download/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.params;
+      const tokens = await storage.getQrTokensByTenant(user.tenantId);
+      const outletTokens = outletId === "all"
+        ? tokens.filter(t => t.active)
+        : tokens.filter(t => t.active && t.outletId === outletId);
+
+      if (outletTokens.length === 0) {
+        return res.status(404).json({ message: "No active QR tokens found" });
+      }
+
+      const JSZip = (await import("jszip")).default;
+      const zip = new JSZip();
+
+      await Promise.all(outletTokens.map(async (token) => {
+        const url = `${req.protocol}://${req.get("host")}/table?qr=${token.token}`;
+        const dataUrl = await QRCode.toDataURL(url, { width: 512, margin: 2 });
+        const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
+        zip.file(`table-${token.label ?? token.token}.png`, base64, { base64: true });
+      }));
+
+      const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
+      res.setHeader("Content-Type", "application/zip");
+      res.setHeader("Content-Disposition", `attachment; filename="qr-codes.zip"`);
+      res.send(zipBuffer);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/outlets/:id/qr-settings", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const outlet = await storage.getOutlet(req.params.id);
+      if (!outlet || outlet.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Outlet not found" });
+      }
+      const { rows } = await pool.query(
+        `SELECT qr_request_settings FROM outlets WHERE id = $1`,
+        [req.params.id]
+      );
+      res.json({ qrRequestSettings: rows[0]?.qr_request_settings ?? null });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/outlets/:id/qr-settings", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const outlet = await storage.getOutlet(req.params.id);
+      if (!outlet || outlet.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Outlet not found" });
+      }
+      const { settings } = req.body;
+      if (!settings || typeof settings !== "object") {
+        return res.status(400).json({ message: "settings object is required" });
+      }
+      await pool.query(
+        `UPDATE outlets SET qr_request_settings = $1 WHERE id = $2`,
+        [JSON.stringify(settings), req.params.id]
+      );
+      res.json({ success: true, settings });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

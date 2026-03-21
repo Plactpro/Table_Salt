@@ -489,15 +489,23 @@ export interface IStorage {
   getTableRequestsLive(tenantId: string): Promise<TableRequest[]>;
   getTableRequestAnalytics(tenantId: string, from?: Date, to?: Date): Promise<{
     total: number;
+    totalRequests: number;
     byType: Record<string, number>;
     byStatus: Record<string, number>;
+    byPriority: Record<string, number>;
     avgResponseSeconds: number | null;
+    avgResponseMinutes: number | null;
     avgCompletionSeconds: number | null;
     escalatedCount: number;
     completionRate: number | null;
     topRequestTypes: Array<{ type: string; count: number }>;
     overdueCount: number;
     avgFeedbackRating: number | null;
+    byTable: Array<{ tableNumber: number | null; count: number }>;
+    byHour: Record<string, number>;
+    byDay: Record<string, number>;
+    byStaff: Array<{ name: string; count: number; avgResponseMinutes: number | null }>;
+    feedbackByRating: Record<string, number>;
   }>;
 }
 
@@ -2153,44 +2161,95 @@ export class DatabaseStorage implements IStorage {
   }
   async getTableRequestAnalytics(tenantId: string, from?: Date, to?: Date): Promise<{
     total: number;
+    totalRequests: number;
     byType: Record<string, number>;
     byStatus: Record<string, number>;
+    byPriority: Record<string, number>;
     avgResponseSeconds: number | null;
+    avgResponseMinutes: number | null;
     avgCompletionSeconds: number | null;
     escalatedCount: number;
     completionRate: number | null;
     topRequestTypes: Array<{ type: string; count: number }>;
     overdueCount: number;
     avgFeedbackRating: number | null;
+    byTable: Array<{ tableNumber: number | null; count: number }>;
+    byHour: Record<string, number>;
+    byDay: Record<string, number>;
+    byStaff: Array<{ name: string; count: number; avgResponseMinutes: number | null }>;
+    feedbackByRating: Record<string, number>;
   }> {
     const conditions = [eq(tableRequests.tenantId, tenantId)];
     if (from) conditions.push(gte(tableRequests.createdAt, from));
     if (to) conditions.push(lte(tableRequests.createdAt, to));
     const rows = await db.select().from(tableRequests).where(and(...conditions));
+
+    const tenantTables = await this.getTablesByTenant(tenantId);
+    const tableMap = new Map(tenantTables.map(t => [t.id, t.number]));
+
     const byType: Record<string, number> = {};
     const byStatus: Record<string, number> = {};
+    const byPriority: Record<string, number> = {};
+    const byTableMap: Record<string, number> = {};
+    const byHour: Record<string, number> = {};
+    const byDay: Record<string, number> = {};
+    const feedbackByRating: Record<string, number> = {};
+    const staffMap: Record<string, { name: string; count: number; totalResponseMs: number; responseCount: number }> = {};
+
     let totalResponseSecs = 0, responseCount = 0;
     let totalCompletionSecs = 0, completionCount = 0;
     let escalatedCount = 0;
     let totalFeedbackRating = 0, feedbackRatingCount = 0;
     let overdueCount = 0;
     const now = Date.now();
+
     for (const r of rows) {
       byType[r.requestType] = (byType[r.requestType] ?? 0) + 1;
       byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
-      if (r.acknowledgedAt && r.createdAt) {
-        totalResponseSecs += (new Date(r.acknowledgedAt).getTime() - new Date(r.createdAt).getTime()) / 1000;
-        responseCount++;
+      byPriority[r.priority] = (byPriority[r.priority] ?? 0) + 1;
+
+      const tNum = tableMap.get(r.tableId);
+      const tKey = String(tNum ?? r.tableId);
+      byTableMap[tKey] = (byTableMap[tKey] ?? 0) + 1;
+
+      if (r.createdAt) {
+        const d = new Date(r.createdAt);
+        const hour = String(d.getHours());
+        const day = d.toLocaleDateString("en-US", { weekday: "short" });
+        byHour[hour] = (byHour[hour] ?? 0) + 1;
+        byDay[day] = (byDay[day] ?? 0) + 1;
       }
+
+      if (r.acknowledgedAt && r.createdAt) {
+        const respMs = new Date(r.acknowledgedAt).getTime() - new Date(r.createdAt).getTime();
+        totalResponseSecs += respMs / 1000;
+        responseCount++;
+        if (r.assignedToName) {
+          const key = r.assignedToName;
+          if (!staffMap[key]) staffMap[key] = { name: key, count: 0, totalResponseMs: 0, responseCount: 0 };
+          staffMap[key].count++;
+          staffMap[key].totalResponseMs += respMs;
+          staffMap[key].responseCount++;
+        }
+      } else if (r.assignedToName && (r.status === "completed")) {
+        const key = r.assignedToName;
+        if (!staffMap[key]) staffMap[key] = { name: key, count: 0, totalResponseMs: 0, responseCount: 0 };
+        staffMap[key].count++;
+      }
+
       if (r.completedAt && r.createdAt) {
         totalCompletionSecs += (new Date(r.completedAt).getTime() - new Date(r.createdAt).getTime()) / 1000;
         completionCount++;
       }
+
       if (r.escalatedAt) escalatedCount++;
+
       if (r.feedbackRating !== null && r.feedbackRating !== undefined) {
         totalFeedbackRating += r.feedbackRating;
         feedbackRatingCount++;
+        feedbackByRating[String(r.feedbackRating)] = (feedbackByRating[String(r.feedbackRating)] ?? 0) + 1;
       }
+
       if (r.createdAt && (r.status === "pending" || r.status === "acknowledged")) {
         const ageMinutes = (now - new Date(r.createdAt).getTime()) / 60000;
         const thresholdMap: Record<string, number> = { high: 2, medium: 5, low: 10 };
@@ -2198,22 +2257,44 @@ export class DatabaseStorage implements IStorage {
         if (ageMinutes > threshold && !r.escalatedAt) overdueCount++;
       }
     }
+
     const total = rows.length;
     const completedCount = byStatus["completed"] ?? 0;
     const topRequestTypes = Object.entries(byType)
       .sort((a, b) => b[1] - a[1])
       .map(([type, count]) => ({ type, count }));
+
+    const byTable = Object.entries(byTableMap).map(([key, count]) => {
+      const num = parseInt(key);
+      return { tableNumber: isNaN(num) ? null : num, count };
+    }).sort((a, b) => b.count - a.count);
+
+    const byStaff = Object.values(staffMap).map(s => ({
+      name: s.name,
+      count: s.count,
+      avgResponseMinutes: s.responseCount > 0 ? Math.round(s.totalResponseMs / s.responseCount / 60000) : null,
+    })).sort((a, b) => b.count - a.count);
+
+    const avgResponseSecs = responseCount > 0 ? Math.round(totalResponseSecs / responseCount) : null;
     return {
       total,
+      totalRequests: total,
       byType,
       byStatus,
-      avgResponseSeconds: responseCount > 0 ? Math.round(totalResponseSecs / responseCount) : null,
+      byPriority,
+      avgResponseSeconds: avgResponseSecs,
+      avgResponseMinutes: avgResponseSecs !== null ? Math.round(avgResponseSecs / 60) : null,
       avgCompletionSeconds: completionCount > 0 ? Math.round(totalCompletionSecs / completionCount) : null,
       escalatedCount,
       completionRate: total > 0 ? Math.round((completedCount / total) * 100) : null,
       topRequestTypes,
       overdueCount,
       avgFeedbackRating: feedbackRatingCount > 0 ? Math.round((totalFeedbackRating / feedbackRatingCount) * 10) / 10 : null,
+      byTable,
+      byHour,
+      byDay,
+      byStaff,
+      feedbackByRating,
     };
   }
 }

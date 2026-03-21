@@ -1,37 +1,39 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Settings, Shield, CreditCard, Clock } from "lucide-react";
+import { Settings, Shield, CreditCard, Clock, QrCode } from "lucide-react";
 import SettingsPage from "./settings";
 import SecuritySettingsPage from "./security-settings";
 import SubscriptionSettings from "./subscription-settings";
 import ShiftsManagement from "./shifts-management";
+import QrRequestSettings from "./qr-request-settings";
 
-function getInitialTab(): string {
+const VALID_TABS = ["general", "shifts", "security", "subscription", "qr-settings"] as const;
+type ValidTab = typeof VALID_TABS[number];
+
+function getInitialTab(): ValidTab {
   try {
     const params = new URLSearchParams(window.location.search);
-    const tab = params.get("tab");
-    if (tab === "subscription" || tab === "security" || tab === "general" || tab === "shifts") return tab;
+    const tab = params.get("tab") as ValidTab | null;
+    if (tab && VALID_TABS.includes(tab)) return tab;
   } catch {}
   return "general";
 }
 
 export default function SettingsHub() {
-  const [tab, setTab] = useState(getInitialTab);
+  const [tab, setTab] = useState<ValidTab>(getInitialTab);
   const [, navigate] = useLocation();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlTab = params.get("tab");
-    if (urlTab && urlTab !== tab) {
-      if (urlTab === "subscription" || urlTab === "security" || urlTab === "general" || urlTab === "shifts") {
-        setTab(urlTab);
-      }
+    const urlTab = params.get("tab") as ValidTab | null;
+    if (urlTab && VALID_TABS.includes(urlTab) && urlTab !== tab) {
+      setTab(urlTab);
     }
   }, []);
 
   const handleTabChange = (value: string) => {
-    setTab(value);
+    setTab(value as ValidTab);
     const params = new URLSearchParams(window.location.search);
     params.set("tab", value);
     navigate(`/settings?${params.toString()}`, { replace: true });
@@ -53,6 +55,9 @@ export default function SettingsHub() {
           <TabsTrigger value="subscription" data-testid="tab-subscription">
             <CreditCard className="h-4 w-4 mr-1.5" />Subscription
           </TabsTrigger>
+          <TabsTrigger value="qr-settings" data-testid="tab-qr-settings">
+            <QrCode className="h-4 w-4 mr-1.5" />QR Requests
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="general" className="mt-4">
           <SettingsPage />
@@ -65,6 +70,9 @@ export default function SettingsHub() {
         </TabsContent>
         <TabsContent value="subscription" className="mt-4">
           <SubscriptionSettings />
+        </TabsContent>
+        <TabsContent value="qr-settings" className="mt-4">
+          <QrRequestSettings />
         </TabsContent>
       </Tabs>
     </div>

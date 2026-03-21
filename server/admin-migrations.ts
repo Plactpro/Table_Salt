@@ -340,4 +340,7 @@ export async function runAdminMigrations(): Promise<void> {
 
   // Task #74: Add structured details column to table_requests
   await pool.query(`ALTER TABLE table_requests ADD COLUMN IF NOT EXISTS details JSONB`);
+
+  // Task #75: QR Request Settings per outlet
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS qr_request_settings JSONB`);
 }
