@@ -65,7 +65,7 @@ export default function BillViewPage() {
   const tableNumber = order.tableId ? tableMap[order.tableId] : undefined;
 
   return (
-    <div data-testid="page-bill-view">
+    <div data-testid="page-bill-view" className="min-h-screen bg-muted/20">
       <BillPreviewModal
         open={true}
         onClose={() => navigate("/orders")}
@@ -81,6 +81,7 @@ export default function BillViewPage() {
         orderId={order.id}
         posSessionId={undefined}
         onPaymentComplete={() => navigate("/orders")}
+        fullPage={true}
       />
     </div>
   );

@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogPageContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Receipt, CreditCard, Banknote, Smartphone, Gift, Plus, Minus, Printer,
@@ -41,6 +41,7 @@ interface BillPreviewProps {
   orderId?: string;
   posSessionId?: string;
   onPaymentComplete: () => void;
+  fullPage?: boolean;
 }
 
 type PaymentStep = "preview" | "payment" | "receipt" | "void" | "refund";
@@ -99,7 +100,7 @@ function numWords(n: number): string {
 
 export default function BillPreviewModal({
   open, onClose, cart, subtotal, discountAmount, serviceChargeAmount, taxAmount, total,
-  orderType, tableId, tableNumber, orderId, posSessionId, onPaymentComplete,
+  orderType, tableId, tableNumber, orderId, posSessionId, onPaymentComplete, fullPage = false,
 }: BillPreviewProps) {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -333,6 +334,17 @@ export default function BillPreviewModal({
   const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
 
+  const BillWrapper = fullPage ? DialogPageContent : DialogContent;
+  const billWrapperClass = fullPage
+    ? "min-h-screen flex flex-col"
+    : "max-w-lg max-h-[90vh] overflow-y-auto";
+  const stepLabel = step === "preview" ? "Bill Preview" : step === "payment" ? "Payment" : step === "void" ? "Void Bill" : step === "refund" ? "Issue Refund" : "Receipt";
+  const goBack = () => {
+    if (step === "payment") setStep("preview");
+    else if (step === "void" || step === "refund") setStep("receipt");
+    else setStep("payment");
+  };
+
   return (
     <>
       <style>{`
@@ -393,22 +405,34 @@ export default function BillPreviewModal({
       </div>
 
       <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+        <BillWrapper className={billWrapperClass}>
+          {fullPage ? (
+            <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b px-4 py-3 flex items-center gap-2 no-print">
               {step !== "preview" && (
-                <Button variant="ghost" size="icon" className="h-7 w-7 no-print" onClick={() => {
-                  if (step === "payment") setStep("preview");
-                  else if (step === "void" || step === "refund") setStep("receipt");
-                  else setStep("payment");
-                }}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goBack}>
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
               )}
               <Receipt className="h-5 w-5 text-primary" />
-              {step === "preview" ? "Bill Preview" : step === "payment" ? "Payment" : step === "void" ? "Void Bill" : step === "refund" ? "Issue Refund" : "Receipt"}
-            </DialogTitle>
-          </DialogHeader>
+              <span className="font-semibold text-sm">{stepLabel}</span>
+              <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto" onClick={handleClose} data-testid="button-close-bill-page">
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {step !== "preview" && (
+                  <Button variant="ghost" size="icon" className="h-7 w-7 no-print" onClick={goBack}>
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                )}
+                <Receipt className="h-5 w-5 text-primary" />
+                {stepLabel}
+              </DialogTitle>
+            </DialogHeader>
+          )}
+          <div className={fullPage ? "max-w-2xl mx-auto w-full py-6 px-4 space-y-4 flex-1" : ""}>
 
           {step === "preview" && (
             <div className="space-y-4">
@@ -595,7 +619,7 @@ export default function BillPreviewModal({
                             <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setLookedUpCustomer(null); setLoyaltyPointsToRedeem(0); }}>Change</Button>
                           </div>
                           <div className="space-y-1">
-                            <p className="text-xs font-medium">Points to Redeem (100 pts = AED 1)</p>
+                            <p className="text-xs font-medium">Points to Redeem (100 pts = 1 {currency})</p>
                             <div className="flex gap-2">
                               <Input
                                 type="number"
@@ -619,7 +643,7 @@ export default function BillPreviewModal({
                               </p>
                             )}
                           </div>
-                          <p className="text-xs text-amber-600 dark:text-amber-400">Points earned this visit: +{Math.floor((total + tipAmount) / 10)} pts (1 pt per AED 10 spent).</p>
+                          <p className="text-xs text-amber-600 dark:text-amber-400">Points earned this visit: +{Math.floor((total + tipAmount) / 10)} pts (1 pt per 10 {currency} spent).</p>
                         </div>
                       ) : (
                         <div className="flex gap-1.5">
@@ -834,7 +858,8 @@ export default function BillPreviewModal({
               </div>
             </div>
           )}
-        </DialogContent>
+          </div>
+        </BillWrapper>
       </Dialog>
     </>
   );
