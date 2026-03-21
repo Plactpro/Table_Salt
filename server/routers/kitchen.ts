@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts } from "@shared/schema";
 import { convertUnits } from "@shared/units";
+import { getNextKotSequence } from "./print-jobs";
 
 export function registerKitchenRoutes(app: Express): void {
   app.get("/api/kitchen-stations", requireAuth, async (req, res) => {
@@ -294,8 +295,7 @@ export function registerKitchenRoutes(app: Express): void {
           const tables = await storage.getTablesByTenant(user.tenantId);
           const tableNum = order.tableId ? tables.find(t => t.id === order.tableId)?.number : undefined;
           const sentAt = new Date().toISOString();
-          const allKotEvents = await storage.getKotEventsByOrder(order.id);
-          const kotSequence = allKotEvents.length;
+          const kotSequence = await getNextKotSequence(user.tenantId, order.id);
 
           const stationsInBatch = station
             ? [station]

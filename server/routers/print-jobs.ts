@@ -8,6 +8,12 @@ type PrintJobStatus = typeof VALID_PRINT_JOB_STATUSES[number];
 const VALID_PRINT_JOB_TYPES = ["kot", "bill", "receipt"] as const;
 type PrintJobType = typeof VALID_PRINT_JOB_TYPES[number];
 
+export async function getNextKotSequence(tenantId: string, orderId: string): Promise<number> {
+  const existingJobs = await storage.getPrintJobsByTenant(tenantId, { referenceId: orderId });
+  const kotCount = existingJobs.filter(j => j.type === "kot").length;
+  return kotCount + 1;
+}
+
 export function registerPrintJobRoutes(app: Express): void {
   app.get("/api/print-jobs", requireAuth, async (req, res) => {
     try {
