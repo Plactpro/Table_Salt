@@ -183,7 +183,7 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/table-requests/:id/assign", requireAuth, async (req, res) => {
+  app.put("/api/table-requests/:id/assign", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
       const request = await storage.getTableRequest(req.params.id);
