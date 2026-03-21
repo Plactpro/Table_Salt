@@ -44,6 +44,7 @@ import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
 import AccountantDashboard from "@/pages/dashboards/accountant";
 import KdsWallScreen from "@/pages/dashboards/kds-wall";
+import TableQrPage from "@/pages/table-qr";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -312,6 +313,10 @@ function Router() {
         <Route component={NotFound} />
       </Switch>
     );
+  }
+
+  if (location.startsWith("/table")) {
+    return <TableQrPage />;
   }
 
   if (location.startsWith("/admin")) {
