@@ -64,6 +64,7 @@ interface CartItem {
   modifiers?: CartModifier[];
   cartKey: string;
   isAddon?: boolean;
+  hsnCode?: string | null;
 }
 
 interface OrderTab {
@@ -589,7 +590,7 @@ export default function POSPage() {
         menuItemId: item.id, name: item.name,
         price: parseFloat(item.price), basePrice: parseFloat(item.price),
         quantity: 1, notes: "", isVeg: item.isVeg, categoryId: item.categoryId,
-        cartKey,
+        cartKey, hsnCode: item.hsnCode || null,
       }];
     });
   }, [setCart]);
