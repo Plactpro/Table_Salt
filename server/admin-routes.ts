@@ -407,7 +407,7 @@ export function registerAdminRoutes(app: Express) {
       const ownerMap = new Map(ownerUsers.map(u => [u.tenantId, u.id]));
       const lastActMap = new Map(lastActivityRows.map(r => [r.tenantId, r.lastActivity]));
 
-      const data = page.map(t => ({
+      const data = page.map(({ razorpayKeySecret: _secret, ...t }) => ({
         ...t,
         userCount: ucMap.get(t.id) ?? 0,
         outletCount: ocMap.get(t.id) ?? 0,
@@ -440,8 +440,9 @@ export function registerAdminRoutes(app: Express) {
           .orderBy(desc(auditEvents.createdAt)).limit(20),
       ]);
 
+      const { razorpayKeySecret: _secret, ...safeTenant } = tenant as any;
       return res.json({
-        ...tenant,
+        ...safeTenant,
         users: tenantUsers.map(u => stripSensitiveFields(u as Record<string, unknown>)),
         outlets: tenantOutlets,
         orderCount: orderStats?.total ?? 0,
@@ -586,7 +587,8 @@ export function registerAdminRoutes(app: Express) {
         req,
       });
 
-      return res.json(updated);
+      const { razorpayKeySecret: _s, ...safeUpdated } = (updated || {}) as any;
+      return res.json(safeUpdated);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });
