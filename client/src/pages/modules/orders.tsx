@@ -112,6 +112,7 @@ export default function OrdersPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isManagerOrOwner = user?.role === "owner" || user?.role === "manager";
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -523,11 +524,13 @@ export default function OrdersPage() {
                       Advance to {statusLabels[NEXT_STATUS[selectedOrderDetail.status || "new"]!]}
                     </Button>
                   )}
-                  {selectedOrderDetail.status !== "cancelled" && selectedOrderDetail.status !== "voided" && selectedOrderDetail.status !== "paid" && (
+                  {selectedOrderDetail.status !== "cancelled" && selectedOrderDetail.status !== "voided" && selectedOrderDetail.status !== "paid" && selectedOrderDetail.status !== "completed" && (
                     <>
-                      <Button variant="destructive" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-void-order">
-                        <Ban className="h-4 w-4 mr-1" /> Void Bill
-                      </Button>
+                      {isManagerOrOwner && (
+                        <Button variant="destructive" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-void-order">
+                          <Ban className="h-4 w-4 mr-1" /> Void Bill
+                        </Button>
+                      )}
                       <Button variant="outline" className="text-destructive border-destructive/50" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled" })} disabled={updateStatusMutation.isPending} data-testid="button-cancel-order">
                         Cancel Order
                       </Button>
