@@ -62,6 +62,10 @@ interface CreatedBill {
   totalAmount: string;
   paymentStatus: string;
   alreadyExists?: boolean;
+  invoiceNumber?: string | null;
+  cgstAmount?: string | null;
+  sgstAmount?: string | null;
+  customerGstin?: string | null;
 }
 
 const VOID_REASONS = [
@@ -394,11 +398,20 @@ export default function BillPreviewModal({
           <div style={{ textAlign: "center", marginBottom: 8 }}>
             <div style={{ fontWeight: "bold", fontSize: 14 }}>{tenantName}</div>
             {tenantAddress && <div style={{ fontSize: 10 }}>{tenantAddress}</div>}
+            {currency === "INR" && (user?.tenant as any)?.gstin && (
+              <div style={{ fontSize: 10 }}>GSTIN: {(user?.tenant as any).gstin}</div>
+            )}
             <div style={{ fontSize: 10, marginTop: 4 }}>
-              Bill No: {billNumber || "PREVIEW"} | {dateStr} {timeStr}
+              {currency === "INR" && createdBill?.invoiceNumber
+                ? <>Invoice: {createdBill.invoiceNumber} | {dateStr} {timeStr}</>
+                : <>Bill No: {billNumber || "PREVIEW"} | {dateStr} {timeStr}</>
+              }
             </div>
             {tableNumber && <div>Table: {tableNumber}</div>}
             <div>Waiter: {user?.name || user?.username}</div>
+            {currency === "INR" && (createdBill as any)?.customerGstin && (
+              <div style={{ fontSize: 10 }}>Cust. GSTIN: {(createdBill as any).customerGstin}</div>
+            )}
           </div>
           <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
@@ -425,7 +438,20 @@ export default function BillPreviewModal({
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
           {discountAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Discount</span><span>-{fmt(discountAmount)}</span></div>}
           {serviceChargeAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Service Charge</span><span>{fmt(serviceChargeAmount)}</span></div>}
-          {taxAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tax ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>}
+          {taxAmount > 0 && currency === "INR" && createdBill ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>CGST ({(user?.tenant as any)?.cgstRate ?? 9}%)</span>
+                <span>{fmt(Number((createdBill as any).cgstAmount ?? taxAmount / 2))}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span>SGST ({(user?.tenant as any)?.sgstRate ?? 9}%)</span>
+                <span>{fmt(Number((createdBill as any).sgstAmount ?? taxAmount / 2))}</span>
+              </div>
+            </>
+          ) : (
+            taxAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tax ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>
+          )}
           {tipAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tips</span><span>{fmt(tipAmount)}</span></div>}
           <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: 13 }}>
@@ -434,6 +460,9 @@ export default function BillPreviewModal({
           <div style={{ fontSize: 9, marginTop: 4, fontStyle: "italic" }}>{numWords(grandTotal)}</div>
           <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }} />
           <div style={{ textAlign: "center", fontSize: 10 }}>Thank you for dining with us!</div>
+          {currency === "INR" && (
+            <div style={{ textAlign: "center", fontSize: 9, marginTop: 4 }}>This is a computer-generated tax invoice.</div>
+          )}
         </div>
       </div>
 
@@ -824,8 +853,37 @@ export default function BillPreviewModal({
                 <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-2" />
                 <h3 className="font-bold text-lg">Payment Successful!</h3>
                 <p className="text-muted-foreground text-sm">{billNumber}</p>
+                {currency === "INR" && createdBill?.invoiceNumber && (
+                  <p className="text-xs font-mono text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/30 rounded px-2 py-0.5 inline-block mt-1">
+                    🧾 {createdBill.invoiceNumber}
+                  </p>
+                )}
                 <p className="font-bold text-xl text-primary mt-1">{fmt(grandTotal)}</p>
               </div>
+
+              {currency === "INR" && createdBill && taxAmount > 0 && (
+                <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/20 p-3 text-sm space-y-1">
+                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide mb-2">Tax Summary</p>
+                  {(user?.tenant as any)?.gstin && (
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Restaurant GSTIN</span><span className="font-mono">{(user?.tenant as any).gstin}</span>
+                    </div>
+                  )}
+                  {(createdBill as any)?.customerGstin && (
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Customer GSTIN</span><span className="font-mono">{(createdBill as any).customerGstin}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">CGST ({(user?.tenant as any)?.cgstRate ?? 9}%)</span>
+                    <span>{fmt(Number((createdBill as any).cgstAmount ?? taxAmount / 2))}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">SGST ({(user?.tenant as any)?.sgstRate ?? 9}%)</span>
+                    <span>{fmt(Number((createdBill as any).sgstAmount ?? taxAmount / 2))}</span>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2 no-print">
                 <Button variant="outline" onClick={handlePrint} data-testid="button-print-receipt">

@@ -99,6 +99,11 @@ export const tenants = pgTable("tenants", {
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
   subscriptionStatus: text("subscription_status").default("trialing"),
   wallScreenToken: text("wall_screen_token"),
+  gstin: text("gstin"),
+  cgstRate: decimal("cgst_rate", { precision: 5, scale: 2 }),
+  sgstRate: decimal("sgst_rate", { precision: 5, scale: 2 }),
+  invoicePrefix: text("invoice_prefix").default("INV"),
+  invoiceCounter: integer("invoice_counter").default(0),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -183,6 +188,7 @@ export const menuItems = pgTable("menu_items", {
   ingredients: jsonb("ingredients"),
   station: text("station"),
   course: text("course"),
+  hsnCode: text("hsn_code"),
 }, (t) => [
   index("idx_menu_items_tenant_id").on(t.tenantId),
   index("idx_menu_items_tenant_category").on(t.tenantId, t.categoryId),
@@ -399,6 +405,11 @@ export const customers = pgTable("customers", {
   averageSpend: decimal("average_spend", { precision: 10, scale: 2 }).default("0"),
   privacyConsents: jsonb("privacy_consents"),
   anonymized: boolean("anonymized").default(false),
+  gstin: text("gstin"),
+  visitCount: integer("visit_count").default(0),
+  lastVisitAt: timestamp("last_visit_at"),
+  birthday: text("birthday"),
+  anniversary: text("anniversary"),
 }, (t) => [
   index("idx_customers_tenant_id").on(t.tenantId),
   index("idx_customers_tenant_loyalty_tier").on(t.tenantId, t.loyaltyTier),
@@ -1442,6 +1453,10 @@ export const bills = pgTable("bills", {
   voidedBy: varchar("voided_by", { length: 36 }),
   posSessionId: varchar("pos_session_id", { length: 36 }),
   covers: integer("covers").default(1),
+  invoiceNumber: text("invoice_number"),
+  customerGstin: text("customer_gstin"),
+  cgstAmount: decimal("cgst_amount", { precision: 10, scale: 2 }),
+  sgstAmount: decimal("sgst_amount", { precision: 10, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow(),
   paidAt: timestamp("paid_at"),
 }, (t) => [

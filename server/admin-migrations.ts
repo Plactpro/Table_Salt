@@ -198,4 +198,28 @@ export async function runAdminMigrations(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS bills_tenant_bill_number_uidx
     ON bills (tenant_id, bill_number)
   `);
+
+  // Task #64: GST-Compliant Invoicing
+  // Tenant GST fields (INR-only)
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS gstin TEXT`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS cgst_rate NUMERIC(5,2)`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS sgst_rate NUMERIC(5,2)`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS invoice_prefix TEXT DEFAULT 'INV'`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS invoice_counter INTEGER DEFAULT 0`);
+
+  // Menu item HSN/SAC code
+  await pool.query(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS hsn_code TEXT`);
+
+  // Customer GSTIN + visit tracking + birthday/anniversary
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS gstin TEXT`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS visit_count INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS last_visit_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS birthday TEXT`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS anniversary TEXT`);
+
+  // Bill GST columns
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS invoice_number TEXT`);
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS customer_gstin TEXT`);
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS cgst_amount NUMERIC(10,2)`);
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS sgst_amount NUMERIC(10,2)`);
 }
