@@ -8,6 +8,7 @@ import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { syncManager } from "@/lib/sync-manager";
 import { useCachedQuery } from "@/hooks/use-cached-query";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
+import { useKotAutoDispatch } from "@/hooks/use-kot-auto-dispatch";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -261,6 +262,7 @@ function isComboActive(combo: ComboOffer, userOutletId?: string | null): boolean
 export default function POSPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { dispatchKotForOrder } = useKotAutoDispatch();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
 
@@ -875,6 +877,9 @@ export default function POSPage() {
       } else {
         const isAddonKot = (activeTab?.sentCartKeys.length ?? 0) > 0 && isDineIn;
         toast({ title: isAddonKot ? "Add-on KOT sent!" : isDineIn ? "Order sent to kitchen!" : "Order placed!" });
+        if (isDineIn && data?.id) {
+          dispatchKotForOrder(data.id, user?.tenant?.name || "Kitchen");
+        }
       }
       const tableNum = tables.find(t => t.id === selectedTable)?.number;
       const snapshot = {
