@@ -145,6 +145,7 @@ export default function BillPreviewModal({
     lastVisitAt?: string | null; loyaltyTier?: string | null;
     notes?: string | null; tags?: string[] | null;
     phone?: string | null;
+    activeOffers?: { id: string; name: string; type: string; value: string; maxDiscount?: string | null }[] | null;
   } | null>(null);
   const [loyaltySearching, setLoyaltySearching] = useState(false);
 
@@ -456,6 +457,13 @@ export default function BillPreviewModal({
 
   const isManagerOrOwner = user?.role === "manager" || user?.role === "owner";
 
+  interface CrmActiveOffer {
+    id: string;
+    name: string;
+    type: string;
+    value: string;
+    maxDiscount?: string | null;
+  }
   interface CrmCustomerMatch {
     id: string;
     name: string;
@@ -470,6 +478,7 @@ export default function BillPreviewModal({
     notes?: string | null;
     tags?: string[] | null;
     phone?: string | null;
+    activeOffers?: CrmActiveOffer[] | null;
   }
 
   const setCustomerFromMatch = useCallback((match: CrmCustomerMatch) => {
@@ -487,6 +496,7 @@ export default function BillPreviewModal({
       notes: match.notes ?? null,
       tags: match.tags ?? null,
       phone: match.phone ?? null,
+      activeOffers: match.activeOffers ?? null,
     });
     if (isGSTTenant && match.gstin) setCustomerGstinInput(match.gstin);
     setCrmQuickNote("");
@@ -536,7 +546,7 @@ export default function BillPreviewModal({
     if (!lookedUpCustomer || !crmQuickNote.trim()) return;
     setCrmNoteSaving(true);
     try {
-      const updated = await apiRequest("POST", `/api/customers/${lookedUpCustomer.id}/visit-note`, { note: crmQuickNote.trim() });
+      const updated = await apiRequest("PATCH", `/api/customers/${lookedUpCustomer.id}`, { appendNote: crmQuickNote.trim() });
       const updatedCustomer = await updated.json();
       setLookedUpCustomer(prev => prev ? { ...prev, notes: updatedCustomer.notes } : prev);
       setCrmQuickNote("");
@@ -785,7 +795,10 @@ export default function BillPreviewModal({
                       const label = isBirthday
                         ? bdDays === 0 ? "Today is this customer's birthday!" : `Birthday in ${bdDays} day${bdDays > 1 ? "s" : ""}!`
                         : annDays === 0 ? "Today is this customer's anniversary!" : `Anniversary in ${annDays! > 1 ? `${annDays} days` : "1 day"}!`;
-                      const applicableOffer = isBirthday ? birthdayOffer : anniversaryOffer;
+                      const activeOffers = lookedUpCustomer.activeOffers ?? [];
+                      const birthdayActiveOffer = activeOffers.find(o => /birthday/i.test(o.name)) ?? birthdayOffer;
+                      const anniversaryActiveOffer = activeOffers.find(o => /anniversary/i.test(o.name)) ?? anniversaryOffer;
+                      const applicableOffer = isBirthday ? birthdayActiveOffer : anniversaryActiveOffer;
                       const offerDiscount = applicableOffer
                         ? applicableOffer.type === "percentage"
                           ? Math.min(subtotal * (Number(applicableOffer.value) / 100), applicableOffer.maxDiscount ? Number(applicableOffer.maxDiscount) : Infinity)

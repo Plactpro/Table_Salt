@@ -41,6 +41,19 @@ export function registerCustomersRoutes(app: Express): void {
       const normalise = (p: string) => String(p ?? "").replace(/[\s\-\(\)]/g, "");
       const match = all.find(c => normalise(c.phone ?? "") === normalise(phone.trim()));
       if (!match) return res.status(404).json({ message: "Customer not found" });
+
+      const tenantOffers = await storage.getOffersByTenant(user.tenantId);
+      const activeOffers = tenantOffers
+        .filter(o => o.active && (o.type === "percentage" || o.type === "fixed_amount"))
+        .filter(o => /birthday|anniversary/i.test(o.name))
+        .map(o => ({
+          id: o.id,
+          name: o.name,
+          type: o.type,
+          value: o.value,
+          maxDiscount: o.maxDiscount ?? null,
+        }));
+
       res.json({
         id: match.id,
         name: match.name,
@@ -56,6 +69,7 @@ export function registerCustomersRoutes(app: Express): void {
         notes: match.notes,
         tags: match.tags,
         gstin: match.gstin,
+        activeOffers,
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -68,10 +82,22 @@ export function registerCustomersRoutes(app: Express): void {
   });
 
   app.patch("/api/customers/:id", requireAuth, async (req, res) => {
-    const user = req.user as any;
-    const customer = await storage.updateCustomerByTenant(req.params.id, user.tenantId, req.body);
-    if (!customer) return res.status(404).json({ message: "Customer not found" });
-    res.json(customer);
+    try {
+      const user = req.user as any;
+      const { appendNote, ...rest } = req.body as { appendNote?: string; [key: string]: unknown };
+      let updateData = rest as Record<string, unknown>;
+      if (appendNote && appendNote.trim()) {
+        const existing = await storage.getCustomerByTenant(req.params.id, user.tenantId);
+        if (!existing) return res.status(404).json({ message: "Customer not found" });
+        const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
+        const entry = `[${timestamp}] ${appendNote.trim()}`;
+        const existingNotes = existing.notes?.trim() ?? "";
+        updateData = { ...updateData, notes: existingNotes ? `${existingNotes}\n${entry}` : entry };
+      }
+      const customer = await storage.updateCustomerByTenant(req.params.id, user.tenantId, updateData as any);
+      if (!customer) return res.status(404).json({ message: "Customer not found" });
+      res.json(customer);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.post("/api/customers/:id/visit-note", requireAuth, async (req, res) => {
