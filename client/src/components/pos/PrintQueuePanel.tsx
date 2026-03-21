@@ -79,7 +79,9 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
       if (job.type === "kot") {
         html = renderKotHtml({
           restaurantName,
-          kotNumber: job.referenceId.slice(-6).toUpperCase(),
+          kotNumber: job.payload?.kotSequence != null
+            ? `KOT-${String(job.payload.kotSequence).padStart(3, "0")}`
+            : job.referenceId.slice(-6).toUpperCase(),
           orderId: job.payload?.orderId || job.referenceId,
           orderType: job.payload?.orderType,
           tableNumber: job.payload?.tableNumber,
