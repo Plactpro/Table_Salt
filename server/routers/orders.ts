@@ -141,6 +141,43 @@ export function registerOrdersRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.patch("/api/orders/:id/accept", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      const etaMinutes = Math.max(5, Math.min(120, parseInt(req.body.etaMinutes) || 30));
+      const estimatedReadyAt = new Date(Date.now() + etaMinutes * 60 * 1000);
+      await pool.query(
+        `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1 WHERE id = $2`,
+        [estimatedReadyAt, order.id]
+      );
+      emitToTenant(user.tenantId, "order:delivery_accepted", { orderId: order.id, etaMinutes, estimatedReadyAt });
+      emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", orderType: "delivery" });
+      auditLogFromReq(req, { action: "delivery_order_accepted", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "in_progress", etaMinutes } });
+      res.json({ success: true, estimatedReadyAt });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/orders/:id/reject", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      const rejectionReason = String(req.body.rejectionReason || "Order rejected by restaurant");
+      await pool.query(
+        `UPDATE orders SET status = 'cancelled', rejection_reason = $1 WHERE id = $2`,
+        [rejectionReason, order.id]
+      );
+      emitToTenant(user.tenantId, "order:delivery_rejected", { orderId: order.id, rejectionReason });
+      emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "cancelled", orderType: "delivery" });
+      auditLogFromReq(req, { action: "delivery_order_rejected", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "cancelled", rejectionReason } });
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/orders/:id", requireAuth, async (req, res) => {
     const user = req.user as Express.User & { tenantId: string };
     const order = await storage.getOrder(req.params.id);
