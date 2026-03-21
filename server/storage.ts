@@ -2152,10 +2152,14 @@ export class DatabaseStorage implements IStorage {
     return q;
   }
   async getTableRequestsLive(tenantId: string): Promise<TableRequest[]> {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     return db.select().from(tableRequests)
       .where(and(
         eq(tableRequests.tenantId, tenantId),
-        sql`${tableRequests.status} IN ('pending', 'pending_confirmation', 'acknowledged')`
+        sql`(
+          ${tableRequests.status} IN ('pending', 'pending_confirmation', 'acknowledged')
+          OR (${tableRequests.status} IN ('completed', 'cancelled') AND ${tableRequests.createdAt} >= ${oneDayAgo.toISOString()})
+        )`
       ))
       .orderBy(desc(tableRequests.createdAt));
   }
