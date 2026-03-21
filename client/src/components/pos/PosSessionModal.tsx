@@ -271,10 +271,10 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
       {showSupervisor && (
         <SupervisorApprovalDialog
           open={showSupervisor}
+          onOpenChange={(o) => { if (!o) setShowSupervisor(false); }}
           action="close_shift"
           actionLabel="Close Shift"
           onApproved={(_supervisorId, credentials) => { setShowSupervisor(false); closeMutation.mutate(credentials); }}
-          onCancel={() => setShowSupervisor(false)}
         />
       )}
     </>

@@ -30,7 +30,8 @@ export type PermissionAction =
   | "manage_users"
   | "view_audit_log"
   | "manage_security"
-  | "supervisor_override";
+  | "supervisor_override"
+  | "close_shift";
 
 export type UserRole =
   | "owner"
@@ -58,6 +59,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
+    "close_shift",
   ],
   franchise_owner: [
     "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
@@ -67,6 +69,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
+    "close_shift",
   ],
   hq_admin: [
     "view_reports", "view_cost_reports", "manage_menu", "manage_inventory",
@@ -82,6 +85,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_staff", "manage_tables", "manage_outlets", "manage_offers", "manage_crm",
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_users", "view_audit_log", "supervisor_override",
+    "close_shift",
   ],
   outlet_manager: [
     "create_order", "edit_order", "void_order", "apply_discount",
@@ -90,12 +94,14 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_staff", "manage_tables", "manage_offers", "manage_crm",
     "manage_delivery", "manage_cleaning", "manage_audits",
     "manage_users", "view_audit_log", "supervisor_override",
+    "close_shift",
   ],
   supervisor: [
     "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
     "change_price", "close_day", "view_reports",
     "manage_menu", "manage_inventory", "adjust_stock", "large_stock_adjustment",
     "manage_tables", "manage_cleaning", "supervisor_override",
+    "close_shift",
   ],
   cashier: [
     "create_order", "edit_order", "apply_discount", "manage_tables",
@@ -121,6 +127,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
+    "close_shift",
   ],
 };
 
@@ -129,6 +136,7 @@ export const supervisorRequiredActions: PermissionAction[] = [
   "apply_large_discount",
   "change_price",
   "large_stock_adjustment",
+  "close_shift",
 ];
 
 export const actionLabels: Record<PermissionAction, string> = {
@@ -164,6 +172,7 @@ export const actionLabels: Record<PermissionAction, string> = {
   view_audit_log: "View Audit Log",
   manage_security: "Manage Security",
   supervisor_override: "Supervisor Override",
+  close_shift: "Close Shift",
 };
 
 export const roleLabels: Record<UserRole, string> = {

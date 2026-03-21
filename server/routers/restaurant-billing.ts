@@ -345,7 +345,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const { sessionId, closingCashCount, notes, supervisorOverride } = req.body;
       const isManagerOrOwner = user.role === "owner" || user.role === "manager";
       if (!isManagerOrOwner) {
-        const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "close_shift" as any, req);
+        const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "close_shift", req);
         if (!result.verified) return res.status(403).json({ message: result.error || "Manager approval required to close shift" });
       }
       let session;
