@@ -46,7 +46,12 @@ export function registerKitchenRoutes(app: Express): void {
       const allOrders = await storage.getOrdersByTenant(user.tenantId);
       const allTables = await storage.getTablesByTenant(user.tenantId);
       const tableMap = new Map(allTables.map(t => [t.id, t.number]));
-      const activeOrders = allOrders.filter(o => ["new", "sent_to_kitchen", "in_progress", "ready"].includes(o.status || ""));
+      const activeOrders = allOrders.filter(o => {
+        const status = o.status || "";
+        if (!["new", "sent_to_kitchen", "in_progress", "ready"].includes(status)) return false;
+        if (o.orderType === "delivery" && (status === "new" || status === "on_hold")) return false;
+        return true;
+      });
       const tickets = [];
       for (const o of activeOrders) {
         const items = await storage.getOrderItemsByOrder(o.id);
@@ -465,7 +470,12 @@ export function registerKitchenRoutes(app: Express): void {
       const allOrders = await storage.getOrdersByTenant(tenant.id);
       const allTables = await storage.getTablesByTenant(tenant.id);
       const tableMap = new Map(allTables.map(t => [t.id, t.number]));
-      const activeOrders = allOrders.filter(o => ["new", "sent_to_kitchen", "in_progress", "ready"].includes(o.status || ""));
+      const activeOrders = allOrders.filter(o => {
+        const status = o.status || "";
+        if (!["new", "sent_to_kitchen", "in_progress", "ready"].includes(status)) return false;
+        if (o.orderType === "delivery" && (status === "new" || status === "on_hold")) return false;
+        return true;
+      });
       const tickets = [];
       for (const o of activeOrders) {
         const items = await storage.getOrderItemsByOrder(o.id);
