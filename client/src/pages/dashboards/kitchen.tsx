@@ -825,6 +825,9 @@ export default function KitchenDashboard() {
         if (res.ok) {
           const jobs: Array<{ id: string; type: string; station: string | null; payload: any }> = await res.json();
           const kotJobs = jobs.filter(j => j.type === "kot");
+          let printedCount = 0;
+          let failedCount = 0;
+          let usedNetworkPrinter = false;
           for (const job of kotJobs) {
             const stationPrinterUrl = job.station
               ? (queryClient.getQueryData<KitchenStation[]>(["/api/kitchen-stations"]) || [])
@@ -841,7 +844,7 @@ export default function KitchenDashboard() {
               sentAt: p.sentAt || new Date().toISOString(),
               items: p.items || [],
             });
-            await dispatchPrint(html, stationPrinterUrl, {
+            const result = await dispatchPrint(html, stationPrinterUrl, {
               onNetworkSuccess: () => {
                 apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "printed" }).catch(() => {});
               },
@@ -852,6 +855,17 @@ export default function KitchenDashboard() {
                 apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "failed" }).catch(() => {});
               },
             });
+            if (stationPrinterUrl) usedNetworkPrinter = true;
+            if (result === "failed") { failedCount++; } else { printedCount++; }
+          }
+          if (kotJobs.length > 0) {
+            if (failedCount > 0 && printedCount === 0) {
+              toast({ title: "KOT Print Failed", description: "Popup was blocked. Open your print queue to retry.", variant: "destructive" });
+            } else if (failedCount > 0) {
+              toast({ title: `KOT Partially Printed`, description: `${printedCount} sent, ${failedCount} failed. Check print queue.`, variant: "destructive" });
+            } else {
+              toast({ title: "KOT Printed", description: `${printedCount} ticket${printedCount > 1 ? "s" : ""} sent to ${usedNetworkPrinter ? "network printer" : "print dialog"}.` });
+            }
           }
         }
       } catch (_) {}
