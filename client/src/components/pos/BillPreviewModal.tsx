@@ -220,7 +220,6 @@ export default function BillPreviewModal({
     try {
       const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payment-request`, {
         method: activeMethod,
-        amountRupees: grandTotal,
         tips: tipAmount || 0,
       });
       const data = await res.json();
@@ -402,6 +401,13 @@ export default function BillPreviewModal({
     setLoyaltySearchPhone("");
     setLookedUpCustomer(null);
     setLoyaltySearching(false);
+    // Reset Razorpay gateway state so it doesn't bleed into the next bill session
+    setRzpLinkId(null);
+    setRzpShortUrl(null);
+    setRzpQrDataUrl(null);
+    setRzpPolling(false);
+    setRzpInitiating(false);
+    setRzpPaid(false);
     onClose();
   };
 

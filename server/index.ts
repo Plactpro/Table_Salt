@@ -62,17 +62,23 @@ app.post(
           const { storage } = await import("./storage");
           const bill = await storage.getBill(pl.reference_id);
           if (bill && bill.paymentStatus !== "paid") {
+            const payMethod = payment.method?.toUpperCase() === "CARD" ? "CARD" : "UPI";
             await storage.updateBill(bill.id, bill.tenantId, { paymentStatus: "paid", paidAt: new Date() });
             await storage.createBillPayment({
               tenantId: bill.tenantId,
               billId: bill.id,
-              paymentMethod: payment.method?.toUpperCase() === "CARD" ? "CARD" : "UPI",
+              paymentMethod: payMethod,
               amount: String(pl.amount / 100),
               referenceNo: payment.id,
               razorpayPaymentId: payment.id,
             });
+            // Run same completion side-effects as the standard payment flow
+            await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: payMethod.toLowerCase() });
+            if (bill.tableId) {
+              try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+            }
             const { emitToTenant } = await import("./realtime");
-            emitToTenant(bill.tenantId, "bill:paid", { billId: bill.id });
+            emitToTenant(bill.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
           }
         }
       }

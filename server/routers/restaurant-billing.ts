@@ -448,14 +448,15 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const tenant = await storage.getTenant(user.tenantId);
       if (!tenant?.razorpayEnabled) return res.status(400).json({ message: "Razorpay gateway not enabled for this account" });
 
-      const { method, amountRupees, tips } = req.body;
+      const { method, tips } = req.body;
       const tipVal = parseFloat(tips) || 0;
 
       if (tipVal > 0) {
         await storage.updateBill(bill.id, user.tenantId, { tips: tipVal.toFixed(2) });
       }
 
-      const totalAmount = parseFloat(String(amountRupees)) || Number(bill.totalAmount) + tipVal;
+      // Always derive amount from server-side bill totals — never trust client-supplied amount
+      const serverAmount = Number(bill.totalAmount) + tipVal;
 
       if (bill.razorpayOrderId) {
         try {
@@ -467,7 +468,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       }
 
       const link = await createPaymentLink({
-        amountRupees: totalAmount,
+        amountRupees: serverAmount,
         currency: tenant.currency || "INR",
         description: `Payment for Bill ${bill.billNumber}`,
         billId: bill.id,
@@ -507,7 +508,12 @@ export function registerRestaurantBillingRoutes(app: Express): void {
           collectedBy: user.id,
           razorpayPaymentId: paymentId,
         });
-        emitToTenant(bill.tenantId, "bill:paid", { billId: bill.id, method });
+        // Run same completion side-effects as the standard payment flow
+        await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: method.toLowerCase() });
+        if (bill.tableId) {
+          try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+        }
+        emitToTenant(bill.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
         return res.json({ status: "paid", paymentId });
       }
 
