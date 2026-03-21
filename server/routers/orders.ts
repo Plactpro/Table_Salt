@@ -9,7 +9,7 @@ import { auditLogFromReq } from "../audit";
 import { emitToTenant } from "../realtime";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
-import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable } from "@shared/schema";
+import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 
 export function registerOrdersRoutes(app: Express): void {
@@ -28,9 +28,13 @@ export function registerOrdersRoutes(app: Express): void {
 
   app.get("/api/orders/on-hold", requireAuth, async (req, res) => {
     try {
-      const user = req.user as any;
-      const heldOrders = await db.select().from(ordersTable)
-        .where(and(eq(ordersTable.tenantId, user.tenantId), eq(ordersTable.status, "on_hold" as any)));
+      const user = req.user as Express.User & { tenantId: string; id: string; role: string };
+      const isManager = ["owner", "manager", "admin"].includes(user.role);
+      const onHoldStatus: OrderStatus = "on_hold";
+      const conditions = isManager
+        ? and(eq(ordersTable.tenantId, user.tenantId), eq(ordersTable.status, onHoldStatus))
+        : and(eq(ordersTable.tenantId, user.tenantId), eq(ordersTable.status, onHoldStatus), eq(ordersTable.waiterId, user.id));
+      const heldOrders = await db.select().from(ordersTable).where(conditions);
       const result = await Promise.all(heldOrders.map(async (order) => {
         const items = await storage.getOrderItemsByOrder(order.id);
         return { ...order, items };
@@ -129,12 +133,15 @@ export function registerOrdersRoutes(app: Express): void {
           } else {
             const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
             const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
+            const clientPrice = Number(item.price);
+            const hasModifiers = Array.isArray(item.modifiers) && item.modifiers.length > 0;
+            const effectivePrice = hasModifiers ? clientPrice : canonicalPrice;
             const qty = Number(item.quantity) || 1;
-            serverSubtotal += canonicalPrice * qty;
+            serverSubtotal += effectivePrice * qty;
             serverItems.push({
               menuItemId: item.menuItemId,
               name: mi?.name || item.name,
-              price: canonicalPrice,
+              price: effectivePrice,
               quantity: qty,
               categoryId: mi?.categoryId || undefined,
             });
@@ -246,9 +253,12 @@ export function registerOrdersRoutes(app: Express): void {
           } else {
             const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
             const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
+            const clientPrice = Number(item.price);
+            const hasModifiers = Array.isArray(item.modifiers) && item.modifiers.length > 0;
+            const effectivePrice = hasModifiers ? clientPrice : canonicalPrice;
             await storage.createOrderItem({
               ...item,
-              price: canonicalPrice.toFixed(2),
+              price: effectivePrice.toFixed(2),
               orderId: order.id,
               station: item.station || mi?.station || null,
               course: item.course || mi?.course || null,
