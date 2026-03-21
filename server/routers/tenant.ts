@@ -4,11 +4,18 @@ import { requireAuth, requireRole } from "../auth";
 import { requirePermission } from "../permissions";
 import { auditLogFromReq } from "../audit";
 
+/** Strip server-only secrets from tenant objects before sending to client */
+function sanitizeTenant(tenant: Record<string, any> | null | undefined) {
+  if (!tenant) return tenant;
+  const { razorpayKeySecret, ...safe } = tenant as any;
+  return safe;
+}
+
 export function registerTenantRoutes(app: Express): void {
   app.get("/api/tenant", requireAuth, async (req, res) => {
     const user = req.user as any;
     const tenant = await storage.getTenant(user.tenantId);
-    res.json(tenant);
+    res.json(sanitizeTenant(tenant));
   });
 
   app.patch("/api/tenant", requireRole("owner"), async (req, res) => {
@@ -16,7 +23,7 @@ export function registerTenantRoutes(app: Express): void {
     const before = await storage.getTenant(user.tenantId);
     const tenant = await storage.updateTenant(user.tenantId, req.body);
     auditLogFromReq(req, { action: "tenant_settings_updated", entityType: "tenant", entityId: user.tenantId, before: before ? { name: before.name, currency: before.currency, taxRate: before.taxRate } : null, after: req.body });
-    res.json(tenant);
+    res.json(sanitizeTenant(tenant));
   });
 
   app.get("/api/offers", requireAuth, async (req, res) => {
