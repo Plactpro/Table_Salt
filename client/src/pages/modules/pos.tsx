@@ -929,19 +929,13 @@ export default function POSPage() {
   const splitOrderMutation = useMutation({
     mutationFn: async (groups: CartItem[][]) => {
       const nonEmpty = groups.filter(g => g.length > 0);
-      let parentOrderId: string | undefined = activeTab?.heldOrderId;
-      if (!parentOrderId) {
-        const parentData = buildOrderData(undefined);
-        const parentRes = await apiRequest("POST", "/api/orders", parentData);
-        if (!parentRes.ok) throw new Error("Failed to create parent order for split");
-        const parentOrder = (await parentRes.json()) as { id: string };
-        parentOrderId = parentOrder.id;
-      }
+      const parentOrderId: string | undefined = activeTab?.heldOrderId || undefined;
       const results: { id: string }[] = [];
       for (const group of nonEmpty) {
         const tabForGroup: OrderTab = { ...(activeTab!), id: makeid(), cart: group, sentCartKeys: [] };
         const orderData = buildOrderData(undefined, tabForGroup);
-        const res = await apiRequest("POST", "/api/orders", { ...orderData, parentOrderId });
+        const payload = parentOrderId ? { ...orderData, parentOrderId } : orderData;
+        const res = await apiRequest("POST", "/api/orders", payload);
         if (!res.ok) throw new Error("Failed to place split order");
         results.push((await res.json()) as { id: string });
       }
@@ -950,13 +944,17 @@ export default function POSPage() {
     onSuccess: ({ orders, groups }) => {
       toast({ title: "Orders split!", description: `${orders.length} separate orders created.` });
       const currentActiveTab = activeTab!;
-      const splitTabs: OrderTab[] = groups.map((group, i) => ({
-        ...currentActiveTab,
-        id: makeid(),
-        cart: group,
-        sentCartKeys: [],
-        orderNotes: `Split ${i + 1}/${orders.length}`,
-      }));
+      const splitTabs: OrderTab[] = groups.map((group, i) => {
+        const allCartKeys = group.map(c => c.cartKey);
+        return {
+          ...currentActiveTab,
+          id: makeid(),
+          cart: group,
+          sentCartKeys: allCartKeys,
+          heldOrderId: orders[i]?.id,
+          orderNotes: `Split ${i + 1}/${orders.length}`,
+        };
+      });
       setTabs(prev => {
         const withoutActive = prev.filter(t => t.id !== currentActiveTab.id);
         const updated = [...withoutActive, ...splitTabs];
