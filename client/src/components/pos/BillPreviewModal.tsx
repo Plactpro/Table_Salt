@@ -1,5 +1,5 @@
-import { useState, useRef } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useState, useRef, useCallback } from "react";
+import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Receipt, CreditCard, Banknote, Smartphone, Gift, Plus, Minus, Printer,
-  Share2, ArrowLeft, CheckCircle2, X, AlertTriangle, Mail, RotateCcw,
+  Share2, ArrowLeft, CheckCircle2, X, AlertTriangle, Mail, RotateCcw, FileDown,
 } from "lucide-react";
 
 interface CartItem {
@@ -128,6 +128,9 @@ export default function BillPreviewModal({
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
   const [upiMarkedPaid, setUpiMarkedPaid] = useState(false);
+  const [loyaltySearchPhone, setLoyaltySearchPhone] = useState("");
+  const [lookedUpCustomer, setLookedUpCustomer] = useState<{ id: string; name: string; loyaltyPoints: number } | null>(null);
+  const [loyaltySearching, setLoyaltySearching] = useState(false);
 
   const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
   const grandTotal = total + tipAmount;
@@ -144,6 +147,7 @@ export default function BillPreviewModal({
       const res = await apiRequest("POST", "/api/restaurant-bills", {
         orderId,
         tableId: tableId || null,
+        customerId: lookedUpCustomer?.id || null,
         subtotal: subtotal.toFixed(2),
         discountAmount: discountAmount.toFixed(2),
         serviceCharge: serviceChargeAmount.toFixed(2),
@@ -279,10 +283,33 @@ export default function BillPreviewModal({
     setRefundAmount("");
     setRefundReason("");
     setUpiMarkedPaid(false);
+    setLoyaltySearchPhone("");
+    setLookedUpCustomer(null);
+    setLoyaltySearching(false);
     onClose();
   };
 
   const isManagerOrOwner = user?.role === "manager" || user?.role === "owner";
+
+  const handleLoyaltySearch = useCallback(async () => {
+    if (!loyaltySearchPhone.trim()) return;
+    setLoyaltySearching(true);
+    try {
+      const res = await apiRequest("GET", `/api/customers?phone=${encodeURIComponent(loyaltySearchPhone.trim())}`);
+      const data = await res.json();
+      const customers = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
+      const match = customers[0] ?? null;
+      if (match) {
+        setLookedUpCustomer({ id: match.id, name: match.name, loyaltyPoints: match.loyaltyPoints ?? 0 });
+      } else {
+        toast({ title: "Customer not found", description: "No customer with that phone number", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Lookup failed", description: "Could not search customers", variant: "destructive" });
+    } finally {
+      setLoyaltySearching(false);
+    }
+  }, [loyaltySearchPhone, toast]);
   const handleEmailReceipt = () => {
     const subject = encodeURIComponent(`Receipt from ${tenantName} — ${billNumber}`);
     const body = encodeURIComponent(
@@ -516,13 +543,37 @@ export default function BillPreviewModal({
                     </div>
                   )}
                   {activeMethod === "LOYALTY" && (
-                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2">
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 space-y-3">
                       <div className="flex items-center gap-2">
                         <Gift className="h-4 w-4 text-amber-600" />
-                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Loyalty Points Redemption</p>
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Customer Loyalty Lookup</p>
                       </div>
-                      <p className="text-xs text-muted-foreground">Link the customer to this order to redeem accumulated loyalty points toward the bill amount.</p>
-                      <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Points earned on this visit will be credited automatically after payment.</p>
+                      {lookedUpCustomer ? (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between bg-white dark:bg-amber-900/40 rounded p-2 border border-amber-200 dark:border-amber-700">
+                            <div>
+                              <p className="text-sm font-semibold">{lookedUpCustomer.name}</p>
+                              <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts · {fmt(lookedUpCustomer.loyaltyPoints / 100)} redeemable</p>
+                            </div>
+                            <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => setLookedUpCustomer(null)}>Change</Button>
+                          </div>
+                          <p className="text-xs text-amber-600 dark:text-amber-400">Points earned this visit will be credited after payment (1 pt per AED 10 spent).</p>
+                        </div>
+                      ) : (
+                        <div className="flex gap-1.5">
+                          <Input
+                            placeholder="Customer phone number"
+                            value={loyaltySearchPhone}
+                            onChange={e => setLoyaltySearchPhone(e.target.value)}
+                            onKeyDown={e => e.key === "Enter" && handleLoyaltySearch()}
+                            className="h-8 text-xs flex-1"
+                            data-testid="input-loyalty-phone"
+                          />
+                          <Button size="sm" className="h-8 text-xs" onClick={handleLoyaltySearch} disabled={loyaltySearching} data-testid="button-loyalty-search">
+                            {loyaltySearching ? "..." : "Find"}
+                          </Button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -595,7 +646,10 @@ export default function BillPreviewModal({
 
               <div className="grid grid-cols-2 gap-2 no-print">
                 <Button variant="outline" onClick={handlePrint} data-testid="button-print-receipt">
-                  <Printer className="h-4 w-4 mr-2" /> Print / PDF
+                  <Printer className="h-4 w-4 mr-2" /> Print
+                </Button>
+                <Button variant="outline" onClick={() => { document.title = `Receipt-${billNumber}`; handlePrint(); }} data-testid="button-download-pdf">
+                  <FileDown className="h-4 w-4 mr-2" /> Download PDF
                 </Button>
                 <Button variant="outline" onClick={handleWhatsApp} data-testid="button-whatsapp-receipt">
                   <Share2 className="h-4 w-4 mr-2" /> WhatsApp
@@ -605,8 +659,8 @@ export default function BillPreviewModal({
                 </Button>
                 {isManagerOrOwner && createdBill && (
                   <Button variant="outline" onClick={() => setStep("refund")}
-                    className="text-orange-600 border-orange-300 hover:bg-orange-50" data-testid="button-refund">
-                    <RotateCcw className="h-4 w-4 mr-2" /> Refund
+                    className="text-orange-600 border-orange-300 hover:bg-orange-50 col-span-2" data-testid="button-refund">
+                    <RotateCcw className="h-4 w-4 mr-2" /> Issue Refund
                   </Button>
                 )}
               </div>

@@ -139,6 +139,19 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         if (bill.tableId) {
           try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
         }
+        if (bill.customerId) {
+          try {
+            const customer = await storage.getCustomerByTenant(bill.customerId, user.tenantId);
+            if (customer) {
+              const pointsEarned = Math.floor(billTotal / 10);
+              if (pointsEarned > 0) {
+                await storage.updateCustomerByTenant(bill.customerId, user.tenantId, {
+                  loyaltyPoints: (customer.loyaltyPoints ?? 0) + pointsEarned,
+                });
+              }
+            }
+          } catch (_) {}
+        }
         emitToTenant(user.tenantId, "order:updated", { orderId: bill.orderId, status: "paid" });
       }
 
@@ -196,6 +209,19 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (bill.tableId) {
         try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
       }
+      if (bill.customerId && bill.paymentStatus === "paid") {
+        try {
+          const customer = await storage.getCustomerByTenant(bill.customerId, user.tenantId);
+          if (customer) {
+            const pointsToReverse = Math.floor(Number(bill.totalAmount) / 10);
+            if (pointsToReverse > 0) {
+              await storage.updateCustomerByTenant(bill.customerId, user.tenantId, {
+                loyaltyPoints: Math.max(0, (customer.loyaltyPoints ?? 0) - pointsToReverse),
+              });
+            }
+          }
+        } catch (_) {}
+      }
       emitToTenant(user.tenantId, "order:updated", { orderId: bill.orderId, status: "voided" });
       res.json({ ...updated, reversalsCreated: consumptionMovements.length });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -210,6 +236,14 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (bill.paymentStatus !== "paid") return res.status(400).json({ message: "Bill is not paid" });
       const { amount, reason, paymentMethod } = req.body;
       if (!amount || !reason) return res.status(400).json({ message: "amount and reason required" });
+
+      const allPayments = await storage.getBillPayments(bill.id);
+      const totalPaid = allPayments.filter(p => !p.isRefund).reduce((s, p) => s + Number(p.amount), 0);
+      const totalRefunded = allPayments.filter(p => p.isRefund).reduce((s, p) => s + Math.abs(Number(p.amount)), 0);
+      const netPaid = totalPaid - totalRefunded;
+      if (Number(amount) > netPaid + 0.01) {
+        return res.status(400).json({ message: `Refund amount (${Number(amount).toFixed(2)}) exceeds net paid balance (${netPaid.toFixed(2)})` });
+      }
 
       const refund = await storage.createBillPayment({
         tenantId: user.tenantId,
