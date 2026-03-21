@@ -443,6 +443,7 @@ export function registerOrdersRoutes(app: Express): void {
             station: null,
             status: "queued",
             payload: {
+              kotSequence: 1,
               orderId: order.id,
               orderType: order.orderType,
               tableNumber: tableNum ?? null,
@@ -462,6 +463,7 @@ export function registerOrdersRoutes(app: Express): void {
               station: stationName,
               status: "queued",
               payload: {
+                kotSequence: 1,
                 orderId: order.id,
                 orderType: order.orderType,
                 tableNumber: tableNum ?? null,
@@ -643,6 +645,7 @@ export function registerOrdersRoutes(app: Express): void {
           await storage.createPrintJob({
             tenantId: user.tenantId, type: "kot", referenceId: req.params.id, station: null, status: "queued",
             payload: {
+              kotSequence: 1,
               orderId: req.params.id, orderType: existing.orderType, tableNumber: tableNum ?? null, station: null, sentAt,
               items: allItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
             },
@@ -654,6 +657,7 @@ export function registerOrdersRoutes(app: Express): void {
             await storage.createPrintJob({
               tenantId: user.tenantId, type: "kot", referenceId: req.params.id, station: stn, status: "queued",
               payload: {
+                kotSequence: 1,
                 orderId: req.params.id, orderType: existing.orderType, tableNumber: tableNum ?? null, station: stn, sentAt,
                 items: stnItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
               },

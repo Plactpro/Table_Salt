@@ -33,8 +33,17 @@ export function useKotAutoDispatch() {
         const kotJobs = jobs.filter(j => j.type === "kot");
         if (kotJobs.length === 0) return;
 
-        const stations: KitchenStation[] =
+        let stations: KitchenStation[] =
           queryClient.getQueryData<KitchenStation[]>(["/api/kitchen-stations"]) || [];
+        if (stations.length === 0) {
+          try {
+            const stRes = await fetch("/api/kitchen-stations", { credentials: "include" });
+            if (stRes.ok) {
+              stations = await stRes.json();
+              queryClient.setQueryData(["/api/kitchen-stations"], stations);
+            }
+          } catch (_) {}
+        }
 
         let printedCount = 0;
         let failedCount = 0;
@@ -47,7 +56,9 @@ export function useKotAutoDispatch() {
           const p = job.payload || {};
           const html = renderKotHtml({
             restaurantName,
-            kotNumber: p.orderId?.slice(-6).toUpperCase(),
+            kotNumber: p.kotSequence != null
+              ? `KOT-${String(p.kotSequence).padStart(3, "0")}`
+              : p.orderId?.slice(-6).toUpperCase(),
             orderId: p.orderId || orderId,
             orderType: p.orderType,
             tableNumber: p.tableNumber,

@@ -287,13 +287,15 @@ export function registerKitchenRoutes(app: Express): void {
           items: filtered.map(i => ({ id: i.id, name: i.name, quantity: i.quantity })),
         });
 
-        const existingKotJobs = await storage.getPrintJobsByTenant(user.tenantId, { referenceId: order.id, status: "queued" });
+        const existingKotJobs = await storage.getPrintJobsByTenant(user.tenantId, { referenceId: order.id });
         const existingKotJobCount = existingKotJobs.filter(j => j.type === "kot").length;
 
         if (existingKotJobCount === 0) {
           const tables = await storage.getTablesByTenant(user.tenantId);
           const tableNum = order.tableId ? tables.find(t => t.id === order.tableId)?.number : undefined;
           const sentAt = new Date().toISOString();
+          const allKotEvents = await storage.getKotEventsByOrder(order.id);
+          const kotSequence = allKotEvents.length;
 
           const stationsInBatch = station
             ? [station]
@@ -308,6 +310,7 @@ export function registerKitchenRoutes(app: Express): void {
               status: "queued",
               payload: {
                 kotEventId: kotEvent.id,
+                kotSequence,
                 orderId: order.id,
                 orderType: order.orderType,
                 tableNumber: tableNum ?? null,
@@ -331,6 +334,7 @@ export function registerKitchenRoutes(app: Express): void {
                 status: "queued",
                 payload: {
                   kotEventId: kotEvent.id,
+                  kotSequence,
                   orderId: order.id,
                   orderType: order.orderType,
                   tableNumber: tableNum ?? null,
