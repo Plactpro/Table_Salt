@@ -3,7 +3,7 @@ import { storage } from "../storage";
 import { db } from "../db";
 import { eq, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
-import { customers } from "@shared/schema";
+import { customers, type InsertCustomer } from "@shared/schema";
 
 export function registerCustomersRoutes(app: Express): void {
   app.get("/api/customers", requireAuth, async (req, res) => {
@@ -84,35 +84,19 @@ export function registerCustomersRoutes(app: Express): void {
   app.patch("/api/customers/:id", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { appendNote, ...rest } = req.body as { appendNote?: string; [key: string]: unknown };
-      let updateData = rest as Record<string, unknown>;
+      const { appendNote, ...rest } = req.body as { appendNote?: string } & Partial<InsertCustomer>;
+      const updateData: Partial<InsertCustomer> = rest;
       if (appendNote && appendNote.trim()) {
         const existing = await storage.getCustomerByTenant(req.params.id, user.tenantId);
         if (!existing) return res.status(404).json({ message: "Customer not found" });
         const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
         const entry = `[${timestamp}] ${appendNote.trim()}`;
         const existingNotes = existing.notes?.trim() ?? "";
-        updateData = { ...updateData, notes: existingNotes ? `${existingNotes}\n${entry}` : entry };
+        updateData.notes = existingNotes ? `${existingNotes}\n${entry}` : entry;
       }
-      const customer = await storage.updateCustomerByTenant(req.params.id, user.tenantId, updateData as any);
+      const customer = await storage.updateCustomerByTenant(req.params.id, user.tenantId, updateData);
       if (!customer) return res.status(404).json({ message: "Customer not found" });
       res.json(customer);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/customers/:id/visit-note", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const existing = await storage.getCustomerByTenant(req.params.id, user.tenantId);
-      if (!existing) return res.status(404).json({ message: "Customer not found" });
-      const { note } = req.body as { note?: string };
-      if (!note || !note.trim()) return res.status(400).json({ message: "note is required" });
-      const timestamp = new Date().toISOString().replace("T", " ").slice(0, 16);
-      const entry = `[${timestamp}] ${note.trim()}`;
-      const existingNotes = existing.notes?.trim() ?? "";
-      const newNotes = existingNotes ? `${existingNotes}\n${entry}` : entry;
-      const updated = await storage.updateCustomerByTenant(req.params.id, user.tenantId, { notes: newNotes });
-      res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -1177,15 +1177,15 @@ export default function BillPreviewModal({
                               <Input
                                 type="number"
                                 min={0}
-                                max={Math.min(lookedUpCustomer.loyaltyPoints, Math.floor((total + tipAmount) * 100))}
+                                max={Math.min(lookedUpCustomer.loyaltyPoints, Math.floor(Math.max(0, total - tierDiscountAmount + tipAmount) * 100))}
                                 step={100}
                                 value={loyaltyPointsToRedeem}
-                                onChange={e => setLoyaltyPointsToRedeem(Math.max(0, Math.min(parseInt(e.target.value) || 0, lookedUpCustomer.loyaltyPoints, Math.floor((total + tipAmount) * 100))))}
+                                onChange={e => setLoyaltyPointsToRedeem(Math.max(0, Math.min(parseInt(e.target.value) || 0, lookedUpCustomer.loyaltyPoints, Math.floor(Math.max(0, total - tierDiscountAmount + tipAmount) * 100))))}
                                 className="h-8 text-xs flex-1"
                                 data-testid="input-loyalty-points-redeem"
                               />
                               <Button size="sm" variant="outline" className="text-xs h-8 whitespace-nowrap"
-                                onClick={() => setLoyaltyPointsToRedeem(Math.min(lookedUpCustomer.loyaltyPoints, Math.floor((total + tipAmount) * 100)))}>
+                                onClick={() => setLoyaltyPointsToRedeem(Math.min(lookedUpCustomer.loyaltyPoints, Math.floor(Math.max(0, total - tierDiscountAmount + tipAmount) * 100)))}>
                                 Use All
                               </Button>
                               <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => setLoyaltyPointsToRedeem(0)}>Clear</Button>
