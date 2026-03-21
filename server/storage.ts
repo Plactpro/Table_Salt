@@ -494,6 +494,10 @@ export interface IStorage {
     avgResponseSeconds: number | null;
     avgCompletionSeconds: number | null;
     escalatedCount: number;
+    completionRate: number | null;
+    topRequestTypes: Array<{ type: string; count: number }>;
+    overdueCount: number;
+    avgFeedbackRating: number | null;
   }>;
 }
 
@@ -2143,7 +2147,7 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(tableRequests)
       .where(and(
         eq(tableRequests.tenantId, tenantId),
-        sql`${tableRequests.status} IN ('pending', 'acknowledged', 'escalated')`
+        sql`${tableRequests.status} IN ('pending', 'pending_confirmation', 'acknowledged')`
       ))
       .orderBy(desc(tableRequests.createdAt));
   }
@@ -2154,6 +2158,10 @@ export class DatabaseStorage implements IStorage {
     avgResponseSeconds: number | null;
     avgCompletionSeconds: number | null;
     escalatedCount: number;
+    completionRate: number | null;
+    topRequestTypes: Array<{ type: string; count: number }>;
+    overdueCount: number;
+    avgFeedbackRating: number | null;
   }> {
     const conditions = [eq(tableRequests.tenantId, tenantId)];
     if (from) conditions.push(gte(tableRequests.createdAt, from));
@@ -2164,6 +2172,9 @@ export class DatabaseStorage implements IStorage {
     let totalResponseSecs = 0, responseCount = 0;
     let totalCompletionSecs = 0, completionCount = 0;
     let escalatedCount = 0;
+    let totalFeedbackRating = 0, feedbackRatingCount = 0;
+    let overdueCount = 0;
+    const now = Date.now();
     for (const r of rows) {
       byType[r.requestType] = (byType[r.requestType] ?? 0) + 1;
       byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
@@ -2176,14 +2187,33 @@ export class DatabaseStorage implements IStorage {
         completionCount++;
       }
       if (r.escalatedAt) escalatedCount++;
+      if (r.feedbackRating !== null && r.feedbackRating !== undefined) {
+        totalFeedbackRating += r.feedbackRating;
+        feedbackRatingCount++;
+      }
+      if (r.createdAt && (r.status === "pending" || r.status === "acknowledged")) {
+        const ageMinutes = (now - new Date(r.createdAt).getTime()) / 60000;
+        const thresholdMap: Record<string, number> = { high: 2, medium: 5, low: 10 };
+        const threshold = thresholdMap[r.priority] ?? 5;
+        if (ageMinutes > threshold && !r.escalatedAt) overdueCount++;
+      }
     }
+    const total = rows.length;
+    const completedCount = byStatus["completed"] ?? 0;
+    const topRequestTypes = Object.entries(byType)
+      .sort((a, b) => b[1] - a[1])
+      .map(([type, count]) => ({ type, count }));
     return {
-      total: rows.length,
+      total,
       byType,
       byStatus,
       avgResponseSeconds: responseCount > 0 ? Math.round(totalResponseSecs / responseCount) : null,
       avgCompletionSeconds: completionCount > 0 ? Math.round(totalCompletionSecs / completionCount) : null,
       escalatedCount,
+      completionRate: total > 0 ? Math.round((completedCount / total) * 100) : null,
+      topRequestTypes,
+      overdueCount,
+      avgFeedbackRating: feedbackRatingCount > 0 ? Math.round((totalFeedbackRating / feedbackRatingCount) * 10) / 10 : null,
     };
   }
 }

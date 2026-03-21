@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { requireAuth } from "../auth";
+import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { pool } from "../db";
 
@@ -74,7 +74,7 @@ export function registerTableRequestRoutes(app: Express): void {
         guestNote: guestNote ? String(guestNote).slice(0, 500) : null,
       });
 
-      emitToTenant(qrToken.tenantId, "table_request:new", {
+      emitToTenant(qrToken.tenantId, "table-request:new", {
         request,
         tableId: qrToken.tableId,
       });
@@ -155,7 +155,7 @@ export function registerTableRequestRoutes(app: Express): void {
         assignedToName: user.name ?? user.username,
       });
 
-      emitToTenant(user.tenantId, "table_request:updated", { request: updated });
+      emitToTenant(user.tenantId, "table-request:updated", { request: updated });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -176,7 +176,7 @@ export function registerTableRequestRoutes(app: Express): void {
         staffNote: staffNote ? String(staffNote).slice(0, 1000) : request.staffNote,
       });
 
-      emitToTenant(user.tenantId, "table_request:updated", { request: updated });
+      emitToTenant(user.tenantId, "table-request:updated", { request: updated });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -197,7 +197,7 @@ export function registerTableRequestRoutes(app: Express): void {
         assignedToName: assignedToName ?? null,
       });
 
-      emitToTenant(user.tenantId, "table_request:updated", { request: updated });
+      emitToTenant(user.tenantId, "table-request:updated", { request: updated });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -214,14 +214,14 @@ export function registerTableRequestRoutes(app: Express): void {
       }
 
       const updated = await storage.updateTableRequest(req.params.id, { status: "cancelled" });
-      emitToTenant(user.tenantId, "table_request:updated", { request: updated });
+      emitToTenant(user.tenantId, "table-request:updated", { request: updated });
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
   });
 
-  app.post("/api/qr/generate/:tableId", requireAuth, async (req, res) => {
+  app.post("/api/qr/generate/:tableId", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
       const table = await storage.getTable(req.params.tableId);
@@ -244,6 +244,8 @@ export function registerTableRequestRoutes(app: Express): void {
         active: true,
         label: label ?? `Table ${table.number}`,
       });
+
+      await storage.updateTableByTenant(table.id, user.tenantId, { qrToken: tokenValue });
 
       res.status(201).json(qrToken);
     } catch (err: any) {
@@ -270,7 +272,7 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/qr/tokens/:id", requireAuth, async (req, res) => {
+  app.delete("/api/qr/tokens/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
       await storage.deactivateQrToken(req.params.id, user.tenantId);
@@ -294,7 +296,7 @@ export function startEscalationJob(): void {
       }>(`
         SELECT id, tenant_id, priority, status, created_at, escalated_at
         FROM table_requests
-        WHERE status = 'pending'
+        WHERE status IN ('pending', 'pending_confirmation', 'acknowledged')
           AND escalated_at IS NULL
       `);
 
@@ -304,12 +306,12 @@ export function startEscalationJob(): void {
         const threshold = ESCALATION_MINUTES[row.priority] ?? 5;
         if (ageMinutes >= threshold) {
           await pool.query(
-            `UPDATE table_requests SET status = 'escalated', escalated_at = now() WHERE id = $1`,
+            `UPDATE table_requests SET escalated_at = now() WHERE id = $1`,
             [row.id]
           );
           const updated = await storage.getTableRequest(row.id);
           if (updated) {
-            emitToTenant(row.tenant_id, "table_request:escalated", { request: updated });
+            emitToTenant(row.tenant_id, "table-request:escalated", { request: updated });
           }
         }
       }
