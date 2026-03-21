@@ -1,13 +1,14 @@
 import { useState, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle } from "lucide-react";
+import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell } from "lucide-react";
 import ReportsPage from "./reports";
 import BIDashboard from "./bi-dashboard";
 import AuditLogPage from "./audit-log";
 import FoodCostReports from "./food-cost-reports";
 import ChefReport from "./chef-report";
 import ShiftReconciliation from "./shift-reconciliation";
+import CustomerRequestsAnalytics from "./customer-requests-analytics";
 
 class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -38,7 +39,7 @@ export default function ReportsHub() {
   return (
     <div className="space-y-6" data-testid="reports-hub">
       <Tabs value={tab} onValueChange={setTab}>
-        <TabsList data-testid="reports-tabs">
+        <TabsList data-testid="reports-tabs" className="flex-wrap h-auto">
           <TabsTrigger value="reports" data-testid="tab-reports">
             <BarChart3 className="h-4 w-4 mr-1.5" />Sales Reports
           </TabsTrigger>
@@ -53,6 +54,9 @@ export default function ReportsHub() {
           </TabsTrigger>
           <TabsTrigger value="shift-report" data-testid="tab-shift-report">
             <Clock className="h-4 w-4 mr-1.5" />Shift Report
+          </TabsTrigger>
+          <TabsTrigger value="customer-requests" data-testid="tab-customer-requests">
+            <Bell className="h-4 w-4 mr-1.5" />Customer Requests
           </TabsTrigger>
           <TabsTrigger value="audit-log" data-testid="tab-audit-log">
             <ScrollText className="h-4 w-4 mr-1.5" />Audit Log
@@ -81,6 +85,11 @@ export default function ReportsHub() {
         <TabsContent value="shift-report" className="mt-4" forceMount>
           <TabErrorBoundary label="Shift Report">
             <ShiftReconciliation />
+          </TabErrorBoundary>
+        </TabsContent>
+        <TabsContent value="customer-requests" className="mt-4">
+          <TabErrorBoundary label="Customer Requests">
+            <CustomerRequestsAnalytics />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="audit-log" className="mt-4" forceMount>

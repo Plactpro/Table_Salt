@@ -33,6 +33,7 @@ import {
   Zap,
   Layers,
   CalendarDays,
+  Bell,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -53,6 +54,7 @@ const navItems: NavItem[] = [
   { id: "m-4", name: "POS", icon: MonitorSmartphone, path: "/pos", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "pos" },
   { id: "m-5", name: "Orders", icon: Receipt, path: "/orders", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen"], featureKey: "orders" },
   { id: "m-6", name: "Tables", icon: Utensils, path: "/tables", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
+  { id: "m-33", name: "Live Requests", icon: Bell, path: "/live-requests", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
   { id: "m-7", name: "Menu", icon: MenuSquare, path: "/menu", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "menu" },
   { id: "m-12", name: "Promotions", icon: Zap, path: "/promotions", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
   { id: "m-15", name: "Delivery & Online", icon: Truck, path: "/delivery", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
