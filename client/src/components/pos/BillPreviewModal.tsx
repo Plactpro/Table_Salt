@@ -195,7 +195,7 @@ export default function BillPreviewModal({
     const interval = setInterval(async () => {
       try {
         const res = await fetch(
-          `/api/restaurant-bills/${createdBill.id}/payment-status?method=${activeMethod}`,
+          `/api/restaurant-bills/${createdBill.id}/payment-status`,
           { credentials: "include" }
         );
         if (!res.ok) return;
