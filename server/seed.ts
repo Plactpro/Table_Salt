@@ -1283,7 +1283,7 @@ export async function seedDatabase() {
       { tokenIdx: 1, type: "call_server", priority: "low", status: "completed", note: null, minsAgo: 120 },
       { tokenIdx: 2, type: "feedback", priority: "low", status: "completed", note: "Loved the ambiance", minsAgo: 200 },
       { tokenIdx: 3, type: "feedback", priority: "low", status: "completed", note: "Steak was overcooked", minsAgo: 90 },
-      { tokenIdx: 0, type: "water_refill", priority: "medium", status: "escalated", note: null, minsAgo: 10, escalated: true },
+      { tokenIdx: 0, type: "water_refill", priority: "medium", status: "pending", note: null, minsAgo: 10, escalated: true },
     ];
 
     for (const sr of sampleRequests) {
@@ -1303,7 +1303,7 @@ export async function seedDatabase() {
         qrTokenId: qrt.id,
         requestType: sr.type,
         priority: sr.priority,
-        status: sr.status === "pending_confirmation" ? "pending" : sr.status,
+        status: sr.status,
         guestNote: sr.note ?? null,
         acknowledgedAt,
         completedAt,
