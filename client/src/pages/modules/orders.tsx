@@ -524,6 +524,11 @@ export default function OrdersPage() {
                       Advance to {statusLabels[NEXT_STATUS[selectedOrderDetail.status || "new"]!]}
                     </Button>
                   )}
+                  {(selectedOrderDetail.status === "paid" || selectedOrderDetail.status === "completed") && (
+                    <Button variant="outline" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-view-bill">
+                      <Receipt className="h-4 w-4 mr-1" /> View Bill / Refund
+                    </Button>
+                  )}
                   {selectedOrderDetail.status !== "cancelled" && selectedOrderDetail.status !== "voided" && selectedOrderDetail.status !== "paid" && selectedOrderDetail.status !== "completed" && (
                     <>
                       {isManagerOrOwner && (
