@@ -153,6 +153,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         paymentStatus: newStatus,
         tips: tips ? String(Number(bill.tips) + tips) : bill.tips,
         ...(newStatus === "paid" ? { paidAt: new Date() } : {}),
+        ...(!bill.customerId && loyaltyCustomerId ? { customerId: loyaltyCustomerId } : {}),
       });
 
       if (newStatus === "paid") {
