@@ -222,4 +222,11 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS customer_gstin TEXT`);
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS cgst_amount NUMERIC(10,2)`);
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS sgst_amount NUMERIC(10,2)`);
+
+  // Unique index: one invoice_number per tenant (partial — only non-null invoice numbers)
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_bills_tenant_invoice_number_unique
+    ON bills (tenant_id, invoice_number)
+    WHERE invoice_number IS NOT NULL
+  `);
 }
