@@ -48,6 +48,7 @@ interface KDSOrderItem {
   startedAt: string | null;
   readyAt: string | null;
   menuItemId?: string | null;
+  isAddon?: boolean | null;
 }
 
 interface KDSTicket {
@@ -512,10 +513,15 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
               )}
               {courseItems.map(item => (
                 <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
                     <span className={`font-medium ${item.status === "ready" ? "line-through text-muted-foreground" : ""}`}>
                       {item.quantity}× {item.name}
                     </span>
+                    {item.isAddon && (
+                      <span className="inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold bg-orange-500 text-white shrink-0" data-testid={`badge-addon-${item.id.slice(-4)}`}>
+                        ADD-ON
+                      </span>
+                    )}
                     {item.notes && <span className="text-xs text-red-600 dark:text-red-400 font-medium italic truncate">⚠ {item.notes}</span>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
