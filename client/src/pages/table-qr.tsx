@@ -262,6 +262,7 @@ interface LocalCartItem {
   name: string;
   price: number;
   quantity: number;
+  note: string;
 }
 
 interface SubmittedRequest {
@@ -395,7 +396,7 @@ function StatusTracker({
         )}
       </div>
 
-      {!submitted.isPositiveFeedback && !submitted.isNegativeFeedback && (
+      {!submitted.isPositiveFeedback && (
         <div className="flex flex-col items-center gap-2">
           <p className="text-xs text-gray-400">{t.trackingStatus}</p>
           <StatusBubble status={submitted.status} t={t} />
@@ -509,12 +510,16 @@ function FoodOrderFlow({
 
   const filteredItems = menuData?.items.filter(i => !selCat || i.categoryId === selCat) ?? [];
 
-  function addToCart(item: MenuItem) {
+  function addToCart(item: MenuItem, note = "") {
     setCart(prev => {
       const existing = prev.find(c => c.menuItemId === item.id);
       if (existing) return prev.map(c => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { menuItemId: item.id, name: item.name, price: Number(item.price), quantity: 1 }];
+      return [...prev, { menuItemId: item.id, name: item.name, price: Number(item.price), quantity: 1, note }];
     });
+  }
+
+  function updateItemNote(menuItemId: string, note: string) {
+    setCart(prev => prev.map(c => c.menuItemId === menuItemId ? { ...c, note } : c));
   }
 
   function setQty(menuItemId: string, qty: number) {
@@ -536,12 +541,14 @@ function FoodOrderFlow({
           body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity }),
         });
       }
-      await fetch(`/api/guest/session/${sessionId}/order`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const orderItems = cart.map(c => ({ menuItemId: c.menuItemId, name: c.name, quantity: c.quantity, unitPrice: c.price }));
+      const orderItems = cart.map(c => ({
+        menuItemId: c.menuItemId,
+        name: c.name,
+        quantity: c.quantity,
+        unitPrice: c.price,
+        note: c.note || null,
+      }));
+      const guestNote = cart.map(c => c.note ? `${c.quantity}x ${c.name} (${c.note})` : `${c.quantity}x ${c.name}`).join(", ");
       const res = await fetch("/api/table-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -549,7 +556,7 @@ function FoodOrderFlow({
           token,
           requestType: "order_food",
           priority: "medium",
-          guestNote: cart.map(c => `${c.quantity}x ${c.name}`).join(", "),
+          guestNote,
           details: {
             items: orderItems,
             totalAmount: cartTotal,
@@ -583,20 +590,30 @@ function FoodOrderFlow({
         ) : (
           <div className="flex flex-col gap-3">
             {cart.map(c => (
-              <div key={c.menuItemId} data-testid={`cart-item-${c.menuItemId}`} className="flex items-center justify-between bg-white rounded-xl p-3 border border-gray-100">
-                <div>
-                  <p className="font-medium text-sm">{c.name}</p>
-                  <p className="text-xs text-gray-500">{formatPrice(c.price, menuData?.currency ?? "USD")}</p>
+              <div key={c.menuItemId} data-testid={`cart-item-${c.menuItemId}`} className="bg-white rounded-xl p-3 border border-gray-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-sm">{c.name}</p>
+                    <p className="text-xs text-gray-500">{formatPrice(c.price, menuData?.currency ?? "USD")}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button data-testid={`button-dec-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity - 1)} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                      <Minus className="w-3 h-3" />
+                    </button>
+                    <span className="w-6 text-center font-semibold text-sm">{c.quantity}</span>
+                    <button data-testid={`button-inc-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity + 1)} className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center">
+                      <Plus className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button data-testid={`button-dec-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity - 1)} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
-                    <Minus className="w-3 h-3" />
-                  </button>
-                  <span className="w-6 text-center font-semibold text-sm">{c.quantity}</span>
-                  <button data-testid={`button-inc-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity + 1)} className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center">
-                    <Plus className="w-3 h-3" />
-                  </button>
-                </div>
+                <input
+                  data-testid={`input-item-note-${c.menuItemId}`}
+                  type="text"
+                  value={c.note}
+                  onChange={e => updateItemNote(c.menuItemId, e.target.value)}
+                  placeholder={t.yourNote}
+                  className="mt-2 w-full border border-gray-100 rounded-lg px-2.5 py-1.5 text-xs text-gray-600 focus:outline-none focus:border-teal-300 bg-gray-50"
+                />
               </div>
             ))}
             <div className="border-t pt-3 flex justify-between text-sm font-bold text-gray-700">
@@ -1048,16 +1065,25 @@ export default function TableQrPage() {
       <div className="max-w-md mx-auto flex flex-col min-h-screen">
         <div className="text-white px-5 pt-10 pb-6" style={{ backgroundColor: PRIMARY }}>
           <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-xl font-bold" data-testid="text-restaurant-name">{ctx.restaurantName}</h1>
-              {ctx.outletName && <p className="text-teal-100 text-sm">{ctx.outletName}</p>}
-              <div className="flex items-center gap-3 mt-2">
-                <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-semibold" data-testid="text-table-number">
-                  {t.table} {ctx.tableNumber}
-                </span>
-                {ctx.tableZone && (
-                  <span className="text-teal-100 text-sm" data-testid="text-table-zone">{ctx.tableZone}</span>
-                )}
+            <div className="flex items-start gap-3">
+              <div
+                data-testid="img-restaurant-logo"
+                className="w-12 h-12 rounded-xl bg-white bg-opacity-20 flex items-center justify-center flex-shrink-0 text-xl font-bold"
+                aria-label="Restaurant logo"
+              >
+                {ctx.restaurantName.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <h1 className="text-xl font-bold" data-testid="text-restaurant-name">{ctx.restaurantName}</h1>
+                {ctx.outletName && <p className="text-teal-100 text-sm">{ctx.outletName}</p>}
+                <div className="flex items-center gap-3 mt-2">
+                  <span className="bg-white bg-opacity-20 px-3 py-1 rounded-full text-sm font-semibold" data-testid="text-table-number">
+                    {t.table} {ctx.tableNumber}
+                  </span>
+                  {ctx.tableZone && (
+                    <span className="text-teal-100 text-sm" data-testid="text-table-zone">{ctx.tableZone}</span>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex gap-1.5" data-testid="lang-toggle">
