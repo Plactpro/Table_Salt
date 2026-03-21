@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Receipt, CreditCard, Banknote, Smartphone, Gift, Plus, Minus, Printer,
-  Share2, ArrowLeft, CheckCircle2, X, AlertTriangle,
+  Share2, ArrowLeft, CheckCircle2, X, AlertTriangle, Mail, RotateCcw,
 } from "lucide-react";
 
 interface CartItem {
@@ -42,7 +43,7 @@ interface BillPreviewProps {
   onPaymentComplete: () => void;
 }
 
-type PaymentStep = "preview" | "payment" | "receipt";
+type PaymentStep = "preview" | "payment" | "receipt" | "void" | "refund";
 type PaymentMethodType = "CASH" | "CARD" | "UPI" | "LOYALTY" | "WALLET";
 
 interface SplitPaymentRow {
@@ -52,10 +53,29 @@ interface SplitPaymentRow {
   referenceNo: string;
 }
 
+interface CreatedBill {
+  id: string;
+  billNumber: string;
+  tenantId: string;
+  orderId: string;
+  totalAmount: string;
+  paymentStatus: string;
+  alreadyExists?: boolean;
+}
+
 const VOID_REASONS = [
   "Customer Cancelled",
   "Incorrect Order",
   "System Error",
+  "Manager Override",
+  "Other",
+];
+
+const REFUND_REASONS = [
+  "Overcharge",
+  "Wrong Item Served",
+  "Customer Dissatisfied",
+  "Duplicate Payment",
   "Manager Override",
   "Other",
 ];
@@ -100,8 +120,14 @@ export default function BillPreviewModal({
   const [customTip, setCustomTip] = useState("");
   const [splitRows, setSplitRows] = useState<SplitPaymentRow[]>([]);
   const [isSplit, setIsSplit] = useState(false);
-  const [createdBill, setCreatedBill] = useState<any>(null);
+  const [createdBill, setCreatedBill] = useState<CreatedBill | null>(null);
   const [billNumber, setBillNumber] = useState("");
+  const [billVoided, setBillVoided] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
+  const [voidNotes, setVoidNotes] = useState("");
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [upiMarkedPaid, setUpiMarkedPaid] = useState(false);
 
   const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
   const grandTotal = total + tipAmount;
@@ -165,6 +191,49 @@ export default function BillPreviewModal({
     onError: (err: Error) => toast({ title: "Payment failed", description: err.message, variant: "destructive" }),
   });
 
+  const voidBillMutation = useMutation({
+    mutationFn: async () => {
+      if (!createdBill) throw new Error("No bill to void");
+      if (!voidReason) throw new Error("Void reason is required");
+      const res = await apiRequest("PUT", `/api/restaurant-bills/${createdBill.id}/void`, {
+        reason: voidNotes ? `${voidReason} — ${voidNotes}` : voidReason,
+      });
+      if (!res.ok) throw new Error((await res.json()).message || "Void failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      setBillVoided(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
+      toast({ title: "Bill voided", description: "Stock reversals have been applied" });
+      handleClose();
+    },
+    onError: (err: Error) => toast({ title: "Void failed", description: err.message, variant: "destructive" }),
+  });
+
+  const refundBillMutation = useMutation({
+    mutationFn: async () => {
+      if (!createdBill) throw new Error("No bill to refund");
+      if (!refundAmount || !refundReason) throw new Error("Amount and reason required");
+      const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/refund`, {
+        amount: parseFloat(refundAmount),
+        reason: refundReason,
+        paymentMethod: "CASH",
+      });
+      if (!res.ok) throw new Error((await res.json()).message || "Refund failed");
+      return res.json();
+    },
+    onSuccess: () => {
+      setStep("receipt");
+      setRefundAmount("");
+      setRefundReason("");
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
+      toast({ title: "Refund recorded", description: `${fmt(parseFloat(refundAmount))} refunded` });
+    },
+    onError: (err: Error) => toast({ title: "Refund failed", description: err.message, variant: "destructive" }),
+  });
+
   const handleProceedToPayment = () => {
     if (!orderId) {
       toast({ title: "Order not placed yet", description: "Please place the order first", variant: "destructive" });
@@ -192,7 +261,7 @@ export default function BillPreviewModal({
   };
 
   const handleClose = () => {
-    if (step === "receipt") {
+    if (step === "receipt" || billVoided) {
       onPaymentComplete();
     }
     setStep("preview");
@@ -204,7 +273,22 @@ export default function BillPreviewModal({
     setCustomTip("");
     setSplitRows([]);
     setIsSplit(false);
+    setBillVoided(false);
+    setVoidReason("");
+    setVoidNotes("");
+    setRefundAmount("");
+    setRefundReason("");
+    setUpiMarkedPaid(false);
     onClose();
+  };
+
+  const isManagerOrOwner = user?.role === "manager" || user?.role === "owner";
+  const handleEmailReceipt = () => {
+    const subject = encodeURIComponent(`Receipt from ${tenantName} — ${billNumber}`);
+    const body = encodeURIComponent(
+      `${tenantName}\nBill No: ${billNumber}\nTable: ${tableNumber || "Takeaway"}\nDate: ${dateStr} ${timeStr}\n\nTotal: ${fmt(grandTotal)}\n\nThank you for dining with us!`
+    );
+    window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   };
 
   const now = new Date();
@@ -275,12 +359,16 @@ export default function BillPreviewModal({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               {step !== "preview" && (
-                <Button variant="ghost" size="icon" className="h-7 w-7 no-print" onClick={() => step === "payment" ? setStep("preview") : setStep("payment")}>
+                <Button variant="ghost" size="icon" className="h-7 w-7 no-print" onClick={() => {
+                  if (step === "payment") setStep("preview");
+                  else if (step === "void" || step === "refund") setStep("receipt");
+                  else setStep("payment");
+                }}>
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
               )}
               <Receipt className="h-5 w-5 text-primary" />
-              {step === "preview" ? "Bill Preview" : step === "payment" ? "Payment" : "Receipt"}
+              {step === "preview" ? "Bill Preview" : step === "payment" ? "Payment" : step === "void" ? "Void Bill" : step === "refund" ? "Issue Refund" : "Receipt"}
             </DialogTitle>
           </DialogHeader>
 
@@ -405,16 +493,36 @@ export default function BillPreviewModal({
                     </div>
                   )}
                   {activeMethod === "UPI" && (
-                    <div className="text-center p-4 bg-muted/50 rounded-lg border">
-                      <Smartphone className="h-8 w-8 mx-auto mb-2 text-primary" />
+                    <div className="text-center p-4 bg-muted/50 rounded-lg border space-y-3">
+                      <Smartphone className="h-8 w-8 mx-auto text-primary" />
                       <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
-                      <p className="text-xs text-muted-foreground mt-1">Show QR or share payment link, then click "Mark as Paid"</p>
+                      <p className="text-xs text-muted-foreground">Show QR or share payment link with the customer, then confirm once received.</p>
+                      <div className="flex gap-2 justify-center">
+                        <Button
+                          size="sm"
+                          variant={upiMarkedPaid ? "secondary" : "default"}
+                          className="text-xs"
+                          onClick={() => setUpiMarkedPaid(true)}
+                          data-testid="button-upi-mark-paid"
+                        >
+                          {upiMarkedPaid ? "✓ UPI Received" : "Mark as Paid"}
+                        </Button>
+                        {upiMarkedPaid && (
+                          <Button size="sm" variant="ghost" className="text-xs" onClick={() => setUpiMarkedPaid(false)}>
+                            Undo
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   )}
                   {activeMethod === "LOYALTY" && (
-                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
-                      <p className="text-sm text-amber-700 dark:text-amber-300">Loyalty points redemption</p>
-                      <p className="text-xs text-muted-foreground mt-1">Customer must be linked to order to redeem points.</p>
+                    <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Gift className="h-4 w-4 text-amber-600" />
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Loyalty Points Redemption</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Link the customer to this order to redeem accumulated loyalty points toward the bill amount.</p>
+                      <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">Points earned on this visit will be credited automatically after payment.</p>
                     </div>
                   )}
                 </div>
@@ -449,11 +557,30 @@ export default function BillPreviewModal({
                 </div>
               )}
 
-              <Button className="w-full" size="lg" data-testid="button-confirm-payment"
-                disabled={payBillMutation.isPending || (isSplit && splitRemaining > 0.01) || (!isSplit && activeMethod === "CASH" && cashTendered !== "" && parseFloat(cashTendered) < grandTotal)}
-                onClick={() => payBillMutation.mutate()}>
-                {payBillMutation.isPending ? "Processing..." : `Confirm Payment · ${fmt(grandTotal)}`}
-              </Button>
+              {billVoided ? (
+                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-center text-sm text-destructive font-medium">
+                  <AlertTriangle className="h-4 w-4 inline mr-1" /> Bill has been voided
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Button className="w-full" size="lg" data-testid="button-confirm-payment"
+                    disabled={
+                      payBillMutation.isPending ||
+                      (isSplit && splitRemaining > 0.01) ||
+                      (!isSplit && activeMethod === "CASH" && cashTendered !== "" && parseFloat(cashTendered) < grandTotal) ||
+                      (!isSplit && activeMethod === "UPI" && !upiMarkedPaid)
+                    }
+                    onClick={() => payBillMutation.mutate()}>
+                    {payBillMutation.isPending ? "Processing..." : `Confirm Payment · ${fmt(grandTotal)}`}
+                  </Button>
+                  {isManagerOrOwner && createdBill && (
+                    <Button variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
+                      onClick={() => setStep("void")} data-testid="button-void-bill">
+                      <AlertTriangle className="h-3 w-3 mr-1" /> Void Bill
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -467,16 +594,121 @@ export default function BillPreviewModal({
               </div>
 
               <div className="grid grid-cols-2 gap-2 no-print">
-                <Button variant="outline" onClick={handlePrint}>
-                  <Printer className="h-4 w-4 mr-2" /> Print Receipt
+                <Button variant="outline" onClick={handlePrint} data-testid="button-print-receipt">
+                  <Printer className="h-4 w-4 mr-2" /> Print / PDF
                 </Button>
-                <Button variant="outline" onClick={handleWhatsApp}>
+                <Button variant="outline" onClick={handleWhatsApp} data-testid="button-whatsapp-receipt">
                   <Share2 className="h-4 w-4 mr-2" /> WhatsApp
                 </Button>
+                <Button variant="outline" onClick={handleEmailReceipt} data-testid="button-email-receipt">
+                  <Mail className="h-4 w-4 mr-2" /> Email
+                </Button>
+                {isManagerOrOwner && createdBill && (
+                  <Button variant="outline" onClick={() => setStep("refund")}
+                    className="text-orange-600 border-orange-300 hover:bg-orange-50" data-testid="button-refund">
+                    <RotateCcw className="h-4 w-4 mr-2" /> Refund
+                  </Button>
+                )}
               </div>
+              {isManagerOrOwner && createdBill && (
+                <Button variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/40 hover:bg-destructive/10 no-print"
+                  onClick={() => setStep("void")} data-testid="button-void-paid-bill">
+                  <AlertTriangle className="h-3 w-3 mr-1" /> Void Paid Bill
+                </Button>
+              )}
               <Button className="w-full" size="lg" onClick={handleClose} data-testid="button-new-order">
                 New Order
               </Button>
+            </div>
+          )}
+
+          {step === "void" && (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
+                <p className="text-sm font-medium text-destructive flex items-center gap-1.5">
+                  <AlertTriangle className="h-4 w-4" /> Warning — Irreversible Action
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  This will void bill <strong>{billNumber}</strong>, reverse any stock deductions, and free the table.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Reason <span className="text-destructive">*</span></p>
+                <Select value={voidReason} onValueChange={setVoidReason}>
+                  <SelectTrigger data-testid="select-void-reason">
+                    <SelectValue placeholder="Select a reason..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VOID_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Additional notes (optional)</p>
+                <Textarea
+                  placeholder="Describe what happened..."
+                  value={voidNotes}
+                  onChange={e => setVoidNotes(e.target.value)}
+                  rows={2}
+                  data-testid="input-void-notes"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setStep(createdBill?.paymentStatus === "paid" ? "receipt" : "payment")}>
+                  Cancel
+                </Button>
+                <Button variant="destructive" className="flex-1" disabled={!voidReason || voidBillMutation.isPending}
+                  onClick={() => voidBillMutation.mutate()} data-testid="button-confirm-void">
+                  {voidBillMutation.isPending ? "Voiding..." : "Confirm Void"}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {step === "refund" && (
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
+                Refund for bill <strong>{billNumber}</strong> · Total paid: {fmt(grandTotal)}
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Refund Amount <span className="text-destructive">*</span></p>
+                <div className="flex gap-2">
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    value={refundAmount}
+                    onChange={e => setRefundAmount(e.target.value)}
+                    min="0.01"
+                    step="0.01"
+                    max={grandTotal}
+                    data-testid="input-refund-amount"
+                    className="flex-1"
+                  />
+                  <Button size="sm" variant="outline" className="text-xs whitespace-nowrap"
+                    onClick={() => setRefundAmount(grandTotal.toFixed(2))}>
+                    Full ({fmt(grandTotal)})
+                  </Button>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-medium">Reason <span className="text-destructive">*</span></p>
+                <Select value={refundReason} onValueChange={setRefundReason}>
+                  <SelectTrigger data-testid="select-refund-reason">
+                    <SelectValue placeholder="Select a reason..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {REFUND_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setStep("receipt")}>Cancel</Button>
+                <Button className="flex-1 bg-orange-600 hover:bg-orange-700"
+                  disabled={!refundAmount || !refundReason || refundBillMutation.isPending}
+                  onClick={() => refundBillMutation.mutate()} data-testid="button-confirm-refund">
+                  {refundBillMutation.isPending ? "Refunding..." : `Refund ${refundAmount ? fmt(parseFloat(refundAmount)) : ""}`}
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
