@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useSearch } from "wouter";
+import { useSearch, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Bell, Receipt, Droplets, Sparkles, Utensils, ShoppingCart, Star,
@@ -69,18 +69,16 @@ const TRANSLATIONS = {
     music: "Music",
     otherRequest: "Other Request",
     birthdayMsg: "Name & occasion:",
-    dietaryMsg: "Please describe your dietary requirement:",
+    dietaryMsg: "Describe your dietary requirement:",
     temperatureLabel: "Preferred temperature:",
     musicLabel: "Music preference:",
     otherLabel: "Describe your request:",
     cooler: "Cooler",
     warmer: "Warmer",
     current: "As is",
-    veg: "Veg",
-    spicy: "Spicy",
     foodOrderingUnavailable: "Food ordering is not available for this table.",
-    language: "Language",
     noItems: "No items available in this category",
+    trackingStatus: "Your request status",
   },
   ar: {
     dir: "rtl" as const,
@@ -149,11 +147,9 @@ const TRANSLATIONS = {
     cooler: "أبرد",
     warmer: "أدفأ",
     current: "كما هو",
-    veg: "نباتي",
-    spicy: "حار",
     foodOrderingUnavailable: "طلب الطعام غير متاح لهذه الطاولة.",
-    language: "اللغة",
     noItems: "لا توجد عناصر في هذه الفئة",
+    trackingStatus: "حالة طلبك",
   },
   hi: {
     dir: "ltr" as const,
@@ -222,11 +218,9 @@ const TRANSLATIONS = {
     cooler: "ठंडा",
     warmer: "गर्म",
     current: "जैसा है",
-    veg: "शाकाहारी",
-    spicy: "मसालेदार",
     foodOrderingUnavailable: "इस टेबल के लिए खाना ऑर्डर करना उपलब्ध नहीं है।",
-    language: "भाषा",
     noItems: "इस श्रेणी में कोई आइटम नहीं",
+    trackingStatus: "आपके अनुरोध की स्थिति",
   },
 } as const;
 
@@ -255,8 +249,6 @@ interface MenuItem {
   image: string | null;
   isVeg: boolean | null;
   spicyLevel: number | null;
-  allergens: string[] | null;
-  tags: string[] | null;
 }
 
 interface Category {
@@ -266,25 +258,22 @@ interface Category {
 }
 
 interface LocalCartItem {
-  itemId: string;
   menuItemId: string;
   name: string;
   price: number;
   quantity: number;
-  note?: string;
 }
-
-type Flow =
-  | "home"
-  | "quick-confirm"
-  | "food-order"
-  | "feedback"
-  | "special-request";
 
 interface SubmittedRequest {
   id: string;
   status: string;
+  label: string;
+  isPositiveFeedback?: boolean;
+  isNegativeFeedback?: boolean;
+  restaurantName?: string;
 }
+
+type Flow = "home" | "food-order" | "feedback" | "special-request" | "status-track";
 
 const PRIMARY = "hsl(174, 65%, 32%)";
 
@@ -369,6 +358,88 @@ function StatusBubble({ status, t }: { status: string; t: T }) {
   );
 }
 
+function StatusTracker({
+  submitted, ctx, t, onDone,
+}: {
+  submitted: SubmittedRequest;
+  ctx: QrContext;
+  t: T;
+  onDone: () => void;
+}) {
+  return (
+    <div className="flex flex-col items-center justify-center py-8 gap-5 text-center px-4" data-testid="status-tracker-screen">
+      {submitted.status === "completed" ? (
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 200 }} className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
+          <Check className="w-10 h-10 text-green-600" />
+        </motion.div>
+      ) : submitted.isNegativeFeedback ? (
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="w-20 h-20 rounded-full bg-orange-100 flex items-center justify-center">
+          <AlertCircle className="w-10 h-10 text-orange-500" />
+        </motion.div>
+      ) : (
+        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ type: "spring", stiffness: 200 }} className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
+          <Check className="w-10 h-10 text-green-600" />
+        </motion.div>
+      )}
+
+      <div>
+        <h2 className="text-xl font-bold text-gray-900" data-testid="text-submitted">
+          {submitted.isNegativeFeedback ? t.thanksForFeedback : submitted.label}
+        </h2>
+        {submitted.isNegativeFeedback ? (
+          <p className="text-gray-500 text-sm mt-1">{t.managerAlert}</p>
+        ) : submitted.isPositiveFeedback ? (
+          <p className="text-gray-500 text-sm mt-1">{t.positiveMsg}</p>
+        ) : (
+          <p className="text-gray-500 text-sm mt-1">{t.submitted}</p>
+        )}
+      </div>
+
+      {!submitted.isPositiveFeedback && !submitted.isNegativeFeedback && (
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-gray-400">{t.trackingStatus}</p>
+          <StatusBubble status={submitted.status} t={t} />
+        </div>
+      )}
+
+      {submitted.isPositiveFeedback && (
+        <div className="flex flex-col gap-2 w-full">
+          <a
+            href={`https://www.google.com/maps/search/${encodeURIComponent(ctx.restaurantName)}`}
+            target="_blank" rel="noreferrer"
+            data-testid="link-share-google"
+            className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-teal-600 text-teal-700 text-center block"
+          >
+            {t.shareGoogle}
+          </a>
+          <a
+            href={`https://www.tripadvisor.com/Search?q=${encodeURIComponent(ctx.restaurantName)}`}
+            target="_blank" rel="noreferrer"
+            data-testid="link-share-tripadvisor"
+            className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-green-500 text-green-700 text-center block"
+          >
+            {t.shareTripAdvisor}
+          </a>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-3 w-full mt-2">
+        <button
+          data-testid="button-submit-another"
+          onClick={onDone}
+          className="w-full py-3 rounded-xl font-bold text-white text-sm"
+          style={{ backgroundColor: PRIMARY }}
+        >
+          {t.submitAnother}
+        </button>
+        <button data-testid="button-back-to-home" onClick={onDone} className="text-sm text-gray-500 underline">
+          {t.backToMenu}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function RequestButton({
   icon, label, onClick, testId,
 }: {
@@ -414,7 +485,7 @@ function FoodOrderFlow({
   t: T;
   token: string;
   onBack: () => void;
-  onOrderPlaced: () => void;
+  onOrderPlaced: (requestId: string) => void;
 }) {
   const [menuData, setMenuData] = useState<{ categories: Category[]; items: MenuItem[]; currency: string } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -423,7 +494,6 @@ function FoodOrderFlow({
   const [cart, setCart] = useState<LocalCartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
   const [placing, setPlacing] = useState(false);
-  const [placed, setPlaced] = useState(false);
 
   useEffect(() => {
     if (!ctx.outletId) return;
@@ -443,7 +513,7 @@ function FoodOrderFlow({
     setCart(prev => {
       const existing = prev.find(c => c.menuItemId === item.id);
       if (existing) return prev.map(c => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { itemId: crypto.randomUUID(), menuItemId: item.id, name: item.name, price: Number(item.price), quantity: 1 }];
+      return [...prev, { menuItemId: item.id, name: item.name, price: Number(item.price), quantity: 1 }];
     });
   }
 
@@ -471,34 +541,28 @@ function FoodOrderFlow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const orderSummary = cart.map(c => `${c.quantity}x ${c.name}`).join(", ");
-      await fetch("/api/table-requests", {
+      const orderItems = cart.map(c => ({ menuItemId: c.menuItemId, name: c.name, quantity: c.quantity, unitPrice: c.price }));
+      const res = await fetch("/api/table-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token,
           requestType: "order_food",
           priority: "medium",
-          guestNote: `Order placed via QR: ${orderSummary}`,
+          guestNote: cart.map(c => `${c.quantity}x ${c.name}`).join(", "),
+          details: {
+            items: orderItems,
+            totalAmount: cartTotal,
+            currency: menuData?.currency ?? ctx.currency,
+            sessionId,
+          },
         }),
       });
-      setPlaced(true);
-      setTimeout(onOrderPlaced, 2500);
+      const data = await res.json();
+      if (res.ok) onOrderPlaced(data.id);
     } finally {
       setPlacing(false);
     }
-  }
-
-  if (placed) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-4 text-center px-6">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
-          <Check className="w-10 h-10 text-green-600" />
-        </motion.div>
-        <h2 className="text-xl font-bold text-gray-900">{t.orderPlaced}</h2>
-        <p className="text-gray-500">{t.orderPlacedMsg}</p>
-      </div>
-    );
   }
 
   if (menuLoading) {
@@ -535,11 +599,9 @@ function FoodOrderFlow({
                 </div>
               </div>
             ))}
-            <div className="border-t pt-3">
-              <div className="flex justify-between text-sm text-gray-600 font-bold">
-                <span>{t.placeOrder}</span>
-                <span className="text-gray-900">{formatPrice(cartTotal, menuData?.currency ?? "USD")}</span>
-              </div>
+            <div className="border-t pt-3 flex justify-between text-sm font-bold text-gray-700">
+              <span>Total</span>
+              <span>{formatPrice(cartTotal, menuData?.currency ?? "USD")}</span>
             </div>
             <button
               data-testid="button-place-order"
@@ -585,9 +647,7 @@ function FoodOrderFlow({
         ))}
       </div>
 
-      {filteredItems.length === 0 && (
-        <p className="text-center text-gray-400 py-8">{t.noItems}</p>
-      )}
+      {filteredItems.length === 0 && <p className="text-center text-gray-400 py-8">{t.noItems}</p>}
 
       <div className="flex flex-col gap-3">
         {filteredItems.map(item => {
@@ -607,7 +667,6 @@ function FoodOrderFlow({
                     <p className="font-semibold text-sm text-gray-900">{item.name}</p>
                     <div className="flex items-center gap-1.5 mt-0.5">
                       {item.isVeg && <span className="text-green-600"><Leaf className="w-3 h-3" /></span>}
-                      {item.spicyLevel && item.spicyLevel > 0 && <span className="text-red-500 text-xs">🌶️</span>}
                     </div>
                     {item.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{item.description}</p>}
                   </div>
@@ -651,20 +710,15 @@ function FeedbackFlow({
   t: T;
   token: string;
   onBack: () => void;
-  onDone: () => void;
+  onDone: (submitted: SubmittedRequest) => void;
 }) {
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const [complaintCat, setComplaintCat] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
-  const [isPositive, setIsPositive] = useState(false);
-  const [isNegative, setIsNegative] = useState(false);
 
-  useEffect(() => {
-    setIsPositive(rating >= 4);
-    setIsNegative(rating > 0 && rating <= 3);
-  }, [rating]);
+  const isPositive = rating >= 4;
+  const isNegative = rating > 0 && rating <= 3;
 
   const complaintCats = [
     { key: "food_quality", label: t.foodQuality },
@@ -682,7 +736,7 @@ function FeedbackFlow({
       const note = isNegative
         ? `Rating: ${rating}/5 | Issue: ${complaintCat || "general"} | Comment: ${comment}`
         : `Rating: ${rating}/5 | Comment: ${comment}`;
-      await fetch("/api/table-requests", {
+      const res = await fetch("/api/table-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -690,49 +744,23 @@ function FeedbackFlow({
           requestType: "feedback",
           priority: isNegative ? "high" : "low",
           guestNote: note,
+          details: { rating, comment, complaintCategory: complaintCat || null },
         }),
       });
-      setDone(true);
+      const data = await res.json();
+      if (res.ok) {
+        onDone({
+          id: data.id,
+          status: data.status,
+          label: t.thanksForFeedback,
+          isPositiveFeedback: isPositive,
+          isNegativeFeedback: isNegative,
+          restaurantName: ctx.restaurantName,
+        });
+      }
     } finally {
       setSubmitting(false);
     }
-  }
-
-  if (done) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 gap-4 text-center px-4">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className={`w-20 h-20 rounded-full flex items-center justify-center ${isNegative ? "bg-orange-100" : "bg-green-100"}`}>
-          {isNegative ? <AlertCircle className="w-10 h-10 text-orange-500" /> : <Check className="w-10 h-10 text-green-600" />}
-        </motion.div>
-        <h2 className="text-xl font-bold">{t.thanksForFeedback}</h2>
-        {isNegative ? (
-          <p className="text-gray-500">{t.managerAlert}</p>
-        ) : (
-          <>
-            <p className="text-gray-500">{t.positiveMsg}</p>
-            <div className="flex flex-col gap-2 w-full mt-2">
-              <a
-                href={`https://www.google.com/maps/search/${encodeURIComponent(ctx.restaurantName)}`}
-                target="_blank" rel="noreferrer"
-                data-testid="link-share-google"
-                className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-teal-600 text-teal-700 text-center block"
-              >
-                {t.shareGoogle}
-              </a>
-              <a
-                href={`https://www.tripadvisor.com/Search?q=${encodeURIComponent(ctx.restaurantName)}`}
-                target="_blank" rel="noreferrer"
-                data-testid="link-share-tripadvisor"
-                className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-green-500 text-green-700 text-center block"
-              >
-                {t.shareTripAdvisor}
-              </a>
-            </div>
-          </>
-        )}
-        <button data-testid="button-back-from-feedback" onClick={onDone} className="mt-4 text-teal-600 text-sm font-medium underline">{t.backToMenu}</button>
-      </div>
-    );
   }
 
   return (
@@ -796,13 +824,12 @@ function SpecialRequestFlow({
   t: T;
   token: string;
   onBack: () => void;
-  onDone: () => void;
+  onDone: (submitted: SubmittedRequest) => void;
 }) {
   const [selectedType, setSelectedType] = useState<SpecialType | null>(null);
   const [text, setText] = useState("");
   const [tempPref, setTempPref] = useState("current");
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
 
   const types: { type: SpecialType; icon: React.ReactNode; label: string }[] = [
     { type: "birthday", icon: <Sparkles className="w-5 h-5" />, label: t.birthdaySetup },
@@ -816,10 +843,8 @@ function SpecialRequestFlow({
     if (!selectedType) return;
     setSubmitting(true);
     try {
-      let note = "";
-      if (selectedType === "temperature") note = `Temperature preference: ${tempPref}. ${text}`.trim();
-      else note = text;
-      await fetch("/api/table-requests", {
+      const note = selectedType === "temperature" ? `Temperature preference: ${tempPref}. ${text}`.trim() : text;
+      const res = await fetch("/api/table-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -827,24 +852,16 @@ function SpecialRequestFlow({
           requestType: "other",
           priority: "medium",
           guestNote: `[${selectedType.toUpperCase()}] ${note}`,
+          details: { specialType: selectedType, note, tempPref: selectedType === "temperature" ? tempPref : undefined },
         }),
       });
-      setDone(true);
-      setTimeout(onDone, 2000);
+      const data = await res.json();
+      if (res.ok) {
+        onDone({ id: data.id, status: data.status, label: t.submitted });
+      }
     } finally {
       setSubmitting(false);
     }
-  }
-
-  if (done) {
-    return (
-      <div className="flex flex-col items-center justify-center py-16 gap-4 text-center">
-        <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
-          <Check className="w-10 h-10 text-green-600" />
-        </motion.div>
-        <h2 className="text-xl font-bold">{t.submitted}</h2>
-      </div>
-    );
   }
 
   return (
@@ -867,7 +884,7 @@ function SpecialRequestFlow({
               key={type}
               data-testid={`special-type-${type}`}
               onClick={() => setSelectedType(type)}
-              className="flex items-center gap-3 p-4 rounded-xl bg-white border border-gray-100 text-left hover:border-teal-300 active:scale-98 transition-transform"
+              className="flex items-center gap-3 p-4 rounded-xl bg-white border border-gray-100 text-left hover:border-teal-300"
             >
               <span className="text-teal-600">{icon}</span>
               <span className="font-medium text-sm text-gray-800">{label}</span>
@@ -937,6 +954,7 @@ interface ImmediateRequest {
 
 export default function TableQrPage() {
   const search = useSearch();
+  const routeParams = useParams<{ tenantSlug?: string; outletId?: string; tableId?: string }>();
   const params = new URLSearchParams(search);
   const token = params.get("token");
 
@@ -946,14 +964,13 @@ export default function TableQrPage() {
   const { ctx, error, loading } = useQrToken(token);
 
   const [flow, setFlow] = useState<Flow>("home");
-  const [quickLabel, setQuickLabel] = useState<string>("");
   const [submittedRequest, setSubmittedRequest] = useState<SubmittedRequest | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   useGuestWebSocket(ctx?.tenantId ?? null, useCallback((event, payload) => {
     if (event === "table-request:updated" && payload?.request) {
       const r = payload.request;
-      setSubmittedRequest(prev => prev && r.id === prev.id ? { id: r.id, status: r.status } : prev);
+      setSubmittedRequest(prev => prev && r.id === prev.id ? { ...prev, status: r.status } : prev);
     }
   }, []));
 
@@ -971,11 +988,9 @@ export default function TableQrPage() {
 
   const submitQuickRequest = useCallback(async (req: ImmediateRequest) => {
     if (!token) return;
-    setQuickLabel(req.label);
     setSubmitting(true);
     setSubmittedRequest(null);
     try {
-      const note = req.backendType === "other" ? req.label : null;
       const res = await fetch("/api/table-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -983,18 +998,28 @@ export default function TableQrPage() {
           token,
           requestType: req.backendType,
           priority: req.priority,
-          guestNote: note,
+          guestNote: req.backendType === "other" ? req.label : null,
         }),
       });
       const data = await res.json();
       if (res.ok) {
-        setSubmittedRequest({ id: data.id, status: data.status });
-        setFlow("quick-confirm");
+        setSubmittedRequest({ id: data.id, status: data.status, label: req.label });
+        setFlow("status-track");
       }
     } finally {
       setSubmitting(false);
     }
   }, [token]);
+
+  const handleFlowDone = useCallback((submitted: SubmittedRequest) => {
+    setSubmittedRequest(submitted);
+    setFlow("status-track");
+  }, []);
+
+  const handleBackToHome = useCallback(() => {
+    setFlow("home");
+    setSubmittedRequest(null);
+  }, []);
 
   const dir = t.dir;
 
@@ -1100,39 +1125,9 @@ export default function TableQrPage() {
               </motion.div>
             )}
 
-            {flow === "quick-confirm" && (
-              <motion.div key="quick-confirm" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                <div className="flex flex-col items-center justify-center py-8 gap-5 text-center px-4">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: "spring", stiffness: 200 }}
-                    className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center"
-                  >
-                    <Check className="w-10 h-10 text-green-600" />
-                  </motion.div>
-
-                  <div>
-                    <h2 className="text-xl font-bold text-gray-900" data-testid="text-submitted">{t.submitted}</h2>
-                    <p className="text-gray-500 text-sm mt-1">{quickLabel}</p>
-                  </div>
-
-                  {submittedRequest && <StatusBubble status={submittedRequest.status} t={t} />}
-
-                  <div className="flex flex-col gap-3 w-full mt-4">
-                    <button
-                      data-testid="button-submit-another"
-                      onClick={() => { setFlow("home"); setSubmittedRequest(null); }}
-                      className="w-full py-3 rounded-xl font-bold text-white text-sm"
-                      style={{ backgroundColor: PRIMARY }}
-                    >
-                      {t.submitAnother}
-                    </button>
-                    <button data-testid="button-back-to-home" onClick={() => { setFlow("home"); setSubmittedRequest(null); }} className="text-sm text-gray-500 underline">
-                      {t.backToMenu}
-                    </button>
-                  </div>
-                </div>
+            {flow === "status-track" && submittedRequest && (
+              <motion.div key="status-track" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
+                <StatusTracker submitted={submittedRequest} ctx={ctx} t={t} onDone={handleBackToHome} />
               </motion.div>
             )}
 
@@ -1143,7 +1138,7 @@ export default function TableQrPage() {
                   t={t}
                   token={token!}
                   onBack={() => setFlow("home")}
-                  onOrderPlaced={() => setFlow("home")}
+                  onOrderPlaced={(reqId) => handleFlowDone({ id: reqId, status: "pending", label: t.orderPlaced })}
                 />
               </motion.div>
             )}
@@ -1167,7 +1162,7 @@ export default function TableQrPage() {
                   t={t}
                   token={token!}
                   onBack={() => setFlow("home")}
-                  onDone={() => setFlow("home")}
+                  onDone={handleFlowDone}
                 />
               </motion.div>
             )}
@@ -1178,7 +1173,7 @@ export default function TableQrPage() {
                   t={t}
                   token={token!}
                   onBack={() => setFlow("home")}
-                  onDone={() => setFlow("home")}
+                  onDone={handleFlowDone}
                 />
               </motion.div>
             )}

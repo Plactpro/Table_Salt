@@ -1577,6 +1577,7 @@ export const tableRequests = pgTable("table_requests", {
   priority: text("priority").notNull().default("medium"),
   status: text("status").notNull().default("pending"),
   guestNote: text("guest_note"),
+  details: jsonb("details"),
   assignedTo: varchar("assigned_to", { length: 36 }).references(() => users.id),
   assignedToName: text("assigned_to_name"),
   staffNote: text("staff_note"),

@@ -337,4 +337,7 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_requests_table ON table_requests (table_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_requests_status ON table_requests (status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_requests_tenant_status ON table_requests (tenant_id, status)`);
+
+  // Task #74: Add structured details column to table_requests
+  await pool.query(`ALTER TABLE table_requests ADD COLUMN IF NOT EXISTS details JSONB`);
 }
