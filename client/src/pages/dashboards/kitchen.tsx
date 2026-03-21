@@ -96,6 +96,11 @@ interface RecipeCheckItem {
   ingredients: RecipeCheckIngredient[];
 }
 
+interface RecipeCheckResponse {
+  items: RecipeCheckItem[];
+  hasUnlinkedItems: boolean;
+}
+
 const STATION_ICONS: Record<string, LucideIcon> = {
   grill: Beef,
   main: CookingPot,
@@ -218,12 +223,13 @@ function RecipeCheckDrawer({
   const url = station
     ? `/api/kds/recipe-check/${orderId}?station=${encodeURIComponent(station)}`
     : `/api/kds/recipe-check/${orderId}`;
-  const { data: recipeItems = [], isLoading } = useQuery<RecipeCheckItem[]>({
+  const { data: recipeCheckData, isLoading } = useQuery<RecipeCheckResponse>({
     queryKey: ["/api/kds/recipe-check", orderId, station],
     queryFn: () => fetch(url, { credentials: "include" }).then(r => r.json()),
     enabled: open,
   });
 
+  const recipeItems = recipeCheckData?.items ?? [];
   const linkedItems = recipeItems.filter(r => !r.noRecipe);
   const unlinkedItems = recipeItems.filter(r => r.noRecipe);
   const allIngredients = linkedItems.flatMap(r => r.ingredients);
@@ -283,12 +289,16 @@ function RecipeCheckDrawer({
             )}
 
             {unlinkedItems.length > 0 && (
-              <div className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700" data-testid="warning-no-recipe">
-                <Package className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
-                <div className="text-sm text-slate-600 dark:text-slate-400">
-                  <p className="font-medium">No recipe linked — stock not tracked</p>
-                  <p className="text-xs mt-1">{unlinkedItems.map(u => `${u.quantity}× ${u.menuItemName}`).join(", ")}</p>
-                </div>
+              <div className="space-y-1.5" data-testid="warning-no-recipe">
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">No recipe — stock not tracked</p>
+                {unlinkedItems.map(u => (
+                  <div key={u.orderItemId} className="flex items-center justify-between px-3 py-2 rounded-md border bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700 text-sm">
+                    <span className="text-slate-700 dark:text-slate-300">{u.quantity}× {u.menuItemName}</span>
+                    <Badge variant="outline" className="text-xs text-slate-500 border-slate-300" data-testid={`badge-no-recipe-${u.menuItemId}`}>
+                      No Recipe
+                    </Badge>
+                  </div>
+                ))}
               </div>
             )}
 
