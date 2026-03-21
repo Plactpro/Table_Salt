@@ -194,7 +194,8 @@ export function registerKitchenRoutes(app: Express): void {
           ingredients,
         });
       }
-      res.json(result);
+      const hasUnlinkedItems = result.some(r => r.noRecipe);
+      res.json({ items: result, hasUnlinkedItems });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -222,7 +223,7 @@ export function registerKitchenRoutes(app: Express): void {
           if (!oi.menuItemId) continue;
           const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
           if (!recipe) {
-            console.warn(`[kds/start] No recipe for menu item ${oi.menuItemId} ("${oi.name}") — skipping inventory deduction for order ${req.params.id}`);
+            console.warn("[kds/start] no-recipe: skipping inventory deduction", { tenantId: user.tenantId, orderId: req.params.id, menuItemId: oi.menuItemId, menuItemName: oi.name });
             continue;
           }
           const recipeIngs = await storage.getRecipeIngredients(recipe.id);

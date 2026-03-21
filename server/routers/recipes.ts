@@ -128,10 +128,12 @@ export function registerRecipesRoutes(app: Express): void {
       });
 
       const menuItemSales = new Map<string, number>();
+      const menuItemRevenue = new Map<string, number>();
       for (const order of paidOrders) {
         const items = await storage.getOrderItemsByOrder(order.id);
         for (const oi of items) {
           menuItemSales.set(oi.menuItemId, (menuItemSales.get(oi.menuItemId) || 0) + Number(oi.quantity));
+          menuItemRevenue.set(oi.menuItemId, (menuItemRevenue.get(oi.menuItemId) || 0) + Number(oi.price) * Number(oi.quantity));
         }
       }
 
@@ -195,7 +197,17 @@ export function registerRecipesRoutes(app: Express): void {
       const reorderSuggestions = inventory.filter(item => { const stock = Number(item.currentStock || 0); const par = Number(item.parLevel || item.reorderLevel || 0); return stock <= par && par > 0; }).map(item => ({ itemId: item.id, itemName: item.name, currentStock: Number(item.currentStock || 0), reorderLevel: Number(item.reorderLevel || 0), parLevel: Number(item.parLevel || 0), leadTimeDays: Number(item.leadTimeDays || 1), suggestedOrder: Math.max(0, Number(item.parLevel || item.reorderLevel || 0) * 2 - Number(item.currentStock || 0)), unit: item.unit }));
 
       const linkedMenuItemIds = new Set(allRecipes.map(r => r.menuItemId).filter(Boolean));
-      const untrackedMenuItems = menuItemsAll.filter(m => m.available !== false && !linkedMenuItemIds.has(m.id)).map(m => ({ id: m.id, name: m.name, price: Number(m.price || 0), categoryId: m.categoryId }));
+      const untrackedMenuItems = menuItemsAll
+        .filter(m => m.available !== false && !linkedMenuItemIds.has(m.id) && menuItemSales.has(m.id))
+        .map(m => ({
+          id: m.id,
+          name: m.name,
+          price: Number(m.price || 0),
+          categoryId: m.categoryId,
+          timesSold: menuItemSales.get(m.id) || 0,
+          totalRevenue: Math.round((menuItemRevenue.get(m.id) || 0) * 100) / 100,
+        }))
+        .sort((a, b) => b.totalRevenue - a.totalRevenue);
 
       res.json({ recipes: report, summary: { totalCost: Math.round(totalCost * 100) / 100, totalRevenue: Math.round(totalRevenue * 100) / 100, avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10, totalSalesCost: Math.round(totalSalesCost * 100) / 100, totalSalesRevenue: Math.round(totalSalesRevenue * 100) / 100, salesWeightedFoodCostPct: Math.round(salesWeightedFoodCostPct * 10) / 10 }, varianceByIngredient, topMovers, reorderSuggestions, untrackedMenuItems });
     } catch (err: any) { res.status(500).json({ message: err.message }); }

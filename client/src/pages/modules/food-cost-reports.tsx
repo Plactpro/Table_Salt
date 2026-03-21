@@ -48,6 +48,8 @@ interface UntrackedMenuItem {
   name: string;
   price: number;
   categoryId: string | null;
+  timesSold: number;
+  totalRevenue: number;
 }
 
 interface FoodCostReport {
@@ -538,6 +540,54 @@ export default function FoodCostReports() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {untrackedMenuItems.length > 0 && (
+        <Card data-testid="table-untracked-items">
+          <CardHeader className="pb-3">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+              <CardTitle className="text-base">Untracked Items Sold — No Recipe Linked</CardTitle>
+            </div>
+            <CardDescription>
+              These menu items were sold in the selected period but have no recipe linked, so food costs are not tracked for them.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Menu Item</TableHead>
+                  <TableHead className="text-right">Times Sold</TableHead>
+                  <TableHead className="text-right">Total Revenue</TableHead>
+                  <TableHead className="text-right">Selling Price</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {untrackedMenuItems.map(m => (
+                  <TableRow key={m.id} data-testid={`untracked-row-${m.id}`}>
+                    <TableCell className="font-medium">{m.name}</TableCell>
+                    <TableCell className="text-right">{m.timesSold}</TableCell>
+                    <TableCell className="text-right font-medium text-amber-700 dark:text-amber-400">{fmt(m.totalRevenue)}</TableCell>
+                    <TableCell className="text-right text-muted-foreground">{fmt(m.price)}</TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => navigate("/inventory?tab=recipes")}
+                        data-testid={`button-add-recipe-${m.id}`}
+                      >
+                        <ChefHat className="h-3 w-3 mr-1" /> Add Recipe
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -10,6 +10,7 @@ import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/
 import {
   ChefHat, Plus, Trash2, ArrowLeft, Save, Link2, Loader2, X,
   DollarSign, TrendingUp, Clock, Package, AlertTriangle, Copy, Search, Info,
+  ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -72,6 +73,8 @@ export default function RecipeEditorPage() {
   const invMap = new Map(inventory.map(i => [i.id, i]));
   const menuMap = new Map(menuItems.map(m => [m.id, m]));
 
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [bannerCollapsed, setBannerCollapsed] = useState(false);
   const [name, setName] = useState("");
   const [menuItemId, setMenuItemId] = useState(isNew ? preselectedMenuItemId : "none");
   const [yieldQty, setYieldQty] = useState("1");
@@ -342,19 +345,50 @@ export default function RecipeEditorPage() {
         )}
       </div>
 
-      {unlinkedMenuItems.length > 0 && (
-        <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 text-sm" data-testid="banner-unlinked-menu-items">
-          <Info className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
-          <div>
-            <span className="font-medium text-slate-700 dark:text-slate-300">
-              {unlinkedMenuItems.length} menu item{unlinkedMenuItems.length !== 1 ? "s" : ""} still need{unlinkedMenuItems.length === 1 ? "s" : ""} a recipe:
-            </span>
-            <span className="text-slate-500 dark:text-slate-400 ml-1.5">
-              {unlinkedMenuItems.slice(0, 6).map(m => m.name).join(", ")}
-              {unlinkedMenuItems.length > 6 && ` and ${unlinkedMenuItems.length - 6} more`}
-            </span>
-            <span className="text-xs text-slate-400 ml-1">— inventory won't be tracked for these items when sold</span>
+      {unlinkedMenuItems.length > 0 && !bannerDismissed && (
+        <div className="rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 text-sm" data-testid="banner-unlinked-menu-items">
+          <div className="flex items-center justify-between px-3 py-2.5">
+            <div className="flex items-center gap-2">
+              <Info className="h-4 w-4 text-slate-500 shrink-0" />
+              <span className="font-medium text-slate-700 dark:text-slate-300">
+                {unlinkedMenuItems.length} menu item{unlinkedMenuItems.length !== 1 ? "s" : ""} still need{unlinkedMenuItems.length === 1 ? "s" : ""} a recipe — inventory won't be tracked when sold
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+                onClick={() => setBannerCollapsed(c => !c)}
+                data-testid="button-toggle-unlinked-banner"
+              >
+                {bannerCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 w-6 p-0 text-slate-400 hover:text-slate-600"
+                onClick={() => setBannerDismissed(true)}
+                data-testid="button-dismiss-unlinked-banner"
+              >
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
+          {!bannerCollapsed && (
+            <div className="px-3 pb-2.5 flex flex-wrap gap-1.5">
+              {unlinkedMenuItems.map(m => (
+                <a
+                  key={m.id}
+                  href={`/recipes/new?menuItemId=${m.id}&menuItemName=${encodeURIComponent(m.name)}`}
+                  className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-primary hover:text-primary transition-colors"
+                  data-testid={`link-unlinked-item-${m.id}`}
+                >
+                  {m.name}
+                </a>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
