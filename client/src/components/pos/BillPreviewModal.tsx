@@ -437,7 +437,7 @@ export default function BillPreviewModal({
     const html = renderBillHtml({
       restaurantName: tenantName,
       restaurantAddress: tenantAddress || undefined,
-      restaurantGstin: (user?.tenant as any)?.gstin || undefined,
+      restaurantGstin: user?.tenant?.gstin || undefined,
       billNumber: billPayload.billNumber,
       invoiceNumber: billPayload.invoiceNumber,
       orderId: billPayload.orderId || "",
@@ -475,12 +475,17 @@ export default function BillPreviewModal({
       } catch (_) {}
     }
 
-    const networkSuccess = await dispatchPrint(html, null, () => {
-      if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+    await dispatchPrint(html, null, {
+      onNetworkSuccess: () => {
+        if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+      },
+      onPopupPrint: () => {
+        if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+      },
+      onFailure: () => {
+        if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "failed" }).catch(() => {});
+      },
     });
-    if (!networkSuccess && jobId) {
-      apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
-    }
   }, [
     billNumber, createdBill, orderId, orderType, tableNumber, cart,
     subtotal, discountAmount, tierDiscountAmount, serviceChargeAmount,

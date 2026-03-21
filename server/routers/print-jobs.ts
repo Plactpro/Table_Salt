@@ -8,7 +8,8 @@ export function registerPrintJobRoutes(app: Express): void {
       const user = req.user as any;
       const status = req.query.status as string | undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
-      const jobs = await storage.getPrintJobsByTenant(user.tenantId, { status, limit });
+      const referenceId = req.query.referenceId as string | undefined;
+      const jobs = await storage.getPrintJobsByTenant(user.tenantId, { status, limit, referenceId });
       res.json(jobs);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
