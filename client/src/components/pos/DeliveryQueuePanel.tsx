@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -31,8 +31,9 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Truck, Clock, CheckCircle2, XCircle, Send, Package,
-  RefreshCw, Layers, ShoppingBag,
+  RefreshCw, Layers, ShoppingBag, ChevronDown, ChevronUp,
 } from "lucide-react";
+import { useEffect } from "react";
 
 const ETA_OPTIONS = [
   { label: "15 min", value: 15 },
@@ -62,6 +63,12 @@ interface DeliveryOrderItem {
   price: string;
 }
 
+interface DeliveryChannelData {
+  customerName?: string;
+  customerPhone?: string;
+  customerAddress?: string;
+}
+
 interface DeliveryQueueOrder {
   id: string;
   status: string;
@@ -69,12 +76,24 @@ interface DeliveryQueueOrder {
   total: string | null;
   subtotal: string | null;
   channelOrderId: string | null;
-  channelData: Record<string, unknown> | null;
+  channelData: DeliveryChannelData | null;
   channel: string | null;
   createdAt: string | null;
   estimatedReadyAt: string | null;
   queueType: "pending" | "active";
   items: DeliveryOrderItem[];
+}
+
+const CHANNEL_STYLES: Record<string, { label: string; bg: string; text: string }> = {
+  swiggy:     { label: "Swiggy",     bg: "bg-orange-100", text: "text-orange-700" },
+  zomato:     { label: "Zomato",     bg: "bg-red-100",    text: "text-red-700" },
+  ubereats:   { label: "Uber Eats",  bg: "bg-green-100",  text: "text-green-700" },
+  online:     { label: "Online",     bg: "bg-blue-100",   text: "text-blue-700" },
+  aggregator: { label: "Aggregator", bg: "bg-purple-100", text: "text-purple-700" },
+};
+
+function getChannelStyle(channel: string | null) {
+  return CHANNEL_STYLES[channel ?? ""] ?? { label: channel || "Delivery", bg: "bg-slate-100", text: "text-slate-700" };
 }
 
 function useCountdown(target: string | null): string {
@@ -110,17 +129,6 @@ function CountdownBadge({ estimatedReadyAt }: { estimatedReadyAt: string | null 
   );
 }
 
-function channelLabel(channel: string | null): string {
-  const map: Record<string, string> = {
-    swiggy: "Swiggy",
-    zomato: "Zomato",
-    ubereats: "Uber Eats",
-    online: "Online",
-    aggregator: "Aggregator",
-  };
-  return map[channel ?? ""] || channel || "Delivery";
-}
-
 interface DeliveryQueuePanelProps {
   open: boolean;
   onClose: () => void;
@@ -134,6 +142,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
   const [etaMinutes, setEtaMinutes] = useState("30");
   const [rejectingOrderId, setRejectingOrderId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState(REJECTION_REASONS[0]);
+  const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -154,7 +163,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
   useRealtimeEvent("order:delivery_accepted", () => refetch());
   useRealtimeEvent("order:delivery_rejected", () => refetch());
   useRealtimeEvent("order:delivery_dispatched", () => refetch());
-  useRealtimeEvent("order:created", () => refetch());
+  useRealtimeEvent("order:new", () => refetch());
 
   const pendingOrders = orders.filter(o => o.queueType === "pending");
   const activeOrders = orders.filter(o => o.queueType === "active");
@@ -198,19 +207,32 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
+  const toggleExpanded = useCallback((orderId: string) => {
+    setExpandedOrders(prev => {
+      const next = new Set(prev);
+      if (next.has(orderId)) next.delete(orderId);
+      else next.add(orderId);
+      return next;
+    });
+  }, []);
+
   const formatTime = (iso: string | null) => {
     if (!iso) return "–";
     return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
   const OrderCard = useCallback(({ order }: { order: DeliveryQueueOrder }) => {
-    const customerName = (order.channelData as any)?.customerName || "Customer";
+    const customerName = order.channelData?.customerName || "Customer";
     const channelId = order.channelOrderId || order.id.slice(-6).toUpperCase();
     const isPending = order.queueType === "pending";
     const isReady = order.status === "ready";
+    const channelStyle = getChannelStyle(order.channel);
+    const isExpanded = expandedOrders.has(order.id);
+    const visibleItems = isExpanded ? order.items : order.items.slice(0, 3);
+    const hasMore = order.items.length > 3;
 
     return (
-      <Card className={`border-l-4 ${isPending ? "border-l-orange-400 animate-pulse-once" : isReady ? "border-l-green-500" : "border-l-blue-400"}`}
+      <Card className={`border-l-4 ${isPending ? "border-l-orange-400" : isReady ? "border-l-green-500" : "border-l-blue-400"}`}
         data-testid={`delivery-order-card-${order.id}`}>
         <CardContent className="p-3 space-y-2">
           <div className="flex items-start justify-between gap-2">
@@ -219,9 +241,9 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
                 <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-mono" data-testid={`badge-order-id-${order.id}`}>
                   #{channelId}
                 </Badge>
-                <Badge className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700" data-testid={`badge-channel-${order.id}`}>
+                <Badge className={`text-[10px] px-1.5 py-0 ${channelStyle.bg} ${channelStyle.text} border-0`} data-testid={`badge-channel-${order.id}`}>
                   <ShoppingBag className="h-2.5 w-2.5 mr-0.5" />
-                  {channelLabel(order.channel)}
+                  {channelStyle.label}
                 </Badge>
                 {!isPending && <CountdownBadge estimatedReadyAt={order.estimatedReadyAt} />}
               </div>
@@ -235,14 +257,24 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
           </div>
 
           <div className="space-y-0.5">
-            {order.items.slice(0, 3).map((item) => (
+            {visibleItems.map((item) => (
               <div key={item.id} className="flex items-center justify-between text-xs text-muted-foreground">
                 <span className="truncate">{item.quantity}× {item.name}</span>
                 <span>{fmt(parseFloat(item.price) * (item.quantity || 1))}</span>
               </div>
             ))}
-            {order.items.length > 3 && (
-              <p className="text-xs text-muted-foreground">+{order.items.length - 3} more items</p>
+            {hasMore && (
+              <button
+                className="flex items-center gap-0.5 text-xs text-primary hover:underline mt-0.5"
+                onClick={() => toggleExpanded(order.id)}
+                data-testid={`button-toggle-items-${order.id}`}
+              >
+                {isExpanded ? (
+                  <><ChevronUp className="h-3 w-3" />Show less</>
+                ) : (
+                  <><ChevronDown className="h-3 w-3" />+{order.items.length - 3} more items</>
+                )}
+              </button>
             )}
           </div>
 
@@ -284,7 +316,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
         </CardContent>
       </Card>
     );
-  }, [fmt, dispatchMutation, acceptMutation, rejectMutation]);
+  }, [fmt, dispatchMutation, expandedOrders, toggleExpanded]);
 
   const acceptingOrder = orders.find(o => o.id === acceptingOrderId);
   const rejectingOrder = orders.find(o => o.id === rejectingOrderId);
@@ -454,7 +486,23 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
   );
 }
 
+interface ChannelConfig {
+  id: string;
+  enabled: boolean;
+}
+
 export function DeliveryQueueButton({ onClick }: { onClick: () => void }) {
+  const { data: channelConfigs = [] } = useQuery<ChannelConfig[]>({
+    queryKey: ["/api/channel-configs"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/channel-configs");
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
+  const hasActiveChannels = channelConfigs.some(c => c.enabled);
+
   const { data: orders = [] } = useQuery<DeliveryQueueOrder[]>({
     queryKey: ["/api/orders/delivery-queue"],
     queryFn: async () => {
@@ -462,7 +510,10 @@ export function DeliveryQueueButton({ onClick }: { onClick: () => void }) {
       return res.json();
     },
     refetchInterval: 15000,
+    enabled: hasActiveChannels,
   });
+
+  if (!hasActiveChannels) return null;
 
   const pendingCount = orders.filter(o => o.queueType === "pending").length;
 

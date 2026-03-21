@@ -81,7 +81,7 @@ export function registerOrdersRoutes(app: Express): void {
           eq(ordersTable.orderType, "delivery"),
           inArray(ordersTable.status, allStatuses)
         )
-      );
+      ).orderBy(ordersTable.createdAt);
       const result = await Promise.all(rows.map(async (order) => {
         const items = await storage.getOrderItemsByOrder(order.id);
         return { ...order, items, queueType: pendingStatuses.includes(order.status as OrderStatus) ? "pending" : "active" };
@@ -103,6 +103,7 @@ export function registerOrdersRoutes(app: Express): void {
         [estimatedReadyAt, order.id]
       );
       emitToTenant(user.tenantId, "order:delivery_accepted", { orderId: order.id, etaMinutes, estimatedReadyAt });
+      emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", orderType: "delivery" });
       auditLogFromReq(req, { action: "delivery_order_accepted", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "in_progress", etaMinutes } });
       res.json({ success: true, estimatedReadyAt });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -120,6 +121,7 @@ export function registerOrdersRoutes(app: Express): void {
         [rejectionReason, order.id]
       );
       emitToTenant(user.tenantId, "order:delivery_rejected", { orderId: order.id, rejectionReason });
+      emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "cancelled", orderType: "delivery" });
       auditLogFromReq(req, { action: "delivery_order_rejected", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "cancelled", rejectionReason } });
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -133,6 +135,7 @@ export function registerOrdersRoutes(app: Express): void {
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
       await storage.updateOrder(order.id, { status: "served" });
       emitToTenant(user.tenantId, "order:delivery_dispatched", { orderId: order.id });
+      emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "served", orderType: "delivery" });
       auditLogFromReq(req, { action: "delivery_order_dispatched", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "served" } });
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
