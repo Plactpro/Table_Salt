@@ -1546,4 +1546,54 @@ export const posSessions = pgTable("pos_sessions", {
 
 export const insertPosSessionSchema = createInsertSchema(posSessions).omit({ id: true, openedAt: true });
 export type PosSession = typeof posSessions.$inferSelect;
+
+export const tableQrTokens = pgTable("table_qr_tokens", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  tableId: varchar("table_id", { length: 36 }).notNull().references(() => tables.id),
+  token: text("token").notNull().unique(),
+  active: boolean("active").default(true),
+  label: text("label"),
+  createdAt: timestamp("created_at").defaultNow(),
+  deactivatedAt: timestamp("deactivated_at"),
+}, (t) => [
+  index("idx_table_qr_tokens_tenant").on(t.tenantId),
+  index("idx_table_qr_tokens_table").on(t.tableId),
+  index("idx_table_qr_tokens_token").on(t.token),
+]);
+
+export const insertTableQrTokenSchema = createInsertSchema(tableQrTokens).omit({ id: true, createdAt: true });
+export type TableQrToken = typeof tableQrTokens.$inferSelect;
+export type InsertTableQrToken = z.infer<typeof insertTableQrTokenSchema>;
+
+export const tableRequests = pgTable("table_requests", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  tableId: varchar("table_id", { length: 36 }).notNull().references(() => tables.id),
+  qrTokenId: varchar("qr_token_id", { length: 36 }).references(() => tableQrTokens.id),
+  requestType: text("request_type").notNull().default("call_server"),
+  priority: text("priority").notNull().default("medium"),
+  status: text("status").notNull().default("pending"),
+  guestNote: text("guest_note"),
+  assignedTo: varchar("assigned_to", { length: 36 }).references(() => users.id),
+  assignedToName: text("assigned_to_name"),
+  staffNote: text("staff_note"),
+  escalatedAt: timestamp("escalated_at"),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  completedAt: timestamp("completed_at"),
+  feedbackRating: integer("feedback_rating"),
+  feedbackText: text("feedback_text"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_table_requests_tenant").on(t.tenantId),
+  index("idx_table_requests_table").on(t.tableId),
+  index("idx_table_requests_status").on(t.status),
+  index("idx_table_requests_tenant_status").on(t.tenantId, t.status),
+]);
+
+export const insertTableRequestSchema = createInsertSchema(tableRequests).omit({ id: true, createdAt: true });
+export type TableRequest = typeof tableRequests.$inferSelect;
+export type InsertTableRequest = z.infer<typeof insertTableRequestSchema>;
 export type InsertPosSession = z.infer<typeof insertPosSessionSchema>;

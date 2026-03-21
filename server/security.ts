@@ -127,7 +127,8 @@ export function setupCsrf(app: Express) {
       url === "/api/auth/register" ||
       url === "/api/webhooks/stripe" ||
       url.startsWith("/api/guest/") ||
-      url.startsWith("/api/kiosk/")
+      url.startsWith("/api/kiosk/") ||
+      url === "/api/table-requests"
     ) {
       return next();
     }

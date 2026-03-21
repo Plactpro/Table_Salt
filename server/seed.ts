@@ -1249,6 +1249,69 @@ export async function seedDatabase() {
     });
   }
 
+  const qrTokenValues: string[] = [];
+  for (let i = 0; i < tableIds.length; i++) {
+    const tableId = tableIds[i];
+    const tableNum = i + 1;
+    const tokenVal = `qr-demo-table-${String(tableNum).padStart(3, "0")}`;
+    await storage.createQrToken({
+      tenantId: tenant.id,
+      outletId: outlet.id,
+      tableId,
+      token: tokenVal,
+      active: true,
+      label: `Table ${tableNum}`,
+    });
+    qrTokenValues.push(tokenVal);
+  }
+
+  const qrTokenRecords = [];
+  for (const tv of qrTokenValues) {
+    const t = await storage.getQrTokenByValue(tv);
+    if (t) qrTokenRecords.push(t);
+  }
+
+  if (qrTokenRecords.length >= 5) {
+    const now = Date.now();
+    const sampleRequests = [
+      { tokenIdx: 0, type: "call_server", priority: "high", status: "pending", note: "Need help with the menu", minsAgo: 1 },
+      { tokenIdx: 1, type: "water_refill", priority: "medium", status: "acknowledged", note: null, minsAgo: 8 },
+      { tokenIdx: 2, type: "request_bill", priority: "high", status: "pending", note: "In a hurry", minsAgo: 3 },
+      { tokenIdx: 0, type: "feedback", priority: "low", status: "completed", note: "Everything was great!", minsAgo: 45 },
+      { tokenIdx: 3, type: "cleaning", priority: "medium", status: "acknowledged", note: "Spilled some water", minsAgo: 12 },
+      { tokenIdx: 4, type: "order_food", priority: "medium", status: "pending_confirmation", note: "Allergic to nuts, please confirm", minsAgo: 5 },
+      { tokenIdx: 1, type: "call_server", priority: "low", status: "completed", note: null, minsAgo: 120 },
+      { tokenIdx: 2, type: "feedback", priority: "low", status: "completed", note: "Loved the ambiance", minsAgo: 200 },
+      { tokenIdx: 3, type: "feedback", priority: "low", status: "completed", note: "Steak was overcooked", minsAgo: 90 },
+      { tokenIdx: 0, type: "water_refill", priority: "medium", status: "escalated", note: null, minsAgo: 10, escalated: true },
+    ];
+
+    for (const sr of sampleRequests) {
+      const qrt = qrTokenRecords[sr.tokenIdx];
+      if (!qrt) continue;
+      const createdAt = new Date(now - sr.minsAgo * 60000);
+      const acknowledgedAt = sr.status === "acknowledged" || sr.status === "completed"
+        ? new Date(createdAt.getTime() + 2 * 60000) : null;
+      const completedAt = sr.status === "completed"
+        ? new Date(createdAt.getTime() + (sr.minsAgo > 60 ? 10 : 5) * 60000) : null;
+      const escalatedAt = (sr as any).escalated ? new Date(createdAt.getTime() + 2 * 60000) : null;
+
+      await storage.createTableRequest({
+        tenantId: tenant.id,
+        outletId: outlet.id,
+        tableId: qrt.tableId,
+        qrTokenId: qrt.id,
+        requestType: sr.type,
+        priority: sr.priority,
+        status: sr.status === "pending_confirmation" ? "pending" : sr.status,
+        guestNote: sr.note ?? null,
+        acknowledgedAt,
+        completedAt,
+        escalatedAt,
+      });
+    }
+  }
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");
