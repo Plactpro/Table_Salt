@@ -1008,14 +1008,15 @@ export default function POSPage() {
         if (e.key === "n" || e.key === "N") { e.preventDefault(); addTab(); }
         else if (e.key === "b" || e.key === "B") {
           e.preventDefault();
-          if (lastPlacedOrder?.orderId) navigate(`/pos/bill/${lastPlacedOrder.orderId}`);
+          const billOrderId = activeTab?.heldOrderId || lastPlacedOrder?.orderId;
+          if (billOrderId) navigate(`/pos/bill/${billOrderId}`);
         }
         else if (e.key === "k" || e.key === "K") { e.preventDefault(); handlePlaceOrder(); }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, navigate, handlePlaceOrder]);
+  }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder]);
 
   return (
     <div className="flex h-full gap-0" data-testid="pos-page">

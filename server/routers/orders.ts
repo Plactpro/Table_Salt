@@ -12,6 +12,32 @@ import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
 import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 
+/** Server-side whitelist of modifier size multipliers (fractional, e.g. 0.3 = +30%).
+ *  Labels and multipliers must exactly match SIZE_MODIFIERS / SPICE_MODIFIERS in pos.tsx.
+ *  The effective price is: canonicalPrice * (1 + sizeMultiplier).
+ *  Spice modifiers carry no price impact (all 0).
+ *  "extra" (free-text) modifiers are also zero-priced.
+ *  Client-submitted prices are never trusted — only canonical DB price matters.
+ */
+const MODIFIER_SIZE_MULTIPLIERS: Record<string, number> = {
+  Half: -0.2, Regular: 0, Large: 0.3, XL: 0.5,
+};
+
+function computeEffectivePrice(
+  canonicalPrice: number,
+  modifiers: Array<{ groupId?: string; type?: string; label?: string }>,
+): number {
+  let sizeMultiplier = 0;
+  for (const mod of modifiers) {
+    const groupKey = mod.groupId ?? mod.type;
+    if (groupKey === "size" && mod.label !== undefined) {
+      sizeMultiplier = MODIFIER_SIZE_MULTIPLIERS[mod.label] ?? 0;
+    }
+    // spice and extra modifiers have no price impact
+  }
+  return Math.max(0, canonicalPrice * (1 + sizeMultiplier));
+}
+
 export function registerOrdersRoutes(app: Express): void {
   app.get("/api/orders", requireAuth, async (req, res) => {
     try {
@@ -132,10 +158,10 @@ export function registerOrdersRoutes(app: Express): void {
 
           } else {
             const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
-            const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
-            const clientPrice = Number(item.price);
-            const hasModifiers = Array.isArray(item.modifiers) && item.modifiers.length > 0;
-            const effectivePrice = hasModifiers ? clientPrice : canonicalPrice;
+            const canonicalPrice = mi ? Number(mi.price) : 0;
+            const effectivePrice = Array.isArray(item.modifiers) && item.modifiers.length > 0
+              ? computeEffectivePrice(canonicalPrice, item.modifiers as Array<{ groupId?: string; type?: string; label?: string }>)
+              : canonicalPrice;
             const qty = Number(item.quantity) || 1;
             serverSubtotal += effectivePrice * qty;
             serverItems.push({
@@ -252,13 +278,13 @@ export function registerOrdersRoutes(app: Express): void {
             }
           } else {
             const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
-            const canonicalPrice = mi ? Number(mi.price) : Number(item.price);
-            const clientPrice = Number(item.price);
-            const hasModifiers = Array.isArray(item.modifiers) && item.modifiers.length > 0;
-            const effectivePrice = hasModifiers ? clientPrice : canonicalPrice;
+            const canonicalPrice = mi ? Number(mi.price) : 0;
+            const effectivePrice2 = Array.isArray(item.modifiers) && item.modifiers.length > 0
+              ? computeEffectivePrice(canonicalPrice, item.modifiers as Array<{ groupId?: string; type?: string; label?: string }>)
+              : canonicalPrice;
             await storage.createOrderItem({
               ...item,
-              price: effectivePrice.toFixed(2),
+              price: effectivePrice2.toFixed(2),
               orderId: order.id,
               station: item.station || mi?.station || null,
               course: item.course || mi?.course || null,
