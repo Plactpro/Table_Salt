@@ -432,12 +432,15 @@ export default function BillPreviewModal({
       customerName: lookedUpCustomer?.name || null,
       customerGstin: (createdBill?.customerGstin || customerGstinInput) || null,
       loyaltyPointsEarned: lookedUpCustomer ? loyaltyEarned : undefined,
+      restaurantLogo: user?.tenant?.logo || null,
+      digitalReceiptUrl: null as string | null,
     };
 
     const html = renderBillHtml({
       restaurantName: tenantName,
       restaurantAddress: tenantAddress || undefined,
       restaurantGstin: user?.tenant?.gstin || undefined,
+      restaurantLogo: user?.tenant?.logo || undefined,
       billNumber: billPayload.billNumber,
       invoiceNumber: billPayload.invoiceNumber,
       orderId: billPayload.orderId || "",

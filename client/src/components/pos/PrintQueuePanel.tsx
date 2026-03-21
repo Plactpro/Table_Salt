@@ -91,6 +91,7 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
         const p = job.payload || {};
         html = renderBillHtml({
           restaurantName,
+          restaurantLogo: p.restaurantLogo || null,
           billNumber: p.billNumber || job.referenceId.slice(-6).toUpperCase(),
           invoiceNumber: p.invoiceNumber,
           orderId: p.orderId || job.referenceId,
@@ -112,6 +113,7 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
           customerName: p.customerName,
           customerGstin: p.customerGstin,
           loyaltyPointsEarned: p.loyaltyPointsEarned,
+          digitalReceiptUrl: p.digitalReceiptUrl || null,
         });
       } else {
         toast({ title: "Unknown print type", description: `Cannot print type: ${job.type}`, variant: "destructive" });
