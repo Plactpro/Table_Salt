@@ -7,6 +7,11 @@ import { parse as parseCookie } from "cookie";
 
 const tenantSockets = new Map<string, Set<WebSocket>>();
 
+interface GuestSocketMeta {
+  tableId: string;
+}
+const guestSocketMeta = new WeakMap<WebSocket, GuestSocketMeta>();
+
 function addSocket(tenantId: string, ws: WebSocket) {
   if (!tenantSockets.has(tenantId)) tenantSockets.set(tenantId, new Set());
   tenantSockets.get(tenantId)!.add(ws);
@@ -19,11 +24,22 @@ function removeSocket(tenantId: string, ws: WebSocket) {
 export function emitToTenant(tenantId: string, event: string, payload: unknown) {
   const clients = tenantSockets.get(tenantId);
   if (!clients || clients.size === 0) return;
+
+  const isTableRequestEvent = event.startsWith("table-request:");
+  const requestTableId: string | undefined = isTableRequestEvent
+    ? (payload as any)?.request?.tableId ?? (payload as any)?.tableId
+    : undefined;
+
   const msg = JSON.stringify({ event, payload });
+
   for (const ws of clients) {
-    if (ws.readyState === WebSocket.OPEN) {
-      try { ws.send(msg); } catch (_) {}
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    const meta = guestSocketMeta.get(ws);
+    if (meta) {
+      if (!isTableRequestEvent) continue;
+      if (requestTableId && meta.tableId !== requestTableId) continue;
     }
+    try { ws.send(msg); } catch (_) {}
   }
 }
 
@@ -67,19 +83,32 @@ export function setupWebSocket(httpServer: HttpServer) {
 
   wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     let resolvedTenantId = await getTenantFromRequest(req);
+    let isGuest = false;
+    let guestTableId: string | null = null;
 
-    // Public wall-screen connections use a share token or tenantId (read-only access)
     if (!resolvedTenantId && req.url) {
       const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
       const qp = new URLSearchParams(qs);
-      const token = qp.get("token");
+      const wallToken = qp.get("token");
       const rawId = qp.get("tenantId");
-      if (token) {
-        const tenant = await storage.getTenantByWallScreenToken(token).catch(() => null);
+      const qrToken = qp.get("qrToken");
+
+      if (wallToken) {
+        const tenant = await storage.getTenantByWallScreenToken(wallToken).catch(() => null);
         if (tenant) resolvedTenantId = tenant.id;
+      } else if (qrToken) {
+        const tableToken = await storage.getQrTokenByValue(qrToken).catch(() => null);
+        if (tableToken?.active) {
+          resolvedTenantId = tableToken.tenantId;
+          guestTableId = tableToken.tableId;
+          isGuest = true;
+        }
       } else if (rawId) {
         const tenant = await storage.getTenant(rawId).catch(() => null);
-        if (tenant) resolvedTenantId = rawId;
+        if (tenant) {
+          resolvedTenantId = rawId;
+          isGuest = true;
+        }
       }
     }
 
@@ -89,6 +118,13 @@ export function setupWebSocket(httpServer: HttpServer) {
     }
 
     const tenantId = resolvedTenantId;
+
+    if (isGuest && guestTableId) {
+      guestSocketMeta.set(ws, { tableId: guestTableId });
+    } else if (isGuest) {
+      guestSocketMeta.set(ws, { tableId: "" });
+    }
+
     addSocket(tenantId, ws);
 
     try {

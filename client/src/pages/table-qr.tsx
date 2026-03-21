@@ -303,12 +303,12 @@ function useQrToken(token: string | null) {
   return { ctx, error, loading };
 }
 
-function useGuestWebSocket(tenantId: string | null, onMessage: (event: string, payload: any) => void) {
+function useGuestWebSocket(qrToken: string | null, onMessage: (event: string, payload: any) => void) {
   const cbRef = useRef(onMessage);
   cbRef.current = onMessage;
 
   useEffect(() => {
-    if (!tenantId) return;
+    if (!qrToken) return;
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let delay = 1000;
@@ -317,7 +317,7 @@ function useGuestWebSocket(tenantId: string | null, onMessage: (event: string, p
     function connect() {
       if (!active) return;
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${proto}//${window.location.host}/ws?tenantId=${encodeURIComponent(tenantId!)}`);
+      ws = new WebSocket(`${proto}//${window.location.host}/ws?qrToken=${encodeURIComponent(qrToken!)}`);
       ws.onopen = () => { delay = 1000; };
       ws.onmessage = (evt) => {
         try {
@@ -339,7 +339,7 @@ function useGuestWebSocket(tenantId: string | null, onMessage: (event: string, p
       if (retryTimer) clearTimeout(retryTimer);
       if (ws) { ws.onclose = null; ws.close(); }
     };
-  }, [tenantId]);
+  }, [qrToken]);
 }
 
 function StatusBubble({ status, t }: { status: string; t: T }) {
@@ -541,6 +541,11 @@ function FoodOrderFlow({
           body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity }),
         });
       }
+      await fetch(`/api/guest/session/${sessionId}/order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
       const orderItems = cart.map(c => ({
         menuItemId: c.menuItemId,
         name: c.name,
@@ -984,7 +989,7 @@ export default function TableQrPage() {
   const [submittedRequest, setSubmittedRequest] = useState<SubmittedRequest | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  useGuestWebSocket(ctx?.tenantId ?? null, useCallback((event, payload) => {
+  useGuestWebSocket(token, useCallback((event, payload) => {
     if (event === "table-request:updated" && payload?.request) {
       const r = payload.request;
       setSubmittedRequest(prev => prev && r.id === prev.id ? { ...prev, status: r.status } : prev);
