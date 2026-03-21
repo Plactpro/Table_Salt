@@ -148,6 +148,8 @@ export default function BillPreviewModal({
   const [rzpPolling, setRzpPolling] = useState(false);
   const [rzpInitiating, setRzpInitiating] = useState(false);
   const [rzpPaid, setRzpPaid] = useState(false);
+  // Tracks whether at least one Razorpay link was attempted (enables manual fallback)
+  const [rzpAttempted, setRzpAttempted] = useState(false);
 
   const { data: existingBillData, status: existingBillStatus } = useQuery({
     queryKey: ["/api/restaurant-bills/by-order", orderId],
@@ -217,6 +219,7 @@ export default function BillPreviewModal({
   const handleInitiateRazorpay = async () => {
     if (!createdBill) return;
     setRzpInitiating(true);
+    setRzpAttempted(true); // mark gateway as attempted — enables manual fallback if this link later fails
     try {
       const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payment-request`, {
         method: activeMethod,
@@ -408,6 +411,7 @@ export default function BillPreviewModal({
     setRzpPolling(false);
     setRzpInitiating(false);
     setRzpPaid(false);
+    setRzpAttempted(false);
     onClose();
   };
 
@@ -770,8 +774,8 @@ export default function BillPreviewModal({
                           )}
                         </div>
                       )}
-                      {!rzpLinkId && (
-                        <div className={`grid grid-cols-2 gap-2 ${user?.tenant?.razorpayEnabled ? "opacity-60" : ""}`}>
+                      {(!user?.tenant?.razorpayEnabled || (rzpAttempted && !rzpLinkId)) && (
+                        <div className="grid grid-cols-2 gap-2">
                           <Input placeholder="Last 4 digits" maxLength={4} value={cardLast4} onChange={e => setCardLast4(e.target.value)} data-testid="input-card-last4" />
                           <Input placeholder="Reference / Approval code" value={cardRef} onChange={e => setCardRef(e.target.value)} data-testid="input-card-ref" />
                         </div>
@@ -822,9 +826,9 @@ export default function BillPreviewModal({
                               </Button>
                             </>
                           )}
-                          {!rzpLinkId && (
+                          {rzpAttempted && !rzpLinkId && (
                             <div className="pt-1 border-t">
-                              <p className="text-xs text-muted-foreground mb-2">Or mark manually:</p>
+                              <p className="text-xs text-muted-foreground mb-2">Gateway link cancelled — fallback:</p>
                               <div className="flex gap-2 justify-center">
                                 <Button size="sm" variant={upiMarkedPaid ? "secondary" : "outline"} className="text-xs" onClick={() => setUpiMarkedPaid(!upiMarkedPaid)} data-testid="button-upi-mark-paid">
                                   {upiMarkedPaid ? "✓ UPI Received" : "Mark as Paid"}
@@ -1016,8 +1020,14 @@ export default function BillPreviewModal({
                       (isSplit && splitRemaining > 0.01) ||
                       (isSplit && splitRows.some(r => r.method === "LOYALTY") && !lookedUpCustomer) ||
                       (!isSplit && activeMethod === "CASH" && cashTendered !== "" && parseFloat(cashTendered) < grandTotal) ||
-                      (!isSplit && activeMethod === "UPI" && !upiMarkedPaid && !rzpPolling && !rzpPaid) ||
-                      (!isSplit && (activeMethod === "CARD" || activeMethod === "UPI") && !!rzpLinkId && rzpPolling) ||
+                      // CARD + Razorpay enabled: must attempt gateway first; blocked while link is polling
+                      (!isSplit && activeMethod === "CARD" && !!user?.tenant?.razorpayEnabled && !rzpPaid &&
+                        (!rzpAttempted || (!!rzpLinkId && rzpPolling))) ||
+                      // UPI + Razorpay enabled: must attempt gateway first; manual mark only available after attempt
+                      (!isSplit && activeMethod === "UPI" && !!user?.tenant?.razorpayEnabled && !rzpPaid &&
+                        (!rzpAttempted || (!!rzpLinkId && rzpPolling) || !upiMarkedPaid)) ||
+                      // UPI + Razorpay disabled: must manually mark as paid
+                      (!isSplit && activeMethod === "UPI" && !user?.tenant?.razorpayEnabled && !upiMarkedPaid) ||
                       (!isSplit && activeMethod === "LOYALTY" && !lookedUpCustomer) ||
                       (!isSplit && activeMethod === "LOYALTY" && !!lookedUpCustomer && grandTotal > 0.01)
                     }
@@ -1026,6 +1036,8 @@ export default function BillPreviewModal({
                       ? "Processing..."
                       : rzpPolling
                       ? "Awaiting payment verification…"
+                      : !isSplit && (activeMethod === "CARD" || activeMethod === "UPI") && !!user?.tenant?.razorpayEnabled && !rzpAttempted
+                      ? "Initiate Gateway Payment First"
                       : `Confirm Payment · ${fmt(grandTotal)}`}
                   </Button>
                   {isManagerOrOwner && createdBill && (
