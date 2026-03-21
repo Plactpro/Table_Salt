@@ -61,7 +61,7 @@ function buildIngredientRecon(movements: StockMovement[]): IngredientRecon[] {
   }
 
   const result: IngredientRecon[] = [];
-  for (const [itemId, rows] of byItem.entries()) {
+  for (const [itemId, rows] of Array.from(byItem.entries())) {
     const sorted = [...rows].sort((a, b) =>
       new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime()
     );
@@ -197,7 +197,7 @@ export default function ShiftReconciliation() {
       if (m.chefId) g.chefs.add(m.chefId);
     }
 
-    for (const g of map.values()) {
+    for (const g of Array.from(map.values())) {
       g.recon = buildIngredientRecon(g.movements);
     }
 

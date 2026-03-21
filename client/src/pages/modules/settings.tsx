@@ -93,6 +93,10 @@ export default function SettingsPage() {
   const [serviceCharge, setServiceCharge] = useState("0");
   const [businessType, setBusinessType] = useState<BusinessType>("casual_dining");
   const [plan, setPlan] = useState<SubscriptionTier>("basic");
+  const [gstin, setGstin] = useState("");
+  const [cgstRate, setCgstRate] = useState("9");
+  const [sgstRate, setSgstRate] = useState("9");
+  const [invoicePrefix, setInvoicePrefix] = useState("INV");
   const [tzSearch, setTzSearch] = useState("");
   const [currencySearch, setCurrencySearch] = useState("");
   const [clockTick, setClockTick] = useState(0);
@@ -113,6 +117,10 @@ export default function SettingsPage() {
       setServiceCharge((tenant as any).serviceCharge || "0");
       setBusinessType(((tenant as any).businessType as BusinessType) || "casual_dining");
       setPlan((tenant.plan as SubscriptionTier) || "basic");
+      setGstin((tenant as any).gstin || "");
+      setCgstRate((tenant as any).cgstRate || "9");
+      setSgstRate((tenant as any).sgstRate || "9");
+      setInvoicePrefix((tenant as any).invoicePrefix || "INV");
     }
   }, [tenant]);
 
@@ -137,7 +145,7 @@ export default function SettingsPage() {
       const sectionKeys: Record<string, string[]> = {
         profile: ["name", "address"],
         timezone: ["timezone", "timeFormat"],
-        tax: ["taxRate", "taxType", "compoundTax", "serviceCharge"],
+        tax: ["taxRate", "taxType", "compoundTax", "serviceCharge", "gstin", "cgstRate", "sgstRate", "invoicePrefix"],
         currency: ["currency", "currencyPosition", "currencyDecimals"],
         business: ["businessType", "plan"],
       };
@@ -170,7 +178,7 @@ export default function SettingsPage() {
 
   const handleTaxSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMutation.mutate({ taxRate, taxType, compoundTax, serviceCharge });
+    updateMutation.mutate({ taxRate, taxType, compoundTax, serviceCharge, gstin, cgstRate, sgstRate, invoicePrefix });
   };
 
   const handleCurrencySubmit = (e: React.FormEvent) => {
@@ -526,6 +534,36 @@ export default function SettingsPage() {
                   </CardHeader>
                   <CardContent>
                     <form onSubmit={handleTaxSubmit} className="space-y-4">
+                      {currency === "INR" && (
+                        <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">
+                          <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">GST (India)</p>
+                          <div className="space-y-2">
+                            <Label>GSTIN (Restaurant)</Label>
+                            <Input
+                              placeholder="22AAAAA0000A1Z5"
+                              value={gstin}
+                              onChange={(e) => setGstin(e.target.value.toUpperCase())}
+                              maxLength={15}
+                              data-testid="input-settings-gstin"
+                            />
+                          </div>
+                          <div className="grid grid-cols-3 gap-3">
+                            <div className="space-y-2">
+                              <Label>CGST Rate (%)</Label>
+                              <Input type="number" step="0.5" min="0" max="50" value={cgstRate} onChange={(e) => setCgstRate(e.target.value)} data-testid="input-settings-cgst-rate" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>SGST Rate (%)</Label>
+                              <Input type="number" step="0.5" min="0" max="50" value={sgstRate} onChange={(e) => setSgstRate(e.target.value)} data-testid="input-settings-sgst-rate" />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Invoice Prefix</Label>
+                              <Input placeholder="INV" value={invoicePrefix} onChange={(e) => setInvoicePrefix(e.target.value.toUpperCase())} maxLength={10} data-testid="input-settings-invoice-prefix" />
+                            </div>
+                          </div>
+                          <p className="text-xs text-muted-foreground">Combined GST = CGST + SGST. Invoice numbers will be {invoicePrefix || "INV"}/2025-26/0001.</p>
+                        </div>
+                      )}
                       <div className="space-y-2">
                         <Label>Tax Type</Label>
                         <Select value={taxType} onValueChange={setTaxType}>

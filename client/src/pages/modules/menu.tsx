@@ -268,7 +268,7 @@ export default function MenuPage() {
     isVeg: false, available: true, image: "", spicyLevel: 0,
     tags: [] as string[], customTag: "",
     ingredientsList: "", allergens: "", nutritionalNotes: "", preparationNotes: "", calories: "",
-    station: "", course: "",
+    station: "", course: "", hsnCode: "",
   });
 
   const [detailItem, setDetailItem] = useState<MenuItem | null>(null);
@@ -542,7 +542,7 @@ export default function MenuPage() {
       isVeg: false, available: true, image: "", spicyLevel: 0,
       tags: [], customTag: "",
       ingredientsList: "", allergens: "", nutritionalNotes: "", preparationNotes: "", calories: "",
-      station: "", course: "",
+      station: "", course: "", hsnCode: "",
     });
     setItemDialogOpen(true);
   }
@@ -569,6 +569,7 @@ export default function MenuPage() {
       calories: ing?.calories ? String(ing.calories) : "",
       station: item.station || "",
       course: item.course || "",
+      hsnCode: (item as any).hsnCode || "",
     });
     setItemDialogOpen(true);
   }
@@ -604,6 +605,7 @@ export default function MenuPage() {
       ingredients: Object.keys(ingredients).length > 0 ? ingredients : null,
       station: itemForm.station || null,
       course: itemForm.course || null,
+      hsnCode: itemForm.hsnCode || null,
     };
     if (editingItem) {
       updateItem.mutate({ id: editingItem.id, data: payload });
@@ -1207,6 +1209,19 @@ export default function MenuPage() {
                   </SelectContent>
                 </Select>
               </div>
+              {tenantCurrency === "INR" && (
+                <div>
+                  <Label htmlFor="item-hsn-code">HSN Code (GST)</Label>
+                  <Input
+                    id="item-hsn-code"
+                    value={itemForm.hsnCode}
+                    onChange={(e) => setItemForm({ ...itemForm, hsnCode: e.target.value })}
+                    placeholder="e.g. 21069099"
+                    maxLength={10}
+                    data-testid="input-item-hsn-code"
+                  />
+                </div>
+              )}
             </div>
 
             <div className="border rounded-lg p-4 space-y-3 bg-muted/30">

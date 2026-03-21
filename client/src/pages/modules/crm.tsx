@@ -99,6 +99,7 @@ export default function CrmPage() {
 
   const [formData, setFormData] = useState({
     name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "",
+    gstin: "", birthday: "", anniversary: "",
   });
 
   const [feedbackForm, setFeedbackForm] = useState({
@@ -246,13 +247,16 @@ export default function CrmPage() {
       notes: customer.notes || "",
       loyaltyTier: customer.loyaltyTier || "bronze",
       tags: (customer.tags || []).join(", "),
+      gstin: (customer as any).gstin || "",
+      birthday: (customer as any).birthday || "",
+      anniversary: (customer as any).anniversary || "",
     });
     setSelectedCustomer(customer);
     setShowEditDialog(true);
   };
 
   const openAdd = () => {
-    setFormData({ name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "" });
+    setFormData({ name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "", gstin: "", birthday: "", anniversary: "" });
     setShowAddDialog(true);
   };
 
@@ -265,7 +269,10 @@ export default function CrmPage() {
       notes: formData.notes || null,
       loyaltyTier: formData.loyaltyTier,
       tags: tags.length > 0 ? tags : null,
-    });
+      gstin: formData.gstin || null,
+      birthday: formData.birthday || null,
+      anniversary: formData.anniversary || null,
+    } as any);
   };
 
   const handleSubmitEdit = () => {
@@ -280,7 +287,10 @@ export default function CrmPage() {
         notes: formData.notes || null,
         loyaltyTier: formData.loyaltyTier,
         tags: tags.length > 0 ? tags : null,
-      },
+        gstin: formData.gstin || null,
+        birthday: formData.birthday || null,
+        anniversary: formData.anniversary || null,
+      } as any,
     });
   };
 
@@ -730,6 +740,25 @@ export default function CrmPage() {
               <Label>Notes</Label>
               <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-customer-notes" />
             </div>
+            {currency === "INR" && (
+              <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">
+                <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">GST Details</p>
+                <div>
+                  <Label>Customer GSTIN (optional)</Label>
+                  <Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" maxLength={15} data-testid="input-customer-gstin" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Birthday</Label>
+                    <Input type="date" value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} data-testid="input-customer-birthday" />
+                  </div>
+                  <div>
+                    <Label>Anniversary</Label>
+                    <Input type="date" value={formData.anniversary} onChange={(e) => setFormData({ ...formData, anniversary: e.target.value })} data-testid="input-customer-anniversary" />
+                  </div>
+                </div>
+              </div>
+            )}
             <Button className="w-full" onClick={handleSubmitAdd} disabled={!formData.name || createMutation.isPending} data-testid="button-submit-customer">
               Add Customer
             </Button>
@@ -779,6 +808,25 @@ export default function CrmPage() {
               <Label>Notes</Label>
               <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-edit-customer-notes" />
             </div>
+            {currency === "INR" && (
+              <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">
+                <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">GST Details</p>
+                <div>
+                  <Label>Customer GSTIN (optional)</Label>
+                  <Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" maxLength={15} data-testid="input-edit-customer-gstin" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <Label>Birthday</Label>
+                    <Input type="date" value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} data-testid="input-edit-customer-birthday" />
+                  </div>
+                  <div>
+                    <Label>Anniversary</Label>
+                    <Input type="date" value={formData.anniversary} onChange={(e) => setFormData({ ...formData, anniversary: e.target.value })} data-testid="input-edit-customer-anniversary" />
+                  </div>
+                </div>
+              </div>
+            )}
             <Button className="w-full" onClick={handleSubmitEdit} disabled={!formData.name || updateMutation.isPending} data-testid="button-update-customer">
               Update Customer
             </Button>

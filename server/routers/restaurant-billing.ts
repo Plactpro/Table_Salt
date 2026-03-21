@@ -3,6 +3,16 @@ import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { verifySupervisorOverride } from "./_shared";
+import { db } from "../db";
+import { sql, eq } from "drizzle-orm";
+import { tenants as tenantsTable } from "@shared/schema";
+
+function getFiscalYear(date: Date): string {
+  const m = date.getMonth() + 1;
+  const y = date.getFullYear();
+  if (m >= 4) return `${y}-${String(y + 1).slice(2)}`;
+  return `${y - 1}-${String(y).slice(2)}`;
+}
 
 function numWords(n: number): string {
   const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
@@ -71,6 +81,32 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (referencedOrder.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const existing = await storage.getBillByOrder(orderId);
       if (existing) return res.json({ ...existing, alreadyExists: true });
+
+      const tenant = await storage.getTenant(user.tenantId);
+      const isINR = (tenant as any)?.currency === "INR";
+      let invoiceNumber: string | null = null;
+      let cgstAmount: string | null = null;
+      let sgstAmount: string | null = null;
+      const { customerGstin } = req.body;
+
+      if (isINR) {
+        const cgstRate = Number((tenant as any)?.cgstRate ?? 9);
+        const sgstRate = Number((tenant as any)?.sgstRate ?? 9);
+        const tax = Number(taxAmount ?? 0);
+        const totalGstRate = cgstRate + sgstRate || 18;
+        cgstAmount = String(Math.round((tax * cgstRate / totalGstRate) * 100) / 100);
+        sgstAmount = String(Math.round((tax * sgstRate / totalGstRate) * 100) / 100);
+
+        const prefix = (tenant as any)?.invoicePrefix || "INV";
+        const fy = getFiscalYear(new Date());
+        const [updated] = await db.update(tenantsTable)
+          .set({ invoiceCounter: sql`COALESCE(${tenantsTable.invoiceCounter}, 0) + 1` })
+          .where(eq(tenantsTable.id, user.tenantId))
+          .returning({ counter: tenantsTable.invoiceCounter });
+        const counter = updated?.counter ?? 1;
+        invoiceNumber = `${prefix}/${fy}/${String(counter).padStart(5, "0")}`;
+      }
+
       const bill = await storage.createBill({
         tenantId: user.tenantId,
         outletId: user.outletId || null,
@@ -91,6 +127,10 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         paymentStatus: "pending",
         posSessionId: posSessionId || null,
         covers: covers || 1,
+        invoiceNumber,
+        customerGstin: customerGstin || null,
+        cgstAmount,
+        sgstAmount,
       });
       res.status(201).json({ ...bill, amountInWords: numWords(Number(bill.totalAmount)) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
