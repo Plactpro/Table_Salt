@@ -27,7 +27,8 @@ export function emitToTenant(tenantId: string, event: string, payload: unknown) 
 
   const isTableRequestEvent = event.startsWith("table-request:");
   const requestTableId: string | undefined = isTableRequestEvent
-    ? (payload as any)?.request?.tableId ?? (payload as any)?.tableId
+    ? (payload as { request?: { tableId?: string }; tableId?: string })?.request?.tableId ??
+      (payload as { tableId?: string })?.tableId
     : undefined;
 
   const msg = JSON.stringify({ event, payload });

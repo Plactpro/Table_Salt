@@ -294,7 +294,7 @@ function useQrToken(token: string | null) {
   useEffect(() => {
     if (!token) { setError("No QR token provided"); setLoading(false); return; }
     fetch(`/api/qr/${encodeURIComponent(token)}`)
-      .then(r => r.ok ? r.json() : r.json().then((e: any) => Promise.reject(e.message || "QR error")))
+      .then(r => r.ok ? r.json() : r.json().then((e: { message?: string }) => Promise.reject(e.message || "QR error")))
       .then(setCtx)
       .catch(e => setError(typeof e === "string" ? e : "Invalid QR code"))
       .finally(() => setLoading(false));
@@ -303,7 +303,7 @@ function useQrToken(token: string | null) {
   return { ctx, error, loading };
 }
 
-function useGuestWebSocket(qrToken: string | null, onMessage: (event: string, payload: any) => void) {
+function useGuestWebSocket(qrToken: string | null, onMessage: (event: string, payload: unknown) => void) {
   const cbRef = useRef(onMessage);
   cbRef.current = onMessage;
 
@@ -541,6 +541,13 @@ function FoodOrderFlow({
           body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity }),
         });
       }
+      const orderRes = await fetch(`/api/guest/session/${sessionId}/order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const orderData: { orderId?: string; id?: string } = orderRes.ok ? await orderRes.json() : {};
+      const orderId = orderData.orderId ?? orderData.id ?? null;
       const orderItems = cart.map(c => ({
         menuItemId: c.menuItemId,
         name: c.name,
@@ -562,6 +569,7 @@ function FoodOrderFlow({
             totalAmount: cartTotal,
             currency: menuData?.currency ?? ctx.currency,
             sessionId,
+            orderId,
           },
         }),
       });
@@ -985,9 +993,12 @@ export default function TableQrPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useGuestWebSocket(token, useCallback((event, payload) => {
-    if (event === "table-request:updated" && payload?.request) {
-      const r = payload.request;
-      setSubmittedRequest(prev => prev && r.id === prev.id ? { ...prev, status: r.status } : prev);
+    if (event === "table-request:updated") {
+      const p = payload as { request?: { id: string; status: string } };
+      const r = p?.request;
+      if (r?.id) {
+        setSubmittedRequest(prev => prev && r.id === prev.id ? { ...prev, status: r.status } : prev);
+      }
     }
   }, []));
 
