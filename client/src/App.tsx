@@ -315,8 +315,14 @@ function Router() {
     );
   }
 
-  if (location === "/table") {
-    return <TableQrPage />;
+  if (location.startsWith("/table/") || location === "/table") {
+    return (
+      <Switch>
+        <Route path="/table/:tenantSlug/:outletId/:tableId" component={TableQrPage} />
+        <Route path="/table" component={TableQrPage} />
+        <Route component={NotFound} />
+      </Switch>
+    );
   }
 
   if (location.startsWith("/admin")) {

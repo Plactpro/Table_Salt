@@ -53,7 +53,7 @@ export function registerTableRequestRoutes(app: Express): void {
 
   app.post("/api/table-requests", async (req, res) => {
     try {
-      const { token, requestType, guestNote, priority } = req.body;
+      const { token, requestType, guestNote, priority, details } = req.body;
       if (!token) return res.status(400).json({ message: "token is required" });
       if (!requestType) return res.status(400).json({ message: "requestType is required" });
       if (!REQUEST_TYPES.includes(requestType)) return res.status(400).json({ message: `Invalid requestType. Must be one of: ${REQUEST_TYPES.join(", ")}` });
@@ -72,6 +72,7 @@ export function registerTableRequestRoutes(app: Express): void {
         priority: effectivePriority,
         status: "pending",
         guestNote: guestNote ? String(guestNote).slice(0, 500) : null,
+        details: details && typeof details === "object" ? details : null,
       });
 
       emitToTenant(qrToken.tenantId, "table-request:new", {
