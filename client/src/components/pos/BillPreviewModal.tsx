@@ -1,4 +1,5 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { renderBillHtml, dispatchPrint } from "@/lib/print-utils";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -399,24 +400,94 @@ export default function BillPreviewModal({
     createBillMutation.mutate();
   };
 
-  const handlePrint = () => {
-    window.print();
-    if (createdBill?.id || orderId) {
-      const refId = createdBill?.id || orderId || "";
-      apiRequest("POST", "/api/print-jobs", {
-        type: "bill",
-        referenceId: refId,
-        station: null,
-        payload: {
-          billNumber: billNumber || createdBill?.billNumber,
-          orderId,
-          orderType,
-          tableNumber,
-          totalAmount: grandTotal,
-        },
-      }).catch(() => {});
+  const handlePrint = useCallback(async () => {
+    const loyaltyEarned = Math.floor(grandTotal / 10);
+    const isGST = isGSTTenant;
+    const cgst = isGST ? taxAmount / 2 : 0;
+    const sgst = isGST ? taxAmount / 2 : 0;
+    const billPayload = {
+      billNumber: billNumber || createdBill?.billNumber || "",
+      invoiceNumber: createdBill?.invoiceNumber,
+      orderId,
+      orderType,
+      tableNumber,
+      items: cart.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+        notes: item.notes || null,
+        hsnCode: item.hsnCode || null,
+      })),
+      subtotal,
+      discountAmount: discountAmount + tierDiscountAmount,
+      serviceCharge: serviceChargeAmount,
+      taxAmount,
+      taxType: user?.tenant?.taxType || "none",
+      taxRate,
+      cgstAmount: cgst,
+      sgstAmount: sgst,
+      tips: tipAmount,
+      totalAmount: grandTotal,
+      paymentMethod: activeMethod,
+      customerName: lookedUpCustomer?.name || null,
+      customerGstin: (createdBill?.customerGstin || customerGstinInput) || null,
+      loyaltyPointsEarned: lookedUpCustomer ? loyaltyEarned : undefined,
+    };
+
+    const html = renderBillHtml({
+      restaurantName: tenantName,
+      restaurantAddress: tenantAddress || undefined,
+      restaurantGstin: (user?.tenant as any)?.gstin || undefined,
+      billNumber: billPayload.billNumber,
+      invoiceNumber: billPayload.invoiceNumber,
+      orderId: billPayload.orderId || "",
+      orderType: billPayload.orderType,
+      tableNumber: typeof billPayload.tableNumber === "number" ? billPayload.tableNumber : undefined,
+      items: billPayload.items,
+      subtotal: billPayload.subtotal,
+      discountAmount: billPayload.discountAmount,
+      serviceCharge: billPayload.serviceCharge,
+      taxAmount: billPayload.taxAmount,
+      taxType: billPayload.taxType,
+      taxRate: billPayload.taxRate,
+      cgstAmount: billPayload.cgstAmount,
+      sgstAmount: billPayload.sgstAmount,
+      tips: billPayload.tips,
+      totalAmount: billPayload.totalAmount,
+      paymentMethod: billPayload.paymentMethod,
+      customerName: billPayload.customerName,
+      customerGstin: billPayload.customerGstin,
+      loyaltyPointsEarned: billPayload.loyaltyPointsEarned,
+    });
+
+    const refId = createdBill?.id || orderId || "";
+    let jobId: string | undefined;
+    if (refId) {
+      try {
+        const res = await apiRequest("POST", "/api/print-jobs", {
+          type: "bill",
+          referenceId: refId,
+          station: null,
+          payload: billPayload,
+        });
+        const job = await res.json();
+        jobId = job?.id;
+      } catch (_) {}
     }
-  };
+
+    const networkSuccess = await dispatchPrint(html, null, () => {
+      if (jobId) apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+    });
+    if (!networkSuccess && jobId) {
+      apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+    }
+  }, [
+    billNumber, createdBill, orderId, orderType, tableNumber, cart,
+    subtotal, discountAmount, tierDiscountAmount, serviceChargeAmount,
+    taxAmount, taxRate, grandTotal, tipAmount, activeMethod,
+    lookedUpCustomer, customerGstinInput, isGSTTenant,
+    tenantName, tenantAddress, user,
+  ]);
 
   const handleWhatsApp = () => {
     const text = `*${tenantName}*\nBill No: ${billNumber}\nTable: ${tableNumber || "Takeaway"}\nTotal: ${fmt(grandTotal)}\nThank you!`;

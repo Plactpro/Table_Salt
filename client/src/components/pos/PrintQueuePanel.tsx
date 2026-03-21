@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { Printer, RefreshCw, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useState, useCallback } from "react";
-import { renderKotHtml } from "@/lib/print-utils";
+import { renderKotHtml, renderBillHtml, dispatchPrint } from "@/lib/print-utils";
 
 interface PrintJob {
   id: string;
@@ -17,6 +17,13 @@ interface PrintJob {
   status: string;
   payload: Record<string, any>;
   createdAt: string;
+}
+
+interface KitchenStation {
+  id: string;
+  name: string;
+  displayName: string;
+  printerUrl?: string | null;
 }
 
 interface PrintQueuePanelProps {
@@ -37,7 +44,11 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
       const res = await apiRequest("GET", `/api/print-jobs?${params}`);
       return res.json();
     },
-    refetchInterval: 10000,
+    refetchInterval: 15000,
+  });
+
+  const { data: stations = [] } = useQuery<KitchenStation[]>({
+    queryKey: ["/api/kitchen-stations"],
   });
 
   const updateStatusMutation = useMutation({
@@ -53,31 +64,70 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
     },
   });
 
-  const handlePrintJob = useCallback((job: PrintJob) => {
-    const html = renderKotHtml({
-      restaurantName,
-      kotNumber: job.referenceId.slice(-6).toUpperCase(),
-      orderId: job.payload?.orderId || job.referenceId,
-      orderType: job.payload?.orderType,
-      tableNumber: job.payload?.tableNumber,
-      station: job.payload?.station,
-      sentAt: job.payload?.sentAt || job.createdAt,
-      items: job.payload?.items || [],
-    });
-    const win = window.open("", "_blank", "width=400,height=600");
-    if (!win) {
-      toast({ title: "Popup blocked", description: "Allow popups to print KOT", variant: "destructive" });
-      return;
-    }
-    win.document.write(html);
-    win.document.close();
-    win.focus();
-    setTimeout(() => {
-      win.print();
-      win.close();
-      updateStatusMutation.mutate({ id: job.id, status: "printed" });
-    }, 300);
-  }, [restaurantName, updateStatusMutation, toast]);
+  const getStationPrinterUrl = useCallback(
+    (stationName: string | null) => {
+      if (!stationName) return null;
+      return stations.find(s => s.name === stationName)?.printerUrl ?? null;
+    },
+    [stations]
+  );
+
+  const handlePrintJob = useCallback(
+    async (job: PrintJob) => {
+      let html: string;
+
+      if (job.type === "kot") {
+        html = renderKotHtml({
+          restaurantName,
+          kotNumber: job.referenceId.slice(-6).toUpperCase(),
+          orderId: job.payload?.orderId || job.referenceId,
+          orderType: job.payload?.orderType,
+          tableNumber: job.payload?.tableNumber,
+          station: job.payload?.station,
+          sentAt: job.payload?.sentAt || job.createdAt,
+          items: job.payload?.items || [],
+        });
+      } else if (job.type === "bill" || job.type === "receipt") {
+        const p = job.payload || {};
+        html = renderBillHtml({
+          restaurantName,
+          billNumber: p.billNumber || job.referenceId.slice(-6).toUpperCase(),
+          invoiceNumber: p.invoiceNumber,
+          orderId: p.orderId || job.referenceId,
+          orderType: p.orderType,
+          tableNumber: p.tableNumber,
+          items: p.items || [],
+          subtotal: Number(p.subtotal) || 0,
+          discountAmount: Number(p.discountAmount) || 0,
+          discountReason: p.discountReason,
+          serviceCharge: Number(p.serviceCharge) || 0,
+          taxAmount: Number(p.taxAmount) || 0,
+          taxType: p.taxType,
+          taxRate: p.taxRate,
+          cgstAmount: Number(p.cgstAmount) || 0,
+          sgstAmount: Number(p.sgstAmount) || 0,
+          tips: Number(p.tips) || 0,
+          totalAmount: Number(p.totalAmount) || 0,
+          paymentMethod: p.paymentMethod,
+          customerName: p.customerName,
+          customerGstin: p.customerGstin,
+          loyaltyPointsEarned: p.loyaltyPointsEarned,
+        });
+      } else {
+        toast({ title: "Unknown print type", description: `Cannot print type: ${job.type}`, variant: "destructive" });
+        return;
+      }
+
+      const printerUrl = getStationPrinterUrl(job.station);
+      const networkSuccess = await dispatchPrint(html, printerUrl, () => {
+        updateStatusMutation.mutate({ id: job.id, status: "printed" });
+      });
+      if (!networkSuccess) {
+        updateStatusMutation.mutate({ id: job.id, status: "printed" });
+      }
+    },
+    [restaurantName, getStationPrinterUrl, updateStatusMutation, toast]
+  );
 
   const statusColor: Record<string, string> = {
     queued: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
@@ -95,6 +145,21 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
     new Date(dt).toLocaleString("en-IN", {
       day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true,
     });
+
+  const getJobLabel = (job: PrintJob) => {
+    const p = job.payload || {};
+    if (job.type === "kot") {
+      if (p.orderType === "dine_in" && p.tableNumber) return `Table #${p.tableNumber}`;
+      if (p.orderType === "takeaway") return "Takeaway";
+      if (p.orderType === "delivery") return "Delivery";
+      return "Kitchen Order";
+    }
+    if (job.type === "bill" || job.type === "receipt") {
+      const bn = p.billNumber || job.referenceId.slice(-6).toUpperCase();
+      return `Bill #${bn}`;
+    }
+    return `Ref: ${job.referenceId.slice(-6).toUpperCase()}`;
+  };
 
   return (
     <Card data-testid="print-queue-panel">
@@ -134,81 +199,60 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="text-center text-muted-foreground py-6 text-sm">Loading print jobs...</div>
+          <div className="text-center text-muted-foreground py-6 text-sm">Loading print jobs…</div>
         ) : jobs.length === 0 ? (
           <div className="text-center text-muted-foreground py-6 text-sm" data-testid="text-no-print-jobs">
             No print jobs{statusFilter !== "all" ? ` with status "${statusFilter}"` : ""}
           </div>
         ) : (
           <div className="space-y-2">
-            {jobs.map((job) => {
-              const payload = job.payload || {};
-              return (
-                <div
-                  key={job.id}
-                  className="flex items-center justify-between p-3 rounded-lg border bg-muted/30"
-                  data-testid={`print-job-row-${job.id}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge className={`text-xs px-1.5 py-0 gap-1 ${statusColor[job.status] || ""}`}>
-                        <StatusIcon status={job.status} />
-                        <span className="capitalize">{job.status}</span>
-                      </Badge>
-                      <span className="text-xs font-medium uppercase text-muted-foreground">{job.type}</span>
-                      {job.station && (
-                        <span className="text-xs text-muted-foreground">· {job.station}</span>
-                      )}
-                    </div>
-                    <div className="text-sm font-medium mt-0.5 truncate">
-                      {job.type === "kot" ? (
-                        <>
-                          {payload.orderType === "dine_in" && payload.tableNumber
-                            ? `Table #${payload.tableNumber}`
-                            : payload.orderType === "takeaway"
-                            ? "Takeaway"
-                            : payload.orderType === "delivery"
-                            ? "Delivery"
-                            : "Order"}
-                          {" — "}
-                          {(payload.items || []).length} item(s)
-                        </>
-                      ) : (
-                        `Ref: ${job.referenceId.slice(-6).toUpperCase()}`
-                      )}
-                    </div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
-                      {formatTime(job.createdAt)}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1 ml-2 shrink-0">
-                    {job.type === "kot" && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs"
-                        onClick={() => handlePrintJob(job)}
-                        data-testid={`button-print-job-${job.id}`}
-                      >
-                        <Printer className="h-3 w-3 mr-1" />
-                        Print
-                      </Button>
-                    )}
-                    {job.status === "queued" && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs text-muted-foreground"
-                        onClick={() => updateStatusMutation.mutate({ id: job.id, status: "failed" })}
-                        data-testid={`button-skip-job-${job.id}`}
-                      >
-                        Skip
-                      </Button>
+            {jobs.map((job) => (
+              <div
+                key={job.id}
+                className="flex items-center justify-between p-3 rounded-lg border bg-muted/30"
+                data-testid={`print-job-row-${job.id}`}
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Badge className={`text-xs px-1.5 py-0 gap-1 ${statusColor[job.status] || ""}`}>
+                      <StatusIcon status={job.status} />
+                      <span className="capitalize">{job.status}</span>
+                    </Badge>
+                    <span className="text-xs font-medium uppercase text-muted-foreground">{job.type}</span>
+                    {job.station && (
+                      <span className="text-xs text-muted-foreground">· {job.station}</span>
                     )}
                   </div>
+                  <div className="text-sm font-medium mt-0.5 truncate">
+                    {getJobLabel(job)}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5">{formatTime(job.createdAt)}</div>
                 </div>
-              );
-            })}
+                <div className="flex items-center gap-1 ml-2 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => handlePrintJob(job)}
+                    data-testid={`button-print-job-${job.id}`}
+                  >
+                    <Printer className="h-3 w-3 mr-1" />
+                    Print
+                  </Button>
+                  {job.status !== "printed" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => updateStatusMutation.mutate({ id: job.id, status: "failed" })}
+                      data-testid={`button-skip-job-${job.id}`}
+                    >
+                      Skip
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </CardContent>
