@@ -218,7 +218,7 @@ export default function BillPreviewModal({
           queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
           queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
           queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
-          performCrmUpdate(grandTotal);
+          queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
           setStep("receipt");
         } else if (data.status === "cancelled") {
           setRzpPolling(false);
@@ -323,7 +323,7 @@ export default function BillPreviewModal({
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
-      performCrmUpdate(grandTotal);
+      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setStep("receipt");
     },
     onError: (err: Error) => toast({ title: "Payment failed", description: err.message, variant: "destructive" }),
@@ -435,7 +435,23 @@ export default function BillPreviewModal({
 
   const isManagerOrOwner = user?.role === "manager" || user?.role === "owner";
 
-  const setCustomerFromMatch = useCallback((match: any) => {
+  interface CrmCustomerMatch {
+    id: string;
+    name: string;
+    loyaltyPoints: number;
+    gstin?: string | null;
+    birthday?: string | null;
+    anniversary?: string | null;
+    totalSpent?: string | null;
+    visitCount?: number | null;
+    lastVisitAt?: string | null;
+    loyaltyTier?: string | null;
+    notes?: string | null;
+    tags?: string[] | null;
+    phone?: string | null;
+  }
+
+  const setCustomerFromMatch = useCallback((match: CrmCustomerMatch) => {
     setLookedUpCustomer({
       id: match.id,
       name: match.name,
@@ -461,8 +477,8 @@ export default function BillPreviewModal({
     try {
       const res = await apiRequest("GET", `/api/customers?phone=${encodeURIComponent(loyaltySearchPhone.trim())}`);
       const data = await res.json();
-      const customers = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
-      const match = customers[0] ?? null;
+      const list = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
+      const match: CrmCustomerMatch | null = list[0] ?? null;
       if (match) {
         setCustomerFromMatch(match);
       } else {
@@ -482,7 +498,7 @@ export default function BillPreviewModal({
       const res = await apiRequest("GET", `/api/customers?phone=${encodeURIComponent(crmPhone.trim())}`);
       const data = await res.json();
       const list = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
-      const match = list[0] ?? null;
+      const match: CrmCustomerMatch | null = list[0] ?? null;
       if (match) {
         setCustomerFromMatch(match);
         setLoyaltySearchPhone(crmPhone.trim());
@@ -497,32 +513,20 @@ export default function BillPreviewModal({
   }, [crmPhone, toast, setCustomerFromMatch]);
 
   const handleCrmSaveNote = useCallback(async () => {
-    if (!lookedUpCustomer) return;
+    if (!lookedUpCustomer || !crmQuickNote.trim()) return;
     setCrmNoteSaving(true);
     try {
-      await apiRequest("PATCH", `/api/customers/${lookedUpCustomer.id}`, { notes: crmQuickNote });
-      setLookedUpCustomer(prev => prev ? { ...prev, notes: crmQuickNote } : prev);
-      toast({ title: "Note saved", description: "Customer note updated" });
+      const updated = await apiRequest("POST", `/api/customers/${lookedUpCustomer.id}/visit-note`, { note: crmQuickNote.trim() });
+      const updatedCustomer = await updated.json();
+      setLookedUpCustomer(prev => prev ? { ...prev, notes: updatedCustomer.notes } : prev);
+      setCrmQuickNote("");
+      toast({ title: "Note saved", description: "Visit note appended to customer record" });
     } catch {
       toast({ title: "Save failed", description: "Could not save note", variant: "destructive" });
     } finally {
       setCrmNoteSaving(false);
     }
   }, [lookedUpCustomer, crmQuickNote, toast]);
-
-  const performCrmUpdate = useCallback(async (billTotal: number) => {
-    if (!lookedUpCustomer) return;
-    try {
-      const newTotalSpent = (parseFloat(lookedUpCustomer.totalSpent ?? "0") + billTotal).toFixed(2);
-      const newVisitCount = (lookedUpCustomer.visitCount ?? 0) + 1;
-      await apiRequest("PATCH", `/api/customers/${lookedUpCustomer.id}`, {
-        visitCount: newVisitCount,
-        lastVisitAt: new Date().toISOString(),
-        totalSpent: newTotalSpent,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
-    } catch (_) {}
-  }, [lookedUpCustomer, queryClient]);
   const handleEmailReceipt = () => {
     const subject = encodeURIComponent(`Receipt from ${tenantName} — ${billNumber}`);
     const body = encodeURIComponent(
@@ -738,17 +742,32 @@ export default function BillPreviewModal({
                   <div className="space-y-2">
                     {(() => {
                       const today = new Date();
-                      const mmdd = `${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-                      const isBirthday = lookedUpCustomer.birthday && lookedUpCustomer.birthday.slice(5) === mmdd;
-                      const isAnniversary = lookedUpCustomer.anniversary && lookedUpCustomer.anniversary.slice(5) === mmdd;
-                      return (isBirthday || isAnniversary) ? (
+                      function daysUntil(dateStr: string | null | undefined): number | null {
+                        if (!dateStr) return null;
+                        const parts = dateStr.split("-");
+                        if (parts.length < 3) return null;
+                        const mm = parseInt(parts[1], 10);
+                        const dd = parseInt(parts[2], 10);
+                        const thisYear = new Date(today.getFullYear(), mm - 1, dd);
+                        const nextYear = new Date(today.getFullYear() + 1, mm - 1, dd);
+                        const target = thisYear >= today ? thisYear : nextYear;
+                        return Math.round((target.getTime() - today.setHours(0,0,0,0)) / 86400000);
+                      }
+                      const bdDays = daysUntil(lookedUpCustomer.birthday);
+                      const annDays = daysUntil(lookedUpCustomer.anniversary);
+                      const isBirthday = bdDays !== null && bdDays <= 3;
+                      const isAnniversary = annDays !== null && annDays <= 3;
+                      if (!isBirthday && !isAnniversary) return null;
+                      const icon = isBirthday ? <Cake className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : <Heart className="h-3.5 w-3.5 shrink-0 text-rose-500" />;
+                      const label = isBirthday
+                        ? bdDays === 0 ? "Today is this customer's birthday!" : `Birthday in ${bdDays} day${bdDays > 1 ? "s" : ""}!`
+                        : annDays === 0 ? "Today is this customer's anniversary!" : `Anniversary in ${annDays} day${annDays! > 1 ? "s" : ""}!`;
+                      return (
                         <div className="flex items-center gap-2 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-700 px-3 py-2 text-xs text-amber-800 dark:text-amber-300 font-medium" data-testid="crm-occasion-banner">
-                          {isBirthday && <Cake className="h-3.5 w-3.5 shrink-0 text-amber-500" />}
-                          {isAnniversary && !isBirthday && <Heart className="h-3.5 w-3.5 shrink-0 text-rose-500" />}
-                          {isBirthday ? "Today is this customer's birthday!" : "Today is this customer's anniversary!"}
-                          <span className="ml-auto text-amber-500 text-[10px]">Consider applying an offer</span>
+                          {icon}{label}
+                          <span className="ml-auto text-amber-500 text-[10px] shrink-0">Consider applying an offer</span>
                         </div>
-                      ) : null;
+                      );
                     })()}
                     <div className="flex items-start justify-between gap-2 bg-muted/40 rounded-lg p-2.5 border" data-testid="crm-profile-card">
                       <div className="flex-1 min-w-0 space-y-0.5">
@@ -767,6 +786,18 @@ export default function BillPreviewModal({
                             {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0"))} lifetime
                           </span>
                         </div>
+                        {lookedUpCustomer.loyaltyTier && (() => {
+                          const tierBenefits: Record<string, string> = {
+                            bronze: "No tier discount",
+                            silver: "Silver — 5% loyalty discount applicable",
+                            gold: "Gold — 10% loyalty discount applicable",
+                            platinum: "Platinum — 15% loyalty discount applicable",
+                          };
+                          const benefit = tierBenefits[lookedUpCustomer.loyaltyTier!.toLowerCase()];
+                          return benefit ? (
+                            <p className="text-[10px] text-primary/70 mt-0.5" data-testid="crm-tier-benefit">{benefit}</p>
+                          ) : null;
+                        })()}
                         {lookedUpCustomer.tags && lookedUpCustomer.tags.length > 0 && (
                           <div className="flex gap-1 flex-wrap mt-1">
                             {lookedUpCustomer.tags.map(tag => (
@@ -779,20 +810,25 @@ export default function BillPreviewModal({
                         Change
                       </Button>
                     </div>
+                    {lookedUpCustomer.notes && (
+                      <div className="text-[10px] text-muted-foreground bg-muted/30 rounded px-2 py-1.5 border font-mono whitespace-pre-wrap" data-testid="crm-existing-notes">
+                        {lookedUpCustomer.notes}
+                      </div>
+                    )}
                     <div className="space-y-1" data-testid="crm-quick-note-section">
                       <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                        <StickyNote className="h-3 w-3" /> Quick Note
+                        <StickyNote className="h-3 w-3" /> Add Visit Note
                       </p>
                       <div className="flex gap-1.5">
                         <Textarea
-                          placeholder="Add a note about this visit..."
+                          placeholder="Note about this visit (appended with timestamp)..."
                           value={crmQuickNote}
                           onChange={e => setCrmQuickNote(e.target.value)}
                           rows={2}
                           className="text-xs flex-1 min-h-0 resize-none"
                           data-testid="input-crm-quick-note"
                         />
-                        <Button size="sm" variant="outline" className="text-xs h-auto self-stretch px-2" onClick={handleCrmSaveNote} disabled={crmNoteSaving} data-testid="button-crm-save-note">
+                        <Button size="sm" variant="outline" className="text-xs h-auto self-stretch px-2" onClick={handleCrmSaveNote} disabled={crmNoteSaving || !crmQuickNote.trim()} data-testid="button-crm-save-note">
                           {crmNoteSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
                         </Button>
                       </div>
