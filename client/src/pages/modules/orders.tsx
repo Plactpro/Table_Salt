@@ -159,8 +159,8 @@ export default function OrdersPage() {
       const subtotal = Number(order.subtotal ?? 0);
       const tax = Number(order.tax ?? 0);
       const discount = Number(order.discount ?? 0);
-      const serviceCharge = order.orderType === "dine_in" ? subtotal * 0.05 : 0;
-      const totalAmount = Number(order.total ?? 0) + serviceCharge;
+      const totalAmount = Number(order.total ?? 0);
+      const serviceCharge = Math.max(0, totalAmount - (subtotal - discount + tax));
 
       const billRes = await apiRequest("POST", "/api/restaurant-bills", {
         orderId: order.id,
@@ -557,8 +557,8 @@ export default function OrdersPage() {
                   )}
                   {selectedOrderDetail.status !== "cancelled" && selectedOrderDetail.status !== "voided" && selectedOrderDetail.status !== "paid" && (
                     <>
-                      <Button variant="destructive" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "voided" })} disabled={updateStatusMutation.isPending} data-testid="button-void-order">
-                        <Ban className="h-4 w-4 mr-1" /> Void
+                      <Button variant="destructive" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-void-order">
+                        <Ban className="h-4 w-4 mr-1" /> Void Bill
                       </Button>
                       <Button variant="outline" className="text-destructive border-destructive/50" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled" })} disabled={updateStatusMutation.isPending} data-testid="button-cancel-order">
                         Cancel Order
@@ -576,10 +576,11 @@ export default function OrdersPage() {
         const bpSubtotal = Number(billPreviewOrder.subtotal ?? 0);
         const bpDiscount = Number(billPreviewOrder.discount ?? 0);
         const bpTax = Number(billPreviewOrder.tax ?? 0);
-        const bpServiceCharge = billPreviewOrder.orderType === "dine_in" ? bpSubtotal * SERVICE_CHARGE_RATE : 0;
-        const bpTotal = Number(billPreviewOrder.total ?? 0) + bpServiceCharge;
+        const bpOrderTotal = Number(billPreviewOrder.total ?? 0);
+        const bpServiceCharge = Math.max(0, bpOrderTotal - (bpSubtotal - bpDiscount + bpTax));
+        const bpTotal = bpOrderTotal;
         const bpCart = (billPreviewOrder.items ?? []).map(item => ({
-          menuItemId: (item as any).menuItemId || item.id,
+          menuItemId: item.menuItemId || item.id,
           name: item.name || "",
           price: Number(item.price || 0),
           quantity: item.quantity || 1,
