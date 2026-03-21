@@ -5,6 +5,9 @@ import { requireAuth, requireRole } from "../auth";
 const VALID_PRINT_JOB_STATUSES = ["queued", "printed", "failed"] as const;
 type PrintJobStatus = typeof VALID_PRINT_JOB_STATUSES[number];
 
+const VALID_PRINT_JOB_TYPES = ["kot", "bill", "receipt"] as const;
+type PrintJobType = typeof VALID_PRINT_JOB_TYPES[number];
+
 export function registerPrintJobRoutes(app: Express): void {
   app.get("/api/print-jobs", requireAuth, async (req, res) => {
     try {
@@ -30,9 +33,12 @@ export function registerPrintJobRoutes(app: Express): void {
       if (!type || !referenceId) {
         return res.status(400).json({ message: "type and referenceId are required" });
       }
+      if (!(VALID_PRINT_JOB_TYPES as readonly string[]).includes(type)) {
+        return res.status(400).json({ message: `Invalid type. Must be one of: ${VALID_PRINT_JOB_TYPES.join(", ")}` });
+      }
       const job = await storage.createPrintJob({
         tenantId: user.tenantId,
-        type,
+        type: type as PrintJobType,
         referenceId,
         station: station ?? null,
         status: "queued",
