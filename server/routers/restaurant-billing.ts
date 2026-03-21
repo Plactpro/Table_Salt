@@ -69,17 +69,22 @@ export async function finalizeBillCompletion(opts: {
     try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
   }
 
-  // 5. Loyalty points accrual for linked customer (same formula as direct payment route)
+  // 5. Loyalty points accrual + CRM visit update for linked customer
   if (bill.customerId) {
     try {
       const customer = await storage.getCustomerByTenant(bill.customerId, bill.tenantId);
       if (customer) {
         const billTotal = Number(bill.totalAmount) + Number(bill.tips || 0);
         const pointsEarned = Math.floor(billTotal / 10);
-        if (pointsEarned > 0) {
-          const newBalance = (customer.loyaltyPoints ?? 0) + pointsEarned;
-          await storage.updateCustomerByTenant(bill.customerId, bill.tenantId, { loyaltyPoints: newBalance });
-        }
+        const newTotalSpent = (Number(customer.totalSpent ?? "0") + billTotal).toFixed(2);
+        const newVisitCount = (customer.visitCount ?? 0) + 1;
+        const crmUpdate: Record<string, unknown> = {
+          totalSpent: newTotalSpent,
+          visitCount: newVisitCount,
+          lastVisitAt: new Date(),
+        };
+        if (pointsEarned > 0) crmUpdate.loyaltyPoints = (customer.loyaltyPoints ?? 0) + pointsEarned;
+        await storage.updateCustomerByTenant(bill.customerId, bill.tenantId, crmUpdate as any);
       }
     } catch (_) {}
   }
@@ -277,11 +282,15 @@ export function registerRestaurantBillingRoutes(app: Express): void {
                 : loyaltyPointsRedeemed;
               const netChange = pointsEarned - serverLoyaltyPointsDeducted;
               const newBalance = Math.max(0, (customer.loyaltyPoints ?? 0) + netChange);
-              if (netChange !== 0) {
-                await storage.updateCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId, {
-                  loyaltyPoints: newBalance,
-                });
-              }
+              const newTotalSpent = (Number(customer.totalSpent ?? "0") + billTotal).toFixed(2);
+              const newVisitCount = (customer.visitCount ?? 0) + 1;
+              const crmUpdate: Record<string, unknown> = {
+                totalSpent: newTotalSpent,
+                visitCount: newVisitCount,
+                lastVisitAt: new Date(),
+              };
+              if (netChange !== 0) crmUpdate.loyaltyPoints = newBalance;
+              await storage.updateCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId, crmUpdate as any);
             }
           } catch (_) {}
         }
