@@ -536,7 +536,7 @@ function FoodOrderFlow({
         await fetch(`/api/guest/session/${sessionId}/cart`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity }),
+          body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity, notes: cartItem.note || undefined }),
         });
       }
       const orderRes = await fetch(`/api/guest/session/${sessionId}/order`, {
