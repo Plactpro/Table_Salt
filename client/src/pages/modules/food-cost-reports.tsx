@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
+import { useLocation } from "wouter";
 import { formatCurrency } from "@shared/currency";
-import { Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, BarChart3, Activity, Filter, FileDown } from "lucide-react";
+import { Loader2, TrendingUp, DollarSign, AlertTriangle, CheckCircle, BarChart3, Activity, Filter, FileDown, ChefHat } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,13 @@ interface VarianceRow {
   varianceCost: number;
 }
 
+interface UntrackedMenuItem {
+  id: string;
+  name: string;
+  price: number;
+  categoryId: string | null;
+}
+
 interface FoodCostReport {
   recipes: FoodCostRecipe[];
   summary: {
@@ -55,6 +63,7 @@ interface FoodCostReport {
   varianceByIngredient: VarianceRow[];
   topMovers: Array<{ itemId: string; itemName: string; usage: number; unit: string }>;
   reorderSuggestions: Array<{ itemId: string; itemName: string; currentStock: number; reorderLevel: number; parLevel: number; leadTimeDays: number; suggestedOrder: number; unit: string }>;
+  untrackedMenuItems: UntrackedMenuItem[];
 }
 
 function foodCostBadge(pct: number) {
@@ -82,6 +91,7 @@ function varianceRowBg(absPct: number): string {
 
 export default function FoodCostReports() {
   const { user } = useAuth();
+  const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("profitability");
   const [sortBy, setSortBy] = useState<"foodCostPct" | "soldQty" | "margin" | "plateCost" | "sellingPrice">("foodCostPct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
@@ -127,7 +137,7 @@ export default function FoodCostReports() {
 
   if (!report) return null;
 
-  const { recipes, summary, varianceByIngredient, topMovers } = report;
+  const { recipes, summary, varianceByIngredient, topMovers, untrackedMenuItems = [] } = report;
 
   const filteredRecipes = recipes
     .filter(r => {
@@ -172,6 +182,30 @@ export default function FoodCostReports() {
           </Card>
         ))}
       </div>
+
+      {untrackedMenuItems.length > 0 && (
+        <div className="flex items-start gap-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800" data-testid="banner-untracked-items">
+          <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+              {untrackedMenuItems.length} menu item{untrackedMenuItems.length !== 1 ? "s" : ""} without a recipe — inventory costs not tracked
+            </p>
+            <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+              {untrackedMenuItems.slice(0, 5).map(m => m.name).join(", ")}
+              {untrackedMenuItems.length > 5 && ` and ${untrackedMenuItems.length - 5} more`}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 border-amber-300 text-amber-800 hover:bg-amber-100"
+            onClick={() => navigate("/inventory?tab=recipes")}
+            data-testid="button-add-missing-recipes"
+          >
+            <ChefHat className="h-3.5 w-3.5 mr-1.5" /> Add Recipes
+          </Button>
+        </div>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList data-testid="food-cost-tabs">

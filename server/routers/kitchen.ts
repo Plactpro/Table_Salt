@@ -148,7 +148,19 @@ export function registerKitchenRoutes(app: Express): void {
       for (const oi of filtered) {
         if (!oi.menuItemId) continue;
         const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
-        if (!recipe) continue;
+        if (!recipe) {
+          result.push({
+            orderItemId: oi.id,
+            menuItemId: oi.menuItemId,
+            menuItemName: oi.name,
+            quantity: oi.quantity,
+            noRecipe: true,
+            recipeId: null,
+            recipeName: null,
+            ingredients: [],
+          });
+          continue;
+        }
         const recipeIngs = await storage.getRecipeIngredients(recipe.id);
         const ingredients: any[] = [];
         for (const ing of recipeIngs) {
@@ -176,6 +188,7 @@ export function registerKitchenRoutes(app: Express): void {
           menuItemId: oi.menuItemId,
           menuItemName: oi.name,
           quantity: oi.quantity,
+          noRecipe: false,
           recipeId: recipe.id,
           recipeName: recipe.name,
           ingredients,
@@ -208,7 +221,10 @@ export function registerKitchenRoutes(app: Express): void {
         for (const oi of filtered) {
           if (!oi.menuItemId) continue;
           const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
-          if (!recipe) continue;
+          if (!recipe) {
+            console.warn(`[kds/start] No recipe for menu item ${oi.menuItemId} ("${oi.name}") — skipping inventory deduction for order ${req.params.id}`);
+            continue;
+          }
           const recipeIngs = await storage.getRecipeIngredients(recipe.id);
           for (const ing of recipeIngs) {
             const invItem = await storage.getInventoryItem(ing.inventoryItemId);
