@@ -123,7 +123,7 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
       return res.json();
     },
     onSuccess: (data) => {
-      setReportData(data);
+      setReportData(data.report ?? data);
       toast({ title: "Shift closed successfully!" });
       queryClient.invalidateQueries({ queryKey: ["/api/pos/session"] });
       onClosed();
