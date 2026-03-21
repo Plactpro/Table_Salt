@@ -10,7 +10,7 @@ import {
 
 const TRANSLATIONS = {
   en: {
-    dir: "ltr",
+    dir: "ltr" as const,
     loading: "Loading...",
     invalidQr: "Invalid or expired QR code",
     table: "Table",
@@ -31,6 +31,7 @@ const TRANSLATIONS = {
     waiting: "Waiting...",
     staffOnTheWay: "Staff on the way!",
     completed: "Completed",
+    cancelled: "Cancelled",
     submitted: "Request submitted!",
     submitAnother: "Submit Another Request",
     backToMenu: "Back to Menu",
@@ -77,17 +78,12 @@ const TRANSLATIONS = {
     current: "As is",
     veg: "Veg",
     spicy: "Spicy",
-    allergens: "Allergens",
-    notes: "Notes",
-    qty: "Qty",
-    subtotal: "Subtotal",
-    tax: "Tax",
-    total: "Total",
-    itemAdded: "Added to cart",
+    foodOrderingUnavailable: "Food ordering is not available for this table.",
     language: "Language",
+    noItems: "No items available in this category",
   },
   ar: {
-    dir: "rtl",
+    dir: "rtl" as const,
     loading: "جار التحميل...",
     invalidQr: "رمز QR غير صالح أو منتهي",
     table: "طاولة",
@@ -108,6 +104,7 @@ const TRANSLATIONS = {
     waiting: "في الانتظار...",
     staffOnTheWay: "الموظف في الطريق!",
     completed: "تم الإنجاز",
+    cancelled: "ملغى",
     submitted: "تم إرسال الطلب!",
     submitAnother: "تقديم طلب آخر",
     backToMenu: "العودة للقائمة",
@@ -154,17 +151,12 @@ const TRANSLATIONS = {
     current: "كما هو",
     veg: "نباتي",
     spicy: "حار",
-    allergens: "مسببات الحساسية",
-    notes: "ملاحظات",
-    qty: "الكمية",
-    subtotal: "المجموع الفرعي",
-    tax: "الضريبة",
-    total: "المجموع",
-    itemAdded: "أضيف إلى السلة",
+    foodOrderingUnavailable: "طلب الطعام غير متاح لهذه الطاولة.",
     language: "اللغة",
+    noItems: "لا توجد عناصر في هذه الفئة",
   },
   hi: {
-    dir: "ltr",
+    dir: "ltr" as const,
     loading: "लोड हो रहा है...",
     invalidQr: "अमान्य या समाप्त QR कोड",
     table: "टेबल",
@@ -185,6 +177,7 @@ const TRANSLATIONS = {
     waiting: "प्रतीक्षा में...",
     staffOnTheWay: "स्टाफ आ रहा है!",
     completed: "पूर्ण",
+    cancelled: "रद्द",
     submitted: "अनुरोध भेजा गया!",
     submitAnother: "एक और अनुरोध करें",
     backToMenu: "मेनू पर वापस जाएं",
@@ -231,14 +224,9 @@ const TRANSLATIONS = {
     current: "जैसा है",
     veg: "शाकाहारी",
     spicy: "मसालेदार",
-    allergens: "एलर्जी",
-    notes: "नोट्स",
-    qty: "मात्रा",
-    subtotal: "उप-योग",
-    tax: "कर",
-    total: "कुल",
-    itemAdded: "कार्ट में जोड़ा",
+    foodOrderingUnavailable: "इस टेबल के लिए खाना ऑर्डर करना उपलब्ध नहीं है।",
     language: "भाषा",
+    noItems: "इस श्रेणी में कोई आइटम नहीं",
   },
 } as const;
 
@@ -277,8 +265,9 @@ interface Category {
   sortOrder: number | null;
 }
 
-interface CartItem {
+interface LocalCartItem {
   itemId: string;
+  menuItemId: string;
   name: string;
   price: number;
   quantity: number;
@@ -290,8 +279,7 @@ type Flow =
   | "quick-confirm"
   | "food-order"
   | "feedback"
-  | "special-request"
-  | "status";
+  | "special-request";
 
 interface SubmittedRequest {
   id: string;
@@ -325,7 +313,7 @@ function useQrToken(token: string | null) {
   return { ctx, error, loading };
 }
 
-function useWebSocket(tenantId: string | null, onMessage: (event: string, payload: any) => void) {
+function useGuestWebSocket(tenantId: string | null, onMessage: (event: string, payload: any) => void) {
   const cbRef = useRef(onMessage);
   cbRef.current = onMessage;
 
@@ -339,11 +327,11 @@ function useWebSocket(tenantId: string | null, onMessage: (event: string, payloa
     function connect() {
       if (!active) return;
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-      ws = new WebSocket(`${proto}//${window.location.host}/ws`);
+      ws = new WebSocket(`${proto}//${window.location.host}/ws?tenantId=${encodeURIComponent(tenantId!)}`);
       ws.onopen = () => { delay = 1000; };
       ws.onmessage = (evt) => {
         try {
-          const { event, payload } = JSON.parse(evt.data);
+          const { event, payload } = JSON.parse(evt.data as string);
           cbRef.current(event, payload);
         } catch {}
       };
@@ -370,11 +358,11 @@ function StatusBubble({ status, t }: { status: string; t: T }) {
     pending_confirmation: { label: t.waiting, color: "bg-amber-100 text-amber-700 border-amber-200", icon: <Loader2 className="w-4 h-4 animate-spin" /> },
     acknowledged: { label: t.staffOnTheWay, color: "bg-blue-100 text-blue-700 border-blue-200", icon: <Bell className="w-4 h-4" /> },
     completed: { label: t.completed, color: "bg-green-100 text-green-700 border-green-200", icon: <Check className="w-4 h-4" /> },
-    cancelled: { label: "Cancelled", color: "bg-gray-100 text-gray-600 border-gray-200", icon: <X className="w-4 h-4" /> },
+    cancelled: { label: t.cancelled, color: "bg-gray-100 text-gray-600 border-gray-200", icon: <X className="w-4 h-4" /> },
   };
   const s = statusMap[status] ?? statusMap.pending;
   return (
-    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium ${s.color}`}>
+    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-full border text-sm font-medium ${s.color}`} data-testid="status-bubble">
       {s.icon}
       {s.label}
     </div>
@@ -393,7 +381,7 @@ function RequestButton({
     <button
       data-testid={testId}
       onClick={onClick}
-      className="flex flex-col items-center justify-center gap-2 p-4 rounded-2xl bg-white border-2 border-gray-100 shadow-sm active:scale-95 transition-transform text-center min-h-[90px] hover:border-teal-300 hover:bg-teal-50"
+      className="flex flex-col items-center justify-center gap-2 p-3 rounded-2xl bg-white border-2 border-gray-100 shadow-sm active:scale-95 transition-transform text-center min-h-[90px] hover:border-teal-300 hover:bg-teal-50"
       style={{ WebkitTapHighlightColor: "transparent" }}
     >
       <span className="text-teal-700">{icon}</span>
@@ -429,54 +417,71 @@ function FoodOrderFlow({
   onOrderPlaced: () => void;
 }) {
   const [menuData, setMenuData] = useState<{ categories: Category[]; items: MenuItem[]; currency: string } | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [menuLoading, setMenuLoading] = useState(true);
   const [selCat, setSelCat] = useState<string | null>(null);
-  const [cart, setCart] = useState<CartItem[]>([]);
+  const [cart, setCart] = useState<LocalCartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
   const [placing, setPlacing] = useState(false);
   const [placed, setPlaced] = useState(false);
-  const [itemNote, setItemNote] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (!ctx.outletId) return;
-    fetch(`/api/guest/menu/${ctx.outletId}`)
-      .then(r => r.json())
-      .then(data => {
-        setMenuData(data);
-        if (data.categories?.length) setSelCat(data.categories[0]?.id ?? null);
-      })
-      .finally(() => setLoading(false));
-  }, [ctx.outletId]);
+    Promise.all([
+      fetch(`/api/guest/menu/${ctx.outletId}`).then(r => r.json()),
+      fetch(`/api/guest/${ctx.outletId}/${token}`).then(r => r.json()),
+    ]).then(([menu, guestData]) => {
+      setMenuData(menu);
+      if (menu.categories?.length) setSelCat(menu.categories[0]?.id ?? null);
+      if (guestData.session?.id) setSessionId(guestData.session.id);
+    }).finally(() => setMenuLoading(false));
+  }, [ctx.outletId, token]);
 
   const filteredItems = menuData?.items.filter(i => !selCat || i.categoryId === selCat) ?? [];
 
   function addToCart(item: MenuItem) {
     setCart(prev => {
-      const existing = prev.find(c => c.itemId === item.id);
-      if (existing) return prev.map(c => c.itemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { itemId: item.id, name: item.name, price: Number(item.price), quantity: 1 }];
+      const existing = prev.find(c => c.menuItemId === item.id);
+      if (existing) return prev.map(c => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+      return [...prev, { itemId: crypto.randomUUID(), menuItemId: item.id, name: item.name, price: Number(item.price), quantity: 1 }];
     });
   }
 
-  function setQty(itemId: string, qty: number) {
-    if (qty <= 0) { setCart(prev => prev.filter(c => c.itemId !== itemId)); return; }
-    setCart(prev => prev.map(c => c.itemId === itemId ? { ...c, quantity: qty } : c));
+  function setQty(menuItemId: string, qty: number) {
+    if (qty <= 0) { setCart(prev => prev.filter(c => c.menuItemId !== menuItemId)); return; }
+    setCart(prev => prev.map(c => c.menuItemId === menuItemId ? { ...c, quantity: qty } : c));
   }
 
   const cartTotal = cart.reduce((s, c) => s + c.price * c.quantity, 0);
   const cartCount = cart.reduce((s, c) => s + c.quantity, 0);
 
   async function placeOrder() {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || !sessionId) return;
     setPlacing(true);
     try {
-      const body: Record<string, any> = {
-        token,
-        requestType: "order_food",
-        priority: "medium",
-        guestNote: cart.map(c => `${c.quantity}x ${c.name}`).join(", "),
-      };
-      await fetch("/api/table-requests", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      for (const cartItem of cart) {
+        await fetch(`/api/guest/session/${sessionId}/cart`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity }),
+        });
+      }
+      await fetch(`/api/guest/session/${sessionId}/order`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const orderSummary = cart.map(c => `${c.quantity}x ${c.name}`).join(", ");
+      await fetch("/api/table-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          requestType: "order_food",
+          priority: "medium",
+          guestNote: `Order placed via QR: ${orderSummary}`,
+        }),
+      });
       setPlaced(true);
       setTimeout(onOrderPlaced, 2500);
     } finally {
@@ -496,7 +501,7 @@ function FoodOrderFlow({
     );
   }
 
-  if (loading) {
+  if (menuLoading) {
     return <div className="flex items-center justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-teal-600" /></div>;
   }
 
@@ -514,33 +519,33 @@ function FoodOrderFlow({
         ) : (
           <div className="flex flex-col gap-3">
             {cart.map(c => (
-              <div key={c.itemId} data-testid={`cart-item-${c.itemId}`} className="flex items-center justify-between bg-white rounded-xl p-3 border border-gray-100">
+              <div key={c.menuItemId} data-testid={`cart-item-${c.menuItemId}`} className="flex items-center justify-between bg-white rounded-xl p-3 border border-gray-100">
                 <div>
                   <p className="font-medium text-sm">{c.name}</p>
                   <p className="text-xs text-gray-500">{formatPrice(c.price, menuData?.currency ?? "USD")}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button data-testid={`button-dec-${c.itemId}`} onClick={() => setQty(c.itemId, c.quantity - 1)} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                  <button data-testid={`button-dec-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity - 1)} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
                     <Minus className="w-3 h-3" />
                   </button>
                   <span className="w-6 text-center font-semibold text-sm">{c.quantity}</span>
-                  <button data-testid={`button-inc-${c.itemId}`} onClick={() => setQty(c.itemId, c.quantity + 1)} className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center">
+                  <button data-testid={`button-inc-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity + 1)} className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center">
                     <Plus className="w-3 h-3" />
                   </button>
                 </div>
               </div>
             ))}
-            <div className="border-t pt-3 space-y-1">
-              <div className="flex justify-between text-sm text-gray-600">
-                <span>{t.total}</span>
-                <span className="font-bold text-gray-900">{formatPrice(cartTotal, menuData?.currency ?? "USD")}</span>
+            <div className="border-t pt-3">
+              <div className="flex justify-between text-sm text-gray-600 font-bold">
+                <span>{t.placeOrder}</span>
+                <span className="text-gray-900">{formatPrice(cartTotal, menuData?.currency ?? "USD")}</span>
               </div>
             </div>
             <button
               data-testid="button-place-order"
               onClick={placeOrder}
-              disabled={placing}
-              className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2"
+              disabled={placing || !sessionId}
+              className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-50"
               style={{ backgroundColor: PRIMARY }}
             >
               {placing ? <><Loader2 className="w-4 h-4 animate-spin" />{t.sending}</> : t.placeOrder}
@@ -580,9 +585,13 @@ function FoodOrderFlow({
         ))}
       </div>
 
+      {filteredItems.length === 0 && (
+        <p className="text-center text-gray-400 py-8">{t.noItems}</p>
+      )}
+
       <div className="flex flex-col gap-3">
         {filteredItems.map(item => {
-          const cartEntry = cart.find(c => c.itemId === item.id);
+          const cartEntry = cart.find(c => c.menuItemId === item.id);
           return (
             <div key={item.id} data-testid={`card-item-${item.id}`} className="bg-white rounded-xl p-3 border border-gray-100 flex gap-3">
               {item.image ? (
@@ -649,9 +658,13 @@ function FeedbackFlow({
   const [complaintCat, setComplaintCat] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [isPositive, setIsPositive] = useState(false);
+  const [isNegative, setIsNegative] = useState(false);
 
-  const isPositive = rating >= 4;
-  const isNegative = rating > 0 && rating <= 3;
+  useEffect(() => {
+    setIsPositive(rating >= 4);
+    setIsNegative(rating > 0 && rating <= 3);
+  }, [rating]);
 
   const complaintCats = [
     { key: "food_quality", label: t.foodQuality },
@@ -702,7 +715,7 @@ function FeedbackFlow({
                 href={`https://www.google.com/maps/search/${encodeURIComponent(ctx.restaurantName)}`}
                 target="_blank" rel="noreferrer"
                 data-testid="link-share-google"
-                className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-teal-600 text-teal-700 text-center"
+                className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-teal-600 text-teal-700 text-center block"
               >
                 {t.shareGoogle}
               </a>
@@ -710,7 +723,7 @@ function FeedbackFlow({
                 href={`https://www.tripadvisor.com/Search?q=${encodeURIComponent(ctx.restaurantName)}`}
                 target="_blank" rel="noreferrer"
                 data-testid="link-share-tripadvisor"
-                className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-green-500 text-green-700 text-center"
+                className="w-full py-3 rounded-xl text-sm font-semibold border-2 border-green-500 text-green-700 text-center block"
               >
                 {t.shareTripAdvisor}
               </a>
@@ -804,7 +817,7 @@ function SpecialRequestFlow({
     setSubmitting(true);
     try {
       let note = "";
-      if (selectedType === "temperature") note = `Temperature preference: ${tempPref}. ${text}`;
+      if (selectedType === "temperature") note = `Temperature preference: ${tempPref}. ${text}`.trim();
       else note = text;
       await fetch("/api/table-requests", {
         method: "POST",
@@ -837,7 +850,11 @@ function SpecialRequestFlow({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
-        <button data-testid="button-back-special" onClick={selectedType ? () => setSelectedType(null) : onBack} className="p-2 rounded-full hover:bg-gray-100">
+        <button
+          data-testid="button-back-special"
+          onClick={selectedType ? () => setSelectedType(null) : onBack}
+          className="p-2 rounded-full hover:bg-gray-100"
+        >
           <ChevronLeft className="w-5 h-5" />
         </button>
         <h2 className="text-lg font-bold">{t.specialRequest}</h2>
@@ -907,56 +924,15 @@ function SpecialRequestFlow({
   );
 }
 
-function QuickConfirmFlow({
-  requestType, label, t, token, onBack, requestId, onNewRequest,
-}: {
-  requestType: string;
+const VALID_BACKEND_TYPES = ["call_server", "order_food", "request_bill", "feedback", "water_refill", "cleaning", "other"] as const;
+type BackendRequestType = (typeof VALID_BACKEND_TYPES)[number];
+
+interface ImmediateRequest {
+  type: string;
   label: string;
-  t: T;
-  token: string;
-  onBack: () => void;
-  requestId: string | null;
-  onNewRequest: () => void;
-}) {
-  const [status, setStatus] = useState("pending");
-
-  useEffect(() => {
-    if (requestId) setStatus("pending");
-  }, [requestId]);
-
-  return (
-    <div className="flex flex-col items-center justify-center py-8 gap-5 text-center px-4">
-      <motion.div
-        initial={{ scale: 0 }}
-        animate={{ scale: 1 }}
-        transition={{ type: "spring", stiffness: 200 }}
-        className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center"
-      >
-        <Check className="w-10 h-10 text-green-600" />
-      </motion.div>
-
-      <div>
-        <h2 className="text-xl font-bold text-gray-900">{t.submitted}</h2>
-        <p className="text-gray-500 text-sm mt-1">{label}</p>
-      </div>
-
-      <StatusBubble status={status} t={t} />
-
-      <div className="flex flex-col gap-3 w-full mt-4">
-        <button
-          data-testid="button-submit-another"
-          onClick={onNewRequest}
-          className="w-full py-3 rounded-xl font-bold text-white text-sm"
-          style={{ backgroundColor: PRIMARY }}
-        >
-          {t.submitAnother}
-        </button>
-        <button data-testid="button-back-to-home" onClick={onBack} className="text-sm text-gray-500 underline">
-          {t.backToMenu}
-        </button>
-      </div>
-    </div>
-  );
+  icon: React.ReactNode;
+  priority: "high" | "medium" | "low";
+  backendType: BackendRequestType;
 }
 
 export default function TableQrPage() {
@@ -970,40 +946,55 @@ export default function TableQrPage() {
   const { ctx, error, loading } = useQrToken(token);
 
   const [flow, setFlow] = useState<Flow>("home");
-  const [quickType, setQuickType] = useState<{ type: string; label: string } | null>(null);
+  const [quickLabel, setQuickLabel] = useState<string>("");
   const [submittedRequest, setSubmittedRequest] = useState<SubmittedRequest | null>(null);
-  const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  useWebSocket(ctx?.tenantId ?? null, (event, payload) => {
+  useGuestWebSocket(ctx?.tenantId ?? null, useCallback((event, payload) => {
     if (event === "table-request:updated" && payload?.request) {
       const r = payload.request;
-      if (submittedRequest && r.id === submittedRequest.id) {
-        setSubmittedRequest({ id: r.id, status: r.status });
-      }
+      setSubmittedRequest(prev => prev && r.id === prev.id ? { id: r.id, status: r.status } : prev);
     }
-  });
+  }, []));
 
-  const submitQuickRequest = useCallback(async (type: string, label: string, priority = "medium") => {
+  const immediateRequests: ImmediateRequest[] = [
+    { type: "call_server", label: t.callWaiter, icon: <Bell className="w-6 h-6" />, priority: "high", backendType: "call_server" },
+    { type: "request_bill", label: t.requestBill, icon: <Receipt className="w-6 h-6" />, priority: "high", backendType: "request_bill" },
+    { type: "water_refill", label: t.requestWater, icon: <Droplets className="w-6 h-6" />, priority: "medium", backendType: "water_refill" },
+    { type: "cleaning", label: t.requestCleaning, icon: <Sparkles className="w-6 h-6" />, priority: "medium", backendType: "cleaning" },
+    { type: "cutlery", label: t.requestCutlery, icon: <Utensils className="w-6 h-6" />, priority: "low", backendType: "other" },
+    { type: "napkins", label: t.requestNapkins, icon: <Scissors className="w-6 h-6" />, priority: "low", backendType: "other" },
+    { type: "takeaway_box", label: t.requestTakeawayBox, icon: <Package className="w-6 h-6" />, priority: "low", backendType: "other" },
+    { type: "high_chair", label: t.requestHighChair, icon: <Baby className="w-6 h-6" />, priority: "medium", backendType: "other" },
+    { type: "wheelchair", label: t.requestWheelchair, icon: <Accessibility className="w-6 h-6" />, priority: "high", backendType: "other" },
+  ];
+
+  const submitQuickRequest = useCallback(async (req: ImmediateRequest) => {
     if (!token) return;
-    setQuickType({ type, label });
+    setQuickLabel(req.label);
     setSubmitting(true);
+    setSubmittedRequest(null);
     try {
+      const note = req.backendType === "other" ? req.label : null;
       const res = await fetch("/api/table-requests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, requestType: type, priority, guestNote: note || null }),
+        body: JSON.stringify({
+          token,
+          requestType: req.backendType,
+          priority: req.priority,
+          guestNote: note,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setSubmittedRequest({ id: data.id, status: data.status });
-        setNote("");
         setFlow("quick-confirm");
       }
     } finally {
       setSubmitting(false);
     }
-  }, [token, note]);
+  }, [token]);
 
   const dir = t.dir;
 
@@ -1017,38 +1008,20 @@ export default function TableQrPage() {
 
   if (error || !ctx) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center gap-4">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center gap-4" data-testid="error-screen">
         <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
           <AlertCircle className="w-8 h-8 text-red-500" />
         </div>
-        <h2 className="text-lg font-bold text-gray-800">{t.invalidQr}</h2>
+        <h2 className="text-lg font-bold text-gray-800" data-testid="text-qr-error">{t.invalidQr}</h2>
         <p className="text-sm text-gray-500">{error}</p>
       </div>
     );
   }
 
-  const immediateRequests = [
-    { type: "call_server", label: t.callWaiter, icon: <Bell className="w-6 h-6" />, priority: "high" },
-    { type: "request_bill", label: t.requestBill, icon: <Receipt className="w-6 h-6" />, priority: "high" },
-    { type: "water_refill", label: t.requestWater, icon: <Droplets className="w-6 h-6" />, priority: "medium" },
-    { type: "cleaning", label: t.requestCleaning, icon: <Sparkles className="w-6 h-6" />, priority: "medium" },
-    { type: "cutlery", label: t.requestCutlery, icon: <Utensils className="w-6 h-6" />, priority: "low" },
-    { type: "napkins", label: t.requestNapkins, icon: <Scissors className="w-6 h-6" />, priority: "low" },
-    { type: "takeaway_box", label: t.requestTakeawayBox, icon: <Package className="w-6 h-6" />, priority: "low" },
-    { type: "high_chair", label: t.requestHighChair, icon: <Baby className="w-6 h-6" />, priority: "medium" },
-    { type: "wheelchair", label: t.requestWheelchair, icon: <Accessibility className="w-6 h-6" />, priority: "high" },
-  ];
-
-  const resolvedType = (type: string) => {
-    const immediateTypes = ["call_server", "request_bill", "water_refill", "cleaning"];
-    if (immediateTypes.includes(type)) return type;
-    return "other";
-  };
-
   return (
     <div className="min-h-screen bg-gray-50" dir={dir}>
       <div className="max-w-md mx-auto flex flex-col min-h-screen">
-        <div className="text-white px-5 pt-10 pb-6 relative" style={{ backgroundColor: PRIMARY }}>
+        <div className="text-white px-5 pt-10 pb-6" style={{ backgroundColor: PRIMARY }}>
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-xl font-bold" data-testid="text-restaurant-name">{ctx.restaurantName}</h1>
@@ -1090,7 +1063,7 @@ export default function TableQrPage() {
                       testId={`button-request-${req.type}`}
                       icon={req.icon}
                       label={req.label}
-                      onClick={() => submitQuickRequest(resolvedType(req.type), req.label, req.priority)}
+                      onClick={() => submitQuickRequest(req)}
                     />
                   ))}
                 </div>
@@ -1118,7 +1091,7 @@ export default function TableQrPage() {
 
                 {submitting && (
                   <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-2xl p-6 flex flex-col items-center gap-3">
+                    <div className="bg-white rounded-2xl p-6 flex flex-col items-center gap-3 shadow-xl">
                       <Loader2 className="w-8 h-8 animate-spin text-teal-600" />
                       <p className="text-sm font-medium text-gray-700">{t.sending}</p>
                     </div>
@@ -1127,22 +1100,39 @@ export default function TableQrPage() {
               </motion.div>
             )}
 
-            {flow === "quick-confirm" && quickType && (
+            {flow === "quick-confirm" && (
               <motion.div key="quick-confirm" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }}>
-                <QuickConfirmFlow
-                  requestType={quickType.type}
-                  label={quickType.label}
-                  t={t}
-                  token={token!}
-                  onBack={() => setFlow("home")}
-                  requestId={submittedRequest?.id ?? null}
-                  onNewRequest={() => setFlow("home")}
-                />
-                {submittedRequest && (
-                  <div className="mt-4 flex justify-center">
-                    <StatusBubble status={submittedRequest.status} t={t} />
+                <div className="flex flex-col items-center justify-center py-8 gap-5 text-center px-4">
+                  <motion.div
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 200 }}
+                    className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center"
+                  >
+                    <Check className="w-10 h-10 text-green-600" />
+                  </motion.div>
+
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-900" data-testid="text-submitted">{t.submitted}</h2>
+                    <p className="text-gray-500 text-sm mt-1">{quickLabel}</p>
                   </div>
-                )}
+
+                  {submittedRequest && <StatusBubble status={submittedRequest.status} t={t} />}
+
+                  <div className="flex flex-col gap-3 w-full mt-4">
+                    <button
+                      data-testid="button-submit-another"
+                      onClick={() => { setFlow("home"); setSubmittedRequest(null); }}
+                      className="w-full py-3 rounded-xl font-bold text-white text-sm"
+                      style={{ backgroundColor: PRIMARY }}
+                    >
+                      {t.submitAnother}
+                    </button>
+                    <button data-testid="button-back-to-home" onClick={() => { setFlow("home"); setSubmittedRequest(null); }} className="text-sm text-gray-500 underline">
+                      {t.backToMenu}
+                    </button>
+                  </div>
+                </div>
               </motion.div>
             )}
 
@@ -1166,7 +1156,7 @@ export default function TableQrPage() {
                   </button>
                   <h2 className="text-lg font-bold">{t.orderFood}</h2>
                 </div>
-                <p className="text-gray-500 text-sm">Food ordering is not available for this table.</p>
+                <p className="text-gray-500 text-sm" data-testid="text-food-unavailable">{t.foodOrderingUnavailable}</p>
               </motion.div>
             )}
 
