@@ -166,9 +166,12 @@ function newTab(): OrderTab {
 function loadTabsFromStorage(): OrderTab[] {
   try {
     const raw = localStorage.getItem(TABS_STORAGE_KEY);
-    if (raw) return JSON.parse(raw) as OrderTab[];
+    if (raw) {
+      const parsed = JSON.parse(raw) as OrderTab[];
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
   } catch {}
-  return [newTab()];
+  return [];
 }
 
 function saveTabsToStorage(tabs: OrderTab[]) {
@@ -293,11 +296,14 @@ export default function POSPage() {
 
   const [tabs, setTabs] = useState<OrderTab[]>(() => {
     const stored = loadTabsFromStorage();
-    return stored.length > 0 ? stored : [newTab()];
+    if (stored.length > 0) return stored;
+    const initialTab = newTab();
+    saveTabsToStorage([initialTab]);
+    return [initialTab];
   });
   const [activeTabId, setActiveTabId] = useState<string>(() => {
     const stored = loadTabsFromStorage();
-    return stored[0]?.id ?? newTab().id;
+    return stored[0]?.id ?? "";
   });
 
   const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId) || tabs[0], [tabs, activeTabId]);
@@ -920,27 +926,45 @@ export default function POSPage() {
 
   const splitOrderMutation = useMutation({
     mutationFn: async (groups: CartItem[][]) => {
-      const results = [];
-      for (const group of groups) {
-        if (group.length === 0) continue;
-        const tabForGroup: OrderTab = {
-          ...(activeTab!),
-          id: makeid(),
-          cart: group,
-          sentCartKeys: [],
-        };
-        const orderData = buildOrderData(undefined, tabForGroup);
-        const res = await apiRequest("POST", "/api/orders", orderData);
-        if (!res.ok) throw new Error("Failed to place split order");
-        results.push(await res.json());
+      const nonEmpty = groups.filter(g => g.length > 0);
+      let parentOrderId: string | undefined = activeTab?.heldOrderId;
+      if (!parentOrderId) {
+        const parentData = buildOrderData(undefined);
+        const parentRes = await apiRequest("POST", "/api/orders", parentData);
+        if (!parentRes.ok) throw new Error("Failed to create parent order for split");
+        const parentOrder = (await parentRes.json()) as { id: string };
+        parentOrderId = parentOrder.id;
       }
-      return results;
+      const results: { id: string }[] = [];
+      for (const group of nonEmpty) {
+        const tabForGroup: OrderTab = { ...(activeTab!), id: makeid(), cart: group, sentCartKeys: [] };
+        const orderData = buildOrderData(undefined, tabForGroup);
+        const res = await apiRequest("POST", "/api/orders", { ...orderData, parentOrderId });
+        if (!res.ok) throw new Error("Failed to place split order");
+        results.push((await res.json()) as { id: string });
+      }
+      return { orders: results, groups: nonEmpty };
     },
-    onSuccess: (orders) => {
+    onSuccess: ({ orders, groups }) => {
       toast({ title: "Orders split!", description: `${orders.length} separate orders created.` });
-      updateActiveTab({ cart: [], discount: "", orderNotes: "", selectedOfferId: null, dismissedRuleIds: [], sentCartKeys: [] });
+      const currentActiveTab = activeTab!;
+      const splitTabs: OrderTab[] = groups.map((group, i) => ({
+        ...currentActiveTab,
+        id: makeid(),
+        cart: group,
+        sentCartKeys: [],
+        orderNotes: `Split ${i + 1}/${orders.length}`,
+      }));
+      setTabs(prev => {
+        const withoutActive = prev.filter(t => t.id !== currentActiveTab.id);
+        const updated = [...withoutActive, ...splitTabs];
+        saveTabsToStorage(updated);
+        return updated;
+      });
+      if (splitTabs.length > 0) setActiveTabId(splitTabs[0].id);
       setShowSplitDialog(false);
       setSplitAssignment({});
+      setSplitGroupCount(2);
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
     },
