@@ -26,6 +26,20 @@ export function registerOrdersRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/orders/on-hold", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const heldOrders = await db.select().from(ordersTable)
+        .where(eq(ordersTable.tenantId, user.tenantId))
+        .then(rows => rows.filter(r => r.status === "on_hold"));
+      const result = await Promise.all(heldOrders.map(async (order) => {
+        const items = await storage.getOrderItemsByOrder(order.id);
+        return { ...order, items };
+      }));
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/orders/:id", requireAuth, async (req, res) => {
     const user = req.user as Express.User & { tenantId: string };
     const order = await storage.getOrder(req.params.id);
