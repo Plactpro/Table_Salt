@@ -258,6 +258,28 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         refundReason: reason,
         collectedBy: user.id,
       });
+
+      const customerId = bill.customerId;
+      if (customerId) {
+        try {
+          const customer = await storage.getCustomerByTenant(customerId, user.tenantId);
+          if (customer) {
+            const refundFraction = Math.min(1, Number(amount) / Math.max(netPaid, 0.01));
+            const loyaltyPayments = allPayments.filter(p => !p.isRefund && p.paymentMethod === "LOYALTY");
+            const loyaltyPaid = loyaltyPayments.reduce((s, p) => s + Number(p.amount), 0);
+            const pointsToRestore = Math.floor(loyaltyPaid * 100 * refundFraction);
+            const earnedPoints = Math.floor(Number(bill.totalAmount) / 10);
+            const pointsToDeduct = Math.floor(earnedPoints * refundFraction);
+            const netChange = pointsToRestore - pointsToDeduct;
+            if (netChange !== 0) {
+              await storage.updateCustomerByTenant(customerId, user.tenantId, {
+                loyaltyPoints: Math.max(0, (customer.loyaltyPoints ?? 0) + netChange),
+              });
+            }
+          }
+        } catch (_) {}
+      }
+
       res.json(refund);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

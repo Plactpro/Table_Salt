@@ -12,7 +12,7 @@ export default function BillViewPage() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
 
-  const serviceChargeRate = Number((user?.tenant as any)?.serviceCharge || 0) / 100;
+  const serviceChargeRate = Number(user?.tenant?.serviceCharge || 0) / 100;
 
   const { data: order, isLoading, error } = useQuery<OrderWithItems>({
     queryKey: ["/api/orders", orderId],
@@ -49,7 +49,7 @@ export default function BillViewPage() {
   }
 
   const cartItems = (order.items ?? []).map((item) => ({
-    menuItemId: (item as any).menuItemId || item.id,
+    menuItemId: item.menuItemId || item.id,
     name: item.name || "",
     price: Number(item.price || 0),
     quantity: item.quantity || 1,
@@ -59,8 +59,9 @@ export default function BillViewPage() {
   const subtotal = Number(order.subtotal ?? 0);
   const discountAmount = Number(order.discount ?? 0);
   const taxAmount = Number(order.tax ?? 0);
-  const serviceChargeAmount = order.orderType === "dine_in" ? subtotal * serviceChargeRate : 0;
-  const total = Number(order.total ?? 0) + serviceChargeAmount;
+  const orderTotal = Number(order.total ?? 0);
+  const serviceChargeAmount = Math.max(0, orderTotal - (subtotal - discountAmount + taxAmount));
+  const total = orderTotal;
   const tableNumber = order.tableId ? tableMap[order.tableId] : undefined;
 
   return (
