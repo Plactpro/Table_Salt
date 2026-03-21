@@ -3,6 +3,7 @@ import QRCode from "qrcode";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import { eq, sql, and, inArray } from "drizzle-orm";
+import { getNextKotSequence } from "./print-jobs";
 import { requireAuth, requireRole } from "../auth";
 import { can, needsSupervisorApproval } from "../permissions";
 import { auditLogFromReq } from "../audit";
@@ -435,6 +436,7 @@ export function registerOrdersRoutes(app: Express): void {
         const tables = orderData.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
         const tableNum = orderData.tableId ? tables.find(t => t.id === orderData.tableId)?.number : undefined;
         const stations = Array.from(new Set(orderItems.map(i => i.station).filter((s): s is string => Boolean(s))));
+        const kotSequence = await getNextKotSequence(user.tenantId, order.id);
         if (stations.length === 0) {
           await storage.createPrintJob({
             tenantId: user.tenantId,
@@ -443,7 +445,7 @@ export function registerOrdersRoutes(app: Express): void {
             station: null,
             status: "queued",
             payload: {
-              kotSequence: 1,
+              kotSequence,
               orderId: order.id,
               orderType: order.orderType,
               tableNumber: tableNum ?? null,
@@ -463,7 +465,7 @@ export function registerOrdersRoutes(app: Express): void {
               station: stationName,
               status: "queued",
               payload: {
-                kotSequence: 1,
+                kotSequence,
                 orderId: order.id,
                 orderType: order.orderType,
                 tableNumber: tableNum ?? null,
@@ -641,11 +643,12 @@ export function registerOrdersRoutes(app: Express): void {
         const tables = existing.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
         const tableNum = existing.tableId ? tables.find(t => t.id === existing.tableId)?.number : undefined;
         const stationsArr = Array.from(new Set(allItems.map(i => i.station).filter((s): s is string => Boolean(s))));
+        const kotSequence = await getNextKotSequence(user.tenantId, req.params.id);
         if (stationsArr.length === 0) {
           await storage.createPrintJob({
             tenantId: user.tenantId, type: "kot", referenceId: req.params.id, station: null, status: "queued",
             payload: {
-              kotSequence: 1,
+              kotSequence,
               orderId: req.params.id, orderType: existing.orderType, tableNumber: tableNum ?? null, station: null, sentAt,
               items: allItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
             },
@@ -657,7 +660,7 @@ export function registerOrdersRoutes(app: Express): void {
             await storage.createPrintJob({
               tenantId: user.tenantId, type: "kot", referenceId: req.params.id, station: stn, status: "queued",
               payload: {
-                kotSequence: 1,
+                kotSequence,
                 orderId: req.params.id, orderType: existing.orderType, tableNumber: tableNum ?? null, station: stn, sentAt,
                 items: stnItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
               },
