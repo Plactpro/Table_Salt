@@ -155,6 +155,42 @@ export default function OrdersPage() {
     enabled: !!selectedOrderId,
   });
 
+  const payBillFromOrdersMutation = useMutation({
+    mutationFn: async ({ order, paymentMethod }: { order: OrderWithItems; paymentMethod: string }) => {
+      const subtotal = Number(order.subtotal ?? 0);
+      const tax = Number(order.tax ?? 0);
+      const discount = Number(order.discount ?? 0);
+      const serviceCharge = order.orderType === "dine_in" ? subtotal * 0.05 : 0;
+      const totalAmount = Number(order.total ?? 0) + serviceCharge;
+
+      const billRes = await apiRequest("POST", "/api/restaurant-bills", {
+        orderId: order.id,
+        tableId: order.tableId ?? null,
+        subtotal: String(subtotal),
+        tax: String(tax),
+        discount: String(discount),
+        serviceCharge: String(serviceCharge),
+        totalAmount: String(totalAmount),
+        notes: null,
+      });
+      if (!billRes.ok) throw new Error((await billRes.json()).message || "Failed to create bill");
+      const bill = await billRes.json();
+
+      const payRes = await apiRequest("POST", `/api/restaurant-bills/${bill.id}/payments`, {
+        payments: [{ paymentMethod: paymentMethod.toUpperCase(), amount: totalAmount }],
+        tips: 0,
+      });
+      if (!payRes.ok) throw new Error((await payRes.json()).message || "Failed to record payment");
+      return payRes.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+      toast({ title: "Payment recorded", description: "Bill settled via billing pipeline" });
+    },
+    onError: (err: Error) => toast({ variant: "destructive", title: "Payment failed", description: err.message }),
+  });
+
   const updateStatusMutation = useMutation({
     mutationFn: async ({ id, status, paymentMethod: pm, supervisorOverride }: { id: string; status: string; paymentMethod?: string; supervisorOverride?: { username: string; password: string; otpApprovalToken?: string } }) => {
       const body: Record<string, unknown> = { status };
@@ -633,8 +669,8 @@ export default function OrdersPage() {
                 <Button variant="outline" className="flex-1" onClick={() => setBillPreviewOrder(null)} data-testid="button-close-bill">
                   Close
                 </Button>
-                <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => { updateStatusMutation.mutate({ id: billPreviewOrder.id, status: "paid", paymentMethod: billPaymentMethod }); setBillPreviewOrder(null); }} disabled={updateStatusMutation.isPending} data-testid="button-mark-paid">
-                  <DollarSign className="h-4 w-4 mr-1" /> Mark as Paid
+                <Button className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => { payBillFromOrdersMutation.mutate({ order: billPreviewOrder, paymentMethod: billPaymentMethod }); setBillPreviewOrder(null); }} disabled={payBillFromOrdersMutation.isPending} data-testid="button-mark-paid">
+                  <DollarSign className="h-4 w-4 mr-1" /> {payBillFromOrdersMutation.isPending ? "Processing..." : "Mark as Paid"}
                 </Button>
               </DialogFooter>
             </div>

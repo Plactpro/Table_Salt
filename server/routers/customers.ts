@@ -9,6 +9,13 @@ export function registerCustomersRoutes(app: Express): void {
   app.get("/api/customers", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
+      const phone = req.query.phone as string | undefined;
+      if (phone) {
+        const all = await storage.getCustomersByTenant(user.tenantId, { limit: 500, offset: 0 });
+        const normalise = (p: string) => String(p ?? "").replace(/[\s\-\(\)]/g, "");
+        const match = all.filter(c => normalise(c.phone ?? "") === normalise(phone));
+        return res.json({ data: match, total: match.length, limit: 500, offset: 0 });
+      }
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       const [data, [{ total }]] = await Promise.all([
