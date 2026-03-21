@@ -2,7 +2,7 @@ import type { Express } from "express";
 import QRCode from "qrcode";
 import { storage } from "../storage";
 import { db, pool } from "../db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
 import { can, needsSupervisorApproval } from "../permissions";
 import { auditLogFromReq } from "../audit";
@@ -30,8 +30,7 @@ export function registerOrdersRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const heldOrders = await db.select().from(ordersTable)
-        .where(eq(ordersTable.tenantId, user.tenantId))
-        .then(rows => rows.filter(r => r.status === "on_hold"));
+        .where(and(eq(ordersTable.tenantId, user.tenantId), eq(ordersTable.status, "on_hold" as any)));
       const result = await Promise.all(heldOrders.map(async (order) => {
         const items = await storage.getOrderItemsByOrder(order.id);
         return { ...order, items };
