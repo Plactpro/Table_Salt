@@ -563,10 +563,21 @@ export function registerKitchenRoutes(app: Express): void {
         if (o.orderType === "delivery" && (status === "new" || status === "on_hold")) return false;
         return true;
       });
+      const liveAssignments = await storage.getLiveAssignments(tenant.id).catch(() => []);
+      const assignMap = new Map(liveAssignments.map(a => [a.orderId ?? "", a]));
       const tickets = [];
       for (const o of activeOrders) {
         const items = await storage.getOrderItemsByOrder(o.id);
-        tickets.push({ ...o, tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined, items });
+        const asgn = assignMap.get(o.id);
+        tickets.push({
+          ...o,
+          tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined,
+          items,
+          assignedChefName: asgn?.chefName ?? null,
+          counterName: asgn?.counterName ?? null,
+          counterId: asgn?.counterId ?? null,
+          assignmentStatus: asgn?.status ?? null,
+        });
       }
       res.json(tickets);
     } catch (err: any) { res.status(500).json({ message: err.message }); }

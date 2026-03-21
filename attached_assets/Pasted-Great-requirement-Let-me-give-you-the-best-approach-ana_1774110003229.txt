@@ -1,0 +1,496 @@
+Great requirement. Let me give you the **best approach analysis first**, then the full prompt.
+
+***
+
+## Best Approach Analysis
+
+### The Problem
+```
+Multiple cooking counters → Multiple chefs → Orders arriving continuously
+How to assign dishes to the right chef at the right counter efficiently?
+```
+
+### 3 Possible Approaches
+
+| Approach | How It Works | Best For | Weakness |
+|---|---|---|---|
+| **A. Pure Auto-Assign** | System assigns based on roster/workload | Large restaurants, high volume | Chefs lose control |
+| **B. Pure Self-Assign** | Chef picks their own tickets | Small restaurants, low volume | Tickets ignored, chaos |
+| **C. Hybrid (Best ✅)** | Auto-assign first, chef can override/self-assign | All sizes | Needs smart logic |
+
+### Recommended: Hybrid Intelligent Assignment
+```
+Order arrives
+    ↓
+System tries AUTO-ASSIGN first:
+  → Check roster (who is scheduled for this shift?)
+  → Check counter (which counter handles this dish type?)
+  → Check workload (who has fewest active tickets?)
+  → Assign to best available chef
+    ↓
+If no chef available:
+  → Ticket goes to UNASSIGNED pool
+  → Any chef can SELF-ASSIGN from pool
+    ↓
+If ticket not picked in X minutes:
+  → Escalate to Head Chef / Manager
+```
+
+***
+
+## Full Prompt for Replit AI
+
+***
+
+### Prompt for Replit AI – Smart Chef Assignment System (Auto + Self-Assign + Roster)
+
+This is a continuation of the existing restaurant SaaS project. KDS, recipe-inventory engine, POS, multi-tenant architecture, and station-based ticket routing are already built.
+
+Now build a **complete Chef Assignment and Counter Management System** that intelligently assigns incoming orders to the right chef at the right counter using a **hybrid approach**: automatic roster-based assignment with self-assign fallback and full manual override capability.
+
+***
+
+#### 1. Core entities and concepts
+
+```
+RESTAURANT
+  └── OUTLET
+        └── COUNTERS (physical cooking stations)
+              └── CHEFS (assigned per shift via roster)
+                    └── TICKETS (orders assigned to chef)
+```
+
+- **Counter**: a physical cooking station (Grill, Cold Kitchen, Bar, Fry Station, Bakery, etc.).
+- **Chef**: a kitchen staff member assigned to one or more counters per shift.
+- **Roster**: shift schedule that defines which chef works at which counter during which time.
+- **Ticket**: a KOT (Kitchen Order Ticket) for a specific dish that needs to be prepared.
+- **Assignment**: the link between a ticket and a chef/counter.
+
+***
+
+#### 2. Counter management
+
+Build a **Counter Management** screen under Kitchen Settings:
+
+```sql
+CREATE TABLE kitchen_counters (
+  id              UUID PRIMARY KEY,
+  tenant_id       UUID NOT NULL,
+  outlet_id       UUID NOT NULL,
+  name            VARCHAR(100) NOT NULL,
+    -- 'Grill Station', 'Cold Kitchen', 'Bar',
+    -- 'Fry Station', 'Dessert Counter', 'Tandoor'
+  counter_code    VARCHAR(20) UNIQUE,
+  handles_items   JSONB,
+    -- array of menu_item_ids or categories
+    -- this drives auto-routing
+  max_capacity    INT DEFAULT 5,
+    -- max simultaneous tickets this counter handles
+  display_color   VARCHAR(20),
+    -- color shown on KDS for this counter
+  is_active       BOOLEAN DEFAULT true,
+  sort_order      INT DEFAULT 0,
+  created_at      TIMESTAMP DEFAULT NOW()
+);
+```
+
+- Manager can:
+  - Create/edit/delete counters.
+  - Assign menu categories or specific items to each counter.
+  - Set max ticket capacity per counter.
+  - Set display color (shown on KDS board).
+- Each menu item is linked to exactly one counter (set in Menu Management):
+  - This drives automatic ticket routing to the correct counter.
+
+***
+
+#### 3. Chef roster / shift assignment
+
+Build a **Roster Management** screen:
+
+```sql
+CREATE TABLE chef_roster (
+  id              UUID PRIMARY KEY,
+  tenant_id       UUID NOT NULL,
+  outlet_id       UUID NOT NULL,
+  chef_id         UUID NOT NULL,
+  chef_name       VARCHAR(255),
+  counter_id      UUID NOT NULL,
+  counter_name    VARCHAR(100),
+  shift_date      DATE NOT NULL,
+  shift_start     TIME NOT NULL,
+  shift_end       TIME NOT NULL,
+  shift_type      VARCHAR(20),
+    -- 'morning', 'afternoon', 'evening', 'night'
+  status          VARCHAR(20) DEFAULT 'scheduled',
+    -- 'scheduled', 'checked_in', 'checked_out', 'absent'
+  checked_in_at   TIMESTAMP,
+  checked_out_at  TIMESTAMP,
+  created_by      UUID,
+  created_at      TIMESTAMP DEFAULT NOW()
+);
+```
+
+- Manager can:
+  - Create weekly roster by dragging chefs to counters and time slots.
+  - Copy last week's roster.
+  - View roster as a weekly grid:
+    ```
+    Counter      | Mon  | Tue  | Wed  | Thu  | Fri  | Sat  | Sun
+    Grill        | Ravi | Ravi | John | John | Ravi | Sara | Sara
+    Cold Kitchen | Anita| Tom  | Anita| Tom  | Anita| Tom  | Tom
+    Bar          | Mike | Mike | Mike | Lisa | Lisa | Lisa | Mike
+    ```
+  - Set recurring roster (repeat weekly).
+  - Receive warning if a counter has no chef assigned for a shift.
+
+***
+
+#### 4. Chef availability (real-time)
+
+```sql
+CREATE TABLE chef_availability (
+  id              UUID PRIMARY KEY,
+  tenant_id       UUID NOT NULL,
+  outlet_id       UUID NOT NULL,
+  chef_id         UUID NOT NULL,
+  counter_id      UUID NOT NULL,
+  shift_date      DATE NOT NULL,
+  status          VARCHAR(20) DEFAULT 'available',
+    -- 'available', 'busy', 'on_break', 'offline'
+  active_tickets  INT DEFAULT 0,
+  last_updated    TIMESTAMP DEFAULT NOW()
+);
+```
+
+- Chef availability is updated in real time:
+  - When chef checks in → status = `available`.
+  - When chef picks up a ticket → `active_tickets + 1`.
+  - When chef completes a ticket → `active_tickets - 1`.
+  - When chef goes on break → status = `on_break`.
+  - When chef checks out → status = `offline`.
+
+***
+
+#### 5. Hybrid intelligent assignment engine
+
+This is the core logic. Implement as a service: `ChefAssignmentService`.
+
+##### Algorithm (runs every time a new ticket arrives):
+
+```typescript
+async function assignTicket(ticket: Ticket): Promise<Assignment> {
+
+  // STEP 1: Determine which counter handles this dish
+  const counter = await getCounterForMenuItem(ticket.menuItemId);
+
+  // STEP 2: Get all chefs available at this counter right now
+  const availableChefs = await getAvailableChefs(
+    counter.id,
+    ticket.outletId,
+    currentShift()
+  );
+
+  if (availableChefs.length === 0) {
+    // No chef available → send to UNASSIGNED pool
+    return assignToPool(ticket, counter);
+  }
+
+  // STEP 3: Score each available chef
+  const scored = availableChefs.map(chef => ({
+    chef,
+    score: calculateScore(chef, ticket)
+  }));
+
+  // STEP 4: Pick highest scoring chef
+  const best = scored.sort((a, b) => b.score - a.score)[0];
+
+  // STEP 5: Assign ticket
+  return createAssignment(ticket, best.chef, counter);
+}
+
+function calculateScore(chef, ticket): number {
+  let score = 100;
+
+  // Factor 1: Workload (fewer active tickets = higher score)
+  score -= chef.activeTickets * 20;
+
+  // Factor 2: Roster match (scheduled for this counter = bonus)
+  if (chef.isRosteredForCounter(ticket.counterId)) score += 30;
+
+  // Factor 3: Specialization (chef has prepared this dish before)
+  if (chef.hasExperienceWith(ticket.menuItemId)) score += 15;
+
+  // Factor 4: Recent performance (faster avg prep time = bonus)
+  score += Math.max(0, 20 - chef.avgPrepTimeMinutes);
+
+  return score;
+}
+```
+
+##### Assignment modes (configurable per outlet):
+
+```
+MODE 1: FULL AUTO
+  → System always assigns; chef cannot self-assign
+  → Best for: high-volume, disciplined kitchens
+
+MODE 2: HYBRID (DEFAULT ✅ RECOMMENDED)
+  → System auto-assigns first
+  → If unassigned pool has tickets, any on-duty chef can grab them
+  → Chef can request reassignment with reason
+
+MODE 3: SELF-ASSIGN ONLY
+  → All tickets go to pool
+  → Chef picks what they want to prepare
+  → Best for: small restaurants
+
+MODE 4: MANUAL (Manager-only)
+  → Manager assigns each ticket manually
+  → Best for: high-end fine dining with specific pairings
+```
+
+***
+
+#### 6. Assignment database schema
+
+```sql
+CREATE TABLE ticket_assignments (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  ticket_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  menu_item_id        UUID NOT NULL,
+  menu_item_name      VARCHAR(255),
+  counter_id          UUID NOT NULL,
+  counter_name        VARCHAR(100),
+  chef_id             UUID,
+  chef_name           VARCHAR(255),
+  assignment_type     VARCHAR(20),
+    -- 'AUTO_ROSTER', 'AUTO_WORKLOAD',
+    -- 'SELF_ASSIGNED', 'MANAGER_ASSIGNED',
+    -- 'REASSIGNED', 'UNASSIGNED'
+  assignment_score    INT,
+  assigned_at         TIMESTAMP,
+  accepted_at         TIMESTAMP,
+  started_at          TIMESTAMP,
+  completed_at        TIMESTAMP,
+  status              VARCHAR(20) DEFAULT 'assigned',
+    -- 'unassigned', 'assigned', 'accepted',
+    -- 'in_progress', 'completed', 'reassigned'
+  reassign_reason     TEXT,
+  estimated_time_min  INT,
+  actual_time_min     INT,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+```
+
+***
+
+#### 7. KDS redesign with assignment awareness
+
+Redesign the existing KDS to show assignment information:
+
+##### Wall screen (counter-filtered view)
+- Each counter has its own column or can switch to a full view.
+- Ticket card shows:
+  ```
+  ┌─────────────────────────┐
+  │ 🔴 T-5 | ORDER #045     │
+  │ Grilled Chicken x1      │
+  │ + No onions             │
+  │ ──────────────────────  │
+  │ 👨‍🍳 RAVI KUMAR  [GRILL] │
+  │ ⏱️ 3:24  📊 ASSIGNED    │
+  │ [START] [REASSIGN]      │
+  └─────────────────────────┘
+  ```
+- Unassigned tickets shown with red border and pulsing animation:
+  ```
+  ┌─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┐
+  │ ⚠️ UNASSIGNED           │
+  │ T-7 | Pasta x2          │
+  │ Waiting for chef...     │
+  │ [GRAB THIS TICKET]      │
+  └─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─ ─┘
+  ```
+
+##### Chef tablet (personal view)
+- Chef sees 3 sections:
+
+  **Section 1 – My Active Tickets** (assigned to me):
+  ```
+  [START] Grilled Chicken | T-5 | 3:24 elapsed
+  [DONE]  Caesar Salad    | T-3 | 8:10 elapsed
+  ```
+
+  **Section 2 – Available Pool** (unassigned, same counter):
+  ```
+  ┌─────────────────────────┐
+  │ UNASSIGNED TICKETS (2)  │
+  │ Pasta x2 | T-7          │
+  │ [GRAB]                  │
+  │ Risotto x1 | T-9        │
+  │ [GRAB]                  │
+  └─────────────────────────┘
+  ```
+
+  **Section 3 – Counter Overview** (all chefs at this counter):
+  ```
+  Ravi:  3 tickets (BUSY)
+  Anita: 1 ticket  (AVAILABLE)
+  Tom:   0 tickets (IDLE)
+  ```
+
+- **Chef actions**:
+  - `GRAB`: self-assign an unassigned ticket.
+  - `START`: begin preparation (triggers stock deduction).
+  - `DONE`: mark as ready.
+  - `REASSIGN`: request to move ticket to another chef (with reason).
+  - `HELP`: flag ticket as needing assistance.
+
+***
+
+#### 8. Manager assignment dashboard
+
+Build a **"Kitchen Assignment Board"** for managers:
+
+##### Live overview
+```
+┌─────────────────────────────────────────────────────────┐
+│  KITCHEN OVERVIEW — Live                                │
+├────────────┬────────────┬────────────┬──────────────────┤
+│   GRILL    │    BAR     │  COLD KIT  │    DESSERT       │
+│            │            │            │                  │
+│ Ravi: 3🟠  │ Mike: 1🟢  │ Anita: 2🟠 │ Sara: 0🟢        │
+│ John: 4🔴  │            │ Tom:  3🟠  │                  │
+│            │            │            │                  │
+│ UNASSIGNED │ UNASSIGNED │ UNASSIGNED │ UNASSIGNED       │
+│    2 🔴    │    0 ✅    │    1 🟡    │    0 ✅          │
+└────────────┴────────────┴────────────┴──────────────────┘
+```
+
+- Color coding: green (0–2 tickets), amber (3–4), red (5+).
+- Manager can:
+  - Drag and drop tickets between chefs.
+  - Assign unassigned tickets to specific chefs.
+  - Temporarily add a chef from another counter to help (overflow support).
+  - View each chef's active ticket list.
+
+***
+
+#### 9. Auto-assignment rules configuration
+
+Under Kitchen Settings → Assignment Rules:
+
+```
+Assignment Mode:        [Hybrid ▼]
+Max tickets per chef:   [5     ]
+Unassigned timeout:     [3 min ] → then escalate to manager
+Auto-reassign if idle:  [10 min] → ticket auto-moves to pool
+Consider roster:        [✅ Yes]
+Consider workload:      [✅ Yes]
+Consider experience:    [✅ Yes]
+Allow self-assign:      [✅ Yes]
+Allow chef reassign:    [✅ Yes]
+Require reason to
+  reassign:             [✅ Yes]
+```
+
+***
+
+#### 10. Chef performance and assignment analytics
+
+Under Reports → Kitchen → Chef Assignment:
+
+- Per chef metrics:
+  - Total tickets assigned (auto vs self-assigned).
+  - Acceptance rate (how often they grabbed unassigned tickets).
+  - Average prep time per dish type.
+  - Reassignment rate (how often they passed tickets).
+  - Tickets completed per shift.
+
+- Counter metrics:
+  - Average tickets per hour per counter.
+  - Peak load times per counter.
+  - Unassigned ticket rate (% of tickets that went to pool).
+
+- Assignment efficiency:
+  - Auto-assign success rate.
+  - Average time from order to assignment.
+  - Average time from assignment to start.
+
+***
+
+#### 11. Escalation and alerts
+
+- **Unassigned ticket alert**:
+  - If ticket not assigned within 3 minutes → manager gets red alert.
+  - If ticket not started within 5 minutes → manager gets urgent alert.
+
+- **Overloaded chef alert**:
+  - If any chef has more than max_tickets → amber alert to manager.
+  - Suggest: "Move 1 ticket from Ravi to Tom (currently idle)."
+
+- **Counter understaffed alert**:
+  - If a counter has active tickets but no available chef → immediate manager alert.
+
+- **Absent chef alert**:
+  - If rostered chef hasn't checked in 15 min after shift start → alert manager.
+  - Suggest: "Ravi hasn't checked in. Assign Grill tickets to Tom?"
+
+***
+
+#### 12. APIs required
+
+```
+-- Counter management
+GET    /api/counters                          → list counters
+POST   /api/counters                          → create counter
+PUT    /api/counters/:id                      → update counter
+
+-- Roster management
+GET    /api/roster?date=&outletId=            → get roster for date
+POST   /api/roster                            → create/update roster entry
+POST   /api/roster/copy-week                  → copy last week's roster
+
+-- Chef availability
+GET    /api/chef-availability/live            → real-time availability
+PUT    /api/chef-availability/:chefId/status  → update status (break/available)
+
+-- Assignment engine
+POST   /api/assignments/auto-assign           → trigger auto-assign for ticket
+POST   /api/assignments/self-assign           → chef grabs unassigned ticket
+PUT    /api/assignments/:id/start             → chef starts preparation
+PUT    /api/assignments/:id/complete          → chef marks done
+PUT    /api/assignments/:id/reassign          → request reassignment
+GET    /api/assignments/live                  → live assignment board (WebSocket)
+GET    /api/assignments/analytics             → assignment performance report
+
+-- Manager override
+PUT    /api/assignments/:id/manager-assign    → manager manually assigns
+POST   /api/assignments/rebalance             → auto-rebalance workload
+```
+
+***
+
+#### 13. Seed demo data
+
+Seed the following for full demonstration:
+
+- 4 counters: Grill, Cold Kitchen, Bar, Dessert.
+- 6 chefs assigned across counters with 2 shifts (morning/evening).
+- Weekly roster for current week.
+- 10 active tickets in various assignment states:
+  - 4 assigned and in progress.
+  - 3 assigned but not started.
+  - 2 unassigned (in pool).
+  - 1 reassigned.
+- Chef availability showing realistic workload distribution.
+- Assignment analytics data for last 7 days.
+- All 4 assignment modes configurable and switchable per outlet.
+
+***
+
+Ensure all assignment logic is scoped by `tenant_id` and `outlet_id`. Use WebSocket for real-time assignment broadcasting to all KDS screens and chef tablets simultaneously. Wrap assignment creation in DB transactions to prevent duplicate assignments. Index `counter_id`, `chef_id`, `status`, `assigned_at`, and `tenant_id` for fast live queries.

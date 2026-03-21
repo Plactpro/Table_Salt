@@ -47,6 +47,8 @@ import KdsWallScreen from "@/pages/dashboards/kds-wall";
 import TableQrPage from "@/pages/table-qr";
 import LiveRequestsPage from "@/pages/modules/live-requests";
 import QrRequestSettings from "@/pages/modules/qr-request-settings";
+import KitchenSettingsPage from "@/pages/dashboards/kitchen-settings";
+import KitchenBoardPage from "@/pages/dashboards/kitchen-board";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -94,6 +96,8 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/events": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor"], featureKey: "staff" },
   "/live-requests": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
   "/qr-settings": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "tables" },
+  "/kitchen-settings": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
+  "/kitchen-board": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -278,6 +282,8 @@ function ProtectedPages() {
         <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffHub} />}</Route>
         <Route path="/live-requests">{() => <GuardedRoute path="/live-requests" component={LiveRequestsPage} />}</Route>
         <Route path="/qr-settings">{() => <GuardedRoute path="/qr-settings" component={QrRequestSettings} />}</Route>
+        <Route path="/kitchen-settings">{() => <GuardedRoute path="/kitchen-settings" component={KitchenSettingsPage} />}</Route>
+        <Route path="/kitchen-board">{() => <GuardedRoute path="/kitchen-board" component={KitchenBoardPage} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsHub} />}</Route>
         <Route path="/stock-movements">{() => <GuardedRoute path="/inventory" component={StockMovementLog} />}</Route>
         <Route path="/chef-report">{() => <GuardedRoute path="/reports" component={ChefReport} />}</Route>

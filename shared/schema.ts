@@ -1552,12 +1552,13 @@ export const tableQrTokens = pgTable("table_qr_tokens", {
   tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
   outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
   tableId: varchar("table_id", { length: 36 }).notNull().references(() => tables.id),
-  token: text("token").notNull().unique(),
+  token: text("token").notNull(),
   active: boolean("active").default(true),
   label: text("label"),
   createdAt: timestamp("created_at").defaultNow(),
   deactivatedAt: timestamp("deactivated_at"),
 }, (t) => [
+  uniqueIndex("table_qr_tokens_token_key").on(t.token),
   index("idx_table_qr_tokens_tenant").on(t.tenantId),
   index("idx_table_qr_tokens_table").on(t.tableId),
   index("idx_table_qr_tokens_token").on(t.token),
@@ -1597,4 +1598,108 @@ export const tableRequests = pgTable("table_requests", {
 export const insertTableRequestSchema = createInsertSchema(tableRequests).omit({ id: true, createdAt: true });
 export type TableRequest = typeof tableRequests.$inferSelect;
 export type InsertTableRequest = z.infer<typeof insertTableRequestSchema>;
+
+// ─── Task #76: Smart Chef Assignment & Counter Management ─────────────────────
+
+export const kitchenCounters = pgTable("kitchen_counters", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  name: text("name").notNull(),
+  counterCode: varchar("counter_code", { length: 20 }),
+  handlesCategories: jsonb("handles_categories").$type<string[]>().default([]),
+  maxCapacity: integer("max_capacity").default(5),
+  displayColor: varchar("display_color", { length: 20 }).default("#3B82F6"),
+  isActive: boolean("is_active").default(true),
+  sortOrder: integer("sort_order").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_kitchen_counters_tenant").on(t.tenantId),
+]);
+
+export const insertKitchenCounterSchema = createInsertSchema(kitchenCounters).omit({ id: true, createdAt: true });
+export type KitchenCounter = typeof kitchenCounters.$inferSelect;
+export type InsertKitchenCounter = z.infer<typeof insertKitchenCounterSchema>;
+
+export const chefRoster = pgTable("chef_roster", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  chefId: varchar("chef_id", { length: 36 }).references(() => users.id),
+  chefName: text("chef_name"),
+  counterId: varchar("counter_id", { length: 36 }).references(() => kitchenCounters.id),
+  counterName: text("counter_name"),
+  shiftDate: text("shift_date").notNull(),
+  shiftStart: text("shift_start").notNull(),
+  shiftEnd: text("shift_end").notNull(),
+  shiftType: varchar("shift_type", { length: 20 }).default("morning"),
+  status: varchar("status", { length: 20 }).default("scheduled"),
+  checkedInAt: timestamp("checked_in_at"),
+  checkedOutAt: timestamp("checked_out_at"),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_chef_roster_tenant").on(t.tenantId),
+  index("idx_chef_roster_date").on(t.shiftDate),
+  index("idx_chef_roster_counter").on(t.counterId),
+]);
+
+export const insertChefRosterSchema = createInsertSchema(chefRoster).omit({ id: true, createdAt: true });
+export type ChefRoster = typeof chefRoster.$inferSelect;
+export type InsertChefRoster = z.infer<typeof insertChefRosterSchema>;
+
+export const chefAvailability = pgTable("chef_availability", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  chefId: varchar("chef_id", { length: 36 }).notNull().references(() => users.id),
+  counterId: varchar("counter_id", { length: 36 }).references(() => kitchenCounters.id),
+  shiftDate: text("shift_date"),
+  status: varchar("status", { length: 20 }).default("available"),
+  activeTickets: integer("active_tickets").default(0),
+  lastUpdated: timestamp("last_updated").defaultNow(),
+}, (t) => [
+  index("idx_chef_availability_tenant").on(t.tenantId),
+  index("idx_chef_availability_chef").on(t.chefId),
+]);
+
+export const insertChefAvailabilitySchema = createInsertSchema(chefAvailability).omit({ id: true, lastUpdated: true });
+export type ChefAvailability = typeof chefAvailability.$inferSelect;
+export type InsertChefAvailability = z.infer<typeof insertChefAvailabilitySchema>;
+
+export const ticketAssignments = pgTable("ticket_assignments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  orderItemId: varchar("order_item_id", { length: 36 }),
+  orderId: varchar("order_id", { length: 36 }),
+  menuItemId: varchar("menu_item_id", { length: 36 }),
+  menuItemName: text("menu_item_name"),
+  tableNumber: integer("table_number"),
+  counterId: varchar("counter_id", { length: 36 }).references(() => kitchenCounters.id),
+  counterName: text("counter_name"),
+  chefId: varchar("chef_id", { length: 36 }).references(() => users.id),
+  chefName: text("chef_name"),
+  assignmentType: varchar("assignment_type", { length: 30 }).default("UNASSIGNED"),
+  assignmentScore: integer("assignment_score"),
+  assignedAt: timestamp("assigned_at"),
+  acceptedAt: timestamp("accepted_at"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  status: varchar("status", { length: 20 }).default("unassigned"),
+  reassignReason: text("reassign_reason"),
+  estimatedTimeMin: integer("estimated_time_min"),
+  actualTimeMin: integer("actual_time_min"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_ticket_assignments_tenant").on(t.tenantId),
+  index("idx_ticket_assignments_counter").on(t.counterId),
+  index("idx_ticket_assignments_chef").on(t.chefId),
+  index("idx_ticket_assignments_status").on(t.status),
+  index("idx_ticket_assignments_assigned_at").on(t.assignedAt),
+]);
+
+export const insertTicketAssignmentSchema = createInsertSchema(ticketAssignments).omit({ id: true, createdAt: true });
+export type TicketAssignment = typeof ticketAssignments.$inferSelect;
+export type InsertTicketAssignment = z.infer<typeof insertTicketAssignmentSchema>;
 export type InsertPosSession = z.infer<typeof insertPosSessionSchema>;
