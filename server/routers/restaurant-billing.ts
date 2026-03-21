@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
+import { verifySupervisorOverride } from "./_shared";
 
 function numWords(n: number): string {
   const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
@@ -338,10 +339,15 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/pos/session/close", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/pos/session/close", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { sessionId, closingCashCount, notes } = req.body;
+      const { sessionId, closingCashCount, notes, supervisorOverride } = req.body;
+      const isManagerOrOwner = user.role === "owner" || user.role === "manager";
+      if (!isManagerOrOwner) {
+        const result = await verifySupervisorOverride(supervisorOverride, user.tenantId, "close_shift" as any, req);
+        if (!result.verified) return res.status(403).json({ message: result.error || "Manager approval required to close shift" });
+      }
       let session;
       if (sessionId) {
         session = await storage.getPosSession(sessionId);
