@@ -229,4 +229,14 @@ export async function runAdminMigrations(): Promise<void> {
     ON bills (tenant_id, invoice_number)
     WHERE invoice_number IS NOT NULL
   `);
+
+  // Razorpay fields — tenants
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS razorpay_enabled BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS razorpay_key_id TEXT`);
+
+  // Razorpay order/payment link stored on bill
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS razorpay_order_id TEXT`);
+
+  // Razorpay payment ID stored on bill_payments for reconciliation
+  await pool.query(`ALTER TABLE bill_payments ADD COLUMN IF NOT EXISTS razorpay_payment_id TEXT`);
 }

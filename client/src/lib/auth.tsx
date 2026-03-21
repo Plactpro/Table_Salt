@@ -33,6 +33,8 @@ export interface TenantInfo {
   cgstRate?: string | null;
   sgstRate?: string | null;
   invoicePrefix?: string | null;
+  razorpayEnabled?: boolean | null;
+  razorpayKeyId?: string | null;
 }
 
 export interface AuthUser {

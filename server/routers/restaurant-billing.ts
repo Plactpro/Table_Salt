@@ -6,6 +6,7 @@ import { verifySupervisorOverride } from "./_shared";
 import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { tenants as tenantsTable } from "@shared/schema";
+import { createPaymentLink, getPaymentLink, verifyWebhookSignature } from "../razorpay";
 
 function getFiscalYear(date: Date): string {
   const m = date.getMonth() + 1;
@@ -433,6 +434,84 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (!session || session.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const report = await storage.getPosSessionReport(sessionId);
       res.json(report);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/restaurant-bills/:id/payment-request", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const bill = await storage.getBill(req.params.id);
+      if (!bill) return res.status(404).json({ message: "Bill not found" });
+      if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      if (bill.paymentStatus === "paid") return res.status(400).json({ message: "Bill already paid" });
+
+      const tenant = await storage.getTenant(user.tenantId);
+      if (!tenant?.razorpayEnabled) return res.status(400).json({ message: "Razorpay gateway not enabled for this account" });
+
+      const { method, amountRupees, tips } = req.body;
+      const tipVal = parseFloat(tips) || 0;
+
+      if (tipVal > 0) {
+        await storage.updateBill(bill.id, user.tenantId, { tips: tipVal.toFixed(2) });
+      }
+
+      const totalAmount = parseFloat(String(amountRupees)) || Number(bill.totalAmount) + tipVal;
+
+      if (bill.razorpayOrderId) {
+        try {
+          const existing = await getPaymentLink(bill.razorpayOrderId, tenant.razorpayKeyId);
+          if (existing.status !== "cancelled" && existing.status !== "expired") {
+            return res.json({ paymentLinkId: existing.id, shortUrl: existing.short_url, status: existing.status });
+          }
+        } catch (_) {}
+      }
+
+      const link = await createPaymentLink({
+        amountRupees: totalAmount,
+        currency: tenant.currency || "INR",
+        description: `Payment for Bill ${bill.billNumber}`,
+        billId: bill.id,
+        tenantKeyId: tenant.razorpayKeyId,
+      });
+
+      await storage.updateBill(bill.id, user.tenantId, { razorpayOrderId: link.id });
+
+      return res.json({ paymentLinkId: link.id, shortUrl: link.short_url, status: link.status });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/restaurant-bills/:id/payment-status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const bill = await storage.getBill(req.params.id);
+      if (!bill) return res.status(404).json({ message: "Bill not found" });
+      if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      if (bill.paymentStatus === "paid") return res.json({ status: "paid" });
+
+      if (!bill.razorpayOrderId) return res.json({ status: "pending" });
+
+      const tenant = await storage.getTenant(user.tenantId);
+      const link = await getPaymentLink(bill.razorpayOrderId, tenant?.razorpayKeyId);
+
+      if (link.status === "paid") {
+        const paymentId = link.payments?.[0]?.payment_id ?? null;
+        const method = (req.query.method as string) || "UPI";
+        await storage.updateBill(bill.id, user.tenantId, { paymentStatus: "paid", paidAt: new Date() });
+        await storage.createBillPayment({
+          tenantId: bill.tenantId,
+          billId: bill.id,
+          paymentMethod: method,
+          amount: link.amount ? String(link.amount / 100) : bill.totalAmount,
+          referenceNo: paymentId || link.id,
+          collectedBy: user.id,
+          razorpayPaymentId: paymentId,
+        });
+        emitToTenant(bill.tenantId, "bill:paid", { billId: bill.id, method });
+        return res.json({ status: "paid", paymentId });
+      }
+
+      return res.json({ status: link.status === "cancelled" || link.status === "expired" ? "cancelled" : "pending" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

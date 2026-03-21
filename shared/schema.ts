@@ -105,6 +105,8 @@ export const tenants = pgTable("tenants", {
   sgstRate: decimal("sgst_rate", { precision: 5, scale: 2 }),
   invoicePrefix: text("invoice_prefix").default("INV"),
   invoiceCounter: integer("invoice_counter").default(0),
+  razorpayEnabled: boolean("razorpay_enabled").default(false),
+  razorpayKeyId: text("razorpay_key_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -1458,6 +1460,7 @@ export const bills = pgTable("bills", {
   customerGstin: text("customer_gstin"),
   cgstAmount: decimal("cgst_amount", { precision: 10, scale: 2 }),
   sgstAmount: decimal("sgst_amount", { precision: 10, scale: 2 }),
+  razorpayOrderId: text("razorpay_order_id"),
   createdAt: timestamp("created_at").defaultNow(),
   paidAt: timestamp("paid_at"),
 }, (t) => [
@@ -1482,6 +1485,7 @@ export const billPayments = pgTable("bill_payments", {
   collectedBy: varchar("collected_by", { length: 36 }).references(() => users.id),
   isRefund: boolean("is_refund").default(false),
   refundReason: text("refund_reason"),
+  razorpayPaymentId: text("razorpay_payment_id"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_bill_payments_bill_id").on(t.billId),

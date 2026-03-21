@@ -41,6 +41,49 @@ app.post(
   }
 );
 
+// Razorpay webhook — must be registered BEFORE express.json() to get raw body
+app.post(
+  "/api/webhooks/razorpay",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const sig = req.headers["x-razorpay-signature"];
+    if (!sig || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "Invalid request" });
+    const rawBody = req.body.toString("utf8");
+    const { verifyWebhookSignature } = await import("./razorpay");
+    if (!verifyWebhookSignature(rawBody, Array.isArray(sig) ? sig[0] : sig)) {
+      return res.status(400).json({ error: "Signature mismatch" });
+    }
+    try {
+      const event = JSON.parse(rawBody);
+      if (event.event === "payment_link.paid") {
+        const pl = event.payload?.payment_link?.entity;
+        const payment = event.payload?.payment?.entity;
+        if (pl?.reference_id && payment?.id) {
+          const { storage } = await import("./storage");
+          const bill = await storage.getBill(pl.reference_id);
+          if (bill && bill.paymentStatus !== "paid") {
+            await storage.updateBill(bill.id, bill.tenantId, { paymentStatus: "paid", paidAt: new Date() });
+            await storage.createBillPayment({
+              tenantId: bill.tenantId,
+              billId: bill.id,
+              paymentMethod: payment.method?.toUpperCase() === "CARD" ? "CARD" : "UPI",
+              amount: String(pl.amount / 100),
+              referenceNo: payment.id,
+              razorpayPaymentId: payment.id,
+            });
+            const { emitToTenant } = await import("./realtime");
+            emitToTenant(bill.tenantId, "bill:paid", { billId: bill.id });
+          }
+        }
+      }
+      res.status(200).json({ received: true });
+    } catch (err: any) {
+      console.error("[Razorpay webhook]", err.message);
+      res.status(500).json({ error: "Webhook processing failed" });
+    }
+  }
+);
+
 app.use(
   express.json({
     verify: (req, _res, buf) => {
