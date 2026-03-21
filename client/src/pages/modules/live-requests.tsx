@@ -75,7 +75,7 @@ const STATUS_CONFIG: Record<string, { label: string; badge: string }> = {
 function useElapsedTimer() {
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick(t => t + 1), 10000);
+    const id = setInterval(() => setTick(t => t + 1), 1000);
     return () => clearInterval(id);
   }, []);
   return tick;
@@ -193,6 +193,7 @@ export default function LiveRequestsPage() {
   const [filterStatus, setFilterStatus] = useState<string>("active");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterTable, setFilterTable] = useState<string>("all");
+  const [filterStaff, setFilterStaff] = useState<string>("all");
   const [assignModalReq, setAssignModalReq] = useState<TableRequest | null>(null);
   const [selectedStaffId, setSelectedStaffId] = useState<string>("");
 
@@ -271,12 +272,14 @@ export default function LiveRequestsPage() {
   }, [queryClient, playAlert]));
 
   const tableNumbers = Array.from(new Set(requests.map(r => r.tableNumber).filter(Boolean) as number[])).sort((a, b) => a - b);
+  const staffList = allUsers.filter(u => ["owner", "manager", "supervisor", "waiter", "cashier"].includes(u.role));
 
   const filtered = requests.filter(r => {
     if (filterStatus === "active" && (r.status === "completed" || r.status === "cancelled")) return false;
     if (filterStatus !== "active" && filterStatus !== "all" && r.status !== filterStatus) return false;
     if (filterType !== "all" && r.requestType !== filterType) return false;
     if (filterTable !== "all" && String(r.tableNumber) !== filterTable) return false;
+    if (filterStaff !== "all" && r.assignedTo !== filterStaff) return false;
     return true;
   }).sort((a, b) => {
     const pOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -289,14 +292,25 @@ export default function LiveRequestsPage() {
   const acknowledged = requests.filter(r => r.status === "acknowledged").length;
   const overdue = requests.filter(r => isOverdue(r)).length;
 
-  const avgResponseMs = (() => {
-    const completed = requests.filter(r => r.status === "completed" && r.acknowledgedAt && r.createdAt);
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+
+  const avgResponseTodayMs = (() => {
+    const completed = requests.filter(r =>
+      r.status === "completed" && r.acknowledgedAt && r.createdAt &&
+      new Date(r.createdAt) >= todayStart
+    );
     if (!completed.length) return null;
     const avg = completed.reduce((s, r) => s + (new Date(r.acknowledgedAt!).getTime() - new Date(r.createdAt).getTime()), 0) / completed.length;
     return Math.round(avg / 60000);
   })();
 
-  const staffList = allUsers.filter(u => ["owner", "manager", "supervisor", "waiter", "cashier"].includes(u.role));
+  const mostRequestedType = (() => {
+    const counts: Record<string, number> = {};
+    requests.forEach(r => { counts[r.requestType] = (counts[r.requestType] ?? 0) + 1; });
+    const top = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return top ? (TYPE_CONFIG[top[0]]?.label ?? top[0]) : null;
+  })();
 
   return (
     <div className="space-y-6 p-1" data-testid="live-requests-page">
@@ -341,10 +355,17 @@ export default function LiveRequestsPage() {
           </Card>
           <Card data-testid="stat-avg-response">
             <CardContent className="pt-4 pb-3">
-              <p className="text-xs text-muted-foreground">Avg Response</p>
+              <p className="text-xs text-muted-foreground">Avg Response Today</p>
               <p className="text-2xl font-bold text-green-600">
-                {avgResponseMs !== null ? `${avgResponseMs}m` : "—"}
+                {avgResponseTodayMs !== null ? `${avgResponseTodayMs}m` : "—"}
               </p>
+            </CardContent>
+          </Card>
+          <Card data-testid="stat-most-requested" className="col-span-2 sm:col-span-4">
+            <CardContent className="pt-3 pb-2 flex items-center gap-2">
+              <Zap className="h-4 w-4 text-orange-500 shrink-0" />
+              <span className="text-xs text-muted-foreground">Most Requested Type:</span>
+              <span className="text-sm font-semibold text-orange-600">{mostRequestedType ?? "—"}</span>
             </CardContent>
           </Card>
         </div>
@@ -385,6 +406,20 @@ export default function LiveRequestsPage() {
               <SelectItem value="all">All Tables</SelectItem>
               {tableNumbers.map(n => (
                 <SelectItem key={n} value={String(n)}>Table {n}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {isManager && staffList.length > 0 && (
+          <Select value={filterStaff} onValueChange={setFilterStaff}>
+            <SelectTrigger className="w-36 h-8 text-xs" data-testid="filter-staff">
+              <User className="h-3 w-3 mr-1" /><SelectValue placeholder="All Staff" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Staff</SelectItem>
+              {staffList.map(s => (
+                <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
