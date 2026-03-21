@@ -239,9 +239,8 @@ function QrManagementTab({ tables, toast, queryClient, user }: {
   };
 
   const handleBulkDownload = () => {
-    const outletId = qrTokens.find(q => q.outletId)?.outletId ?? tables.find(t => t.outletId)?.outletId ?? "all";
     const link = document.createElement("a");
-    link.href = `/api/qr/bulk-download/${outletId}`;
+    link.href = `/api/qr/bulk-download/all`;
     link.download = "qr-codes.zip";
     link.click();
   };
