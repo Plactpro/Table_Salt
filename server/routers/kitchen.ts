@@ -196,6 +196,9 @@ export function registerKitchenRoutes(app: Express): void {
       const activeShift = await storage.getActiveShift(user.tenantId, order.outletId || undefined);
       const chefName = (user as any).name || (user as any).username || "Chef";
 
+      const existingMovements = await storage.getStockMovementsByOrder(order.id);
+      const alreadyDeducted = existingMovements.some((m) => m.type === "RECIPE_CONSUMPTION");
+
       const stockWrites: Array<{ inventoryItemId: string; qty: number; menuItemId: string; recipeId: string; menuItemName: string }> = [];
       const insufficientItems: string[] = [];
 
@@ -224,7 +227,7 @@ export function registerKitchenRoutes(app: Express): void {
         return res.status(409).json({ message: "Insufficient stock", insufficientItems });
       }
 
-      if (order.channel !== "kiosk" && stockWrites.length > 0) {
+      if (order.channel !== "kiosk" && !alreadyDeducted && stockWrites.length > 0) {
         const lowStockItems: Array<{ id: string; name: string; after: number; reorder: number; stockMovementId: string }> = [];
         await db.transaction(async (tx) => {
           for (const w of stockWrites) {
@@ -352,7 +355,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", tableId: order.tableId });
-      res.json({ success: true, deducted: order.channel !== "kiosk" ? stockWrites.length : 0 });
+      res.json({ success: true, deducted: (order.channel !== "kiosk" && !alreadyDeducted) ? stockWrites.length : 0 });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

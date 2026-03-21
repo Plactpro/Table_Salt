@@ -12,6 +12,7 @@ import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
 import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
 import { convertUnits } from "@shared/units";
+import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 
 /** Server-side whitelist of modifier size multipliers (fractional, e.g. 0.3 = +30%).
  *  Labels and multipliers must exactly match SIZE_MODIFIERS / SPICE_MODIFIERS in pos.tsx.
@@ -103,6 +104,11 @@ export function registerOrdersRoutes(app: Express): void {
         `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1 WHERE id = $2`,
         [estimatedReadyAt, order.id]
       );
+      try {
+        await deductRecipeInventoryForOrder(order.id, user.tenantId, "delivery");
+      } catch (deductErr) {
+        console.error(`[orders/accept-delivery] Inventory deduction failed for order ${order.id}:`, deductErr);
+      }
       emitToTenant(user.tenantId, "order:delivery_accepted", { orderId: order.id, etaMinutes, estimatedReadyAt });
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", orderType: "delivery" });
       auditLogFromReq(req, { action: "delivery_order_accepted", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "in_progress", etaMinutes } });
@@ -154,6 +160,11 @@ export function registerOrdersRoutes(app: Express): void {
         `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1 WHERE id = $2`,
         [estimatedReadyAt, order.id]
       );
+      try {
+        await deductRecipeInventoryForOrder(order.id, user.tenantId, "delivery");
+      } catch (deductErr) {
+        console.error(`[orders/accept] Inventory deduction failed for order ${order.id}:`, deductErr);
+      }
       emitToTenant(user.tenantId, "order:delivery_accepted", { orderId: order.id, etaMinutes, estimatedReadyAt });
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", orderType: "delivery" });
       auditLogFromReq(req, { action: "delivery_order_accepted", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "in_progress", etaMinutes } });
