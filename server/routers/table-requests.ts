@@ -76,8 +76,15 @@ export function registerTableRequestRoutes(app: Express): void {
         details: details && typeof details === "object" ? details : null,
       });
 
+      const table = await storage.getTable(qrToken.tableId);
+      const enrichedRequest = {
+        ...request,
+        tableNumber: table?.number ?? null,
+        tableZone: table?.zone ?? null,
+      };
+
       emitToTenant(qrToken.tenantId, "table-request:new", {
-        request,
+        request: enrichedRequest,
         tableId: qrToken.tableId,
       });
 
@@ -304,7 +311,9 @@ export function registerTableRequestRoutes(app: Express): void {
         const url = `${req.protocol}://${req.get("host")}/table?qr=${token.token}`;
         const dataUrl = await QRCode.toDataURL(url, { width: 512, margin: 2 });
         const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
-        zip.file(`table-${token.label ?? token.token}.png`, base64, { base64: true });
+        const rawLabel = token.label ?? token.token;
+        const safeLabel = rawLabel.replace(/[^a-zA-Z0-9_\-]/g, "_").slice(0, 80);
+        zip.file(`table-${safeLabel}.png`, base64, { base64: true });
       }));
 
       const zipBuffer = await zip.generateAsync({ type: "nodebuffer" });
