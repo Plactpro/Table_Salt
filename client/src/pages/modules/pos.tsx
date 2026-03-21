@@ -338,6 +338,17 @@ export default function POSPage() {
 
   const [heldTabs, setHeldTabs] = useState<HeldTab[]>(() => loadHeldTabsFromStorage());
   const [showRecall, setShowRecall] = useState(false);
+
+  const { data: serverHeldOrders = [] } = useQuery<any[]>({
+    queryKey: ["/api/orders/on-hold"],
+    enabled: showRecall,
+    staleTime: 0,
+    refetchOnWindowFocus: false,
+  });
+  const orphanedServerOrders = useMemo(() =>
+    serverHeldOrders.filter(o => !heldTabs.some(h => h.tab.heldOrderId === o.id)),
+    [serverHeldOrders, heldTabs]
+  );
   const [modifierItem, setModifierItem] = useState<CartItem | null>(null);
   const [modifierSize, setModifierSize] = useState("Regular");
   const [modifierSpice, setModifierSpice] = useState("Medium");
@@ -562,29 +573,46 @@ export default function POSPage() {
     setItemNoteText("");
   };
 
+  const holdOrderMutation = useMutation({
+    mutationFn: async () => {
+      const hasPlacedOrder = !!activeTab?.heldOrderId;
+      if (hasPlacedOrder) {
+        await apiRequest("PATCH", `/api/orders/${activeTab!.heldOrderId}`, { status: "on_hold" });
+        return activeTab!.heldOrderId!;
+      }
+      if (cart.length === 0) return null;
+      const orderData = buildOrderData();
+      orderData.status = "on_hold";
+      const res = await apiRequest("POST", "/api/orders", orderData);
+      const order = await res.json();
+      return order.id as string;
+    },
+    onSuccess: (orderId) => {
+      const tabLabel = isDineIn && selectedTable
+        ? `Table ${tables.find(t => t.id === selectedTable)?.number || ""}`
+        : orderType === "takeaway" ? "Takeaway" : "Delivery";
+      const heldTab: OrderTab = { ...activeTab!, heldOrderId: orderId ?? activeTab!.heldOrderId };
+      const held: HeldTab = { tab: heldTab, heldAt: new Date().toISOString(), label: tabLabel };
+      const updated = [...heldTabs, held];
+      setHeldTabs(updated);
+      saveHeldTabsToStorage(updated);
+      closeTab(activeTabId);
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/on-hold"] });
+      toast({ title: "Order held", description: `${tabLabel} saved. Use Recall to restore it.` });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to hold order", description: err.message, variant: "destructive" });
+    },
+  });
+
   const holdCurrentTab = useCallback(() => {
     const hasPlacedOrder = !!activeTab?.heldOrderId;
     if (cart.length === 0 && !hasPlacedOrder) {
       toast({ title: "Cart is empty", description: "Nothing to hold.", variant: "destructive" });
       return;
     }
-    const tabLabel = isDineIn && selectedTable
-      ? `Table ${tables.find(t => t.id === selectedTable)?.number || ""}`
-      : orderType === "takeaway" ? "Takeaway" : "Delivery";
-    if (hasPlacedOrder) {
-      apiRequest("PATCH", `/api/orders/${activeTab!.heldOrderId}`, { status: "on_hold" }).catch(() => {});
-    }
-    const held: HeldTab = {
-      tab: { ...activeTab!, id: activeTab!.id },
-      heldAt: new Date().toISOString(),
-      label: tabLabel,
-    };
-    const updated = [...heldTabs, held];
-    setHeldTabs(updated);
-    saveHeldTabsToStorage(updated);
-    closeTab(activeTabId);
-    toast({ title: "Order held", description: `${tabLabel} saved. Use Recall to restore it.` });
-  }, [cart, activeTab, activeTabId, closeTab, heldTabs, isDineIn, orderType, selectedTable, tables, toast]);
+    holdOrderMutation.mutate();
+  }, [cart, activeTab, holdOrderMutation, toast]);
 
   const recallHeldTab = (held: HeldTab) => {
     const tab = { ...held.tab, id: makeid() };
@@ -609,6 +637,40 @@ export default function POSPage() {
     setHeldTabs(updatedHeld);
     saveHeldTabsToStorage(updatedHeld);
   };
+
+  const recallServerOrder = useCallback((order: any) => {
+    const reconstructedCart: CartItem[] = (order.items || []).map((item: any) => ({
+      menuItemId: item.menuItemId,
+      name: item.name,
+      price: parseFloat(item.price),
+      basePrice: parseFloat(item.price),
+      quantity: item.quantity,
+      notes: item.notes || "",
+      isVeg: null,
+      categoryId: null,
+      modifiers: item.modifiers || undefined,
+      cartKey: makeid(),
+      isAddon: item.isAddon || false,
+    }));
+    const tab: OrderTab = {
+      id: makeid(),
+      cart: reconstructedCart,
+      orderType: (order.orderType as OrderTab["orderType"]) || "dine_in",
+      selectedTable: order.tableId || "",
+      discount: order.discount || "",
+      orderNotes: order.notes || "",
+      selectedOfferId: null,
+      dismissedRuleIds: [],
+      sentCartKeys: [],
+      heldOrderId: order.id,
+    };
+    setTabs(prev => { const u = [...prev, tab]; saveTabsToStorage(u); return u; });
+    setActiveTabId(tab.id);
+    apiRequest("PATCH", `/api/orders/${order.id}`, { status: "in_progress" }).catch(() => {});
+    queryClient.invalidateQueries({ queryKey: ["/api/orders/on-hold"] });
+    setShowRecall(false);
+    toast({ title: "Order recalled", description: "Server order restored to cart." });
+  }, [queryClient, toast]);
 
   const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }, tabOverride?: OrderTab) => {
     const tab = tabOverride || activeTab!;
@@ -1058,12 +1120,12 @@ export default function POSPage() {
               </motion.div>
             )}
             <div className="ml-auto flex items-center gap-1">
-              {heldTabs.length > 0 && (
-                <Button variant="outline" size="sm" className="text-xs h-7 px-2 relative" onClick={() => setShowRecall(true)} data-testid="button-recall">
-                  <RotateCcw className="h-3 w-3 mr-1" /> Recall
+              <Button variant="outline" size="sm" className="text-xs h-7 px-2 relative" onClick={() => setShowRecall(true)} data-testid="button-recall">
+                <RotateCcw className="h-3 w-3 mr-1" /> Recall
+                {heldTabs.length > 0 && (
                   <Badge className="absolute -top-1.5 -right-1.5 h-4 w-4 p-0 flex items-center justify-center text-[10px]">{heldTabs.length}</Badge>
-                </Button>
-              )}
+                )}
+              </Button>
               {posSessionId ? (
                 <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowCloseShift(true)} data-testid="button-close-shift">
                   <Clock className="h-3 w-3 mr-1" /> End Shift
@@ -1424,7 +1486,7 @@ export default function POSPage() {
       <Dialog open={showRecall} onOpenChange={setShowRecall}>
         <DialogContent className="max-w-sm" data-testid="dialog-recall">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-primary" /> Held Orders</DialogTitle></DialogHeader>
-          {heldTabs.length === 0 ? (
+          {heldTabs.length === 0 && orphanedServerOrders.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">No held orders</p>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
@@ -1436,6 +1498,15 @@ export default function POSPage() {
                   </div>
                   <Button size="sm" className="text-xs h-7" onClick={() => recallHeldTab(held)} data-testid={`button-recall-${i}`}>Recall</Button>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteHeldTab(held)} data-testid={`button-delete-held-${i}`}><X className="h-3 w-3" /></Button>
+                </div>
+              ))}
+              {orphanedServerOrders.map((order, i) => (
+                <div key={order.id} className="flex items-center gap-2 p-3 border border-dashed rounded-lg" data-testid={`held-order-server-${i}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{order.tableId ? `Table #${order.tableNumber ?? "?"}` : order.orderType}</p>
+                    <p className="text-xs text-muted-foreground">{(order.items || []).length} items · from server</p>
+                  </div>
+                  <Button size="sm" className="text-xs h-7" onClick={() => recallServerOrder(order)} data-testid={`button-recall-server-${i}`}>Recall</Button>
                 </div>
               ))}
             </div>
