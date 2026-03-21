@@ -99,6 +99,7 @@ export default function SettingsPage() {
   const [invoicePrefix, setInvoicePrefix] = useState("INV");
   const [razorpayEnabled, setRazorpayEnabled] = useState(false);
   const [razorpayKeyId, setRazorpayKeyId] = useState("");
+  const [razorpayKeySecret, setRazorpayKeySecret] = useState("");
   const [tzSearch, setTzSearch] = useState("");
   const [currencySearch, setCurrencySearch] = useState("");
   const [clockTick, setClockTick] = useState(0);
@@ -152,7 +153,7 @@ export default function SettingsPage() {
         tax: ["taxRate", "taxType", "compoundTax", "serviceCharge", "gstin", "cgstRate", "sgstRate", "invoicePrefix"],
         currency: ["currency", "currencyPosition", "currencyDecimals"],
         business: ["businessType", "plan"],
-        razorpay: ["razorpayEnabled", "razorpayKeyId"],
+        razorpay: ["razorpayEnabled", "razorpayKeyId", "razorpayKeySecret"],
       };
       const matchedSections = Object.entries(sectionKeys).filter(([, keys]) =>
         keys.some((k) => variables[k] !== undefined)
@@ -193,7 +194,13 @@ export default function SettingsPage() {
 
   const handleRazorpaySubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMutation.mutate({ razorpayEnabled, razorpayKeyId: razorpayKeyId.trim() || null });
+    const payload: Record<string, any> = { razorpayEnabled, razorpayKeyId: razorpayKeyId.trim() || null };
+    // Only send key secret if the user entered a new one — never overwrite with blank
+    if (razorpayKeySecret.trim()) {
+      payload.razorpayKeySecret = razorpayKeySecret.trim();
+    }
+    updateMutation.mutate(payload);
+    setRazorpayKeySecret(""); // clear after saving
   };
 
   const handleBusinessConfigSubmit = (e: React.FormEvent) => {
@@ -761,9 +768,19 @@ export default function SettingsPage() {
                               onChange={(e) => setRazorpayKeyId(e.target.value.trim())}
                               data-testid="input-razorpay-key-id"
                             />
-                            <p className="text-xs text-muted-foreground">
-                              Your Razorpay Key ID (not secret). The API secret must be set as the <code className="text-xs font-mono bg-muted px-1 rounded">RAZORPAY_KEY_SECRET</code> environment variable.
-                            </p>
+                            <p className="text-xs text-muted-foreground">Your Razorpay publishable key ID.</p>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Razorpay Key Secret</Label>
+                            <Input
+                              type="password"
+                              placeholder="Enter new secret to update (leave blank to keep current)"
+                              value={razorpayKeySecret}
+                              onChange={(e) => setRazorpayKeySecret(e.target.value)}
+                              autoComplete="new-password"
+                              data-testid="input-razorpay-key-secret"
+                            />
+                            <p className="text-xs text-muted-foreground">Your Razorpay API secret. Stored securely server-side — never shown after saving.</p>
                           </div>
                           <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 text-xs text-blue-700 dark:text-blue-300 space-y-1">
                             <p className="font-semibold">How it works</p>

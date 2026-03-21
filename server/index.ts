@@ -61,24 +61,19 @@ app.post(
         if (pl?.reference_id && payment?.id) {
           const { storage } = await import("./storage");
           const bill = await storage.getBill(pl.reference_id);
+          // Idempotency: skip if already processed
           if (bill && bill.paymentStatus !== "paid") {
-            const payMethod = payment.method?.toUpperCase() === "CARD" ? "CARD" : "UPI";
-            await storage.updateBill(bill.id, bill.tenantId, { paymentStatus: "paid", paidAt: new Date() });
-            await storage.createBillPayment({
-              tenantId: bill.tenantId,
-              billId: bill.id,
+            // Derive method from Razorpay payload — never trust external input
+            const rzpMethod = (payment.method as string | undefined)?.toLowerCase();
+            const payMethod = rzpMethod === "card" ? "CARD" : rzpMethod === "upi" ? "UPI" : "RAZORPAY";
+            const { finalizeBillCompletion } = await import("./routers/restaurant-billing");
+            await finalizeBillCompletion({
+              bill,
               paymentMethod: payMethod,
-              amount: String(pl.amount / 100),
-              referenceNo: payment.id,
-              razorpayPaymentId: payment.id,
+              paymentId: payment.id,
+              linkId: pl.id,
+              amountStr: pl.amount != null ? String(pl.amount / 100) : bill.totalAmount,
             });
-            // Run same completion side-effects as the standard payment flow
-            await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: payMethod.toLowerCase() });
-            if (bill.tableId) {
-              try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
-            }
-            const { emitToTenant } = await import("./realtime");
-            emitToTenant(bill.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
           }
         }
       }

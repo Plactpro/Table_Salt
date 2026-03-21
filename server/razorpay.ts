@@ -7,13 +7,13 @@ export interface RazorpayPaymentLink {
   amount: number;
   currency: string;
   reference_id?: string;
-  payments?: Array<{ payment_id: string; status: string }>;
+  payments?: Array<{ payment_id: string; status: string; method?: string }>;
 }
 
-function getCredentials(tenantKeyId?: string | null): { keyId: string; keySecret: string } {
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+function getCredentials(tenantKeyId?: string | null, tenantKeySecret?: string | null): { keyId: string; keySecret: string } {
   const keyId = tenantKeyId || process.env.RAZORPAY_KEY_ID;
-  if (!keyId || !keySecret) throw new Error("Razorpay credentials not configured. Set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET.");
+  const keySecret = tenantKeySecret || process.env.RAZORPAY_KEY_SECRET;
+  if (!keyId || !keySecret) throw new Error("Razorpay credentials not configured. Set key_id and key_secret in Settings or as environment variables.");
   return { keyId, keySecret };
 }
 
@@ -27,8 +27,9 @@ export async function createPaymentLink(params: {
   description: string;
   billId: string;
   tenantKeyId?: string | null;
+  tenantKeySecret?: string | null;
 }): Promise<RazorpayPaymentLink> {
-  const { keyId, keySecret } = getCredentials(params.tenantKeyId);
+  const { keyId, keySecret } = getCredentials(params.tenantKeyId, params.tenantKeySecret);
   const amountPaise = Math.round(params.amountRupees * 100);
 
   const body = {
@@ -54,8 +55,8 @@ export async function createPaymentLink(params: {
   return response.json() as Promise<RazorpayPaymentLink>;
 }
 
-export async function getPaymentLink(linkId: string, tenantKeyId?: string | null): Promise<RazorpayPaymentLink> {
-  const { keyId, keySecret } = getCredentials(tenantKeyId);
+export async function getPaymentLink(linkId: string, tenantKeyId?: string | null, tenantKeySecret?: string | null): Promise<RazorpayPaymentLink> {
+  const { keyId, keySecret } = getCredentials(tenantKeyId, tenantKeySecret);
   const response = await fetch(`https://api.razorpay.com/v1/payment_links/${linkId}`, {
     headers: { Authorization: authHeader(keyId, keySecret) },
   });
