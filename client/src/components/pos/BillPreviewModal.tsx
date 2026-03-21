@@ -24,6 +24,7 @@ interface CartItem {
   notes: string;
   isCombo?: boolean;
   modifiers?: { name: string; price: number }[];
+  hsnCode?: string | null;
 }
 
 interface BillPreviewProps {
@@ -115,6 +116,7 @@ export default function BillPreviewModal({
   const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
   const currencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: number | string) => sharedFormatCurrency(val, currency, { position: currencyPosition, decimals: currencyDecimals });
+  const isGSTTenant = currency === "INR" && user?.tenant?.taxType === "gst";
 
   const [step, setStep] = useState<PaymentStep>("preview");
   const [activeMethod, setActiveMethod] = useState<PaymentMethodType>("CASH");
@@ -137,6 +139,7 @@ export default function BillPreviewModal({
   const [lookedUpCustomer, setLookedUpCustomer] = useState<{ id: string; name: string; loyaltyPoints: number } | null>(null);
   const [loyaltySearching, setLoyaltySearching] = useState(false);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
+  const [customerGstinInput, setCustomerGstinInput] = useState("");
 
   const { data: existingBillData, status: existingBillStatus } = useQuery({
     queryKey: ["/api/restaurant-bills/by-order", orderId],
@@ -192,6 +195,7 @@ export default function BillPreviewModal({
         tips: "0",
         totalAmount: total.toFixed(2),
         posSessionId: posSessionId || null,
+        customerGstin: isGSTTenant && customerGstinInput ? customerGstinInput : undefined,
       });
       return res.json();
     },
@@ -398,19 +402,19 @@ export default function BillPreviewModal({
           <div style={{ textAlign: "center", marginBottom: 8 }}>
             <div style={{ fontWeight: "bold", fontSize: 14 }}>{tenantName}</div>
             {tenantAddress && <div style={{ fontSize: 10 }}>{tenantAddress}</div>}
-            {currency === "INR" && (user?.tenant as any)?.gstin && (
-              <div style={{ fontSize: 10 }}>GSTIN: {(user?.tenant as any).gstin}</div>
+            {isGSTTenant && user?.tenant?.gstin && (
+              <div style={{ fontSize: 10 }}>GSTIN: {user.tenant.gstin}</div>
             )}
             <div style={{ fontSize: 10, marginTop: 4 }}>
-              {currency === "INR" && createdBill?.invoiceNumber
+              {isGSTTenant && createdBill?.invoiceNumber
                 ? <>Invoice: {createdBill.invoiceNumber} | {dateStr} {timeStr}</>
                 : <>Bill No: {billNumber || "PREVIEW"} | {dateStr} {timeStr}</>
               }
             </div>
             {tableNumber && <div>Table: {tableNumber}</div>}
             <div>Waiter: {user?.name || user?.username}</div>
-            {currency === "INR" && (createdBill as any)?.customerGstin && (
-              <div style={{ fontSize: 10 }}>Cust. GSTIN: {(createdBill as any).customerGstin}</div>
+            {isGSTTenant && createdBill?.customerGstin && (
+              <div style={{ fontSize: 10 }}>Cust. GSTIN: {createdBill.customerGstin}</div>
             )}
           </div>
           <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
@@ -426,7 +430,12 @@ export default function BillPreviewModal({
             <tbody>
               {cart.map((item, i) => (
                 <tr key={i}>
-                  <td>{item.name}</td>
+                  <td>
+                    <div>{item.name}</div>
+                    {isGSTTenant && item.hsnCode && (
+                      <div style={{ fontSize: 9, color: "#666" }}>HSN: {item.hsnCode}</div>
+                    )}
+                  </td>
                   <td style={{ textAlign: "right" }}>{item.quantity}</td>
                   <td style={{ textAlign: "right" }}>{fmt(item.price)}</td>
                   <td style={{ textAlign: "right" }}>{fmt(item.price * item.quantity)}</td>
@@ -438,15 +447,15 @@ export default function BillPreviewModal({
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
           {discountAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Discount</span><span>-{fmt(discountAmount)}</span></div>}
           {serviceChargeAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Service Charge</span><span>{fmt(serviceChargeAmount)}</span></div>}
-          {taxAmount > 0 && currency === "INR" && createdBill ? (
+          {taxAmount > 0 && isGSTTenant && createdBill ? (
             <>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>CGST ({(user?.tenant as any)?.cgstRate ?? 9}%)</span>
-                <span>{fmt(Number((createdBill as any).cgstAmount ?? taxAmount / 2))}</span>
+                <span>CGST ({Number(user?.tenant?.cgstRate ?? 9)}%)</span>
+                <span>{fmt(Number(createdBill.cgstAmount ?? taxAmount / 2))}</span>
               </div>
               <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>SGST ({(user?.tenant as any)?.sgstRate ?? 9}%)</span>
-                <span>{fmt(Number((createdBill as any).sgstAmount ?? taxAmount / 2))}</span>
+                <span>SGST ({Number(user?.tenant?.sgstRate ?? 9)}%)</span>
+                <span>{fmt(Number(createdBill.sgstAmount ?? taxAmount / 2))}</span>
               </div>
             </>
           ) : (
@@ -460,7 +469,7 @@ export default function BillPreviewModal({
           <div style={{ fontSize: 9, marginTop: 4, fontStyle: "italic" }}>{numWords(grandTotal)}</div>
           <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }} />
           <div style={{ textAlign: "center", fontSize: 10 }}>Thank you for dining with us!</div>
-          {currency === "INR" && (
+          {isGSTTenant && (
             <div style={{ textAlign: "center", fontSize: 9, marginTop: 4 }}>This is a computer-generated tax invoice.</div>
           )}
         </div>
@@ -558,6 +567,20 @@ export default function BillPreviewModal({
                   <p>Customer can scan QR on payment step</p>
                 </div>
               </div>
+
+              {isGSTTenant && (
+                <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/20 p-3 no-print">
+                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 mb-2">Customer GSTIN (B2B Invoice)</p>
+                  <Input
+                    placeholder="22AAAAA0000A1Z5 (optional)"
+                    value={customerGstinInput}
+                    onChange={(e) => setCustomerGstinInput(e.target.value.toUpperCase())}
+                    maxLength={15}
+                    className="font-mono text-sm"
+                    data-testid="input-bill-customer-gstin"
+                  />
+                </div>
+              )}
 
               <div className="flex gap-2 no-print">
                 <Button variant="outline" size="sm" onClick={handlePrint} className="flex-1">
@@ -853,7 +876,7 @@ export default function BillPreviewModal({
                 <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-2" />
                 <h3 className="font-bold text-lg">Payment Successful!</h3>
                 <p className="text-muted-foreground text-sm">{billNumber}</p>
-                {currency === "INR" && createdBill?.invoiceNumber && (
+                {isGSTTenant && createdBill?.invoiceNumber && (
                   <p className="text-xs font-mono text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/30 rounded px-2 py-0.5 inline-block mt-1">
                     🧾 {createdBill.invoiceNumber}
                   </p>
@@ -861,26 +884,26 @@ export default function BillPreviewModal({
                 <p className="font-bold text-xl text-primary mt-1">{fmt(grandTotal)}</p>
               </div>
 
-              {currency === "INR" && createdBill && taxAmount > 0 && (
+              {isGSTTenant && createdBill && taxAmount > 0 && (
                 <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/20 p-3 text-sm space-y-1">
                   <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide mb-2">Tax Summary</p>
-                  {(user?.tenant as any)?.gstin && (
+                  {user?.tenant?.gstin && (
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Restaurant GSTIN</span><span className="font-mono">{(user?.tenant as any).gstin}</span>
+                      <span>Restaurant GSTIN</span><span className="font-mono">{user.tenant.gstin}</span>
                     </div>
                   )}
-                  {(createdBill as any)?.customerGstin && (
+                  {createdBill.customerGstin && (
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Customer GSTIN</span><span className="font-mono">{(createdBill as any).customerGstin}</span>
+                      <span>Customer GSTIN</span><span className="font-mono">{createdBill.customerGstin}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">CGST ({(user?.tenant as any)?.cgstRate ?? 9}%)</span>
-                    <span>{fmt(Number((createdBill as any).cgstAmount ?? taxAmount / 2))}</span>
+                    <span className="text-muted-foreground">CGST ({Number(user?.tenant?.cgstRate ?? 9)}%)</span>
+                    <span>{fmt(Number(createdBill.cgstAmount ?? taxAmount / 2))}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">SGST ({(user?.tenant as any)?.sgstRate ?? 9}%)</span>
-                    <span>{fmt(Number((createdBill as any).sgstAmount ?? taxAmount / 2))}</span>
+                    <span className="text-muted-foreground">SGST ({Number(user?.tenant?.sgstRate ?? 9)}%)</span>
+                    <span>{fmt(Number(createdBill.sgstAmount ?? taxAmount / 2))}</span>
                   </div>
                 </div>
               )}

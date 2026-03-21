@@ -272,7 +272,7 @@ export default function CrmPage() {
       gstin: formData.gstin || null,
       birthday: formData.birthday || null,
       anniversary: formData.anniversary || null,
-    } as any);
+    });
   };
 
   const handleSubmitEdit = () => {
@@ -290,7 +290,7 @@ export default function CrmPage() {
         gstin: formData.gstin || null,
         birthday: formData.birthday || null,
         anniversary: formData.anniversary || null,
-      } as any,
+      },
     });
   };
 

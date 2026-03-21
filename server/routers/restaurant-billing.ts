@@ -83,21 +83,28 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (existing) return res.json({ ...existing, alreadyExists: true });
 
       const tenant = await storage.getTenant(user.tenantId);
-      const isINR = (tenant as any)?.currency === "INR";
+      const isGST = tenant?.currency === "INR" && tenant?.taxType === "gst";
       let invoiceNumber: string | null = null;
       let cgstAmount: string | null = null;
       let sgstAmount: string | null = null;
+      let resolvedTaxBreakdown = taxBreakdown || null;
       const { customerGstin } = req.body;
 
-      if (isINR) {
-        const cgstRate = Number((tenant as any)?.cgstRate ?? 9);
-        const sgstRate = Number((tenant as any)?.sgstRate ?? 9);
+      if (isGST) {
+        const cgstRate = Number(tenant?.cgstRate ?? 9);
+        const sgstRate = Number(tenant?.sgstRate ?? 9);
         const tax = Number(taxAmount ?? 0);
         const totalGstRate = cgstRate + sgstRate || 18;
-        cgstAmount = String(Math.round((tax * cgstRate / totalGstRate) * 100) / 100);
-        sgstAmount = String(Math.round((tax * sgstRate / totalGstRate) * 100) / 100);
+        const cgst = Math.round((tax * cgstRate / totalGstRate) * 100) / 100;
+        const sgst = Math.round((tax * sgstRate / totalGstRate) * 100) / 100;
+        cgstAmount = String(cgst);
+        sgstAmount = String(sgst);
+        resolvedTaxBreakdown = {
+          [`CGST (${cgstRate}%)`]: cgst.toFixed(2),
+          [`SGST (${sgstRate}%)`]: sgst.toFixed(2),
+        };
 
-        const prefix = (tenant as any)?.invoicePrefix || "INV";
+        const prefix = tenant?.invoicePrefix || "INV";
         const fy = getFiscalYear(new Date());
         const [updated] = await db.update(tenantsTable)
           .set({ invoiceCounter: sql`COALESCE(${tenantsTable.invoiceCounter}, 0) + 1` })
@@ -121,14 +128,14 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         discountReason: discountReason || null,
         serviceCharge: String(serviceCharge ?? 0),
         taxAmount: String(taxAmount ?? 0),
-        taxBreakdown: taxBreakdown || null,
+        taxBreakdown: resolvedTaxBreakdown,
         tips: String(tips ?? 0),
         totalAmount: String(totalAmount),
         paymentStatus: "pending",
         posSessionId: posSessionId || null,
         covers: covers || 1,
         invoiceNumber,
-        customerGstin: customerGstin || null,
+        customerGstin: (isGST && customerGstin) ? customerGstin : null,
         cgstAmount,
         sgstAmount,
       });

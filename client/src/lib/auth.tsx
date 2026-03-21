@@ -29,6 +29,10 @@ export interface TenantInfo {
   stripeCustomerId?: string | null;
   stripeSubscriptionId?: string | null;
   logo?: string | null;
+  gstin?: string | null;
+  cgstRate?: string | null;
+  sgstRate?: string | null;
+  invoicePrefix?: string | null;
 }
 
 export interface AuthUser {
@@ -109,6 +113,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           trialEndsAt: data.trialEndsAt ?? null,
           stripeCustomerId: data.stripeCustomerId ?? null,
           stripeSubscriptionId: data.stripeSubscriptionId ?? null,
+          gstin: data.gstin ?? null,
+          cgstRate: data.cgstRate ?? null,
+          sgstRate: data.sgstRate ?? null,
+          invoicePrefix: data.invoicePrefix ?? null,
         };
       } catch {
         return null;
