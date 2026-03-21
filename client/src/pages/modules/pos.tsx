@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -324,6 +323,19 @@ export default function POSPage() {
     });
   }, [activeTabId]);
 
+  const requestCloseTab = useCallback((id: string) => {
+    const tab = tabs.find(t => t.id === id);
+    if (tab && tab.cart.length > 0) {
+      const sentKeys = new Set(tab.sentCartKeys);
+      const hasUnsent = tab.cart.some(c => !sentKeys.has(c.cartKey));
+      if (hasUnsent) {
+        setCloseTabConfirm(id);
+        return;
+      }
+    }
+    closeTab(id);
+  }, [tabs, closeTab]);
+
   const [heldTabs, setHeldTabs] = useState<HeldTab[]>(() => loadHeldTabsFromStorage());
   const [showRecall, setShowRecall] = useState(false);
   const [modifierItem, setModifierItem] = useState<CartItem | null>(null);
@@ -335,6 +347,7 @@ export default function POSPage() {
   const [splitAssignment, setSplitAssignment] = useState<Record<string, 1 | 2>>({});
   const [noteDialogItem, setNoteDialogItem] = useState<string | null>(null);
   const [itemNoteText, setItemNoteText] = useState("");
+  const [closeTabConfirm, setCloseTabConfirm] = useState<string | null>(null);
 
   useEffect(() => { syncManager.init(); }, []);
 
@@ -550,13 +563,17 @@ export default function POSPage() {
   };
 
   const holdCurrentTab = useCallback(() => {
-    if (cart.length === 0) {
+    const hasPlacedOrder = !!activeTab?.heldOrderId;
+    if (cart.length === 0 && !hasPlacedOrder) {
       toast({ title: "Cart is empty", description: "Nothing to hold.", variant: "destructive" });
       return;
     }
     const tabLabel = isDineIn && selectedTable
       ? `Table ${tables.find(t => t.id === selectedTable)?.number || ""}`
       : orderType === "takeaway" ? "Takeaway" : "Delivery";
+    if (hasPlacedOrder) {
+      apiRequest("PATCH", `/api/orders/${activeTab!.heldOrderId}`, { status: "on_hold" }).catch(() => {});
+    }
     const held: HeldTab = {
       tab: { ...activeTab!, id: activeTab!.id },
       heldAt: new Date().toISOString(),
@@ -580,6 +597,9 @@ export default function POSPage() {
     const updatedHeld = heldTabs.filter(h => h.heldAt !== held.heldAt);
     setHeldTabs(updatedHeld);
     saveHeldTabsToStorage(updatedHeld);
+    if (held.tab.heldOrderId) {
+      apiRequest("PATCH", `/api/orders/${held.tab.heldOrderId}`, { status: "in_progress" }).catch(() => {});
+    }
     setShowRecall(false);
     toast({ title: "Order recalled", description: `${held.label} restored to cart.` });
   };
@@ -594,10 +614,15 @@ export default function POSPage() {
     const tab = tabOverride || activeTab!;
     const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const sentKeys = new Set(tab.sentCartKeys);
+    const tabIsDineIn = tab.orderType === "dine_in";
+    const isAddonKot = sentKeys.size > 0 && tabIsDineIn;
+
+    const itemsToSend = isAddonKot
+      ? tab.cart.filter(c => !sentKeys.has(c.cartKey))
+      : tab.cart;
 
     const orderItems: Record<string, unknown>[] = [];
-    for (const c of tab.cart) {
-      const isAddonItem = sentKeys.size > 0 && !sentKeys.has(c.cartKey);
+    for (const c of itemsToSend) {
       const modifiersData = c.modifiers && c.modifiers.length > 0 ? c.modifiers : null;
       if (c.isCombo && c.comboItems) {
         orderItems.push({
@@ -605,7 +630,7 @@ export default function POSPage() {
           quantity: c.quantity, price: c.price.toFixed(2),
           notes: c.comboItems.map((ci) => ci.name).join(", ") + (c.notes ? ` | ${c.notes}` : ""),
           isCombo: true, comboId: c.comboId || undefined,
-          isAddon: isAddonItem,
+          isAddon: isAddonKot,
         });
       } else {
         orderItems.push({
@@ -613,20 +638,19 @@ export default function POSPage() {
           quantity: c.quantity, price: c.price.toFixed(2),
           notes: c.notes || null,
           modifiers: modifiersData,
-          isAddon: isAddonItem,
+          isAddon: isAddonKot,
         });
       }
     }
 
     const tabDiscount = parseFloat(tab.discount);
     const tabManualDiscount = isNaN(tabDiscount) ? 0 : tabDiscount;
-    const tabSubtotal = tab.cart.reduce((s, c) => s + c.price * c.quantity, 0);
-    const tabAfterDiscount = Math.max(0, tabSubtotal - tabManualDiscount);
+    const tabSubtotal = itemsToSend.reduce((s, c) => s + c.price * c.quantity, 0);
+    const tabAfterDiscount = Math.max(0, tabSubtotal - (isAddonKot ? 0 : tabManualDiscount));
     const tabServiceCharge = tabAfterDiscount * tenantServiceChargePct;
     const tabTaxBase = tenantCompoundTax ? tabAfterDiscount + tabServiceCharge : tabAfterDiscount;
     const tabTax = tabTaxBase * taxRate;
     const tabTotal = tabAfterDiscount + tabServiceCharge + tabTax;
-    const tabIsDineIn = tab.orderType === "dine_in";
 
     const orderData: Record<string, unknown> = {
       channel: "pos", clientOrderId,
@@ -634,15 +658,16 @@ export default function POSPage() {
       tableId: tabIsDineIn ? tab.selectedTable || null : null,
       subtotal: tabSubtotal.toFixed(2),
       tax: tabTax.toFixed(2),
-      discount: tabManualDiscount.toFixed(2),
+      discount: (isAddonKot ? 0 : tabManualDiscount).toFixed(2),
       total: tabTotal.toFixed(2),
       notes: tab.orderNotes || null,
       status: tabIsDineIn ? "in_progress" : "new",
       items: orderItems,
     };
+    if (tab.heldOrderId) orderData.parentOrderId = tab.heldOrderId;
     if (!tabIsDineIn) orderData.paymentMethod = paymentMethod;
     if (supervisorOverride) orderData.supervisorOverride = supervisorOverride;
-    if (tab.dismissedRuleIds.length > 0) orderData.dismissedRuleIds = tab.dismissedRuleIds;
+    if (!isAddonKot && tab.dismissedRuleIds.length > 0) orderData.dismissedRuleIds = tab.dismissedRuleIds;
     return orderData;
   }, [activeTab, paymentMethod, tenantServiceChargePct, tenantCompoundTax, taxRate]);
 
@@ -682,7 +707,8 @@ export default function POSPage() {
       if (data?.queued) {
         toast({ title: "Order queued", description: "Will sync when connection is restored" });
       } else {
-        toast({ title: isDineIn ? "Order sent to kitchen!" : "Order placed!" });
+        const isAddonKot = (activeTab?.sentCartKeys.length ?? 0) > 0 && isDineIn;
+        toast({ title: isAddonKot ? "Add-on KOT sent!" : isDineIn ? "Order sent to kitchen!" : "Order placed!" });
       }
       const tableNum = tables.find(t => t.id === selectedTable)?.number;
       const snapshot = {
@@ -692,9 +718,22 @@ export default function POSPage() {
         tableId: selectedTable || undefined, tableNumber: tableNum,
       };
       setLastPlacedOrder(snapshot);
-      if (!isDineIn) setShowBillModal(true);
-      const allCartKeys = cart.map(c => c.cartKey);
-      updateActiveTab({ cart: [], discount: "", orderNotes: "", selectedOfferId: null, dismissedRuleIds: [], sentCartKeys: [], selectedTable: "" });
+      if (isDineIn) {
+        const sentKeys = new Set(activeTab?.sentCartKeys ?? []);
+        const newlySentKeys = cart.filter(c => !sentKeys.has(c.cartKey)).map(c => c.cartKey);
+        const allSentKeys = [...(activeTab?.sentCartKeys ?? []), ...newlySentKeys];
+        updateActiveTab({
+          sentCartKeys: allSentKeys,
+          heldOrderId: data.id,
+          discount: "",
+          orderNotes: "",
+          selectedOfferId: null,
+          dismissedRuleIds: [],
+        });
+      } else {
+        setShowBillModal(true);
+        updateActiveTab({ cart: [], discount: "", orderNotes: "", selectedOfferId: null, dismissedRuleIds: [], sentCartKeys: [], selectedTable: "", heldOrderId: undefined });
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/offers"] });
@@ -715,9 +754,20 @@ export default function POSPage() {
     setSupervisorDialog(null);
   }, [placeOrderMutation]);
 
+  const hasUnsentItems = useMemo(() => {
+    if (cart.length === 0) return false;
+    if (!activeTab?.sentCartKeys.length) return true;
+    const sentKeys = new Set(activeTab.sentCartKeys);
+    return cart.some(c => !sentKeys.has(c.cartKey));
+  }, [cart, activeTab?.sentCartKeys]);
+
+  const isAddonKotMode = useMemo(() => {
+    return isDineIn && (activeTab?.sentCartKeys.length ?? 0) > 0;
+  }, [isDineIn, activeTab?.sentCartKeys]);
+
   const handlePlaceOrder = () => {
-    if (cart.length === 0) {
-      toast({ title: "Cart is empty", description: "Add items before placing an order", variant: "destructive" });
+    if (!hasUnsentItems) {
+      toast({ title: "No new items to send", description: "Add items to the cart before sending another KOT", variant: "destructive" });
       return;
     }
     if (isDineIn && !selectedTable) {
@@ -982,7 +1032,7 @@ export default function POSPage() {
                 <span>{tabLabel(tab)}</span>
                 {tab.cart.length > 0 && <Badge variant="secondary" className="h-4 px-1 text-[10px]">{tab.cart.reduce((s, c) => s + c.quantity, 0)}</Badge>}
                 {tabs.length > 1 && (
-                  <button className="ml-0.5 hover:text-destructive" onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }} data-testid={`button-close-tab-${idx}`}>
+                  <button className="ml-0.5 hover:text-destructive" onClick={(e) => { e.stopPropagation(); requestCloseTab(tab.id); }} data-testid={`button-close-tab-${idx}`}>
                     <X className="h-2.5 w-2.5" />
                   </button>
                 )}
@@ -1245,7 +1295,7 @@ export default function POSPage() {
           </div>
 
           <div className="flex gap-2">
-            <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-3" onClick={holdCurrentTab} disabled={cart.length === 0} title="Hold order">
+            <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-3" onClick={holdCurrentTab} disabled={cart.length === 0 && !activeTab?.heldOrderId} title="Hold order">
               <Pause className="h-3.5 w-3.5 mr-1" /> Hold
             </Button>
             {cart.length >= 2 && (
@@ -1253,8 +1303,8 @@ export default function POSPage() {
                 <Scissors className="h-3.5 w-3.5 mr-1" /> Split
               </Button>
             )}
-            <Button data-testid="button-place-order" className="flex-1 transition-all duration-200 hover:scale-[1.02]" size="lg" onClick={handlePlaceOrder} disabled={cart.length === 0 || placeOrderMutation.isPending}>
-              {placeOrderMutation.isPending ? "Sending..." : isDineIn ? "Send to Kitchen" : "Place Order"}
+            <Button data-testid="button-place-order" className="flex-1 transition-all duration-200 hover:scale-[1.02]" size="lg" onClick={handlePlaceOrder} disabled={!hasUnsentItems || placeOrderMutation.isPending}>
+              {placeOrderMutation.isPending ? "Sending..." : isAddonKotMode ? "Send Add-on KOT" : isDineIn ? "Send to Kitchen" : "Place Order"}
             </Button>
           </div>
 
@@ -1472,6 +1522,17 @@ export default function POSPage() {
         <CloseShiftDialog open={showCloseShift} onClose={() => setShowCloseShift(false)} sessionId={posSessionId}
           onClosed={() => { setPosSessionId(null); setShowCloseShift(false); }} />
       )}
+
+      <Dialog open={!!closeTabConfirm} onOpenChange={() => setCloseTabConfirm(null)}>
+        <DialogContent className="max-w-xs" data-testid="dialog-close-tab-confirm">
+          <DialogHeader><DialogTitle>Close tab?</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">This tab has unsent items that haven't been sent to the kitchen yet. Close anyway?</p>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => setCloseTabConfirm(null)} data-testid="button-cancel-close-tab">Cancel</Button>
+            <Button variant="destructive" onClick={() => { if (closeTabConfirm) { closeTab(closeTabConfirm); setCloseTabConfirm(null); } }} data-testid="button-confirm-close-tab">Close Tab</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
