@@ -1017,6 +1017,24 @@ export function registerAdminRoutes(app: Express) {
     };
   }
 
+  async function loadGatewaySettings() {
+    const { rows } = await pool.query(
+      `SELECT active_payment_gateway, stripe_key_id, stripe_key_secret, razorpay_key_id, razorpay_key_secret
+       FROM platform_settings WHERE id = 'singleton' LIMIT 1`
+    );
+    if (rows.length === 0) {
+      return { activePaymentGateway: "stripe", stripeKeyId: null, stripeKeySecret: null, razorpayKeyId: null, razorpayKeySecret: null };
+    }
+    const r = rows[0];
+    return {
+      activePaymentGateway: r.active_payment_gateway ?? "stripe",
+      stripeKeyId: r.stripe_key_id ?? null,
+      stripeKeySecret: r.stripe_key_secret ?? null,
+      razorpayKeyId: r.razorpay_key_id ?? null,
+      razorpayKeySecret: r.razorpay_key_secret ?? null,
+    };
+  }
+
   app.get("/api/admin/platform-settings", requireSuperAdmin, async (_req, res) => {
     try {
       return res.json(await loadPlatformSettings());
@@ -1070,6 +1088,99 @@ export function registerAdminRoutes(app: Express) {
       });
 
       return res.json(next);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  // ─── Gateway Settings ───────────────────────────────────────────────────────
+
+  const gatewaySettingsSchema = z.object({
+    activePaymentGateway: z.enum(["stripe", "razorpay", "both"]).optional(),
+    stripeKeyId: z.string().optional().nullable(),
+    stripeKeySecret: z.string().optional().nullable(),
+    razorpayKeyId: z.string().optional().nullable(),
+    razorpayKeySecret: z.string().optional().nullable(),
+  });
+
+  app.get("/api/admin/platform-settings/gateway", requireSuperAdmin, async (_req, res) => {
+    try {
+      const gw = await loadGatewaySettings();
+      return res.json({
+        activePaymentGateway: gw.activePaymentGateway,
+        stripeKeyId: gw.stripeKeyId,
+        stripeKeySecretConfigured: !!gw.stripeKeySecret,
+        razorpayKeyId: gw.razorpayKeyId,
+        razorpayKeySecretConfigured: !!gw.razorpayKeySecret,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.patch("/api/admin/platform-settings/gateway", requireSuperAdmin, async (req, res) => {
+    try {
+      const adminUser = req.user as { id: string; name: string };
+      const parsed = gatewaySettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ message: "Validation failed", errors: parsed.error.flatten() });
+      }
+      const updates = parsed.data;
+      const current = await loadGatewaySettings();
+
+      const next = {
+        activePaymentGateway: updates.activePaymentGateway ?? current.activePaymentGateway,
+        stripeKeyId: updates.stripeKeyId !== undefined ? updates.stripeKeyId : current.stripeKeyId,
+        stripeKeySecret: updates.stripeKeySecret !== undefined && updates.stripeKeySecret !== "" ? updates.stripeKeySecret : current.stripeKeySecret,
+        razorpayKeyId: updates.razorpayKeyId !== undefined ? updates.razorpayKeyId : current.razorpayKeyId,
+        razorpayKeySecret: updates.razorpayKeySecret !== undefined && updates.razorpayKeySecret !== "" ? updates.razorpayKeySecret : current.razorpayKeySecret,
+      };
+
+      await pool.query(
+        `INSERT INTO platform_settings (id, active_payment_gateway, stripe_key_id, stripe_key_secret, razorpay_key_id, razorpay_key_secret, updated_at)
+         VALUES ('singleton', $1, $2, $3, $4, $5, now())
+         ON CONFLICT (id) DO UPDATE SET
+           active_payment_gateway = EXCLUDED.active_payment_gateway,
+           stripe_key_id = EXCLUDED.stripe_key_id,
+           stripe_key_secret = EXCLUDED.stripe_key_secret,
+           razorpay_key_id = EXCLUDED.razorpay_key_id,
+           razorpay_key_secret = EXCLUDED.razorpay_key_secret,
+           updated_at = now()`,
+        [next.activePaymentGateway, next.stripeKeyId, next.stripeKeySecret, next.razorpayKeyId, next.razorpayKeySecret]
+      );
+
+      await auditLog({
+        tenantId: null,
+        userId: adminUser.id,
+        userName: adminUser.name,
+        action: "gateway_settings_updated",
+        entityType: "platform",
+        entityId: "gateway",
+        entityName: "Payment Gateway Settings",
+        metadata: { activePaymentGateway: next.activePaymentGateway, stripeConfigured: !!next.stripeKeySecret, razorpayConfigured: !!next.razorpayKeySecret } as Record<string, unknown>,
+        req,
+      });
+
+      return res.json({
+        activePaymentGateway: next.activePaymentGateway,
+        stripeKeyId: next.stripeKeyId,
+        stripeKeySecretConfigured: !!next.stripeKeySecret,
+        razorpayKeyId: next.razorpayKeyId,
+        razorpayKeySecretConfigured: !!next.razorpayKeySecret,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  // ─── Public gateway config (no credentials) — used by frontends ─────────────
+  app.get("/api/platform/gateway-config", async (_req, res) => {
+    try {
+      const gw = await loadGatewaySettings();
+      return res.json({ activePaymentGateway: gw.activePaymentGateway });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
       return res.status(500).json({ message });

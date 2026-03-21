@@ -1,7 +1,18 @@
 import type { Express } from "express";
+import { pool } from "../db";
 import { storage } from "../storage";
 import { requireAuth } from "../middleware";
-import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
+import { isStripeConfigured, getUncachableStripeClient, getPaymentStripeClient } from "../stripe";
+import { createPaymentLink } from "../razorpay";
+
+async function getPlatformGatewaySettings(): Promise<{ activeGateway: string; razorpayKeyId: string | null; razorpayKeySecret: string | null }> {
+  try {
+    const { rows } = await pool.query(`SELECT active_payment_gateway, razorpay_key_id, razorpay_key_secret FROM platform_settings WHERE id = 'singleton' LIMIT 1`);
+    return { activeGateway: rows[0]?.active_payment_gateway ?? "stripe", razorpayKeyId: rows[0]?.razorpay_key_id ?? null, razorpayKeySecret: rows[0]?.razorpay_key_secret ?? null };
+  } catch {
+    return { activeGateway: "stripe", razorpayKeyId: null, razorpayKeySecret: null };
+  }
+}
 
 export function registerGuestRoutes(app: Express): void {
   app.get("/api/guest/menu/:outletId", async (req, res) => {
@@ -262,6 +273,8 @@ export function registerGuestRoutes(app: Express): void {
 
   app.post("/api/guest/payment-session", async (req, res) => {
     try {
+      const gwSettings = await getPlatformGatewaySettings();
+      if (gwSettings.activeGateway === "razorpay") return res.status(403).json({ message: "Stripe payments are disabled. Active gateway is Razorpay." });
       if (!await isStripeConfigured()) return res.status(503).json({ message: "Stripe is not configured" });
       const { sessionId, outletId, tableToken } = req.body;
       if (!sessionId || !outletId || !tableToken) return res.status(400).json({ message: "sessionId, outletId, and tableToken are required" });
@@ -281,7 +294,7 @@ export function registerGuestRoutes(app: Express): void {
       const amountInCents = Math.round(billTotal * 100);
       if (amountInCents <= 0) return res.status(400).json({ message: "No unpaid bill found for this session" });
 
-      const stripeClient = await getUncachableStripeClient();
+      const stripeClient = await getPaymentStripeClient();
       const origin = `${req.protocol}://${req.get("host")}`;
       const currency = (tenant.currency || "usd").toLowerCase();
       const session = await stripeClient.checkout.sessions.create({
@@ -292,6 +305,77 @@ export function registerGuestRoutes(app: Express): void {
         metadata: { orderPayment: "true", guestPayment: "true", sessionId, tenantId: tableSession.tenantId, channel: "guest" },
       });
       res.json({ url: session.url, sessionId: session.id, amount: billTotal.toFixed(2) });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/guest/razorpay-payment", async (req, res) => {
+    try {
+      const gwSettings = await getPlatformGatewaySettings();
+      if (gwSettings.activeGateway === "stripe") return res.status(403).json({ message: "Razorpay payments are disabled. Active gateway is Stripe." });
+      const { sessionId, outletId, tableToken } = req.body;
+      if (!sessionId || !outletId || !tableToken) return res.status(400).json({ message: "sessionId, outletId, and tableToken are required" });
+
+      const tableSession = await storage.getTableSession(sessionId);
+      if (!tableSession) return res.status(404).json({ message: "Session not found" });
+
+      const validTable = await storage.getTableByQrToken(outletId, tableToken);
+      if (!validTable || validTable.id !== tableSession.tableId) return res.status(403).json({ message: "Session does not match the provided table credentials" });
+
+      const tenant = await storage.getTenant(tableSession.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+
+      const allOrders = await storage.getOrdersByTenant(tableSession.tenantId);
+      const unpaidTableOrders = allOrders.filter(o => o.tableId === tableSession.tableId && o.status !== "cancelled" && o.status !== "voided" && o.status !== "paid");
+      const billTotal = unpaidTableOrders.reduce((sum, o) => sum + Number(o.total || 0), 0);
+      if (billTotal <= 0) return res.status(400).json({ message: "No unpaid bill found for this session" });
+
+      const platformSettings = await getPlatformGatewaySettings();
+      const keyId = (tenant as any).razorpayKeyId || platformSettings.razorpayKeyId;
+      const keySecret = (tenant as any).razorpayKeySecret || platformSettings.razorpayKeySecret;
+
+      const link = await createPaymentLink({
+        amountRupees: billTotal,
+        currency: tenant.currency || "INR",
+        description: `Bill Payment — ${tenant.name}`,
+        billId: sessionId,
+        tenantKeyId: keyId,
+        tenantKeySecret: keySecret,
+      });
+
+      res.json({ paymentLinkId: link.id, shortUrl: link.short_url, amount: billTotal.toFixed(2) });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/guest/razorpay-payment-status", async (req, res) => {
+    try {
+      const { linkId, outletId, tableToken } = req.query as Record<string, string>;
+      if (!linkId || !outletId || !tableToken) return res.status(400).json({ message: "linkId, outletId, and tableToken are required" });
+
+      const table = await storage.getTableByQrToken(outletId, tableToken);
+      if (!table) return res.status(403).json({ message: "Invalid table credentials" });
+
+      const tenant = await storage.getTenant(table.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Tenant not found" });
+
+      const platformSettings = await getPlatformGatewaySettings();
+      const keyId = (tenant as any).razorpayKeyId || platformSettings.razorpayKeyId;
+      const keySecret = (tenant as any).razorpayKeySecret || platformSettings.razorpayKeySecret;
+
+      const { getPaymentLink } = await import("../razorpay");
+      const link = await getPaymentLink(linkId, keyId, keySecret);
+
+      if (link.status === "paid") {
+        const allOrders = await storage.getOrdersByTenant(table.tenantId);
+        const tableOrders = allOrders.filter(o => o.tableId === table.id && (o.status === "pending_payment" || o.status === "new" || o.status === "completed"));
+        for (const o of tableOrders) {
+          if (o.status !== "paid") {
+            await storage.updateOrder(o.id, { status: "paid", paymentMethod: "razorpay" });
+          }
+        }
+        return res.json({ status: "paid" });
+      }
+
+      return res.json({ status: link.status === "cancelled" || link.status === "expired" ? "cancelled" : "pending" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

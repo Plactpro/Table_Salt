@@ -134,6 +134,11 @@ export default function GuestPage() {
   const [selectedSplitItems, setSelectedSplitItems] = useState<Set<number>>(new Set());
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   const [stripeRedirecting, setStripeRedirecting] = useState(false);
+  const [razorpayRedirecting, setRazorpayRedirecting] = useState(false);
+  const [razorpayUrl, setRazorpayUrl] = useState<string | null>(null);
+  const [razorpayLinkId, setRazorpayLinkId] = useState<string | null>(null);
+  const [razorpayPollStatus, setRazorpayPollStatus] = useState<"pending" | "paid" | "cancelled">("pending");
+  const [activeGateway, setActiveGateway] = useState<"stripe" | "razorpay" | "both">("stripe");
 
   const fmt = useCallback((val: number | string) => {
     if (!tenant) return String(val);
@@ -142,6 +147,37 @@ export default function GuestPage() {
       decimals: tenant.currencyDecimals,
     });
   }, [tenant]);
+
+  useEffect(() => {
+    fetch("/api/platform/gateway-config")
+      .then(r => r.ok ? r.json() : { activePaymentGateway: "stripe" })
+      .then(data => setActiveGateway(data.activePaymentGateway ?? "stripe"))
+      .catch(() => setActiveGateway("stripe"));
+  }, []);
+
+  useEffect(() => {
+    if (!razorpayLinkId || !outletId || !tableToken || razorpayPollStatus !== "pending") return;
+    let stopped = false;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/guest/razorpay-payment-status?linkId=${encodeURIComponent(razorpayLinkId)}&outletId=${encodeURIComponent(outletId)}&tableToken=${encodeURIComponent(tableToken)}`
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (!stopped) {
+            if (data.status === "paid") { setRazorpayPollStatus("paid"); setPaymentConfirmed(true); setRazorpayUrl(null); }
+            else if (data.status === "cancelled") { setRazorpayPollStatus("cancelled"); }
+          }
+        }
+      } catch { }
+    };
+
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => { stopped = true; clearInterval(interval); };
+  }, [razorpayLinkId, outletId, tableToken, razorpayPollStatus]);
 
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -329,6 +365,33 @@ export default function GuestPage() {
       setPaymentConfirmed(true);
     } finally {
       setStripeRedirecting(false);
+    }
+  }, [session, bill, outletId, tableToken]);
+
+  const payWithRazorpay = useCallback(async () => {
+    if (!session || !bill) return;
+    setRazorpayRedirecting(true);
+    try {
+      const res = await fetch("/api/guest/razorpay-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: session.id, outletId, tableToken }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.shortUrl) {
+          setRazorpayUrl(data.shortUrl);
+          setRazorpayLinkId(data.paymentLinkId || null);
+          setRazorpayPollStatus("pending");
+          return;
+        }
+      }
+      setPaymentConfirmed(true);
+    } catch (err) {
+      console.error("Razorpay payment error:", err);
+      setPaymentConfirmed(true);
+    } finally {
+      setRazorpayRedirecting(false);
     }
   }, [session, bill, outletId, tableToken]);
 
@@ -879,7 +942,34 @@ export default function GuestPage() {
                     <p className="text-3xl font-bold text-teal-700" data-testid="text-payment-total">{fmt(bill.total)}</p>
                   </div>
 
+                  {razorpayUrl ? (
+                    <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200 text-center space-y-3">
+                      {razorpayPollStatus === "paid" ? (
+                        <div data-testid="status-razorpay-guest-paid" className="flex items-center gap-2 justify-center text-green-700 font-semibold">
+                          <CheckCircle2 className="h-5 w-5" /> Payment confirmed!
+                        </div>
+                      ) : razorpayPollStatus === "cancelled" ? (
+                        <div data-testid="status-razorpay-guest-cancelled" className="text-red-600 font-semibold">Payment link expired or cancelled. Please try again.</div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-medium text-blue-800">Complete your Razorpay / UPI payment:</p>
+                          <a
+                            href={razorpayUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            data-testid="link-razorpay-guest-payment"
+                            className="inline-flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-blue-700"
+                          >
+                            <CreditCard className="h-4 w-4" /> Open Payment Page
+                          </a>
+                          <p className="text-xs text-blue-600 break-all">{razorpayUrl}</p>
+                          <p data-testid="status-razorpay-guest-pending" className="text-xs text-gray-400 animate-pulse">Waiting for payment confirmation...</p>
+                        </>
+                      )}
+                    </div>
+                  ) : (
                   <div className="space-y-2 mb-6">
+                    {(activeGateway === "stripe" || activeGateway === "both") && (
                     <button
                       onClick={payWithStripe}
                       disabled={stripeRedirecting}
@@ -887,8 +977,20 @@ export default function GuestPage() {
                       data-testid="button-pay-card"
                     >
                       {stripeRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CreditCard className="h-4 w-4" />}
-                      {stripeRedirecting ? "Redirecting to payment..." : "Pay with Card"}
+                      {stripeRedirecting ? "Redirecting to payment..." : "Pay with Card (Stripe)"}
                     </button>
+                    )}
+                    {(activeGateway === "razorpay" || activeGateway === "both") && (
+                    <button
+                      onClick={payWithRazorpay}
+                      disabled={razorpayRedirecting}
+                      className="w-full bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 flex items-center justify-center gap-2 disabled:opacity-50"
+                      data-testid="button-pay-razorpay"
+                    >
+                      {razorpayRedirecting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Smartphone className="h-4 w-4" />}
+                      {razorpayRedirecting ? "Generating payment link..." : "Pay via Razorpay / UPI"}
+                    </button>
+                    )}
                     <button
                       onClick={() => setPaymentConfirmed(true)}
                       className="w-full border border-gray-200 py-3 rounded-xl font-medium hover:bg-gray-50 flex items-center justify-center gap-2"
@@ -904,6 +1006,7 @@ export default function GuestPage() {
                       <Smartphone className="h-4 w-4" /> Mobile Payment
                     </button>
                   </div>
+                  )}
 
                   <button onClick={() => setStep("bill")} className="text-teal-600 text-sm font-medium" data-testid="button-back-from-payment">
                     Back to Bill

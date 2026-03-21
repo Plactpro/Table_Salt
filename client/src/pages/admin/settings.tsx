@@ -10,6 +10,10 @@ import {
   Bell,
   Shield,
   AlertCircle,
+  CreditCard,
+  Eye,
+  EyeOff,
+  CheckCircle2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
 
 interface PlatformSettings {
   maintenanceMode: boolean;
@@ -25,6 +30,14 @@ interface PlatformSettings {
   maxTenantsPerPlan: Record<string, number>;
   alertEmailRecipients: string[];
   platformName: string;
+}
+
+interface GatewaySettings {
+  activePaymentGateway: "stripe" | "razorpay" | "both";
+  stripeKeyId: string | null;
+  stripeKeySecretConfigured: boolean;
+  razorpayKeyId: string | null;
+  razorpayKeySecretConfigured: boolean;
 }
 
 const DEFAULT_SETTINGS: PlatformSettings = {
@@ -35,10 +48,25 @@ const DEFAULT_SETTINGS: PlatformSettings = {
   platformName: "Table Salt",
 };
 
+const DEFAULT_GATEWAY: GatewaySettings = {
+  activePaymentGateway: "stripe",
+  stripeKeyId: null,
+  stripeKeySecretConfigured: false,
+  razorpayKeyId: null,
+  razorpayKeySecretConfigured: false,
+};
+
 export default function AdminSettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [newEmail, setNewEmail] = useState("");
+
+  const [stripeKeyId, setStripeKeyId] = useState("");
+  const [stripeKeySecret, setStripeKeySecret] = useState("");
+  const [razorpayKeyId, setRazorpayKeyId] = useState("");
+  const [razorpayKeySecret, setRazorpayKeySecret] = useState("");
+  const [showStripeSecret, setShowStripeSecret] = useState(false);
+  const [showRazorpaySecret, setShowRazorpaySecret] = useState(false);
 
   const { data: settings, isLoading, error } = useQuery<PlatformSettings>({
     queryKey: ["/api/admin/platform-settings"],
@@ -46,6 +74,18 @@ export default function AdminSettingsPage() {
       const r = await apiRequest("GET", "/api/admin/platform-settings");
       if (!r.ok) throw new Error(`Failed to load settings: ${r.status}`);
       return r.json();
+    },
+  });
+
+  const { data: gatewayData, isLoading: gatewayLoading } = useQuery<GatewaySettings>({
+    queryKey: ["/api/admin/platform-settings/gateway"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/admin/platform-settings/gateway");
+      if (!r.ok) throw new Error(`Failed to load gateway settings: ${r.status}`);
+      const data = await r.json();
+      setStripeKeyId(data.stripeKeyId ?? "");
+      setRazorpayKeyId(data.razorpayKeyId ?? "");
+      return data;
     },
   });
 
@@ -62,7 +102,24 @@ export default function AdminSettingsPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const current = settings ?? DEFAULT_SETTINGS; // DEFAULT_SETTINGS used only during initial load
+  const saveGatewayMutation = useMutation({
+    mutationFn: async (data: Record<string, unknown>) => {
+      const r = await apiRequest("PATCH", "/api/admin/platform-settings/gateway", data);
+      if (!r.ok) throw new Error(`Failed to save gateway settings: ${r.status}`);
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/platform-settings/gateway"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/platform/gateway-config"] });
+      setStripeKeySecret("");
+      setRazorpayKeySecret("");
+      toast({ title: "Payment gateway settings saved" });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const current = settings ?? DEFAULT_SETTINGS;
+  const gateway = gatewayData ?? DEFAULT_GATEWAY;
 
   const toggle = (key: keyof PlatformSettings, value: boolean) => {
     saveMutation.mutate({ [key]: value });
@@ -83,6 +140,26 @@ export default function AdminSettingsPage() {
       alertEmailRecipients: (current.alertEmailRecipients ?? []).filter(e => e !== email),
     });
   };
+
+  const handleGatewaySelect = (gw: "stripe" | "razorpay" | "both") => {
+    saveGatewayMutation.mutate({ activePaymentGateway: gw });
+  };
+
+  const handleGatewayCredentials = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload: Record<string, unknown> = {};
+    if (stripeKeyId.trim()) payload.stripeKeyId = stripeKeyId.trim();
+    if (stripeKeySecret.trim()) payload.stripeKeySecret = stripeKeySecret.trim();
+    if (razorpayKeyId.trim()) payload.razorpayKeyId = razorpayKeyId.trim();
+    if (razorpayKeySecret.trim()) payload.razorpayKeySecret = razorpayKeySecret.trim();
+    saveGatewayMutation.mutate(payload);
+  };
+
+  const gatewayOptions: { id: "stripe" | "razorpay" | "both"; label: string; desc: string }[] = [
+    { id: "stripe", label: "Stripe Only", desc: "Use Stripe for all payment contexts" },
+    { id: "razorpay", label: "Razorpay Only", desc: "Use Razorpay for all payment contexts" },
+    { id: "both", label: "Both (tenants choose)", desc: "Expose both gateways; staff selects at checkout" },
+  ];
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5" data-testid="admin-settings-page">
@@ -156,6 +233,145 @@ export default function AdminSettingsPage() {
                   <span className="text-xs text-slate-400 self-center">Locked to license</span>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Payment Gateway */}
+          <Card data-testid="card-payment-gateway">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <CreditCard className="h-4 w-4" />
+                Payment Gateway
+              </CardTitle>
+              <CardDescription>Choose which payment gateway(s) are active across all POS, kiosk, and online flows</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {gatewayLoading ? (
+                <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14 w-full" />)}</div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" data-testid="gateway-options">
+                    {gatewayOptions.map(opt => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        data-testid={`gateway-option-${opt.id}`}
+                        onClick={() => handleGatewaySelect(opt.id)}
+                        disabled={saveGatewayMutation.isPending}
+                        className={`relative flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-all ${
+                          gateway.activePaymentGateway === opt.id
+                            ? "border-primary bg-primary/5 ring-2 ring-primary"
+                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                        }`}
+                      >
+                        {gateway.activePaymentGateway === opt.id && (
+                          <CheckCircle2 className="absolute top-3 right-3 h-4 w-4 text-primary" />
+                        )}
+                        <span className="text-sm font-semibold text-slate-800">{opt.label}</span>
+                        <span className="text-xs text-slate-500">{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  <Separator />
+
+                  <form onSubmit={handleGatewayCredentials} className="space-y-4">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                        Stripe Credentials
+                        {gateway.stripeKeySecretConfigured && (
+                          <Badge variant="outline" className="text-green-600 border-green-300 text-xs">Configured</Badge>
+                        )}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Publishable Key (pk_…)</Label>
+                          <Input
+                            value={stripeKeyId}
+                            onChange={e => setStripeKeyId(e.target.value)}
+                            placeholder="pk_live_…"
+                            className="text-sm font-mono"
+                            data-testid="input-stripe-key-id"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Secret Key (sk_…)</Label>
+                          <div className="relative">
+                            <Input
+                              type={showStripeSecret ? "text" : "password"}
+                              value={stripeKeySecret}
+                              onChange={e => setStripeKeySecret(e.target.value)}
+                              placeholder={gateway.stripeKeySecretConfigured ? "••••••••• (leave blank to keep)" : "sk_live_…"}
+                              className="text-sm font-mono pr-9"
+                              data-testid="input-stripe-key-secret"
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                              onClick={() => setShowStripeSecret(v => !v)}
+                              data-testid="button-toggle-stripe-secret"
+                            >
+                              {showStripeSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                        Razorpay Credentials
+                        {gateway.razorpayKeySecretConfigured && (
+                          <Badge variant="outline" className="text-green-600 border-green-300 text-xs">Configured</Badge>
+                        )}
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Key ID (rzp_…)</Label>
+                          <Input
+                            value={razorpayKeyId}
+                            onChange={e => setRazorpayKeyId(e.target.value)}
+                            placeholder="rzp_live_…"
+                            className="text-sm font-mono"
+                            data-testid="input-razorpay-key-id"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Key Secret</Label>
+                          <div className="relative">
+                            <Input
+                              type={showRazorpaySecret ? "text" : "password"}
+                              value={razorpayKeySecret}
+                              onChange={e => setRazorpayKeySecret(e.target.value)}
+                              placeholder={gateway.razorpayKeySecretConfigured ? "••••••••• (leave blank to keep)" : "Enter secret…"}
+                              className="text-sm font-mono pr-9"
+                              data-testid="input-razorpay-key-secret"
+                            />
+                            <button
+                              type="button"
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                              onClick={() => setShowRazorpaySecret(v => !v)}
+                              data-testid="button-toggle-razorpay-secret"
+                            >
+                              {showRazorpaySecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <Button
+                      type="submit"
+                      size="sm"
+                      disabled={saveGatewayMutation.isPending}
+                      data-testid="button-save-gateway-credentials"
+                    >
+                      {saveGatewayMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                      Save Credentials
+                    </Button>
+                  </form>
+                </>
+              )}
             </CardContent>
           </Card>
 

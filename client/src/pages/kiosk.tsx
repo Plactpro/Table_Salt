@@ -137,6 +137,17 @@ export default function KioskPage() {
     { enabled: !!token, staleTime: 60000, customFetcher: kioskFetch }
   );
 
+  const { data: gatewayConfig } = useQuery({
+    queryKey: ["/api/platform/gateway-config"],
+    queryFn: async () => {
+      const res = await fetch("/api/platform/gateway-config");
+      if (!res.ok) return { activePaymentGateway: "stripe" };
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  const activeGateway: "stripe" | "razorpay" | "both" = gatewayConfig?.activePaymentGateway ?? "stripe";
+
   const categories = menuData?.categories || [];
   const menuItems = menuData?.items || [];
 
@@ -288,7 +299,14 @@ export default function KioskPage() {
   const placeOrder = useCallback(async () => {
     setIsPlacingOrder(true);
     try {
-      if (paymentMethod === "card") {
+      const useRazorpay = activeGateway === "razorpay"
+        ? (paymentMethod === "card" || paymentMethod === "upi")
+        : activeGateway === "both"
+          ? paymentMethod === "upi"
+          : false;
+      const useStripe = (activeGateway === "stripe" || activeGateway === "both") && (paymentMethod === "card" || paymentMethod === "wallet");
+
+      if (useStripe) {
         const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         const res = await kioskFetch("/api/kiosk/payment-session", {
           method: "POST",
@@ -302,6 +320,28 @@ export default function KioskPage() {
           const data = await res.json();
           if (data.url) {
             window.location.href = data.url;
+            return;
+          }
+        }
+      }
+
+      if (useRazorpay) {
+        const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `kiosk-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const res = await kioskFetch("/api/kiosk/razorpay-payment", {
+          method: "POST",
+          body: JSON.stringify({
+            items: cart.map(c => ({ menuItemId: c.menuItemId, quantity: c.quantity, notes: c.notes || undefined })),
+            serviceType,
+            clientOrderId,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.shortUrl) {
+            setOrderResult({ tokenNumber: data.orderId?.slice(0, 6).toUpperCase() || "OK", razorpayUrl: data.shortUrl, orderId: data.orderId, linkId: data.paymentLinkId });
+            setStep("confirmation");
+            setCart([]);
+            setTimeout(() => resetKiosk(), confirmResetMs);
             return;
           }
         }
@@ -330,7 +370,7 @@ export default function KioskPage() {
     } finally {
       setIsPlacingOrder(false);
     }
-  }, [cart, paymentMethod, serviceType, resetKiosk, token]);
+  }, [cart, paymentMethod, serviceType, resetKiosk, token, activeGateway]);
 
   if (!token) {
     return (
@@ -447,6 +487,7 @@ export default function KioskPage() {
             onSelectMethod={setPaymentMethod}
             onBack={() => setStep("cart")}
             onConfirm={placeOrder}
+            activeGateway={activeGateway}
           />
         )}
         {step === "confirmation" && (
@@ -456,6 +497,7 @@ export default function KioskPage() {
             serviceType={serviceType}
             fmt={fmt}
             onNewOrder={resetKiosk}
+            kioskToken={token}
           />
         )}
       </AnimatePresence>
@@ -1364,7 +1406,7 @@ function CartScreen({
 }
 
 function PaymentScreen({
-  total, paymentMethod, isPlacing, fmt, onSelectMethod, onBack, onConfirm,
+  total, paymentMethod, isPlacing, fmt, onSelectMethod, onBack, onConfirm, activeGateway,
 }: {
   total: number;
   paymentMethod: string;
@@ -1373,13 +1415,25 @@ function PaymentScreen({
   onSelectMethod: (m: string) => void;
   onBack: () => void;
   onConfirm: () => void;
+  activeGateway: "stripe" | "razorpay" | "both";
 }) {
+  const stripeAvailable = activeGateway === "stripe" || activeGateway === "both";
+  const razorpayAvailable = activeGateway === "razorpay" || activeGateway === "both";
+
+  const cardDesc = stripeAvailable && razorpayAvailable
+    ? "Card / UPI (gateway auto-selected)"
+    : stripeAvailable
+      ? "Tap or insert card (Stripe)"
+      : "Card / UPI via Razorpay";
+
+  const upiDesc = razorpayAvailable ? "Scan QR code via Razorpay" : "Scan QR code to pay";
+
   const methods = [
-    { id: "card", label: "Card", icon: CreditCard, desc: "Tap or insert card" },
-    { id: "upi", label: "UPI / QR", icon: Smartphone, desc: "Scan QR code to pay" },
-    { id: "wallet", label: "Digital Wallet", icon: Wallet, desc: "Apple Pay, Google Pay" },
-    { id: "counter", label: "Pay at Counter", icon: Store, desc: "Pay when collecting" },
-  ];
+    { id: "card", label: "Card", icon: CreditCard, desc: cardDesc, enabled: stripeAvailable || razorpayAvailable },
+    { id: "upi", label: "UPI / QR", icon: Smartphone, desc: upiDesc, enabled: razorpayAvailable },
+    { id: "wallet", label: "Digital Wallet", icon: Wallet, desc: "Apple Pay, Google Pay", enabled: stripeAvailable },
+    { id: "counter", label: "Pay at Counter", icon: Store, desc: "Pay when collecting", enabled: true },
+  ].filter(m => m.enabled);
 
   return (
     <motion.div
@@ -1446,13 +1500,38 @@ function PaymentScreen({
 }
 
 function ConfirmationScreen({
-  orderResult, serviceType, fmt, onNewOrder,
+  orderResult, serviceType, fmt, onNewOrder, kioskToken,
 }: {
   orderResult: any;
   serviceType: ServiceType;
   fmt: (val: number | string) => string;
   onNewOrder: () => void;
+  kioskToken: string;
 }) {
+  const [pollStatus, setPollStatus] = useState<"pending" | "paid" | "cancelled">("pending");
+
+  useEffect(() => {
+    if (!orderResult?.razorpayUrl || !orderResult?.linkId || !orderResult?.orderId) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(
+          `/api/kiosk/razorpay-payment-status/${orderResult.orderId}?linkId=${encodeURIComponent(orderResult.linkId)}`,
+          { headers: { "x-kiosk-token": kioskToken } }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          if (!cancelled) setPollStatus(data.status === "paid" ? "paid" : data.status === "cancelled" ? "cancelled" : "pending");
+        }
+      } catch { }
+    };
+
+    poll();
+    const interval = setInterval(poll, 4000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [orderResult?.razorpayUrl, orderResult?.linkId, orderResult?.orderId, kioskToken]);
+
   return (
     <motion.div
       initial={{ scale: 0.8, opacity: 0 }}
@@ -1492,12 +1571,39 @@ function ConfirmationScreen({
         <p className="text-slate-400 mt-4 text-sm">
           {orderResult?.queued
             ? "Your order has been saved and will be sent when connectivity is restored."
-            : serviceType === "dine_in"
-              ? "Please take a seat. Your order will be served to you."
-              : "Please wait at the counter for your order."}
+            : orderResult?.razorpayUrl
+              ? "Scan the QR code or use the link below to complete your payment."
+              : serviceType === "dine_in"
+                ? "Please take a seat. Your order will be served to you."
+                : "Please wait at the counter for your order."}
         </p>
         {orderResult?.total && (
           <p className="text-lg text-white mt-4">Total: {fmt(orderResult.total)}</p>
+        )}
+        {orderResult?.razorpayUrl && (
+          <div className="mt-6 space-y-3">
+            {pollStatus === "paid" ? (
+              <div data-testid="status-razorpay-paid" className="flex items-center gap-2 justify-center text-green-400 font-semibold">
+                <CheckCircle className="h-5 w-5" /> Payment received!
+              </div>
+            ) : pollStatus === "cancelled" ? (
+              <div data-testid="status-razorpay-cancelled" className="text-red-400 font-semibold">Payment link expired or cancelled.</div>
+            ) : (
+              <>
+                <a
+                  href={orderResult.razorpayUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  data-testid="link-razorpay-payment"
+                  className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6 py-3 rounded-xl transition-colors"
+                >
+                  Pay via Razorpay
+                </a>
+                <p className="text-xs text-slate-400 break-all">{orderResult.razorpayUrl}</p>
+                <p data-testid="status-razorpay-pending" className="text-xs text-slate-500 animate-pulse">Waiting for payment confirmation...</p>
+              </>
+            )}
+          </div>
         )}
       </motion.div>
 

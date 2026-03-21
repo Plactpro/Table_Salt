@@ -1,7 +1,36 @@
 import type Stripe from "stripe";
+import StripeLib from "stripe";
 import { getUncachableStripeClient } from "./stripeClient";
+import { pool } from "./db";
 
 export { getUncachableStripeClient };
+
+async function getPlatformStripeSecret(): Promise<string | null> {
+  try {
+    const { rows } = await pool.query(`SELECT stripe_key_secret FROM platform_settings WHERE id = 'singleton' LIMIT 1`);
+    return rows[0]?.stripe_key_secret ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getPaymentStripeClient(): Promise<Stripe> {
+  const platformSecret = await getPlatformStripeSecret();
+  if (platformSecret) {
+    return new StripeLib(platformSecret, { apiVersion: "2025-02-24.acacia" });
+  }
+  return getUncachableStripeClient();
+}
+
+export async function isStripeAvailable(): Promise<boolean> {
+  try {
+    const platformSecret = await getPlatformStripeSecret();
+    if (platformSecret) return true;
+    return await isStripeConfigured();
+  } catch {
+    return false;
+  }
+}
 
 export const TRIAL_DAYS = 30;
 
