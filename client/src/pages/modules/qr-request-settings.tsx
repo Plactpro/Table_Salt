@@ -14,6 +14,8 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 
+type SoundTone = "chime" | "beep" | "bell" | "ding" | "ping";
+
 interface QrRequestSettings {
   enabledRequestTypes: string[];
   escalationMinutes: { high: number; medium: number; low: number };
@@ -22,7 +24,8 @@ interface QrRequestSettings {
   requireWaiterConfirmation: boolean;
   welcomeMessage: string;
   soundEnabled: boolean;
-  soundTone: "chime" | "beep" | "bell";
+  soundTone: SoundTone;
+  soundTonePerPriority: { high: SoundTone; medium: SoundTone; low: SoundTone };
 }
 
 interface Outlet {
@@ -40,6 +43,14 @@ const ALL_REQUEST_TYPES = [
   { key: "other", label: "Other / Special Request" },
 ];
 
+const TONE_OPTIONS: { value: SoundTone; label: string }[] = [
+  { value: "beep", label: "Beep" },
+  { value: "chime", label: "Chime" },
+  { value: "bell", label: "Bell" },
+  { value: "ding", label: "Ding" },
+  { value: "ping", label: "Ping" },
+];
+
 const DEFAULT_SETTINGS: QrRequestSettings = {
   enabledRequestTypes: ["call_server", "request_bill", "water_refill", "cleaning", "order_food", "feedback", "other"],
   escalationMinutes: { high: 2, medium: 5, low: 10 },
@@ -49,6 +60,7 @@ const DEFAULT_SETTINGS: QrRequestSettings = {
   welcomeMessage: "Welcome! How can we help you today?",
   soundEnabled: true,
   soundTone: "beep",
+  soundTonePerPriority: { high: "bell", medium: "chime", low: "beep" },
 };
 
 export default function QrRequestSettings() {
@@ -235,21 +247,48 @@ export default function QrRequestSettings() {
                   />
                 </div>
                 <div className="flex items-center gap-3">
-                  <Label className="text-sm font-normal w-24">Alert tone</Label>
+                  <Label className="text-sm font-normal w-24">Default tone</Label>
                   <Select
                     value={settings.soundTone}
-                    onValueChange={v => setSettings(prev => ({ ...prev, soundTone: v as QrRequestSettings["soundTone"] }))}
+                    onValueChange={v => setSettings(prev => ({ ...prev, soundTone: v as SoundTone }))}
                     disabled={!settings.soundEnabled}
                   >
                     <SelectTrigger className="flex-1 h-8 text-sm" data-testid="select-sound-tone">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="chime">Chime</SelectItem>
-                      <SelectItem value="beep">Beep</SelectItem>
-                      <SelectItem value="bell">Bell</SelectItem>
+                      {TONE_OPTIONS.map(t => (
+                        <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="pt-1 space-y-2">
+                  <Label className="text-xs text-muted-foreground font-normal">Tone per priority</Label>
+                  {(["high", "medium", "low"] as const).map(p => (
+                    <div key={p} className="flex items-center gap-3">
+                      <span className={`text-xs w-16 capitalize font-medium ${p === "high" ? "text-red-600" : p === "medium" ? "text-amber-600" : "text-blue-600"}`}>
+                        {p}
+                      </span>
+                      <Select
+                        value={settings.soundTonePerPriority?.[p] ?? "beep"}
+                        onValueChange={v => setSettings(prev => ({
+                          ...prev,
+                          soundTonePerPriority: { ...prev.soundTonePerPriority, [p]: v as SoundTone },
+                        }))}
+                        disabled={!settings.soundEnabled}
+                      >
+                        <SelectTrigger className="flex-1 h-8 text-sm" data-testid={`select-tone-${p}`}>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TONE_OPTIONS.map(t => (
+                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>

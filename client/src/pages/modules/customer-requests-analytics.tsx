@@ -60,6 +60,7 @@ function StatCard({ title, value, icon: Icon, color = "text-primary" }: {
 
 export default function CustomerRequestsAnalytics() {
   const [range, setRange] = useState("7d");
+  const [ratingAggregation, setRatingAggregation] = useState<"day" | "week" | "month">("day");
 
   const { data, isLoading, error } = useQuery<AnalyticsData>({
     queryKey: ["/api/table-requests/analytics", range],
@@ -120,13 +121,40 @@ export default function CustomerRequestsAnalytics() {
     .map(([date, count]) => ({ date: date.slice(5), count }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
-  const ratingTrendData = Object.entries(data.feedbackByDay ?? {})
-    .map(([date, v]) => ({
-      date: date.slice(5),
-      avg: v.count > 0 ? Math.round((v.total / v.count) * 10) / 10 : null,
-    }))
-    .filter(d => d.avg !== null)
-    .sort((a, b) => a.date.localeCompare(b.date));
+  const ratingTrendData = (() => {
+    const rawEntries = Object.entries(data.feedbackByDay ?? {});
+    if (ratingAggregation === "day") {
+      return rawEntries
+        .map(([date, v]) => ({
+          date: date.slice(5),
+          avg: v.count > 0 ? Math.round((v.total / v.count) * 10) / 10 : null,
+        }))
+        .filter(d => d.avg !== null)
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
+    const buckets: Record<string, { count: number; total: number }> = {};
+    for (const [date, v] of rawEntries) {
+      const d = new Date(date);
+      let key: string;
+      if (ratingAggregation === "week") {
+        const startOfWeek = new Date(d);
+        startOfWeek.setDate(d.getDate() - d.getDay());
+        key = startOfWeek.toISOString().slice(0, 10);
+      } else {
+        key = date.slice(0, 7);
+      }
+      if (!buckets[key]) buckets[key] = { count: 0, total: 0 };
+      buckets[key].count += v.count;
+      buckets[key].total += v.total;
+    }
+    return Object.entries(buckets)
+      .map(([key, v]) => ({
+        date: key.slice(5),
+        avg: v.count > 0 ? Math.round((v.total / v.count) * 10) / 10 : null,
+      }))
+      .filter(d => d.avg !== null)
+      .sort((a, b) => a.date.localeCompare(b.date));
+  })();
 
   const COMPLAINT_TYPES = ["cleaning", "other", "feedback"];
   const complaintDonutData = Object.entries(data.byType ?? {})
@@ -314,12 +342,26 @@ export default function CustomerRequestsAnalytics() {
           </Card>
         )}
 
-        {ratingTrendData.length > 1 && (
-          <Card data-testid="chart-rating-trend">
-            <CardHeader className="pb-2">
+        <Card data-testid="chart-rating-trend">
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between gap-2">
               <CardTitle className="text-sm font-medium">Avg Feedback Rating Trend</CardTitle>
-            </CardHeader>
-            <CardContent>
+              <Select value={ratingAggregation} onValueChange={v => setRatingAggregation(v as "day" | "week" | "month")}>
+                <SelectTrigger className="h-7 w-24 text-xs" data-testid="select-rating-aggregation">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Daily</SelectItem>
+                  <SelectItem value="week">Weekly</SelectItem>
+                  <SelectItem value="month">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {ratingTrendData.length < 2 ? (
+              <p className="text-xs text-muted-foreground text-center py-8">Not enough feedback data to show trend</p>
+            ) : (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={ratingTrendData} margin={{ left: 0, right: 8 }}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -329,9 +371,9 @@ export default function CustomerRequestsAnalytics() {
                   <Line type="monotone" dataKey="avg" stroke="#eab308" strokeWidth={2} dot={{ r: 3 }} />
                 </LineChart>
               </ResponsiveContainer>
-            </CardContent>
-          </Card>
-        )}
+            )}
+          </CardContent>
+        </Card>
 
         {complaintDonutData.length > 0 && (
           <Card data-testid="chart-complaint-categories">
