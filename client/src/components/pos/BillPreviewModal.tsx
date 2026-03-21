@@ -433,7 +433,9 @@ export default function BillPreviewModal({
       customerGstin: (createdBill?.customerGstin || customerGstinInput) || null,
       loyaltyPointsEarned: lookedUpCustomer ? loyaltyEarned : undefined,
       restaurantLogo: user?.tenant?.logo || null,
-      digitalReceiptUrl: null as string | null,
+      digitalReceiptUrl: createdBill?.id
+        ? `${window.location.origin}/receipt/${createdBill.id}`
+        : null,
     };
 
     const html = renderBillHtml({
@@ -461,6 +463,7 @@ export default function BillPreviewModal({
       customerName: billPayload.customerName,
       customerGstin: billPayload.customerGstin,
       loyaltyPointsEarned: billPayload.loyaltyPointsEarned,
+      digitalReceiptUrl: billPayload.digitalReceiptUrl,
     });
 
     const refId = createdBill?.id || orderId || "";

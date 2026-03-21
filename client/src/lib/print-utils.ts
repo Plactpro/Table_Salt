@@ -1,3 +1,17 @@
+/**
+ * Escape HTML special characters to prevent XSS when inserting
+ * user-controlled strings into raw HTML print templates.
+ */
+function esc(str: string | null | undefined): string {
+  if (!str) return "";
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#x27;");
+}
+
 export interface KotPrintOptions {
   restaurantName: string;
   kotNumber?: string;
@@ -19,7 +33,7 @@ export function renderKotHtml(opts: KotPrintOptions): string {
   const date = new Date(sentAt);
   const dateStr = date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
-  const orderRef = orderId.slice(-6).toUpperCase();
+  const orderRef = esc(orderId.slice(-6).toUpperCase());
 
   const courseOrder = ["starter", "Starter", "main", "Main", "dessert", "Dessert", "beverage", "Beverage"];
   const groupedByCourse: Record<string, typeof items> = {};
@@ -47,17 +61,17 @@ export function renderKotHtml(opts: KotPrintOptions): string {
     .map((course) => {
       const courseHeader =
         sortedCourses.length > 1
-          ? `<div style="font-weight:bold;text-transform:uppercase;font-size:11px;margin-bottom:2px;border-bottom:1px solid #000;">-- ${course} --</div>`
+          ? `<div style="font-weight:bold;text-transform:uppercase;font-size:11px;margin-bottom:2px;border-bottom:1px solid #000;">-- ${esc(course)} --</div>`
           : "";
       const itemsInCourse = groupedByCourse[course]
         .map(
           (item) => `
             <div style="margin-bottom:4px;">
               <div style="display:flex;justify-content:space-between;">
-                <span style="font-weight:bold;font-size:14px;">${item.name}</span>
+                <span style="font-weight:bold;font-size:14px;">${esc(item.name)}</span>
                 <span style="font-weight:bold;font-size:14px;">x${item.quantity}</span>
               </div>
-              ${item.notes ? `<div style="font-size:11px;padding-left:8px;font-style:italic;">* ${item.notes}</div>` : ""}
+              ${item.notes ? `<div style="font-size:11px;padding-left:8px;font-style:italic;">* ${esc(item.notes)}</div>` : ""}
             </div>
           `
         )
@@ -72,7 +86,7 @@ export function renderKotHtml(opts: KotPrintOptions): string {
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>KOT - ${orderLabel}</title>
+<title>KOT</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -93,18 +107,18 @@ export function renderKotHtml(opts: KotPrintOptions): string {
 </head>
 <body>
   <div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:6px;margin-bottom:6px;">
-    <div style="font-weight:bold;font-size:16px;letter-spacing:1px;">${restaurantName.toUpperCase()}</div>
+    <div style="font-weight:bold;font-size:16px;letter-spacing:1px;">${esc(restaurantName).toUpperCase()}</div>
     <div style="font-size:11px;margin-top:2px;">*** KITCHEN ORDER TICKET ***</div>
-    ${station ? `<div style="font-size:11px;font-weight:bold;">STATION: ${station.toUpperCase()}</div>` : ""}
+    ${station ? `<div style="font-size:11px;font-weight:bold;">STATION: ${esc(station).toUpperCase()}</div>` : ""}
   </div>
   <div style="border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;">
     <div style="display:flex;justify-content:space-between;">
-      <span style="font-weight:bold;">KOT #${kotNumber || orderRef}</span>
-      <span>${dateStr}</span>
+      <span style="font-weight:bold;">KOT #${kotNumber ? esc(kotNumber) : orderRef}</span>
+      <span>${esc(dateStr)}</span>
     </div>
     <div style="display:flex;justify-content:space-between;">
-      <span style="font-weight:bold;">${orderLabel}</span>
-      <span>${timeStr}</span>
+      <span style="font-weight:bold;">${esc(orderLabel)}</span>
+      <span>${esc(timeStr)}</span>
     </div>
     <div style="font-size:11px;">Ref: #${orderRef}</div>
   </div>
@@ -186,10 +200,10 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     .map(
       (item) => `
         <tr>
-          <td style="padding:2px 0;">${item.name}${item.notes ? ` <small><em>(${item.notes})</em></small>` : ""}${item.hsnCode ? `<br/><small style="color:#666;">HSN: ${item.hsnCode}</small>` : ""}</td>
+          <td style="padding:2px 0;">${esc(item.name)}${item.notes ? ` <small><em>(${esc(item.notes)})</em></small>` : ""}${item.hsnCode ? `<br/><small style="color:#666;">HSN: ${esc(item.hsnCode)}</small>` : ""}</td>
           <td style="text-align:center;padding:2px 4px;">${item.quantity}</td>
-          <td style="text-align:right;padding:2px 0;">${fmt(item.price)}</td>
-          <td style="text-align:right;padding:2px 0;">${fmt(item.price * item.quantity)}</td>
+          <td style="text-align:right;padding:2px 0;">${esc(fmt(item.price))}</td>
+          <td style="text-align:right;padding:2px 0;">${esc(fmt(item.price * item.quantity))}</td>
         </tr>
       `
     )
@@ -210,7 +224,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
       : taxAmount > 0
       ? `
         <tr>
-          <td colspan="3">${taxType?.toUpperCase() || "Tax"}${taxRate ? ` (${taxRate}%)` : ""}</td>
+          <td colspan="3">${esc(taxType?.toUpperCase() || "Tax")}${taxRate ? ` (${taxRate}%)` : ""}</td>
           <td style="text-align:right;">${fmt(taxAmount)}</td>
         </tr>
       `
@@ -223,7 +237,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     ? `<div style="text-align:center;margin-top:6px;font-size:10px;">
         <div style="margin-bottom:4px;">Scan QR for digital receipt:</div>
         ${qrApiUrl ? `<img src="${qrApiUrl}" alt="QR Code" width="80" height="80" style="display:block;margin:0 auto 4px;" onerror="this.style.display='none'" />` : ""}
-        <div style="font-family:monospace;font-size:9px;word-break:break-all;">${digitalReceiptUrl}</div>
+        <div style="font-family:monospace;font-size:9px;word-break:break-all;">${esc(digitalReceiptUrl)}</div>
       </div>`
     : "";
 
@@ -231,7 +245,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Bill - ${billNumber}</title>
+<title>Bill</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -255,22 +269,22 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 </head>
 <body>
   <div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:6px;margin-bottom:6px;">
-    ${restaurantLogo ? `<img src="${restaurantLogo}" alt="${restaurantName}" height="48" style="display:block;margin:0 auto 4px;max-height:48px;object-fit:contain;" onerror="this.style.display='none'" />` : ""}
-    <div style="font-weight:bold;font-size:16px;letter-spacing:1px;">${restaurantName.toUpperCase()}</div>
-    ${restaurantAddress ? `<div style="font-size:10px;">${restaurantAddress}</div>` : ""}
-    ${restaurantGstin ? `<div style="font-size:10px;">GSTIN: ${restaurantGstin}</div>` : ""}
-    <div style="font-size:11px;">${dateStr} &nbsp; ${timeStr}</div>
+    ${restaurantLogo ? `<img src="${esc(restaurantLogo)}" alt="${esc(restaurantName)}" height="48" style="display:block;margin:0 auto 4px;max-height:48px;object-fit:contain;" onerror="this.style.display='none'" />` : ""}
+    <div style="font-weight:bold;font-size:16px;letter-spacing:1px;">${esc(restaurantName).toUpperCase()}</div>
+    ${restaurantAddress ? `<div style="font-size:10px;">${esc(restaurantAddress)}</div>` : ""}
+    ${restaurantGstin ? `<div style="font-size:10px;">GSTIN: ${esc(restaurantGstin)}</div>` : ""}
+    <div style="font-size:11px;">${esc(dateStr)} &nbsp; ${esc(timeStr)}</div>
   </div>
 
   <div style="margin-bottom:6px;font-size:11px;">
     <div style="display:flex;justify-content:space-between;">
-      <span><strong>Bill: ${billNumber}</strong></span>
-      <span>${orderLabel}</span>
+      <span><strong>Bill: ${esc(billNumber)}</strong></span>
+      <span>${esc(orderLabel)}</span>
     </div>
-    ${invoiceNumber ? `<div>Invoice: ${invoiceNumber}</div>` : ""}
-    ${waiterName ? `<div>Served by: ${waiterName}</div>` : ""}
-    ${customerName ? `<div>Customer: ${customerName}</div>` : ""}
-    ${customerGstin ? `<div>Cust. GSTIN: ${customerGstin}</div>` : ""}
+    ${invoiceNumber ? `<div>Invoice: ${esc(invoiceNumber)}</div>` : ""}
+    ${waiterName ? `<div>Served by: ${esc(waiterName)}</div>` : ""}
+    ${customerName ? `<div>Customer: ${esc(customerName)}</div>` : ""}
+    ${customerGstin ? `<div>Cust. GSTIN: ${esc(customerGstin)}</div>` : ""}
   </div>
 
   <table>
@@ -292,7 +306,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     </tr>
     ${discountAmount > 0 ? `
     <tr>
-      <td colspan="3">Discount${discountReason ? ` (${discountReason})` : ""}</td>
+      <td colspan="3">Discount${discountReason ? ` (${esc(discountReason)})` : ""}</td>
       <td style="text-align:right;">-${fmt(discountAmount)}</td>
     </tr>
     ` : ""}
@@ -321,7 +335,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     ${paymentMethod ? `
     <tr>
       <td colspan="3">Paid via</td>
-      <td style="text-align:right;">${paymentMethod}</td>
+      <td style="text-align:right;">${esc(paymentMethod)}</td>
     </tr>
     ` : ""}
   </table>

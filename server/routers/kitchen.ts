@@ -293,7 +293,7 @@ export function registerKitchenRoutes(app: Express): void {
 
         const stationsInBatch = station
           ? [station]
-          : [...new Set(filtered.map(i => (i as any).station).filter(Boolean))];
+          : Array.from(new Set(filtered.map(i => (i as any).station).filter(Boolean)));
 
         if (stationsInBatch.length === 0) {
           await storage.createPrintJob({
