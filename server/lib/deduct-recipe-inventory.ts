@@ -42,7 +42,7 @@ export async function deductRecipeInventoryForOrder(
     if (!oi.menuItemId) { skipped++; continue; }
     const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
     if (!recipe) {
-      console.warn(`[deductRecipeInventory] No recipe for menuItemId=${oi.menuItemId} name="${oi.name}" orderId=${orderId} tenantId=${tenantId} — stock not tracked`);
+      console.warn("[inventory-deduction] no-recipe-skip", { tenantId, orderId, menuItemId: oi.menuItemId, menuItemName: oi.name, source: label });
       skipped++;
       continue;
     }
