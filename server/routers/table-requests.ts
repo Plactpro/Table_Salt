@@ -185,7 +185,7 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/table-requests/:id/assign", requireRole("owner", "manager"), async (req, res) => {
+  app.put("/api/table-requests/:id/assign", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"), async (req, res) => {
     try {
       const user = req.user as any;
       const request = await storage.getTableRequest(req.params.id);
@@ -223,7 +223,7 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/qr/generate/:tableId", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/qr/generate/:tableId", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
     try {
       const user = req.user as any;
       const table = await storage.getTable(req.params.tableId);
@@ -274,7 +274,7 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
-  app.delete("/api/qr/tokens/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.delete("/api/qr/tokens/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
     try {
       const user = req.user as any;
       await storage.deactivateQrToken(req.params.id, user.tenantId);
@@ -333,7 +333,7 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
-  app.put("/api/outlets/:id/qr-settings", requireRole("owner", "manager"), async (req, res) => {
+  app.put("/api/outlets/:id/qr-settings", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
     try {
       const user = req.user as any;
       const outlet = await storage.getOutlet(req.params.id);
