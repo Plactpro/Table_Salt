@@ -291,4 +291,50 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS stripe_key_secret TEXT`);
   await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS razorpay_key_id TEXT`);
   await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS razorpay_key_secret TEXT`);
+
+  // Task #73: Table QR Token table (dedicated QR tokens for customer request system)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS table_qr_tokens (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      table_id VARCHAR(36) NOT NULL REFERENCES tables(id),
+      token TEXT NOT NULL UNIQUE,
+      active BOOLEAN NOT NULL DEFAULT true,
+      label TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      deactivated_at TIMESTAMPTZ
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_qr_tokens_tenant ON table_qr_tokens (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_qr_tokens_table ON table_qr_tokens (table_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_qr_tokens_token ON table_qr_tokens (token)`);
+
+  // Task #73: Table Requests table (customer service requests via QR code)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS table_requests (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      table_id VARCHAR(36) NOT NULL REFERENCES tables(id),
+      qr_token_id VARCHAR(36) REFERENCES table_qr_tokens(id),
+      request_type TEXT NOT NULL DEFAULT 'call_server',
+      priority TEXT NOT NULL DEFAULT 'medium',
+      status TEXT NOT NULL DEFAULT 'pending',
+      guest_note TEXT,
+      assigned_to VARCHAR(36) REFERENCES users(id),
+      assigned_to_name TEXT,
+      staff_note TEXT,
+      escalated_at TIMESTAMPTZ,
+      acknowledged_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      feedback_rating INTEGER,
+      feedback_text TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_requests_tenant ON table_requests (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_requests_table ON table_requests (table_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_requests_status ON table_requests (status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_table_requests_tenant_status ON table_requests (tenant_id, status)`);
 }

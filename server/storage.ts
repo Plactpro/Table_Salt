@@ -118,6 +118,9 @@ import {
   type PosSession, type InsertPosSession,
   printJobs, printJobStatusEnum,
   type PrintJob, type InsertPrintJob,
+  tableQrTokens, tableRequests,
+  type TableQrToken, type InsertTableQrToken,
+  type TableRequest, type InsertTableRequest,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -472,6 +475,26 @@ export interface IStorage {
   createPrintJob(data: InsertPrintJob): Promise<PrintJob>;
   getPrintJobsByTenant(tenantId: string, opts?: { status?: typeof printJobStatusEnum.enumValues[number]; limit?: number; referenceId?: string }): Promise<PrintJob[]>;
   updatePrintJob(id: string, tenantId: string, data: Partial<InsertPrintJob>): Promise<PrintJob | undefined>;
+
+  createQrToken(data: InsertTableQrToken): Promise<TableQrToken>;
+  getActiveQrToken(tableId: string): Promise<TableQrToken | undefined>;
+  getQrTokenByValue(token: string): Promise<TableQrToken | undefined>;
+  getQrTokensByTenant(tenantId: string): Promise<TableQrToken[]>;
+  deactivateQrToken(id: string, tenantId: string): Promise<void>;
+
+  createTableRequest(data: InsertTableRequest): Promise<TableRequest>;
+  getTableRequest(id: string): Promise<TableRequest | undefined>;
+  updateTableRequest(id: string, data: Partial<InsertTableRequest>): Promise<TableRequest | undefined>;
+  getTableRequestsByTenant(tenantId: string, opts?: { status?: string; limit?: number; offset?: number }): Promise<TableRequest[]>;
+  getTableRequestsLive(tenantId: string): Promise<TableRequest[]>;
+  getTableRequestAnalytics(tenantId: string, from?: Date, to?: Date): Promise<{
+    total: number;
+    byType: Record<string, number>;
+    byStatus: Record<string, number>;
+    avgResponseSeconds: number | null;
+    avgCompletionSeconds: number | null;
+    escalatedCount: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2067,6 +2090,101 @@ export class DatabaseStorage implements IStorage {
       .where(and(eq(printJobs.id, id), eq(printJobs.tenantId, tenantId)))
       .returning();
     return job;
+  }
+
+  async createQrToken(data: InsertTableQrToken): Promise<TableQrToken> {
+    const [token] = await db.insert(tableQrTokens).values(data).returning();
+    return token;
+  }
+  async getActiveQrToken(tableId: string): Promise<TableQrToken | undefined> {
+    const [token] = await db.select().from(tableQrTokens)
+      .where(and(eq(tableQrTokens.tableId, tableId), eq(tableQrTokens.active, true)))
+      .orderBy(desc(tableQrTokens.createdAt)).limit(1);
+    return token;
+  }
+  async getQrTokenByValue(token: string): Promise<TableQrToken | undefined> {
+    const [t] = await db.select().from(tableQrTokens).where(eq(tableQrTokens.token, token));
+    return t;
+  }
+  async getQrTokensByTenant(tenantId: string): Promise<TableQrToken[]> {
+    return db.select().from(tableQrTokens)
+      .where(eq(tableQrTokens.tenantId, tenantId))
+      .orderBy(desc(tableQrTokens.createdAt));
+  }
+  async deactivateQrToken(id: string, tenantId: string): Promise<void> {
+    await db.update(tableQrTokens)
+      .set({ active: false, deactivatedAt: new Date() })
+      .where(and(eq(tableQrTokens.id, id), eq(tableQrTokens.tenantId, tenantId)));
+  }
+
+  async createTableRequest(data: InsertTableRequest): Promise<TableRequest> {
+    const [req] = await db.insert(tableRequests).values(data).returning();
+    return req;
+  }
+  async getTableRequest(id: string): Promise<TableRequest | undefined> {
+    const [req] = await db.select().from(tableRequests).where(eq(tableRequests.id, id));
+    return req;
+  }
+  async updateTableRequest(id: string, data: Partial<InsertTableRequest>): Promise<TableRequest | undefined> {
+    const [req] = await db.update(tableRequests).set(data)
+      .where(eq(tableRequests.id, id)).returning();
+    return req;
+  }
+  async getTableRequestsByTenant(tenantId: string, opts?: { status?: string; limit?: number; offset?: number }): Promise<TableRequest[]> {
+    const conditions = [eq(tableRequests.tenantId, tenantId)];
+    if (opts?.status) conditions.push(eq(tableRequests.status, opts.status));
+    let q = db.select().from(tableRequests).where(and(...conditions))
+      .orderBy(desc(tableRequests.createdAt)).$dynamic();
+    if (opts?.limit) q = q.limit(opts.limit);
+    if (opts?.offset) q = q.offset(opts.offset);
+    return q;
+  }
+  async getTableRequestsLive(tenantId: string): Promise<TableRequest[]> {
+    return db.select().from(tableRequests)
+      .where(and(
+        eq(tableRequests.tenantId, tenantId),
+        sql`${tableRequests.status} IN ('pending', 'acknowledged', 'escalated')`
+      ))
+      .orderBy(desc(tableRequests.createdAt));
+  }
+  async getTableRequestAnalytics(tenantId: string, from?: Date, to?: Date): Promise<{
+    total: number;
+    byType: Record<string, number>;
+    byStatus: Record<string, number>;
+    avgResponseSeconds: number | null;
+    avgCompletionSeconds: number | null;
+    escalatedCount: number;
+  }> {
+    const conditions = [eq(tableRequests.tenantId, tenantId)];
+    if (from) conditions.push(gte(tableRequests.createdAt, from));
+    if (to) conditions.push(lte(tableRequests.createdAt, to));
+    const rows = await db.select().from(tableRequests).where(and(...conditions));
+    const byType: Record<string, number> = {};
+    const byStatus: Record<string, number> = {};
+    let totalResponseSecs = 0, responseCount = 0;
+    let totalCompletionSecs = 0, completionCount = 0;
+    let escalatedCount = 0;
+    for (const r of rows) {
+      byType[r.requestType] = (byType[r.requestType] ?? 0) + 1;
+      byStatus[r.status] = (byStatus[r.status] ?? 0) + 1;
+      if (r.acknowledgedAt && r.createdAt) {
+        totalResponseSecs += (new Date(r.acknowledgedAt).getTime() - new Date(r.createdAt).getTime()) / 1000;
+        responseCount++;
+      }
+      if (r.completedAt && r.createdAt) {
+        totalCompletionSecs += (new Date(r.completedAt).getTime() - new Date(r.createdAt).getTime()) / 1000;
+        completionCount++;
+      }
+      if (r.escalatedAt) escalatedCount++;
+    }
+    return {
+      total: rows.length,
+      byType,
+      byStatus,
+      avgResponseSeconds: responseCount > 0 ? Math.round(totalResponseSecs / responseCount) : null,
+      avgCompletionSeconds: completionCount > 0 ? Math.round(totalCompletionSecs / completionCount) : null,
+      escalatedCount,
+    };
   }
 }
 
