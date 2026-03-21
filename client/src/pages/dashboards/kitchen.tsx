@@ -90,8 +90,9 @@ interface RecipeCheckItem {
   menuItemId: string;
   menuItemName: string;
   quantity: number;
-  recipeId: string;
-  recipeName: string;
+  noRecipe?: boolean;
+  recipeId: string | null;
+  recipeName: string | null;
   ingredients: RecipeCheckIngredient[];
 }
 
@@ -223,7 +224,9 @@ function RecipeCheckDrawer({
     enabled: open,
   });
 
-  const allIngredients = recipeItems.flatMap(r => r.ingredients);
+  const linkedItems = recipeItems.filter(r => !r.noRecipe);
+  const unlinkedItems = recipeItems.filter(r => r.noRecipe);
+  const allIngredients = linkedItems.flatMap(r => r.ingredients);
   const hasInsufficient = allIngredients.some(i => !i.sufficient);
   const outIngredients = allIngredients.filter(i => i.status === "out");
   const lowIngredients = allIngredients.filter(i => i.status === "low");
@@ -279,7 +282,17 @@ function RecipeCheckDrawer({
               </div>
             )}
 
-            {recipeItems.map(ri => (
+            {unlinkedItems.length > 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700" data-testid="warning-no-recipe">
+                <Package className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+                <div className="text-sm text-slate-600 dark:text-slate-400">
+                  <p className="font-medium">No recipe linked — stock not tracked</p>
+                  <p className="text-xs mt-1">{unlinkedItems.map(u => `${u.quantity}× ${u.menuItemName}`).join(", ")}</p>
+                </div>
+              </div>
+            )}
+
+            {linkedItems.map(ri => (
               <div key={ri.orderItemId} className="space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="font-semibold text-sm">{ri.quantity}× {ri.menuItemName}</span>
@@ -327,7 +340,8 @@ function RecipeCheckDrawer({
                 onClick={() => onConfirm(false)}
                 data-testid="button-confirm-start"
               >
-                <Flame className="h-4 w-4" /> Confirm & Start Cooking
+                <Flame className="h-4 w-4" />
+                {linkedItems.length === 0 ? "Start Cooking (No Stock Check)" : "Confirm & Start Cooking"}
               </Button>
               <Button variant="ghost" className="w-full" onClick={onClose} data-testid="button-cancel-start">
                 Cancel

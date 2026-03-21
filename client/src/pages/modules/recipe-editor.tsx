@@ -9,7 +9,7 @@ import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
 import {
   ChefHat, Plus, Trash2, ArrowLeft, Save, Link2, Loader2, X,
-  DollarSign, TrendingUp, Clock, Package, AlertTriangle, Copy, Search,
+  DollarSign, TrendingUp, Clock, Package, AlertTriangle, Copy, Search, Info,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -65,6 +65,9 @@ export default function RecipeEditorPage() {
   });
   const inventory = inventoryRes?.data ?? [];
   const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: unlinkedMenuItems = [] } = useQuery<{ id: string; name: string; price: number }[]>({
+    queryKey: ["/api/recipes/unlinked-menu-items"],
+  });
 
   const invMap = new Map(inventory.map(i => [i.id, i]));
   const menuMap = new Map(menuItems.map(m => [m.id, m]));
@@ -338,6 +341,22 @@ export default function RecipeEditorPage() {
           </Button>
         )}
       </div>
+
+      {unlinkedMenuItems.length > 0 && (
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/40 border border-slate-200 dark:border-slate-700 text-sm" data-testid="banner-unlinked-menu-items">
+          <Info className="h-4 w-4 text-slate-500 shrink-0 mt-0.5" />
+          <div>
+            <span className="font-medium text-slate-700 dark:text-slate-300">
+              {unlinkedMenuItems.length} menu item{unlinkedMenuItems.length !== 1 ? "s" : ""} still need{unlinkedMenuItems.length === 1 ? "s" : ""} a recipe:
+            </span>
+            <span className="text-slate-500 dark:text-slate-400 ml-1.5">
+              {unlinkedMenuItems.slice(0, 6).map(m => m.name).join(", ")}
+              {unlinkedMenuItems.length > 6 && ` and ${unlinkedMenuItems.length - 6} more`}
+            </span>
+            <span className="text-xs text-slate-400 ml-1">— inventory won't be tracked for these items when sold</span>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="space-y-5">

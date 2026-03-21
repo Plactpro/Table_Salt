@@ -95,6 +95,17 @@ export function registerRecipesRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/recipes/unlinked-menu-items", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allRecipes = await storage.getRecipesByTenant(user.tenantId);
+      const linkedMenuItemIds = new Set(allRecipes.map(r => r.menuItemId).filter(Boolean));
+      const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+      const unlinked = menuItems.filter(m => m.available !== false && !linkedMenuItemIds.has(m.id));
+      res.json(unlinked.map(m => ({ id: m.id, name: m.name, price: m.price, categoryId: m.categoryId })));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/food-cost-report", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -183,7 +194,10 @@ export function registerRecipesRoutes(app: Express): void {
       const topMovers = inventory.map(item => ({ itemId: item.id, itemName: item.name, usage: Math.round((ingredientIdealUsage.get(item.id) || 0) * 100) / 100, unit: item.unit })).sort((a, b) => b.usage - a.usage).slice(0, 10);
       const reorderSuggestions = inventory.filter(item => { const stock = Number(item.currentStock || 0); const par = Number(item.parLevel || item.reorderLevel || 0); return stock <= par && par > 0; }).map(item => ({ itemId: item.id, itemName: item.name, currentStock: Number(item.currentStock || 0), reorderLevel: Number(item.reorderLevel || 0), parLevel: Number(item.parLevel || 0), leadTimeDays: Number(item.leadTimeDays || 1), suggestedOrder: Math.max(0, Number(item.parLevel || item.reorderLevel || 0) * 2 - Number(item.currentStock || 0)), unit: item.unit }));
 
-      res.json({ recipes: report, summary: { totalCost: Math.round(totalCost * 100) / 100, totalRevenue: Math.round(totalRevenue * 100) / 100, avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10, totalSalesCost: Math.round(totalSalesCost * 100) / 100, totalSalesRevenue: Math.round(totalSalesRevenue * 100) / 100, salesWeightedFoodCostPct: Math.round(salesWeightedFoodCostPct * 10) / 10 }, varianceByIngredient, topMovers, reorderSuggestions });
+      const linkedMenuItemIds = new Set(allRecipes.map(r => r.menuItemId).filter(Boolean));
+      const untrackedMenuItems = menuItemsAll.filter(m => m.available !== false && !linkedMenuItemIds.has(m.id)).map(m => ({ id: m.id, name: m.name, price: Number(m.price || 0), categoryId: m.categoryId }));
+
+      res.json({ recipes: report, summary: { totalCost: Math.round(totalCost * 100) / 100, totalRevenue: Math.round(totalRevenue * 100) / 100, avgFoodCostPct: Math.round(avgFoodCostPct * 10) / 10, totalSalesCost: Math.round(totalSalesCost * 100) / 100, totalSalesRevenue: Math.round(totalSalesRevenue * 100) / 100, salesWeightedFoodCostPct: Math.round(salesWeightedFoodCostPct * 10) / 10 }, varianceByIngredient, topMovers, reorderSuggestions, untrackedMenuItems });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
