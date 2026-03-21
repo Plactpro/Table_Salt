@@ -15,6 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -26,7 +28,7 @@ import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
-  Receipt, Clock,
+  Receipt, Clock, Pause, RotateCcw, Scissors, Flame, ChevronDown,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
@@ -41,10 +43,17 @@ interface EngineDiscount {
   description: string;
 }
 
+interface CartModifier {
+  type: string;
+  label: string;
+  priceAdjust: number;
+}
+
 interface CartItem {
   menuItemId: string;
   name: string;
   price: number;
+  basePrice: number;
   quantity: number;
   notes: string;
   isVeg: boolean | null;
@@ -53,10 +62,95 @@ interface CartItem {
   comboId?: string;
   comboItems?: { menuItemId: string; name: string; price: string }[];
   originalPrice?: number;
+  modifiers?: CartModifier[];
+  cartKey: string;
+  isAddon?: boolean;
 }
 
-type OrderType = "dine_in" | "takeaway" | "delivery";
+interface OrderTab {
+  id: string;
+  cart: CartItem[];
+  orderType: "dine_in" | "takeaway" | "delivery";
+  selectedTable: string;
+  discount: string;
+  orderNotes: string;
+  selectedOfferId: string | null;
+  dismissedRuleIds: string[];
+  sentCartKeys: string[];
+  heldOrderId?: string;
+}
+
+interface HeldTab {
+  tab: OrderTab;
+  heldAt: string;
+  label: string;
+}
+
 type PaymentMethod = "cash" | "card" | "upi";
+
+const TABS_STORAGE_KEY = "pos_tabs_v2";
+const HELD_TABS_STORAGE_KEY = "pos_held_tabs_v2";
+const MAX_TABS = 6;
+
+const SIZE_MODIFIERS = [
+  { label: "Half", priceAdjust: -0.2 },
+  { label: "Regular", priceAdjust: 0 },
+  { label: "Large", priceAdjust: 0.3 },
+  { label: "XL", priceAdjust: 0.5 },
+];
+
+const SPICE_MODIFIERS = [
+  { label: "Mild", priceAdjust: 0 },
+  { label: "Medium", priceAdjust: 0 },
+  { label: "Spicy", priceAdjust: 0 },
+  { label: "Extra Spicy", priceAdjust: 0 },
+];
+
+function makeid() {
+  return crypto.randomUUID ? crypto.randomUUID() : `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function newTab(): OrderTab {
+  return {
+    id: makeid(),
+    cart: [],
+    orderType: "dine_in",
+    selectedTable: "",
+    discount: "",
+    orderNotes: "",
+    selectedOfferId: null,
+    dismissedRuleIds: [],
+    sentCartKeys: [],
+  };
+}
+
+function loadTabsFromStorage(): OrderTab[] {
+  try {
+    const raw = localStorage.getItem(TABS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as OrderTab[];
+  } catch {}
+  return [newTab()];
+}
+
+function saveTabsToStorage(tabs: OrderTab[]) {
+  try {
+    localStorage.setItem(TABS_STORAGE_KEY, JSON.stringify(tabs));
+  } catch {}
+}
+
+function loadHeldTabsFromStorage(): HeldTab[] {
+  try {
+    const raw = localStorage.getItem(HELD_TABS_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as HeldTab[];
+  } catch {}
+  return [];
+}
+
+function saveHeldTabsToStorage(held: HeldTab[]) {
+  try {
+    localStorage.setItem(HELD_TABS_STORAGE_KEY, JSON.stringify(held));
+  } catch {}
+}
 
 const categoryIcons: Record<string, React.ElementType> = {
   appetizers: Soup, starters: Soup, mains: Beef, main: Beef,
@@ -92,12 +186,9 @@ function isOfferApplicable(offer: Offer, cart: CartItem[], subtotal: number): bo
   if (!isOfferActive(offer)) return false;
   if (!isHappyHourActive(offer)) return false;
   if (offer.minOrderAmount && subtotal < Number(offer.minOrderAmount)) return false;
-
   const scope = offer.scope || "all_items";
   if (scope === "all_items" || scope === "order_total") return true;
-  if (scope === "category" && offer.scopeRef) {
-    return cart.some((item) => item.categoryId === offer.scopeRef);
-  }
+  if (scope === "category" && offer.scopeRef) return cart.some((item) => item.categoryId === offer.scopeRef);
   if (scope === "specific_items" && offer.scopeRef) {
     const itemIds = offer.scopeRef.split(",").map((s) => s.trim());
     return cart.some((item) => itemIds.includes(item.menuItemId));
@@ -105,11 +196,7 @@ function isOfferApplicable(offer: Offer, cart: CartItem[], subtotal: number): bo
   return true;
 }
 
-interface ComboItemRef {
-  menuItemId: string;
-  name: string;
-  price: string;
-}
+interface ComboItemRef { menuItemId: string; name: string; price: string; }
 
 function isComboActive(combo: ComboOffer, userOutletId?: string | null): boolean {
   if (!combo.isActive) return false;
@@ -141,24 +228,14 @@ export default function POSPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showCombos, setShowCombos] = useState(false);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [orderType, setOrderType] = useState<OrderType>("dine_in");
-  const [selectedTable, setSelectedTable] = useState<string>("");
-  const [discount, setDiscount] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
-  const [orderNotes, setOrderNotes] = useState("");
-  const [noteDialogItem, setNoteDialogItem] = useState<string | null>(null);
-  const [itemNoteText, setItemNoteText] = useState("");
   const [addedItemId, setAddedItemId] = useState<string | null>(null);
-  const [selectedOffer, setSelectedOffer] = useState<Offer | null>(null);
-  const [dismissedRuleIds, setDismissedRuleIds] = useState<Set<string>>(new Set());
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [supervisorDialog, setSupervisorDialog] = useState<{
     open: boolean; action: string; actionLabel: string;
   } | null>(null);
   const [paymentLinkModal, setPaymentLinkModal] = useState<{
     open: boolean; url: string; qrDataUrl: string; copied: boolean; orderId?: string;
   } | null>(null);
-
   const [posSessionId, setPosSessionId] = useState<string | null>(null);
   const [showStartShift, setShowStartShift] = useState(false);
   const [showCloseShift, setShowCloseShift] = useState(false);
@@ -174,6 +251,90 @@ export default function POSPage() {
     tableNumber?: string | number;
   } | null>(null);
   const [showBillModal, setShowBillModal] = useState(false);
+
+  const [tabs, setTabs] = useState<OrderTab[]>(() => {
+    const stored = loadTabsFromStorage();
+    return stored.length > 0 ? stored : [newTab()];
+  });
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    const stored = loadTabsFromStorage();
+    return stored[0]?.id ?? newTab().id;
+  });
+
+  const activeTab = useMemo(() => tabs.find(t => t.id === activeTabId) || tabs[0], [tabs, activeTabId]);
+  const activeTabIndex = useMemo(() => tabs.findIndex(t => t.id === activeTabId), [tabs, activeTabId]);
+
+  const cart = activeTab?.cart ?? [];
+  const orderType = activeTab?.orderType ?? "dine_in";
+  const selectedTable = activeTab?.selectedTable ?? "";
+  const discount = activeTab?.discount ?? "";
+  const orderNotes = activeTab?.orderNotes ?? "";
+
+  const updateTab = useCallback((id: string, patch: Partial<OrderTab>) => {
+    setTabs(prev => {
+      const updated = prev.map(t => t.id === id ? { ...t, ...patch } : t);
+      saveTabsToStorage(updated);
+      return updated;
+    });
+  }, []);
+
+  const updateActiveTab = useCallback((patch: Partial<OrderTab>) => {
+    if (!activeTabId) return;
+    updateTab(activeTabId, patch);
+  }, [activeTabId, updateTab]);
+
+  const setCart = useCallback((fn: (prev: CartItem[]) => CartItem[]) => {
+    setTabs(prev => {
+      const updated = prev.map(t => t.id === activeTabId ? { ...t, cart: fn(t.cart) } : t);
+      saveTabsToStorage(updated);
+      return updated;
+    });
+  }, [activeTabId]);
+
+  const addTab = useCallback(() => {
+    if (tabs.length >= MAX_TABS) {
+      toast({ title: "Maximum tabs reached", description: `You can have up to ${MAX_TABS} order tabs open.`, variant: "destructive" });
+      return;
+    }
+    const tab = newTab();
+    setTabs(prev => {
+      const updated = [...prev, tab];
+      saveTabsToStorage(updated);
+      return updated;
+    });
+    setActiveTabId(tab.id);
+  }, [tabs.length, toast]);
+
+  const closeTab = useCallback((id: string) => {
+    setTabs(prev => {
+      if (prev.length === 1) {
+        const fresh = [newTab()];
+        saveTabsToStorage(fresh);
+        setActiveTabId(fresh[0].id);
+        return fresh;
+      }
+      const idx = prev.findIndex(t => t.id === id);
+      const updated = prev.filter(t => t.id !== id);
+      saveTabsToStorage(updated);
+      if (activeTabId === id) {
+        const newIdx = Math.max(0, idx - 1);
+        setActiveTabId(updated[newIdx]?.id ?? updated[0].id);
+      }
+      return updated;
+    });
+  }, [activeTabId]);
+
+  const [heldTabs, setHeldTabs] = useState<HeldTab[]>(() => loadHeldTabsFromStorage());
+  const [showRecall, setShowRecall] = useState(false);
+  const [modifierItem, setModifierItem] = useState<CartItem | null>(null);
+  const [modifierSize, setModifierSize] = useState("Regular");
+  const [modifierSpice, setModifierSpice] = useState("Medium");
+  const [modifierExtras, setModifierExtras] = useState("");
+  const [modifierNote, setModifierNote] = useState("");
+  const [showSplitDialog, setShowSplitDialog] = useState(false);
+  const [splitAssignment, setSplitAssignment] = useState<Record<string, 1 | 2>>({});
+  const [noteDialogItem, setNoteDialogItem] = useState<string | null>(null);
+  const [itemNoteText, setItemNoteText] = useState("");
 
   useEffect(() => { syncManager.init(); }, []);
 
@@ -194,15 +355,12 @@ export default function POSPage() {
 
   useRealtimeEvent("order:updated", handleOrderTerminal);
   useRealtimeEvent("order:completed", handleOrderTerminal);
-
   useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
     const p = payload as { status?: string } | null;
-    const kitchenStatuses = ["in_progress", "ready", "served"];
-    if (p?.status && kitchenStatuses.includes(p.status)) {
+    if (p?.status && ["in_progress", "ready", "served"].includes(p.status)) {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
     }
   }, [queryClient]));
-
   useRealtimeEvent("order:item_updated", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
   }, [queryClient]));
@@ -215,7 +373,6 @@ export default function POSPage() {
 
   const userOutletId = user && "outletId" in user ? (user as { outletId?: string }).outletId || null : null;
   const activeCombos = useMemo(() => comboOffers.filter((c) => isComboActive(c, userOutletId)), [comboOffers, userOutletId]);
-
   const freeTables = useMemo(() => tables.filter((t) => t.status === "free"), [tables]);
 
   const filteredItems = useMemo(() => {
@@ -230,27 +387,22 @@ export default function POSPage() {
 
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
 
+  const selectedOffer = useMemo(() => {
+    if (!activeTab?.selectedOfferId) return null;
+    return offers.find(o => o.id === activeTab.selectedOfferId) || null;
+  }, [activeTab?.selectedOfferId, offers]);
+
+  const dismissedRuleIds = useMemo(() => new Set(activeTab?.dismissedRuleIds ?? []), [activeTab?.dismissedRuleIds]);
+
   const evaluatePayload = useMemo(() => {
     if (cart.length === 0) return null;
     return {
-      items: cart.map((c) => ({
-        menuItemId: c.menuItemId,
-        name: c.name,
-        price: c.price,
-        quantity: c.quantity,
-        categoryId: c.categoryId || undefined,
-      })),
-      subtotal,
-      channel: "pos",
-      orderType,
+      items: cart.map((c) => ({ menuItemId: c.menuItemId, name: c.name, price: c.price, quantity: c.quantity, categoryId: c.categoryId || undefined })),
+      subtotal, channel: "pos", orderType,
     };
   }, [cart, subtotal, orderType]);
 
-  const { data: engineResult } = useQuery<{
-    appliedDiscounts: EngineDiscount[];
-    totalDiscount: number;
-    finalSubtotal: number;
-  }>({
+  const { data: engineResult } = useQuery<{ appliedDiscounts: EngineDiscount[]; totalDiscount: number; finalSubtotal: number }>({
     queryKey: ["/api/promotions/evaluate", evaluatePayload],
     queryFn: async () => {
       if (!evaluatePayload) return { appliedDiscounts: [], totalDiscount: 0, finalSubtotal: subtotal };
@@ -266,17 +418,12 @@ export default function POSPage() {
     return all.filter((d) => !dismissedRuleIds.has(d.ruleId));
   }, [engineResult, dismissedRuleIds]);
 
-  const engineDiscount = useMemo(() => {
-    return engineDiscounts.reduce((sum, d) => sum + d.discountAmount, 0);
-  }, [engineDiscounts]);
-
+  const engineDiscount = useMemo(() => engineDiscounts.reduce((sum, d) => sum + d.discountAmount, 0), [engineDiscounts]);
   const SUPPORTED_OFFER_TYPES = ["percentage", "fixed_amount", "happy_hour"];
-
   const applicableOffers = useMemo(
     () => offers.filter((offer) => SUPPORTED_OFFER_TYPES.includes(offer.type) && isOfferApplicable(offer, cart, subtotal)),
     [offers, cart, subtotal]
   );
-
   const offerDiscount = useMemo(() => {
     if (!selectedOffer) return 0;
     if (!isOfferApplicable(selectedOffer, cart, subtotal)) return 0;
@@ -286,9 +433,7 @@ export default function POSPage() {
     } else if (selectedOffer.type === "fixed_amount") {
       disc = Number(selectedOffer.value);
     }
-    if (selectedOffer.maxDiscount && disc > Number(selectedOffer.maxDiscount)) {
-      disc = Number(selectedOffer.maxDiscount);
-    }
+    if (selectedOffer.maxDiscount && disc > Number(selectedOffer.maxDiscount)) disc = Number(selectedOffer.maxDiscount);
     return Math.min(disc, subtotal);
   }, [selectedOffer, subtotal, cart]);
 
@@ -307,20 +452,25 @@ export default function POSPage() {
   const taxBase = tenantCompoundTax ? afterDiscount + serviceChargeAmount : afterDiscount;
   const taxAmount = taxBase * taxRate;
   const total = afterDiscount + serviceChargeAmount + taxAmount;
-
   const isDineIn = orderType === "dine_in";
 
   const addToCart = useCallback((item: MenuItem) => {
     setAddedItemId(item.id);
     setTimeout(() => setAddedItemId(null), 600);
     setCart((prev) => {
-      const existing = prev.find((c) => c.menuItemId === item.id && !c.isCombo);
+      const existing = prev.find((c) => c.menuItemId === item.id && !c.isCombo && !c.modifiers?.length);
       if (existing) {
-        return prev.map((c) => c.menuItemId === item.id && !c.isCombo ? { ...c, quantity: c.quantity + 1 } : c);
+        return prev.map((c) => c.cartKey === existing.cartKey ? { ...c, quantity: c.quantity + 1 } : c);
       }
-      return [...prev, { menuItemId: item.id, name: item.name, price: parseFloat(item.price), quantity: 1, notes: "", isVeg: item.isVeg, categoryId: item.categoryId }];
+      const cartKey = makeid();
+      return [...prev, {
+        menuItemId: item.id, name: item.name,
+        price: parseFloat(item.price), basePrice: parseFloat(item.price),
+        quantity: 1, notes: "", isVeg: item.isVeg, categoryId: item.categoryId,
+        cartKey,
+      }];
     });
-  }, []);
+  }, [setCart]);
 
   const addComboToCart = useCallback((combo: ComboOffer) => {
     const mainItems = (combo.mainItems as ComboItemRef[]) || [];
@@ -329,108 +479,176 @@ export default function POSPage() {
     const allComboItems = [...mainItems, ...sideItems, ...addonItems];
     const savingsAmount = Number(combo.individualTotal) - Number(combo.comboPrice);
     const comboCartId = `combo-${combo.id}-${Date.now()}`;
-
     setAddedItemId(combo.id);
     setTimeout(() => setAddedItemId(null), 600);
-
     setCart((prev) => [
       ...prev,
       {
-        menuItemId: comboCartId,
-        name: `${combo.name}`,
-        price: Number(combo.comboPrice),
-        quantity: 1,
-        notes: `Save ${fmt(savingsAmount)}`,
-        isVeg: null,
-        categoryId: null,
-        isCombo: true,
-        comboId: combo.id,
-        comboItems: allComboItems,
+        menuItemId: comboCartId, name: combo.name,
+        price: Number(combo.comboPrice), basePrice: Number(combo.comboPrice),
+        quantity: 1, notes: `Save ${fmt(savingsAmount)}`,
+        isVeg: null, categoryId: null, isCombo: true,
+        comboId: combo.id, comboItems: allComboItems,
         originalPrice: Number(combo.individualTotal),
+        cartKey: makeid(),
       },
     ]);
+  }, [fmt, setCart]);
 
-  }, [fmt]);
+  const updateQuantity = useCallback((cartKey: string, delta: number) => {
+    setCart((prev) => prev.map((c) => c.cartKey === cartKey ? { ...c, quantity: c.quantity + delta } : c).filter((c) => c.quantity > 0));
+  }, [setCart]);
 
-  const updateQuantity = (menuItemId: string, delta: number) => {
-    setCart((prev) => prev.map((c) => c.menuItemId === menuItemId ? { ...c, quantity: c.quantity + delta } : c).filter((c) => c.quantity > 0));
+  const removeFromCart = useCallback((cartKey: string) => {
+    setCart((prev) => prev.filter((c) => c.cartKey !== cartKey));
+  }, [setCart]);
+
+  const openModifierDrawer = (item: CartItem) => {
+    if (item.isCombo) return;
+    setModifierItem(item);
+    const sizeModifier = item.modifiers?.find(m => m.type === "size");
+    const spiceModifier = item.modifiers?.find(m => m.type === "spice");
+    const extraModifier = item.modifiers?.find(m => m.type === "extra");
+    setModifierSize(sizeModifier?.label || "Regular");
+    setModifierSpice(spiceModifier?.label || "Medium");
+    setModifierExtras(extraModifier?.label || "");
+    setModifierNote(item.notes || "");
   };
 
-  const removeFromCart = (menuItemId: string) => {
-    setCart((prev) => prev.filter((c) => c.menuItemId !== menuItemId));
+  const saveModifiers = () => {
+    if (!modifierItem) return;
+    const sizeEntry = SIZE_MODIFIERS.find(s => s.label === modifierSize) || { label: "Regular", priceAdjust: 0 };
+    const mods: CartModifier[] = [
+      { type: "size", label: modifierSize, priceAdjust: sizeEntry.priceAdjust },
+      { type: "spice", label: modifierSpice, priceAdjust: 0 },
+    ];
+    if (modifierExtras.trim()) {
+      mods.push({ type: "extra", label: modifierExtras.trim(), priceAdjust: 0 });
+    }
+    const newPrice = Math.max(0, modifierItem.basePrice * (1 + sizeEntry.priceAdjust));
+    setCart(prev => prev.map(c => c.cartKey === modifierItem.cartKey
+      ? { ...c, modifiers: mods, price: Number(newPrice.toFixed(2)), notes: modifierNote }
+      : c
+    ));
+    setModifierItem(null);
+    setModifierNote("");
+    setModifierExtras("");
   };
 
-  const openNoteDialog = (menuItemId: string) => {
-    const item = cart.find((c) => c.menuItemId === menuItemId);
+  const openNoteDialog = (cartKey: string) => {
+    const item = cart.find((c) => c.cartKey === cartKey);
     setItemNoteText(item?.notes || "");
-    setNoteDialogItem(menuItemId);
+    setNoteDialogItem(cartKey);
   };
 
   const saveItemNote = () => {
     if (noteDialogItem) {
-      setCart((prev) => prev.map((c) => c.menuItemId === noteDialogItem ? { ...c, notes: itemNoteText } : c));
+      setCart((prev) => prev.map((c) => c.cartKey === noteDialogItem ? { ...c, notes: itemNoteText } : c));
     }
     setNoteDialogItem(null);
     setItemNoteText("");
   };
 
-  const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
-    const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const holdCurrentTab = useCallback(() => {
+    if (cart.length === 0) {
+      toast({ title: "Cart is empty", description: "Nothing to hold.", variant: "destructive" });
+      return;
+    }
+    const tabLabel = isDineIn && selectedTable
+      ? `Table ${tables.find(t => t.id === selectedTable)?.number || ""}`
+      : orderType === "takeaway" ? "Takeaway" : "Delivery";
+    const held: HeldTab = {
+      tab: { ...activeTab!, id: activeTab!.id },
+      heldAt: new Date().toISOString(),
+      label: tabLabel,
+    };
+    const updated = [...heldTabs, held];
+    setHeldTabs(updated);
+    saveHeldTabsToStorage(updated);
+    closeTab(activeTabId);
+    toast({ title: "Order held", description: `${tabLabel} saved. Use Recall to restore it.` });
+  }, [cart, activeTab, activeTabId, closeTab, heldTabs, isDineIn, orderType, selectedTable, tables, toast]);
 
-    const orderItems: { menuItemId: string; name: string; quantity: number; price: string; notes: string | null; isCombo?: boolean; comboId?: string }[] = [];
-    for (const c of cart) {
+  const recallHeldTab = (held: HeldTab) => {
+    const tab = { ...held.tab, id: makeid() };
+    setTabs(prev => {
+      const updated = [...prev, tab];
+      saveTabsToStorage(updated);
+      return updated;
+    });
+    setActiveTabId(tab.id);
+    const updatedHeld = heldTabs.filter(h => h.heldAt !== held.heldAt);
+    setHeldTabs(updatedHeld);
+    saveHeldTabsToStorage(updatedHeld);
+    setShowRecall(false);
+    toast({ title: "Order recalled", description: `${held.label} restored to cart.` });
+  };
+
+  const deleteHeldTab = (held: HeldTab) => {
+    const updatedHeld = heldTabs.filter(h => h.heldAt !== held.heldAt);
+    setHeldTabs(updatedHeld);
+    saveHeldTabsToStorage(updatedHeld);
+  };
+
+  const buildOrderData = useCallback((supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }, tabOverride?: OrderTab) => {
+    const tab = tabOverride || activeTab!;
+    const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const sentKeys = new Set(tab.sentCartKeys);
+
+    const orderItems: Record<string, unknown>[] = [];
+    for (const c of tab.cart) {
+      const isAddonItem = sentKeys.size > 0 && !sentKeys.has(c.cartKey);
+      const modifiersData = c.modifiers && c.modifiers.length > 0 ? c.modifiers : null;
       if (c.isCombo && c.comboItems) {
         orderItems.push({
-          menuItemId: c.comboId || c.menuItemId,
-          name: c.name,
-          quantity: c.quantity,
-          price: c.price.toFixed(2),
+          menuItemId: c.comboId || c.menuItemId, name: c.name,
+          quantity: c.quantity, price: c.price.toFixed(2),
           notes: c.comboItems.map((ci) => ci.name).join(", ") + (c.notes ? ` | ${c.notes}` : ""),
-          isCombo: true,
-          comboId: c.comboId || undefined,
+          isCombo: true, comboId: c.comboId || undefined,
+          isAddon: isAddonItem,
         });
       } else {
         orderItems.push({
-          menuItemId: c.menuItemId,
-          name: c.name,
-          quantity: c.quantity,
-          price: c.price.toFixed(2),
+          menuItemId: c.menuItemId, name: c.name,
+          quantity: c.quantity, price: c.price.toFixed(2),
           notes: c.notes || null,
+          modifiers: modifiersData,
+          isAddon: isAddonItem,
         });
       }
     }
 
+    const tabDiscount = parseFloat(tab.discount);
+    const tabManualDiscount = isNaN(tabDiscount) ? 0 : tabDiscount;
+    const tabSubtotal = tab.cart.reduce((s, c) => s + c.price * c.quantity, 0);
+    const tabAfterDiscount = Math.max(0, tabSubtotal - tabManualDiscount);
+    const tabServiceCharge = tabAfterDiscount * tenantServiceChargePct;
+    const tabTaxBase = tenantCompoundTax ? tabAfterDiscount + tabServiceCharge : tabAfterDiscount;
+    const tabTax = tabTaxBase * taxRate;
+    const tabTotal = tabAfterDiscount + tabServiceCharge + tabTax;
+    const tabIsDineIn = tab.orderType === "dine_in";
+
     const orderData: Record<string, unknown> = {
-      channel: "pos",
-      clientOrderId,
-      orderType,
-      tableId: isDineIn ? selectedTable || null : null,
-      subtotal: subtotal.toFixed(2),
-      tax: taxAmount.toFixed(2),
-      discount: totalDiscount.toFixed(2),
-      total: total.toFixed(2),
-      notes: [orderNotes, serviceChargeAmount > 0 ? `Service Charge (${(tenantServiceChargePct * 100).toFixed(1)}%): ${serviceChargeAmount.toFixed(2)}` : null].filter(Boolean).join(" | ") || null,
-      status: isDineIn ? "in_progress" : "new",
-      offerId: selectedOffer?.id || null,
-      manualDiscountAmount: manualDiscount > 0 ? manualDiscount.toFixed(2) : null,
+      channel: "pos", clientOrderId,
+      orderType: tab.orderType,
+      tableId: tabIsDineIn ? tab.selectedTable || null : null,
+      subtotal: tabSubtotal.toFixed(2),
+      tax: tabTax.toFixed(2),
+      discount: tabManualDiscount.toFixed(2),
+      total: tabTotal.toFixed(2),
+      notes: tab.orderNotes || null,
+      status: tabIsDineIn ? "in_progress" : "new",
       items: orderItems,
     };
-    if (!isDineIn) {
-      orderData.paymentMethod = paymentMethod;
-    }
-    if (supervisorOverride) {
-      orderData.supervisorOverride = supervisorOverride;
-    }
-    if (dismissedRuleIds.size > 0) {
-      orderData.dismissedRuleIds = Array.from(dismissedRuleIds);
-    }
+    if (!tabIsDineIn) orderData.paymentMethod = paymentMethod;
+    if (supervisorOverride) orderData.supervisorOverride = supervisorOverride;
+    if (tab.dismissedRuleIds.length > 0) orderData.dismissedRuleIds = tab.dismissedRuleIds;
     return orderData;
-  }, [orderType, isDineIn, selectedTable, subtotal, taxAmount, totalDiscount, total, orderNotes, serviceChargeAmount, selectedOffer, cart, paymentMethod, dismissedRuleIds]);
+  }, [activeTab, paymentMethod, tenantServiceChargePct, tenantCompoundTax, taxRate]);
 
   const placeOrderMutation = useMutation({
     mutationFn: async (supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }) => {
       const orderData = buildOrderData(supervisorOverride);
-
       if (supervisorOverride) {
         const supervisorCsrfMatch = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
         const supervisorCsrf = supervisorCsrfMatch ? decodeURIComponent(supervisorCsrfMatch[1]) : null;
@@ -442,21 +660,16 @@ export default function POSPage() {
         });
         if (res.status === 403) {
           const errData = await res.json();
-          if (errData.requiresSupervisor) {
-            throw new Error("__SUPERVISOR_REQUIRED__:" + (errData.action || "apply_large_discount"));
-          }
+          if (errData.requiresSupervisor) throw new Error("__SUPERVISOR_REQUIRED__:" + (errData.action || "apply_large_discount"));
           throw new Error(errData.message || "Permission denied");
         }
         if (res.status === 409) return (await res.json()).order;
         if (!res.ok) throw new Error((await res.json()).message || "Failed");
         return res.json();
       }
-
       try {
         const { queued, orderId } = await syncManager.enqueueOrder(orderData);
-        if (queued) {
-          return { id: orderId, queued: true };
-        }
+        if (queued) return { id: orderId, queued: true };
         return { id: orderId };
       } catch (syncErr: any) {
         if (syncErr.status === 403 && syncErr.data?.requiresSupervisor) {
@@ -473,26 +686,15 @@ export default function POSPage() {
       }
       const tableNum = tables.find(t => t.id === selectedTable)?.number;
       const snapshot = {
-        orderId: data.id,
-        cart: [...cart],
-        subtotal,
-        discountAmount: totalDiscount,
-        serviceChargeAmount,
-        taxAmount,
-        total,
-        tableId: selectedTable || undefined,
-        tableNumber: tableNum,
+        orderId: data.id, cart: [...cart],
+        subtotal, discountAmount: totalDiscount,
+        serviceChargeAmount, taxAmount, total,
+        tableId: selectedTable || undefined, tableNumber: tableNum,
       };
       setLastPlacedOrder(snapshot);
-      if (!isDineIn) {
-        setShowBillModal(true);
-      }
-      setCart([]);
-      setDiscount("");
-      setOrderNotes("");
-      setSelectedTable("");
-      setSelectedOffer(null);
-      setDismissedRuleIds(new Set());
+      if (!isDineIn) setShowBillModal(true);
+      const allCartKeys = cart.map(c => c.cartKey);
+      updateActiveTab({ cart: [], discount: "", orderNotes: "", selectedOfferId: null, dismissedRuleIds: [], sentCartKeys: [], selectedTable: "" });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/offers"] });
@@ -539,12 +741,7 @@ export default function POSPage() {
     },
     onSuccess: (data) => {
       setPaymentLinkModal({ open: true, url: data.url, qrDataUrl: data.qrDataUrl, copied: false, orderId: data.orderId });
-      setCart([]);
-      setDiscount("");
-      setOrderNotes("");
-      setSelectedTable("");
-      setSelectedOffer(null);
-      setDismissedRuleIds(new Set());
+      updateActiveTab({ cart: [], discount: "", orderNotes: "", selectedOfferId: null, dismissedRuleIds: [] });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
     },
@@ -552,6 +749,79 @@ export default function POSPage() {
       toast({ title: "Payment link failed", description: err.message, variant: "destructive" });
     },
   });
+
+  const splitOrderMutation = useMutation({
+    mutationFn: async (groups: CartItem[][]) => {
+      const results = [];
+      for (const group of groups) {
+        if (group.length === 0) continue;
+        const tabForGroup: OrderTab = {
+          ...(activeTab!),
+          id: makeid(),
+          cart: group,
+          sentCartKeys: [],
+        };
+        const orderData = buildOrderData(undefined, tabForGroup);
+        const res = await apiRequest("POST", "/api/orders", orderData);
+        if (!res.ok) throw new Error("Failed to place split order");
+        results.push(await res.json());
+      }
+      return results;
+    },
+    onSuccess: (orders) => {
+      toast({ title: "Orders split!", description: `${orders.length} separate orders created.` });
+      updateActiveTab({ cart: [], discount: "", orderNotes: "", selectedOfferId: null, dismissedRuleIds: [], sentCartKeys: [] });
+      setShowSplitDialog(false);
+      setSplitAssignment({});
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Split failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const handleSplitConfirm = () => {
+    const group1 = cart.filter(c => (splitAssignment[c.cartKey] || 1) === 1);
+    const group2 = cart.filter(c => splitAssignment[c.cartKey] === 2);
+    if (group1.length === 0 || group2.length === 0) {
+      toast({ title: "Invalid split", description: "Both groups must have at least one item.", variant: "destructive" });
+      return;
+    }
+    splitOrderMutation.mutate([group1, group2]);
+  };
+
+  const tabLabel = useCallback((tab: OrderTab) => {
+    if (tab.orderType === "takeaway") return "Takeaway";
+    if (tab.orderType === "delivery") return "Delivery";
+    const tbl = tables.find(t => t.id === tab.selectedTable);
+    return tbl ? `T${tbl.number}` : "Dine-in";
+  }, [tables]);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement;
+      const inInput = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.tagName === "SELECT" || (activeEl as HTMLElement).isContentEditable);
+      if (e.key === "Escape") {
+        if (modifierItem) { setModifierItem(null); e.preventDefault(); return; }
+        if (noteDialogItem) { setNoteDialogItem(null); e.preventDefault(); return; }
+        if (showSplitDialog) { setShowSplitDialog(false); e.preventDefault(); return; }
+        if (showRecall) { setShowRecall(false); e.preventDefault(); return; }
+        return;
+      }
+      if (inInput) return;
+      if (e.ctrlKey || e.metaKey) {
+        if (e.key === "n" || e.key === "N") { e.preventDefault(); addTab(); }
+        else if (e.key === "b" || e.key === "B") {
+          e.preventDefault();
+          if (lastPlacedOrder?.orderId) navigate(`/pos/bill/${lastPlacedOrder.orderId}`);
+        }
+        else if (e.key === "k" || e.key === "K") { e.preventDefault(); handlePlaceOrder(); }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, navigate, handlePlaceOrder]);
 
   return (
     <div className="flex h-full gap-0" data-testid="pos-page">
@@ -562,11 +832,11 @@ export default function POSPage() {
             <Input data-testid="input-search-menu" placeholder="Search menu items..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1">
-            <Button data-testid="button-category-all" variant={selectedCategory === null && !showCombos ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(null); setShowCombos(false); }} className="transition-all duration-200 hover:scale-105">
+            <Button data-testid="button-category-all" variant={selectedCategory === null && !showCombos ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(null); setShowCombos(false); }}>
               <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> All
             </Button>
             {activeCombos.length > 0 && (
-              <Button data-testid="button-category-combos" variant={showCombos ? "default" : "outline"} size="sm" onClick={() => { setShowCombos(true); setSelectedCategory(null); }} className="transition-all duration-200 hover:scale-105 whitespace-nowrap">
+              <Button data-testid="button-category-combos" variant={showCombos ? "default" : "outline"} size="sm" onClick={() => { setShowCombos(true); setSelectedCategory(null); }} className="whitespace-nowrap">
                 <Package className="h-3.5 w-3.5 mr-1" /> Combos
                 <Badge variant="secondary" className="ml-1 text-xs h-4 px-1">{activeCombos.length}</Badge>
               </Button>
@@ -574,7 +844,7 @@ export default function POSPage() {
             {categories.filter((c) => c.active !== false).map((cat) => {
               const CatIcon = getCategoryIcon(cat.name);
               return (
-                <Button key={cat.id} data-testid={`button-category-${cat.id}`} variant={selectedCategory === cat.id ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(cat.id); setShowCombos(false); }} className="whitespace-nowrap transition-all duration-200 hover:scale-105">
+                <Button key={cat.id} data-testid={`button-category-${cat.id}`} variant={selectedCategory === cat.id ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(cat.id); setShowCombos(false); }} className="whitespace-nowrap">
                   <CatIcon className="h-3.5 w-3.5 mr-1" /> {cat.name}
                 </Button>
               );
@@ -586,8 +856,7 @@ export default function POSPage() {
           {showCombos ? (
             activeCombos.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                <Package className="h-12 w-12 mb-2" />
-                <p>No active combos</p>
+                <Package className="h-12 w-12 mb-2" /><p>No active combos</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -621,15 +890,11 @@ export default function POSPage() {
                             {allComboItems.slice(0, 3).map((item, i) => (
                               <span key={i} className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">{item.name}</span>
                             ))}
-                            {allComboItems.length > 3 && (
-                              <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">+{allComboItems.length - 3}</span>
-                            )}
+                            {allComboItems.length > 3 && <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">+{allComboItems.length - 3}</span>}
                           </div>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-baseline gap-1.5">
-                              <span className="font-bold text-sm text-primary" data-testid={`text-combo-price-${combo.id}`}>{fmt(combo.comboPrice)}</span>
-                              <span className="text-xs text-muted-foreground line-through">{fmt(combo.individualTotal)}</span>
-                            </div>
+                          <div className="flex items-baseline gap-1.5">
+                            <span className="font-bold text-sm text-primary" data-testid={`text-combo-price-${combo.id}`}>{fmt(combo.comboPrice)}</span>
+                            <span className="text-xs text-muted-foreground line-through">{fmt(combo.individualTotal)}</span>
                           </div>
                         </CardContent>
                       </Card>
@@ -640,8 +905,7 @@ export default function POSPage() {
             )
           ) : filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <UtensilsCrossed className="h-12 w-12 mb-2" />
-              <p>No items found</p>
+              <UtensilsCrossed className="h-12 w-12 mb-2" /><p>No items found</p>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -673,23 +937,19 @@ export default function POSPage() {
                         <div className="flex items-start justify-between mb-1">
                           <h4 className="font-medium text-sm leading-tight line-clamp-2">{item.name}</h4>
                           {item.isVeg === true ? (
-                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-green-600 rounded-sm flex items-center justify-center" title="Veg" data-testid={`icon-veg-${item.id}`}>
+                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-green-600 rounded-sm flex items-center justify-center" data-testid={`icon-veg-${item.id}`}>
                               <span className="w-2 h-2 rounded-full bg-green-600" />
                             </span>
                           ) : item.isVeg === false ? (
-                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-red-600 rounded-sm flex items-center justify-center" title="Non-Veg" data-testid={`icon-nonveg-${item.id}`}>
+                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-red-600 rounded-sm flex items-center justify-center" data-testid={`icon-nonveg-${item.id}`}>
                               <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-600" />
                             </span>
                           ) : null}
                         </div>
                         {item.tags && (item.tags as string[]).length > 0 && (
                           <div className="flex flex-wrap gap-1 mb-1.5">
-                            {(item.tags as string[]).slice(0, 2).map((tag, i) => (
-                              <span key={i} className="text-[9px] px-1.5 py-0 rounded bg-muted text-muted-foreground">{tag}</span>
-                            ))}
-                            {(item.tags as string[]).length > 2 && (
-                              <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">+{(item.tags as string[]).length - 2}</span>
-                            )}
+                            {(item.tags as string[]).slice(0, 2).map((tag, i) => <span key={i} className="text-[9px] px-1.5 py-0 rounded bg-muted text-muted-foreground">{tag}</span>)}
+                            {(item.tags as string[]).length > 2 && <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">+{(item.tags as string[]).length - 2}</span>}
                           </div>
                         )}
                         {item.description && <p className="text-xs text-muted-foreground line-clamp-1 mb-2">{item.description}</p>}
@@ -711,7 +971,31 @@ export default function POSPage() {
         </div>
       </div>
 
-      <div className="w-[380px] flex flex-col bg-card">
+      <div className="w-[400px] flex flex-col bg-card">
+        <div className="border-b">
+          <div className="flex items-center gap-0 px-2 pt-2 overflow-x-auto" data-testid="pos-tabs-bar">
+            {tabs.map((tab, idx) => (
+              <div key={tab.id} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-t-lg text-xs font-medium cursor-pointer border border-b-0 mr-0.5 whitespace-nowrap transition-colors ${tab.id === activeTabId ? "bg-card border-border text-foreground" : "bg-muted/50 border-transparent text-muted-foreground hover:text-foreground"}`}
+                onClick={() => setActiveTabId(tab.id)}
+                data-testid={`pos-tab-${idx}`}
+              >
+                <span>{tabLabel(tab)}</span>
+                {tab.cart.length > 0 && <Badge variant="secondary" className="h-4 px-1 text-[10px]">{tab.cart.reduce((s, c) => s + c.quantity, 0)}</Badge>}
+                {tabs.length > 1 && (
+                  <button className="ml-0.5 hover:text-destructive" onClick={(e) => { e.stopPropagation(); closeTab(tab.id); }} data-testid={`button-close-tab-${idx}`}>
+                    <X className="h-2.5 w-2.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+            {tabs.length < MAX_TABS && (
+              <button className="px-2 py-1.5 text-muted-foreground hover:text-foreground rounded-t-lg text-xs flex items-center gap-0.5" onClick={addTab} data-testid="button-add-tab" title="New order tab (Ctrl+N)">
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
         <div className="p-4 border-b">
           <div className="flex items-center gap-2 mb-3">
             <div className="p-1.5 rounded-lg bg-primary/10">
@@ -723,7 +1007,13 @@ export default function POSPage() {
                 <Badge variant="secondary" data-testid="badge-cart-count">{cart.reduce((s, c) => s + c.quantity, 0)}</Badge>
               </motion.div>
             )}
-            <div className="ml-auto flex items-center gap-1.5">
+            <div className="ml-auto flex items-center gap-1">
+              {heldTabs.length > 0 && (
+                <Button variant="outline" size="sm" className="text-xs h-7 px-2 relative" onClick={() => setShowRecall(true)} data-testid="button-recall">
+                  <RotateCcw className="h-3 w-3 mr-1" /> Recall
+                  <Badge className="absolute -top-1.5 -right-1.5 h-4 w-4 p-0 flex items-center justify-center text-[10px]">{heldTabs.length}</Badge>
+                </Button>
+              )}
               {posSessionId ? (
                 <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowCloseShift(true)} data-testid="button-close-shift">
                   <Clock className="h-3 w-3 mr-1" /> End Shift
@@ -735,36 +1025,31 @@ export default function POSPage() {
               )}
             </div>
           </div>
+
           {lastPlacedOrder && (
             <div className="mb-2 flex items-center gap-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg px-3 py-1.5">
               <Receipt className="h-3.5 w-3.5 text-green-600 shrink-0" />
-              <span className="text-xs text-green-700 dark:text-green-300 flex-1">
-                Order placed · {fmt(lastPlacedOrder.total)}
-              </span>
-              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">
-                Bill
-              </Button>
-              <button className="text-green-600 hover:text-green-800 ml-1" onClick={() => setLastPlacedOrder(null)} data-testid="button-dismiss-bill">
-                <X className="h-3 w-3" />
-              </button>
+              <span className="text-xs text-green-700 dark:text-green-300 flex-1">Order placed · {fmt(lastPlacedOrder.total)}</span>
+              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">Bill</Button>
+              <button className="text-green-600 hover:text-green-800 ml-1" onClick={() => setLastPlacedOrder(null)} data-testid="button-dismiss-bill"><X className="h-3 w-3" /></button>
             </div>
           )}
 
           <div className="flex gap-1">
-            <Button data-testid="button-order-type-dine-in" variant={orderType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setOrderType("dine_in")}>
+            <Button data-testid="button-order-type-dine-in" variant={orderType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => updateActiveTab({ orderType: "dine_in" })}>
               <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> Dine-in
             </Button>
-            <Button data-testid="button-order-type-takeaway" variant={orderType === "takeaway" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setOrderType("takeaway")}>
+            <Button data-testid="button-order-type-takeaway" variant={orderType === "takeaway" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => updateActiveTab({ orderType: "takeaway" })}>
               <Package className="h-3.5 w-3.5 mr-1" /> Takeaway
             </Button>
-            <Button data-testid="button-order-type-delivery" variant={orderType === "delivery" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setOrderType("delivery")}>
+            <Button data-testid="button-order-type-delivery" variant={orderType === "delivery" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => updateActiveTab({ orderType: "delivery" })}>
               <Truck className="h-3.5 w-3.5 mr-1" /> Delivery
             </Button>
           </div>
 
           {isDineIn && (
             <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-3">
-              <Select value={selectedTable} onValueChange={setSelectedTable}>
+              <Select value={selectedTable} onValueChange={(v) => updateActiveTab({ selectedTable: v })}>
                 <SelectTrigger data-testid="select-table"><SelectValue placeholder="Select table..." /></SelectTrigger>
                 <SelectContent>
                   {freeTables.map((t) => (
@@ -787,65 +1072,71 @@ export default function POSPage() {
           ) : (
             <div className="space-y-3">
               <AnimatePresence>
-                {cart.map((item) => (
-                  <motion.div key={item.menuItemId} data-testid={`cart-item-${item.menuItemId}`} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40, height: 0 }} transition={{ type: "spring", stiffness: 400, damping: 30 }} className={`flex flex-col gap-1.5 p-2 rounded-lg border bg-background ${item.isCombo ? "border-primary/30 bg-primary/5" : ""}`}>
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1 min-w-0">
+                {cart.map((item) => {
+                  const isSent = activeTab?.sentCartKeys.includes(item.cartKey);
+                  return (
+                    <motion.div key={item.cartKey} data-testid={`cart-item-${item.menuItemId}`}
+                      initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40, height: 0 }}
+                      transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                      className={`flex flex-col gap-1.5 p-2 rounded-lg border bg-background ${item.isCombo ? "border-primary/30 bg-primary/5" : ""} ${isSent ? "opacity-75" : ""}`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1 flex-wrap">
+                            {item.isCombo ? (
+                              <Package className="h-3 w-3 text-primary shrink-0" />
+                            ) : item.isVeg === true ? (
+                              <span className="h-3 w-3 shrink-0 border border-green-600 rounded-sm flex items-center justify-center"><span className="w-1.5 h-1.5 rounded-full bg-green-600" /></span>
+                            ) : item.isVeg === false ? (
+                              <span className="h-3 w-3 shrink-0 border border-red-600 rounded-sm flex items-center justify-center"><span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-l-transparent border-r-transparent border-b-red-600" /></span>
+                            ) : null}
+                            <span className="font-medium text-sm truncate">{item.name}</span>
+                            {item.isAddon && <Badge variant="outline" className="text-[9px] h-4 px-1 border-orange-400 text-orange-600 bg-orange-50 dark:bg-orange-950/30">Add-on</Badge>}
+                            {isSent && !item.isAddon && <Badge variant="outline" className="text-[9px] h-4 px-1 text-muted-foreground">Sent</Badge>}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>
+                            {item.isCombo && item.originalPrice && <span className="text-xs text-muted-foreground line-through">{fmt(item.originalPrice)}</span>}
+                            {item.modifiers?.filter(m => m.label && m.label !== "Regular" && m.label !== "Medium").map((m, i) => (
+                              <Badge key={i} variant="secondary" className="text-[9px] h-4 px-1">{m.label}</Badge>
+                            ))}
+                          </div>
+                        </div>
+                        <span className="font-semibold text-sm ml-2">{fmt(item.price * item.quantity)}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
-                          {item.isCombo ? (
-                            <Package className="h-3 w-3 text-primary shrink-0" />
-                          ) : item.isVeg === true ? (
-                            <span className="h-3 w-3 shrink-0 border border-green-600 rounded-sm flex items-center justify-center">
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-600" />
-                            </span>
-                          ) : item.isVeg === false ? (
-                            <span className="h-3 w-3 shrink-0 border border-red-600 rounded-sm flex items-center justify-center">
-                              <span className="w-0 h-0 border-l-[3px] border-r-[3px] border-b-[5px] border-l-transparent border-r-transparent border-b-red-600" />
-                            </span>
-                          ) : null}
-                          <span className="font-medium text-sm truncate">{item.name}</span>
+                          <Button data-testid={`button-decrease-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.cartKey, -1)}>
+                            <Minus className="h-3 w-3" />
+                          </Button>
+                          <motion.span key={item.quantity} initial={{ scale: 1.3 }} animate={{ scale: 1 }} className="w-8 text-center text-sm font-medium" data-testid={`text-qty-${item.menuItemId}`}>{item.quantity}</motion.span>
+                          <Button data-testid={`button-increase-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.cartKey, 1)}>
+                            <Plus className="h-3 w-3" />
+                          </Button>
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>
-                          {item.isCombo && item.originalPrice && (
-                            <span className="text-xs text-muted-foreground line-through">{fmt(item.originalPrice)}</span>
+                        <div className="flex items-center gap-1">
+                          {!item.isCombo && (
+                            <Button data-testid={`button-modifier-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => openModifierDrawer(item)} title="Modifiers & instructions">
+                              <ChevronDown className="h-3 w-3" />
+                            </Button>
                           )}
-                          {item.isCombo && (
-                            <Badge variant="secondary" className="text-[9px] h-4 bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300">Combo</Badge>
-                          )}
+                          <Button data-testid={`button-note-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNoteDialog(item.cartKey)}>
+                            <StickyNote className="h-3 w-3" />
+                          </Button>
+                          <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.cartKey)}>
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </div>
                       </div>
-                      <span className="font-semibold text-sm">{fmt(item.price * item.quantity)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1">
-                        <Button data-testid={`button-decrease-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.menuItemId, -1)}>
-                          <Minus className="h-3 w-3" />
-                        </Button>
-                        <motion.span key={item.quantity} initial={{ scale: 1.3 }} animate={{ scale: 1 }} className="w-8 text-center text-sm font-medium" data-testid={`text-qty-${item.menuItemId}`}>{item.quantity}</motion.span>
-                        <Button data-testid={`button-increase-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.menuItemId, 1)}>
-                          <Plus className="h-3 w-3" />
-                        </Button>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button data-testid={`button-note-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNoteDialog(item.menuItemId)}>
-                          <StickyNote className="h-3 w-3" />
-                        </Button>
-                        <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.menuItemId)}>
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </div>
-                    {item.notes && !item.isCombo && <p className="text-xs text-muted-foreground italic pl-1">Note: {item.notes}</p>}
-                    {item.isCombo && item.comboItems && (
-                      <div className="text-xs text-muted-foreground pl-1 flex flex-wrap gap-1">
-                        {item.comboItems.map((ci, i) => (
-                          <span key={i} className="bg-muted px-1.5 py-0.5 rounded">{ci.name}</span>
-                        ))}
-                      </div>
-                    )}
-                  </motion.div>
-                ))}
+                      {item.notes && !item.isCombo && <p className="text-xs text-muted-foreground italic pl-1">Note: {item.notes}</p>}
+                      {item.isCombo && item.comboItems && (
+                        <div className="text-xs text-muted-foreground pl-1 flex flex-wrap gap-1">
+                          {item.comboItems.map((ci, i) => <span key={i} className="bg-muted px-1.5 py-0.5 rounded">{ci.name}</span>)}
+                        </div>
+                      )}
+                    </motion.div>
+                  );
+                })}
               </AnimatePresence>
             </div>
           )}
@@ -859,16 +1150,11 @@ export default function POSPage() {
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {applicableOffers.map((offer) => {
-                  const isSelected = selectedOffer?.id === offer.id;
+                  const isSelected = activeTab?.selectedOfferId === offer.id;
                   return (
-                    <Button
-                      key={offer.id}
-                      variant={isSelected ? "default" : "outline"}
-                      size="sm"
-                      className="text-xs h-7 transition-all duration-200"
-                      onClick={() => setSelectedOffer(isSelected ? null : offer)}
-                      data-testid={`button-offer-${offer.id}`}
-                    >
+                    <Button key={offer.id} variant={isSelected ? "default" : "outline"} size="sm" className="text-xs h-7"
+                      onClick={() => updateActiveTab({ selectedOfferId: isSelected ? null : offer.id })}
+                      data-testid={`button-offer-${offer.id}`}>
                       {isSelected && <CheckCircle2 className="h-3 w-3 mr-1" />}
                       {(offer.type === "percentage" || offer.type === "happy_hour") ? <Percent className="h-3 w-3 mr-0.5" /> : <Tag className="h-3 w-3 mr-0.5" />}
                       {offer.name}
@@ -879,31 +1165,27 @@ export default function POSPage() {
               </div>
               {selectedOffer && offerDiscount > 0 && (
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="flex items-center justify-between bg-green-50 dark:bg-green-950/30 rounded-lg px-2.5 py-1.5 text-xs">
-                  <span className="text-green-700 dark:text-green-300 font-medium">
-                    {selectedOffer.name}: -{fmt(offerDiscount)}
-                  </span>
-                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-green-600" onClick={() => setSelectedOffer(null)} data-testid="button-remove-offer">
-                    <X className="h-3 w-3" />
-                  </Button>
+                  <span className="text-green-700 dark:text-green-300 font-medium">{selectedOffer.name}: -{fmt(offerDiscount)}</span>
+                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-green-600" onClick={() => updateActiveTab({ selectedOfferId: null })} data-testid="button-remove-offer"><X className="h-3 w-3" /></Button>
                 </motion.div>
               )}
             </div>
           )}
 
           <div className="space-y-2">
-            <Input data-testid="input-discount" type="number" placeholder="Additional discount" value={discount} onChange={(e) => setDiscount(e.target.value)} min="0" step="0.01" />
-            <Textarea data-testid="input-order-notes" placeholder="Order notes..." value={orderNotes} onChange={(e) => setOrderNotes(e.target.value)} rows={2} className="resize-none" />
+            <Input data-testid="input-discount" type="number" placeholder="Additional discount" value={discount} onChange={(e) => updateActiveTab({ discount: e.target.value })} min="0" step="0.01" />
+            <Textarea data-testid="input-order-notes" placeholder="Order notes..." value={orderNotes} onChange={(e) => updateActiveTab({ orderNotes: e.target.value })} rows={2} className="resize-none" />
           </div>
 
           {!isDineIn && (
             <div className="flex gap-1">
-              <Button data-testid="button-payment-cash" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("cash")}>
+              <Button data-testid="button-payment-cash" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setPaymentMethod("cash")}>
                 <Banknote className="h-3.5 w-3.5 mr-1" /> Cash
               </Button>
-              <Button data-testid="button-payment-card" variant={paymentMethod === "card" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("card")}>
+              <Button data-testid="button-payment-card" variant={paymentMethod === "card" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setPaymentMethod("card")}>
                 <CreditCard className="h-3.5 w-3.5 mr-1" /> Card
               </Button>
-              <Button data-testid="button-payment-upi" variant={paymentMethod === "upi" ? "default" : "outline"} size="sm" className="flex-1 transition-all duration-200" onClick={() => setPaymentMethod("upi")}>
+              <Button data-testid="button-payment-upi" variant={paymentMethod === "upi" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setPaymentMethod("upi")}>
                 <Wallet className="h-3.5 w-3.5 mr-1" /> UPI
               </Button>
             </div>
@@ -919,8 +1201,7 @@ export default function POSPage() {
 
           <div className="space-y-1 text-sm">
             <div className="flex justify-between" data-testid="text-subtotal">
-              <span className="text-muted-foreground">Subtotal</span>
-              <span>{fmt(subtotal)}</span>
+              <span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span>
             </div>
             {offerDiscount > 0 && (
               <div className="flex justify-between text-green-600" data-testid="text-offer-discount">
@@ -933,13 +1214,8 @@ export default function POSPage() {
                 <span className="flex items-center gap-1 text-xs"><Percent className="h-3 w-3" /> {ed.ruleName}</span>
                 <span className="flex items-center gap-1">
                   {ed.discountAmount > 0 ? `-${fmt(ed.discountAmount)}` : `+${fmt(Math.abs(ed.discountAmount))}`}
-                  <button
-                    type="button"
-                    className="ml-1 text-purple-400 hover:text-red-500 transition-colors"
-                    data-testid={`button-dismiss-rule-${ed.ruleId}`}
-                    title="Remove this auto-applied discount"
-                    onClick={() => setDismissedRuleIds((prev) => new Set(Array.from(prev).concat(ed.ruleId)))}
-                  >
+                  <button type="button" className="ml-1 text-purple-400 hover:text-red-500" data-testid={`button-dismiss-rule-${ed.ruleId}`}
+                    onClick={() => updateActiveTab({ dismissedRuleIds: [...(activeTab?.dismissedRuleIds ?? []), ed.ruleId] })}>
                     <X className="h-3 w-3" />
                   </button>
                 </span>
@@ -947,8 +1223,7 @@ export default function POSPage() {
             ))}
             {manualDiscount > 0 && (
               <div className="flex justify-between text-green-600" data-testid="text-discount">
-                <span>Manual Discount</span>
-                <span>-{fmt(manualDiscount)}</span>
+                <span>Manual Discount</span><span>-{fmt(manualDiscount)}</span>
               </div>
             )}
             {serviceChargeAmount > 0 && (
@@ -965,29 +1240,28 @@ export default function POSPage() {
             )}
             <Separator />
             <div className="flex justify-between font-semibold text-base" data-testid="text-total">
-              <span>Total</span>
-              <span>{fmt(total)}</span>
+              <span>Total</span><span>{fmt(total)}</span>
             </div>
           </div>
 
-          <Button data-testid="button-place-order" className="w-full transition-all duration-200 hover:scale-[1.02]" size="lg" onClick={handlePlaceOrder} disabled={cart.length === 0 || placeOrderMutation.isPending}>
-            {placeOrderMutation.isPending ? "Placing Order..." : isDineIn ? "Send to Kitchen" : "Place Order"}
-          </Button>
+          <div className="flex gap-2">
+            <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-3" onClick={holdCurrentTab} disabled={cart.length === 0} title="Hold order">
+              <Pause className="h-3.5 w-3.5 mr-1" /> Hold
+            </Button>
+            {cart.length >= 2 && (
+              <Button data-testid="button-split-bill" variant="outline" size="sm" className="text-xs px-3" onClick={() => { setSplitAssignment({}); setShowSplitDialog(true); }} title="Split bill">
+                <Scissors className="h-3.5 w-3.5 mr-1" /> Split
+              </Button>
+            )}
+            <Button data-testid="button-place-order" className="flex-1 transition-all duration-200 hover:scale-[1.02]" size="lg" onClick={handlePlaceOrder} disabled={cart.length === 0 || placeOrderMutation.isPending}>
+              {placeOrderMutation.isPending ? "Sending..." : isDineIn ? "Send to Kitchen" : "Place Order"}
+            </Button>
+          </div>
 
           {!isDineIn && paymentMethod === "card" && (
-            <Button
-              data-testid="button-send-payment-link"
-              variant="outline"
-              className="w-full transition-all duration-200"
-              size="sm"
-              onClick={() => sendPaymentLinkMutation.mutate()}
-              disabled={cart.length === 0 || sendPaymentLinkMutation.isPending}
-            >
-              {sendPaymentLinkMutation.isPending ? (
-                "Generating Link..."
-              ) : (
-                <><QrCode className="h-3.5 w-3.5 mr-1.5" /> Send Payment Link</>
-              )}
+            <Button data-testid="button-send-payment-link" variant="outline" className="w-full" size="sm"
+              onClick={() => sendPaymentLinkMutation.mutate()} disabled={cart.length === 0 || sendPaymentLinkMutation.isPending}>
+              {sendPaymentLinkMutation.isPending ? "Generating Link..." : <><QrCode className="h-3.5 w-3.5 mr-1.5" /> Send Payment Link</>}
             </Button>
           )}
         </div>
@@ -1003,22 +1277,16 @@ export default function POSPage() {
                 <img src={paymentLinkModal.qrDataUrl} alt="Payment QR code" className="w-48 h-48 rounded-lg border" data-testid="img-payment-qr" />
               </div>
             )}
-            <div className="bg-muted rounded-lg p-3 break-all text-xs text-left font-mono" data-testid="text-payment-link-url">
-              {paymentLinkModal?.url}
-            </div>
+            <div className="bg-muted rounded-lg p-3 break-all text-xs text-left font-mono" data-testid="text-payment-link-url">{paymentLinkModal?.url}</div>
             <div className="flex gap-2">
-              <Button
-                className="flex-1"
-                variant={paymentLinkModal?.copied ? "secondary" : "default"}
+              <Button className="flex-1" variant={paymentLinkModal?.copied ? "secondary" : "default"}
                 onClick={() => {
                   if (paymentLinkModal?.url) {
                     navigator.clipboard.writeText(paymentLinkModal.url);
                     setPaymentLinkModal(prev => prev ? { ...prev, copied: true } : null);
                     setTimeout(() => setPaymentLinkModal(prev => prev ? { ...prev, copied: false } : null), 2000);
                   }
-                }}
-                data-testid="button-copy-payment-link"
-              >
+                }} data-testid="button-copy-payment-link">
                 <Link className="h-4 w-4 mr-1.5" />
                 {paymentLinkModal?.copied ? "Copied!" : "Copy Link"}
               </Button>
@@ -1042,6 +1310,131 @@ export default function POSPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={!!modifierItem} onOpenChange={(o) => !o && setModifierItem(null)}>
+        <DialogContent className="max-w-sm" data-testid="dialog-modifier-drawer">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Flame className="h-4 w-4 text-primary" />
+              {modifierItem?.name} — Modifiers
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Size</Label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {SIZE_MODIFIERS.map(s => (
+                  <button key={s.label}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${modifierSize === s.label ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50"}`}
+                    onClick={() => setModifierSize(s.label)}
+                    data-testid={`modifier-size-${s.label.toLowerCase()}`}
+                  >
+                    {s.label}
+                    {s.priceAdjust !== 0 && <span className="block text-[9px] opacity-70">{s.priceAdjust > 0 ? `+${(s.priceAdjust * 100).toFixed(0)}%` : `${(s.priceAdjust * 100).toFixed(0)}%`}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Spice Level</Label>
+              <div className="grid grid-cols-4 gap-1.5">
+                {SPICE_MODIFIERS.map(s => (
+                  <button key={s.label}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${modifierSpice === s.label ? "bg-orange-500 text-white border-orange-500" : "border-border hover:border-orange-400"}`}
+                    onClick={() => setModifierSpice(s.label)}
+                    data-testid={`modifier-spice-${s.label.toLowerCase().replace(" ", "-")}`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">Extras / Add-ons</Label>
+              <Input placeholder="e.g. Extra cheese, No onions" value={modifierExtras} onChange={e => setModifierExtras(e.target.value)} className="text-sm" data-testid="input-modifier-extras" />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">Special Instructions</Label>
+              <Textarea placeholder="Any special prep instructions..." value={modifierNote} onChange={e => setModifierNote(e.target.value)} rows={2} className="resize-none text-sm" data-testid="input-modifier-note" />
+            </div>
+            {modifierItem && (
+              <div className="flex items-center justify-between text-sm bg-muted/50 rounded-lg px-3 py-2">
+                <span className="text-muted-foreground">Adjusted price</span>
+                <span className="font-semibold">{fmt(Math.max(0, modifierItem.basePrice * (1 + (SIZE_MODIFIERS.find(s => s.label === modifierSize)?.priceAdjust ?? 0))))}</span>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setModifierItem(null)} data-testid="button-cancel-modifier">Cancel</Button>
+              <Button className="flex-1" onClick={saveModifiers} data-testid="button-save-modifier">Apply</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showRecall} onOpenChange={setShowRecall}>
+        <DialogContent className="max-w-sm" data-testid="dialog-recall">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-primary" /> Held Orders</DialogTitle></DialogHeader>
+          {heldTabs.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4">No held orders</p>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-y-auto">
+              {heldTabs.map((held, i) => (
+                <div key={i} className="flex items-center gap-2 p-3 border rounded-lg" data-testid={`held-order-${i}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm">{held.label}</p>
+                    <p className="text-xs text-muted-foreground">{held.tab.cart.length} items · {new Date(held.heldAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                  <Button size="sm" className="text-xs h-7" onClick={() => recallHeldTab(held)} data-testid={`button-recall-${i}`}>Recall</Button>
+                  <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteHeldTab(held)} data-testid={`button-delete-held-${i}`}><X className="h-3 w-3" /></Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showSplitDialog} onOpenChange={(o) => { setShowSplitDialog(o); if (!o) setSplitAssignment({}); }}>
+        <DialogContent className="max-w-sm" data-testid="dialog-split-bill">
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Scissors className="h-4 w-4 text-primary" /> Split Bill</DialogTitle></DialogHeader>
+          <p className="text-xs text-muted-foreground mb-2">Assign items to Group 1 or Group 2. Each group becomes a separate order.</p>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {cart.map((item) => {
+              const group = splitAssignment[item.cartKey] || 1;
+              return (
+                <div key={item.cartKey} className="flex items-center gap-3 p-2 border rounded-lg" data-testid={`split-item-${item.menuItemId}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{item.name}</p>
+                    <p className="text-xs text-muted-foreground">×{item.quantity} · {fmt(item.price * item.quantity)}</p>
+                  </div>
+                  <div className="flex gap-1">
+                    <button
+                      className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${group === 1 ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
+                      onClick={() => setSplitAssignment(prev => ({ ...prev, [item.cartKey]: 1 }))}
+                      data-testid={`split-group1-${item.menuItemId}`}
+                    >G1</button>
+                    <button
+                      className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${group === 2 ? "bg-secondary text-secondary-foreground border-secondary" : "border-border text-muted-foreground"}`}
+                      onClick={() => setSplitAssignment(prev => ({ ...prev, [item.cartKey]: 2 }))}
+                      data-testid={`split-group2-${item.menuItemId}`}
+                    >G2</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-xs text-muted-foreground mt-1 grid grid-cols-2 gap-2">
+            <div className="bg-muted/50 rounded p-2">G1: {cart.filter(c => (splitAssignment[c.cartKey] || 1) === 1).length} items</div>
+            <div className="bg-muted/50 rounded p-2">G2: {cart.filter(c => splitAssignment[c.cartKey] === 2).length} items</div>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setShowSplitDialog(false)} data-testid="button-cancel-split">Cancel</Button>
+            <Button className="flex-1" onClick={handleSplitConfirm} disabled={splitOrderMutation.isPending} data-testid="button-confirm-split">
+              {splitOrderMutation.isPending ? "Splitting..." : "Place Split Orders"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {supervisorDialog && (
         <SupervisorApprovalDialog
           open={supervisorDialog.open}
@@ -1074,24 +1467,10 @@ export default function POSPage() {
         />
       )}
 
-      <StartShiftModal
-        open={showStartShift}
-        onSessionStarted={(sessionId) => {
-          setPosSessionId(sessionId);
-          setShowStartShift(false);
-        }}
-      />
-
+      <StartShiftModal open={showStartShift} onSessionStarted={(sessionId) => { setPosSessionId(sessionId); setShowStartShift(false); }} />
       {posSessionId && (
-        <CloseShiftDialog
-          open={showCloseShift}
-          onClose={() => setShowCloseShift(false)}
-          sessionId={posSessionId}
-          onClosed={() => {
-            setPosSessionId(null);
-            setShowCloseShift(false);
-          }}
-        />
+        <CloseShiftDialog open={showCloseShift} onClose={() => setShowCloseShift(false)} sessionId={posSessionId}
+          onClosed={() => { setPosSessionId(null); setShowCloseShift(false); }} />
       )}
     </div>
   );

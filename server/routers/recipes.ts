@@ -7,7 +7,6 @@ import { requirePermission } from "../permissions";
 import { auditLogFromReq } from "../audit";
 import { emitToTenant } from "../realtime";
 import { insertRecipeSchema } from "@shared/schema";
-import { stockMovements as stockMovementsTable } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 
 export function registerRecipesRoutes(app: Express): void {
@@ -259,16 +258,4 @@ export function registerRecipesRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/stock-movements", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as any;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
-      const [data, [{ total }]] = await Promise.all([
-        storage.getStockMovementsByTenant(user.tenantId, limit, offset),
-        db.select({ total: sql<number>`count(*)::int` }).from(stockMovementsTable).where(eq(stockMovementsTable.tenantId, user.tenantId)),
-      ]);
-      res.json({ data, total: Number(total), limit, offset });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
 }
