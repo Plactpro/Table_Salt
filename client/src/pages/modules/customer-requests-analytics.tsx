@@ -11,7 +11,6 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 
 interface AnalyticsData {
   totalRequests: number;
@@ -26,6 +25,7 @@ interface AnalyticsData {
   byStaff: { name: string; count: number; avgResponseMinutes: number | null }[];
   feedbackByRating: Record<string, number>;
   completionRate: number;
+  feedbackByDay?: Record<string, { count: number; total: number }>;
 }
 
 const TYPE_LABELS: Record<string, string> = {
@@ -113,6 +113,24 @@ export default function CustomerRequestsAnalytics() {
     .slice(0, 10);
 
   const pieData = Object.entries(data.byType ?? {})
+    .map(([type, count]) => ({ name: TYPE_LABELS[type] ?? type, value: count }))
+    .filter(d => d.value > 0);
+
+  const dayTrendData = Object.entries(data.byDay ?? {})
+    .map(([date, count]) => ({ date: date.slice(5), count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const ratingTrendData = Object.entries(data.feedbackByDay ?? {})
+    .map(([date, v]) => ({
+      date: date.slice(5),
+      avg: v.count > 0 ? Math.round((v.total / v.count) * 10) / 10 : null,
+    }))
+    .filter(d => d.avg !== null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const COMPLAINT_TYPES = ["cleaning", "other", "feedback"];
+  const complaintDonutData = Object.entries(data.byType ?? {})
+    .filter(([type]) => COMPLAINT_TYPES.includes(type))
     .map(([type, count]) => ({ name: TYPE_LABELS[type] ?? type, value: count }))
     .filter(d => d.value > 0);
 
@@ -274,6 +292,77 @@ export default function CustomerRequestsAnalytics() {
             )}
           </CardContent>
         </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        {dayTrendData.length > 1 && (
+          <Card data-testid="chart-daily-trend">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Daily Request Volume</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={dayTrendData} margin={{ left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" stroke="hsl(174, 65%, 32%)" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {ratingTrendData.length > 1 && (
+          <Card data-testid="chart-rating-trend">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Avg Feedback Rating Trend</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={ratingTrendData} margin={{ left: 0, right: 8 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} />
+                  <YAxis domain={[1, 5]} tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="avg" stroke="#eab308" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
+
+        {complaintDonutData.length > 0 && (
+          <Card data-testid="chart-complaint-categories">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium">Complaint & Feedback Categories</CardTitle>
+            </CardHeader>
+            <CardContent className="flex justify-center">
+              <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                  <Pie
+                    data={complaintDonutData}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    dataKey="value"
+                    label={({ name, value }) => `${name} (${value})`}
+                    labelLine={false}
+                    fontSize={10}
+                  >
+                    {complaintDonutData.map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend iconSize={10} iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {data.byStaff && data.byStaff.length > 0 && (

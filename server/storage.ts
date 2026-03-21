@@ -2178,6 +2178,7 @@ export class DatabaseStorage implements IStorage {
     byDay: Record<string, number>;
     byStaff: Array<{ name: string; count: number; avgResponseMinutes: number | null }>;
     feedbackByRating: Record<string, number>;
+    feedbackByDay: Record<string, { count: number; total: number }>;
   }> {
     const conditions = [eq(tableRequests.tenantId, tenantId)];
     if (from) conditions.push(gte(tableRequests.createdAt, from));
@@ -2194,6 +2195,7 @@ export class DatabaseStorage implements IStorage {
     const byHour: Record<string, number> = {};
     const byDay: Record<string, number> = {};
     const feedbackByRating: Record<string, number> = {};
+    const feedbackByDay: Record<string, { count: number; total: number }> = {};
     const staffMap: Record<string, { name: string; count: number; totalResponseMs: number; responseCount: number }> = {};
 
     let totalResponseSecs = 0, responseCount = 0;
@@ -2215,9 +2217,9 @@ export class DatabaseStorage implements IStorage {
       if (r.createdAt) {
         const d = new Date(r.createdAt);
         const hour = String(d.getHours());
-        const day = d.toLocaleDateString("en-US", { weekday: "short" });
+        const isoDay = d.toISOString().slice(0, 10);
         byHour[hour] = (byHour[hour] ?? 0) + 1;
-        byDay[day] = (byDay[day] ?? 0) + 1;
+        byDay[isoDay] = (byDay[isoDay] ?? 0) + 1;
       }
 
       if (r.acknowledgedAt && r.createdAt) {
@@ -2248,6 +2250,12 @@ export class DatabaseStorage implements IStorage {
         totalFeedbackRating += r.feedbackRating;
         feedbackRatingCount++;
         feedbackByRating[String(r.feedbackRating)] = (feedbackByRating[String(r.feedbackRating)] ?? 0) + 1;
+        if (r.createdAt) {
+          const isoDay = new Date(r.createdAt).toISOString().slice(0, 10);
+          if (!feedbackByDay[isoDay]) feedbackByDay[isoDay] = { count: 0, total: 0 };
+          feedbackByDay[isoDay].count++;
+          feedbackByDay[isoDay].total += r.feedbackRating;
+        }
       }
 
       if (r.createdAt && (r.status === "pending" || r.status === "acknowledged")) {
@@ -2295,6 +2303,7 @@ export class DatabaseStorage implements IStorage {
       byDay,
       byStaff,
       feedbackByRating,
+      feedbackByDay,
     };
   }
 }
