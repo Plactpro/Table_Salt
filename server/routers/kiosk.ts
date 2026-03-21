@@ -5,7 +5,26 @@ import { storage } from "../storage";
 import { requireAuth, requireRole } from "../middleware";
 import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable } from "@shared/schema";
 import { convertUnits } from "@shared/units";
-import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
+import { isStripeConfigured, getUncachableStripeClient, getPaymentStripeClient } from "../stripe";
+import { createPaymentLink, getPaymentLink } from "../razorpay";
+
+async function getActiveGateway(): Promise<string> {
+  try {
+    const { rows } = await pool.query(`SELECT active_payment_gateway FROM platform_settings WHERE id = 'singleton' LIMIT 1`);
+    return rows[0]?.active_payment_gateway ?? "stripe";
+  } catch {
+    return "stripe";
+  }
+}
+
+async function getPlatformRazorpayCredentials(): Promise<{ keyId: string | null; keySecret: string | null }> {
+  try {
+    const { rows } = await pool.query(`SELECT razorpay_key_id, razorpay_key_secret FROM platform_settings WHERE id = 'singleton' LIMIT 1`);
+    return { keyId: rows[0]?.razorpay_key_id ?? null, keySecret: rows[0]?.razorpay_key_secret ?? null };
+  } catch {
+    return { keyId: null, keySecret: null };
+  }
+}
 
 export function registerKioskRoutes(app: Express): void {
   app.get("/api/kiosk-devices", requireAuth, requireRole("owner", "manager"), async (req, res) => {
@@ -280,6 +299,8 @@ export function registerKioskRoutes(app: Express): void {
 
   app.post("/api/kiosk/payment-session", async (req, res) => {
     try {
+      const gwCheck = await getActiveGateway();
+      if (gwCheck === "razorpay") return res.status(403).json({ message: "Stripe payments are disabled. Active gateway is Razorpay." });
       if (!await isStripeConfigured()) return res.status(503).json({ message: "Stripe is not configured" });
       const token = req.headers["x-kiosk-token"] as string;
       if (!token) return res.status(401).json({ message: "Missing kiosk token" });
@@ -342,7 +363,7 @@ export function registerKioskRoutes(app: Express): void {
         });
       }
 
-      const stripeClient = await getUncachableStripeClient();
+      const stripeClient = await getPaymentStripeClient();
       const origin = `${req.protocol}://${req.get("host")}`;
       const currency = (tenant?.currency || "usd").toLowerCase();
 
@@ -365,6 +386,119 @@ export function registerKioskRoutes(app: Express): void {
       await pool.query(`UPDATE orders SET stripe_payment_session_id = $1 WHERE id = $2`, [session.id, order.id]);
 
       res.json({ url: session.url, orderId: order.id, sessionId: session.id });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/kiosk/razorpay-payment", async (req, res) => {
+    try {
+      const gwCheck = await getActiveGateway();
+      if (gwCheck === "stripe") return res.status(403).json({ message: "Razorpay payments are disabled. Active gateway is Stripe." });
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+
+      const { items, serviceType, clientOrderId } = req.body;
+      if (!items || !Array.isArray(items) || items.length === 0) return res.status(400).json({ message: "Order must have at least one item" });
+
+      if (clientOrderId) {
+        const existing = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
+        if (existing) {
+          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems } });
+        }
+      }
+
+      const menuItemsList = await storage.getMenuItemsByTenant(device.tenantId!);
+      const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+      const availableItems = new Set(menuItemsList.filter(m => m.available !== false).map(m => m.id));
+
+      let serverSubtotal = 0;
+      const serverItems: { menuItemId: string; name: string; price: number; quantity: number; notes?: string }[] = [];
+      for (const item of items) {
+        if (!item.menuItemId || typeof item.menuItemId !== "string") continue;
+        const mi = menuMap.get(item.menuItemId);
+        if (!mi || !availableItems.has(mi.id)) continue;
+        const canonicalPrice = Number(mi.price);
+        const qty = Math.max(1, Math.floor(Number(item.quantity) || 1));
+        serverSubtotal += canonicalPrice * qty;
+        serverItems.push({ menuItemId: mi.id, name: mi.name, price: canonicalPrice, quantity: qty, notes: typeof item.notes === "string" ? item.notes.slice(0, 200) : undefined });
+      }
+      if (serverItems.length === 0) return res.status(400).json({ message: "No valid items in order" });
+      serverSubtotal = Math.round(serverSubtotal * 100) / 100;
+
+      const tenant = await storage.getTenant(device.tenantId!);
+      const taxRate = Number(tenant?.taxRate || 0) / 100;
+      const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
+      const afterDiscount = serverSubtotal;
+      const serverServiceCharge = Math.round(afterDiscount * serviceChargeRate * 100) / 100;
+      const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
+      const serverTotal = Math.round((afterDiscount + serverServiceCharge + serverTax) * 100) / 100;
+      const requestedServiceType = serviceType === "dine_in" ? "dine_in" : "takeaway";
+
+      const order = await storage.createOrder({
+        tenantId: device.tenantId!, outletId: device.outletId,
+        orderType: requestedServiceType, channel: "kiosk",
+        channelOrderId: clientOrderId || undefined, status: "pending_payment",
+        subtotal: serverSubtotal.toFixed(2), discount: "0.00",
+        tax: serverTax.toFixed(2), total: serverTotal.toFixed(2),
+        paymentMethod: "razorpay", notes: `Kiosk order from ${device.name} (awaiting Razorpay payment)`,
+      });
+
+      for (const item of serverItems) {
+        const mi = menuMap.get(item.menuItemId);
+        await storage.createOrderItem({
+          orderId: order.id, menuItemId: item.menuItemId, name: item.name,
+          quantity: item.quantity, price: item.price.toFixed(2),
+          station: mi?.station || null, course: mi?.course || null, notes: item.notes || null,
+        });
+      }
+
+      const platformCreds = await getPlatformRazorpayCredentials();
+      const keyId = tenant?.razorpayKeyId || platformCreds.keyId;
+      const keySecret = tenant?.razorpayKeySecret || platformCreds.keySecret;
+
+      const link = await createPaymentLink({
+        amountRupees: serverTotal,
+        currency: tenant?.currency || "INR",
+        description: `Kiosk Order — ${device.name}`,
+        billId: order.id,
+        tenantKeyId: keyId,
+        tenantKeySecret: keySecret,
+      });
+
+      res.json({ paymentLinkId: link.id, shortUrl: link.short_url, orderId: order.id, status: link.status });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/kiosk/razorpay-payment-status/:orderId", async (req, res) => {
+    try {
+      const token = req.headers["x-kiosk-token"] as string;
+      if (!token) return res.status(401).json({ message: "Missing kiosk token" });
+      const device = await storage.getKioskDeviceByToken(token);
+      if (!device || !device.active) return res.status(401).json({ message: "Invalid or inactive kiosk device" });
+
+      const { linkId } = req.query;
+      if (!linkId) return res.status(400).json({ message: "linkId query param required" });
+
+      const tenant = await storage.getTenant(device.tenantId!);
+
+      const order = await storage.getOrder(req.params.orderId);
+      if (!order || order.tenantId !== device.tenantId) {
+        return res.status(403).json({ message: "Order not found or access denied" });
+      }
+
+      const platformCreds = await getPlatformRazorpayCredentials();
+      const keyId = (tenant as any)?.razorpayKeyId || platformCreds.keyId;
+      const keySecret = (tenant as any)?.razorpayKeySecret || platformCreds.keySecret;
+
+      const link = await getPaymentLink(linkId as string, keyId, keySecret);
+
+      if (link.status === "paid") {
+        await storage.updateOrder(req.params.orderId, { status: "completed", paymentMethod: "razorpay" });
+        return res.json({ status: "paid", orderId: req.params.orderId });
+      }
+      return res.json({ status: link.status === "cancelled" || link.status === "expired" ? "cancelled" : "pending" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

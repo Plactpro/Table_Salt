@@ -283,4 +283,12 @@ export async function runAdminMigrations(): Promise<void> {
 
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_print_jobs_tenant_status ON print_jobs (tenant_id, status)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_print_jobs_tenant_created ON print_jobs (tenant_id, created_at)`);
+
+  // Task #69: Payment Gateway Super Admin Toggle
+  // Add gateway selection + credential fields to platform_settings
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS active_payment_gateway TEXT NOT NULL DEFAULT 'stripe'`);
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS stripe_key_id TEXT`);
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS stripe_key_secret TEXT`);
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS razorpay_key_id TEXT`);
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS razorpay_key_secret TEXT`);
 }

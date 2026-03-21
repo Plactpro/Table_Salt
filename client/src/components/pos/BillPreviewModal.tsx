@@ -121,6 +121,19 @@ export default function BillPreviewModal({
   const fmt = (val: number | string) => sharedFormatCurrency(val, currency, { position: currencyPosition, decimals: currencyDecimals });
   const isGSTTenant = currency === "INR" && user?.tenant?.taxType === "gst";
 
+  const { data: gatewayConfig } = useQuery({
+    queryKey: ["/api/platform/gateway-config"],
+    queryFn: async () => {
+      const res = await fetch("/api/platform/gateway-config");
+      if (!res.ok) return { activePaymentGateway: "stripe" };
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+  const activeGateway: "stripe" | "razorpay" | "both" = gatewayConfig?.activePaymentGateway ?? "stripe";
+  const razorpayAvailableForPOS = (activeGateway === "razorpay" || activeGateway === "both") && !!user?.tenant?.razorpayEnabled;
+  const stripeAvailableForPOS = activeGateway === "stripe" || activeGateway === "both";
+
   const [step, setStep] = useState<PaymentStep>("preview");
   const [activeMethod, setActiveMethod] = useState<PaymentMethodType>("CASH");
   const [cashTendered, setCashTendered] = useState("");
@@ -1129,7 +1142,7 @@ export default function BillPreviewModal({
                   )}
                   {activeMethod === "CARD" && (
                     <div className="space-y-2">
-                      {user?.tenant?.razorpayEnabled && (
+                      {razorpayAvailableForPOS && (
                         <div className="rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 p-3 space-y-3" data-testid="razorpay-card-section">
                           {!rzpLinkId ? (
                             <div className="text-center space-y-2">
@@ -1169,7 +1182,7 @@ export default function BillPreviewModal({
                           )}
                         </div>
                       )}
-                      {(!user?.tenant?.razorpayEnabled || (rzpAttempted && !rzpLinkId)) && (
+                      {(!razorpayAvailableForPOS || (rzpAttempted && !rzpLinkId)) && (
                         <div className="grid grid-cols-2 gap-2">
                           <Input placeholder="Last 4 digits" maxLength={4} value={cardLast4} onChange={e => setCardLast4(e.target.value)} data-testid="input-card-last4" />
                           <Input placeholder="Reference / Approval code" value={cardRef} onChange={e => setCardRef(e.target.value)} data-testid="input-card-ref" />
@@ -1179,7 +1192,7 @@ export default function BillPreviewModal({
                   )}
                   {activeMethod === "UPI" && (
                     <div className="text-center p-4 bg-muted/50 rounded-lg border space-y-3">
-                      {user?.tenant?.razorpayEnabled ? (
+                      {razorpayAvailableForPOS ? (
                         <>
                           {!rzpLinkId ? (
                             <>
@@ -1416,13 +1429,13 @@ export default function BillPreviewModal({
                       (isSplit && splitRows.some(r => r.method === "LOYALTY") && !lookedUpCustomer) ||
                       (!isSplit && activeMethod === "CASH" && cashTendered !== "" && parseFloat(cashTendered) < grandTotal) ||
                       // CARD + Razorpay enabled: must attempt gateway first; blocked while link is polling
-                      (!isSplit && activeMethod === "CARD" && !!user?.tenant?.razorpayEnabled && !rzpPaid &&
+                      (!isSplit && activeMethod === "CARD" && !!razorpayAvailableForPOS && !rzpPaid &&
                         (!rzpAttempted || (!!rzpLinkId && rzpPolling))) ||
                       // UPI + Razorpay enabled: must attempt gateway first; manual mark only available after attempt
-                      (!isSplit && activeMethod === "UPI" && !!user?.tenant?.razorpayEnabled && !rzpPaid &&
+                      (!isSplit && activeMethod === "UPI" && !!razorpayAvailableForPOS && !rzpPaid &&
                         (!rzpAttempted || (!!rzpLinkId && rzpPolling) || !upiMarkedPaid)) ||
                       // UPI + Razorpay disabled: must manually mark as paid
-                      (!isSplit && activeMethod === "UPI" && !user?.tenant?.razorpayEnabled && !upiMarkedPaid) ||
+                      (!isSplit && activeMethod === "UPI" && !razorpayAvailableForPOS && !upiMarkedPaid) ||
                       (!isSplit && activeMethod === "LOYALTY" && !lookedUpCustomer) ||
                       (!isSplit && activeMethod === "LOYALTY" && !!lookedUpCustomer && grandTotal > 0.01)
                     }
@@ -1431,7 +1444,7 @@ export default function BillPreviewModal({
                       ? "Processing..."
                       : rzpPolling
                       ? "Awaiting payment verification…"
-                      : !isSplit && (activeMethod === "CARD" || activeMethod === "UPI") && !!user?.tenant?.razorpayEnabled && !rzpAttempted
+                      : !isSplit && (activeMethod === "CARD" || activeMethod === "UPI") && !!razorpayAvailableForPOS && !rzpAttempted
                       ? "Initiate Gateway Payment First"
                       : `Confirm Payment · ${fmt(grandTotal)}`}
                   </Button>
