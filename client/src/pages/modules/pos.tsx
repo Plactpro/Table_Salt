@@ -279,8 +279,10 @@ export default function POSPage() {
     open: boolean; url: string; qrDataUrl: string; copied: boolean; orderId?: string;
   } | null>(null);
   const [posSessionId, setPosSessionId] = useState<string | null>(null);
+  const [posSession, setPosSession] = useState<{ id: string; shiftName: string | null; openedAt: string } | null>(null);
   const [showStartShift, setShowStartShift] = useState(false);
   const [showCloseShift, setShowCloseShift] = useState(false);
+  const [sessionElapsed, setSessionElapsed] = useState("");
   const [lastPlacedOrder, setLastPlacedOrder] = useState<{
     orderId: string;
     cart: CartItem[];
@@ -455,6 +457,41 @@ export default function POSPage() {
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
+
+  const { data: activeSessionData } = useQuery<{ id: string; shiftName: string | null; openedAt: string } | null>({
+    queryKey: ["/api/pos/session"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pos/session");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
+
+  useEffect(() => {
+    if (activeSessionData === undefined) return;
+    if (activeSessionData) {
+      setPosSessionId(activeSessionData.id);
+      setPosSession(activeSessionData);
+      setShowStartShift(false);
+    } else {
+      setPosSessionId(null);
+      setPosSession(null);
+      setShowStartShift(true);
+    }
+  }, [activeSessionData]);
+
+  useEffect(() => {
+    if (!posSession?.openedAt) { setSessionElapsed(""); return; }
+    const update = () => {
+      const diffMs = Date.now() - new Date(posSession.openedAt).getTime();
+      const h = Math.floor(diffMs / 3_600_000);
+      const m = Math.floor((diffMs % 3_600_000) / 60_000);
+      setSessionElapsed(h > 0 ? `${h}h ${m}m` : `${m}m`);
+    };
+    update();
+    const timer = setInterval(update, 60_000);
+    return () => clearInterval(timer);
+  }, [posSession?.openedAt]);
 
   const userOutletId = user && "outletId" in user ? (user as { outletId?: string }).outletId || null : null;
   const activeCombos = useMemo(() => comboOffers.filter((c) => isComboActive(c, userOutletId)), [comboOffers, userOutletId]);
@@ -1210,9 +1247,15 @@ export default function POSPage() {
                 )}
               </Button>
               {posSessionId ? (
-                <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowCloseShift(true)} data-testid="button-close-shift">
-                  <Clock className="h-3 w-3 mr-1" /> End Shift
-                </Button>
+                <button
+                  onClick={() => setShowCloseShift(true)}
+                  className="flex items-center gap-1.5 h-7 px-2 rounded-md border text-xs bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary transition-colors"
+                  data-testid="button-close-shift"
+                >
+                  <Clock className="h-3 w-3" />
+                  <span className="font-medium">{posSession?.shiftName ?? "Shift"}</span>
+                  {sessionElapsed && <span className="text-primary/70">· {sessionElapsed}</span>}
+                </button>
               ) : (
                 <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowStartShift(true)} data-testid="button-start-shift">
                   <Clock className="h-3 w-3 mr-1" /> Start Shift
@@ -1675,10 +1718,14 @@ export default function POSPage() {
         />
       )}
 
-      <StartShiftModal open={showStartShift} onSessionStarted={(sessionId) => { setPosSessionId(sessionId); setShowStartShift(false); }} />
+      <StartShiftModal open={showStartShift} onSessionStarted={(sessionId) => {
+        setPosSessionId(sessionId);
+        setShowStartShift(false);
+        queryClient.invalidateQueries({ queryKey: ["/api/pos/session"] });
+      }} />
       {posSessionId && (
         <CloseShiftDialog open={showCloseShift} onClose={() => setShowCloseShift(false)} sessionId={posSessionId}
-          onClosed={() => { setPosSessionId(null); setShowCloseShift(false); }} />
+          onClosed={() => { setPosSessionId(null); setPosSession(null); setShowCloseShift(false); queryClient.invalidateQueries({ queryKey: ["/api/pos/session"] }); }} />
       )}
 
       <Dialog open={!!closeTabConfirm} onOpenChange={() => setCloseTabConfirm(null)}>

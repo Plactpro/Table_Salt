@@ -90,13 +90,15 @@ export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps
   );
 }
 
+interface SupervisorCredentials { username: string; password: string; otpApprovalToken?: string; }
+
 export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseShiftDialogProps) {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [cashCount, setCashCount] = useState("");
   const [showSupervisor, setShowSupervisor] = useState(false);
-  const [reportData, setReportData] = useState<any>(null);
+  const [reportData, setReportData] = useState<{ session: { openingFloat?: number; shiftName?: string | null }; revenueByMethod?: Record<string, number>; billCount?: number; totalRevenue?: number } | null>(null);
 
   const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -113,10 +115,10 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
   });
 
   const closeMutation = useMutation({
-    mutationFn: async () => {
-      const res = await apiRequest("POST", "/api/pos/session/close", {
-        closingCashCount: cashCount ? parseFloat(cashCount) : null,
-      });
+    mutationFn: async (supervisorOverride: SupervisorCredentials | null) => {
+      const body: Record<string, unknown> = { closingCashCount: cashCount ? parseFloat(cashCount) : null };
+      if (supervisorOverride) body.supervisorOverride = supervisorOverride;
+      const res = await apiRequest("POST", "/api/pos/session/close", body);
       if (!res.ok) throw new Error((await res.json()).message || "Failed to close session");
       return res.json();
     },
@@ -129,11 +131,54 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
     onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
   });
 
+  const isManagerOrOwner = user?.role === "owner" || user?.role === "manager";
+
   const expectedCash = report ? (Number(report.session?.openingFloat ?? 0) + (report.revenueByMethod?.CASH ?? 0)) : 0;
   const actualCash = parseFloat(cashCount) || 0;
   const variance = cashCount ? actualCash - expectedCash : null;
 
-  const handlePrintReport = () => window.print();
+  const handlePrintReport = () => {
+    const source = report || reportData;
+    if (!source) return;
+    const expCash = Number(source.session?.openingFloat ?? 0) + (source.revenueByMethod?.CASH ?? 0);
+    const actCash = parseFloat(cashCount) || 0;
+    const varianceVal = cashCount ? actCash - expCash : null;
+    const methodRows = Object.entries(source.revenueByMethod || {}).map(([m, amt]: [string, number]) =>
+      `<tr><td>${m}</td><td style="text-align:right">${fmt(amt)}</td></tr>`
+    ).join("");
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<!DOCTYPE html><html><head><title>Shift Report</title>
+      <style>body{font-family:sans-serif;padding:2rem;max-width:480px;margin:auto}h1{font-size:1.2rem;margin-bottom:.5rem}table{width:100%;border-collapse:collapse;margin-bottom:1rem}td{padding:.3rem .5rem;border-bottom:1px solid #eee}td:last-child{text-align:right}.var-neg{color:red}.var-pos{color:green}.summary{display:flex;gap:2rem;margin-bottom:1rem}.stat{text-align:center}.stat-val{font-size:1.8rem;font-weight:bold}.stat-lbl{font-size:.75rem;color:#666}</style>
+    </head><body>
+      <h1>Shift Report — ${source.session ? (source.session as {shiftName?: string}).shiftName ?? "Shift" : "Shift"}</h1>
+      <p style="color:#666;font-size:.85rem">Printed: ${new Date().toLocaleString()}</p>
+      <div class="summary">
+        <div class="stat"><div class="stat-val">${source.billCount ?? 0}</div><div class="stat-lbl">Orders</div></div>
+        <div class="stat"><div class="stat-val">${fmt(source.totalRevenue ?? 0)}</div><div class="stat-lbl">Revenue</div></div>
+      </div>
+      <h2 style="font-size:.9rem">Revenue by Method</h2>
+      <table>${methodRows}</table>
+      <h2 style="font-size:.9rem">Cash Reconciliation</h2>
+      <table>
+        <tr><td>Opening Float</td><td>${fmt(source.session?.openingFloat ?? 0)}</td></tr>
+        <tr><td>Cash Sales</td><td>${fmt(source.revenueByMethod?.CASH ?? 0)}</td></tr>
+        <tr><td><strong>Expected Cash</strong></td><td><strong>${fmt(expCash)}</strong></td></tr>
+        ${cashCount ? `<tr><td>Counted Cash</td><td>${fmt(actCash)}</td></tr>
+        <tr><td><strong>Variance</strong></td><td class="${varianceVal! < 0 ? "var-neg" : "var-pos"}"><strong>${varianceVal! >= 0 ? "+" : ""}${fmt(varianceVal!)}</strong></td></tr>` : ""}
+      </table>
+    </body></html>`);
+    win.document.close();
+    win.print();
+  };
+
+  const handleCloseShift = () => {
+    if (isManagerOrOwner) {
+      closeMutation.mutate(null);
+    } else {
+      setShowSupervisor(true);
+    }
+  };
 
   return (
     <>
@@ -210,8 +255,8 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
                 <Button variant="outline" size="sm" onClick={handlePrintReport} className="flex-1">
                   <Printer className="h-4 w-4 mr-1" /> Print Report
                 </Button>
-                <Button size="sm" className="flex-1" onClick={() => setShowSupervisor(true)} data-testid="button-close-shift">
-                  Close Shift
+                <Button size="sm" className="flex-1" onClick={handleCloseShift} disabled={closeMutation.isPending} data-testid="button-close-shift">
+                  {closeMutation.isPending ? "Closing..." : "Close Shift"}
                 </Button>
               </div>
             </div>
@@ -228,7 +273,7 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
           open={showSupervisor}
           action="close_shift"
           actionLabel="Close Shift"
-          onApproved={() => { setShowSupervisor(false); closeMutation.mutate(); }}
+          onApproved={(_supervisorId, credentials) => { setShowSupervisor(false); closeMutation.mutate(credentials); }}
           onCancel={() => setShowSupervisor(false)}
         />
       )}
