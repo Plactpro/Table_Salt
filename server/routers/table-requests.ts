@@ -284,7 +284,7 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
-  app.get("/api/qr/bulk-download/:outletId", requireAuth, async (req, res) => {
+  app.get("/api/qr/bulk-download/:outletId", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
     try {
       const user = req.user as any;
       const { outletId } = req.params;
