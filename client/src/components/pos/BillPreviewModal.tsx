@@ -509,6 +509,12 @@ export default function BillPreviewModal({
                   {createBillMutation.isPending ? "Creating bill..." : "Proceed to Payment →"}
                 </Button>
               </div>
+              {isManagerOrOwner && createdBill && (
+                <Button variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/40 hover:bg-destructive/10 no-print"
+                  onClick={() => setStep("void")} data-testid="button-void-bill-preview">
+                  <AlertTriangle className="h-3 w-3 mr-1" /> Void Bill
+                </Button>
+              )}
             </div>
           )}
 
