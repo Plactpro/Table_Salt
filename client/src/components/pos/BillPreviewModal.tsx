@@ -822,7 +822,7 @@ export default function BillPreviewModal({
                                 className="h-5 text-[10px] px-2 shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-0"
                                 onClick={() => {
                                   setTierDiscountAmount(occasionOfferApplied ? 0 : offerDiscount);
-                                  toast({ title: occasionOfferApplied ? "Offer removed" : "Birthday offer applied", description: occasionOfferApplied ? "Discount removed" : `"${applicableOffer.name}" applied to this bill` });
+                                  toast({ title: occasionOfferApplied ? "Offer removed" : isBirthday ? "Birthday offer applied" : "Anniversary offer applied", description: occasionOfferApplied ? "Discount removed" : `"${applicableOffer.name}" applied to this bill` });
                                 }}
                                 data-testid="button-crm-apply-occasion-offer"
                               >
@@ -846,7 +846,11 @@ export default function BillPreviewModal({
                             </Badge>
                           )}
                           <span className="text-[10px] text-muted-foreground" data-testid="crm-visit-count">
-                            {lookedUpCustomer.visitCount ?? 0} visits
+                            {(() => {
+                              const n = (lookedUpCustomer.visitCount ?? 0) + 1;
+                              const sfx = n === 11 || n === 12 || n === 13 ? "th" : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
+                              return `${n}${sfx} visit`;
+                            })()}
                           </span>
                           <span className="text-[10px] text-muted-foreground" data-testid="crm-total-spent">
                             {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0"))} lifetime
