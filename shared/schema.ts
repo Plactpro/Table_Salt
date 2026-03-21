@@ -10,6 +10,7 @@ import {
   pgEnum,
   jsonb,
   index,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1464,6 +1465,7 @@ export const bills = pgTable("bills", {
   index("idx_bills_order_id").on(t.orderId),
   index("idx_bills_tenant_created").on(t.tenantId, t.createdAt),
   index("idx_bills_tenant_status").on(t.tenantId, t.paymentStatus),
+  uniqueIndex("idx_bills_tenant_invoice_number_unique").on(t.tenantId, t.invoiceNumber),
 ]);
 
 export const insertBillSchema = createInsertSchema(bills).omit({ id: true, createdAt: true });

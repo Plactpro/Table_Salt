@@ -136,7 +136,7 @@ export default function BillPreviewModal({
   const [refundReason, setRefundReason] = useState("");
   const [upiMarkedPaid, setUpiMarkedPaid] = useState(false);
   const [loyaltySearchPhone, setLoyaltySearchPhone] = useState("");
-  const [lookedUpCustomer, setLookedUpCustomer] = useState<{ id: string; name: string; loyaltyPoints: number } | null>(null);
+  const [lookedUpCustomer, setLookedUpCustomer] = useState<{ id: string; name: string; loyaltyPoints: number; gstin?: string | null } | null>(null);
   const [loyaltySearching, setLoyaltySearching] = useState(false);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
   const [customerGstinInput, setCustomerGstinInput] = useState("");
@@ -352,7 +352,8 @@ export default function BillPreviewModal({
       const customers = Array.isArray(data) ? data : (data.data ?? data.customers ?? []);
       const match = customers[0] ?? null;
       if (match) {
-        setLookedUpCustomer({ id: match.id, name: match.name, loyaltyPoints: match.loyaltyPoints ?? 0 });
+        setLookedUpCustomer({ id: match.id, name: match.name, loyaltyPoints: match.loyaltyPoints ?? 0, gstin: match.gstin ?? null });
+        if (isGSTTenant && match.gstin) setCustomerGstinInput(match.gstin);
       } else {
         toast({ title: "Customer not found", description: "No customer with that phone number", variant: "destructive" });
       }
