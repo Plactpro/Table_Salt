@@ -176,7 +176,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
             }
           } catch (_) {}
         }
-        emitToTenant(user.tenantId, "order:updated", { orderId: bill.orderId, status: "paid" });
+        emitToTenant(user.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
       }
 
       res.json({ bill: updatedBill, payments: createdPayments });
