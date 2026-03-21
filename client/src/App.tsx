@@ -315,7 +315,7 @@ function Router() {
     );
   }
 
-  if (location.startsWith("/table")) {
+  if (location === "/table") {
     return <TableQrPage />;
   }
 
