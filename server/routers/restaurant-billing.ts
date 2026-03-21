@@ -5,7 +5,7 @@ import { emitToTenant } from "../realtime";
 import { verifySupervisorOverride } from "./_shared";
 import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
-import { tenants as tenantsTable } from "@shared/schema";
+import { tenants as tenantsTable, type InsertCustomer } from "@shared/schema";
 import { createPaymentLink, getPaymentLink } from "../razorpay";
 
 function getFiscalYear(date: Date): string {
@@ -78,13 +78,13 @@ export async function finalizeBillCompletion(opts: {
         const pointsEarned = Math.floor(billTotal / 10);
         const newTotalSpent = (Number(customer.totalSpent ?? "0") + billTotal).toFixed(2);
         const newVisitCount = (customer.visitCount ?? 0) + 1;
-        const crmUpdate: Record<string, unknown> = {
+        const crmUpdate: Partial<InsertCustomer> = {
           totalSpent: newTotalSpent,
           visitCount: newVisitCount,
           lastVisitAt: new Date(),
         };
         if (pointsEarned > 0) crmUpdate.loyaltyPoints = (customer.loyaltyPoints ?? 0) + pointsEarned;
-        await storage.updateCustomerByTenant(bill.customerId, bill.tenantId, crmUpdate as any);
+        await storage.updateCustomerByTenant(bill.customerId, bill.tenantId, crmUpdate);
       }
     } catch (_) {}
   }
@@ -284,13 +284,13 @@ export function registerRestaurantBillingRoutes(app: Express): void {
               const newBalance = Math.max(0, (customer.loyaltyPoints ?? 0) + netChange);
               const newTotalSpent = (Number(customer.totalSpent ?? "0") + billTotal).toFixed(2);
               const newVisitCount = (customer.visitCount ?? 0) + 1;
-              const crmUpdate: Record<string, unknown> = {
+              const crmUpdate: Partial<InsertCustomer> = {
                 totalSpent: newTotalSpent,
                 visitCount: newVisitCount,
                 lastVisitAt: new Date(),
               };
               if (netChange !== 0) crmUpdate.loyaltyPoints = newBalance;
-              await storage.updateCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId, crmUpdate as any);
+              await storage.updateCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId, crmUpdate);
             }
           } catch (_) {}
         }
