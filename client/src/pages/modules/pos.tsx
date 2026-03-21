@@ -787,6 +787,8 @@ export default function POSPage() {
       notes: tab.orderNotes || null,
       status: tabIsDineIn ? "in_progress" : "new",
       items: orderItems,
+      offerId: (!isAddonKot && tab.selectedOfferId) ? tab.selectedOfferId : null,
+      manualDiscountAmount: (!isAddonKot && tabManualDiscount > 0) ? tabManualDiscount.toFixed(2) : null,
     };
     if (tab.heldOrderId) orderData.parentOrderId = tab.heldOrderId;
     if (!tabIsDineIn) orderData.paymentMethod = paymentMethod;

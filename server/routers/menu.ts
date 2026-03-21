@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { requireRole } from "../auth";
+import { requireRole, requireAuth } from "../auth";
 import { requirePermission } from "../permissions";
 import { can } from "../permissions";
 import { auditLogFromReq } from "../audit";
@@ -40,9 +40,11 @@ export function registerMenuRoutes(app: Express): void {
     res.json(items);
   });
 
-  app.get("/api/menu-items/:id/modifiers", async (req, res) => {
+  app.get("/api/menu-items/:id/modifiers", requireAuth, async (req, res) => {
+    const user = req.user as Express.User & { tenantId: string };
     const item = await storage.getMenuItem(req.params.id);
     if (!item) return res.status(404).json({ message: "Menu item not found" });
+    if (item.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
     const groups = [
       {
         id: "size",
