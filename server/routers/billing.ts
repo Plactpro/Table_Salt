@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth } from "../auth";
 import { isStripeConfigured, getUncachableStripeClient, STRIPE_PRICE_IDS, planFromPriceId } from "../stripe";
+import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 
 export function registerBillingRoutes(app: Express): void {
   app.get("/api/onboarding/status", requireAuth, async (req, res) => {
@@ -190,6 +191,13 @@ export function registerBillingRoutes(app: Express): void {
                 await storage.updateOrder(orderId, { status: "paid", paymentMethod: "card" });
                 if (orderToUpdate.tableId) {
                   try { await storage.updateTable(orderToUpdate.tableId, { status: "free" }); } catch (_) {}
+                }
+                if (orderToUpdate.channel === "kiosk") {
+                  try {
+                    await deductRecipeInventoryForOrder(orderId, orderToUpdate.tenantId, "kiosk");
+                  } catch (deductErr) {
+                    console.error(`[billing/stripe] Inventory deduction failed for order ${orderId}:`, deductErr);
+                  }
                 }
               }
             } else if (session.metadata?.guestPayment === "true" && session.metadata?.sessionId) {

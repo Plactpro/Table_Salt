@@ -1,12 +1,10 @@
 import type { Express } from "express";
-import { eq, sql } from "drizzle-orm";
-import { db, pool } from "../db";
+import { pool } from "../db";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../middleware";
-import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable } from "@shared/schema";
-import { convertUnits } from "@shared/units";
 import { isStripeConfigured, getUncachableStripeClient, getPaymentStripeClient } from "../stripe";
 import { createPaymentLink, getPaymentLink } from "../razorpay";
+import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 
 async function getActiveGateway(): Promise<string> {
   try {
@@ -259,37 +257,10 @@ export function registerKioskRoutes(app: Express): void {
       const tokenNumber = order.orderNumber || order.id.slice(0, 6).toUpperCase();
 
       if (isDigitalPayment) {
-        type KioskWrite = { inventoryItemId: string; tenantId: string; menuItemId: string; recipeId: string; qty: number; reason: string };
-        const kioskWrites: KioskWrite[] = [];
-        for (const oi of orderItems) {
-          if (!oi.menuItemId) continue;
-          const recipe = await storage.getRecipeByMenuItem(oi.menuItemId);
-          if (!recipe) continue;
-          const recipeIngs = await storage.getRecipeIngredients(recipe.id);
-          for (const ing of recipeIngs) {
-            const invItem = await storage.getInventoryItem(ing.inventoryItemId);
-            if (!invItem) continue;
-            const ingUnit = ing.unit || invItem.unit || "pcs";
-            const invUnit = invItem.unit || "pcs";
-            const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
-            const convertedQty = convertUnits(baseQty, ingUnit, invUnit);
-            const qty = Math.round(convertedQty * (oi.quantity || 1) * 100) / 100;
-            kioskWrites.push({ inventoryItemId: ing.inventoryItemId, tenantId: device.tenantId!, menuItemId: oi.menuItemId, recipeId: recipe.id, qty, reason: `Recipe consumption (kiosk): ${oi.name} x${oi.quantity || 1}` });
-          }
-        }
-        if (kioskWrites.length > 0) {
-          await db.transaction(async (tx) => {
-            for (const w of kioskWrites) {
-              await tx.update(inventoryItemsTable)
-                .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)` })
-                .where(eq(inventoryItemsTable.id, w.inventoryItemId));
-              await tx.insert(stockMovementsTable).values({
-                tenantId: w.tenantId, itemId: w.inventoryItemId, type: "RECIPE_CONSUMPTION",
-                quantity: String(w.qty), reason: w.reason, orderId: order.id,
-                menuItemId: w.menuItemId, recipeId: w.recipeId,
-              });
-            }
-          });
+        try {
+          await deductRecipeInventoryForOrder(order.id, device.tenantId!, "kiosk");
+        } catch (deductErr) {
+          console.error(`[kiosk] Inventory deduction failed for order ${order.id}:`, deductErr);
         }
       }
 
@@ -496,6 +467,11 @@ export function registerKioskRoutes(app: Express): void {
 
       if (link.status === "paid") {
         await storage.updateOrder(req.params.orderId, { status: "completed", paymentMethod: "razorpay" });
+        try {
+          await deductRecipeInventoryForOrder(req.params.orderId, device.tenantId!, "kiosk");
+        } catch (deductErr) {
+          console.error(`[kiosk/razorpay] Inventory deduction failed for order ${req.params.orderId}:`, deductErr);
+        }
         return res.json({ status: "paid", orderId: req.params.orderId });
       }
       return res.json({ status: link.status === "cancelled" || link.status === "expired" ? "cancelled" : "pending" });
