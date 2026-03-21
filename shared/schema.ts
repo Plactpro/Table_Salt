@@ -107,6 +107,7 @@ export const tenants = pgTable("tenants", {
   invoiceCounter: integer("invoice_counter").default(0),
   razorpayEnabled: boolean("razorpay_enabled").default(false),
   razorpayKeyId: text("razorpay_key_id"),
+  razorpayKeySecret: text("razorpay_key_secret"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

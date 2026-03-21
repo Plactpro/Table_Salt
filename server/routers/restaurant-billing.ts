@@ -32,6 +32,62 @@ function numWords(n: number): string {
   return result;
 }
 
+/**
+ * Shared helper: run all side effects when a bill is fully paid via the Razorpay gateway.
+ * Called from both the polling status route AND the webhook handler to ensure consistent
+ * behavior (loyalty accrual, order completion, table release, realtime event).
+ */
+export async function finalizeBillCompletion(opts: {
+  bill: { id: string; tenantId: string; orderId: string; tableId: string | null; customerId: string | null; totalAmount: string; tips: string | null };
+  paymentMethod: string;
+  paymentId: string | null;
+  linkId: string;
+  amountStr: string;
+  collectedById?: string;
+}): Promise<void> {
+  const { bill, paymentMethod, paymentId, linkId, amountStr, collectedById } = opts;
+
+  // 1. Mark bill as paid
+  await storage.updateBill(bill.id, bill.tenantId, { paymentStatus: "paid", paidAt: new Date() });
+
+  // 2. Record payment row
+  await storage.createBillPayment({
+    tenantId: bill.tenantId,
+    billId: bill.id,
+    paymentMethod,
+    amount: amountStr,
+    referenceNo: paymentId || linkId,
+    ...(collectedById ? { collectedBy: collectedById } : {}),
+    razorpayPaymentId: paymentId,
+  });
+
+  // 3. Complete the order
+  await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: paymentMethod.toLowerCase() });
+
+  // 4. Free the table
+  if (bill.tableId) {
+    try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+  }
+
+  // 5. Loyalty points accrual for linked customer (same formula as direct payment route)
+  if (bill.customerId) {
+    try {
+      const customer = await storage.getCustomerByTenant(bill.customerId, bill.tenantId);
+      if (customer) {
+        const billTotal = Number(bill.totalAmount) + Number(bill.tips || 0);
+        const pointsEarned = Math.floor(billTotal / 10);
+        if (pointsEarned > 0) {
+          const newBalance = (customer.loyaltyPoints ?? 0) + pointsEarned;
+          await storage.updateCustomerByTenant(bill.customerId, bill.tenantId, { loyaltyPoints: newBalance });
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 6. Realtime notification
+  emitToTenant(bill.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
+}
+
 export function registerRestaurantBillingRoutes(app: Express): void {
 
   app.get("/api/restaurant-bills", requireAuth, async (req, res) => {
@@ -460,7 +516,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       if (bill.razorpayOrderId) {
         try {
-          const existing = await getPaymentLink(bill.razorpayOrderId, tenant.razorpayKeyId);
+          const existing = await getPaymentLink(bill.razorpayOrderId, tenant.razorpayKeyId, tenant.razorpayKeySecret);
           if (existing.status !== "cancelled" && existing.status !== "expired") {
             return res.json({ paymentLinkId: existing.id, shortUrl: existing.short_url, status: existing.status });
           }
@@ -473,6 +529,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         description: `Payment for Bill ${bill.billNumber}`,
         billId: bill.id,
         tenantKeyId: tenant.razorpayKeyId,
+        tenantKeySecret: tenant.razorpayKeySecret,
       });
 
       await storage.updateBill(bill.id, user.tenantId, { razorpayOrderId: link.id });
@@ -493,34 +550,26 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (!bill.razorpayOrderId) return res.json({ status: "pending" });
 
       const tenant = await storage.getTenant(user.tenantId);
-      const link = await getPaymentLink(bill.razorpayOrderId, tenant?.razorpayKeyId);
+      const link = await getPaymentLink(bill.razorpayOrderId, tenant?.razorpayKeyId, tenant?.razorpayKeySecret);
 
       if (link.status === "paid") {
         const paymentId = link.payments?.[0]?.payment_id ?? null;
         // Derive method from Razorpay payload — never trust client query param for reconciliation
-        const rzpMethod = (link.payments?.[0]?.method as string | undefined)?.toLowerCase();
+        const rzpMethod = link.payments?.[0]?.method?.toLowerCase();
         const method = rzpMethod === "card" ? "CARD" : rzpMethod === "upi" ? "UPI" : "RAZORPAY";
         // Idempotency guard: re-fetch bill to check if webhook already finalised it
         const freshBill = await storage.getBill(bill.id);
         if (freshBill?.paymentStatus === "paid") {
           return res.json({ status: "paid", paymentId });
         }
-        await storage.updateBill(bill.id, user.tenantId, { paymentStatus: "paid", paidAt: new Date() });
-        await storage.createBillPayment({
-          tenantId: bill.tenantId,
-          billId: bill.id,
+        await finalizeBillCompletion({
+          bill,
           paymentMethod: method,
-          amount: link.amount ? String(link.amount / 100) : bill.totalAmount,
-          referenceNo: paymentId || link.id,
-          collectedBy: user.id,
-          razorpayPaymentId: paymentId,
+          paymentId,
+          linkId: link.id,
+          amountStr: link.amount ? String(link.amount / 100) : bill.totalAmount,
+          collectedById: user.id,
         });
-        // Run same completion side-effects as the standard payment flow
-        await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: method.toLowerCase() });
-        if (bill.tableId) {
-          try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
-        }
-        emitToTenant(bill.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
         return res.json({ status: "paid", paymentId });
       }
 
