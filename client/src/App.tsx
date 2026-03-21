@@ -86,7 +86,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/staff": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
   "/reports": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
   "/billing": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "billing" },
-  "/settings": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
+  "/settings": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "settings" },
   "/kiosk-management": { roles: ["owner", "manager"] },
   "/omnichannel": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
   "/channels": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
