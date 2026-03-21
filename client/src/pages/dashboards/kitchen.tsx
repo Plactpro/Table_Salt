@@ -7,7 +7,7 @@ import {
   AlertTriangle, X, Package, Trash2, CheckSquare, Monitor, Copy, RefreshCw, ExternalLink,
   Printer,
 } from "lucide-react";
-import { renderKotHtml, printHtmlInPopup } from "@/lib/print-utils";
+import { renderKotHtml, dispatchPrint } from "@/lib/print-utils";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -432,13 +432,14 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
   );
 }
 
-function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck, restaurantName }: {
+function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck, restaurantName, stationPrinterUrl }: {
   ticket: KDSTicket;
   stationFilter: string | null;
   onItemStatus: (itemId: string, status: string) => void;
   onBulkStatus: (orderId: string, status: string, station?: string) => void;
   onStartWithRecipeCheck: (orderId: string, station: string | null) => void;
   restaurantName?: string;
+  stationPrinterUrl?: string | null;
 }) {
   const mins = useElapsedMinutes(ticket.createdAt);
   const timeColor = getTimeColor(mins);
@@ -448,7 +449,38 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
   const isLate = mins >= 15;
   const [confirmReady, setConfirmReady] = useState<string | null>(null);
 
-  const handleReprintKOT = useCallback(() => {
+  const handleReprintKOT = useCallback(async () => {
+    const printItems = (stationFilter
+      ? ticket.items.filter(i => i.station === stationFilter)
+      : ticket.items
+    ).map(i => ({
+      name: i.name,
+      quantity: i.quantity ?? 1,
+      notes: i.notes,
+      course: i.course,
+    }));
+
+    const payload = {
+      orderId: ticket.id,
+      orderType: ticket.orderType,
+      tableNumber: ticket.tableNumber,
+      station: stationFilter,
+      sentAt: ticket.createdAt || new Date().toISOString(),
+      items: printItems,
+    };
+
+    let jobId: string | undefined;
+    try {
+      const res = await apiRequest("POST", "/api/print-jobs", {
+        type: "kot",
+        referenceId: ticket.id,
+        station: stationFilter,
+        payload,
+      });
+      const job = await res.json();
+      jobId = job?.id;
+    } catch (_) {}
+
     const html = renderKotHtml({
       restaurantName: restaurantName || "Kitchen",
       kotNumber: ticket.id.slice(-6).toUpperCase(),
@@ -457,15 +489,18 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
       tableNumber: ticket.tableNumber,
       station: stationFilter,
       sentAt: ticket.createdAt || new Date().toISOString(),
-      items: (stationFilter ? ticket.items.filter(i => i.station === stationFilter) : ticket.items).map(i => ({
-        name: i.name,
-        quantity: i.quantity ?? 1,
-        notes: i.notes,
-        course: i.course,
-      })),
+      items: printItems,
     });
-    printHtmlInPopup(html);
-  }, [ticket, stationFilter, restaurantName]);
+
+    await dispatchPrint(html, stationPrinterUrl, () => {
+      if (jobId) {
+        apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+      }
+    });
+    if (!stationPrinterUrl && jobId) {
+      apiRequest("PATCH", `/api/print-jobs/${jobId}/status`, { status: "printed" }).catch(() => {});
+    }
+  }, [ticket, stationFilter, restaurantName, stationPrinterUrl]);
 
   const filteredItems = stationFilter
     ? ticket.items.filter(i => i.station === stationFilter)
@@ -1181,6 +1216,7 @@ export default function KitchenDashboard() {
                         onBulkStatus={handleBulkStatus}
                         onStartWithRecipeCheck={handleStartWithRecipeCheck}
                         restaurantName={tenant?.name || "Restaurant"}
+                        stationPrinterUrl={selectedStation ? stations.find(s => s.name === selectedStation)?.printerUrl : null}
                       />
                     ))
                   )}
