@@ -134,7 +134,7 @@ export default function BillPreviewModal({
   const [loyaltySearching, setLoyaltySearching] = useState(false);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
 
-  const { data: existingBillData } = useQuery({
+  const { data: existingBillData, status: existingBillStatus } = useQuery({
     queryKey: ["/api/restaurant-bills/by-order", orderId],
     queryFn: async () => {
       const res = await fetch(`/api/restaurant-bills/by-order/${orderId}`, { credentials: "include" });
@@ -156,6 +156,12 @@ export default function BillPreviewModal({
       }
     }
   }, [existingBillData]);
+
+  useEffect(() => {
+    if (fullPage && orderId && existingBillStatus === "success" && !existingBillData && !createdBill && !createBillMutation.isPending) {
+      createBillMutation.mutate();
+    }
+  }, [fullPage, orderId, existingBillStatus, existingBillData, createdBill]);
 
   const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
   const loyaltyRedemptionValue = loyaltyPointsToRedeem * 0.01;
@@ -745,10 +751,40 @@ export default function BillPreviewModal({
                 </div>
               )}
 
-              {isSplit && splitRows.some(r => r.method === "LOYALTY") && !lookedUpCustomer && (
-                <div className="flex items-center gap-1.5 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:text-amber-400" data-testid="split-loyalty-no-customer-warning">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                  A Loyalty row is included — search and link a customer above to process it.
+              {isSplit && splitRows.some(r => r.method === "LOYALTY") && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2" data-testid="split-loyalty-customer-section">
+                  <div className="flex items-center gap-2">
+                    <Gift className="h-4 w-4 text-amber-600" />
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Loyalty Customer</p>
+                  </div>
+                  {lookedUpCustomer ? (
+                    <div className="flex items-center justify-between bg-white dark:bg-amber-900/40 rounded p-2 border border-amber-200 dark:border-amber-700">
+                      <div>
+                        <p className="text-sm font-semibold">{lookedUpCustomer.name}</p>
+                        <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts available · {fmt(lookedUpCustomer.loyaltyPoints * 0.01)} max</p>
+                      </div>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setLookedUpCustomer(null); setLoyaltyPointsToRedeem(0); }}>Change</Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="flex gap-1.5">
+                        <Input
+                          placeholder="Customer phone number"
+                          value={loyaltySearchPhone}
+                          onChange={e => setLoyaltySearchPhone(e.target.value)}
+                          onKeyDown={e => e.key === "Enter" && handleLoyaltySearch()}
+                          className="h-8 text-xs flex-1"
+                          data-testid="input-split-loyalty-phone"
+                        />
+                        <Button size="sm" className="h-8 text-xs" onClick={handleLoyaltySearch} disabled={loyaltySearching} data-testid="button-split-loyalty-search">
+                          {loyaltySearching ? "..." : "Find"}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="split-loyalty-no-customer-warning">
+                        Link a customer to process the Loyalty payment row.
+                      </p>
+                    </div>
+                  )}
                 </div>
               )}
 
