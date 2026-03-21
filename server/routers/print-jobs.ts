@@ -2,11 +2,18 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 
+const VALID_PRINT_JOB_STATUSES = ["queued", "printed", "failed"] as const;
+type PrintJobStatus = typeof VALID_PRINT_JOB_STATUSES[number];
+
 export function registerPrintJobRoutes(app: Express): void {
   app.get("/api/print-jobs", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const status = req.query.status as string | undefined;
+      const rawStatus = req.query.status as string | undefined;
+      const status: PrintJobStatus | undefined =
+        rawStatus && (VALID_PRINT_JOB_STATUSES as readonly string[]).includes(rawStatus)
+          ? (rawStatus as PrintJobStatus)
+          : undefined;
       const limit = req.query.limit ? parseInt(req.query.limit as string) : undefined;
       const referenceId = req.query.referenceId as string | undefined;
       const jobs = await storage.getPrintJobsByTenant(user.tenantId, { status, limit, referenceId });

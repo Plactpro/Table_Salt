@@ -232,13 +232,18 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
                 <div className="flex items-center gap-1 ml-2 shrink-0">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant={job.status === "failed" ? "destructive" : "outline"}
                     className="h-7 text-xs gap-1"
-                    onClick={() => handlePrintJob(job)}
+                    onClick={async () => {
+                      if (job.status === "failed") {
+                        await updateStatusMutation.mutateAsync({ id: job.id, status: "queued" });
+                      }
+                      handlePrintJob(job);
+                    }}
                     data-testid={`button-print-job-${job.id}`}
                   >
                     <Printer className="h-3 w-3 mr-1" />
-                    Print
+                    {job.status === "failed" ? "Retry" : "Print"}
                   </Button>
                   {job.status !== "printed" && (
                     <Button

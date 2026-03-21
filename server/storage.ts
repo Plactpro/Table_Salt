@@ -116,7 +116,7 @@ import {
   type Bill, type InsertBill,
   type BillPayment, type InsertBillPayment,
   type PosSession, type InsertPosSession,
-  printJobs,
+  printJobs, printJobStatusEnum,
   type PrintJob, type InsertPrintJob,
 } from "@shared/schema";
 
@@ -470,7 +470,7 @@ export interface IStorage {
   getPosSessionReport(sessionId: string): Promise<{ session: PosSession; billCount: number; totalRevenue: number; revenueByMethod: Record<string, number>; cashSales: number; expectedCash: number }>;
 
   createPrintJob(data: InsertPrintJob): Promise<PrintJob>;
-  getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number; referenceId?: string }): Promise<PrintJob[]>;
+  getPrintJobsByTenant(tenantId: string, opts?: { status?: typeof printJobStatusEnum.enumValues[number]; limit?: number; referenceId?: string }): Promise<PrintJob[]>;
   updatePrintJob(id: string, tenantId: string, data: Partial<InsertPrintJob>): Promise<PrintJob | undefined>;
 }
 
@@ -2053,9 +2053,9 @@ export class DatabaseStorage implements IStorage {
     const [job] = await db.insert(printJobs).values(data).returning();
     return job;
   }
-  async getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number; referenceId?: string }): Promise<PrintJob[]> {
+  async getPrintJobsByTenant(tenantId: string, opts?: { status?: typeof printJobStatusEnum.enumValues[number]; limit?: number; referenceId?: string }): Promise<PrintJob[]> {
     const conditions = [eq(printJobs.tenantId, tenantId)];
-    if (opts?.status) conditions.push(eq(printJobs.status, opts.status as any));
+    if (opts?.status) conditions.push(eq(printJobs.status, opts.status));
     if (opts?.referenceId) conditions.push(eq(printJobs.referenceId, opts.referenceId));
     let q = db.select().from(printJobs).where(and(...conditions)).$dynamic();
     q = q.orderBy(desc(printJobs.createdAt));
