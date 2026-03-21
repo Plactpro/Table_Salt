@@ -430,6 +430,50 @@ export function registerOrdersRoutes(app: Express): void {
       const orderItems = await storage.getOrderItemsByOrder(order.id);
       auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length, engineDiscounts: activeDiscounts.length } });
 
+      if (order.status === "sent_to_kitchen" && orderItems.length > 0) {
+        const sentAt = new Date().toISOString();
+        const tables = orderData.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
+        const tableNum = orderData.tableId ? tables.find(t => t.id === orderData.tableId)?.number : undefined;
+        const stations = Array.from(new Set(orderItems.map(i => i.station).filter((s): s is string => Boolean(s))));
+        if (stations.length === 0) {
+          await storage.createPrintJob({
+            tenantId: user.tenantId,
+            type: "kot",
+            referenceId: order.id,
+            station: null,
+            status: "queued",
+            payload: {
+              orderId: order.id,
+              orderType: order.orderType,
+              tableNumber: tableNum ?? null,
+              station: null,
+              sentAt,
+              items: orderItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
+            },
+          });
+        } else {
+          for (const stationName of stations) {
+            const stationItems = orderItems.filter(i => i.station === stationName);
+            if (stationItems.length === 0) continue;
+            await storage.createPrintJob({
+              tenantId: user.tenantId,
+              type: "kot",
+              referenceId: order.id,
+              station: stationName,
+              status: "queued",
+              payload: {
+                orderId: order.id,
+                orderType: order.orderType,
+                tableNumber: tableNum ?? null,
+                station: stationName,
+                sentAt,
+                items: stationItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
+              },
+            });
+          }
+        }
+      }
+
       emitToTenant(user.tenantId, "order:new", { orderId: order.id, status: order.status, tableId: order.tableId, orderType: order.orderType });
       res.json({ ...order, items: orderItems });
     } catch (err: any) {

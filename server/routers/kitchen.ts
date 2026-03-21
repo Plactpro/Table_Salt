@@ -287,57 +287,62 @@ export function registerKitchenRoutes(app: Express): void {
           items: filtered.map(i => ({ id: i.id, name: i.name, quantity: i.quantity })),
         });
 
-        const tables = await storage.getTablesByTenant(user.tenantId);
-        const tableNum = order.tableId ? tables.find(t => t.id === order.tableId)?.number : undefined;
-        const sentAt = new Date().toISOString();
+        const existingKotJobs = await storage.getPrintJobsByTenant(user.tenantId, { referenceId: order.id, status: "queued" });
+        const existingKotJobCount = existingKotJobs.filter(j => j.type === "kot").length;
 
-        const stationsInBatch = station
-          ? [station]
-          : Array.from(new Set(filtered.map(i => (i as any).station).filter(Boolean)));
+        if (existingKotJobCount === 0) {
+          const tables = await storage.getTablesByTenant(user.tenantId);
+          const tableNum = order.tableId ? tables.find(t => t.id === order.tableId)?.number : undefined;
+          const sentAt = new Date().toISOString();
 
-        if (stationsInBatch.length === 0) {
-          await storage.createPrintJob({
-            tenantId: user.tenantId,
-            type: "kot",
-            referenceId: order.id,
-            station: null,
-            status: "queued",
-            payload: {
-              kotEventId: kotEvent.id,
-              orderId: order.id,
-              orderType: order.orderType,
-              tableNumber: tableNum ?? null,
-              station: null,
-              sentAt,
-              items: filtered.map(i => ({
-                name: i.name, quantity: i.quantity,
-                notes: i.notes, course: i.course,
-              })),
-            },
-          });
-        } else {
-          for (const stationName of stationsInBatch) {
-            const stationItems = filtered.filter(i => (i as any).station === stationName || station === stationName);
-            if (stationItems.length === 0) continue;
+          const stationsInBatch = station
+            ? [station]
+            : Array.from(new Set(filtered.map(i => i.station).filter((s): s is string => Boolean(s))));
+
+          if (stationsInBatch.length === 0) {
             await storage.createPrintJob({
               tenantId: user.tenantId,
               type: "kot",
               referenceId: order.id,
-              station: stationName,
+              station: null,
               status: "queued",
               payload: {
                 kotEventId: kotEvent.id,
                 orderId: order.id,
                 orderType: order.orderType,
                 tableNumber: tableNum ?? null,
-                station: stationName,
+                station: null,
                 sentAt,
-                items: stationItems.map(i => ({
+                items: filtered.map(i => ({
                   name: i.name, quantity: i.quantity,
                   notes: i.notes, course: i.course,
                 })),
               },
             });
+          } else {
+            for (const stationName of stationsInBatch) {
+              const stationItems = filtered.filter(i => i.station === stationName || station === stationName);
+              if (stationItems.length === 0) continue;
+              await storage.createPrintJob({
+                tenantId: user.tenantId,
+                type: "kot",
+                referenceId: order.id,
+                station: stationName,
+                status: "queued",
+                payload: {
+                  kotEventId: kotEvent.id,
+                  orderId: order.id,
+                  orderType: order.orderType,
+                  tableNumber: tableNum ?? null,
+                  station: stationName,
+                  sentAt,
+                  items: stationItems.map(i => ({
+                    name: i.name, quantity: i.quantity,
+                    notes: i.notes, course: i.course,
+                  })),
+                },
+              });
+            }
           }
         }
       }
