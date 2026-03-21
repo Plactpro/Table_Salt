@@ -2,7 +2,7 @@ import type { Express } from "express";
 import QRCode from "qrcode";
 import { storage } from "../storage";
 import { db, pool } from "../db";
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
 import { can, needsSupervisorApproval } from "../permissions";
 import { auditLogFromReq } from "../audit";
@@ -66,6 +66,75 @@ export function registerOrdersRoutes(app: Express): void {
         return { ...order, items };
       }));
       res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/orders/delivery-queue", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const pendingStatuses: OrderStatus[] = ["new", "on_hold"];
+      const activeStatuses: OrderStatus[] = ["in_progress", "ready", "sent_to_kitchen"];
+      const allStatuses = [...pendingStatuses, ...activeStatuses];
+      const rows = await db.select().from(ordersTable).where(
+        and(
+          eq(ordersTable.tenantId, user.tenantId),
+          eq(ordersTable.orderType, "delivery"),
+          inArray(ordersTable.status, allStatuses)
+        )
+      );
+      const result = await Promise.all(rows.map(async (order) => {
+        const items = await storage.getOrderItemsByOrder(order.id);
+        return { ...order, items, queueType: pendingStatuses.includes(order.status as OrderStatus) ? "pending" : "active" };
+      }));
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/orders/:id/accept-delivery", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      const etaMinutes = Math.max(5, Math.min(120, parseInt(req.body.etaMinutes) || 30));
+      const estimatedReadyAt = new Date(Date.now() + etaMinutes * 60 * 1000);
+      await pool.query(
+        `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1 WHERE id = $2`,
+        [estimatedReadyAt, order.id]
+      );
+      emitToTenant(user.tenantId, "order:delivery_accepted", { orderId: order.id, etaMinutes, estimatedReadyAt });
+      auditLogFromReq(req, { action: "delivery_order_accepted", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "in_progress", etaMinutes } });
+      res.json({ success: true, estimatedReadyAt });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/orders/:id/reject-delivery", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      const rejectionReason = String(req.body.rejectionReason || "Order rejected by restaurant");
+      await pool.query(
+        `UPDATE orders SET status = 'cancelled', rejection_reason = $1 WHERE id = $2`,
+        [rejectionReason, order.id]
+      );
+      emitToTenant(user.tenantId, "order:delivery_rejected", { orderId: order.id, rejectionReason });
+      auditLogFromReq(req, { action: "delivery_order_rejected", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "cancelled", rejectionReason } });
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/orders/:id/dispatch-delivery", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      await storage.updateOrder(order.id, { status: "served" });
+      emitToTenant(user.tenantId, "order:delivery_dispatched", { orderId: order.id });
+      auditLogFromReq(req, { action: "delivery_order_dispatched", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "served" } });
+      res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

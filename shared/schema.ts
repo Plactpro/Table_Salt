@@ -311,6 +311,8 @@ export const orders = pgTable("orders", {
   parentOrderId: varchar("parent_order_id", { length: 36 }),
   isHeld: boolean("is_held").default(false),
   kitchenSentAt: timestamp("kitchen_sent_at"),
+  estimatedReadyAt: timestamp("estimated_ready_at"),
+  rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_orders_tenant_id").on(t.tenantId),

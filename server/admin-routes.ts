@@ -553,6 +553,7 @@ export function registerAdminRoutes(app: Express) {
     currency: z.string().optional(),
     businessType: z.string().optional(),
     moduleConfig: z.record(z.unknown()).optional(),
+    razorpayEnabled: z.boolean().optional(),
   });
 
   app.patch("/api/admin/tenants/:id", requireSuperAdmin, async (req, res) => {

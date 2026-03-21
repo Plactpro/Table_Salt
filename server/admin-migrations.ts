@@ -242,4 +242,8 @@ export async function runAdminMigrations(): Promise<void> {
 
   // Per-tenant Razorpay key secret (stored encrypted-at-rest by DB; only accessible server-side)
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS razorpay_key_secret TEXT`);
+
+  // Task #66: Delivery Order Queue — estimated ready time + rejection reason on orders
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_ready_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS rejection_reason TEXT`);
 }
