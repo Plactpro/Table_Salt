@@ -108,7 +108,6 @@ export function setupWebSocket(httpServer: HttpServer) {
         const tenant = await storage.getTenant(rawId).catch(() => null);
         if (tenant) {
           resolvedTenantId = rawId;
-          isGuest = true;
         }
       }
     }

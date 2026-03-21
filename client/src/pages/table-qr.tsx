@@ -396,12 +396,10 @@ function StatusTracker({
         )}
       </div>
 
-      {!submitted.isPositiveFeedback && (
-        <div className="flex flex-col items-center gap-2">
-          <p className="text-xs text-gray-400">{t.trackingStatus}</p>
-          <StatusBubble status={submitted.status} t={t} />
-        </div>
-      )}
+      <div className="flex flex-col items-center gap-2">
+        <p className="text-xs text-gray-400">{t.trackingStatus}</p>
+        <StatusBubble status={submitted.status} t={t} />
+      </div>
 
       {submitted.isPositiveFeedback && (
         <div className="flex flex-col gap-2 w-full">
@@ -546,7 +544,8 @@ function FoodOrderFlow({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       });
-      const orderData: { orderId?: string; id?: string } = orderRes.ok ? await orderRes.json() : {};
+      if (!orderRes.ok) throw new Error("Failed to submit order. Please try again.");
+      const orderData: { orderId?: string; id?: string } = await orderRes.json();
       const orderId = orderData.orderId ?? orderData.id ?? null;
       const orderItems = cart.map(c => ({
         menuItemId: c.menuItemId,
