@@ -710,6 +710,13 @@ export default function BillPreviewModal({
                 </div>
               )}
 
+              {isSplit && splitRows.some(r => r.method === "LOYALTY") && !lookedUpCustomer && (
+                <div className="flex items-center gap-1.5 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:text-amber-400" data-testid="split-loyalty-no-customer-warning">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  A Loyalty row is included — search and link a customer above to process it.
+                </div>
+              )}
+
               {billVoided ? (
                 <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-center text-sm text-destructive font-medium">
                   <AlertTriangle className="h-4 w-4 inline mr-1" /> Bill has been voided
@@ -720,6 +727,7 @@ export default function BillPreviewModal({
                     disabled={
                       payBillMutation.isPending ||
                       (isSplit && splitRemaining > 0.01) ||
+                      (isSplit && splitRows.some(r => r.method === "LOYALTY") && !lookedUpCustomer) ||
                       (!isSplit && activeMethod === "CASH" && cashTendered !== "" && parseFloat(cashTendered) < grandTotal) ||
                       (!isSplit && activeMethod === "UPI" && !upiMarkedPaid) ||
                       (!isSplit && activeMethod === "LOYALTY" && !lookedUpCustomer) ||
