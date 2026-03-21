@@ -6,7 +6,7 @@ import { verifySupervisorOverride } from "./_shared";
 import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { tenants as tenantsTable } from "@shared/schema";
-import { createPaymentLink, getPaymentLink, verifyWebhookSignature } from "../razorpay";
+import { createPaymentLink, getPaymentLink } from "../razorpay";
 
 function getFiscalYear(date: Date): string {
   const m = date.getMonth() + 1;
