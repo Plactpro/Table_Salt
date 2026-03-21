@@ -1,4 +1,4 @@
-import { eq, sql, and } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import {
