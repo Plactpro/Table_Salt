@@ -139,14 +139,18 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         if (bill.tableId) {
           try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
         }
-        if (bill.customerId) {
+        const loyaltyCustomerId = req.body.loyaltyCustomerId || bill.customerId;
+        const loyaltyPointsRedeemed = Number(req.body.loyaltyPointsRedeemed ?? 0);
+        if (loyaltyCustomerId) {
           try {
-            const customer = await storage.getCustomerByTenant(bill.customerId, user.tenantId);
+            const customer = await storage.getCustomerByTenant(loyaltyCustomerId, user.tenantId);
             if (customer) {
               const pointsEarned = Math.floor(billTotal / 10);
-              if (pointsEarned > 0) {
-                await storage.updateCustomerByTenant(bill.customerId, user.tenantId, {
-                  loyaltyPoints: (customer.loyaltyPoints ?? 0) + pointsEarned,
+              const netChange = pointsEarned - loyaltyPointsRedeemed;
+              const newBalance = Math.max(0, (customer.loyaltyPoints ?? 0) + netChange);
+              if (netChange !== 0) {
+                await storage.updateCustomerByTenant(loyaltyCustomerId, user.tenantId, {
+                  loyaltyPoints: newBalance,
                 });
               }
             }
