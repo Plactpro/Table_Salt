@@ -945,11 +945,33 @@ export const kitchenStations = pgTable("kitchen_stations", {
   color: text("color").default("#3B82F6"),
   sortOrder: integer("sort_order").default(0),
   active: boolean("active").default(true),
+  printerUrl: text("printer_url"),
 });
 
 export const insertKitchenStationSchema = createInsertSchema(kitchenStations).omit({ id: true });
 export type KitchenStation = typeof kitchenStations.$inferSelect;
 export type InsertKitchenStation = z.infer<typeof insertKitchenStationSchema>;
+
+export const printJobTypeEnum = pgEnum("print_job_type", ["kot", "bill", "receipt"]);
+export const printJobStatusEnum = pgEnum("print_job_status", ["queued", "printed", "failed"]);
+
+export const printJobs = pgTable("print_jobs", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  type: printJobTypeEnum("type").notNull(),
+  referenceId: varchar("reference_id", { length: 36 }).notNull(),
+  station: text("station"),
+  status: printJobStatusEnum("status").notNull().default("queued"),
+  payload: jsonb("payload").notNull().default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_print_jobs_tenant_status").on(t.tenantId, t.status),
+  index("idx_print_jobs_tenant_created").on(t.tenantId, t.createdAt),
+]);
+
+export const insertPrintJobSchema = createInsertSchema(printJobs).omit({ id: true, createdAt: true });
+export type PrintJob = typeof printJobs.$inferSelect;
+export type InsertPrintJob = z.infer<typeof insertPrintJobSchema>;
 export type InsertAuditIssue = z.infer<typeof insertAuditIssueSchema>;
 
 export const orderChannels = pgTable("order_channels", {

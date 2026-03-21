@@ -19,6 +19,7 @@ import {
   CreditCard, Check, Zap, Star, Shield, ArrowRight,
   Users, BarChart3, MessageSquare,
 } from "lucide-react";
+import PrintQueuePanel from "@/components/pos/PrintQueuePanel";
 import {
   SubscriptionTier,
   BusinessType,
@@ -886,6 +887,10 @@ export default function SettingsPage() {
                 </Card>
               </motion.div>
             </div>
+          </div>
+
+          <div className="mt-8">
+            <PrintQueuePanel restaurantName={tenant?.name || "Restaurant"} />
           </div>
         </TabsContent>
 

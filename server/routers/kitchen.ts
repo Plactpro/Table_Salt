@@ -279,12 +279,37 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       if (filtered.length > 0) {
-        await storage.createKotEvent({
+        const kotEvent = await storage.createKotEvent({
           tenantId: user.tenantId,
           outletId: order.outletId || null,
           orderId: order.id,
           station: station || null,
           items: filtered.map(i => ({ id: i.id, name: i.name, quantity: i.quantity })),
+        });
+
+        const tables = await storage.getTablesByTenant(user.tenantId);
+        const tableNum = order.tableId ? tables.find(t => t.id === order.tableId)?.number : undefined;
+
+        await storage.createPrintJob({
+          tenantId: user.tenantId,
+          type: "kot",
+          referenceId: kotEvent.id,
+          station: station || null,
+          status: "queued",
+          payload: {
+            kotEventId: kotEvent.id,
+            orderId: order.id,
+            orderType: order.orderType,
+            tableNumber: tableNum ?? null,
+            station: station || null,
+            sentAt: new Date().toISOString(),
+            items: filtered.map(i => ({
+              name: i.name,
+              quantity: i.quantity,
+              notes: i.notes,
+              course: i.course,
+            })),
+          },
         });
       }
 

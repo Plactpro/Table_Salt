@@ -116,6 +116,8 @@ import {
   type Bill, type InsertBill,
   type BillPayment, type InsertBillPayment,
   type PosSession, type InsertPosSession,
+  printJobs,
+  type PrintJob, type InsertPrintJob,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -466,6 +468,10 @@ export interface IStorage {
   closePosSession(id: string, tenantId: string, data: { closingCashCount?: number; closedBy: string; notes?: string }): Promise<PosSession | undefined>;
   updatePosSession(id: string, tenantId: string, data: Partial<InsertPosSession>): Promise<PosSession | undefined>;
   getPosSessionReport(sessionId: string): Promise<{ session: PosSession; billCount: number; totalRevenue: number; revenueByMethod: Record<string, number>; cashSales: number; expectedCash: number }>;
+
+  createPrintJob(data: InsertPrintJob): Promise<PrintJob>;
+  getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number }): Promise<PrintJob[]>;
+  updatePrintJob(id: string, tenantId: string, data: Partial<InsertPrintJob>): Promise<PrintJob | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2041,6 +2047,27 @@ export class DatabaseStorage implements IStorage {
     const cashSales = revenueByMethod["CASH"] ?? 0;
     const expectedCash = Number(session.openingFloat ?? 0) + cashSales;
     return { session, billCount: paidBills.length, totalRevenue, revenueByMethod, cashSales, expectedCash };
+  }
+
+  async createPrintJob(data: InsertPrintJob): Promise<PrintJob> {
+    const [job] = await db.insert(printJobs).values(data).returning();
+    return job;
+  }
+  async getPrintJobsByTenant(tenantId: string, opts?: { status?: string; limit?: number }): Promise<PrintJob[]> {
+    let q = db.select().from(printJobs).where(
+      opts?.status
+        ? and(eq(printJobs.tenantId, tenantId), eq(printJobs.status, opts.status as any))
+        : eq(printJobs.tenantId, tenantId)
+    ).$dynamic();
+    q = q.orderBy(desc(printJobs.createdAt));
+    if (opts?.limit) q = q.limit(opts.limit);
+    return q;
+  }
+  async updatePrintJob(id: string, tenantId: string, data: Partial<InsertPrintJob>): Promise<PrintJob | undefined> {
+    const [job] = await db.update(printJobs).set(data)
+      .where(and(eq(printJobs.id, id), eq(printJobs.tenantId, tenantId)))
+      .returning();
+    return job;
   }
 }
 
