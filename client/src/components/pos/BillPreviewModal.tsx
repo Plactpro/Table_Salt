@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -133,6 +133,27 @@ export default function BillPreviewModal({
   const [lookedUpCustomer, setLookedUpCustomer] = useState<{ id: string; name: string; loyaltyPoints: number } | null>(null);
   const [loyaltySearching, setLoyaltySearching] = useState(false);
   const [loyaltyPointsToRedeem, setLoyaltyPointsToRedeem] = useState(0);
+
+  const { data: existingBillData } = useQuery({
+    queryKey: ["/api/restaurant-bills/by-order", orderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/restaurant-bills/by-order/${orderId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!orderId,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (existingBillData && !createdBill) {
+      setCreatedBill(existingBillData);
+      setBillNumber(existingBillData.billNumber || "");
+      if (existingBillData.paymentStatus === "paid" || existingBillData.paymentStatus === "partially_paid") {
+        setStep("receipt");
+      }
+    }
+  }, [existingBillData]);
 
   const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
   const loyaltyRedemptionValue = loyaltyPointsToRedeem * 0.01;
