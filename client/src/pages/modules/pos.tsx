@@ -32,6 +32,7 @@ import {
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
 import { StartShiftModal, CloseShiftDialog } from "@/components/pos/PosSessionModal";
+import DeliveryQueuePanel, { DeliveryQueueButton } from "@/components/pos/DeliveryQueuePanel";
 
 interface EngineDiscount {
   ruleId: string;
@@ -423,6 +424,7 @@ export default function POSPage() {
   const [noteDialogItem, setNoteDialogItem] = useState<string | null>(null);
   const [itemNoteText, setItemNoteText] = useState("");
   const [closeTabConfirm, setCloseTabConfirm] = useState<string | null>(null);
+  const [showDeliveryQueue, setShowDeliveryQueue] = useState(false);
 
   useEffect(() => { syncManager.init(); }, []);
 
@@ -1241,6 +1243,7 @@ export default function POSPage() {
               </motion.div>
             )}
             <div className="ml-auto flex items-center gap-1">
+              <DeliveryQueueButton onClick={() => setShowDeliveryQueue(true)} />
               <Button variant="outline" size="sm" className="text-xs h-7 px-2 relative" onClick={() => setShowRecall(true)} data-testid="button-recall">
                 <RotateCcw className="h-3 w-3 mr-1" /> Recall
                 {heldTabs.length > 0 && (
@@ -1739,6 +1742,8 @@ export default function POSPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <DeliveryQueuePanel open={showDeliveryQueue} onClose={() => setShowDeliveryQueue(false)} />
     </div>
   );
 }

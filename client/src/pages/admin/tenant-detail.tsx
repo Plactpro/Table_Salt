@@ -17,6 +17,9 @@ import {
   Pencil,
   Layers,
   ExternalLink,
+  CreditCard,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -81,6 +84,8 @@ interface TenantDetail {
   orderCount: number;
   recentOrderCount: number;
   moduleConfig: Record<string, boolean> | null;
+  razorpayEnabled: boolean | null;
+  razorpayKeyId: string | null;
   users: {
     id: string;
     name: string;
@@ -192,6 +197,20 @@ export default function TenantDetailPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/tenants", tenantId] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleGatewayMutation = useMutation({
+    mutationFn: async ({ gateway, enabled }: { gateway: string; enabled: boolean }) => {
+      const body: Record<string, boolean> = {};
+      if (gateway === "razorpay") body.razorpayEnabled = enabled;
+      const r = await apiRequest("PATCH", `/api/admin/tenants/${tenantId}`, body);
+      return r.json();
+    },
+    onSuccess: (_, { gateway, enabled }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/tenants", tenantId] });
+      toast({ title: `${gateway === "razorpay" ? "Razorpay" : "Gateway"} ${enabled ? "enabled" : "disabled"}` });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -401,6 +420,10 @@ export default function TenantDetailPage() {
             <Layers className="h-4 w-4 mr-1.5" />
             Modules
           </TabsTrigger>
+          <TabsTrigger value="gateways" data-testid="tab-tenant-gateways">
+            <CreditCard className="h-4 w-4 mr-1.5" />
+            Payment Gateways
+          </TabsTrigger>
           <TabsTrigger value="audit" data-testid="tab-tenant-audit">
             <ScrollText className="h-4 w-4 mr-1.5" />
             Audit Events
@@ -521,6 +544,90 @@ export default function TenantDetailPage() {
                     </div>
                   );
                 })}
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="gateways">
+          <Card data-testid="card-payment-gateways">
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                <CreditCard className="h-4 w-4" />
+                Payment Gateway Controls
+              </CardTitle>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Enable or disable payment gateways for this tenant. Tenants configure their own API keys in Settings.
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="divide-y divide-slate-100">
+                <div className="flex items-center justify-between px-6 py-4" data-testid="row-gateway-razorpay">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-md bg-blue-50">
+                      <CreditCard className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label htmlFor="gateway-razorpay" className="text-sm font-medium text-slate-800 cursor-pointer">
+                        Razorpay
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Indian payment gateway — UPI, Cards, Net Banking, Wallets
+                      </p>
+                      {tenant.razorpayKeyId ? (
+                        <div className="flex items-center gap-1 mt-1">
+                          <CheckCircle2 className="h-3 w-3 text-green-600" />
+                          <span className="text-xs text-green-700">API key configured</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 mt-1">
+                          <XCircle className="h-3 w-3 text-amber-500" />
+                          <span className="text-xs text-amber-600">No API key set — tenant must configure in Settings</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge
+                      variant={tenant.razorpayEnabled ? "default" : "outline"}
+                      className={tenant.razorpayEnabled ? "bg-green-100 text-green-700 border-green-200" : "text-slate-400"}
+                      data-testid="badge-razorpay-status"
+                    >
+                      {tenant.razorpayEnabled ? "Enabled" : "Disabled"}
+                    </Badge>
+                    <Switch
+                      id="gateway-razorpay"
+                      checked={tenant.razorpayEnabled ?? false}
+                      onCheckedChange={(checked) =>
+                        toggleGatewayMutation.mutate({ gateway: "razorpay", enabled: checked })
+                      }
+                      disabled={toggleGatewayMutation.isPending}
+                      data-testid="switch-gateway-razorpay"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between px-6 py-4" data-testid="row-gateway-stripe">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-md bg-violet-50">
+                      <CreditCard className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium text-slate-800">
+                        Stripe
+                      </Label>
+                      <p className="text-xs text-slate-400">
+                        Global payment gateway — Cards, Apple Pay, Google Pay
+                      </p>
+                      <p className="text-xs text-slate-300 mt-1">
+                        Configured at platform level via Stripe integration
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant="secondary" className="text-xs" data-testid="badge-stripe-status">
+                    Platform-managed
+                  </Badge>
+                </div>
               </div>
             </CardContent>
           </Card>
