@@ -40,6 +40,36 @@ export function registerMenuRoutes(app: Express): void {
     res.json(items);
   });
 
+  app.get("/api/menu-items/:id/modifiers", async (req, res) => {
+    const item = await storage.getMenuItem(req.params.id);
+    if (!item) return res.status(404).json({ message: "Menu item not found" });
+    const groups = [
+      {
+        id: "size",
+        name: "Size",
+        required: false,
+        options: [
+          { label: "Half", priceAdjust: -0.2 },
+          { label: "Regular", priceAdjust: 0 },
+          { label: "Large", priceAdjust: 0.3 },
+          { label: "XL", priceAdjust: 0.5 },
+        ],
+      },
+      {
+        id: "spice",
+        name: "Spice Level",
+        required: false,
+        options: [
+          { label: "Mild", priceAdjust: 0 },
+          { label: "Medium", priceAdjust: 0 },
+          { label: "Hot", priceAdjust: 0 },
+          { label: "Extra Hot", priceAdjust: 0 },
+        ],
+      },
+    ];
+    res.json({ itemId: item.id, itemName: item.name, basePrice: item.price, groups });
+  });
+
   app.post("/api/menu-items", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const user = req.user as any;
     const item = await storage.createMenuItem({ ...req.body, tenantId: user.tenantId });

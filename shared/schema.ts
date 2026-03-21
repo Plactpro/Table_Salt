@@ -44,6 +44,7 @@ export const orderStatusEnum = pgEnum("order_status", [
   "voided",
   "pending_payment",
 ]);
+export type OrderStatus = (typeof orderStatusEnum.enumValues)[number];
 
 export const orderTypeEnum = pgEnum("order_type", [
   "dine_in",

@@ -87,6 +87,46 @@ interface HeldTab {
 
 type PaymentMethod = "cash" | "card" | "upi";
 
+interface ModifierOption {
+  label: string;
+  priceAdjust: number;
+}
+
+interface ModifierGroup {
+  id: string;
+  name: string;
+  required: boolean;
+  options: ModifierOption[];
+}
+
+interface MenuItemModifiersResponse {
+  itemId: string;
+  itemName: string;
+  basePrice: string;
+  groups: ModifierGroup[];
+}
+
+interface ServerHeldOrderItem {
+  id: string;
+  menuItemId: string;
+  name: string;
+  price: string;
+  quantity: number;
+  notes: string | null;
+  modifiers: CartModifier[] | null;
+  isAddon: boolean | null;
+}
+
+interface ServerHeldOrder {
+  id: string;
+  orderType: string;
+  tableId: string | null;
+  tableNumber?: number | null;
+  discount: string;
+  notes: string | null;
+  items: ServerHeldOrderItem[];
+}
+
 const TABS_STORAGE_KEY = "pos_tabs_v2";
 const HELD_TABS_STORAGE_KEY = "pos_held_tabs_v2";
 const MAX_TABS = 6;
@@ -339,13 +379,13 @@ export default function POSPage() {
   const [heldTabs, setHeldTabs] = useState<HeldTab[]>(() => loadHeldTabsFromStorage());
   const [showRecall, setShowRecall] = useState(false);
 
-  const { data: serverHeldOrders = [] } = useQuery<any[]>({
+  const { data: serverHeldOrders = [] } = useQuery<ServerHeldOrder[]>({
     queryKey: ["/api/orders/on-hold"],
     enabled: showRecall,
     staleTime: 0,
     refetchOnWindowFocus: false,
   });
-  const orphanedServerOrders = useMemo(() =>
+  const orphanedServerOrders = useMemo<ServerHeldOrder[]>(() =>
     serverHeldOrders.filter(o => !heldTabs.some(h => h.tab.heldOrderId === o.id)),
     [serverHeldOrders, heldTabs]
   );
@@ -354,8 +394,23 @@ export default function POSPage() {
   const [modifierSpice, setModifierSpice] = useState("Medium");
   const [modifierExtras, setModifierExtras] = useState("");
   const [modifierNote, setModifierNote] = useState("");
+
+  const { data: modifierGroups } = useQuery<MenuItemModifiersResponse>({
+    queryKey: ["/api/menu-items", modifierItem?.menuItemId, "modifiers"],
+    queryFn: async () => {
+      const res = await fetch(`/api/menu-items/${modifierItem!.menuItemId}/modifiers`);
+      if (!res.ok) throw new Error("Failed to load modifiers");
+      return res.json() as Promise<MenuItemModifiersResponse>;
+    },
+    enabled: !!modifierItem?.menuItemId,
+    staleTime: 60_000,
+  });
+
+  const sizeGroup = modifierGroups?.groups.find(g => g.id === "size");
+  const spiceGroup = modifierGroups?.groups.find(g => g.id === "spice");
   const [showSplitDialog, setShowSplitDialog] = useState(false);
-  const [splitAssignment, setSplitAssignment] = useState<Record<string, 1 | 2>>({});
+  const [splitAssignment, setSplitAssignment] = useState<Record<string, number>>({});
+  const [splitGroupCount, setSplitGroupCount] = useState(2);
   const [noteDialogItem, setNoteDialogItem] = useState<string | null>(null);
   const [itemNoteText, setItemNoteText] = useState("");
   const [closeTabConfirm, setCloseTabConfirm] = useState<string | null>(null);
@@ -541,7 +596,8 @@ export default function POSPage() {
 
   const saveModifiers = () => {
     if (!modifierItem) return;
-    const sizeEntry = SIZE_MODIFIERS.find(s => s.label === modifierSize) || { label: "Regular", priceAdjust: 0 };
+    const sizeOptions = sizeGroup?.options ?? SIZE_MODIFIERS;
+    const sizeEntry = sizeOptions.find(s => s.label === modifierSize) ?? { label: "Regular", priceAdjust: 0 };
     const mods: CartModifier[] = [
       { type: "size", label: modifierSize, priceAdjust: sizeEntry.priceAdjust },
       { type: "spice", label: modifierSpice, priceAdjust: 0 },
@@ -638,8 +694,8 @@ export default function POSPage() {
     saveHeldTabsToStorage(updatedHeld);
   };
 
-  const recallServerOrder = useCallback((order: any) => {
-    const reconstructedCart: CartItem[] = (order.items || []).map((item: any) => ({
+  const recallServerOrder = useCallback((order: ServerHeldOrder) => {
+    const reconstructedCart: CartItem[] = (order.items || []).map((item: ServerHeldOrderItem) => ({
       menuItemId: item.menuItemId,
       name: item.name,
       price: parseFloat(item.price),
@@ -650,7 +706,7 @@ export default function POSPage() {
       categoryId: null,
       modifiers: item.modifiers || undefined,
       cartKey: makeid(),
-      isAddon: item.isAddon || false,
+      isAddon: item.isAddon ?? false,
     }));
     const tab: OrderTab = {
       id: makeid(),
@@ -894,13 +950,15 @@ export default function POSPage() {
   });
 
   const handleSplitConfirm = () => {
-    const group1 = cart.filter(c => (splitAssignment[c.cartKey] || 1) === 1);
-    const group2 = cart.filter(c => splitAssignment[c.cartKey] === 2);
-    if (group1.length === 0 || group2.length === 0) {
-      toast({ title: "Invalid split", description: "Both groups must have at least one item.", variant: "destructive" });
+    const groups: CartItem[][] = Array.from({ length: splitGroupCount }, (_, i) =>
+      cart.filter(c => (splitAssignment[c.cartKey] ?? 1) === i + 1)
+    );
+    const hasEmptyGroup = groups.some(g => g.length === 0);
+    if (hasEmptyGroup) {
+      toast({ title: "Invalid split", description: "Every group must have at least one item.", variant: "destructive" });
       return;
     }
-    splitOrderMutation.mutate([group1, group2]);
+    splitOrderMutation.mutate(groups);
   };
 
   const tabLabel = useCallback((tab: OrderTab) => {
@@ -1433,9 +1491,9 @@ export default function POSPage() {
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Size</Label>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">{sizeGroup?.name ?? "Size"}</Label>
               <div className="grid grid-cols-4 gap-1.5">
-                {SIZE_MODIFIERS.map(s => (
+                {(sizeGroup?.options ?? SIZE_MODIFIERS).map(s => (
                   <button key={s.label}
                     className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${modifierSize === s.label ? "bg-primary text-primary-foreground border-primary" : "border-border hover:border-primary/50"}`}
                     onClick={() => setModifierSize(s.label)}
@@ -1448,9 +1506,9 @@ export default function POSPage() {
               </div>
             </div>
             <div>
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">Spice Level</Label>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">{spiceGroup?.name ?? "Spice Level"}</Label>
               <div className="grid grid-cols-4 gap-1.5">
-                {SPICE_MODIFIERS.map(s => (
+                {(spiceGroup?.options ?? SPICE_MODIFIERS).map(s => (
                   <button key={s.label}
                     className={`px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${modifierSpice === s.label ? "bg-orange-500 text-white border-orange-500" : "border-border hover:border-orange-400"}`}
                     onClick={() => setModifierSpice(s.label)}
@@ -1472,7 +1530,7 @@ export default function POSPage() {
             {modifierItem && (
               <div className="flex items-center justify-between text-sm bg-muted/50 rounded-lg px-3 py-2">
                 <span className="text-muted-foreground">Adjusted price</span>
-                <span className="font-semibold">{fmt(Math.max(0, modifierItem.basePrice * (1 + (SIZE_MODIFIERS.find(s => s.label === modifierSize)?.priceAdjust ?? 0))))}</span>
+                <span className="font-semibold">{fmt(Math.max(0, modifierItem.basePrice * (1 + ((sizeGroup?.options ?? SIZE_MODIFIERS).find(s => s.label === modifierSize)?.priceAdjust ?? 0))))}</span>
               </div>
             )}
             <div className="flex gap-2">
@@ -1514,38 +1572,42 @@ export default function POSPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSplitDialog} onOpenChange={(o) => { setShowSplitDialog(o); if (!o) setSplitAssignment({}); }}>
+      <Dialog open={showSplitDialog} onOpenChange={(o) => { setShowSplitDialog(o); if (!o) { setSplitAssignment({}); setSplitGroupCount(2); } }}>
         <DialogContent className="max-w-sm" data-testid="dialog-split-bill">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><Scissors className="h-4 w-4 text-primary" /> Split Bill</DialogTitle></DialogHeader>
-          <p className="text-xs text-muted-foreground mb-2">Assign items to Group 1 or Group 2. Each group becomes a separate order.</p>
-          <div className="space-y-2 max-h-72 overflow-y-auto">
+          <div className="flex items-center gap-2 mb-2">
+            <p className="text-xs text-muted-foreground flex-1">Assign items to groups. Each group becomes a separate order.</p>
+            <button className="px-2 py-0.5 rounded text-xs border border-border hover:bg-muted disabled:opacity-40" disabled={splitGroupCount <= 2} onClick={() => { setSplitGroupCount(n => n - 1); setSplitAssignment(prev => { const updated = { ...prev }; Object.keys(updated).forEach(k => { if (updated[k] >= splitGroupCount) updated[k] = splitGroupCount - 1; }); return updated; }); }} data-testid="button-split-remove-group">−</button>
+            <span className="text-xs font-medium w-16 text-center">{splitGroupCount} Groups</span>
+            <button className="px-2 py-0.5 rounded text-xs border border-border hover:bg-muted disabled:opacity-40" disabled={splitGroupCount >= cart.length} onClick={() => setSplitGroupCount(n => n + 1)} data-testid="button-split-add-group">+</button>
+          </div>
+          <div className="space-y-2 max-h-64 overflow-y-auto">
             {cart.map((item) => {
-              const group = splitAssignment[item.cartKey] || 1;
+              const group = splitAssignment[item.cartKey] ?? 1;
               return (
-                <div key={item.cartKey} className="flex items-center gap-3 p-2 border rounded-lg" data-testid={`split-item-${item.menuItemId}`}>
+                <div key={item.cartKey} className="flex items-center gap-2 p-2 border rounded-lg" data-testid={`split-item-${item.menuItemId}`}>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{item.name}</p>
                     <p className="text-xs text-muted-foreground">×{item.quantity} · {fmt(item.price * item.quantity)}</p>
                   </div>
-                  <div className="flex gap-1">
-                    <button
-                      className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${group === 1 ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
-                      onClick={() => setSplitAssignment(prev => ({ ...prev, [item.cartKey]: 1 }))}
-                      data-testid={`split-group1-${item.menuItemId}`}
-                    >G1</button>
-                    <button
-                      className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${group === 2 ? "bg-secondary text-secondary-foreground border-secondary" : "border-border text-muted-foreground"}`}
-                      onClick={() => setSplitAssignment(prev => ({ ...prev, [item.cartKey]: 2 }))}
-                      data-testid={`split-group2-${item.menuItemId}`}
-                    >G2</button>
+                  <div className="flex gap-1 flex-wrap justify-end">
+                    {Array.from({ length: splitGroupCount }, (_, i) => i + 1).map(g => (
+                      <button
+                        key={g}
+                        className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${group === g ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:bg-muted"}`}
+                        onClick={() => setSplitAssignment(prev => ({ ...prev, [item.cartKey]: g }))}
+                        data-testid={`split-group${g}-${item.menuItemId}`}
+                      >G{g}</button>
+                    ))}
                   </div>
                 </div>
               );
             })}
           </div>
-          <div className="text-xs text-muted-foreground mt-1 grid grid-cols-2 gap-2">
-            <div className="bg-muted/50 rounded p-2">G1: {cart.filter(c => (splitAssignment[c.cartKey] || 1) === 1).length} items</div>
-            <div className="bg-muted/50 rounded p-2">G2: {cart.filter(c => splitAssignment[c.cartKey] === 2).length} items</div>
+          <div className={`text-xs text-muted-foreground mt-1 grid gap-1`} style={{ gridTemplateColumns: `repeat(${Math.min(splitGroupCount, 3)}, 1fr)` }}>
+            {Array.from({ length: splitGroupCount }, (_, i) => i + 1).map(g => (
+              <div key={g} className="bg-muted/50 rounded p-2">G{g}: {cart.filter(c => (splitAssignment[c.cartKey] ?? 1) === g).length} items</div>
+            ))}
           </div>
           <div className="flex gap-2 mt-2">
             <Button variant="outline" className="flex-1" onClick={() => setShowSplitDialog(false)} data-testid="button-cancel-split">Cancel</Button>
