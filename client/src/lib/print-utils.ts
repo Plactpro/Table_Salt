@@ -123,6 +123,7 @@ export interface BillPrintOptions {
   restaurantName: string;
   restaurantAddress?: string;
   restaurantGstin?: string;
+  restaurantLogo?: string | null;
   billNumber: string;
   invoiceNumber?: string | null;
   orderId: string;
@@ -158,7 +159,7 @@ export interface BillPrintOptions {
 
 export function renderBillHtml(opts: BillPrintOptions): string {
   const {
-    restaurantName, restaurantAddress, restaurantGstin,
+    restaurantName, restaurantAddress, restaurantGstin, restaurantLogo,
     billNumber, invoiceNumber, orderType, tableNumber, waiterName,
     items, subtotal, discountAmount = 0, discountReason,
     serviceCharge = 0, taxAmount = 0, taxType, taxRate,
@@ -215,9 +216,13 @@ export function renderBillHtml(opts: BillPrintOptions): string {
       `
       : "";
 
+  const qrApiUrl = digitalReceiptUrl
+    ? `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(digitalReceiptUrl)}`
+    : null;
   const digitalReceiptSection = digitalReceiptUrl
     ? `<div style="text-align:center;margin-top:6px;font-size:10px;">
-        <div>Scan / visit for digital receipt:</div>
+        <div style="margin-bottom:4px;">Scan QR for digital receipt:</div>
+        ${qrApiUrl ? `<img src="${qrApiUrl}" alt="QR Code" width="80" height="80" style="display:block;margin:0 auto 4px;" onerror="this.style.display='none'" />` : ""}
         <div style="font-family:monospace;font-size:9px;word-break:break-all;">${digitalReceiptUrl}</div>
       </div>`
     : "";
@@ -250,6 +255,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 </head>
 <body>
   <div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:6px;margin-bottom:6px;">
+    ${restaurantLogo ? `<img src="${restaurantLogo}" alt="${restaurantName}" height="48" style="display:block;margin:0 auto 4px;max-height:48px;object-fit:contain;" onerror="this.style.display='none'" />` : ""}
     <div style="font-weight:bold;font-size:16px;letter-spacing:1px;">${restaurantName.toUpperCase()}</div>
     ${restaurantAddress ? `<div style="font-size:10px;">${restaurantAddress}</div>` : ""}
     ${restaurantGstin ? `<div style="font-size:10px;">GSTIN: ${restaurantGstin}</div>` : ""}

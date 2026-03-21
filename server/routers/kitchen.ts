@@ -289,28 +289,57 @@ export function registerKitchenRoutes(app: Express): void {
 
         const tables = await storage.getTablesByTenant(user.tenantId);
         const tableNum = order.tableId ? tables.find(t => t.id === order.tableId)?.number : undefined;
+        const sentAt = new Date().toISOString();
 
-        await storage.createPrintJob({
-          tenantId: user.tenantId,
-          type: "kot",
-          referenceId: kotEvent.id,
-          station: station || null,
-          status: "queued",
-          payload: {
-            kotEventId: kotEvent.id,
-            orderId: order.id,
-            orderType: order.orderType,
-            tableNumber: tableNum ?? null,
-            station: station || null,
-            sentAt: new Date().toISOString(),
-            items: filtered.map(i => ({
-              name: i.name,
-              quantity: i.quantity,
-              notes: i.notes,
-              course: i.course,
-            })),
-          },
-        });
+        const stationsInBatch = station
+          ? [station]
+          : [...new Set(filtered.map(i => (i as any).station).filter(Boolean))];
+
+        if (stationsInBatch.length === 0) {
+          await storage.createPrintJob({
+            tenantId: user.tenantId,
+            type: "kot",
+            referenceId: order.id,
+            station: null,
+            status: "queued",
+            payload: {
+              kotEventId: kotEvent.id,
+              orderId: order.id,
+              orderType: order.orderType,
+              tableNumber: tableNum ?? null,
+              station: null,
+              sentAt,
+              items: filtered.map(i => ({
+                name: i.name, quantity: i.quantity,
+                notes: i.notes, course: i.course,
+              })),
+            },
+          });
+        } else {
+          for (const stationName of stationsInBatch) {
+            const stationItems = filtered.filter(i => (i as any).station === stationName || station === stationName);
+            if (stationItems.length === 0) continue;
+            await storage.createPrintJob({
+              tenantId: user.tenantId,
+              type: "kot",
+              referenceId: order.id,
+              station: stationName,
+              status: "queued",
+              payload: {
+                kotEventId: kotEvent.id,
+                orderId: order.id,
+                orderType: order.orderType,
+                tableNumber: tableNum ?? null,
+                station: stationName,
+                sentAt,
+                items: stationItems.map(i => ({
+                  name: i.name, quantity: i.quantity,
+                  notes: i.notes, course: i.course,
+                })),
+              },
+            });
+          }
+        }
       }
 
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", tableId: order.tableId });
