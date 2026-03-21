@@ -46,6 +46,7 @@ import AccountantDashboard from "@/pages/dashboards/accountant";
 import KdsWallScreen from "@/pages/dashboards/kds-wall";
 import TableQrPage from "@/pages/table-qr";
 import LiveRequestsPage from "@/pages/modules/live-requests";
+import QrRequestSettings from "@/pages/modules/qr-request-settings";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -86,12 +87,13 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/staff": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
   "/reports": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
   "/billing": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "billing" },
-  "/settings": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "settings" },
+  "/settings": { roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
   "/kiosk-management": { roles: ["owner", "manager"] },
   "/omnichannel": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
   "/channels": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
   "/events": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor"], featureKey: "staff" },
   "/live-requests": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
+  "/qr-settings": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "tables" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -275,6 +277,7 @@ function ProtectedPages() {
         <Route path="/integrations">{() => <GuardedRoute path="/integrations" component={IntegrationsPage} />}</Route>
         <Route path="/staff">{() => <GuardedRoute path="/staff" component={StaffHub} />}</Route>
         <Route path="/live-requests">{() => <GuardedRoute path="/live-requests" component={LiveRequestsPage} />}</Route>
+        <Route path="/qr-settings">{() => <GuardedRoute path="/qr-settings" component={QrRequestSettings} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsHub} />}</Route>
         <Route path="/stock-movements">{() => <GuardedRoute path="/inventory" component={StockMovementLog} />}</Route>
         <Route path="/chef-report">{() => <GuardedRoute path="/reports" component={ChefReport} />}</Route>
