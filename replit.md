@@ -49,6 +49,7 @@ The system employs a modern web architecture with a React-based frontend and an 
     - **Chef Accountability Report**: Per-chef breakdown of consumption value, wastage, order count, and ingredient usage. Found under Reports → Chef Report tab.
     - **Shift Reconciliation Report**: Per-shift stock movement summary (consumption vs wastage) with expandable detail rows, ingredient and station breakdowns. Found under Reports → Shift Report tab.
     - **KOT Events**: Audit log table tracking kitchen order ticket events per station with chef attribution.
+    - **KOT & Bill Printing Infrastructure (Task #68)**: `printJobs` table for queuing KOT/bill/receipt print jobs per tenant. KDS kitchen.tsx has a "Reprint KOT" button on each ticket card (prints 80mm monospace layout via `window.open` popup). Station Printer Settings dialog accessible from KDS toolbar (owner/manager only) to configure per-station `printerUrl`. Print Queue Panel embedded in Settings → General tab showing all print jobs with status filter (queued/printed/failed), manual print & skip actions. Bill prints log a job to the queue on print click. `renderKotHtml`/`renderBillHtml`/`printHtmlInPopup` utilities in `client/src/lib/print-utils.ts`.
     - **Super Admin Platform Panel**: Cross-tenant administration for platform stats, tenant/user management, impersonation, and audit logs.
 
 ### Navigation Architecture

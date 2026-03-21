@@ -34,6 +34,7 @@ import { registerGuestRoutes } from "./routers/guest";
 import { registerEventsRoutes } from "./routers/events";
 import { registerComplianceRoutes } from "./routers/compliance";
 import { registerRestaurantBillingRoutes } from "./routers/restaurant-billing";
+import { registerPrintJobRoutes } from "./routers/print-jobs";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -105,6 +106,7 @@ export async function registerRoutes(
   registerEventsRoutes(app);
   registerComplianceRoutes(app);
   registerRestaurantBillingRoutes(app);
+  registerPrintJobRoutes(app);
 
   return httpServer;
 }

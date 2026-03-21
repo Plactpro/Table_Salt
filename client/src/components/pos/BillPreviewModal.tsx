@@ -401,6 +401,21 @@ export default function BillPreviewModal({
 
   const handlePrint = () => {
     window.print();
+    if (createdBill?.id || orderId) {
+      const refId = createdBill?.id || orderId || "";
+      apiRequest("POST", "/api/print-jobs", {
+        type: "bill",
+        referenceId: refId,
+        station: null,
+        payload: {
+          billNumber: billNumber || createdBill?.billNumber,
+          orderId,
+          orderType,
+          tableNumber,
+          totalAmount: grandTotal,
+        },
+      }).catch(() => {});
+    }
   };
 
   const handleWhatsApp = () => {

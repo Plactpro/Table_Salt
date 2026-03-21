@@ -246,4 +246,41 @@ export async function runAdminMigrations(): Promise<void> {
   // Task #66: Delivery Order Queue — estimated ready time + rejection reason on orders
   await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_ready_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS rejection_reason TEXT`);
+
+  // Task #68: KOT & Bill Printing Infrastructure
+  // printerUrl on kitchen_stations for per-station thermal printer config
+  await pool.query(`ALTER TABLE kitchen_stations ADD COLUMN IF NOT EXISTS printer_url TEXT`);
+
+  // print_job_type enum
+  await pool.query(`
+    DO $$ BEGIN
+      CREATE TYPE print_job_type AS ENUM ('kot', 'bill', 'receipt');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+
+  // print_job_status enum
+  await pool.query(`
+    DO $$ BEGIN
+      CREATE TYPE print_job_status AS ENUM ('queued', 'printed', 'failed');
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+
+  // print_jobs table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS print_jobs (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      type print_job_type NOT NULL,
+      reference_id VARCHAR(36) NOT NULL,
+      station TEXT,
+      status print_job_status NOT NULL DEFAULT 'queued',
+      payload JSONB NOT NULL DEFAULT '{}',
+      created_at TIMESTAMP DEFAULT now()
+    )
+  `);
+
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_print_jobs_tenant_status ON print_jobs (tenant_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_print_jobs_tenant_created ON print_jobs (tenant_id, created_at)`);
 }

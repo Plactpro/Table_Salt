@@ -5,7 +5,9 @@ import {
   ChefHat, Flame, CheckCircle2, Utensils, Clock, LogIn, LogOut, CheckCircle, AlertCircle,
   Maximize2, Minimize2, RotateCcw, Coffee, IceCream, Beef, CookingPot, Filter,
   AlertTriangle, X, Package, Trash2, CheckSquare, Monitor, Copy, RefreshCw, ExternalLink,
+  Printer,
 } from "lucide-react";
+import { renderKotHtml, printHtmlInPopup } from "@/lib/print-utils";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -69,6 +71,7 @@ interface KitchenStation {
   color: string;
   sortOrder: number;
   active: boolean;
+  printerUrl?: string | null;
 }
 
 interface RecipeCheckIngredient {
@@ -429,12 +432,13 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
   );
 }
 
-function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck }: {
+function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck, restaurantName }: {
   ticket: KDSTicket;
   stationFilter: string | null;
   onItemStatus: (itemId: string, status: string) => void;
   onBulkStatus: (orderId: string, status: string, station?: string) => void;
   onStartWithRecipeCheck: (orderId: string, station: string | null) => void;
+  restaurantName?: string;
 }) {
   const mins = useElapsedMinutes(ticket.createdAt);
   const timeColor = getTimeColor(mins);
@@ -443,6 +447,25 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
   const isNew = ticket.status === "new" || ticket.status === "sent_to_kitchen";
   const isLate = mins >= 15;
   const [confirmReady, setConfirmReady] = useState<string | null>(null);
+
+  const handleReprintKOT = useCallback(() => {
+    const html = renderKotHtml({
+      restaurantName: restaurantName || "Kitchen",
+      kotNumber: ticket.id.slice(-6).toUpperCase(),
+      orderId: ticket.id,
+      orderType: ticket.orderType,
+      tableNumber: ticket.tableNumber,
+      station: stationFilter,
+      sentAt: ticket.createdAt || new Date().toISOString(),
+      items: (stationFilter ? ticket.items.filter(i => i.station === stationFilter) : ticket.items).map(i => ({
+        name: i.name,
+        quantity: i.quantity ?? 1,
+        notes: i.notes,
+        course: i.course,
+      })),
+    });
+    printHtmlInPopup(html);
+  }, [ticket, stationFilter, restaurantName]);
 
   const filteredItems = stationFilter
     ? ticket.items.filter(i => i.station === stationFilter)
@@ -552,7 +575,18 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
             </div>
           ))}
 
-          <div className="flex items-center justify-end gap-1.5 pt-1 border-t">
+          <div className="flex items-center justify-between gap-1.5 pt-1 border-t">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs gap-1 text-muted-foreground hover:text-foreground"
+              onClick={handleReprintKOT}
+              title="Reprint KOT"
+              data-testid={`btn-reprint-kot-${ticket.id.slice(-4)}`}
+            >
+              <Printer className="h-3 w-3" /> KOT
+            </Button>
+            <div className="flex items-center gap-1.5">
             {allPending && (
               hasRecipe ? (
                 <Button size="sm" className="h-7 text-xs gap-1 bg-orange-500 hover:bg-orange-600" onClick={() => onStartWithRecipeCheck(ticket.id, stationFilter)} data-testid={`btn-start-all-${ticket.id.slice(-4)}`}>
@@ -602,6 +636,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
                 <Utensils className="h-3 w-3" /> Served
               </Button>
             )}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -629,6 +664,8 @@ export default function KitchenDashboard() {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [recipeCheckState, setRecipeCheckState] = useState<{ orderId: string; station: string | null } | null>(null);
   const [wastageOpen, setWastageOpen] = useState(false);
+  const [stationSettingsOpen, setStationSettingsOpen] = useState(false);
+  const [editingPrinterUrl, setEditingPrinterUrl] = useState<Record<string, string>>({});
 
   useEffect(() => {
     if (selectedStation) localStorage.setItem("kds_station", selectedStation);
@@ -764,6 +801,18 @@ export default function KitchenDashboard() {
     onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
   });
 
+  const updateStationMutation = useMutation({
+    mutationFn: async ({ id, printerUrl }: { id: string; printerUrl: string }) => {
+      const res = await apiRequest("PATCH", `/api/kitchen-stations/${id}`, { printerUrl: printerUrl || null });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kitchen-stations"] });
+      toast({ title: "Station updated", description: "Printer URL saved." });
+    },
+    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+  });
+
   const wallScreenUrl = wallTokenData?.token
     ? `${window.location.origin}/kds/wall?token=${wallTokenData.token}`
     : undefined;
@@ -856,6 +905,62 @@ export default function KitchenDashboard() {
       />
       <WastageModal open={wastageOpen} onClose={() => setWastageOpen(false)} station={selectedStation} />
 
+      <Dialog open={stationSettingsOpen} onOpenChange={setStationSettingsOpen}>
+        <DialogContent className="max-w-lg" data-testid="dialog-station-settings">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="h-5 w-5 text-violet-600" />
+              Station Printer Settings
+            </DialogTitle>
+            <DialogDescription>
+              Configure printer URL for each kitchen station. Leave blank to skip network printing.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 pt-2 max-h-[60vh] overflow-y-auto">
+            {stations.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-4">No stations configured.</p>
+            ) : (
+              stations.map(station => (
+                <div key={station.id} className="space-y-1.5">
+                  <Label className="flex items-center gap-2 text-sm font-medium">
+                    <span
+                      className="inline-block w-3 h-3 rounded-full"
+                      style={{ background: station.color }}
+                    />
+                    {station.displayName}
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="http://192.168.1.100:9100 (optional)"
+                      value={editingPrinterUrl[station.id] ?? (station.printerUrl || "")}
+                      onChange={e =>
+                        setEditingPrinterUrl(prev => ({ ...prev, [station.id]: e.target.value }))
+                      }
+                      className="font-mono text-xs"
+                      data-testid={`input-printer-url-${station.name}`}
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={updateStationMutation.isPending}
+                      onClick={() =>
+                        updateStationMutation.mutate({
+                          id: station.id,
+                          printerUrl: editingPrinterUrl[station.id] ?? (station.printerUrl || ""),
+                        })
+                      }
+                      data-testid={`button-save-printer-url-${station.name}`}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={wallPopoverOpen} onOpenChange={setWallPopoverOpen}>
         <DialogContent className="max-w-md" data-testid="dialog-wall-link">
           <DialogHeader>
@@ -941,6 +1046,18 @@ export default function KitchenDashboard() {
 
         <div className="flex items-center gap-2">
           <KitchenClockCard />
+          {(user?.role === "owner" || user?.role === "manager") && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setStationSettingsOpen(true)}
+              className="h-8 gap-1 border-violet-200 text-violet-600 hover:bg-violet-50"
+              data-testid="button-station-settings"
+              title="Station Printer Settings"
+            >
+              <Printer className="h-3.5 w-3.5" /> Printers
+            </Button>
+          )}
           <Button
             size="sm"
             variant="outline"
@@ -1063,6 +1180,7 @@ export default function KitchenDashboard() {
                         onItemStatus={handleItemStatus}
                         onBulkStatus={handleBulkStatus}
                         onStartWithRecipeCheck={handleStartWithRecipeCheck}
+                        restaurantName={tenant?.name || "Restaurant"}
                       />
                     ))
                   )}
