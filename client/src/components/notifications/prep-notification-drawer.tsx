@@ -40,7 +40,9 @@ import {
   ArrowLeft,
   TrendingUp,
   TrendingDown,
+  Minus,
   Bell,
+  Mail,
   RefreshCw,
   ShoppingCart,
 } from "lucide-react";
@@ -49,6 +51,7 @@ import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
+import { usePushNotifications } from "@/hooks/use-push-notifications";
 
 const typeConfig: Record<
   string,
@@ -567,8 +570,31 @@ interface NotificationPreferencesPanelProps {
   onBack: () => void;
 }
 
+function loadEmailDigestPref(userId: string): boolean {
+  try {
+    const raw = localStorage.getItem(`prep_notif_prefs_${userId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return parsed.emailDigest !== false;
+    }
+  } catch {}
+  return true;
+}
+
+function saveEmailDigestPref(userId: string, enabled: boolean) {
+  try {
+    const raw = localStorage.getItem(`prep_notif_prefs_${userId}`);
+    const parsed = raw ? JSON.parse(raw) : {};
+    parsed.emailDigest = enabled;
+    localStorage.setItem(`prep_notif_prefs_${userId}`, JSON.stringify(parsed));
+  } catch {}
+}
+
 function NotificationPreferencesPanel({ userId, onBack }: NotificationPreferencesPanelProps) {
   const [prefs, setPrefs] = useState<NotifPrefs>(() => loadPrefs(userId));
+  const [emailDigest, setEmailDigest] = useState(() => loadEmailDigestPref(userId));
+  const push = usePushNotifications();
+  const [pushLoading, setPushLoading] = useState(false);
 
   const updatePref = (key: keyof NotifPrefs, field: keyof NotifPref, value: boolean | SoundPref) => {
     setPrefs(prev => {
@@ -576,6 +602,24 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
       savePrefs(userId, next);
       return next;
     });
+  };
+
+  const handlePushToggle = async (enabled: boolean) => {
+    setPushLoading(true);
+    try {
+      if (enabled) {
+        await push.subscribe();
+      } else {
+        await push.unsubscribe();
+      }
+    } finally {
+      setPushLoading(false);
+    }
+  };
+
+  const handleEmailDigestToggle = (enabled: boolean) => {
+    setEmailDigest(enabled);
+    saveEmailDigestPref(userId, enabled);
   };
 
   return (
@@ -594,6 +638,59 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
         <p className="text-xs text-muted-foreground mb-4">
           Choose which events to receive alerts for, and the sound to play for each.
         </p>
+
+        <div className="mb-5 space-y-2">
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Delivery Channels</p>
+
+          {push.isSupported && (
+            <div
+              className="flex items-center justify-between py-2.5 border-b"
+              data-testid="pref-row-push"
+            >
+              <div className="flex items-center gap-3">
+                <Bell className="h-4 w-4 text-muted-foreground" />
+                <div>
+                  <Label className="text-sm font-medium">Push notifications</Label>
+                  <p className="text-[10px] text-muted-foreground">
+                    {push.permission === "denied"
+                      ? "Blocked by browser — enable in browser settings"
+                      : push.isSubscribed
+                      ? "OS-level alerts even when tab is in background"
+                      : "Get alerted even when the tab is minimized"}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={push.isSubscribed}
+                onCheckedChange={handlePushToggle}
+                disabled={pushLoading || push.permission === "denied"}
+                data-testid="toggle-push-notifications"
+              />
+            </div>
+          )}
+
+          <div
+            className="flex items-center justify-between py-2.5 border-b"
+            data-testid="pref-row-email-digest"
+          >
+            <div className="flex items-center gap-3">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <Label className="text-sm font-medium">Email shift digest</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  End-of-shift summary: tasks, issues &amp; top performer
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={emailDigest}
+              onCheckedChange={handleEmailDigestToggle}
+              data-testid="toggle-email-digest"
+            />
+          </div>
+        </div>
+
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Alert Sounds</p>
         <div className="space-y-1">
           {(Object.keys(prefs) as Array<keyof NotifPrefs>).map(key => (
             <div

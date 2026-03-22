@@ -39,6 +39,7 @@ import { registerTableRequestRoutes } from "./routers/table-requests";
 import { registerKitchenAssignmentRoutes } from "./routers/kitchen-assignment";
 import { registerStockReportsRoutes } from "./routers/stock-reports";
 import { registerPrepNotificationRoutes } from "./routers/prep-notifications";
+import { registerPushSubscriptionRoutes } from "./routers/push-subscriptions";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -115,6 +116,7 @@ export async function registerRoutes(
   registerKitchenAssignmentRoutes(app);
   registerStockReportsRoutes(app);
   registerPrepNotificationRoutes(app);
+  registerPushSubscriptionRoutes(app);
 
   return httpServer;
 }

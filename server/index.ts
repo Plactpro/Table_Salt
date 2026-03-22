@@ -215,6 +215,13 @@ app.use((req, res, next) => {
     console.error("Stock report scheduler init error:", e);
   }
 
+  try {
+    const { startShiftDigestScheduler } = await import("./services/shift-digest-mailer");
+    startShiftDigestScheduler();
+  } catch (e) {
+    console.error("Shift digest scheduler init error:", e);
+  }
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
