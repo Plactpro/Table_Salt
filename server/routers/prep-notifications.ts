@@ -30,9 +30,9 @@ export function registerPrepNotificationRoutes(app: Router): void {
       if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
       const limit = Math.min(Number(req.query.limit) || 50, 100);
       const offset = Number(req.query.offset) || 0;
-      const notifications = await getNotifications(tenantId, chefId, limit, offset);
+      const { notifications, total } = await getNotifications(tenantId, chefId, limit, offset);
       const unreadCount = await getUnreadCount(tenantId, chefId);
-      return res.json({ notifications, unreadCount });
+      return res.json({ notifications, total, unreadCount, limit, offset });
     } catch (err) {
       console.error("[PrepNotif] list error:", err);
       return res.status(500).json({ error: "Internal error" });

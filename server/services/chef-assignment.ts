@@ -303,6 +303,7 @@ export async function completeAssignment(
     actionLabel: "Verify Now",
   }).catch(() => {});
   checkDishComplete(tenantId, assignment.menuItemId, assignment.orderId).catch(() => {});
+  checkAllPrepComplete(tenantId).catch(() => {});
   return updated;
 }
 
@@ -325,7 +326,45 @@ async function checkDishComplete(tenantId: string, menuItemId?: string | null, o
       title: `🍽️ All prep complete for: ${name} ✅`,
       priority: "LOW", relatedMenuItem: name, actionUrl: `/kitchen`, actionLabel: "View",
     }).catch(() => {});
+    checkAllPrepComplete(tenantId).catch(() => {});
   }
+}
+
+async function checkAllPrepComplete(tenantId: string) {
+  const today = new Date().toISOString().slice(0, 10);
+  const { rows } = await pool.query(
+    `SELECT
+       COUNT(*)::int AS total,
+       COUNT(*) FILTER (WHERE status IN ('completed','verified'))::int AS done
+     FROM ticket_assignments
+     WHERE tenant_id = $1 AND DATE(created_at) = $2`,
+    [tenantId, today]
+  );
+  const { total, done } = rows[0] ?? {};
+  if (!total || total === 0 || total !== done) return;
+
+  const { rows: topRows } = await pool.query(
+    `SELECT chef_id, COUNT(*)::int AS task_count
+     FROM ticket_assignments
+     WHERE tenant_id = $1 AND DATE(created_at) = $2
+       AND status IN ('completed','verified') AND chef_id IS NOT NULL
+     GROUP BY chef_id ORDER BY task_count DESC LIMIT 1`,
+    [tenantId, today]
+  );
+  const topPerformer = topRows[0]?.chef_id ?? null;
+
+  emitToTenant(tenantId, "prep:all_complete", {
+    total,
+    topPerformer,
+    date: today,
+  });
+  createNotification({
+    tenantId, chefId: null, type: "all_complete",
+    title: `🎉 All ${total} prep tasks complete for today!`,
+    body: topPerformer ? `Top performer: chef ${topPerformer}` : undefined,
+    priority: "LOW",
+    actionUrl: `/kitchen`, actionLabel: "View Kitchen",
+  }).catch(() => {});
 }
 
 export async function reassignTicket(
@@ -438,6 +477,7 @@ export async function verifyAssignment(
     }).catch(() => {});
   }
   checkDishComplete(tenantId, assignment.menuItemId, assignment.orderId).catch(() => {});
+  checkAllPrepComplete(tenantId).catch(() => {});
   return updated;
 }
 
