@@ -8,6 +8,7 @@ export type NotificationType =
   | "task_completed"
   | "task_verified"
   | "task_reassigned"
+  | "task_reminder"
   | "task_issue"
   | "task_help"
   | "task_overdue"

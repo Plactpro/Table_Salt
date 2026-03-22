@@ -70,7 +70,7 @@ export function startDeadlineChecker(): void {
             chefId: row.chef_id,
             type: "task_overdue",
             title: `🔴 OVERDUE: ${row.menu_item_name ?? "Task"} is past its deadline`,
-            body: row.chef_name ? `Assigned to ${row.chef_name}` : undefined,
+            body: row.chef_name ? `Assigned to ${row.chef_name} | Not started yet` : undefined,
             priority: "HIGH",
             relatedTaskId: row.id,
             relatedMenuItem: row.menu_item_name,
@@ -92,7 +92,9 @@ export function startDeadlineChecker(): void {
             chefId: row.chef_id,
             type: "deadline_warning",
             title: `⏰ 15-min warning: ${row.menu_item_name ?? "Task"}`,
-            body: `Only ${Math.round(remainMin)} min remaining`,
+            body: row.chef_name
+              ? `Assigned to ${row.chef_name} | Only ${Math.round(remainMin)} min remaining`
+              : `Only ${Math.round(remainMin)} min remaining`,
             priority: "HIGH",
             relatedTaskId: row.id,
             relatedMenuItem: row.menu_item_name,
@@ -114,7 +116,9 @@ export function startDeadlineChecker(): void {
             chefId: row.chef_id,
             type: "deadline_warning",
             title: `⏰ 30-min warning: ${row.menu_item_name ?? "Task"}`,
-            body: `${Math.round(remainMin)} min remaining`,
+            body: row.chef_name
+              ? `Assigned to ${row.chef_name} | ${Math.round(remainMin)} min remaining`
+              : `${Math.round(remainMin)} min remaining`,
             priority: "MEDIUM",
             relatedTaskId: row.id,
             relatedMenuItem: row.menu_item_name,

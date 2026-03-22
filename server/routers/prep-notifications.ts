@@ -7,6 +7,7 @@ import {
   markRead,
 } from "../services/prep-notifications";
 import { startDeadlineChecker } from "../services/prep-deadline-checker";
+import { requireRole } from "../auth";
 
 export function registerPrepNotificationRoutes(app: Router): void {
   startDeadlineChecker();
@@ -125,6 +126,121 @@ export function registerPrepNotificationRoutes(app: Router): void {
       return res.json(result);
     } catch (err: any) {
       console.error("[PrepNotif] help error:", err);
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/kitchen-staff", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "kitchen"), async (req: any, res) => {
+    try {
+      const tenantId: string = req.user?.tenantId;
+      if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
+      const { storage } = await import("../storage");
+      const allUsers = await storage.getUsersByTenant(tenantId);
+      const kitchenRoles = ["kitchen", "chef", "assistant"];
+      const staff = allUsers
+        .filter(u => kitchenRoles.includes(u.role ?? ""))
+        .map(u => ({ id: u.id, name: u.name, username: u.username, role: u.role }));
+      return res.json(staff);
+    } catch (err: any) {
+      console.error("[PrepNotif] kitchen-staff error:", err);
+      return res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  app.post("/api/prep-assignments/:id/remind", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "kitchen"), async (req: any, res) => {
+    try {
+      const tenantId: string = req.user?.tenantId;
+      if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
+      const { storage } = await import("../storage");
+      const { emitToTenant } = await import("../realtime");
+      const assignment = await storage.getAssignment(req.params.id, tenantId);
+      if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+      const { reminderNote } = (req.body ?? {}) as { reminderNote?: string };
+      const notif = await createNotification({
+        tenantId,
+        chefId: assignment.chefId ?? null,
+        type: "task_reminder",
+        title: `⏰ Reminder: ${assignment.menuItemName ?? "Task"} is due soon`,
+        body: reminderNote ?? `Please check on your assigned task.`,
+        priority: "MEDIUM",
+        relatedTaskId: req.params.id,
+        relatedMenuItem: assignment.menuItemName,
+        actionUrl: `/kitchen`,
+        actionLabel: "View Task",
+      });
+      emitToTenant(tenantId, "prep:task_reminder", {
+        taskId: req.params.id,
+        taskName: assignment.menuItemName,
+        chefId: assignment.chefId,
+        chefName: assignment.chefName,
+      });
+      return res.json({ success: true, notification: notif });
+    } catch (err: any) {
+      console.error("[PrepNotif] remind error:", err);
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/prep-assignments/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "kitchen"), async (req: any, res) => {
+    try {
+      const tenantId: string = req.user?.tenantId;
+      if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
+      const { chefId, chefName } = (req.body ?? {}) as { chefId?: string; chefName?: string };
+      if (!chefId) return res.status(400).json({ error: "chefId required" });
+      const { storage } = await import("../storage");
+      const { emitToTenant } = await import("../realtime");
+      const allUsers = await storage.getUsersByTenant(tenantId);
+      const kitchenRoles = ["kitchen", "chef", "assistant"];
+      const targetUser = allUsers.find(u => String(u.id) === String(chefId) && kitchenRoles.includes(u.role ?? ""));
+      if (!targetUser) return res.status(400).json({ error: "Invalid assignee: user not found in this tenant or not a kitchen role" });
+      const assignment = await storage.getAssignment(req.params.id, tenantId);
+      if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+      const oldChefId = assignment.chefId;
+      const taskName = assignment.menuItemName ?? "Task";
+      const resolvedChefName = chefName ?? targetUser.name ?? targetUser.username;
+      const updated = await storage.updateAssignment(req.params.id, tenantId, {
+        chefId,
+        chefName: resolvedChefName,
+        assignmentType: "REASSIGNED",
+        reassignReason: "Reassigned via notification drawer",
+        status: "assigned",
+        assignedAt: new Date(),
+      });
+      if (!updated) return res.status(404).json({ error: "Assignment not found" });
+      emitToTenant(tenantId, "chef-assignment:updated", updated);
+      emitToTenant(tenantId, "prep:task_assigned", {
+        taskId: req.params.id,
+        taskName,
+        chefId,
+        chefName: resolvedChefName,
+      });
+      createNotification({
+        tenantId,
+        chefId,
+        type: "task_reassigned",
+        title: `📋 New task assigned: ${taskName} (reassigned)`,
+        body: `Task has been reassigned to you.`,
+        priority: "MEDIUM",
+        relatedTaskId: req.params.id,
+        relatedMenuItem: taskName,
+        actionUrl: `/kitchen`,
+        actionLabel: "View Task",
+      }).catch(() => {});
+      if (oldChefId && oldChefId !== chefId) {
+        createNotification({
+          tenantId,
+          chefId: oldChefId,
+          type: "task_reassigned",
+          title: `🔄 Task ${taskName} has been reassigned`,
+          body: `This task has been moved to another team member.`,
+          priority: "LOW",
+          relatedTaskId: req.params.id,
+          relatedMenuItem: taskName,
+        }).catch(() => {});
+      }
+      return res.json(updated);
+    } catch (err: any) {
+      console.error("[PrepNotif] reassign error:", err);
       return res.status(400).json({ error: err.message });
     }
   });
