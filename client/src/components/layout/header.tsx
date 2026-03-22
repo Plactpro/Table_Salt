@@ -174,34 +174,54 @@ export default function Header({ onOpenSupport }: HeaderProps) {
 
   useRealtimeEvent("prep:notification", useCallback((n: any) => {
     if (!canSeePrepNotif) return;
-    playSound(n.priority ?? "LOW");
+    playSound(n.priority ?? "LOW", n.type);
     showPrepToast(n.title, n.body ?? undefined, n.priority ?? "LOW");
   }, [canSeePrepNotif, playSound, showPrepToast]));
 
   useRealtimeEvent("prep:task_overdue", useCallback((data: any) => {
     if (!canSeePrepNotif) return;
-    playSound("HIGH");
+    playSound("HIGH", "task_overdue");
     showPrepToast(`🔴 OVERDUE: ${data.taskName ?? "Task"}`, "This task has passed its deadline", "HIGH");
   }, [canSeePrepNotif, playSound, showPrepToast]));
 
   useRealtimeEvent("prep:task_help", useCallback((data: any) => {
     if (!canSeePrepNotif) return;
-    playSound("HIGH");
+    playSound("HIGH", "task_help");
     showPrepToast(`🆘 ${data.chefName ?? "Chef"} needs help`, data.taskName ?? undefined, "HIGH");
   }, [canSeePrepNotif, playSound, showPrepToast]));
 
   useRealtimeEvent("prep:task_issue", useCallback((data: any) => {
     if (!canSeePrepNotif) return;
-    playSound("HIGH");
+    playSound("HIGH", "task_issue");
     showPrepToast(`⚠️ Issue reported`, data.taskName ?? undefined, "HIGH");
   }, [canSeePrepNotif, playSound, showPrepToast]));
 
   useRealtimeEvent("prep:all_complete", useCallback((_data: any) => {
     if (!canSeePrepNotif) return;
-    playSound("LOW");
+    playSound("LOW", "all_complete");
     setCelebrate(true);
     setTimeout(() => setCelebrate(false), 4000);
   }, [canSeePrepNotif, playSound]));
+
+  useRealtimeEvent("prep:task_progress", useCallback((data: any) => {
+    if (!canSeePrepNotif) return;
+    playSound("LOW", "task_progress");
+    showPrepToast(
+      `⏳ ${data.assignedToName ?? "Chef"} is halfway: ${data.taskName ?? "Task"}`,
+      `${data.completedQty}${data.unit ?? ""} done of ${data.totalQty}${data.unit ?? ""}`,
+      "LOW"
+    );
+  }, [canSeePrepNotif, playSound, showPrepToast]));
+
+  useRealtimeEvent("prep:low_readiness_alert", useCallback((data: any) => {
+    if (!canSeePrepNotif) return;
+    playSound("HIGH", "low_readiness_alert");
+    showPrepToast(
+      `🚨 LOW PREP READINESS — ${data.readinessPct}% complete`,
+      `${data.hoursToShift}hrs to shift — ${data.unassignedCount} tasks unassigned`,
+      "HIGH"
+    );
+  }, [canSeePrepNotif, playSound, showPrepToast]));
 
   const invUnreadCount = alertCountData?.count || 0;
 

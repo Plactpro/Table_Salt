@@ -759,4 +759,8 @@ export async function runAdminMigrations(): Promise<void> {
   } catch (err) {
     console.error("[Admin migrations] Stock capacity seed error (non-fatal):", err);
   }
+
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS completed_qty NUMERIC`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS total_qty NUMERIC`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS unit TEXT`);
 }

@@ -66,6 +66,8 @@ const typeConfig: Record<
   dish_complete: { icon: <CheckCircle2 className="h-4 w-4" />, color: "text-teal-600", group: "complete" },
   all_complete: { icon: <PartyPopper className="h-4 w-4" />, color: "text-green-700", group: "complete" },
   readiness_summary: { icon: <BarChart2 className="h-4 w-4" />, color: "text-slate-600", group: "info" },
+  task_progress: { icon: <Clock className="h-4 w-4" />, color: "text-amber-500", group: "info" },
+  low_readiness_alert: { icon: <AlertTriangle className="h-4 w-4" />, color: "text-red-700", group: "action" },
 };
 
 const priorityBadge: Record<string, string> = {
@@ -303,6 +305,50 @@ interface NotificationCardProps {
   onMarkRead: (id: string) => void;
 }
 
+function LowReadinessAlertCard({ notification: n, onMarkRead }: NotificationCardProps) {
+  const [, navigate] = useLocation();
+  const isUnread = !n.readAt;
+
+  return (
+    <div
+      className={`px-4 py-3 border-l-4 border-red-600 ${isUnread ? "bg-red-50 dark:bg-red-950/30" : "bg-slate-50/60 dark:bg-slate-900/20"}`}
+      data-testid={`prep-notif-low-readiness-${n.id.slice(-4)}`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 text-red-600" />
+          <span className="text-sm font-bold text-red-700 dark:text-red-400">LOW READINESS ALERT</span>
+          {isUnread && <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />}
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+        </span>
+      </div>
+      <p className="text-xs text-red-800 dark:text-red-300 font-medium mb-3 leading-relaxed">{n.title}</p>
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant="destructive"
+          className="h-7 text-xs px-3"
+          onClick={() => { onMarkRead(n.id); navigate(n.actionUrl ?? "/kitchen-board"); }}
+          data-testid={`button-low-readiness-assign-${n.id.slice(-4)}`}
+        >
+          ASSIGN ALL PENDING NOW
+        </Button>
+        {isUnread && (
+          <button
+            className="text-[10px] text-primary underline hover:no-underline ml-auto"
+            onClick={() => onMarkRead(n.id)}
+            data-testid={`button-mark-read-low-readiness-${n.id.slice(-4)}`}
+          >
+            Dismiss
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps) {
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -310,6 +356,10 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
 
   if (n.type === "readiness_summary") {
     return <ReadinessSummaryCard notification={n} onMarkRead={onMarkRead} />;
+  }
+
+  if (n.type === "low_readiness_alert") {
+    return <LowReadinessAlertCard notification={n} onMarkRead={onMarkRead} />;
   }
 
   const cfg = typeConfig[n.type] ?? { icon: <Circle className="h-4 w-4" />, color: "text-slate-500", group: "info" };
@@ -472,6 +522,8 @@ interface NotifPrefs {
   task_help: NotifPref;
   readiness_summary: NotifPref;
   all_complete: NotifPref;
+  task_progress: NotifPref;
+  low_readiness_alert: NotifPref;
 }
 
 const DEFAULT_PREFS: NotifPrefs = {
@@ -482,6 +534,8 @@ const DEFAULT_PREFS: NotifPrefs = {
   task_help: { enabled: true, sound: "beep" },
   readiness_summary: { enabled: true, sound: "silent" },
   all_complete: { enabled: true, sound: "chime" },
+  task_progress: { enabled: true, sound: "silent" },
+  low_readiness_alert: { enabled: true, sound: "beep" },
 };
 
 const PREF_LABELS: Record<keyof NotifPrefs, string> = {
@@ -492,6 +546,8 @@ const PREF_LABELS: Record<keyof NotifPrefs, string> = {
   task_help: "Help Requested",
   readiness_summary: "Readiness Summary",
   all_complete: "All Prep Complete",
+  task_progress: "50% Progress Milestone",
+  low_readiness_alert: "Low Readiness Alert",
 };
 
 function loadPrefs(userId: string): NotifPrefs {

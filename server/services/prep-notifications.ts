@@ -15,7 +15,9 @@ export type NotificationType =
   | "deadline_warning"
   | "dish_complete"
   | "all_complete"
-  | "readiness_summary";
+  | "readiness_summary"
+  | "task_progress"
+  | "low_readiness_alert";
 
 export interface CreateNotificationInput {
   tenantId: string;

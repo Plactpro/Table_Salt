@@ -19,6 +19,8 @@ const DEFAULT_SOUND_MAP: Record<string, SoundType> = {
   task_help: "beep",
   readiness_summary: "silent",
   all_complete: "chime",
+  task_progress: "silent",
+  low_readiness_alert: "beep",
 };
 
 function loadPrefsForUser(userId?: string | null): NotifPrefs {
