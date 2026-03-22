@@ -243,6 +243,7 @@ export default function Sidebar() {
                   initial={{ opacity: 0, x: -12 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: index * 0.04, duration: 0.3 }}
+                  style={{ willChange: "opacity, transform" }}
                 >
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -263,10 +264,10 @@ export default function Sidebar() {
                             layoutId="sidebar-active-bg"
                             className="absolute inset-0 rounded-xl"
                             style={{
-                              background: "linear-gradient(135deg, rgba(255,255,255,0.72), rgba(255,255,255,0.50))",
-                              backdropFilter: "blur(8px)",
-                              border: "1px solid rgba(255,255,255,0.6)",
-                              boxShadow: "0 2px 12px rgba(0,0,0,0.10), inset 0 1px 2px rgba(255,255,255,0.4)",
+                              background: "linear-gradient(135deg, rgba(255,255,255,0.82), rgba(255,255,255,0.65))",
+                              backdropFilter: "blur(6px)",
+                              border: "1px solid rgba(255,255,255,0.75)",
+                              boxShadow: "0 2px 12px rgba(0,0,0,0.14), inset 0 1px 2px rgba(255,255,255,0.6)",
                             }}
                             transition={{ type: "spring", stiffness: 350, damping: 30 }}
                           />
@@ -283,8 +284,9 @@ export default function Sidebar() {
                           <div
                             className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                             style={{
-                              background: "rgba(255,255,255,0.30)",
-                              backdropFilter: "blur(4px)",
+                              background: "rgba(255,255,255,0.40)",
+                              backdropFilter: "blur(2px)",
+                              border: "1px solid rgba(255,255,255,0.35)",
                             }}
                           />
                         )}

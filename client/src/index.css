@@ -61,7 +61,7 @@
 
   --card: 0 0% 100%;
   --card-foreground: 185 35% 8%;
-  --card-border: 170 18% 86%;
+  --card-border: 170 18% 80%;
 
   --popover: 170 15% 100%;
   --popover-foreground: 185 30% 10%;
@@ -74,7 +74,7 @@
   --secondary-foreground: 185 30% 10%;
 
   --muted: 170 12% 94%;
-  --muted-foreground: 185 14% 36%;
+  --muted-foreground: 185 18% 30%;
 
   --accent: 36 85% 92%;
   --accent-foreground: 28 60% 28%;
@@ -120,7 +120,7 @@
 
   --card: 185 15% 9%;
   --card-foreground: 170 15% 94%;
-  --card-border: 185 10% 15%;
+  --card-border: 185 12% 20%;
 
   --popover: 185 15% 9%;
   --popover-foreground: 170 15% 94%;
@@ -133,7 +133,7 @@
   --secondary-foreground: 170 15% 94%;
 
   --muted: 185 10% 15%;
-  --muted-foreground: 185 10% 60%;
+  --muted-foreground: 185 12% 68%;
 
   --accent: 36 40% 18%;
   --accent-foreground: 36 50% 80%;
@@ -273,23 +273,26 @@
 
   .shadow-card {
     box-shadow:
-      0 1px 3px rgba(0, 0, 0, 0.08),
-      0 2px 8px rgba(0, 0, 0, 0.06),
-      0 4px 16px rgba(0, 0, 0, 0.04);
+      0 1px 3px rgba(0, 0, 0, 0.10),
+      0 2px 8px rgba(0, 0, 0, 0.08),
+      0 4px 16px rgba(0, 0, 0, 0.06),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
   }
 
   .shadow-card-hover {
     box-shadow:
-      0 2px 6px rgba(0, 0, 0, 0.10),
-      0 4px 16px rgba(0, 0, 0, 0.08),
-      0 8px 30px rgba(0, 0, 0, 0.06);
+      0 2px 6px rgba(0, 0, 0, 0.12),
+      0 4px 16px rgba(0, 0, 0, 0.10),
+      0 8px 30px rgba(0, 0, 0, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
   }
 
   .shadow-card-elevated {
     box-shadow:
-      0 4px 12px rgba(0, 0, 0, 0.12),
-      0 8px 30px rgba(0, 0, 0, 0.10),
-      0 16px 48px rgba(0, 0, 0, 0.06);
+      0 4px 12px rgba(0, 0, 0, 0.14),
+      0 8px 30px rgba(0, 0, 0, 0.12),
+      0 16px 48px rgba(0, 0, 0, 0.08),
+      inset 0 1px 0 rgba(255, 255, 255, 0.6);
   }
 
   .transition-shadow-smooth {
@@ -303,6 +306,34 @@
   .hover-lift:hover {
     transform: translateY(-2px);
   }
+
+  .will-change-motion {
+    will-change: opacity, transform;
+  }
+}
+
+.dark .shadow-card {
+  box-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.30),
+    0 2px 8px rgba(0, 0, 0, 0.22),
+    0 4px 16px rgba(0, 0, 0, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.dark .shadow-card-hover {
+  box-shadow:
+    0 2px 6px rgba(0, 0, 0, 0.36),
+    0 4px 16px rgba(0, 0, 0, 0.28),
+    0 8px 30px rgba(0, 0, 0, 0.20),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.dark .shadow-card-elevated {
+  box-shadow:
+    0 4px 12px rgba(0, 0, 0, 0.40),
+    0 8px 30px rgba(0, 0, 0, 0.32),
+    0 16px 48px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 @keyframes ticket-pulse {
