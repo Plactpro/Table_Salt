@@ -1,0 +1,209 @@
+Add this block directly into the existing Pre-Preparation Task Assignment prompt under the **Notifications and Alerts** section:
+
+***
+
+### Chef Real-Time Status Notification System (Pre-Prep)
+
+#### 1. Real-time status update notifications to chef
+
+Every single status change by any assistant must **instantly notify the assigned chef** via:
+- In-app notification bell (with count badge)
+- Pop-up toast on chef's screen (non-blocking, auto-dismisses in 5 seconds)
+- Sound alert (configurable: chime / beep / silent)
+- Live update on the Pre-Prep Task Board (no page refresh needed)
+
+##### Notification trigger matrix
+
+| Event | Who Gets Notified | Message | Priority |
+|---|---|---|---|
+| Assistant **starts** a task | Assigned Chef | "▶️ Priya started: Chop Onions (5kg)" | 🟡 Low |
+| Assistant marks task **50% done** | Assigned Chef | "⏳ Priya is halfway: Chop Onions (2.5kg done)" | 🟡 Low |
+| Assistant marks task **complete** | Assigned Chef | "✅ Priya completed: Chop Onions — Verify now" | 🔴 High |
+| Assistant **reports an issue** | Chef + Manager | "⚠️ Issue: No cream available for Sauce Base — Priya" | 🔴 High |
+| Assistant **asks for help** | Assigned Chef | "🙋 Priya needs help with: Ferment Dough" | 🟠 Medium |
+| Task **deadline in 30 min** (unstarted) | Chef | "⏰ 30 min left: Marinate Chicken not started yet" | 🟠 Medium |
+| Task **deadline in 15 min** (in progress) | Chef | "⚡ 15 min left: Chop Onions still in progress" | 🔴 High |
+| Task **overdue** | Chef + Manager | "🔴 OVERDUE: Stock Making — deadline passed 10 min ago" | 🔴 High |
+| Task **rejected** → reassigned | New Assignee | "📋 New task assigned: Chop Onions (rejected by chef)" | 🟠 Medium |
+| Task **approved** by chef | Assistant | "🌟 Ravi approved your task: Chop Onions — Great work!" | 🟢 Low |
+| **All tasks** for a dish are verified | Chef + Manager | "🍽️ All prep complete for: Soup of the Day ✅" | 🟢 Low |
+| **All pre-prep** for tomorrow complete | Chef + Manager + Owner | "🎉 100% pre-prep complete for 23 March 2026!" | 🟢 Low |
+
+***
+
+#### 2. Chef notification panel (live feed)
+
+Add a **dedicated notification drawer** in the Kitchen Portal for chefs:
+
+```
+┌─────────────────────────────────────────────────┐
+│  🔔 PREP UPDATES (5 new)          [Mark All Read]│
+├─────────────────────────────────────────────────┤
+│  🔴 2 min ago                                   │
+│  ✅ Priya completed: Chop Onions (5kg, 42 min)  │
+│  → [VERIFY NOW]                                 │
+├─────────────────────────────────────────────────┤
+│  🟠 5 min ago                                   │
+│  ▶️ Tom started: Ferment Dough (2kg)            │
+│  → [VIEW TASK]                                  │
+├─────────────────────────────────────────────────┤
+│  🔴 8 min ago                                   │
+│  ⚠️ Anita reported issue: No cream for Sauce    │
+│  → [VIEW ISSUE]  [RAISE PO]                     │
+├─────────────────────────────────────────────────┤
+│  🟡 15 min ago                                  │
+│  ⏰ Deadline warning: Marinate Chicken (30 min) │
+│  Assigned to: Tom | Not started yet             │
+│  → [REMIND TOM]  [REASSIGN]                     │
+├─────────────────────────────────────────────────┤
+│  🟢 22 min ago                                  │
+│  🍽️ All prep complete for: Caesar Salad ✅      │
+│  → [VIEW SUMMARY]                               │
+└─────────────────────────────────────────────────┘
+```
+
+- Each notification has a **direct action button** so chef can act immediately without navigating.
+- Notifications grouped by: Needs Action / In Progress / Completed.
+- Unread count badge on bell icon in header.
+
+***
+
+#### 3. Live task board auto-refresh
+
+The chef's Pre-Prep Task Board must **update in real time** without any page refresh:
+
+```
+When ANY status changes:
+  → Task card color updates instantly
+  → Status badge changes (Pending → In Progress → Complete → Verified)
+  → Timer updates live
+  → Progress bar fills as quantity is completed
+  → Staff name and status indicator updates
+
+Visual feedback on task card:
+  PENDING:     ⬜ Grey card,  dashed border
+  ASSIGNED:    🔵 Blue card,  solid border
+  IN_PROGRESS: 🟡 Amber card, pulsing left border
+  COMPLETED:   🟠 Orange card, "VERIFY" button highlighted
+  VERIFIED:    🟢 Green card,  checkmark badge
+  OVERDUE:     🔴 Red card,    flashing border + alert icon
+  FAILED:      ❌ Dark card,   rejection note visible
+```
+
+***
+
+#### 4. Readiness summary notification (auto-generated)
+
+At **key milestones**, send a summary notification to the chef automatically:
+
+```
+Every 2 hours (during prep window):
+┌──────────────────────────────────────┐
+│  📊 PREP PROGRESS UPDATE — 4:00 PM  │
+│  For: 23 March 2026                  │
+│  ─────────────────────────────────   │
+│  ✅ Verified:     8 / 25 tasks       │
+│  🔵 In Progress:  6 tasks            │
+│  ⏳ Pending:      9 tasks            │
+│  🔴 Overdue:      2 tasks ← ACTION  │
+│  ─────────────────────────────────   │
+│  🍽️  Dishes fully ready:  6 / 20    │
+│  ⚠️  Dishes at risk:       4         │
+│  ─────────────────────────────────   │
+│  [View Full Board]  [Assign Pending] │
+└──────────────────────────────────────┘
+```
+
+```
+When readiness drops below 50% with 3 hours to shift:
+┌──────────────────────────────────────┐
+│  🚨 ALERT: LOW PREP READINESS        │
+│  Only 48% complete — 3hrs to shift   │
+│  9 tasks still unassigned            │
+│  [ASSIGN ALL PENDING NOW]            │
+└──────────────────────────────────────┘
+```
+
+```
+When all prep is 100% complete:
+┌──────────────────────────────────────┐
+│  🎉 ALL PRE-PREP COMPLETE!           │
+│  23 March 2026 — Main Outlet         │
+│  25/25 tasks verified ✅             │
+│  Total time: 4h 32min                │
+│  Top performer: Priya (8 tasks)      │
+└──────────────────────────────────────┘
+```
+
+***
+
+#### 5. WebSocket events to add
+
+```typescript
+// Emit these events from backend when status changes:
+
+socket.emit('prep_task_started', {
+  taskId, taskName, assignedToName,
+  startedAt, estimatedMinutes, chefId
+});
+
+socket.emit('prep_task_progress', {
+  taskId, taskName, completedQty,
+  totalQty, percentComplete, chefId
+});
+
+socket.emit('prep_task_completed', {
+  taskId, taskName, assignedToName,
+  completedQty, unit, timeTaken,
+  completionNote, chefId
+  // → triggers verification alert for chef
+});
+
+socket.emit('prep_task_issue_reported', {
+  taskId, taskName, assignedToName,
+  issueNote, chefId, managerId
+});
+
+socket.emit('prep_task_verified', {
+  taskId, taskName, verifiedByName,
+  qualityScore, feedback, assignedToId
+  // → sends approval message to assistant
+});
+
+socket.emit('dish_prep_complete', {
+  menuItemId, menuItemName,
+  allTasksVerified: true, chefId
+  // → all tasks for this dish are done
+});
+
+socket.emit('all_prep_complete', {
+  outletId, targetDate,
+  totalTasks, totalTime, topPerformer
+  // → full readiness achieved
+});
+```
+
+***
+
+#### 6. Configurable notification settings (per chef)
+
+In Chef Profile Settings, allow each chef to configure:
+
+```
+NOTIFICATION PREFERENCES
+─────────────────────────────────────────
+Task Completed alerts:     [✅ On ]  [🔔 Sound: Chime ▼]
+Task Started alerts:       [✅ On ]  [🔕 Silent       ]
+Deadline warnings:         [✅ On ]  [🔔 Sound: Beep  ]
+Issue reports:             [✅ On ]  [🔔 Sound: Urgent ]
+Progress summaries:        [✅ On ]  [Every: 2 hrs ▼  ]
+Readiness alerts:          [✅ On ]  [Below: 70%    ▼  ]
+All-complete celebration:  [✅ On ]  [🔔 Sound: Chime ]
+─────────────────────────────────────────
+Push notifications:        [✅ On ]  (browser push)
+Email summary:             [✅ On ]  (end of shift)
+```
+
+***
+
+Paste this block into Replit AI immediately after the existing pre-prep prompt. It adds the complete real-time notification layer on top of the already-built task assignment system.
