@@ -21,7 +21,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -1208,8 +1208,8 @@ export default function POSPage() {
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         </div>
                       ) : (
-                        <div className="h-24 flex items-center justify-center" style={{ background: "linear-gradient(135deg, hsl(174 65% 32% / 0.07) 0%, hsl(174 65% 32% / 0.15) 100%)" }} data-testid={`placeholder-${item.id}`}>
-                          <UtensilsCrossed className="h-7 w-7 text-primary/25" />
+                        <div className="h-24 bg-muted/50 flex items-center justify-center" data-testid={`placeholder-${item.id}`}>
+                          <UtensilsCrossed className="h-6 w-6 text-muted-foreground/40" />
                         </div>
                       )}
                       <CardContent className="p-2.5">
@@ -1331,41 +1331,42 @@ export default function POSPage() {
             </Button>
           </div>
 
-          {isDineIn && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-3 flex gap-2 items-center">
-              <button
-                data-testid="button-select-table"
-                onClick={() => setShowTablePicker(true)}
-                className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors text-left ${selectedTable ? "border-primary bg-primary/5 text-primary" : "border-dashed border-muted-foreground/40 hover:border-primary/50 text-muted-foreground hover:text-foreground"}`}
-              >
-                <MapPin className="h-4 w-4 shrink-0" />
-                <span className="flex-1 truncate">
-                  {selectedTable
-                    ? (() => { const t = tables.find(t => t.id === selectedTable); return t ? `Table ${t.number} — ${t.zone}` : "Table selected"; })()
-                    : "Select table…"}
-                </span>
-                <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
-              </button>
-              <div className="flex items-center gap-1 bg-muted/50 rounded-md px-2 py-1.5 shrink-0">
-                <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: Math.max(1, (activeTab?.covers ?? 1) - 1) })} data-testid="button-covers-decrease"><Minus className="h-3 w-3" /></button>
-                <span className="text-xs font-medium w-12 text-center" data-testid="text-covers">{activeTab?.covers ?? 1} pax</span>
-                <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: (activeTab?.covers ?? 1) + 1 })} data-testid="button-covers-increase"><Plus className="h-3 w-3" /></button>
-              </div>
-            </motion.div>
-          )}
-
-          {!isDineIn && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-3 grid grid-cols-2 gap-2">
-              <div className="relative">
-                <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input data-testid="input-customer-name" placeholder="Customer name" value={activeTab?.customerName ?? ""} onChange={e => updateActiveTab({ customerName: e.target.value })} className="pl-8 text-sm" />
-              </div>
-              <div className="relative">
-                <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                <Input data-testid="input-customer-phone" placeholder="Phone" type="tel" value={activeTab?.customerPhone ?? ""} onChange={e => updateActiveTab({ customerPhone: e.target.value })} className="pl-8 text-sm" />
-              </div>
-            </motion.div>
-          )}
+          <AnimatePresence initial={false}>
+            {isDineIn && (
+              <motion.div key="dine-in-controls" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="mt-3 flex gap-2 items-center overflow-hidden">
+                <button
+                  data-testid="button-select-table"
+                  onClick={() => setShowTablePicker(true)}
+                  className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors text-left ${selectedTable ? "border-primary bg-primary/5 text-primary" : "border-dashed border-muted-foreground/40 hover:border-primary/50 text-muted-foreground hover:text-foreground"}`}
+                >
+                  <MapPin className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 truncate">
+                    {selectedTable
+                      ? (() => { const t = tables.find(t => t.id === selectedTable); return t ? `Table ${t.number} — ${t.zone}` : "Table selected"; })()
+                      : "Select table…"}
+                  </span>
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                </button>
+                <div className="flex items-center gap-1 bg-muted/50 rounded-md px-2 py-1.5 shrink-0">
+                  <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: Math.max(1, (activeTab?.covers ?? 1) - 1) })} data-testid="button-covers-decrease"><Minus className="h-3 w-3" /></button>
+                  <span className="text-xs font-medium w-12 text-center" data-testid="text-covers">{activeTab?.covers ?? 1} pax</span>
+                  <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: (activeTab?.covers ?? 1) + 1 })} data-testid="button-covers-increase"><Plus className="h-3 w-3" /></button>
+                </div>
+              </motion.div>
+            )}
+            {!isDineIn && (
+              <motion.div key="customer-fields" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="mt-3 grid grid-cols-2 gap-2 overflow-hidden">
+                <div className="relative">
+                  <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input data-testid="input-customer-name" placeholder="Customer name" value={activeTab?.customerName ?? ""} onChange={e => updateActiveTab({ customerName: e.target.value })} className="pl-8 text-sm" />
+                </div>
+                <div className="relative">
+                  <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input data-testid="input-customer-phone" placeholder="Phone" type="tel" value={activeTab?.customerPhone ?? ""} onChange={e => updateActiveTab({ customerPhone: e.target.value })} className="pl-8 text-sm" />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
@@ -1639,6 +1640,7 @@ export default function POSPage() {
             <DialogTitle className="flex items-center gap-2">
               <CreditCard className="h-5 w-5 text-primary" /> Collect Payment
             </DialogTitle>
+            <DialogDescription>Select payment method and confirm the transaction.</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-lg bg-muted/50 px-4 py-3 flex items-center justify-between">
