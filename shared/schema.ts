@@ -29,11 +29,13 @@ export const roleEnum = pgEnum("user_role", [
   "auditor",
   "customer",
   "super_admin",
+  "delivery_agent",
 ]);
 
 export const orderStatusEnum = pgEnum("order_status", [
   "new",
   "on_hold",
+  "confirmed",
   "sent_to_kitchen",
   "in_progress",
   "ready",

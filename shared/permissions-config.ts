@@ -46,7 +46,8 @@ export type UserRole =
   | "hq_admin"
   | "franchise_owner"
   | "auditor"
-  | "super_admin";
+  | "super_admin"
+  | "delivery_agent";
 
 export type Role = UserRole;
 
@@ -129,6 +130,9 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
     "close_shift",
   ],
+  delivery_agent: [
+    "create_order", "edit_order",
+  ],
 };
 
 export const supervisorRequiredActions: PermissionAction[] = [
@@ -189,12 +193,13 @@ export const roleLabels: Record<UserRole, string> = {
   auditor: "Auditor",
   customer: "Customer",
   super_admin: "Super Admin",
+  delivery_agent: "Delivery Agent",
 };
 
 export const allRoles: UserRole[] = [
   "owner", "franchise_owner", "hq_admin", "manager", "outlet_manager",
   "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor", "customer",
-  "super_admin",
+  "super_admin", "delivery_agent",
 ];
 
 export function getPermissionsForRole(role: string): PermissionAction[] {

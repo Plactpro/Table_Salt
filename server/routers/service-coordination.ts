@@ -1,0 +1,716 @@
+import type { Express } from "express";
+import { requireAuth, requireRole } from "../auth";
+import { emitToTenant } from "../realtime";
+import { pool } from "../db";
+
+export function registerServiceCoordinationRoutes(app: Express): void {
+
+  // ── Live Orders ────────────────────────────────────────────────────────────
+  app.get("/api/coordination/orders/live", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user.tenantId;
+
+      const { rows: orders } = await pool.query(
+        `SELECT
+           o.*,
+           t.number AS table_number,
+           u.name AS waiter_user_name,
+           v.id AS vip_flag_id,
+           v.vip_level,
+           v.special_notes AS vip_special_notes
+         FROM orders o
+         LEFT JOIN tables t ON t.id = o.table_id
+         LEFT JOIN users u ON u.id = o.waiter_id
+         LEFT JOIN vip_order_flags v ON v.order_id = o.id
+         WHERE o.tenant_id = $1
+           AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')
+         -- created_at serves as received_at (order arrival time) in this schema
+         ORDER BY o.priority DESC NULLS LAST, o.created_at ASC`,
+        [tenantId]
+      );
+
+      const orderIds = orders.map((o: any) => o.id);
+      let items: any[] = [];
+      if (orderIds.length > 0) {
+        const placeholders = orderIds.map((_: any, i: number) => `$${i + 1}`).join(",");
+        const { rows } = await pool.query(
+          `SELECT * FROM order_items WHERE order_id IN (${placeholders})`,
+          orderIds
+        );
+        items = rows;
+      }
+
+      const itemsByOrder: Record<string, any[]> = {};
+      for (const item of items) {
+        if (!itemsByOrder[item.order_id]) itemsByOrder[item.order_id] = [];
+        itemsByOrder[item.order_id].push(item);
+      }
+
+      const result = orders.map((o: any) => ({
+        ...o,
+        items: itemsByOrder[o.id] || [],
+        isVip: !!o.vip_flag_id,
+      }));
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Update Order Status ────────────────────────────────────────────────────
+  app.patch("/api/orders/:id/status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rawStatus = req.body.status as string;
+      if (!rawStatus) return res.status(400).json({ message: "status is required" });
+      // Normalize legacy/external status vocabulary to DB enum values
+      const status = rawStatus === "in_preparation" ? "in_progress" : rawStatus;
+
+      const now = new Date();
+      const setClauses = ["status = $1"];
+      const values: any[] = [status];
+
+      if (status === "confirmed") {
+        setClauses.push(`confirmed_at = COALESCE(confirmed_at, $${values.length + 1})`);
+        values.push(now);
+      }
+      if (status === "in_progress" || status === "sent_to_kitchen") {
+        setClauses.push(`kitchen_sent_at = COALESCE(kitchen_sent_at, $${values.length + 1})`);
+        values.push(now);
+      }
+      if (status === "ready") {
+        setClauses.push(`actual_ready_time = $${values.length + 1}`);
+        values.push(now);
+        setClauses.push(`fully_ready_at = $${values.length + 1}`);
+        values.push(now);
+      }
+      if (status === "served") {
+        setClauses.push(`served_at = $${values.length + 1}`);
+        values.push(now);
+      }
+      if (status === "paid") {
+        setClauses.push(`paid_at = $${values.length + 1}`);
+        values.push(now);
+        setClauses.push(`payment_status = $${values.length + 1}`);
+        values.push("paid");
+      }
+
+      values.push(req.params.id, user.tenantId);
+      const { rows } = await pool.query(
+        `UPDATE orders SET ${setClauses.join(", ")} WHERE id = $${values.length - 1} AND tenant_id = $${values.length} RETURNING *`,
+        values
+      );
+
+      if (!rows[0]) return res.status(404).json({ message: "Order not found" });
+
+      emitToTenant(user.tenantId, "coordination:order_updated", {
+        orderId: rows[0].id,
+        status,
+        source: rows[0].order_source,
+      });
+
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Update Order Priority ──────────────────────────────────────────────────
+  app.patch("/api/orders/:id/priority", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { priority } = req.body;
+      if (priority === undefined) return res.status(400).json({ message: "priority is required" });
+
+      const numericPriority = typeof priority === "number" ? priority
+        : priority === "urgent" ? 5
+        : priority === "vip" ? 4
+        : priority === "high" ? 3
+        : priority === "normal" ? 2
+        : 1;
+
+      const { rows } = await pool.query(
+        `UPDATE orders SET priority = $1 WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+        [numericPriority, req.params.id, user.tenantId]
+      );
+
+      if (!rows[0]) return res.status(404).json({ message: "Order not found" });
+
+      if (priority === "vip" || numericPriority >= 4) {
+        await pool.query(
+          `INSERT INTO vip_order_flags (tenant_id, order_id, vip_level, flagged_by)
+           VALUES ($1, $2, 'VIP', $3)
+           ON CONFLICT (order_id) DO NOTHING`,
+          [user.tenantId, req.params.id, user.id]
+        );
+        emitToTenant(user.tenantId, "coordination:vip_flagged", {
+          orderId: rows[0].id,
+          orderNumber: rows[0].order_number,
+          vipLevel: "VIP",
+          notes: null,
+        });
+      }
+
+      emitToTenant(user.tenantId, "coordination:order_updated", {
+        orderId: rows[0].id,
+        status: rows[0].status,
+        source: rows[0].order_source,
+      });
+
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Flag Order as VIP ──────────────────────────────────────────────────────
+  app.post("/api/orders/:id/vip", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { vipLevel = "VIP", specialNotes, specialSetup, managerNotified = false } = req.body;
+
+      const { rows: orderCheck } = await pool.query(
+        `SELECT id, order_number FROM orders WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, user.tenantId]
+      );
+      if (!orderCheck[0]) return res.status(404).json({ message: "Order not found" });
+
+      const { rows } = await pool.query(
+        `INSERT INTO vip_order_flags (tenant_id, order_id, vip_level, special_notes, special_setup, manager_notified, flagged_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (order_id) DO UPDATE SET
+           vip_level = EXCLUDED.vip_level,
+           special_notes = EXCLUDED.special_notes,
+           special_setup = EXCLUDED.special_setup,
+           manager_notified = EXCLUDED.manager_notified
+         RETURNING *`,
+        [user.tenantId, req.params.id, vipLevel, specialNotes || null, specialSetup || null, managerNotified, user.id]
+      );
+
+      await pool.query(
+        `UPDATE orders SET vip_notes = $1, priority = GREATEST(COALESCE(priority, 0), 4) WHERE id = $2 AND tenant_id = $3`,
+        [specialNotes || null, req.params.id, user.tenantId]
+      );
+
+      emitToTenant(user.tenantId, "coordination:vip_flagged", {
+        orderId: req.params.id,
+        orderNumber: orderCheck[0].order_number,
+        vipLevel,
+        notes: specialNotes || null,
+      });
+
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Update Order Item Status ───────────────────────────────────────────────
+  app.patch("/api/orders/:id/items/:itemId/status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { status } = req.body;
+      if (!status) return res.status(400).json({ message: "status is required" });
+
+      const now = new Date();
+      const setClauses = ["status = $1"];
+      const values: any[] = [status];
+
+      if (status === "in_preparation" || status === "sent_to_kitchen") {
+        setClauses.push(`preparation_started_at = COALESCE(preparation_started_at, $${values.length + 1})`);
+        values.push(now);
+      }
+      if (status === "ready") {
+        setClauses.push(`ready_at = $${values.length + 1}`);
+        values.push(now);
+      }
+      if (status === "served") {
+        setClauses.push(`served_at = $${values.length + 1}`);
+        values.push(now);
+      }
+
+      // Verify the order belongs to this tenant before updating its items
+      const { rows: orderCheck } = await pool.query(
+        `SELECT id FROM orders WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, user.tenantId]
+      );
+      if (!orderCheck[0]) return res.status(404).json({ message: "Order not found" });
+
+      values.push(req.params.itemId, req.params.id);
+      const { rows } = await pool.query(
+        `UPDATE order_items SET ${setClauses.join(", ")} WHERE id = $${values.length - 1} AND order_id = $${values.length} RETURNING *`,
+        values
+      );
+
+      if (!rows[0]) return res.status(404).json({ message: "Order item not found" });
+
+      if (status === "ready") {
+        const { rows: orderRows } = await pool.query(
+          `SELECT o.id, o.table_id, t.number AS table_number, o.waiter_name, o.waiter_id, u.name AS waiter_user_name
+           FROM orders o
+           LEFT JOIN tables t ON t.id = o.table_id
+           LEFT JOIN users u ON u.id = o.waiter_id
+           WHERE o.id = $1 AND o.tenant_id = $2`,
+          [req.params.id, user.tenantId]
+        );
+        if (orderRows[0]) {
+          const order = orderRows[0];
+          await pool.query(
+            `UPDATE orders SET first_item_ready_at = COALESCE(first_item_ready_at, $1) WHERE id = $2`,
+            [now, req.params.id]
+          );
+          emitToTenant(user.tenantId, "coordination:item_ready", {
+            orderId: req.params.id,
+            itemId: req.params.itemId,
+            tableNumber: order.table_number,
+            waiterName: order.waiter_name || order.waiter_user_name,
+          });
+        }
+      }
+
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Service Messages ───────────────────────────────────────────────────────
+  app.post("/api/service-messages", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const {
+        orderId,
+        outletId,
+        toStaffId,
+        toRole,
+        message,
+        messageType = "GENERAL",
+        priority = "normal",
+      } = req.body;
+
+      if (!message) return res.status(400).json({ message: "message is required" });
+
+      const { rows } = await pool.query(
+        `INSERT INTO service_messages
+         (tenant_id, outlet_id, order_id, from_staff_id, from_name, from_role, to_staff_id, to_role, message, message_type, priority)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING *`,
+        [
+          user.tenantId,
+          outletId || null,
+          orderId || null,
+          user.id,
+          user.name || user.username,
+          user.role,
+          toStaffId || null,
+          toRole || null,
+          message,
+          messageType,
+          priority,
+        ]
+      );
+
+      emitToTenant(user.tenantId, "coordination:message", {
+        messageId: rows[0].id,
+        fromName: user.name || user.username,
+        fromRole: user.role,
+        toRole: toRole || null,
+        message,
+        priority,
+      });
+
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/service-messages", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+      const { rows } = await pool.query(
+        `SELECT * FROM service_messages
+         WHERE tenant_id = $1
+           AND (to_staff_id = $2 OR to_role = $3 OR (to_staff_id IS NULL AND to_role IS NULL))
+         ORDER BY created_at DESC
+         LIMIT $4`,
+        [user.tenantId, user.id, user.role, limit]
+      );
+
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/service-messages/:id/read", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      // Only allow marking messages that are addressed to this user (direct, role-broadcast, or global)
+      const { rows } = await pool.query(
+        `UPDATE service_messages SET is_read = true, read_at = NOW()
+         WHERE id = $1
+           AND tenant_id = $2
+           AND (
+             to_staff_id = $3
+             OR to_role = $4
+             OR (to_staff_id IS NULL AND to_role IS NULL)
+           )
+         RETURNING *`,
+        [req.params.id, user.tenantId, user.id, user.role]
+      );
+      if (!rows[0]) return res.status(404).json({ message: "Message not found or not addressed to you" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/service-messages/read-all", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      // Mark messages visible to this user: direct, role-targeted, or global broadcasts
+      await pool.query(
+        `UPDATE service_messages SET is_read = true, read_at = NOW()
+         WHERE tenant_id = $1
+           AND (
+             to_staff_id = $2
+             OR to_role = $3
+             OR (to_staff_id IS NULL AND to_role IS NULL)
+           )
+           AND is_read = false`,
+        [user.tenantId, user.id, user.role]
+      );
+      res.json({ ok: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Coordination Dashboard ─────────────────────────────────────────────────
+  app.get("/api/coordination/dashboard", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user.tenantId;
+
+      const [ordersRes, tablesRes, deliveryRes, vipRes, alertRes, floorRes, kpiWaitRes, kpiKitchenRes, kpiRevenueRes, kpiDeliveryRes] = await Promise.all([
+        pool.query(
+          `SELECT
+             status,
+             COUNT(*) AS count,
+             AVG(EXTRACT(EPOCH FROM (NOW() - created_at)) / 60)::int AS avg_age_min
+           FROM orders
+           WHERE tenant_id = $1 AND status NOT IN ('paid', 'cancelled', 'voided', 'completed')
+           GROUP BY status`,
+          [tenantId]
+        ),
+        pool.query(
+          `SELECT status, COUNT(*) AS count FROM tables WHERE tenant_id = $1 GROUP BY status`,
+          [tenantId]
+        ),
+        pool.query(
+          `SELECT COUNT(*) AS count FROM orders
+           WHERE tenant_id = $1 AND order_type = 'delivery'
+           AND status NOT IN ('paid', 'cancelled', 'voided', 'completed')`,
+          [tenantId]
+        ),
+        pool.query(
+          `SELECT COUNT(*) AS count FROM vip_order_flags vf
+           JOIN orders o ON o.id = vf.order_id
+           WHERE vf.tenant_id = $1
+             AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')`,
+          [tenantId]
+        ),
+        pool.query(
+          `SELECT COUNT(*) AS count FROM service_messages
+           WHERE tenant_id = $1 AND is_read = false AND to_role = 'manager'`,
+          [tenantId]
+        ),
+        // Floor data: per-table occupancy snapshot
+        pool.query(
+          `SELECT
+             t.id,
+             t.number AS table_number,
+             t.status AS table_status,
+             t.capacity,
+             o.id AS order_id,
+             o.status AS order_status,
+             o.covers,
+             o.priority,
+             EXTRACT(EPOCH FROM (NOW() - o.created_at)) / 60 AS order_age_min
+           FROM tables t
+           LEFT JOIN orders o ON o.table_id = t.id
+             AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')
+           WHERE t.tenant_id = $1
+           ORDER BY t.number ASC`,
+          [tenantId]
+        ),
+        // KPI: avg wait + on-time
+        pool.query(
+          `SELECT
+             AVG(EXTRACT(EPOCH FROM (COALESCE(served_at, NOW()) - created_at)) / 60)::int AS avg_wait_min,
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL AND EXTRACT(EPOCH FROM (served_at - created_at)) / 60 <= 30) AS on_time_count,
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL) AS served_count
+           FROM orders
+           WHERE tenant_id = $1 AND created_at >= NOW() - INTERVAL '24 hours'`,
+          [tenantId]
+        ),
+        // KPI: kitchen throughput
+        pool.query(
+          `SELECT COUNT(*) AS active_tickets FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+           WHERE o.tenant_id = $1
+             AND oi.status IN ('pending', 'in_preparation', 'sent_to_kitchen')
+             AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')`,
+          [tenantId]
+        ),
+        // KPI: revenue this hour
+        pool.query(
+          `SELECT COALESCE(SUM(total::numeric), 0) AS revenue
+           FROM orders
+           WHERE tenant_id = $1 AND status = 'paid' AND paid_at >= NOW() - INTERVAL '1 hour'`,
+          [tenantId]
+        ),
+        // KPI: delivery on-time
+        pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL AND promised_time IS NOT NULL AND served_at <= promised_time) AS on_time_delivery,
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL AND promised_time IS NOT NULL) AS total_with_promise
+           FROM orders
+           WHERE tenant_id = $1 AND order_type = 'delivery' AND created_at >= NOW() - INTERVAL '24 hours'`,
+          [tenantId]
+        ),
+      ]);
+
+      const activeByStatus: Record<string, any> = {};
+      for (const row of ordersRes.rows) {
+        activeByStatus[row.status] = { count: parseInt(row.count), avgAgeMin: row.avg_age_min };
+      }
+
+      const totalActiveOrders = Object.values(activeByStatus).reduce(
+        (sum: number, v: any) => sum + (v.count || 0), 0
+      );
+
+      const tableOccupancy: Record<string, number> = {};
+      for (const row of tablesRes.rows) {
+        tableOccupancy[row.status] = parseInt(row.count);
+      }
+
+      const totalTables = Object.values(tableOccupancy).reduce((a: number, b: number) => a + b, 0);
+      const occupiedTables = tableOccupancy["occupied"] || 0;
+
+      // Build floor data: deduplicate tables (a table may have one active order)
+      const seenTables = new Set<string>();
+      const floorData: any[] = [];
+      for (const row of floorRes.rows) {
+        if (seenTables.has(row.id)) continue;
+        seenTables.add(row.id);
+        floorData.push({
+          tableId: row.id,
+          tableNumber: parseInt(row.table_number),
+          tableStatus: row.table_status,
+          capacity: row.capacity,
+          activeOrder: row.order_id ? {
+            orderId: row.order_id,
+            status: row.order_status,
+            covers: row.covers,
+            priority: row.priority,
+            ageMin: Math.round(parseFloat(row.order_age_min || "0")),
+          } : null,
+        });
+      }
+
+      // KPI bundle
+      const kpiWaitRow = kpiWaitRes.rows[0];
+      const servedCount = parseInt(kpiWaitRow.served_count || "0");
+      const onTimeCount = parseInt(kpiWaitRow.on_time_count || "0");
+      const kpiDeliveryRow = kpiDeliveryRes.rows[0];
+      const onTimeDelivery = parseInt(kpiDeliveryRow.on_time_delivery || "0");
+      const totalWithPromise = parseInt(kpiDeliveryRow.total_with_promise || "0");
+
+      res.json({
+        activeOrdersByStatus: activeByStatus,
+        totalActiveOrders,
+        tableOccupancy: {
+          total: totalTables,
+          occupied: occupiedTables,
+          free: tableOccupancy["free"] || 0,
+          reserved: tableOccupancy["reserved"] || 0,
+          occupancyPct: totalTables > 0 ? Math.round((occupiedTables / totalTables) * 100) : 0,
+        },
+        floorData,
+        deliveryQueueCount: parseInt(deliveryRes.rows[0]?.count || "0"),
+        vipOrderCount: parseInt(vipRes.rows[0]?.count || "0"),
+        unreadAlertCount: parseInt(alertRes.rows[0]?.count || "0"),
+        kpis: {
+          avg_wait_min: parseInt(kpiWaitRow.avg_wait_min || "0"),
+          on_time_pct: servedCount > 0 ? Math.round((onTimeCount / servedCount) * 100) : 100,
+          kitchen_throughput: parseInt(kpiKitchenRes.rows[0]?.active_tickets || "0"),
+          revenue_this_hour: parseFloat(kpiRevenueRes.rows[0]?.revenue || "0"),
+          delivery_on_time_pct: totalWithPromise > 0 ? Math.round((onTimeDelivery / totalWithPromise) * 100) : 100,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Live KPIs ──────────────────────────────────────────────────────────────
+  app.get("/api/coordination/metrics/live", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const tenantId = user.tenantId;
+
+      const [waitRes, kitchenRes, revenueRes, turnoverRes, deliveryRes] = await Promise.all([
+        pool.query(
+          `SELECT
+             AVG(EXTRACT(EPOCH FROM (COALESCE(served_at, NOW()) - created_at)) / 60)::int AS avg_wait_min,
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL AND EXTRACT(EPOCH FROM (served_at - created_at)) / 60 <= 30) AS on_time_count,
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL) AS served_count
+           FROM orders
+           WHERE tenant_id = $1
+             AND created_at >= NOW() - INTERVAL '24 hours'`,
+          [tenantId]
+        ),
+        pool.query(
+          `SELECT COUNT(*) AS active_tickets FROM order_items oi
+           JOIN orders o ON o.id = oi.order_id
+           WHERE o.tenant_id = $1
+             AND oi.status IN ('pending', 'in_preparation', 'sent_to_kitchen')
+             AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')`,
+          [tenantId]
+        ),
+        pool.query(
+          `SELECT COALESCE(SUM(total::numeric), 0) AS revenue
+           FROM orders
+           WHERE tenant_id = $1
+             AND status = 'paid'
+             AND paid_at >= NOW() - INTERVAL '1 hour'`,
+          [tenantId]
+        ),
+        // Table turnover: number of dine-in orders completed (paid/served) in last 24h per occupied table
+        pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE status IN ('paid', 'completed') AND paid_at >= NOW() - INTERVAL '24 hours') AS completed_today,
+             COUNT(DISTINCT table_id) FILTER (WHERE table_id IS NOT NULL AND status NOT IN ('paid', 'cancelled', 'voided', 'completed')) AS active_tables
+           FROM orders
+           WHERE tenant_id = $1 AND order_type = 'dine_in'`,
+          [tenantId]
+        ),
+        // Delivery on-time: deliveries served before promised_time vs all served deliveries today
+        pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL AND promised_time IS NOT NULL AND served_at <= promised_time) AS on_time_delivery,
+             COUNT(*) FILTER (WHERE served_at IS NOT NULL AND promised_time IS NOT NULL) AS total_with_promise
+           FROM orders
+           WHERE tenant_id = $1
+             AND order_type = 'delivery'
+             AND created_at >= NOW() - INTERVAL '24 hours'`,
+          [tenantId]
+        ),
+      ]);
+
+      const waitRow = waitRes.rows[0];
+      const servedCount = parseInt(waitRow.served_count || "0");
+      const onTimeCount = parseInt(waitRow.on_time_count || "0");
+
+      const turnoverRow = turnoverRes.rows[0];
+      const completedToday = parseInt(turnoverRow.completed_today || "0");
+      const activeTables = parseInt(turnoverRow.active_tables || "0");
+      const tableTurnover = activeTables > 0 ? parseFloat((completedToday / activeTables).toFixed(2)) : 0;
+
+      const deliveryRow = deliveryRes.rows[0];
+      const onTimeDelivery = parseInt(deliveryRow.on_time_delivery || "0");
+      const totalWithPromise = parseInt(deliveryRow.total_with_promise || "0");
+      const deliveryOnTimePct = totalWithPromise > 0 ? Math.round((onTimeDelivery / totalWithPromise) * 100) : 100;
+
+      res.json({
+        avg_wait_min: parseInt(waitRow.avg_wait_min || "0"),
+        on_time_pct: servedCount > 0 ? Math.round((onTimeCount / servedCount) * 100) : 100,
+        kitchen_throughput: parseInt(kitchenRes.rows[0]?.active_tickets || "0"),
+        revenue_this_hour: parseFloat(revenueRes.rows[0]?.revenue || "0"),
+        table_turnover: tableTurnover,
+        delivery_on_time_pct: deliveryOnTimePct,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Coordination Rules ─────────────────────────────────────────────────────
+  app.get("/api/coordination/rules", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT * FROM coordination_rules WHERE tenant_id = $1 ORDER BY id ASC`,
+        [user.tenantId]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/coordination/rules", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { ruleName, triggerEvent, conditionJson, action, messageTemplate, isActive = true } = req.body;
+
+      if (!ruleName || !triggerEvent || !conditionJson || !action || !messageTemplate) {
+        return res.status(400).json({ message: "ruleName, triggerEvent, conditionJson, action, and messageTemplate are required" });
+      }
+
+      const { rows } = await pool.query(
+        `INSERT INTO coordination_rules (tenant_id, rule_name, trigger_event, condition_json, action, message_template, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [
+          user.tenantId,
+          ruleName,
+          triggerEvent,
+          typeof conditionJson === "string" ? conditionJson : JSON.stringify(conditionJson),
+          action,
+          messageTemplate,
+          isActive,
+        ]
+      );
+
+      res.status(201).json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/coordination/rules/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { isActive, ruleName, messageTemplate, conditionJson, action } = req.body;
+
+      const sets: string[] = [];
+      const values: any[] = [];
+
+      if (isActive !== undefined) { sets.push(`is_active = $${values.length + 1}`); values.push(isActive); }
+      if (ruleName !== undefined) { sets.push(`rule_name = $${values.length + 1}`); values.push(ruleName); }
+      if (messageTemplate !== undefined) { sets.push(`message_template = $${values.length + 1}`); values.push(messageTemplate); }
+      if (conditionJson !== undefined) { sets.push(`condition_json = $${values.length + 1}`); values.push(typeof conditionJson === "string" ? conditionJson : JSON.stringify(conditionJson)); }
+      if (action !== undefined) { sets.push(`action = $${values.length + 1}`); values.push(action); }
+
+      if (sets.length === 0) return res.status(400).json({ message: "No fields to update" });
+
+      values.push(req.params.id, user.tenantId);
+      const { rows } = await pool.query(
+        `UPDATE coordination_rules SET ${sets.join(", ")} WHERE id = $${values.length - 1} AND tenant_id = $${values.length} RETURNING *`,
+        values
+      );
+
+      if (!rows[0]) return res.status(404).json({ message: "Rule not found" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+}

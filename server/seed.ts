@@ -1,5 +1,6 @@
 import { storage } from "./storage";
 import { hashPassword } from "./auth";
+import { pool } from "./db";
 
 async function seedChefAssignment(tenantId: string, outletId: string, kitchenUserId: string) {
   const existing = await storage.getCounters(tenantId, outletId);
@@ -157,6 +158,17 @@ export async function seedDatabase() {
   });
   await storage.createUser({
     tenantId: tenant.id, username: "accountant", password: pw, name: "Morgan Lee", email: "morgan@grandkitchen.com", role: "accountant", hourlyRate: "30.00", overtimeRate: "45.00",
+  });
+
+  // Delivery agents for Service Coordination System (Task #94)
+  await storage.createUser({
+    tenantId: tenant.id, username: "delivery1", password: pw, name: "Carlos Mendez", email: "carlos@grandkitchen.com", role: "delivery_agent",
+  });
+  await storage.createUser({
+    tenantId: tenant.id, username: "delivery2", password: pw, name: "Jamie Park", email: "jamie@grandkitchen.com", role: "delivery_agent",
+  });
+  await storage.createUser({
+    tenantId: tenant.id, username: "delivery3", password: pw, name: "Priya Sharma", email: "priya@grandkitchen.com", role: "delivery_agent",
   });
 
   const categories = [
@@ -1634,4 +1646,299 @@ export async function seedDatabase() {
   console.log("  Main Branch: /kiosk?token=kiosk-demo-token-main-001");
   console.log("  Marina Walk: /kiosk?token=kiosk-demo-token-marina-001");
   console.log("  Airport T3: /kiosk?token=kiosk-demo-token-airport-001");
+
+  await seedServiceCoordination(tenant.id, outlet.id, waiter.id, manager.id, kitchen.id);
+}
+
+async function seedServiceCoordination(
+  tenantId: string,
+  outletId: string,
+  waiterId: string,
+  managerId: string,
+  kitchenId: string
+): Promise<void> {
+  // Idempotency: check for coordination demo orders (QR_TABLE orders are coordination-seeded)
+  // and rules separately — this allows re-seeding orders/messages even if rules already exist
+  const existingCoordOrders = await pool.query(
+    `SELECT id FROM orders WHERE tenant_id = $1 AND order_source = 'QR_TABLE' LIMIT 1`,
+    [tenantId]
+  );
+  if (existingCoordOrders.rows.length > 0) {
+    console.log("Service coordination demo data already seeded, skipping.");
+    return;
+  }
+
+  console.log("Seeding service coordination data...");
+
+  const allItems = await storage.getMenuItemsByTenant(tenantId);
+  const menuItem1 = allItems[0];
+  const menuItem2 = allItems[2];
+  const menuItem3 = allItems[6];
+
+  const now = Date.now();
+
+  const makeOrder = async (params: {
+    orderType: string;
+    status: string;
+    tableId?: string;
+    orderSource?: string;
+    priority?: number;
+    section?: string;
+    covers?: number;
+    specialInstructions?: string;
+    allergies?: string;
+    vipNotes?: string;
+    promisedTime?: Date;
+    firstItemReadyAt?: Date;
+    fullyReadyAt?: Date;
+    servedAt?: Date;
+    paidAt?: Date;
+    paymentStatus?: string;
+    waiterName?: string;
+    createdAtOffset?: number;
+    customerName?: string;
+    customerPhone?: string;
+    channel?: string;
+    channelOrderId?: string;
+  }) => {
+    const sub = (Number(menuItem1?.price || 10) + Number(menuItem2?.price || 12)).toFixed(2);
+    const tax = (Number(sub) * 0.085).toFixed(2);
+    const total = (Number(sub) + Number(tax)).toFixed(2);
+
+    const { rows } = await pool.query(
+      `INSERT INTO orders
+       (id, tenant_id, outlet_id, table_id, waiter_id, order_type, status,
+        order_source, priority, section, covers, special_instructions, allergies,
+        vip_notes, promised_time, first_item_ready_at, fully_ready_at, served_at,
+        paid_at, payment_status, waiter_name, subtotal, tax, total, created_at,
+        channel, channel_order_id, notes)
+       VALUES (
+         gen_random_uuid(), $1, $2, $3, $4, $5, $6,
+         $7, $8, $9, $10, $11, $12,
+         $13, $14, $15, $16, $17,
+         $18, $19, $20, $21, $22, $23,
+         $24 - ($25 * interval '1 minute'),
+         $26, $27, $28
+       )
+       RETURNING *`,
+      [
+        tenantId, outletId, params.tableId || null, waiterId, params.orderType, params.status,
+        params.orderSource || "POS", params.priority ?? 2, params.section || null,
+        params.covers ?? 2, params.specialInstructions || null, params.allergies || null,
+        params.vipNotes || null, params.promisedTime || null, params.firstItemReadyAt || null,
+        params.fullyReadyAt || null, params.servedAt || null,
+        params.paidAt || null, params.paymentStatus || "pending", params.waiterName || "Sam Chen",
+        sub, tax, total, new Date(),
+        params.createdAtOffset ?? 0,
+        params.channel || null, params.channelOrderId || null,
+        params.customerName ? `Customer: ${params.customerName}${params.customerPhone ? ` (${params.customerPhone})` : ""}` : null,
+      ]
+    );
+    return rows[0];
+  };
+
+  const addItems = async (orderId: string, statuses: string[]) => {
+    const itemDefs = [menuItem1, menuItem2, menuItem3].filter(Boolean);
+    for (let i = 0; i < Math.min(statuses.length, itemDefs.length); i++) {
+      const item = itemDefs[i];
+      if (!item) continue;
+      await pool.query(
+        `INSERT INTO order_items (id, order_id, menu_item_id, name, quantity, price, status)
+         VALUES (gen_random_uuid(), $1, $2, $3, 1, $4, $5)`,
+        [orderId, item.id, item.name, item.price, statuses[i]]
+      );
+    }
+  };
+
+  const tables = await pool.query(
+    `SELECT id FROM tables WHERE tenant_id = $1 LIMIT 10`,
+    [tenantId]
+  );
+  const tableIds = tables.rows.map((t: any) => t.id);
+
+  const dineIn1 = await makeOrder({ orderType: "dine_in", status: "new", tableId: tableIds[0], orderSource: "QR_TABLE", section: "Main Hall", covers: 2, createdAtOffset: 5 });
+  await addItems(dineIn1.id, ["pending", "pending"]);
+
+  const dineIn2 = await makeOrder({ orderType: "dine_in", status: "in_progress", tableId: tableIds[1], orderSource: "POS", section: "Patio", covers: 4, createdAtOffset: 18, specialInstructions: "No onions please" });
+  await addItems(dineIn2.id, ["in_preparation", "pending"]);
+
+  const dineIn3 = await makeOrder({ orderType: "dine_in", status: "in_progress", tableId: tableIds[2], orderSource: "POS", section: "Main Hall", covers: 3, createdAtOffset: 25 });
+  await addItems(dineIn3.id, ["ready", "in_preparation"]);
+
+  const dineIn4 = await makeOrder({ orderType: "dine_in", status: "ready", tableId: tableIds[3], orderSource: "QR_TABLE", covers: 2, firstItemReadyAt: new Date(now - 8 * 60000), fullyReadyAt: new Date(now - 6 * 60000), createdAtOffset: 35 });
+  await addItems(dineIn4.id, ["ready", "ready"]);
+
+  const dineIn5 = await makeOrder({ orderType: "dine_in", status: "served", tableId: tableIds[4], orderSource: "POS", covers: 6, firstItemReadyAt: new Date(now - 40 * 60000), fullyReadyAt: new Date(now - 38 * 60000), servedAt: new Date(now - 35 * 60000), createdAtOffset: 60 });
+  await addItems(dineIn5.id, ["served", "served"]);
+
+  const takeaway1 = await makeOrder({ orderType: "takeaway", status: "ready", orderSource: "KIOSK", customerName: "Alice Wong", customerPhone: "+1-555-0101", createdAtOffset: 20, firstItemReadyAt: new Date(now - 5 * 60000), fullyReadyAt: new Date(now - 3 * 60000) });
+  await addItems(takeaway1.id, ["ready"]);
+
+  const takeaway2 = await makeOrder({ orderType: "takeaway", status: "sent_to_kitchen", orderSource: "PHONE", customerName: "Bob Singh", customerPhone: "+1-555-0102", createdAtOffset: 12 });
+  await addItems(takeaway2.id, ["in_preparation"]);
+
+  const takeaway3 = await makeOrder({ orderType: "takeaway", status: "in_progress", orderSource: "WALK_IN", customerName: "Carol Diaz", customerPhone: "+1-555-0103", createdAtOffset: 8 });
+  await addItems(takeaway3.id, ["pending", "in_preparation"]);
+
+  const delivery1 = await makeOrder({ orderType: "delivery", status: "new", orderSource: "ONLINE_DELIVERY", channel: "Zomato", channelOrderId: "ZMT-10023", customerName: "David Park", customerPhone: "+1-555-0201", createdAtOffset: 10, promisedTime: new Date(now + 30 * 60000) });
+  await addItems(delivery1.id, ["pending"]);
+
+  const delivery2 = await makeOrder({ orderType: "delivery", status: "in_progress", orderSource: "PHONE", customerName: "Eva Martinez", customerPhone: "+1-555-0202", createdAtOffset: 20, promisedTime: new Date(now + 15 * 60000) });
+  await addItems(delivery2.id, ["in_preparation"]);
+
+  const delivery3 = await makeOrder({ orderType: "delivery", status: "in_progress", orderSource: "ONLINE_DELIVERY", channel: "Zomato", channelOrderId: "ZMT-10024", customerName: "Frank Liu", customerPhone: "+1-555-0203", createdAtOffset: 30, promisedTime: new Date(now + 8 * 60000) });
+  await addItems(delivery3.id, ["in_preparation", "pending"]);
+
+  const delivery4 = await makeOrder({ orderType: "delivery", status: "ready", orderSource: "POS", customerName: "Grace Kim", customerPhone: "+1-555-0204", createdAtOffset: 45, firstItemReadyAt: new Date(now - 10 * 60000), fullyReadyAt: new Date(now - 8 * 60000) });
+  await addItems(delivery4.id, ["ready"]);
+
+  const advance1 = await makeOrder({ orderType: "dine_in", status: "new", orderSource: "ADVANCE", tableId: tableIds[5], customerName: "Henry Brown", customerPhone: "+1-555-0301", covers: 4, promisedTime: new Date(now + 2 * 3600000), createdAtOffset: 3 });
+  await addItems(advance1.id, ["pending"]);
+
+  const advance2 = await makeOrder({ orderType: "dine_in", status: "new", orderSource: "ADVANCE", tableId: tableIds[6], customerName: "Isabella Clark", customerPhone: "+1-555-0302", covers: 6, promisedTime: new Date(now + 2.5 * 3600000), createdAtOffset: 5, specialInstructions: "Birthday celebration, please prepare table" });
+  await addItems(advance2.id, ["pending"]);
+
+  const vipOrder = await makeOrder({ orderType: "dine_in", status: "in_progress", tableId: tableIds[7], orderSource: "POS", priority: 4, section: "Private", covers: 2, vipNotes: "Corporate client — top priority", waiterName: "Sam Chen", createdAtOffset: 15 });
+  await addItems(vipOrder.id, ["in_preparation", "in_preparation"]);
+
+  await pool.query(
+    `INSERT INTO vip_order_flags (tenant_id, order_id, vip_level, special_notes, special_setup, manager_notified, flagged_by)
+     VALUES ($1, $2, 'CORPORATE', $3, 'Premium table setup with flowers', true, $4)`,
+    [tenantId, vipOrder.id, "Corporate client — priority seating required", managerId]
+  );
+
+  const alertOrder1 = await makeOrder({ orderType: "dine_in", status: "in_progress", tableId: tableIds[8], orderSource: "POS", covers: 3, createdAtOffset: 35, firstItemReadyAt: new Date(now - 25 * 60000) });
+  await addItems(alertOrder1.id, ["ready", "ready"]);
+
+  const alertOrder2 = await makeOrder({ orderType: "delivery", status: "in_progress", orderSource: "ONLINE_DELIVERY", customerName: "Jake Wilson", customerPhone: "+1-555-0401", createdAtOffset: 45, promisedTime: new Date(now + 5 * 60000) });
+  await addItems(alertOrder2.id, ["in_preparation"]);
+
+  const paid1 = await makeOrder({ orderType: "dine_in", status: "paid", tableId: tableIds[9], orderSource: "POS", covers: 2, createdAtOffset: 90, servedAt: new Date(now - 20 * 60000), paidAt: new Date(now - 10 * 60000), paymentStatus: "paid" });
+  await addItems(paid1.id, ["served"]);
+
+  const paid2 = await makeOrder({ orderType: "takeaway", status: "paid", orderSource: "KIOSK", customerName: "Laura Patel", createdAtOffset: 75, paidAt: new Date(now - 5 * 60000), paymentStatus: "paid" });
+  await addItems(paid2.id, ["served"]);
+
+  const paid3 = await makeOrder({ orderType: "delivery", status: "paid", orderSource: "ONLINE_DELIVERY", customerName: "Mike Torres", createdAtOffset: 120, paidAt: new Date(now - 15 * 60000), paymentStatus: "paid" });
+  await addItems(paid3.id, ["served"]);
+
+  const rules = [
+    {
+      ruleName: "Order Age Exceeds 20min in Preparation",
+      triggerEvent: "order_age_exceeds",
+      conditionJson: { threshold_minutes: 20, status: "in_progress" },
+      action: "notify_coordinator",
+      messageTemplate: "Order #{{orderNumber}} has been in preparation for {{minutes}} minutes. Please check status.",
+      isActive: true,
+    },
+    {
+      ruleName: "Item Ready Unserved for 5min",
+      triggerEvent: "item_ready_unserved",
+      conditionJson: { threshold_minutes: 5 },
+      action: "notify_waiter",
+      messageTemplate: "Order #{{orderNumber}} is ready and has not been served for {{minutes}} minutes.",
+      isActive: true,
+    },
+    {
+      ruleName: "VIP Order Delayed 5min",
+      triggerEvent: "vip_order_delayed",
+      conditionJson: { threshold_minutes: 5 },
+      action: "notify_manager_urgent",
+      messageTemplate: "URGENT: VIP Order #{{orderNumber}} has been waiting for {{minutes}} minutes.",
+      isActive: true,
+    },
+    {
+      ruleName: "Order Stuck in Served State 30min",
+      triggerEvent: "order_status_stuck",
+      conditionJson: { threshold_minutes: 30, status: "served" },
+      action: "prompt_coordinator",
+      messageTemplate: "Order #{{orderNumber}} has been in '{{status}}' state for {{minutes}} minutes. Please close the order.",
+      isActive: true,
+    },
+    {
+      ruleName: "Kitchen Overload — More than 15 Active Tickets",
+      triggerEvent: "active_kitchen_tickets_exceed",
+      conditionJson: { threshold: 15 },
+      action: "notify_manager_urgent",
+      messageTemplate: "Kitchen is overloaded with {{count}} active tickets (threshold: {{threshold}}). Immediate attention required.",
+      isActive: true,
+    },
+    {
+      ruleName: "Delivery Time at Risk — Less than 10min Remaining",
+      triggerEvent: "delivery_time_at_risk",
+      conditionJson: { threshold_minutes: 10 },
+      action: "notify_coordinator",
+      messageTemplate: "Delivery Order #{{orderNumber}} is at risk — only {{minutes}} minutes until promised time.",
+      isActive: false,
+    },
+    {
+      ruleName: "Order Age Exceeds 45min Any Status",
+      triggerEvent: "order_age_exceeds",
+      conditionJson: { threshold_minutes: 45, status: "any" },
+      action: "notify_manager_urgent",
+      messageTemplate: "Order #{{orderNumber}} is {{minutes}} minutes old. Please investigate.",
+      isActive: false,
+    },
+    {
+      ruleName: "Order Paid Status Confirmation",
+      triggerEvent: "order_status_stuck",
+      conditionJson: { threshold_minutes: 5, status: "paid" },
+      action: "notify_coordinator",
+      messageTemplate: "Order #{{orderNumber}} marked paid — please ensure table has been cleared.",
+      isActive: false,
+    },
+  ];
+
+  for (const rule of rules) {
+    await pool.query(
+      `INSERT INTO coordination_rules (tenant_id, rule_name, trigger_event, condition_json, action, message_template, is_active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT DO NOTHING`,
+      [
+        tenantId,
+        rule.ruleName,
+        rule.triggerEvent,
+        JSON.stringify(rule.conditionJson),
+        rule.action,
+        rule.messageTemplate,
+        rule.isActive,
+      ]
+    );
+  }
+
+  const messages: Array<{ fromId: string; fromName: string; fromRole: string; toRole?: string; toId?: string; msg: string; type: string; priority: string; orderId: string | null }> = [
+    { fromId: kitchenId, fromName: "Pat Garcia", fromRole: "kitchen", toRole: "waiter", msg: "Table 3 order ready — please pick up", type: "TABLE_READY", priority: "high", orderId: dineIn4.id },
+    { fromId: managerId, fromName: "Jordan Rivera", fromRole: "manager", toRole: "waiter", msg: "VIP guest at table 8 — ensure premium service", type: "VIP_ALERT", priority: "urgent", orderId: vipOrder.id },
+    { fromId: kitchenId, fromName: "Pat Garcia", fromRole: "kitchen", toRole: "waiter", msg: "Salmon is running low — suggest alternatives for table 2", type: "KITCHEN_NOTE", priority: "normal", orderId: null },
+    { fromId: waiterId, fromName: "Sam Chen", fromRole: "waiter", toRole: "manager", msg: "Customer at table 5 complained about slow service", type: "GENERAL", priority: "normal", orderId: dineIn5.id },
+    { fromId: managerId, fromName: "Jordan Rivera", fromRole: "manager", toRole: "kitchen", msg: "Rush hour starting — please prioritize takeaway orders", type: "ORDER_UPDATE", priority: "high", orderId: null },
+    { fromId: kitchenId, fromName: "Pat Garcia", fromRole: "kitchen", toRole: "manager", msg: "Grill station is behind by 10 minutes — requesting assistance", type: "DELAY_ALERT", priority: "high", orderId: null },
+    { fromId: waiterId, fromName: "Sam Chen", fromRole: "waiter", toRole: "kitchen", msg: "Table 1 has nut allergy — please double-check Bruschetta preparation", type: "SPECIAL_REQUEST", priority: "urgent", orderId: dineIn1.id },
+    { fromId: managerId, fromName: "Jordan Rivera", fromRole: "manager", toId: waiterId, toRole: "waiter", msg: "Please ensure Zomato delivery #ZMT-10023 is ready on time", type: "DELIVERY_UPDATE", priority: "normal", orderId: delivery1.id },
+    { fromId: kitchenId, fromName: "Pat Garcia", fromRole: "kitchen", toRole: "waiter", msg: "Table 4 main courses ready", type: "TABLE_READY", priority: "normal", orderId: dineIn3.id },
+    { fromId: waiterId, fromName: "Sam Chen", fromRole: "waiter", toRole: "manager", msg: "Advance booking for Henry Brown confirmed for 2 hours — table setup needed", type: "GENERAL", priority: "low", orderId: advance1.id },
+  ];
+
+  for (const m of messages) {
+    await pool.query(
+      `INSERT INTO service_messages
+       (tenant_id, outlet_id, order_id, from_staff_id, from_name, from_role, to_staff_id, to_role, message, message_type, priority)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      [
+        tenantId,
+        outletId,
+        m.orderId || null,
+        m.fromId,
+        m.fromName,
+        m.fromRole,
+        m.toId || null,
+        m.toRole || null,
+        m.msg,
+        m.type,
+        m.priority,
+      ]
+    );
+  }
+
+  console.log("Service coordination seed data added successfully!");
 }
