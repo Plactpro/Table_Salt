@@ -205,6 +205,7 @@ export default function Sidebar() {
   useRealtimeEvent("table-request:updated", invalidatePendingCount);
   useRealtimeEvent("table-request:escalated", invalidatePendingCount);
   useRealtimeEvent("low_stock_alert", invalidateSecurityCount);
+  useRealtimeEvent("security_alert", invalidateSecurityCount);
 
   return (
     <aside
