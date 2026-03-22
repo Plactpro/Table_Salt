@@ -539,6 +539,22 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_daily_planned_qty_menu_item ON daily_planned_quantities (menu_item_id)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_planned_qty_unique ON daily_planned_quantities (tenant_id, menu_item_id, planned_date)`);
 
+  // Task #79: Migrate daily_planned_quantities unique index to include outlet_id for proper multi-outlet scoping.
+  // Drop the old constraint (no outlet_id) and replace with outlet-aware partial indexes.
+  await pool.query(`DROP INDEX IF EXISTS idx_daily_planned_qty_unique`);
+  // Unique index when outlet_id IS NULL (single-outlet tenants)
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_planned_qty_no_outlet_unique
+    ON daily_planned_quantities (tenant_id, menu_item_id, planned_date)
+    WHERE outlet_id IS NULL
+  `);
+  // Unique index when outlet_id IS NOT NULL (multi-outlet tenants)
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_planned_qty_with_outlet_unique
+    ON daily_planned_quantities (tenant_id, outlet_id, menu_item_id, planned_date)
+    WHERE outlet_id IS NOT NULL
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS prep_notifications (
       id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -571,4 +587,176 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS help_requested BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ`);
   await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS overdue_alerted BOOLEAN DEFAULT false`);
+
+  // ─── Task #79: Stock Capacity Seed Data ──────────────────────────────────
+  // Seed demo reports for the first active tenant (fully idempotent)
+  try {
+    const { rows: seedTenants } = await pool.query(
+      `SELECT t.id AS tenant_id, o.id AS outlet_id
+       FROM tenants t
+       LEFT JOIN outlets o ON o.tenant_id = t.id
+       WHERE t.active = true AND t.slug != 'platform'
+       ORDER BY t.created_at
+       LIMIT 1`
+    );
+
+    if (seedTenants.length > 0) {
+      const { tenant_id: tenantId, outlet_id: outletId } = seedTenants[0];
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = tomorrow.toISOString().slice(0, 10);
+
+      // Seed dishes: 18 SUFFICIENT, 7 LIMITED, 4 CRITICAL, 2 UNAVAILABLE
+      // Each dish has a stable seed ID derived from tenant+name for idempotency
+      const seedDishes = [
+        // SUFFICIENT dishes (18)
+        { key: "ctm", name: "Chicken Tikka Masala", category: "Mains", status: "SUFFICIENT", maxPortions: 45, planned: 30, bottleneck: "Chicken Breast", bottleneckStock: 13.5, bottleneckRequired: 0.3, shortfall: 0 },
+        { key: "pbm", name: "Paneer Butter Masala", category: "Mains", status: "SUFFICIENT", maxPortions: 60, planned: 40, bottleneck: "Paneer", bottleneckStock: 12, bottleneckRequired: 0.2, shortfall: 0 },
+        { key: "dmk", name: "Dal Makhani", category: "Mains", status: "SUFFICIENT", maxPortions: 80, planned: 50, bottleneck: "Black Lentils", bottleneckStock: 8, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "ppn", name: "Palak Paneer", category: "Mains", status: "SUFFICIENT", maxPortions: 55, planned: 35, bottleneck: "Spinach", bottleneckStock: 11, bottleneckRequired: 0.2, shortfall: 0 },
+        { key: "gnaan", name: "Garlic Naan", category: "Bread", status: "SUFFICIENT", maxPortions: 200, planned: 100, bottleneck: "All-Purpose Flour", bottleneckStock: 20, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "bnaan", name: "Butter Naan", category: "Bread", status: "SUFFICIENT", maxPortions: 200, planned: 100, bottleneck: "All-Purpose Flour", bottleneckStock: 20, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "brice", name: "Biryani Rice", category: "Rice", status: "SUFFICIENT", maxPortions: 70, planned: 50, bottleneck: "Basmati Rice", bottleneckStock: 10.5, bottleneckRequired: 0.15, shortfall: 0 },
+        { key: "raita", name: "Raita", category: "Sides", status: "SUFFICIENT", maxPortions: 120, planned: 60, bottleneck: "Yogurt", bottleneckStock: 12, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "mlassi", name: "Mango Lassi", category: "Beverages", status: "SUFFICIENT", maxPortions: 90, planned: 50, bottleneck: "Mango Pulp", bottleneckStock: 9, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "mchai", name: "Masala Chai", category: "Beverages", status: "SUFFICIENT", maxPortions: 150, planned: 80, bottleneck: "Tea Leaves", bottleneckStock: 3, bottleneckRequired: 0.02, shortfall: 0 },
+        { key: "samosa", name: "Samosa (2 pcs)", category: "Starters", status: "SUFFICIENT", maxPortions: 100, planned: 60, bottleneck: "Potato", bottleneckStock: 15, bottleneckRequired: 0.15, shortfall: 0 },
+        { key: "csoup", name: "Chicken Soup", category: "Starters", status: "SUFFICIENT", maxPortions: 65, planned: 40, bottleneck: "Chicken Stock", bottleneckStock: 13, bottleneckRequired: 0.2, shortfall: 0 },
+        { key: "troti", name: "Tandoori Roti", category: "Bread", status: "SUFFICIENT", maxPortions: 180, planned: 100, bottleneck: "Whole Wheat Flour", bottleneckStock: 18, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "gjamun", name: "Gulab Jamun", category: "Desserts", status: "SUFFICIENT", maxPortions: 80, planned: 50, bottleneck: "Milk Powder", bottleneckStock: 8, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "kheer", name: "Kheer", category: "Desserts", status: "SUFFICIENT", maxPortions: 70, planned: 40, bottleneck: "Milk", bottleneckStock: 21, bottleneckRequired: 0.3, shortfall: 0 },
+        { key: "agobi", name: "Aloo Gobi", category: "Mains", status: "SUFFICIENT", maxPortions: 50, planned: 30, bottleneck: "Cauliflower", bottleneckStock: 10, bottleneckRequired: 0.2, shortfall: 0 },
+        { key: "cmasala", name: "Chana Masala", category: "Mains", status: "SUFFICIENT", maxPortions: 75, planned: 45, bottleneck: "Chickpeas", bottleneckStock: 7.5, bottleneckRequired: 0.1, shortfall: 0 },
+        { key: "mrjosh", name: "Mutton Rogan Josh", category: "Mains", status: "SUFFICIENT", maxPortions: 40, planned: 25, bottleneck: "Mutton", bottleneckStock: 10, bottleneckRequired: 0.25, shortfall: 0 },
+        // LIMITED dishes (7)
+        { key: "prawns", name: "Prawn Masala", category: "Mains", status: "LIMITED", maxPortions: 18, planned: 30, bottleneck: "Prawns", bottleneckStock: 1.8, bottleneckRequired: 0.1, shortfall: 120 },
+        { key: "fcurry", name: "Fish Curry", category: "Mains", status: "LIMITED", maxPortions: 20, planned: 35, bottleneck: "Fish Fillet", bottleneckStock: 4, bottleneckRequired: 0.2, shortfall: 300 },
+        { key: "lkebab", name: "Lamb Seekh Kebab", category: "Starters", status: "LIMITED", maxPortions: 25, planned: 40, bottleneck: "Minced Lamb", bottleneckStock: 5, bottleneckRequired: 0.2, shortfall: 375 },
+        { key: "mtikka", name: "Mushroom Tikka", category: "Starters", status: "LIMITED", maxPortions: 22, planned: 35, bottleneck: "Button Mushrooms", bottleneckStock: 2.2, bottleneckRequired: 0.1, shortfall: 195 },
+        { key: "ppasta", name: "Pesto Pasta", category: "Fusion", status: "LIMITED", maxPortions: 28, planned: 45, bottleneck: "Basil Pesto", bottleneckStock: 2.8, bottleneckRequired: 0.1, shortfall: 255 },
+        { key: "csalad", name: "Caesar Salad", category: "Salads", status: "LIMITED", maxPortions: 30, planned: 45, bottleneck: "Romaine Lettuce", bottleneckStock: 4.5, bottleneckRequired: 0.15, shortfall: 225 },
+        { key: "avotoast", name: "Avocado Toast", category: "Breakfast", status: "LIMITED", maxPortions: 20, planned: 30, bottleneck: "Avocado", bottleneckStock: 10, bottleneckRequired: 0.5, shortfall: 250 },
+        // CRITICAL dishes (4)
+        { key: "lbisque", name: "Lobster Bisque", category: "Starters", status: "CRITICAL", maxPortions: 8, planned: 25, bottleneck: "Lobster", bottleneckStock: 0.8, bottleneckRequired: 0.1, shortfall: 1700 },
+        { key: "wagyu", name: "Wagyu Beef Steak", category: "Premium", status: "CRITICAL", maxPortions: 5, planned: 20, bottleneck: "Wagyu Beef", bottleneckStock: 1.5, bottleneckRequired: 0.3, shortfall: 4500 },
+        { key: "trisotto", name: "Truffle Risotto", category: "Premium", status: "CRITICAL", maxPortions: 7, planned: 25, bottleneck: "Truffle Oil", bottleneckStock: 0.35, bottleneckRequired: 0.05, shortfall: 900 },
+        { key: "bsalad", name: "Burrata Salad", category: "Salads", status: "CRITICAL", maxPortions: 10, planned: 30, bottleneck: "Burrata Cheese", bottleneckStock: 1, bottleneckRequired: 0.1, shortfall: 800 },
+        // UNAVAILABLE dishes (2)
+        { key: "fgpate", name: "Foie Gras Pate", category: "Premium", status: "UNAVAILABLE", maxPortions: 0, planned: 15, bottleneck: "Foie Gras", bottleneckStock: 0, bottleneckRequired: 0.1, shortfall: 2250 },
+        { key: "oysters", name: "Oysters Rockefeller", category: "Seafood", status: "UNAVAILABLE", maxPortions: 0, planned: 20, bottleneck: "Fresh Oysters", bottleneckStock: 0, bottleneckRequired: 0.3, shortfall: 2400 },
+      ];
+
+      // Determine overall status
+      const overallStatus = "RED"; // 4 CRITICAL items → RED
+
+      // Insert tomorrow's report with a deterministic seed ID for idempotency
+      const seedReportId = `seed-scr-${tenantId.slice(0, 8)}-tomorrow`;
+      await pool.query(
+        `INSERT INTO stock_check_reports
+         (id, tenant_id, outlet_id, report_type, target_date, generated_by,
+          total_items_checked, items_sufficient, items_limited, items_critical,
+          items_unavailable, overall_status, total_shortfall_value)
+         VALUES ($1, $2, $3, 'SCHEDULED', $4, 'SYSTEM', $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (id) DO NOTHING`,
+        [seedReportId, tenantId, outletId, tomorrowStr, seedDishes.length,
+         seedDishes.filter(d => d.status === "SUFFICIENT").length,
+         seedDishes.filter(d => d.status === "LIMITED").length,
+         seedDishes.filter(d => d.status === "CRITICAL").length,
+         seedDishes.filter(d => d.status === "UNAVAILABLE").length,
+         overallStatus,
+         seedDishes.reduce((s, d) => s + d.shortfall, 0)]
+      );
+
+      // Insert report items with deterministic IDs for full idempotency
+      for (const dish of seedDishes) {
+        const itemId = `seed-item-${dish.key}-${tenantId.slice(0, 8)}`;
+        const menuItemId = `seed-mi-${dish.key}-${tenantId.slice(0, 8)}`;
+        const breakdown = JSON.stringify([{
+          inventoryItemId: `seed-inv-${dish.key}`,
+          name: dish.bottleneck,
+          unit: "kg",
+          currentStock: dish.bottleneckStock,
+          requiredPerPortion: dish.bottleneckRequired,
+          maxPortions: dish.maxPortions,
+          availabilityPct: Math.min(100, Math.round((dish.maxPortions / dish.planned) * 100)),
+          costPrice: dish.shortfall > 0 ? Math.round((dish.shortfall / Math.max(1, (dish.planned - dish.maxPortions) * dish.bottleneckRequired)) * 100) / 100 : 50,
+        }]);
+
+        await pool.query(
+          `INSERT INTO stock_check_report_items
+           (id, report_id, tenant_id, menu_item_id, menu_item_name, category, recipe_id,
+            planned_quantity, max_possible_portions, bottleneck_ingredient, bottleneck_stock,
+            bottleneck_required, status, ingredient_breakdown, recommended_action, shortfall_cost)
+           VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            itemId, seedReportId, tenantId, menuItemId, dish.name, dish.category,
+            dish.planned, dish.maxPortions, dish.bottleneck, dish.bottleneckStock,
+            dish.bottleneckRequired * dish.planned,
+            dish.status, breakdown,
+            dish.status === "SUFFICIENT" ? "OK" : dish.status === "LIMITED" ? "MONITOR" : dish.status === "CRITICAL" ? "REORDER_URGENT" : "PULL_FROM_MENU",
+            dish.shortfall
+          ]
+        );
+
+      }
+
+      // Seed daily_planned_quantities for actual menu items of this tenant
+      const { rows: actualMenuItems } = await pool.query(
+        `SELECT id FROM menu_items WHERE tenant_id = $1 AND available = true LIMIT 50`,
+        [tenantId]
+      );
+      for (const mi of actualMenuItems) {
+        // Use partial-index-aware conflict clause to avoid cross-outlet overwrites
+        if (outletId) {
+          await pool.query(
+            `INSERT INTO daily_planned_quantities
+             (tenant_id, outlet_id, menu_item_id, planned_date, planned_qty, is_disabled, created_by)
+             VALUES ($1, $2, $3, $4, 20, false, 'SYSTEM')
+             ON CONFLICT (tenant_id, outlet_id, menu_item_id, planned_date) WHERE outlet_id IS NOT NULL DO NOTHING`,
+            [tenantId, outletId, mi.id, tomorrowStr]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO daily_planned_quantities
+             (tenant_id, outlet_id, menu_item_id, planned_date, planned_qty, is_disabled, created_by)
+             VALUES ($1, NULL, $2, $3, 20, false, 'SYSTEM')
+             ON CONFLICT (tenant_id, menu_item_id, planned_date) WHERE outlet_id IS NULL DO NOTHING`,
+            [tenantId, mi.id, tomorrowStr]
+          );
+        }
+      }
+
+      // Seed 7 days of historical reports (idempotent — deterministic IDs)
+      for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+        const histDate = new Date();
+        histDate.setDate(histDate.getDate() - dayOffset);
+        const histDateStr = histDate.toISOString().slice(0, 10);
+        const histReportId = `seed-scr-${tenantId.slice(0, 8)}-hist${dayOffset}`;
+
+        const variation = dayOffset % 3;
+        const histSufficient = 18 - variation;
+        const histLimited = 7 + (variation > 1 ? 1 : 0);
+        const histCritical = 4 - (variation === 2 ? 1 : 0);
+        const histUnavailable = 2 + (variation === 1 ? 1 : 0);
+        const histStatus = histCritical > 2 ? "RED" : histLimited > 5 ? "AMBER" : "GREEN";
+        const histTotal = histSufficient + histLimited + histCritical + histUnavailable;
+
+        await pool.query(
+          `INSERT INTO stock_check_reports
+           (id, tenant_id, outlet_id, report_type, target_date, generated_by,
+            total_items_checked, items_sufficient, items_limited, items_critical,
+            items_unavailable, overall_status, total_shortfall_value, generated_at)
+           VALUES ($1, $2, $3, 'SCHEDULED', $4, 'SYSTEM', $5, $6, $7, $8, $9, $10, $11, $12)
+           ON CONFLICT (id) DO NOTHING`,
+          [histReportId, tenantId, outletId, histDateStr, histTotal,
+           histSufficient, histLimited, histCritical, histUnavailable,
+           histStatus, (histLimited * 250 + histCritical * 1500 + histUnavailable * 2000),
+           histDate]
+        );
+      }
+    }
+  } catch (err) {
+    console.error("[Admin migrations] Stock capacity seed error (non-fatal):", err);
+  }
 }

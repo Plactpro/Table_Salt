@@ -1,4 +1,5 @@
 import { pool } from "../db";
+import { emitToTenant } from "../realtime";
 
 export type IngredientCapacity = {
   inventoryItemId: string;
@@ -37,7 +38,7 @@ export type ReportSummary = {
   itemsLimited: number;
   itemsCritical: number;
   itemsUnavailable: number;
-  overallStatus: "GREEN" | "YELLOW" | "RED";
+  overallStatus: "GREEN" | "AMBER" | "RED";
   totalShortfallValue: number;
 };
 
@@ -71,7 +72,7 @@ export async function calculateMenuCapacity(
   const { rows: plannedRows } = await pool.query(
     `SELECT menu_item_id, planned_qty, is_disabled, max_limit
      FROM daily_planned_quantities
-     WHERE tenant_id = $1 AND planned_date = $2 ${outletId ? "AND outlet_id = $3" : ""}`,
+     WHERE tenant_id = $1 AND planned_date = $2 ${outletId ? "AND outlet_id = $3" : "AND outlet_id IS NULL"}`,
     outletId ? [tenantId, dateLabel, outletId] : [tenantId, dateLabel]
   );
   const plannedMap = new Map<string, { qty: number; isDisabled: boolean; maxLimit: number | null }>();
@@ -202,9 +203,9 @@ export async function calculateMenuCapacity(
   const itemsUnavailable = items.filter((i) => i.status === "UNAVAILABLE").length;
   const totalShortfallValue = items.reduce((s, i) => s + i.shortfallCost, 0);
 
-  let overallStatus: "GREEN" | "YELLOW" | "RED" = "GREEN";
+  let overallStatus: "GREEN" | "AMBER" | "RED" = "GREEN";
   if (itemsCritical > 0 || itemsUnavailable > 2) overallStatus = "RED";
-  else if (itemsLimited > 0 || itemsUnavailable > 0) overallStatus = "YELLOW";
+  else if (itemsLimited > 0 || itemsUnavailable > 0) overallStatus = "AMBER";
 
   return {
     tenantId,
@@ -262,6 +263,20 @@ export async function generateAndSaveReport(
       ]
     );
   }
+
+  emitToTenant(tenantId, "stock-report:generated", {
+    reportId,
+    outletId,
+    targetDate,
+    reportType,
+    overallStatus: summary.overallStatus,
+    totalItemsChecked: summary.totalItemsChecked,
+    itemsSufficient: summary.itemsSufficient,
+    itemsLimited: summary.itemsLimited,
+    itemsCritical: summary.itemsCritical,
+    itemsUnavailable: summary.itemsUnavailable,
+    totalShortfallValue: summary.totalShortfallValue,
+  });
 
   return reportId;
 }

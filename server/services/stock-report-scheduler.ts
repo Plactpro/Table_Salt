@@ -1,7 +1,8 @@
+import cron from "node-cron";
 import { pool } from "../db";
 import { generateAndSaveReport } from "./stock-capacity";
 
-let schedulerInterval: NodeJS.Timeout | null = null;
+let schedulerTask: cron.ScheduledTask | null = null;
 
 async function runNightlyReports(): Promise<void> {
   try {
@@ -42,23 +43,46 @@ async function runNightlyReports(): Promise<void> {
 }
 
 export function startStockReportScheduler(): void {
-  if (schedulerInterval) return;
+  if (schedulerTask) return;
 
-  schedulerInterval = setInterval(async () => {
-    const now = new Date();
-    if (now.getHours() === 23 && now.getMinutes() === 0) {
-      await runNightlyReports();
-    }
-  }, 60_000);
+  schedulerTask = cron.schedule("0 23 * * *", async () => {
+    console.log("[StockScheduler] Nightly cron triggered at 23:00");
+    await runNightlyReports();
+  });
 
-  console.log("[StockScheduler] Nightly stock capacity scheduler started (triggers at 23:00)");
+  console.log("[StockScheduler] Nightly stock capacity scheduler started (node-cron: 0 23 * * *)");
 }
 
 export function stopStockReportScheduler(): void {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
+  if (schedulerTask) {
+    schedulerTask.stop();
+    schedulerTask = null;
   }
 }
 
 export { runNightlyReports };
+
+export async function runReportsForTenant(tenantId: string, outletId?: string | null): Promise<void> {
+  const targetDate = new Date().toISOString().slice(0, 10);
+  try {
+    if (outletId) {
+      await generateAndSaveReport(tenantId, outletId, targetDate, "MANUAL", "SYSTEM");
+    } else {
+      const { rows: outlets } = await pool.query(
+        `SELECT id FROM outlets WHERE tenant_id = $1 AND is_active = true`,
+        [tenantId]
+      );
+      if (outlets.length > 0) {
+        for (const o of outlets) {
+          await generateAndSaveReport(tenantId, o.id, targetDate, "MANUAL", "SYSTEM");
+        }
+      } else {
+        await generateAndSaveReport(tenantId, null, targetDate, "MANUAL", "SYSTEM");
+      }
+    }
+    console.log(`[StockScheduler] Manual run complete for tenant ${tenantId}`);
+  } catch (err) {
+    console.error(`[StockScheduler] Manual run failed for tenant ${tenantId}:`, err);
+    throw err;
+  }
+}
