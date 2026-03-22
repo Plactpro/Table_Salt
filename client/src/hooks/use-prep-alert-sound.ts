@@ -1,6 +1,34 @@
 import { useCallback, useRef } from "react";
 
-export type SoundType = "chime" | "beep" | "ding" | "silent";
+export type SoundType = "chime" | "beep" | "silent";
+
+interface NotifPref {
+  enabled: boolean;
+  sound: SoundType;
+}
+
+interface NotifPrefs {
+  [key: string]: NotifPref;
+}
+
+const DEFAULT_SOUND_MAP: Record<string, SoundType> = {
+  task_assigned: "chime",
+  task_completed: "chime",
+  task_overdue: "beep",
+  task_issue: "beep",
+  task_help: "beep",
+  readiness_summary: "silent",
+  all_complete: "chime",
+};
+
+function loadPrefsForUser(userId?: string | null): NotifPrefs {
+  if (!userId) return {};
+  try {
+    const raw = localStorage.getItem(`prep_notif_prefs_${userId}`);
+    if (raw) return JSON.parse(raw);
+  } catch {}
+  return {};
+}
 
 function playChime(ctx: AudioContext) {
   const osc = ctx.createOscillator();
@@ -30,19 +58,6 @@ function playBeep(ctx: AudioContext) {
   osc.stop(ctx.currentTime + 0.15);
 }
 
-function playDing(ctx: AudioContext) {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.type = "sine";
-  osc.frequency.setValueAtTime(1568, ctx.currentTime);
-  gain.gain.setValueAtTime(0.4, ctx.currentTime);
-  gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
-  osc.start(ctx.currentTime);
-  osc.stop(ctx.currentTime + 0.8);
-}
-
 function playUrgent(ctx: AudioContext) {
   for (let i = 0; i < 3; i++) {
     const osc = ctx.createOscillator();
@@ -58,7 +73,7 @@ function playUrgent(ctx: AudioContext) {
   }
 }
 
-export function usePrepAlertSound() {
+export function usePrepAlertSound(userId?: string | null) {
   const ctxRef = useRef<AudioContext | null>(null);
 
   const getCtx = useCallback((): AudioContext | null => {
@@ -75,23 +90,33 @@ export function usePrepAlertSound() {
     }
   }, []);
 
-  const play = useCallback((priority: "HIGH" | "MEDIUM" | "LOW", sound?: SoundType) => {
-    const soundType = sound ?? (localStorage.getItem("prepAlertSound") as SoundType) ?? "chime";
+  const play = useCallback((priority: "HIGH" | "MEDIUM" | "LOW", eventType?: string) => {
+    const prefs = loadPrefsForUser(userId);
+    const key = eventType ?? (priority === "HIGH" ? "task_overdue" : "task_completed");
+    const pref: NotifPref | undefined = prefs[key];
+
+    if (pref && !pref.enabled) return;
+
+    const soundType: SoundType = pref?.sound ?? DEFAULT_SOUND_MAP[key] ?? (priority === "HIGH" ? "beep" : "chime");
     if (soundType === "silent") return;
+
     const ctx = getCtx();
     if (!ctx) return;
+
     try {
-      if (priority === "HIGH") {
+      if (priority === "HIGH" && !pref) {
         playUrgent(ctx);
       } else if (soundType === "chime") {
         playChime(ctx);
       } else if (soundType === "beep") {
-        playBeep(ctx);
-      } else if (soundType === "ding") {
-        playDing(ctx);
+        if (priority === "HIGH") {
+          playUrgent(ctx);
+        } else {
+          playBeep(ctx);
+        }
       }
     } catch {}
-  }, [getCtx]);
+  }, [getCtx, userId]);
 
   return { play };
 }
