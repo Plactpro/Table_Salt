@@ -229,6 +229,13 @@ app.use((req, res, next) => {
     console.error("Coordination rules checker init error:", e);
   }
 
+  try {
+    const { startAdvanceOrderScheduler } = await import("./services/advance-order-scheduler");
+    startAdvanceOrderScheduler();
+  } catch (e) {
+    console.error("Advance order scheduler init error:", e);
+  }
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
