@@ -1399,6 +1399,230 @@ export async function seedDatabase() {
 
   await seedChefAssignment(tenant.id, outlet.id, kitchen.id);
 
+  // ─── Seed Audit Templates ────────────────────────────────────────────────
+  const kitchenAuditTemplate = await storage.createAuditTemplate({
+    tenantId: tenant.id,
+    name: "Kitchen Operations Audit",
+    category: "food_safety",
+    frequency: "daily",
+    scheduledTime: "14:00",
+    scheduledDay: null,
+    riskLevel: "critical",
+    isActive: true,
+  });
+  const kitchenAuditItems = [
+    { title: "All food stored at correct temperatures", description: "Check refrigerator and freezer temps are within safe range", category: "food_safety", points: 10, photoRequired: true, supervisorApproval: false },
+    { title: "Raw meat stored separately from other foods", description: "Verify correct storage segregation to prevent cross-contamination", category: "food_safety", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "All food properly labeled and dated", description: "Check labels on all stored items including prep containers", category: "food_safety", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Food rotation (FIFO) practised correctly", description: "First-in, first-out rotation observed in all storage areas", category: "operations", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "All surfaces sanitized before use", description: "Prep tables and cutting boards sanitized with approved solution", category: "food_safety", points: 10, photoRequired: true, supervisorApproval: false },
+    { title: "Hand wash stations fully stocked", description: "Soap, paper towels, and sanitizer available at each station", category: "food_safety", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "PPE correctly used by all kitchen staff", description: "Gloves, hairnets, and aprons worn as required", category: "compliance", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "No expired ingredients in use", description: "Check all items in active use are within their use-by date", category: "food_safety", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Pest control log reviewed and up to date", description: "Verify pest control records are current and no activity noted", category: "compliance", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Equipment in good working order", description: "All cooking equipment functioning safely with no defects", category: "operations", points: 5, photoRequired: false, supervisorApproval: false },
+  ];
+  for (let i = 0; i < kitchenAuditItems.length; i++) {
+    await storage.createAuditTemplateItem({ ...kitchenAuditItems[i], templateId: kitchenAuditTemplate.id, sortOrder: i });
+  }
+
+  const fohAuditTemplate = await storage.createAuditTemplate({
+    tenantId: tenant.id,
+    name: "Front of House Audit",
+    category: "operations",
+    frequency: "daily",
+    scheduledTime: "16:00",
+    scheduledDay: null,
+    riskLevel: "high",
+    isActive: true,
+  });
+  const fohAuditItems = [
+    { title: "Entrance and reception area clean and welcoming", description: "Check cleanliness and presentation of entry area", category: "facilities", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "All tables properly set and clean", description: "Tables have clean linens/covers, correct cutlery and condiments", category: "operations", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Restrooms clean and fully stocked", description: "Verify restrooms are clean with soap, paper, and sanitizer", category: "facilities", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "Staff uniforms neat and name badges visible", description: "All FOH staff in correct uniform with visible identification", category: "staff", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Menus clean and in good condition", description: "No torn or dirty menus in circulation", category: "operations", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "POS and payment systems operational", description: "Cash registers and card terminals tested and working", category: "operations", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "Emergency exits clear and signage visible", description: "Fire exits unblocked and safety signs illuminated", category: "compliance", points: 10, photoRequired: true, supervisorApproval: true },
+    { title: "Customer feedback forms available", description: "Feedback cards or digital option available to guests", category: "operations", points: 5, photoRequired: false, supervisorApproval: false },
+  ];
+  for (let i = 0; i < fohAuditItems.length; i++) {
+    await storage.createAuditTemplateItem({ ...fohAuditItems[i], templateId: fohAuditTemplate.id, sortOrder: i });
+  }
+
+  const financialAuditTemplate = await storage.createAuditTemplate({
+    tenantId: tenant.id,
+    name: "Financial Audit",
+    category: "financial",
+    frequency: "weekly",
+    scheduledTime: "10:00",
+    scheduledDay: "monday",
+    riskLevel: "critical",
+    isActive: true,
+  });
+  const financialAuditItems = [
+    { title: "Cash drawer count matches opening float", description: "Count cash drawer and verify against expected opening amount", category: "financial", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Daily sales reports reconciled", description: "POS sales totals match bank deposits and receipts", category: "financial", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Void and refund log reviewed", description: "All voided transactions reviewed and authorized", category: "financial", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Petty cash log accurate and up to date", description: "All petty cash expenses recorded with receipts", category: "financial", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Tip distribution records complete", description: "Staff tip records accurate and signed off", category: "financial", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Inventory variance within accepted threshold", description: "Theoretical vs actual food cost variance within 3% tolerance", category: "financial", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Supplier invoices matched to deliveries", description: "GRN records match supplier invoices for the week", category: "financial", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "Payroll hours verified against timesheets", description: "All staff hours cross-checked against clock-in records", category: "financial", points: 5, photoRequired: false, supervisorApproval: true },
+    { title: "Outstanding credit notes reviewed", description: "Any outstanding supplier credit notes addressed", category: "financial", points: 5, photoRequired: false, supervisorApproval: false },
+  ];
+  for (let i = 0; i < financialAuditItems.length; i++) {
+    await storage.createAuditTemplateItem({ ...financialAuditItems[i], templateId: financialAuditTemplate.id, sortOrder: i });
+  }
+
+  const staffAuditTemplate = await storage.createAuditTemplate({
+    tenantId: tenant.id,
+    name: "Staff & Training Audit",
+    category: "staff",
+    frequency: "weekly",
+    scheduledTime: "11:00",
+    scheduledDay: "friday",
+    riskLevel: "medium",
+    isActive: true,
+  });
+  const staffAuditItems = [
+    { title: "All staff have completed required food safety training", description: "Verify training certificates are current for all active staff", category: "compliance", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Onboarding documentation complete for new hires", description: "New staff have signed all required forms", category: "compliance", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "Performance review schedule on track", description: "Scheduled performance reviews completed within timeframe", category: "staff", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Safety incident log reviewed", description: "Any workplace incidents properly documented and followed up", category: "compliance", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Staff scheduling meets legal requirements", description: "Minimum rest periods and hours compliance verified", category: "compliance", points: 5, photoRequired: false, supervisorApproval: false },
+  ];
+  for (let i = 0; i < staffAuditItems.length; i++) {
+    await storage.createAuditTemplateItem({ ...staffAuditItems[i], templateId: staffAuditTemplate.id, sortOrder: i });
+  }
+
+  const opsAuditTemplate = await storage.createAuditTemplate({
+    tenantId: tenant.id,
+    name: "Comprehensive Operations Audit",
+    category: "operations",
+    frequency: "monthly",
+    scheduledTime: "09:00",
+    scheduledDay: "1",
+    riskLevel: "high",
+    isActive: true,
+  });
+  const opsAuditItems = [
+    { title: "Fire suppression system inspected", description: "Annual inspection sticker current and system tested", category: "facilities", points: 10, photoRequired: true, supervisorApproval: true },
+    { title: "All fire extinguishers checked and accessible", description: "Fire extinguishers in date and in designated locations", category: "compliance", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "Grease trap cleaned and documented", description: "Commercial grease trap serviced and service record available", category: "facilities", points: 10, photoRequired: true, supervisorApproval: false },
+    { title: "HVAC system filters cleaned or replaced", description: "Ventilation system filters serviced and functioning", category: "facilities", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Walk-in cooler and freezer door seals checked", description: "Door gaskets in good condition with no air leaks", category: "operations", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Plumbing for leaks and drainage function", description: "All drains clear and no visible plumbing issues", category: "facilities", points: 5, photoRequired: false, supervisorApproval: false },
+    { title: "Food safety audit records reviewed", description: "Previous audit findings reviewed and corrected", category: "compliance", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "License and permit renewals on schedule", description: "Business, food handler, and liquor licenses current", category: "compliance", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Menu allergen information updated and accurate", description: "Allergen declarations match current menu ingredients", category: "compliance", points: 10, photoRequired: false, supervisorApproval: false },
+    { title: "Supplier contracts and agreements reviewed", description: "All supplier agreements current and pricing verified", category: "financial", points: 5, photoRequired: false, supervisorApproval: false },
+  ];
+  for (let i = 0; i < opsAuditItems.length; i++) {
+    await storage.createAuditTemplateItem({ ...opsAuditItems[i], templateId: opsAuditTemplate.id, sortOrder: i });
+  }
+
+  const healthPrepTemplate = await storage.createAuditTemplate({
+    tenantId: tenant.id,
+    name: "Health Inspection Prep",
+    category: "compliance",
+    frequency: "quarterly",
+    scheduledTime: "08:00",
+    scheduledDay: "90",
+    riskLevel: "critical",
+    isActive: true,
+  });
+  const healthPrepItems = [
+    { title: "Food temperatures logged for all critical control points", description: "Temperature logs complete for all required time periods", category: "food_safety", points: 10, photoRequired: true, supervisorApproval: true },
+    { title: "Pest control records complete and filed", description: "All pest control visits documented with findings", category: "compliance", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Staff food handler certifications current", description: "All certifications valid and photocopies on file", category: "compliance", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "HACCP plan reviewed and up to date", description: "Hazard analysis and critical control point plan current", category: "food_safety", points: 10, photoRequired: false, supervisorApproval: true },
+    { title: "Facility cleanliness and repair log current", description: "All maintenance issues documented and actioned", category: "facilities", points: 10, photoRequired: false, supervisorApproval: false },
+  ];
+  for (let i = 0; i < healthPrepItems.length; i++) {
+    await storage.createAuditTemplateItem({ ...healthPrepItems[i], templateId: healthPrepTemplate.id, sortOrder: i });
+  }
+
+  // Seed sample audit schedules
+  const auditYesterday = new Date();
+  auditYesterday.setDate(auditYesterday.getDate() - 1);
+  const auditToday = new Date();
+  const auditLastWeek = new Date();
+  auditLastWeek.setDate(auditLastWeek.getDate() - 7);
+
+  const completedKitchenItems = await storage.getAuditTemplateItems(kitchenAuditTemplate.id);
+  const kitchenMaxScore = completedKitchenItems.reduce((sum, i) => sum + (i.points || 5), 0);
+
+  const completedKitchenSchedule = await storage.createAuditSchedule({
+    tenantId: tenant.id,
+    templateId: kitchenAuditTemplate.id,
+    scheduledDate: auditLastWeek,
+    status: "completed",
+    assignedTo: manager.id,
+    approvedBy: owner.id,
+    totalScore: Math.round(kitchenMaxScore * 0.87),
+    maxScore: kitchenMaxScore,
+    completedAt: new Date(auditLastWeek.getTime() + 3600000),
+    notes: "Good overall compliance. Noted one item needed attention regarding label dating.",
+  });
+
+  for (let i = 0; i < completedKitchenItems.length; i++) {
+    await storage.createAuditResponse({
+      scheduleId: completedKitchenSchedule.id,
+      itemId: completedKitchenItems[i].id,
+      status: i === 2 ? "fail" : "pass",
+      notes: i === 2 ? "Some containers found without labels in the walk-in" : null,
+      completedBy: manager.id,
+      completedAt: new Date(auditLastWeek.getTime() + (i * 120000)),
+    });
+  }
+
+  await storage.createAuditIssue({
+    tenantId: tenant.id,
+    scheduleId: completedKitchenSchedule.id,
+    itemId: completedKitchenItems[2].id,
+    title: "Unlabeled prep containers in walk-in cooler",
+    description: "Multiple prep containers found without date or content labels. Risk of food waste and cross-contamination.",
+    severity: "high",
+    status: "resolved",
+    assignedTo: manager.id,
+    dueDate: auditYesterday,
+    resolvedAt: auditYesterday,
+    resolvedBy: manager.id,
+  });
+
+  await storage.createAuditSchedule({
+    tenantId: tenant.id,
+    templateId: fohAuditTemplate.id,
+    scheduledDate: auditToday,
+    status: "pending",
+    assignedTo: manager.id,
+    maxScore: (await storage.getAuditTemplateItems(fohAuditTemplate.id)).reduce((sum, i) => sum + (i.points || 5), 0),
+    notes: null,
+  });
+
+  const overdueFinancialSchedule = await storage.createAuditSchedule({
+    tenantId: tenant.id,
+    templateId: financialAuditTemplate.id,
+    scheduledDate: auditYesterday,
+    status: "overdue",
+    assignedTo: manager.id,
+    maxScore: (await storage.getAuditTemplateItems(financialAuditTemplate.id)).reduce((sum, i) => sum + (i.points || 5), 0),
+    notes: null,
+  });
+
+  await storage.createAuditIssue({
+    tenantId: tenant.id,
+    scheduleId: overdueFinancialSchedule.id,
+    itemId: null,
+    title: "Weekly Financial Audit overdue",
+    description: "Financial audit was not completed on the scheduled Monday. Requires immediate attention.",
+    severity: "critical",
+    status: "open",
+    assignedTo: manager.id,
+    dueDate: auditToday,
+  });
+
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");
   console.log("  Owner: username=owner");
