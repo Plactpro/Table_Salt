@@ -265,7 +265,7 @@ export default function OrdersPage() {
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6 max-w-7xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">Orders</h1>
+          <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">Online Orders</h1>
           <p className="text-muted-foreground text-sm">Manage and track all orders</p>
         </div>
       </div>

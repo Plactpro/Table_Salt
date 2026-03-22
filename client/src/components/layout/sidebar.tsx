@@ -57,7 +57,7 @@ const navItems: NavItem[] = [
   { id: "m-2", name: "My Shift", icon: Clock, path: "/", roles: ["waiter", "cashier"] },
   { id: "m-3", name: "KDS", icon: ChefHat, path: "/", roles: ["kitchen"] },
   { id: "m-4", name: "POS", icon: MonitorSmartphone, path: "/pos", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "pos" },
-  { id: "m-5", name: "Orders", icon: Receipt, path: "/orders", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen"], featureKey: "orders" },
+  { id: "m-5", name: "Online Orders", icon: Receipt, path: "/orders", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen"], featureKey: "orders" },
   { id: "m-6", name: "Tables", icon: Utensils, path: "/tables", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
   { id: "m-33", name: "Live Requests", icon: Bell, path: "/live-requests", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
   { id: "m-7", name: "Menu", icon: MenuSquare, path: "/menu", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "menu" },
