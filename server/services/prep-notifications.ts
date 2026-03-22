@@ -1,5 +1,6 @@
 import { pool } from "../db";
 import { emitToTenant } from "../realtime";
+import { sendPushToUser, sendPushToTenant } from "./push-sender";
 
 export type NotificationPriority = "HIGH" | "MEDIUM" | "LOW";
 export type NotificationType =
@@ -67,6 +68,29 @@ export async function createNotification(input: CreateNotificationInput): Promis
   );
   const notif = rowToCamel(rows[0]);
   emitToTenant(input.tenantId, "prep:notification", notif);
+
+  if ((input.priority ?? "LOW") === "HIGH") {
+    const pushPayload = {
+      title: input.title,
+      body: input.body,
+      icon: "/favicon.png",
+      data: {
+        url: input.actionUrl ?? "/kitchen",
+        notifId: notif.id,
+        type: input.type,
+      },
+    };
+    if (input.chefId) {
+      sendPushToUser(input.chefId, pushPayload).catch((e) =>
+        console.warn("[PrepNotif] Push to user failed:", e.message)
+      );
+    } else {
+      sendPushToTenant(input.tenantId, pushPayload).catch((e) =>
+        console.warn("[PrepNotif] Push to tenant failed:", e.message)
+      );
+    }
+  }
+
   return notif;
 }
 

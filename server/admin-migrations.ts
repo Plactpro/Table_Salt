@@ -763,4 +763,26 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS completed_qty NUMERIC`);
   await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS total_qty NUMERIC`);
   await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS unit TEXT`);
+
+  // Task #93: KV store for platform-level settings (VAPID keys, etc.)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS platform_settings_kv (
+      key text PRIMARY KEY,
+      value text NOT NULL,
+      created_at timestamptz DEFAULT now()
+    )
+  `);
+
+  // Task #93: Browser Push Notifications — push_subscriptions table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS push_subscriptions (
+      id serial PRIMARY KEY,
+      user_id text NOT NULL,
+      tenant_id text NOT NULL,
+      endpoint text NOT NULL UNIQUE,
+      p256dh text NOT NULL,
+      auth text NOT NULL,
+      created_at timestamptz DEFAULT now()
+    )
+  `);
 }
