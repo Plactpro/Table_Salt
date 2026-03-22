@@ -15,7 +15,7 @@ export const currencyMap: Record<CurrencyCode, CurrencyInfo> = {
   USD: { code: "USD", symbol: "$", name: "US Dollar", decimalPlaces: 2, locale: "en-US" },
   EUR: { code: "EUR", symbol: "\u20AC", name: "Euro", decimalPlaces: 2, locale: "de-DE" },
   GBP: { code: "GBP", symbol: "\u00A3", name: "British Pound", decimalPlaces: 2, locale: "en-GB" },
-  AED: { code: "AED", symbol: "AED", name: "UAE Dirham", decimalPlaces: 2, locale: "ar-AE" },
+  AED: { code: "AED", symbol: "AED", name: "UAE Dirham", decimalPlaces: 2, locale: "en-AE" },
   SAR: { code: "SAR", symbol: "\uFDFC", name: "Saudi Riyal", decimalPlaces: 2, locale: "ar-SA" },
   INR: { code: "INR", symbol: "\u20B9", name: "Indian Rupee", decimalPlaces: 2, locale: "en-IN" },
   JPY: { code: "JPY", symbol: "\u00A5", name: "Japanese Yen", decimalPlaces: 0, locale: "ja-JP" },
