@@ -538,4 +538,37 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_daily_planned_qty_tenant_date ON daily_planned_quantities (tenant_id, planned_date)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_daily_planned_qty_menu_item ON daily_planned_quantities (menu_item_id)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_planned_qty_unique ON daily_planned_quantities (tenant_id, menu_item_id, planned_date)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS prep_notifications (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      chef_id VARCHAR(36),
+      type VARCHAR(50) NOT NULL,
+      title TEXT NOT NULL,
+      body TEXT,
+      priority VARCHAR(10) NOT NULL DEFAULT 'LOW',
+      related_task_id VARCHAR(36),
+      related_order_id VARCHAR(36),
+      related_menu_item VARCHAR(255),
+      action_url TEXT,
+      action_label TEXT,
+      action2_url TEXT,
+      action2_label TEXT,
+      read_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_prep_notifications_chef ON prep_notifications (tenant_id, chef_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_prep_notifications_unread ON prep_notifications (tenant_id, chef_id, read_at)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_prep_notifications_created ON prep_notifications (tenant_id, created_at DESC)`);
+
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS verified_by VARCHAR(36)`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS quality_score INT`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS verification_feedback TEXT`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS issue_note TEXT`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS help_requested BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE ticket_assignments ADD COLUMN IF NOT EXISTS overdue_alerted BOOLEAN DEFAULT false`);
 }

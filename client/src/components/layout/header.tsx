@@ -1,7 +1,7 @@
 import { useAuth, Role } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import SyncStatusIndicator from "@/components/sync-status-indicator";
 import {
   DropdownMenu,
@@ -25,12 +25,17 @@ import {
   UserCircle,
   Headset,
   PackageOpen,
+  PartyPopper,
   type LucideIcon,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
-import { useCallback } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { usePrepNotifications } from "@/hooks/use-prep-notifications";
+import { usePrepAlertSound } from "@/hooks/use-prep-alert-sound";
+import PrepNotificationDrawer from "@/components/notifications/prep-notification-drawer";
 
 interface HeaderProps {
   onOpenSupport?: () => void;
@@ -92,12 +97,26 @@ interface InventoryAlert {
   createdAt: string;
 }
 
+const PREP_NOTIF_ROLES: Role[] = ["kitchen", "owner", "manager", "outlet_manager", "franchise_owner", "hq_admin", "supervisor"];
+
 export default function Header({ onOpenSupport }: HeaderProps) {
   const { user, logout } = useAuth();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const { play: playSound } = usePrepAlertSound();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [celebrate, setCelebrate] = useState(false);
 
   const canSeeInventoryAlerts = user && ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"].includes(user.role);
+  const canSeePrepNotif = user && PREP_NOTIF_ROLES.includes(user.role as Role);
+
+  const {
+    notifications: prepNotifications,
+    unreadCount: prepUnread,
+    markRead: markPrepRead,
+    markAllRead: markAllPrepRead,
+  } = usePrepNotifications();
 
   const { data: alertCountData } = useQuery<{ count: number }>({
     queryKey: ["/api/inventory-alerts/count"],
@@ -142,7 +161,49 @@ export default function Header({ onOpenSupport }: HeaderProps) {
     queryClient.invalidateQueries({ queryKey: ["/api/inventory-alerts"] });
   }, [queryClient]));
 
-  const unreadCount = alertCountData?.count || 0;
+  const showPrepToast = useCallback((title: string, description: string | undefined, priority: "HIGH" | "MEDIUM" | "LOW") => {
+    const muted = localStorage.getItem("prepToastsMuted") === "true";
+    if (muted) return;
+    toast({
+      title,
+      description,
+      duration: priority === "HIGH" ? 7000 : 4000,
+      variant: priority === "HIGH" ? "destructive" : "default",
+    });
+  }, [toast]);
+
+  useRealtimeEvent("prep:notification", useCallback((n: any) => {
+    if (!canSeePrepNotif) return;
+    playSound(n.priority ?? "LOW");
+    showPrepToast(n.title, n.body ?? undefined, n.priority ?? "LOW");
+  }, [canSeePrepNotif, playSound, showPrepToast]));
+
+  useRealtimeEvent("prep:task_overdue", useCallback((data: any) => {
+    if (!canSeePrepNotif) return;
+    playSound("HIGH");
+    showPrepToast(`🔴 OVERDUE: ${data.taskName ?? "Task"}`, "This task has passed its deadline", "HIGH");
+  }, [canSeePrepNotif, playSound, showPrepToast]));
+
+  useRealtimeEvent("prep:task_help", useCallback((data: any) => {
+    if (!canSeePrepNotif) return;
+    playSound("HIGH");
+    showPrepToast(`🆘 ${data.chefName ?? "Chef"} needs help`, data.taskName ?? undefined, "HIGH");
+  }, [canSeePrepNotif, playSound, showPrepToast]));
+
+  useRealtimeEvent("prep:task_issue", useCallback((data: any) => {
+    if (!canSeePrepNotif) return;
+    playSound("HIGH");
+    showPrepToast(`⚠️ Issue reported`, data.taskName ?? undefined, "HIGH");
+  }, [canSeePrepNotif, playSound, showPrepToast]));
+
+  useRealtimeEvent("prep:all_complete", useCallback((_data: any) => {
+    if (!canSeePrepNotif) return;
+    playSound("LOW");
+    setCelebrate(true);
+    setTimeout(() => setCelebrate(false), 4000);
+  }, [canSeePrepNotif, playSound]));
+
+  const invUnreadCount = alertCountData?.count || 0;
 
   if (!user) return null;
 
@@ -163,148 +224,206 @@ export default function Header({ onOpenSupport }: HeaderProps) {
   const roleLabel = roleLabels[user.role] ?? user.role.replace(/_/g, " ");
 
   return (
-    <header className="h-14 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-10" data-testid="header">
-      <div className="flex items-center gap-3">
-        <motion.span
-          initial={{ opacity: 0, scale: 0.8 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
-          className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${badgeColor}`}
-          data-testid="badge-role"
-        >
-          <RoleIcon className="h-3.5 w-3.5" />
-          {roleLabel}
-        </motion.span>
-      </div>
-
-      <div className="flex items-center gap-2">
-        <SyncStatusIndicator />
-        {onOpenSupport && (
-          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="relative h-9 w-9 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:bg-cyan-950"
-              onClick={onOpenSupport}
-              title="Need help? Contact Support"
-              data-testid="button-contact-support-header"
+    <>
+      <AnimatePresence>
+        {celebrate && (
+          <motion.div
+            key="celebrate"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+            data-testid="overlay-all-complete"
+          >
+            <motion.div
+              initial={{ scale: 0.7, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 1.1, opacity: 0 }}
+              className="bg-green-500 text-white rounded-2xl px-10 py-8 shadow-2xl flex flex-col items-center gap-3"
             >
-              <Headset className="h-[18px] w-[18px]" />
-            </Button>
+              <PartyPopper className="h-12 w-12" />
+              <p className="text-2xl font-bold">All Prep Complete!</p>
+              <p className="text-sm opacity-80">Outstanding work today 🎉</p>
+            </motion.div>
           </motion.div>
         )}
+      </AnimatePresence>
 
-        {canSeeInventoryAlerts && (
+      <PrepNotificationDrawer
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        notifications={prepNotifications}
+        unreadCount={prepUnread}
+        onMarkRead={markPrepRead}
+        onMarkAllRead={markAllPrepRead}
+      />
+
+      <header className="h-14 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-10" data-testid="header">
+        <div className="flex items-center gap-3">
+          <motion.span
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${badgeColor}`}
+            data-testid="badge-role"
+          >
+            <RoleIcon className="h-3.5 w-3.5" />
+            {roleLabel}
+          </motion.span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <SyncStatusIndicator />
+          {onOpenSupport && (
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative h-9 w-9 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:bg-cyan-950"
+                onClick={onOpenSupport}
+                title="Need help? Contact Support"
+                data-testid="button-contact-support-header"
+              >
+                <Headset className="h-[18px] w-[18px]" />
+              </Button>
+            </motion.div>
+          )}
+
+          {canSeePrepNotif && (
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="relative h-9 w-9 text-muted-foreground hover:text-foreground"
+                onClick={() => setDrawerOpen(true)}
+                title="Kitchen prep notifications"
+                data-testid="button-prep-notifications"
+              >
+                <ChefHat className="h-4 w-4" />
+                {prepUnread > 0 && (
+                  <span
+                    className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card"
+                    data-testid="badge-prep-unread"
+                  >
+                    {prepUnread > 9 ? "9+" : prepUnread}
+                  </span>
+                )}
+              </Button>
+            </motion.div>
+          )}
+
+          {canSeeInventoryAlerts && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                  <Button variant="ghost" size="icon" className="relative h-9 w-9 text-muted-foreground hover:text-foreground" data-testid="button-notifications">
+                    <Bell className="h-4 w-4" />
+                    {invUnreadCount > 0 && (
+                      <span
+                        className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card"
+                        data-testid="badge-inventory-alerts"
+                      >
+                        {invUnreadCount > 9 ? "9+" : invUnreadCount}
+                      </span>
+                    )}
+                  </Button>
+                </motion.div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80">
+                <DropdownMenuLabel className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <PackageOpen className="h-4 w-4 text-amber-600" />
+                    <span>Low Stock Alerts</span>
+                    {invUnreadCount > 0 && (
+                      <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">{invUnreadCount}</span>
+                    )}
+                  </div>
+                  {invUnreadCount > 0 && (
+                    <button
+                      className="text-xs text-muted-foreground hover:text-foreground underline"
+                      onClick={() => acknowledgeAll.mutate()}
+                      data-testid="button-acknowledge-all-alerts"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {alerts.length === 0 ? (
+                  <div className="py-6 text-center text-sm text-muted-foreground">
+                    No unacknowledged low-stock alerts
+                  </div>
+                ) : (
+                  alerts.slice(0, 8).map(alert => {
+                    const itemId = (alert.metadata?.itemId as string | undefined) || "";
+                    const href = itemId
+                      ? `/inventory?tab=movements&ingredientId=${encodeURIComponent(itemId)}`
+                      : "/inventory?tab=movements";
+                    return (
+                      <DropdownMenuItem
+                        key={alert.id}
+                        className="flex flex-col items-start gap-0.5 py-2 cursor-pointer"
+                        onClick={() => {
+                          acknowledgeOne.mutate(alert.id);
+                          navigate(href);
+                        }}
+                        data-testid={`alert-item-${alert.id.slice(-4)}`}
+                      >
+                        <div className="flex items-center gap-2 w-full">
+                          <PackageOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                          <span className="font-medium text-sm truncate">{alert.title}</span>
+                        </div>
+                        {alert.description && (
+                          <span className="text-xs text-muted-foreground pl-5 line-clamp-2">{alert.description}</span>
+                        )}
+                        <span className="text-[10px] text-primary pl-5">View in Stock Movements →</span>
+                      </DropdownMenuItem>
+                    );
+                  })
+                )}
+                {alerts.length > 0 && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem onClick={() => navigate("/inventory?tab=movements")} className="text-xs text-center justify-center text-primary">
+                      View all in Stock Movements →
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Button variant="ghost" size="icon" className="relative h-9 w-9 text-muted-foreground hover:text-foreground" data-testid="button-notifications">
-                  <Bell className="h-4 w-4" />
-                  {unreadCount > 0 && (
-                    <span
-                      className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card"
-                      data-testid="badge-inventory-alerts"
-                    >
-                      {unreadCount > 9 ? "9+" : unreadCount}
-                    </span>
-                  )}
-                </Button>
-              </motion.div>
+              <Button variant="ghost" className="flex items-center gap-2" data-testid="button-user-menu">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium hidden sm:inline" data-testid="text-user-name">{user.name}</span>
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <PackageOpen className="h-4 w-4 text-amber-600" />
-                  <span>Low Stock Alerts</span>
-                  {unreadCount > 0 && (
-                    <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">{unreadCount}</span>
-                  )}
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="flex flex-col">
+                  <span>{user.name}</span>
+                  <span className="text-xs font-normal text-muted-foreground">@{user.username}</span>
                 </div>
-                {unreadCount > 0 && (
-                  <button
-                    className="text-xs text-muted-foreground hover:text-foreground underline"
-                    onClick={() => acknowledgeAll.mutate()}
-                    data-testid="button-acknowledge-all-alerts"
-                  >
-                    Clear all
-                  </button>
-                )}
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              {alerts.length === 0 ? (
-                <div className="py-6 text-center text-sm text-muted-foreground">
-                  No unacknowledged low-stock alerts
-                </div>
-              ) : (
-                alerts.slice(0, 8).map(alert => {
-                  const itemId = (alert.metadata?.itemId as string | undefined) || "";
-                  const href = itemId
-                    ? `/inventory?tab=movements&ingredientId=${encodeURIComponent(itemId)}`
-                    : "/inventory?tab=movements";
-                  return (
-                    <DropdownMenuItem
-                      key={alert.id}
-                      className="flex flex-col items-start gap-0.5 py-2 cursor-pointer"
-                      onClick={() => {
-                        acknowledgeOne.mutate(alert.id);
-                        navigate(href);
-                      }}
-                      data-testid={`alert-item-${alert.id.slice(-4)}`}
-                    >
-                      <div className="flex items-center gap-2 w-full">
-                        <PackageOpen className="h-3.5 w-3.5 text-amber-500 shrink-0" />
-                        <span className="font-medium text-sm truncate">{alert.title}</span>
-                      </div>
-                      {alert.description && (
-                        <span className="text-xs text-muted-foreground pl-5 line-clamp-2">{alert.description}</span>
-                      )}
-                      <span className="text-[10px] text-primary pl-5">View in Stock Movements →</span>
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-              {alerts.length > 0 && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={() => navigate("/inventory?tab=movements")} className="text-xs text-center justify-center text-primary">
-                    View all in Stock Movements →
-                  </DropdownMenuItem>
-                </>
-              )}
+              <DropdownMenuItem data-testid="menu-item-profile">
+                <User className="mr-2 h-4 w-4" />
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} data-testid="menu-item-logout">
+                <LogOut className="mr-2 h-4 w-4" />
+                Sign out
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        )}
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" className="flex items-center gap-2" data-testid="button-user-menu">
-              <Avatar className="h-8 w-8">
-                <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">{initials}</AvatarFallback>
-              </Avatar>
-              <span className="text-sm font-medium hidden sm:inline" data-testid="text-user-name">{user.name}</span>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <div className="flex flex-col">
-                <span>{user.name}</span>
-                <span className="text-xs font-normal text-muted-foreground">@{user.username}</span>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem data-testid="menu-item-profile">
-              <User className="mr-2 h-4 w-4" />
-              Profile
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={handleLogout} data-testid="menu-item-logout">
-              <LogOut className="mr-2 h-4 w-4" />
-              Sign out
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-    </header>
+        </div>
+      </header>
+    </>
   );
 }
