@@ -107,16 +107,28 @@ export async function getNotifications(
   chefId?: string | null,
   limit = 50,
   offset = 0
-): Promise<Record<string, any>[]> {
-  let query: string;
-  let params: any[];
+): Promise<{ notifications: Record<string, any>[]; total: number }> {
+  let listQuery: string;
+  let countQuery: string;
+  let listParams: any[];
+  let countParams: any[];
   if (chefId) {
-    query = `SELECT * FROM prep_notifications WHERE tenant_id = $1 AND (chef_id = $2 OR chef_id IS NULL) ORDER BY created_at DESC LIMIT $3 OFFSET $4`;
-    params = [tenantId, chefId, limit, offset];
+    listQuery = `SELECT * FROM prep_notifications WHERE tenant_id = $1 AND (chef_id = $2 OR chef_id IS NULL) ORDER BY created_at DESC LIMIT $3 OFFSET $4`;
+    listParams = [tenantId, chefId, limit, offset];
+    countQuery = `SELECT COUNT(*)::int AS total FROM prep_notifications WHERE tenant_id = $1 AND (chef_id = $2 OR chef_id IS NULL)`;
+    countParams = [tenantId, chefId];
   } else {
-    query = `SELECT * FROM prep_notifications WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`;
-    params = [tenantId, limit, offset];
+    listQuery = `SELECT * FROM prep_notifications WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`;
+    listParams = [tenantId, limit, offset];
+    countQuery = `SELECT COUNT(*)::int AS total FROM prep_notifications WHERE tenant_id = $1`;
+    countParams = [tenantId];
   }
-  const { rows } = await pool.query(query, params);
-  return rows.map(rowToCamel);
+  const [listRes, countRes] = await Promise.all([
+    pool.query(listQuery, listParams),
+    pool.query(countQuery, countParams),
+  ]);
+  return {
+    notifications: listRes.rows.map(rowToCamel),
+    total: countRes.rows[0]?.total ?? 0,
+  };
 }
