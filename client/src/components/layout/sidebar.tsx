@@ -1,7 +1,9 @@
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
 import { useAuth, Role } from "@/lib/auth";
 import { useSubscription } from "@/lib/auth";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { cn } from "@/lib/utils";
 import { motion } from "framer-motion";
 import {
@@ -151,6 +153,7 @@ export default function Sidebar() {
   const { user } = useAuth();
   const { tier, badges, hasFeatureAccess, businessType } = useSubscription();
   const [location, navigate] = useLocation();
+  const queryClient = useQueryClient();
 
   const role = user?.role ?? "owner";
   const btConfig = businessConfig[businessType];
@@ -162,6 +165,8 @@ export default function Sidebar() {
   });
 
   const isSecurityRole = ["owner", "hq_admin", "franchise_owner"].includes(role);
+  const canSeeLiveRequests = ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter"].includes(role);
+
   const { data: alertCountData } = useQuery<{ count: number }>({
     queryKey: ["/api/security-alerts/unread-count"],
     queryFn: async () => {
@@ -173,6 +178,31 @@ export default function Sidebar() {
     refetchInterval: 30000,
   });
   const unreadAlerts = alertCountData?.count || 0;
+
+  const { data: pendingRequestData } = useQuery<{ count: number }>({
+    queryKey: ["/api/table-requests/pending-count"],
+    queryFn: async () => {
+      const res = await fetch("/api/table-requests/pending-count", { credentials: "include" });
+      if (!res.ok) return { count: 0 };
+      return res.json();
+    },
+    enabled: canSeeLiveRequests,
+    refetchInterval: 30000,
+  });
+  const pendingRequests = pendingRequestData?.count || 0;
+
+  const invalidatePendingCount = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/table-requests/pending-count"] });
+  }, [queryClient]);
+
+  const invalidateSecurityCount = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/security-alerts/unread-count"] });
+  }, [queryClient]);
+
+  useRealtimeEvent("table-request:new", invalidatePendingCount);
+  useRealtimeEvent("table-request:updated", invalidatePendingCount);
+  useRealtimeEvent("table-request:escalated", invalidatePendingCount);
+  useRealtimeEvent("low_stock_alert", invalidateSecurityCount);
 
   return (
     <aside
@@ -272,6 +302,15 @@ export default function Sidebar() {
                           )} />
                         </motion.div>
                         <span className="relative z-10 flex-1 text-left">{item.name}</span>
+                        {item.id === "m-33" && pendingRequests > 0 && (
+                          <span
+                            className="relative z-10 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white"
+                            style={{ background: "hsl(0, 72%, 51%)" }}
+                            data-testid="badge-live-requests"
+                          >
+                            {pendingRequests > 99 ? "99+" : pendingRequests}
+                          </span>
+                        )}
                         {item.id === "m-18" && unreadAlerts > 0 && (
                           <span
                             className="relative z-10 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white"
