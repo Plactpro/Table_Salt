@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { emitToTenant } from "../realtime";
 import { pool } from "../db";
+import { createNotification } from "./prep-notifications";
 
 export interface AssignmentSettings {
   mode: "full_auto" | "hybrid" | "self_assign" | "manual";
@@ -203,6 +204,18 @@ export async function selfAssignTicket(
   if (!updated) throw new Error("Assignment not found");
   await storage.updateChefAvailabilityStatus(chefId, tenantId, today, "available", undefined);
   emitToTenant(tenantId, "chef-assignment:updated", updated);
+  createNotification({
+    tenantId,
+    chefId: updated.chefId,
+    type: "task_assigned",
+    title: `📋 New task assigned: ${updated.menuItemName ?? "Task"}`,
+    body: `Assigned to ${updated.chefName ?? "you"}`,
+    priority: "MEDIUM",
+    relatedTaskId: updated.id,
+    relatedMenuItem: updated.menuItemName,
+    actionUrl: `/kitchen`,
+    actionLabel: "View Task",
+  }).catch(() => {});
   return updated;
 }
 
@@ -216,6 +229,24 @@ export async function startAssignment(
   });
   if (!updated) throw new Error("Assignment not found");
   emitToTenant(tenantId, "chef-assignment:updated", updated);
+  emitToTenant(tenantId, "prep:task_started", {
+    taskId: updated.id,
+    taskName: (updated as any).menuItemName,
+    chefId: (updated as any).chefId,
+    chefName: (updated as any).chefName,
+    startedAt: new Date().toISOString(),
+  });
+  createNotification({
+    tenantId,
+    chefId: null,
+    type: "task_started",
+    title: `▶️ ${(updated as any).chefName ?? "Chef"} started: ${(updated as any).menuItemName ?? "Task"}`,
+    priority: "LOW",
+    relatedTaskId: updated.id,
+    relatedMenuItem: (updated as any).menuItemName,
+    actionUrl: `/kitchen`,
+    actionLabel: "View Task",
+  }).catch(() => {});
   return updated;
 }
 
@@ -251,7 +282,50 @@ export async function completeAssignment(
     }
   }
   emitToTenant(tenantId, "chef-assignment:updated", updated);
+  const timeTaken = (updated as any).actualTimeMin;
+  emitToTenant(tenantId, "prep:task_completed", {
+    taskId: updated.id,
+    taskName: assignment.menuItemName,
+    chefId: assignment.chefId,
+    chefName: assignment.chefName,
+    completedAt: new Date().toISOString(),
+    timeTaken,
+  });
+  createNotification({
+    tenantId,
+    chefId: null,
+    type: "task_completed",
+    title: `✅ ${assignment.chefName ?? "Chef"} completed: ${assignment.menuItemName ?? "Task"} — Verify now`,
+    priority: "HIGH",
+    relatedTaskId: updated.id,
+    relatedMenuItem: assignment.menuItemName,
+    actionUrl: `/kitchen`,
+    actionLabel: "Verify Now",
+  }).catch(() => {});
+  checkDishComplete(tenantId, assignment.menuItemId, assignment.orderId).catch(() => {});
   return updated;
+}
+
+async function checkDishComplete(tenantId: string, menuItemId?: string | null, orderId?: string | null) {
+  if (!menuItemId || !orderId) return;
+  const { rows } = await pool.query(
+    `SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status IN ('completed','verified'))::int AS done
+     FROM ticket_assignments WHERE tenant_id = $1 AND order_id = $2 AND menu_item_id = $3`,
+    [tenantId, orderId, menuItemId]
+  );
+  const { total, done } = rows[0] ?? {};
+  if (total && done && total === done) {
+    const { rows: mi } = await pool.query(
+      `SELECT name FROM menu_items WHERE id = $1 LIMIT 1`, [menuItemId]
+    );
+    const name = mi[0]?.name ?? menuItemId;
+    emitToTenant(tenantId, "prep:dish_complete", { menuItemId, menuItemName: name, orderId });
+    createNotification({
+      tenantId, chefId: null, type: "dish_complete",
+      title: `🍽️ All prep complete for: ${name} ✅`,
+      priority: "LOW", relatedMenuItem: name, actionUrl: `/kitchen`, actionLabel: "View",
+    }).catch(() => {});
+  }
 }
 
 export async function reassignTicket(
@@ -288,6 +362,17 @@ export async function reassignTicket(
   });
   if (!updated) throw new Error("Update failed");
   emitToTenant(tenantId, "chef-assignment:updated", updated);
+  if (newChefId) {
+    createNotification({
+      tenantId, chefId: newChefId, type: "task_reassigned",
+      title: `📋 New task assigned: ${assignment.menuItemName ?? "Task"} (reassigned)`,
+      body: reason,
+      priority: "MEDIUM",
+      relatedTaskId: updated.id,
+      relatedMenuItem: assignment.menuItemName,
+      actionUrl: `/kitchen`, actionLabel: "View Task",
+    }).catch(() => {});
+  }
   return updated;
 }
 
@@ -308,7 +393,106 @@ export async function managerAssign(
   if (!updated) throw new Error("Assignment not found");
   await storage.updateChefAvailabilityStatus(chefId, tenantId, today, "available", undefined);
   emitToTenant(tenantId, "chef-assignment:updated", updated);
+  createNotification({
+    tenantId, chefId, type: "task_assigned",
+    title: `📋 New task assigned: ${(updated as any).menuItemName ?? "Task"}`,
+    body: `Assigned by manager`,
+    priority: "MEDIUM",
+    relatedTaskId: updated.id,
+    relatedMenuItem: (updated as any).menuItemName,
+    actionUrl: `/kitchen`, actionLabel: "View Task",
+  }).catch(() => {});
   return updated;
+}
+
+export async function verifyAssignment(
+  assignmentId: string,
+  tenantId: string,
+  verifiedBy: string,
+  qualityScore?: number,
+  feedback?: string
+): Promise<{ id: string; status: string }> {
+  const assignment = await storage.getAssignment(assignmentId, tenantId);
+  if (!assignment) throw new Error("Assignment not found");
+  await pool.query(
+    `UPDATE ticket_assignments SET status = 'verified', verified_at = now(), verified_by = $1, quality_score = $2, verification_feedback = $3 WHERE id = $4 AND tenant_id = $5`,
+    [verifiedBy, qualityScore ?? null, feedback ?? null, assignmentId, tenantId]
+  );
+  const updated = { id: assignmentId, status: "verified" };
+  emitToTenant(tenantId, "chef-assignment:updated", updated);
+  emitToTenant(tenantId, "prep:task_verified", {
+    taskId: assignmentId,
+    taskName: assignment.menuItemName,
+    chefId: assignment.chefId,
+    verifiedBy,
+    qualityScore,
+  });
+  if (assignment.chefId) {
+    createNotification({
+      tenantId, chefId: assignment.chefId, type: "task_verified",
+      title: `⭐ Your task was verified: ${assignment.menuItemName ?? "Task"}${qualityScore ? ` (${qualityScore}/5)` : ""}`,
+      body: feedback,
+      priority: "LOW",
+      relatedTaskId: assignmentId,
+      relatedMenuItem: assignment.menuItemName,
+    }).catch(() => {});
+  }
+  checkDishComplete(tenantId, assignment.menuItemId, assignment.orderId).catch(() => {});
+  return updated;
+}
+
+export async function reportIssue(
+  assignmentId: string,
+  tenantId: string,
+  note: string
+): Promise<{ id: string }> {
+  const assignment = await storage.getAssignment(assignmentId, tenantId);
+  if (!assignment) throw new Error("Assignment not found");
+  await pool.query(
+    `UPDATE ticket_assignments SET status = 'issue_reported', issue_note = $1 WHERE id = $2 AND tenant_id = $3`,
+    [note, assignmentId, tenantId]
+  );
+  const updated = { id: assignmentId, status: "issue_reported" };
+  emitToTenant(tenantId, "chef-assignment:updated", updated);
+  emitToTenant(tenantId, "prep:task_issue", {
+    taskId: assignmentId, taskName: assignment.menuItemName,
+    chefId: assignment.chefId, note,
+  });
+  createNotification({
+    tenantId, chefId: null, type: "task_issue",
+    title: `⚠️ Issue reported on: ${assignment.menuItemName ?? "Task"}`,
+    body: note,
+    priority: "HIGH",
+    relatedTaskId: assignmentId,
+    relatedMenuItem: assignment.menuItemName,
+    actionUrl: `/kitchen`, actionLabel: "Review",
+  }).catch(() => {});
+  return updated;
+}
+
+export async function requestHelp(
+  assignmentId: string,
+  tenantId: string
+): Promise<{ id: string }> {
+  const assignment = await storage.getAssignment(assignmentId, tenantId);
+  if (!assignment) throw new Error("Assignment not found");
+  await pool.query(
+    `UPDATE ticket_assignments SET help_requested = true WHERE id = $1 AND tenant_id = $2`,
+    [assignmentId, tenantId]
+  );
+  emitToTenant(tenantId, "prep:task_help", {
+    taskId: assignmentId, taskName: assignment.menuItemName,
+    chefId: assignment.chefId, chefName: assignment.chefName,
+  });
+  createNotification({
+    tenantId, chefId: null, type: "task_help",
+    title: `🆘 ${assignment.chefName ?? "Chef"} needs help on: ${assignment.menuItemName ?? "Task"}`,
+    priority: "HIGH",
+    relatedTaskId: assignmentId,
+    relatedMenuItem: assignment.menuItemName,
+    actionUrl: `/kitchen`, actionLabel: "Go Help",
+  }).catch(() => {});
+  return { id: assignmentId };
 }
 
 export async function rebalanceAssignments(tenantId: string, outletId: string): Promise<{ moved: number }> {
