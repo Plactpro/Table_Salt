@@ -62,19 +62,19 @@ function AnimatedCounter({ value }: { value: string | number }) {
 }
 
 const gradientIconStyles: Record<string, string> = {
-  "text-primary": "from-teal-600/25 to-teal-700/15",
-  "text-teal-600": "from-teal-500/30 to-teal-600/15",
-  "text-emerald-600": "from-emerald-500/30 to-green-600/15",
-  "text-green-600": "from-green-500/30 to-emerald-600/15",
-  "text-orange-500": "from-orange-400/30 to-orange-500/15",
-  "text-orange-600": "from-orange-500/30 to-orange-600/15",
-  "text-amber-600": "from-amber-500/30 to-amber-600/15",
-  "text-red-600": "from-red-500/30 to-rose-600/15",
-  "text-rose-600": "from-rose-500/30 to-rose-600/15",
-  "text-purple-600": "from-purple-500/30 to-violet-600/15",
-  "text-blue-600": "from-blue-500/30 to-blue-600/15",
-  "text-cyan-600": "from-cyan-500/30 to-cyan-600/15",
-  "text-stone-600": "from-stone-500/30 to-stone-600/15",
+  "text-primary": "from-teal-600/40 to-teal-700/25",
+  "text-teal-600": "from-teal-500/45 to-teal-600/25",
+  "text-emerald-600": "from-emerald-500/45 to-green-600/25",
+  "text-green-600": "from-green-500/45 to-emerald-600/25",
+  "text-orange-500": "from-orange-400/45 to-orange-500/25",
+  "text-orange-600": "from-orange-500/45 to-orange-600/25",
+  "text-amber-600": "from-amber-500/45 to-amber-600/25",
+  "text-red-600": "from-red-500/45 to-rose-600/25",
+  "text-rose-600": "from-rose-500/45 to-rose-600/25",
+  "text-purple-600": "from-purple-500/45 to-violet-600/25",
+  "text-blue-600": "from-blue-500/45 to-blue-600/25",
+  "text-cyan-600": "from-cyan-500/45 to-cyan-600/25",
+  "text-stone-600": "from-stone-500/45 to-stone-600/25",
 };
 
 export function StatCard({ title, value, subtitle, icon: Icon, iconColor = "text-primary", iconBg = "bg-primary/10", trend, testId, index = 0 }: StatCardProps) {
@@ -86,7 +86,7 @@ export function StatCard({ title, value, subtitle, icon: Icon, iconColor = "text
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: index * 0.08, ease: [0.25, 0.46, 0.45, 0.94] }}
       whileHover={{ y: -4, transition: { duration: 0.2 } }}
-      className="group"
+      className="group will-change-motion"
     >
       <Card data-testid={testId} className="transition-shadow duration-300 group-hover:shadow-card-hover">
         <CardContent className="p-6">
