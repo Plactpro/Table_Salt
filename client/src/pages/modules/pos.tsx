@@ -1273,8 +1273,10 @@ export default function POSPage() {
           </div>
         </div>
 
-        <div className="p-4 border-b">
-          <div className="flex items-center gap-2 mb-3">
+        {/* ── Sidebar top: header + order-detail partition ── */}
+        <div className="p-4 border-b space-y-3">
+          {/* Row 1: title + action buttons */}
+          <div className="flex items-center gap-2">
             <div className="p-1.5 rounded-lg bg-primary/10">
               <ShoppingCart className="h-5 w-5 text-primary" />
             </div>
@@ -1310,8 +1312,9 @@ export default function POSPage() {
             </div>
           </div>
 
+          {/* Row 2: last-placed notification */}
           {lastPlacedOrder && (
-            <div className="mb-2 flex items-center gap-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg px-3 py-1.5">
+            <div className="flex items-center gap-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg px-3 py-1.5">
               <Receipt className="h-3.5 w-3.5 text-green-600 shrink-0" />
               <span className="text-xs text-green-700 dark:text-green-300 flex-1">Order placed · {fmt(lastPlacedOrder.total)}</span>
               <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">Bill</Button>
@@ -1319,54 +1322,58 @@ export default function POSPage() {
             </div>
           )}
 
-          <div className="flex gap-1">
-            <Button data-testid="button-order-type-dine-in" variant={orderType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => updateActiveTab({ orderType: "dine_in" })}>
-              <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> Dine-in
-            </Button>
-            <Button data-testid="button-order-type-takeaway" variant={orderType === "takeaway" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => updateActiveTab({ orderType: "takeaway" })}>
-              <Package className="h-3.5 w-3.5 mr-1" /> Takeaway
-            </Button>
-            <Button data-testid="button-order-type-delivery" variant={orderType === "delivery" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => updateActiveTab({ orderType: "delivery" })}>
-              <Truck className="h-3.5 w-3.5 mr-1" /> Delivery
-            </Button>
-          </div>
+          {/* Row 3: order-detail partition — type + table/customer */}
+          <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Order Details</p>
+            <div className="flex gap-1">
+              <Button data-testid="button-order-type-dine-in" variant={orderType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "dine_in" })}>
+                <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> Dine-in
+              </Button>
+              <Button data-testid="button-order-type-takeaway" variant={orderType === "takeaway" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "takeaway" })}>
+                <Package className="h-3.5 w-3.5 mr-1" /> Takeaway
+              </Button>
+              <Button data-testid="button-order-type-delivery" variant={orderType === "delivery" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "delivery" })}>
+                <Truck className="h-3.5 w-3.5 mr-1" /> Delivery
+              </Button>
+            </div>
 
-          <AnimatePresence initial={false}>
-            {isDineIn && (
-              <motion.div key="dine-in-controls" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="mt-3 flex gap-2 items-center overflow-hidden">
-                <button
-                  data-testid="button-select-table"
-                  onClick={() => setShowTablePicker(true)}
-                  className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors text-left ${selectedTable ? "border-primary bg-primary/5 text-primary" : "border-dashed border-muted-foreground/40 hover:border-primary/50 text-muted-foreground hover:text-foreground"}`}
-                >
-                  <MapPin className="h-4 w-4 shrink-0" />
-                  <span className="flex-1 truncate">
-                    {selectedTable
-                      ? (() => { const t = tables.find(t => t.id === selectedTable); return t ? `Table ${t.number} — ${t.zone}` : "Table selected"; })()
-                      : "Select table…"}
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
-                </button>
-                <div className="flex items-center gap-1 bg-muted/50 rounded-md px-2 py-1.5 shrink-0">
-                  <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: Math.max(1, (activeTab?.covers ?? 1) - 1) })} data-testid="button-covers-decrease"><Minus className="h-3 w-3" /></button>
-                  <span className="text-xs font-medium w-12 text-center" data-testid="text-covers">{activeTab?.covers ?? 1} pax</span>
-                  <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: (activeTab?.covers ?? 1) + 1 })} data-testid="button-covers-increase"><Plus className="h-3 w-3" /></button>
-                </div>
-              </motion.div>
-            )}
-            {!isDineIn && (
-              <motion.div key="customer-fields" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="mt-3 grid grid-cols-2 gap-2 overflow-hidden">
-                <div className="relative">
-                  <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input data-testid="input-customer-name" placeholder="Customer name" value={activeTab?.customerName ?? ""} onChange={e => updateActiveTab({ customerName: e.target.value })} className="pl-8 text-sm" />
-                </div>
-                <div className="relative">
-                  <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input data-testid="input-customer-phone" placeholder="Phone" type="tel" value={activeTab?.customerPhone ?? ""} onChange={e => updateActiveTab({ customerPhone: e.target.value })} className="pl-8 text-sm" />
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            <AnimatePresence initial={false}>
+              {isDineIn && (
+                <motion.div key="dine-in-controls" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="flex gap-2 items-center overflow-hidden">
+                  <button
+                    data-testid="button-select-table"
+                    onClick={() => setShowTablePicker(true)}
+                    className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors text-left ${selectedTable ? "border-primary bg-primary/5 text-primary" : "border-dashed border-muted-foreground/40 hover:border-primary/50 text-muted-foreground hover:text-foreground"}`}
+                  >
+                    <MapPin className="h-4 w-4 shrink-0" />
+                    <span className="flex-1 truncate">
+                      {selectedTable
+                        ? (() => { const t = tables.find(t => t.id === selectedTable); return t ? `Table ${t.number} — ${t.zone}` : "Table selected"; })()
+                        : "Select table…"}
+                    </span>
+                    <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                  </button>
+                  <div className="flex items-center gap-1 bg-background rounded-md border px-2 py-1.5 shrink-0">
+                    <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: Math.max(1, (activeTab?.covers ?? 1) - 1) })} data-testid="button-covers-decrease"><Minus className="h-3 w-3" /></button>
+                    <span className="text-xs font-medium w-10 text-center" data-testid="text-covers">{activeTab?.covers ?? 1} pax</span>
+                    <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: (activeTab?.covers ?? 1) + 1 })} data-testid="button-covers-increase"><Plus className="h-3 w-3" /></button>
+                  </div>
+                </motion.div>
+              )}
+              {!isDineIn && (
+                <motion.div key="customer-fields" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="grid grid-cols-2 gap-2 overflow-hidden">
+                  <div className="relative">
+                    <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input data-testid="input-customer-name" placeholder="Customer name" value={activeTab?.customerName ?? ""} onChange={e => updateActiveTab({ customerName: e.target.value })} className="pl-8 text-sm bg-background" />
+                  </div>
+                  <div className="relative">
+                    <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input data-testid="input-customer-phone" placeholder="Phone" type="tel" value={activeTab?.customerPhone ?? ""} onChange={e => updateActiveTab({ customerPhone: e.target.value })} className="pl-8 text-sm bg-background" />
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
