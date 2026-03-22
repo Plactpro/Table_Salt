@@ -1204,11 +1204,11 @@ export default function POSPage() {
                         </div>
                       )}
                       {item.image ? (
-                        <div className="h-24 overflow-hidden bg-muted">
+                        <div className="overflow-hidden bg-muted" style={{ height: "110px" }}>
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         </div>
                       ) : (
-                        <div className="h-24 bg-muted/50 flex items-center justify-center" data-testid={`placeholder-${item.id}`}>
+                        <div className="bg-muted/50 flex items-center justify-center" style={{ height: "110px" }} data-testid={`placeholder-${item.id}`}>
                           <UtensilsCrossed className="h-6 w-6 text-muted-foreground/40" />
                         </div>
                       )}
@@ -1534,6 +1534,7 @@ export default function POSPage() {
           <Separator />
 
           <div className="space-y-1 text-sm">
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Totals</p>
             <div className="flex justify-between" data-testid="text-subtotal">
               <span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span>
             </div>
@@ -1611,19 +1612,23 @@ export default function POSPage() {
                     const isSelected = selectedTable === t.id;
                     const isFree = t.status === "free";
                     const isOccupied = t.status === "occupied";
+                    const isReserved = t.status === "reserved";
+                    const canSelect = isFree || isSelected;
                     return (
                       <button
                         key={t.id}
                         data-testid={`button-table-${t.id}`}
-                        disabled={!isFree && !isSelected}
+                        disabled={!canSelect}
                         onClick={() => { updateActiveTab({ selectedTable: t.id }); setShowTablePicker(false); }}
                         className={`relative flex flex-col items-center justify-center h-16 rounded-lg border-2 transition-all text-sm font-semibold
                           ${isSelected ? "border-primary bg-primary text-primary-foreground shadow-lg" :
                             isFree ? "border-green-400 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 hover:border-green-500 hover:scale-[1.03] cursor-pointer" :
-                            "border-red-300 bg-red-50 dark:bg-red-950/30 text-red-400 cursor-not-allowed opacity-60"}`}
+                            isOccupied ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 cursor-not-allowed opacity-70" :
+                            isReserved ? "border-red-300 bg-red-50 dark:bg-red-950/30 text-red-400 cursor-not-allowed opacity-70" :
+                            "border-muted-foreground/30 bg-muted/30 text-muted-foreground cursor-not-allowed opacity-60"}`}
                       >
                         <span className="text-base leading-none">{t.number}</span>
-                        <span className="text-[10px] mt-1 font-normal opacity-75">{isOccupied ? "Occupied" : isFree ? `${t.capacity}p` : t.status}</span>
+                        <span className="text-[10px] mt-1 font-normal opacity-75">{isFree ? `${t.capacity}p` : isOccupied ? "Occupied" : isReserved ? "Reserved" : t.status}</span>
                         {isSelected && <CheckCircle2 className="absolute top-1 right-1 h-3.5 w-3.5" />}
                       </button>
                     );
@@ -1635,7 +1640,8 @@ export default function POSPage() {
           </div>
           <div className="flex items-center gap-3 pt-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-400 inline-block" />Free</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-300 inline-block" />Occupied</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-400 inline-block" />Occupied</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-300 inline-block" />Reserved</span>
           </div>
         </DialogContent>
       </Dialog>
