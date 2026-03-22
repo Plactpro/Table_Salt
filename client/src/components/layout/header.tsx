@@ -104,7 +104,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
-  const { play: playSound } = usePrepAlertSound();
+  const { play: playSound } = usePrepAlertSound(user?.id?.toString());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
 

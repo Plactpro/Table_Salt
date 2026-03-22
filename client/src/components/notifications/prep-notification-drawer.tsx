@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -8,8 +9,16 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   CheckCircle2,
   Circle,
@@ -22,8 +31,14 @@ import {
   BarChart2,
   ChevronRight,
   BellOff,
+  Settings,
+  ArrowLeft,
+  TrendingUp,
+  TrendingDown,
+  Minus,
 } from "lucide-react";
 import type { PrepNotification } from "@/hooks/use-prep-notifications";
+import { useAuth } from "@/lib/auth";
 
 const typeConfig: Record<
   string,
@@ -64,6 +79,128 @@ function groupNotifications(notifications: PrepNotification[]) {
   return { action, info, complete };
 }
 
+interface ReadinessSummaryCardProps {
+  notification: PrepNotification;
+  onMarkRead: (id: string) => void;
+}
+
+function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryCardProps) {
+  const [, navigate] = useLocation();
+  const isUnread = !n.readAt;
+
+  const bodyData: Record<string, any> = (() => {
+    try { return JSON.parse(n.body ?? "{}"); } catch { return {}; }
+  })();
+
+  const verified = bodyData.verified ?? 0;
+  const total = bodyData.total ?? 0;
+  const inProgress = bodyData.inProgress ?? 0;
+  const overdue = bodyData.overdue ?? 0;
+  const dishesReady = bodyData.dishesReady ?? 0;
+  const dishesAtRisk = bodyData.dishesAtRisk ?? 0;
+  const completionPct = total > 0 ? Math.round((verified / total) * 100) : 0;
+
+  return (
+    <div
+      className={`px-4 py-3 border-l-4 border-blue-400 ${isUnread ? "bg-blue-50/60 dark:bg-blue-950/20" : "bg-slate-50/60 dark:bg-slate-900/20"}`}
+      data-testid={`prep-notif-summary-${n.id.slice(-4)}`}
+    >
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <BarChart2 className="h-4 w-4 text-blue-600" />
+          <span className="text-sm font-semibold text-foreground">Readiness Summary</span>
+          {isUnread && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />}
+        </div>
+        <span className="text-[10px] text-muted-foreground">
+          {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true })}
+        </span>
+      </div>
+
+      {n.title && (
+        <p className="text-xs text-muted-foreground mb-2">{n.title}</p>
+      )}
+
+      <div className="grid grid-cols-3 gap-2 mb-2">
+        <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-2 text-center">
+          <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto mb-0.5" />
+          <p className="text-lg font-bold text-green-700">{verified}</p>
+          <p className="text-[10px] text-green-600">Verified</p>
+        </div>
+        <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-2 text-center">
+          <Clock className="h-4 w-4 text-amber-600 mx-auto mb-0.5" />
+          <p className="text-lg font-bold text-amber-700">{inProgress}</p>
+          <p className="text-[10px] text-amber-600">In Progress</p>
+        </div>
+        <div className="bg-red-50 dark:bg-red-950/30 rounded-lg p-2 text-center">
+          <AlertTriangle className="h-4 w-4 text-red-600 mx-auto mb-0.5" />
+          <p className="text-lg font-bold text-red-700">{overdue}</p>
+          <p className="text-[10px] text-red-600">Overdue</p>
+        </div>
+      </div>
+
+      {total > 0 && (
+        <div className="mb-2">
+          <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
+            <span>Overall completion</span>
+            <span className="font-semibold">{completionPct}% ({verified}/{total})</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full bg-green-500 rounded-full transition-all"
+              style={{ width: `${completionPct}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {(dishesReady > 0 || dishesAtRisk > 0) && (
+        <div className="flex items-center gap-3 mb-2 text-xs">
+          {dishesReady > 0 && (
+            <span className="flex items-center gap-1 text-green-700">
+              <TrendingUp className="h-3 w-3" />{dishesReady} dishes ready
+            </span>
+          )}
+          {dishesAtRisk > 0 && (
+            <span className="flex items-center gap-1 text-red-600">
+              <TrendingDown className="h-3 w-3" />{dishesAtRisk} at risk
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 mt-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-xs px-2 py-0"
+          onClick={() => { onMarkRead(n.id); navigate("/kitchen-board"); }}
+          data-testid={`button-summary-board-${n.id.slice(-4)}`}
+        >
+          View Full Board <ChevronRight className="h-3 w-3 ml-0.5" />
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 text-xs px-2 py-0"
+          onClick={() => { onMarkRead(n.id); navigate("/kitchen-board?tab=pending"); }}
+          data-testid={`button-summary-assign-${n.id.slice(-4)}`}
+        >
+          Assign Pending
+        </Button>
+        {isUnread && (
+          <button
+            className="text-[10px] text-primary underline hover:no-underline ml-auto"
+            onClick={() => onMarkRead(n.id)}
+            data-testid={`button-mark-read-summary-${n.id.slice(-4)}`}
+          >
+            Mark read
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface NotificationCardProps {
   notification: PrepNotification;
   onMarkRead: (id: string) => void;
@@ -71,6 +208,11 @@ interface NotificationCardProps {
 
 function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps) {
   const [, navigate] = useLocation();
+
+  if (n.type === "readiness_summary") {
+    return <ReadinessSummaryCard notification={n} onMarkRead={onMarkRead} />;
+  }
+
   const cfg = typeConfig[n.type] ?? { icon: <Circle className="h-4 w-4" />, color: "text-slate-500", group: "info" };
   const isUnread = !n.readAt;
 
@@ -158,6 +300,132 @@ function GroupSection({ title, items, onMarkRead }: GroupSectionProps) {
   );
 }
 
+type SoundPref = "chime" | "beep" | "silent";
+
+interface NotifPref {
+  enabled: boolean;
+  sound: SoundPref;
+}
+
+interface NotifPrefs {
+  task_assigned: NotifPref;
+  task_completed: NotifPref;
+  task_overdue: NotifPref;
+  task_issue: NotifPref;
+  task_help: NotifPref;
+  readiness_summary: NotifPref;
+  all_complete: NotifPref;
+}
+
+const DEFAULT_PREFS: NotifPrefs = {
+  task_assigned: { enabled: true, sound: "chime" },
+  task_completed: { enabled: true, sound: "chime" },
+  task_overdue: { enabled: true, sound: "beep" },
+  task_issue: { enabled: true, sound: "beep" },
+  task_help: { enabled: true, sound: "beep" },
+  readiness_summary: { enabled: true, sound: "silent" },
+  all_complete: { enabled: true, sound: "chime" },
+};
+
+const PREF_LABELS: Record<keyof NotifPrefs, string> = {
+  task_assigned: "Task Assigned",
+  task_completed: "Task Completed",
+  task_overdue: "Task Overdue",
+  task_issue: "Issue Reported",
+  task_help: "Help Requested",
+  readiness_summary: "Readiness Summary",
+  all_complete: "All Prep Complete",
+};
+
+function loadPrefs(userId: string): NotifPrefs {
+  try {
+    const raw = localStorage.getItem(`prep_notif_prefs_${userId}`);
+    if (raw) return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+  } catch {}
+  return { ...DEFAULT_PREFS };
+}
+
+function savePrefs(userId: string, prefs: NotifPrefs) {
+  localStorage.setItem(`prep_notif_prefs_${userId}`, JSON.stringify(prefs));
+}
+
+interface NotificationPreferencesPanelProps {
+  userId: string;
+  onBack: () => void;
+}
+
+function NotificationPreferencesPanel({ userId, onBack }: NotificationPreferencesPanelProps) {
+  const [prefs, setPrefs] = useState<NotifPrefs>(() => loadPrefs(userId));
+
+  const updatePref = (key: keyof NotifPrefs, field: keyof NotifPref, value: boolean | SoundPref) => {
+    setPrefs(prev => {
+      const next = { ...prev, [key]: { ...prev[key], [field]: value } };
+      savePrefs(userId, next);
+      return next;
+    });
+  };
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="px-4 pt-4 pb-3 border-b flex items-center gap-2 shrink-0">
+        <button
+          onClick={onBack}
+          className="text-muted-foreground hover:text-foreground transition-colors"
+          data-testid="button-prefs-back"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <h2 className="text-sm font-semibold">Notification Preferences</h2>
+      </div>
+      <ScrollArea className="flex-1 px-4 py-3">
+        <p className="text-xs text-muted-foreground mb-4">
+          Choose which events to receive alerts for, and the sound to play for each.
+        </p>
+        <div className="space-y-1">
+          {(Object.keys(prefs) as Array<keyof NotifPrefs>).map(key => (
+            <div
+              key={key}
+              className="flex items-center justify-between py-2.5 border-b last:border-0"
+              data-testid={`pref-row-${key}`}
+            >
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={prefs[key].enabled}
+                  onCheckedChange={v => updatePref(key, "enabled", v)}
+                  data-testid={`toggle-pref-${key}`}
+                />
+                <Label className="text-sm cursor-pointer" htmlFor={`pref-${key}`}>
+                  {PREF_LABELS[key]}
+                </Label>
+              </div>
+              <Select
+                value={prefs[key].sound}
+                onValueChange={v => updatePref(key, "sound", v as SoundPref)}
+                disabled={!prefs[key].enabled}
+              >
+                <SelectTrigger
+                  className="h-7 w-[90px] text-xs"
+                  data-testid={`select-sound-${key}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="chime">Chime</SelectItem>
+                  <SelectItem value="beep">Beep</SelectItem>
+                  <SelectItem value="silent">Silent</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ))}
+        </div>
+        <p className="text-[10px] text-muted-foreground mt-4">
+          Preferences are saved locally on this device.
+        </p>
+      </ScrollArea>
+    </div>
+  );
+}
+
 interface PrepNotificationDrawerProps {
   open: boolean;
   onClose: () => void;
@@ -175,55 +443,76 @@ export default function PrepNotificationDrawer({
   onMarkRead,
   onMarkAllRead,
 }: PrepNotificationDrawerProps) {
+  const { user } = useAuth();
+  const [showPrefs, setShowPrefs] = useState(false);
   const { action, info, complete } = groupNotifications(notifications);
 
   return (
     <Sheet open={open} onOpenChange={v => !v && onClose()}>
       <SheetContent side="right" className="w-[380px] sm:w-[420px] p-0 flex flex-col">
-        <SheetHeader className="px-4 pt-4 pb-2 border-b shrink-0">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="flex items-center gap-2 text-base">
-              <ChefHat className="h-5 w-5 text-orange-500" />
-              Kitchen Notifications
-              {unreadCount > 0 && (
-                <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full" data-testid="badge-prep-notif-count">
-                  {unreadCount}
-                </span>
+        {showPrefs && user ? (
+          <NotificationPreferencesPanel
+            userId={user.id.toString()}
+            onBack={() => setShowPrefs(false)}
+          />
+        ) : (
+          <>
+            <SheetHeader className="px-4 pt-4 pb-2 border-b shrink-0">
+              <div className="flex items-center justify-between">
+                <SheetTitle className="flex items-center gap-2 text-base">
+                  <ChefHat className="h-5 w-5 text-orange-500" />
+                  Kitchen Notifications
+                  {unreadCount > 0 && (
+                    <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full" data-testid="badge-prep-notif-count">
+                      {unreadCount}
+                    </span>
+                  )}
+                </SheetTitle>
+                <div className="flex items-center gap-1">
+                  {unreadCount > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-muted-foreground"
+                      onClick={onMarkAllRead}
+                      data-testid="button-mark-all-read"
+                    >
+                      Mark all read
+                    </Button>
+                  )}
+                  <button
+                    className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                    onClick={() => setShowPrefs(true)}
+                    title="Notification preferences"
+                    data-testid="button-open-notif-prefs"
+                  >
+                    <Settings className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </SheetHeader>
+
+            <ScrollArea className="flex-1">
+              {notifications.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+                  <BellOff className="h-10 w-10 opacity-30" />
+                  <p className="text-sm">No notifications yet</p>
+                  <p className="text-xs">You'll see prep task updates here in real time</p>
+                </div>
+              ) : (
+                <div>
+                  <GroupSection title="Needs Action" items={action} onMarkRead={onMarkRead} />
+                  <GroupSection title="In Progress" items={info} onMarkRead={onMarkRead} />
+                  <GroupSection title="Completed" items={complete} onMarkRead={onMarkRead} />
+                </div>
               )}
-            </SheetTitle>
-            {unreadCount > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs text-muted-foreground"
-                onClick={onMarkAllRead}
-                data-testid="button-mark-all-read"
-              >
-                Mark all read
-              </Button>
-            )}
-          </div>
-        </SheetHeader>
+            </ScrollArea>
 
-        <ScrollArea className="flex-1">
-          {notifications.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
-              <BellOff className="h-10 w-10 opacity-30" />
-              <p className="text-sm">No notifications yet</p>
-              <p className="text-xs">You'll see prep task updates here in real time</p>
+            <div className="border-t px-4 py-2 text-[11px] text-muted-foreground text-center shrink-0">
+              Showing {notifications.length} notification{notifications.length !== 1 ? "s" : ""} · Live updates enabled
             </div>
-          ) : (
-            <div>
-              <GroupSection title="Needs Action" items={action} onMarkRead={onMarkRead} />
-              <GroupSection title="In Progress" items={info} onMarkRead={onMarkRead} />
-              <GroupSection title="Completed" items={complete} onMarkRead={onMarkRead} />
-            </div>
-          )}
-        </ScrollArea>
-
-        <div className="border-t px-4 py-2 text-[11px] text-muted-foreground text-center shrink-0">
-          Showing {notifications.length} notification{notifications.length !== 1 ? "s" : ""} · Live updates enabled
-        </div>
+          </>
+        )}
       </SheetContent>
     </Sheet>
   );
