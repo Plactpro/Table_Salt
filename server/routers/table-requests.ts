@@ -94,6 +94,20 @@ export function registerTableRequestRoutes(app: Express): void {
     }
   });
 
+  app.get("/api/table-requests/pending-count", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM table_requests
+         WHERE tenant_id = $1 AND status IN ('pending', 'acknowledged')`,
+        [user.tenantId]
+      );
+      res.json({ count: rows[0]?.count ?? 0 });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/table-requests/live", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
