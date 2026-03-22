@@ -65,6 +65,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["pos", "orders", "delivery_management", "inventory"],
     badges: ["Quick Service", "Fast POS", "Drive-Thru"],
     icon: "Zap",
+    excludedFeatureKeys: ["reservations"],
   },
   food_truck: {
     label: "Food Truck",
@@ -72,7 +73,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["pos", "orders", "inventory", "menu"],
     badges: ["Mobile", "GPS Tracking", "On-The-Go"],
     icon: "Truck",
-    excludedFeatureKeys: ["tables", "cleaning"],
+    excludedFeatureKeys: ["tables", "reservations", "cleaning"],
   },
   cafe: {
     label: "Café",
@@ -101,7 +102,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["orders", "delivery_management", "menu", "inventory", "integrations"],
     badges: ["Cloud Kitchen", "Delivery Only", "Multi-Brand"],
     icon: "Cloud",
-    excludedFeatureKeys: ["tables", "cleaning"],
+    excludedFeatureKeys: ["tables", "reservations", "cleaning"],
     excludedPaths: ["/kiosk-management"],
   },
 };
