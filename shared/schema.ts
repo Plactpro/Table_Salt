@@ -1690,6 +1690,9 @@ export const ticketAssignments = pgTable("ticket_assignments", {
   reassignReason: text("reassign_reason"),
   estimatedTimeMin: integer("estimated_time_min"),
   actualTimeMin: integer("actual_time_min"),
+  completedQty: decimal("completed_qty"),
+  totalQty: decimal("total_qty"),
+  unit: text("unit"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_ticket_assignments_tenant").on(t.tenantId),

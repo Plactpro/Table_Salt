@@ -6,6 +6,7 @@ let deadlineTimer: ReturnType<typeof setInterval> | null = null;
 let summaryTimer: ReturnType<typeof setInterval> | null = null;
 
 const warnedKeys = new Set<string>();
+const LOW_READINESS_THRESHOLD = 50;
 
 export function startDeadlineChecker(): void {
   if (deadlineTimer) return;
@@ -181,7 +182,7 @@ export function startDeadlineChecker(): void {
 
         const done = summary.completed + summary.verified;
         const readinessPct = Math.round((done / summary.total) * 100);
-        const lowAlert = readinessPct < 50;
+        const lowAlert = readinessPct < LOW_READINESS_THRESHOLD;
 
         emitToTenant(tenant_id, "prep:readiness_summary", {
           ...summary,
@@ -201,6 +202,56 @@ export function startDeadlineChecker(): void {
           actionUrl: "/kitchen",
           actionLabel: "View Kitchen",
         });
+
+        if (lowAlert) {
+          const { rows: shiftRows } = await pool.query<{ shift_start: string; shift_date: string }>(
+            `SELECT shift_start, shift_date FROM chef_roster
+             WHERE tenant_id = $1 AND shift_date = CURRENT_DATE
+               AND (shift_date::text || 'T' || shift_start)::timestamp > NOW()
+             ORDER BY shift_start ASC LIMIT 1`,
+            [tenant_id]
+          );
+
+          let hoursToShift: number | null = null;
+          if (shiftRows.length > 0) {
+            const shiftStartStr = `${shiftRows[0].shift_date}T${shiftRows[0].shift_start}`;
+            const shiftStart = new Date(shiftStartStr);
+            hoursToShift = (shiftStart.getTime() - Date.now()) / 3_600_000;
+          }
+
+          if (hoursToShift !== null && hoursToShift <= 3 && hoursToShift >= 0) {
+            const lowReadinessKey = `${tenant_id}:low_readiness:${new Date().toISOString().slice(0, 10)}`;
+            if (!warnedKeys.has(lowReadinessKey)) {
+              warnedKeys.add(lowReadinessKey);
+
+              const { rows: unassignedRows } = await pool.query<{ cnt: number }>(
+                `SELECT COUNT(*)::int AS cnt FROM ticket_assignments
+                 WHERE tenant_id = $1 AND DATE(created_at) = CURRENT_DATE
+                   AND status = 'unassigned' AND chef_id IS NULL`,
+                [tenant_id]
+              );
+              const unassignedCount = unassignedRows[0]?.cnt ?? 0;
+              const hoursDisplay = Math.round(hoursToShift);
+
+              emitToTenant(tenant_id, "prep:low_readiness_alert", {
+                readinessPct,
+                unassignedCount,
+                hoursToShift: hoursDisplay,
+                date: new Date().toISOString().slice(0, 10),
+              });
+
+              await createNotification({
+                tenantId: tenant_id,
+                chefId: null,
+                type: "low_readiness_alert",
+                title: `🚨 ALERT: LOW PREP READINESS — Only ${readinessPct}% complete — ${hoursDisplay}hrs to shift — ${unassignedCount} tasks still unassigned`,
+                priority: "HIGH",
+                actionUrl: "/kitchen-board?tab=pending",
+                actionLabel: "ASSIGN ALL PENDING NOW",
+              });
+            }
+          }
+        }
 
         if (summary.total > 0 && done === summary.total) {
           const { rows: topRows } = await pool.query<{ chef_id: string; cnt: number }>(

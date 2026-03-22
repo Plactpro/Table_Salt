@@ -7,7 +7,9 @@ import {
   markRead,
 } from "../services/prep-notifications";
 import { startDeadlineChecker } from "../services/prep-deadline-checker";
-import { requireRole } from "../auth";
+import { requireAuth, requireRole } from "../auth";
+import { pool } from "../db";
+import { emitToTenant } from "../realtime";
 
 export function registerPrepNotificationRoutes(app: Router): void {
   startDeadlineChecker();
@@ -152,7 +154,6 @@ export function registerPrepNotificationRoutes(app: Router): void {
       const tenantId: string = req.user?.tenantId;
       if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
       const { storage } = await import("../storage");
-      const { emitToTenant } = await import("../realtime");
       const assignment = await storage.getAssignment(req.params.id, tenantId);
       if (!assignment) return res.status(404).json({ error: "Assignment not found" });
       const { reminderNote } = (req.body ?? {}) as { reminderNote?: string };
@@ -188,7 +189,6 @@ export function registerPrepNotificationRoutes(app: Router): void {
       const { chefId, chefName } = (req.body ?? {}) as { chefId?: string; chefName?: string };
       if (!chefId) return res.status(400).json({ error: "chefId required" });
       const { storage } = await import("../storage");
-      const { emitToTenant } = await import("../realtime");
       const allUsers = await storage.getUsersByTenant(tenantId);
       const kitchenRoles = ["kitchen", "chef", "assistant"];
       const targetUser = allUsers.find(u => String(u.id) === String(chefId) && kitchenRoles.includes(u.role ?? ""));
@@ -242,6 +242,95 @@ export function registerPrepNotificationRoutes(app: Router): void {
     } catch (err: any) {
       console.error("[PrepNotif] reassign error:", err);
       return res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.patch("/api/prep-assignments/:id/progress", requireAuth, async (req: any, res) => {
+    try {
+      const tenantId: string = req.user?.tenantId;
+      if (!tenantId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { completedQty, totalQty, unit } = req.body;
+      if (completedQty === undefined || totalQty === undefined) {
+        return res.status(400).json({ error: "completedQty and totalQty are required" });
+      }
+
+      const completedNum = Number(completedQty);
+      const totalNum = Number(totalQty);
+      if (isNaN(completedNum) || isNaN(totalNum) || totalNum <= 0) {
+        return res.status(400).json({ error: "Invalid quantity values" });
+      }
+
+      const { rows: existing } = await pool.query<{
+        id: string;
+        tenant_id: string;
+        chef_id: string | null;
+        chef_name: string | null;
+        menu_item_name: string | null;
+        completed_qty: string | null;
+        total_qty: string | null;
+        unit: string | null;
+      }>(
+        `SELECT id, tenant_id, chef_id, chef_name, menu_item_name, completed_qty, total_qty, unit
+         FROM ticket_assignments WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, tenantId]
+      );
+
+      if (!existing.length) {
+        return res.status(404).json({ error: "Assignment not found" });
+      }
+
+      const row = existing[0];
+      const prevCompletedQty = row.completed_qty ? Number(row.completed_qty) : 0;
+      const prevTotalQty = row.total_qty ? Number(row.total_qty) : totalNum;
+      const previousPct = prevTotalQty > 0 ? Math.round((prevCompletedQty / prevTotalQty) * 100) : 0;
+      const percentComplete = Math.round((completedNum / totalNum) * 100);
+      const resolvedUnit = unit ?? row.unit ?? "";
+
+      await pool.query(
+        `UPDATE ticket_assignments SET completed_qty = $1, total_qty = $2, unit = $3 WHERE id = $4 AND tenant_id = $5`,
+        [completedNum, totalNum, resolvedUnit, req.params.id, tenantId]
+      );
+
+      const isPartial = completedNum < totalNum;
+      const crossedHalfway = percentComplete >= 50 && previousPct < 50;
+
+      if (isPartial && crossedHalfway) {
+        emitToTenant(tenantId, "prep:task_progress", {
+          taskId: row.id,
+          taskName: row.menu_item_name,
+          assignedToName: row.chef_name,
+          completedQty: completedNum,
+          totalQty: totalNum,
+          unit: resolvedUnit,
+          percentComplete,
+          chefId: row.chef_id,
+        });
+
+        createNotification({
+          tenantId,
+          chefId: row.chef_id,
+          type: "task_progress",
+          title: `⏳ ${row.chef_name ?? "Chef"} is halfway: ${row.menu_item_name ?? "Task"} (${completedNum}${resolvedUnit} done)`,
+          priority: "LOW",
+          relatedTaskId: row.id,
+          relatedMenuItem: row.menu_item_name,
+          actionUrl: "/kitchen",
+          actionLabel: "View Task",
+        }).catch(() => {});
+      }
+
+      return res.json({
+        id: row.id,
+        completedQty: completedNum,
+        totalQty: totalNum,
+        unit: resolvedUnit,
+        percentComplete,
+        halfwayEventFired: isPartial && crossedHalfway,
+      });
+    } catch (err: any) {
+      console.error("[PrepNotif] progress error:", err);
+      return res.status(500).json({ error: err.message });
     }
   });
 }
