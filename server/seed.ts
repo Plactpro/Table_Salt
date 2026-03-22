@@ -1,6 +1,91 @@
 import { storage } from "./storage";
 import { hashPassword } from "./auth";
 
+async function seedChefAssignment(tenantId: string, outletId: string, kitchenUserId: string) {
+  const existing = await storage.getCounters(tenantId, outletId);
+  if (existing.length > 0) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+
+  const counterDefs = [
+    { name: "Grill", counterCode: "GRL", displayColor: "#EF4444", sortOrder: 1 },
+    { name: "Cold Kitchen", counterCode: "CLD", displayColor: "#3B82F6", sortOrder: 2 },
+    { name: "Bar", counterCode: "BAR", displayColor: "#A855F7", sortOrder: 3 },
+    { name: "Dessert", counterCode: "DST", displayColor: "#F59E0B", sortOrder: 4 },
+  ];
+
+  const counters = await Promise.all(
+    counterDefs.map(def =>
+      storage.createCounter({ tenantId, outletId, ...def, maxCapacity: 3, isActive: true, handlesCategories: [] })
+    )
+  );
+
+  const [grillCounter, coldCounter] = counters;
+
+  const rosterEntries = [
+    { counterId: grillCounter.id, counterName: grillCounter.name, shiftDate: yesterday, shiftStart: "08:00", shiftEnd: "16:00", shiftType: "morning", status: "completed" },
+    { counterId: coldCounter.id, counterName: coldCounter.name, shiftDate: yesterday, shiftStart: "08:00", shiftEnd: "16:00", shiftType: "morning", status: "completed" },
+    { counterId: grillCounter.id, counterName: grillCounter.name, shiftDate: today, shiftStart: "08:00", shiftEnd: "16:00", shiftType: "morning", status: "checked_in", checkedInAt: new Date(Date.now() - 2 * 3600000) },
+    { counterId: coldCounter.id, counterName: coldCounter.name, shiftDate: today, shiftStart: "16:00", shiftEnd: "23:00", shiftType: "evening", status: "scheduled" },
+    { counterId: grillCounter.id, counterName: grillCounter.name, shiftDate: tomorrow, shiftStart: "08:00", shiftEnd: "16:00", shiftType: "morning", status: "scheduled" },
+    { counterId: coldCounter.id, counterName: coldCounter.name, shiftDate: tomorrow, shiftStart: "08:00", shiftEnd: "16:00", shiftType: "morning", status: "scheduled" },
+  ];
+
+  await Promise.all(
+    rosterEntries.map(entry =>
+      storage.createRosterEntry({ tenantId, outletId, chefId: kitchenUserId, chefName: "Pat Garcia", ...entry })
+    )
+  );
+
+  await storage.upsertChefAvailability({
+    tenantId, outletId, chefId: kitchenUserId, counterId: grillCounter.id,
+    shiftDate: today, status: "available", activeTickets: 2,
+  });
+
+  const now = new Date();
+  const assignments: Array<{ menuItemName: string; counterId: string; counterName: string; status: string; chefId?: string; chefName?: string; tableNumber?: number; assignmentType: string; minsAgo: number }> = [
+    { menuItemName: "Grilled Ribeye Steak",   counterId: grillCounter.id, counterName: "Grill",        status: "in_progress", chefId: kitchenUserId, chefName: "Pat Garcia", tableNumber: 4,  assignmentType: "AUTO",      minsAgo: 8 },
+    { menuItemName: "BBQ Chicken Wings",       counterId: grillCounter.id, counterName: "Grill",        status: "in_progress", chefId: kitchenUserId, chefName: "Pat Garcia", tableNumber: 7,  assignmentType: "ROSTER",    minsAgo: 5 },
+    { menuItemName: "Caesar Salad",            counterId: coldCounter.id,  counterName: "Cold Kitchen",  status: "assigned",    chefId: kitchenUserId, chefName: "Pat Garcia", tableNumber: 2,  assignmentType: "AUTO",      minsAgo: 3 },
+    { menuItemName: "Bruschetta",              counterId: coldCounter.id,  counterName: "Cold Kitchen",  status: "assigned",    chefId: kitchenUserId, chefName: "Pat Garcia", tableNumber: 9,  assignmentType: "SELF",      minsAgo: 2 },
+    { menuItemName: "Beef Burger",             counterId: grillCounter.id, counterName: "Grill",        status: "unassigned",                                                 tableNumber: 11, assignmentType: "UNASSIGNED", minsAgo: 4 },
+    { menuItemName: "Grilled Salmon",          counterId: grillCounter.id, counterName: "Grill",        status: "unassigned",                                                 tableNumber: 3,  assignmentType: "UNASSIGNED", minsAgo: 6 },
+    { menuItemName: "Tiramisu",                counterId: counters[3].id,  counterName: "Dessert",      status: "unassigned",                                                 tableNumber: 5,  assignmentType: "UNASSIGNED", minsAgo: 1 },
+    { menuItemName: "Mojito",                  counterId: counters[2].id,  counterName: "Bar",          status: "assigned",    chefId: kitchenUserId, chefName: "Pat Garcia", tableNumber: 6,  assignmentType: "MANUAL",    minsAgo: 2 },
+    { menuItemName: "Mushroom Risotto",        counterId: coldCounter.id,  counterName: "Cold Kitchen",  status: "completed",   chefId: kitchenUserId, chefName: "Pat Garcia", tableNumber: 1,  assignmentType: "AUTO",      minsAgo: 30 },
+    { menuItemName: "Spaghetti Carbonara",     counterId: coldCounter.id,  counterName: "Cold Kitchen",  status: "completed",   chefId: kitchenUserId, chefName: "Pat Garcia", tableNumber: 8,  assignmentType: "ROSTER",    minsAgo: 45 },
+  ];
+
+  await Promise.all(
+    assignments.map(a => {
+      const assignedAt = new Date(now.getTime() - a.minsAgo * 60000);
+      const startedAt = a.status === "in_progress" || a.status === "completed"
+        ? new Date(assignedAt.getTime() + 60000) : undefined;
+      const completedAt = a.status === "completed"
+        ? new Date(assignedAt.getTime() + 10 * 60000) : undefined;
+      return storage.createAssignment({
+        tenantId, outletId,
+        menuItemName: a.menuItemName,
+        counterId: a.counterId,
+        counterName: a.counterName,
+        chefId: a.chefId ?? null,
+        chefName: a.chefName ?? null,
+        assignmentType: a.assignmentType,
+        status: a.status,
+        tableNumber: a.tableNumber ?? null,
+        assignmentScore: a.chefId ? 75 : null,
+        assignedAt: a.chefId ? assignedAt : null,
+        startedAt: startedAt ?? null,
+        completedAt: completedAt ?? null,
+        estimatedTimeMin: 15,
+        actualTimeMin: a.status === "completed" ? 10 : null,
+      });
+    })
+  );
+}
+
 export async function seedDatabase() {
   const existing = await storage.getAllTenants();
   if (existing.length > 0) return;
@@ -1311,6 +1396,8 @@ export async function seedDatabase() {
       });
     }
   }
+
+  await seedChefAssignment(tenant.id, outlet.id, kitchen.id);
 
   console.log("Demo data seeded successfully!");
   console.log("Login credentials (all passwords: demo123):");

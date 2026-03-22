@@ -75,7 +75,7 @@ function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.9 }}
       transition={{ duration: 0.25 }}
-      className={`rounded-2xl border-2 p-4 space-y-3 ${cardBg}`}
+      className={`rounded-2xl border-2 p-4 space-y-3 ${isUnassigned ? "bg-red-950/60 border-red-500 shadow-[0_0_0_2px_rgba(239,68,68,0.4)] animate-pulse" : cardBg}`}
       data-testid={`wall-ticket-${ticket.id.slice(-4)}`}
     >
       <div className="flex items-center justify-between">
