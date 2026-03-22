@@ -20,6 +20,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   CheckCircle2,
   Circle,
   AlertTriangle,
@@ -35,10 +40,15 @@ import {
   ArrowLeft,
   TrendingUp,
   TrendingDown,
-  Minus,
+  Bell,
+  RefreshCw,
+  ShoppingCart,
 } from "lucide-react";
 import type { PrepNotification } from "@/hooks/use-prep-notifications";
 import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { useQuery } from "@tanstack/react-query";
 
 const typeConfig: Record<
   string,
@@ -201,6 +211,93 @@ function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryC
   );
 }
 
+interface KitchenStaffMember {
+  id: number | string;
+  name: string | null;
+  username: string;
+  role: string;
+}
+
+interface ReassignPopoverProps {
+  taskId: string;
+  onSuccess: (newName: string) => void;
+}
+
+function ReassignPopover({ taskId, onSuccess }: ReassignPopoverProps) {
+  const [open, setOpen] = useState(false);
+  const [selectedChefId, setSelectedChefId] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const { toast } = useToast();
+
+  const { data: kitchenStaff = [] } = useQuery<KitchenStaffMember[]>({
+    queryKey: ["/api/kitchen-staff"],
+    enabled: open,
+  });
+
+  const handleReassign = async () => {
+    if (!selectedChefId) return;
+    const chef = kitchenStaff.find(u => String(u.id) === selectedChefId);
+    const displayName = chef?.name ?? chef?.username ?? selectedChefId;
+    setLoading(true);
+    try {
+      await apiRequest("PATCH", `/api/prep-assignments/${taskId}`, {
+        chefId: selectedChefId,
+        chefName: displayName,
+      });
+      toast({ title: `Task reassigned to ${displayName}` });
+      onSuccess(displayName);
+      setOpen(false);
+    } catch {
+      toast({ title: "Failed to reassign task", variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-xs px-2 py-0"
+          data-testid={`button-reassign-${taskId.slice(-4)}`}
+        >
+          <RefreshCw className="h-3 w-3 mr-1" />
+          REASSIGN
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="start">
+        <p className="text-xs font-semibold mb-2">Reassign to:</p>
+        <Select value={selectedChefId} onValueChange={setSelectedChefId}>
+          <SelectTrigger className="h-7 text-xs mb-2" data-testid={`select-reassign-chef-${taskId.slice(-4)}`}>
+            <SelectValue placeholder="Select staff..." />
+          </SelectTrigger>
+          <SelectContent>
+            {kitchenStaff.length === 0 && (
+              <SelectItem value="__none__" disabled>No kitchen staff found</SelectItem>
+            )}
+            {kitchenStaff.map(u => (
+              <SelectItem key={u.id} value={String(u.id)}>
+                {u.name ?? u.username}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          size="sm"
+          className="w-full h-7 text-xs"
+          disabled={!selectedChefId || loading}
+          onClick={handleReassign}
+          data-testid={`button-confirm-reassign-${taskId.slice(-4)}`}
+        >
+          {loading ? "Reassigning..." : "Confirm Reassign"}
+        </Button>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 interface NotificationCardProps {
   notification: PrepNotification;
   onMarkRead: (id: string) => void;
@@ -208,6 +305,8 @@ interface NotificationCardProps {
 
 function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps) {
   const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const [reminding, setReminding] = useState(false);
 
   if (n.type === "readiness_summary") {
     return <ReadinessSummaryCard notification={n} onMarkRead={onMarkRead} />;
@@ -215,6 +314,29 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
 
   const cfg = typeConfig[n.type] ?? { icon: <Circle className="h-4 w-4" />, color: "text-slate-500", group: "info" };
   const isUnread = !n.readAt;
+
+  const isDeadlineOrOverdue = n.type === "deadline_warning" || n.type === "task_overdue";
+  const isIssue = n.type === "task_issue";
+  const taskId = n.relatedTaskId;
+
+  const assigneeName = (() => {
+    const match = n.body?.match(/Assigned to:?\s+([^\s|,\n]+)/i)
+      ?? n.title?.match(/assigned to:?\s+([^\s|,\n]+)/i);
+    return match?.[1] ?? "ASSIGNEE";
+  })();
+
+  const handleRemind = async () => {
+    if (!taskId) return;
+    setReminding(true);
+    try {
+      await apiRequest("POST", `/api/prep-assignments/${taskId}/remind`, {});
+      toast({ title: `Reminder sent to ${assigneeName}` });
+    } catch {
+      toast({ title: "Failed to send reminder", variant: "destructive" });
+    } finally {
+      setReminding(false);
+    }
+  };
 
   return (
     <div
@@ -249,8 +371,9 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
             </button>
           )}
         </div>
-        {(n.actionUrl || n.action2Url) && (
-          <div className="flex items-center gap-2 mt-2">
+
+        {(n.actionUrl || n.action2Url || isDeadlineOrOverdue || isIssue) && (
+          <div className="flex flex-wrap items-center gap-2 mt-2">
             {n.actionUrl && (
               <Button
                 size="sm"
@@ -273,8 +396,42 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
                 {n.action2Label ?? "More"}
               </Button>
             )}
+
+            {isDeadlineOrOverdue && taskId && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-xs px-2 py-0"
+                  onClick={handleRemind}
+                  disabled={reminding}
+                  data-testid={`button-remind-${n.id.slice(-4)}`}
+                >
+                  <Bell className="h-3 w-3 mr-1" />
+                  {reminding ? "Sending..." : `REMIND ${assigneeName.toUpperCase().replace(/[^A-Z0-9 ]/g, "")}`}
+                </Button>
+                <ReassignPopover
+                  taskId={taskId}
+                  onSuccess={() => onMarkRead(n.id)}
+                />
+              </>
+            )}
+
+            {isIssue && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 text-xs px-2 py-0"
+                onClick={() => { onMarkRead(n.id); navigate("/procurement"); }}
+                data-testid={`button-raise-po-${n.id.slice(-4)}`}
+              >
+                <ShoppingCart className="h-3 w-3 mr-1" />
+                RAISE PO
+              </Button>
+            )}
           </div>
         )}
+
       </div>
     </div>
   );
