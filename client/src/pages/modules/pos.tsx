@@ -21,14 +21,15 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle,
+  Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
-  Receipt, Clock, Pause, RotateCcw, Scissors, Flame, ChevronDown,
+  Receipt, Clock, Pause, RotateCcw, Scissors, Flame, ChevronDown, Users, Phone, User,
+  MapPin, ChevronRight,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
@@ -80,6 +81,9 @@ interface OrderTab {
   dismissedRuleIds: string[];
   sentCartKeys: string[];
   heldOrderId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  covers?: number;
 }
 
 interface HeldTab {
@@ -163,6 +167,9 @@ function newTab(): OrderTab {
     selectedOfferId: null,
     dismissedRuleIds: [],
     sentCartKeys: [],
+    customerName: "",
+    customerPhone: "",
+    covers: 1,
   };
 }
 
@@ -427,6 +434,12 @@ export default function POSPage() {
   const [itemNoteText, setItemNoteText] = useState("");
   const [closeTabConfirm, setCloseTabConfirm] = useState<string | null>(null);
   const [showDeliveryQueue, setShowDeliveryQueue] = useState(false);
+  const [showTablePicker, setShowTablePicker] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [tenderedAmount, setTenderedAmount] = useState("");
+  const [discountPreset, setDiscountPreset] = useState<"none" | "5" | "10" | "15" | "20" | "custom">("none");
+
+  useEffect(() => { setDiscountPreset("none"); }, [activeTabId]);
 
   useEffect(() => { syncManager.init(); }, []);
 
@@ -503,7 +516,7 @@ export default function POSPage() {
   const freeTables = useMemo(() => tables.filter((t) => t.status === "free"), [tables]);
 
   const filteredItems = useMemo(() => {
-    let items = menuItems.filter((item) => item.available !== false);
+    let items = [...menuItems];
     if (selectedCategory) items = items.filter((item) => item.categoryId === selectedCategory);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -826,7 +839,16 @@ export default function POSPage() {
       tax: tabTax.toFixed(2),
       discount: (isAddonKot ? 0 : tabManualDiscount).toFixed(2),
       total: tabTotal.toFixed(2),
-      notes: tab.orderNotes || null,
+      notes: (() => {
+        const parts: string[] = [];
+        if (!tabIsDineIn) {
+          if (tab.customerName?.trim()) parts.push(`Customer: ${tab.customerName.trim()}`);
+          if (tab.customerPhone?.trim()) parts.push(`Phone: ${tab.customerPhone.trim()}`);
+        }
+        if (tabIsDineIn && (tab.covers ?? 1) > 1) parts.push(`Covers: ${tab.covers}`);
+        if (tab.orderNotes?.trim()) parts.push(tab.orderNotes.trim());
+        return parts.length > 0 ? parts.join(" | ") : null;
+      })(),
       status: tabIsDineIn ? "in_progress" : "new",
       items: orderItems,
       offerId: (!isAddonKot && tab.selectedOfferId) ? tab.selectedOfferId : null,
@@ -945,6 +967,16 @@ export default function POSPage() {
       toast({ title: "Select a table", description: "Choose a table for dine-in orders", variant: "destructive" });
       return;
     }
+    if (!isDineIn) {
+      setTenderedAmount("");
+      setShowPaymentModal(true);
+      return;
+    }
+    placeOrderMutation.mutate(undefined);
+  };
+
+  const confirmPaymentAndPlace = () => {
+    setShowPaymentModal(false);
     placeOrderMutation.mutate(undefined);
   };
 
@@ -1152,53 +1184,58 @@ export default function POSPage() {
               {filteredItems.map((item, index) => {
                 const inCart = cart.find((c) => c.menuItemId === item.id && !c.isCombo);
                 const justAdded = addedItemId === item.id;
+                const isUnavailable = item.available === false;
                 return (
                   <motion.div key={item.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03, duration: 0.3 }}>
-                    <Card data-testid={`card-menu-item-${item.id}`} className="cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.03] relative overflow-hidden" onClick={() => addToCart(item)}>
+                    <Card data-testid={`card-menu-item-${item.id}`} className={`transition-all duration-200 relative overflow-hidden ${isUnavailable ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:shadow-lg hover:scale-[1.02]"} ${inCart && !isUnavailable ? "border-primary/40 ring-1 ring-primary/20" : ""}`}
+                      onClick={() => !isUnavailable && addToCart(item)}>
                       <AnimatePresence>
                         {justAdded && (
-                          <motion.div initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="absolute inset-0 z-10 flex items-center justify-center bg-primary/20 backdrop-blur-sm rounded-lg">
+                          <motion.div key="added" initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="absolute inset-0 z-10 flex items-center justify-center bg-primary/20 backdrop-blur-sm rounded-lg">
                             <motion.div initial={{ scale: 0 }} animate={{ scale: [0, 1.3, 1] }} transition={{ duration: 0.4 }}>
                               <CheckCircle2 className="h-8 w-8 text-primary" />
                             </motion.div>
                           </motion.div>
                         )}
                       </AnimatePresence>
+                      {isUnavailable && (
+                        <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-[1px] rounded-lg">
+                          <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-muted text-muted-foreground border">Unavailable</span>
+                        </div>
+                      )}
                       {item.image ? (
-                        <div className="h-20 overflow-hidden bg-muted">
+                        <div className="h-24 overflow-hidden bg-muted">
                           <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         </div>
                       ) : (
-                        <div className="h-20 bg-muted/50 flex items-center justify-center" data-testid={`placeholder-${item.id}`}>
-                          <UtensilsCrossed className="h-6 w-6 text-muted-foreground/40" />
+                        <div className="h-24 flex items-center justify-center" style={{ background: "linear-gradient(135deg, hsl(174 65% 32% / 0.07) 0%, hsl(174 65% 32% / 0.15) 100%)" }} data-testid={`placeholder-${item.id}`}>
+                          <UtensilsCrossed className="h-7 w-7 text-primary/25" />
                         </div>
                       )}
-                      <CardContent className="p-3">
-                        <div className="flex items-start justify-between mb-1">
-                          <h4 className="font-medium text-sm leading-tight line-clamp-2">{item.name}</h4>
+                      <CardContent className="p-2.5">
+                        <div className="flex items-start justify-between mb-0.5">
+                          <h4 className="font-medium text-sm leading-tight line-clamp-2 flex-1 mr-1">{item.name}</h4>
                           {item.isVeg === true ? (
-                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-green-600 rounded-sm flex items-center justify-center" data-testid={`icon-veg-${item.id}`}>
+                            <span className="h-4 w-4 shrink-0 border-2 border-green-600 rounded-sm flex items-center justify-center mt-0.5" data-testid={`icon-veg-${item.id}`}>
                               <span className="w-2 h-2 rounded-full bg-green-600" />
                             </span>
                           ) : item.isVeg === false ? (
-                            <span className="h-4 w-4 shrink-0 ml-1 border-2 border-red-600 rounded-sm flex items-center justify-center" data-testid={`icon-nonveg-${item.id}`}>
+                            <span className="h-4 w-4 shrink-0 border-2 border-red-600 rounded-sm flex items-center justify-center mt-0.5" data-testid={`icon-nonveg-${item.id}`}>
                               <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-600" />
                             </span>
                           ) : null}
                         </div>
-                        {item.tags && (item.tags as string[]).length > 0 && (
-                          <div className="flex flex-wrap gap-1 mb-1.5">
-                            {(item.tags as string[]).slice(0, 2).map((tag, i) => <span key={i} className="text-[9px] px-1.5 py-0 rounded bg-muted text-muted-foreground">{tag}</span>)}
-                            {(item.tags as string[]).length > 2 && <span className="text-[9px] px-1 py-0 rounded bg-muted text-muted-foreground">+{(item.tags as string[]).length - 2}</span>}
-                          </div>
-                        )}
-                        {item.description && <p className="text-xs text-muted-foreground line-clamp-1 mb-2">{item.description}</p>}
+                        {item.description && <p className="text-[10px] text-muted-foreground line-clamp-1 mb-1.5">{item.description}</p>}
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-sm" data-testid={`text-price-${item.id}`}>{fmt(item.price)}</span>
-                          {inCart && (
-                            <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} key={inCart.quantity}>
-                              <Badge variant="default" className="text-xs" data-testid={`badge-qty-${item.id}`}>{inCart.quantity}</Badge>
-                            </motion.div>
+                          <span className="font-semibold text-sm text-primary" data-testid={`text-price-${item.id}`}>{fmt(item.price)}</span>
+                          {inCart && !isUnavailable ? (
+                            <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
+                              <button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-decrease-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button>
+                              <motion.span key={inCart.quantity} initial={{ scale: 1.3 }} animate={{ scale: 1 }} className="w-6 text-center text-sm font-semibold" data-testid={`badge-qty-${item.id}`}>{inCart.quantity}</motion.span>
+                              <button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-increase-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button>
+                            </div>
+                          ) : (
+                            !isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={() => addToCart(item)} data-testid={`button-card-add-${item.id}`}><Plus className="h-3.5 w-3.5 text-primary" /></button>
                           )}
                         </div>
                       </CardContent>
@@ -1295,16 +1332,38 @@ export default function POSPage() {
           </div>
 
           {isDineIn && (
-            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-3">
-              <Select value={selectedTable} onValueChange={(v) => updateActiveTab({ selectedTable: v })}>
-                <SelectTrigger data-testid="select-table"><SelectValue placeholder="Select table..." /></SelectTrigger>
-                <SelectContent>
-                  {freeTables.map((t) => (
-                    <SelectItem key={t.id} value={t.id}>Table {t.number} ({t.zone} - {t.capacity} seats)</SelectItem>
-                  ))}
-                  {freeTables.length === 0 && <div className="px-2 py-1.5 text-sm text-muted-foreground">No free tables</div>}
-                </SelectContent>
-              </Select>
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-3 flex gap-2 items-center">
+              <button
+                data-testid="button-select-table"
+                onClick={() => setShowTablePicker(true)}
+                className={`flex-1 flex items-center gap-2 px-3 py-2 rounded-md border text-sm transition-colors text-left ${selectedTable ? "border-primary bg-primary/5 text-primary" : "border-dashed border-muted-foreground/40 hover:border-primary/50 text-muted-foreground hover:text-foreground"}`}
+              >
+                <MapPin className="h-4 w-4 shrink-0" />
+                <span className="flex-1 truncate">
+                  {selectedTable
+                    ? (() => { const t = tables.find(t => t.id === selectedTable); return t ? `Table ${t.number} — ${t.zone}` : "Table selected"; })()
+                    : "Select table…"}
+                </span>
+                <ChevronRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
+              </button>
+              <div className="flex items-center gap-1 bg-muted/50 rounded-md px-2 py-1.5 shrink-0">
+                <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: Math.max(1, (activeTab?.covers ?? 1) - 1) })} data-testid="button-covers-decrease"><Minus className="h-3 w-3" /></button>
+                <span className="text-xs font-medium w-12 text-center" data-testid="text-covers">{activeTab?.covers ?? 1} pax</span>
+                <button className="h-5 w-5 flex items-center justify-center rounded hover:bg-muted text-muted-foreground" onClick={() => updateActiveTab({ covers: (activeTab?.covers ?? 1) + 1 })} data-testid="button-covers-increase"><Plus className="h-3 w-3" /></button>
+              </div>
+            </motion.div>
+          )}
+
+          {!isDineIn && (
+            <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} className="mt-3 grid grid-cols-2 gap-2">
+              <div className="relative">
+                <User className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input data-testid="input-customer-name" placeholder="Customer name" value={activeTab?.customerName ?? ""} onChange={e => updateActiveTab({ customerName: e.target.value })} className="pl-8 text-sm" />
+              </div>
+              <div className="relative">
+                <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input data-testid="input-customer-phone" placeholder="Phone" type="tel" value={activeTab?.customerPhone ?? ""} onChange={e => updateActiveTab({ customerPhone: e.target.value })} className="pl-8 text-sm" />
+              </div>
             </motion.div>
           )}
         </div>
@@ -1420,27 +1479,47 @@ export default function POSPage() {
           )}
 
           <div className="space-y-2">
-            <Input data-testid="input-discount" type="number" placeholder="Additional discount" value={discount} onChange={(e) => updateActiveTab({ discount: e.target.value })} min="0" step="0.01" />
-            <Textarea data-testid="input-order-notes" placeholder="Order notes..." value={orderNotes} onChange={(e) => updateActiveTab({ orderNotes: e.target.value })} rows={2} className="resize-none" />
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1"><Percent className="h-3 w-3" /> Discount</p>
+              <div className="flex gap-1 flex-wrap">
+                {(["5", "10", "15", "20"] as const).map(pct => {
+                  const isActive = discountPreset === pct;
+                  return (
+                    <Button key={pct} data-testid={`button-discount-${pct}`} variant={isActive ? "default" : "outline"} size="sm" className="text-xs h-7 px-2.5"
+                      onClick={() => {
+                        const newPreset = isActive ? "none" : pct;
+                        setDiscountPreset(newPreset);
+                        updateActiveTab({ discount: newPreset === "none" ? "" : (subtotal * Number(pct) / 100).toFixed(2) });
+                      }}>
+                      {pct}%
+                    </Button>
+                  );
+                })}
+                <Button data-testid="button-discount-custom" variant={discountPreset === "custom" ? "default" : "outline"} size="sm" className="text-xs h-7 px-2.5"
+                  onClick={() => setDiscountPreset(discountPreset === "custom" ? "none" : "custom")}>
+                  Custom
+                </Button>
+                {discountPreset !== "none" && (
+                  <button className="text-xs text-muted-foreground hover:text-destructive ml-auto" data-testid="button-clear-discount"
+                    onClick={() => { setDiscountPreset("none"); updateActiveTab({ discount: "" }); }}>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+              {discountPreset === "custom" && (
+                <Input data-testid="input-discount" type="number" placeholder="Enter discount amount" value={discount} onChange={(e) => updateActiveTab({ discount: e.target.value })} min="0" step="0.01" className="mt-1.5 text-sm" />
+              )}
+              {discountPreset !== "none" && discountPreset !== "custom" && manualDiscount > 0 && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-1">−{fmt(manualDiscount)} off</p>
+              )}
+            </div>
+            <Textarea data-testid="input-order-notes" placeholder="Order notes…" value={orderNotes} onChange={(e) => updateActiveTab({ orderNotes: e.target.value })} rows={2} className="resize-none text-sm" />
           </div>
 
-          {!isDineIn && (
-            <div className="flex gap-1">
-              <Button data-testid="button-payment-cash" variant={paymentMethod === "cash" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setPaymentMethod("cash")}>
-                <Banknote className="h-3.5 w-3.5 mr-1" /> Cash
-              </Button>
-              <Button data-testid="button-payment-card" variant={paymentMethod === "card" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setPaymentMethod("card")}>
-                <CreditCard className="h-3.5 w-3.5 mr-1" /> Card
-              </Button>
-              <Button data-testid="button-payment-upi" variant={paymentMethod === "upi" ? "default" : "outline"} size="sm" className="flex-1" onClick={() => setPaymentMethod("upi")}>
-                <Wallet className="h-3.5 w-3.5 mr-1" /> UPI
-              </Button>
-            </div>
-          )}
-
           {isDineIn && (
-            <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300" data-testid="text-dine-in-info">
-              Dine-in orders start as In Progress. Payment is collected when the guest is ready to pay.
+            <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2" data-testid="text-dine-in-info">
+              <Users className="h-3.5 w-3.5 shrink-0" />
+              Payment collected at the end — table stays open until billing.
             </div>
           )}
 
@@ -1491,28 +1570,150 @@ export default function POSPage() {
             </div>
           </div>
 
-          <div className="flex gap-2">
-            <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-3" onClick={holdCurrentTab} disabled={cart.length === 0 && !activeTab?.heldOrderId} title="Hold order">
-              <Pause className="h-3.5 w-3.5 mr-1" /> Hold
+          <div className="flex gap-1.5">
+            <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={holdCurrentTab} disabled={cart.length === 0 && !activeTab?.heldOrderId} title="Hold order">
+              <Pause className="h-3.5 w-3.5" /> Hold
             </Button>
             {cart.length >= 2 && (
-              <Button data-testid="button-split-bill" variant="outline" size="sm" className="text-xs px-3" onClick={() => { setSplitAssignment({}); setShowSplitDialog(true); }} title="Split bill">
-                <Scissors className="h-3.5 w-3.5 mr-1" /> Split
+              <Button data-testid="button-split-bill" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={() => { setSplitAssignment({}); setShowSplitDialog(true); }} title="Split bill">
+                <Scissors className="h-3.5 w-3.5" /> Split
               </Button>
             )}
-            <Button data-testid="button-place-order" className="flex-1 transition-all duration-200 hover:scale-[1.02]" size="lg" onClick={handlePlaceOrder} disabled={!hasUnsentItems || placeOrderMutation.isPending}>
-              {placeOrderMutation.isPending ? "Sending..." : isAddonKotMode ? "Send Add-on KOT" : isDineIn ? "Send to Kitchen" : "Place Order"}
+            <Button data-testid="button-place-order" className="flex-1 h-10 font-semibold text-sm transition-all duration-200 hover:scale-[1.01] shadow-sm" onClick={handlePlaceOrder} disabled={!hasUnsentItems || placeOrderMutation.isPending}>
+              {placeOrderMutation.isPending ? "Sending…" : isAddonKotMode ? "Send Add-on KOT" : isDineIn ? "Send to Kitchen" : `Pay — ${fmt(total)}`}
             </Button>
           </div>
-
-          {!isDineIn && paymentMethod === "card" && (
-            <Button data-testid="button-send-payment-link" variant="outline" className="w-full" size="sm"
-              onClick={() => sendPaymentLinkMutation.mutate()} disabled={cart.length === 0 || sendPaymentLinkMutation.isPending}>
-              {sendPaymentLinkMutation.isPending ? "Generating Link..." : <><QrCode className="h-3.5 w-3.5 mr-1.5" /> Send Payment Link</>}
-            </Button>
-          )}
         </div>
       </div>
+
+      {/* ── Table Picker Dialog ───────────────────────────────────────── */}
+      <Dialog open={showTablePicker} onOpenChange={setShowTablePicker}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-primary" /> Select Table
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+            {Array.from(new Set(tables.map(t => t.zone))).sort().map(zone => (
+              <div key={zone}>
+                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">{zone}</p>
+                <div className="grid grid-cols-4 gap-2">
+                  {tables.filter(t => t.zone === zone).sort((a, b) => Number(a.number) - Number(b.number)).map(t => {
+                    const isSelected = selectedTable === t.id;
+                    const isFree = t.status === "free";
+                    const isOccupied = t.status === "occupied";
+                    return (
+                      <button
+                        key={t.id}
+                        data-testid={`button-table-${t.id}`}
+                        disabled={!isFree && !isSelected}
+                        onClick={() => { updateActiveTab({ selectedTable: t.id }); setShowTablePicker(false); }}
+                        className={`relative flex flex-col items-center justify-center h-16 rounded-lg border-2 transition-all text-sm font-semibold
+                          ${isSelected ? "border-primary bg-primary text-primary-foreground shadow-lg" :
+                            isFree ? "border-green-400 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 hover:border-green-500 hover:scale-[1.03] cursor-pointer" :
+                            "border-red-300 bg-red-50 dark:bg-red-950/30 text-red-400 cursor-not-allowed opacity-60"}`}
+                      >
+                        <span className="text-base leading-none">{t.number}</span>
+                        <span className="text-[10px] mt-1 font-normal opacity-75">{isOccupied ? "Occupied" : isFree ? `${t.capacity}p` : t.status}</span>
+                        {isSelected && <CheckCircle2 className="absolute top-1 right-1 h-3.5 w-3.5" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+            {tables.length === 0 && <div className="text-center py-8 text-muted-foreground text-sm">No tables configured</div>}
+          </div>
+          <div className="flex items-center gap-3 pt-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-400 inline-block" />Free</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-300 inline-block" />Occupied</span>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Payment Modal ─────────────────────────────────────────────── */}
+      <Dialog open={showPaymentModal} onOpenChange={(o) => { if (!o) setShowPaymentModal(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-primary" /> Collect Payment
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="rounded-lg bg-muted/50 px-4 py-3 flex items-center justify-between">
+              <span className="text-sm text-muted-foreground">Total Due</span>
+              <span className="text-2xl font-bold text-primary" data-testid="text-payment-total">{fmt(total)}</span>
+            </div>
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-2">Payment Method</p>
+              <div className="grid grid-cols-3 gap-2">
+                {([["cash", Banknote, "Cash"], ["card", CreditCard, "Card"], ["upi", Wallet, "UPI"]] as const).map(([method, Icon, label]) => (
+                  <button key={method} data-testid={`button-pay-${method}`}
+                    onClick={() => setPaymentMethod(method)}
+                    className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 text-sm font-medium transition-all ${paymentMethod === method ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
+                    <Icon className="h-5 w-5" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {paymentMethod === "cash" && (
+              <div className="space-y-2">
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">Cash Tendered</p>
+                  <Input data-testid="input-tendered-amount" type="number" placeholder={`Enter amount ≥ ${fmt(total)}`} value={tenderedAmount} onChange={e => setTenderedAmount(e.target.value)} className="text-lg font-semibold" autoFocus />
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[50, 100, 200, 500].map(amt => (
+                    <button key={amt} data-testid={`button-tender-${amt}`}
+                      onClick={() => setTenderedAmount(String(Math.ceil(total / amt) * amt))}
+                      className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors">
+                      ₹{amt}
+                    </button>
+                  ))}
+                  <button data-testid="button-tender-exact" onClick={() => setTenderedAmount(total.toFixed(2))}
+                    className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors text-primary font-medium">
+                    Exact
+                  </button>
+                </div>
+                {tenderedAmount && Number(tenderedAmount) >= total && (
+                  <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-3 py-2 flex items-center justify-between text-sm" data-testid="text-change-due">
+                    <span className="text-muted-foreground">Change Due</span>
+                    <span className="font-bold text-green-700 dark:text-green-400">{fmt(Number(tenderedAmount) - total)}</span>
+                  </div>
+                )}
+                {tenderedAmount && Number(tenderedAmount) < total && (
+                  <p className="text-xs text-red-500 text-center">Amount is less than total</p>
+                )}
+              </div>
+            )}
+            {paymentMethod === "card" && (
+              <div className="space-y-2">
+                <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 text-center">
+                  Process card payment on your POS terminal
+                </div>
+                <Button variant="outline" className="w-full text-xs" data-testid="button-send-payment-link-modal"
+                  onClick={() => { setShowPaymentModal(false); sendPaymentLinkMutation.mutate(); }} disabled={cart.length === 0 || sendPaymentLinkMutation.isPending}>
+                  <QrCode className="h-3.5 w-3.5 mr-1.5" /> Send Stripe Payment Link instead
+                </Button>
+              </div>
+            )}
+            {paymentMethod === "upi" && (
+              <div className="rounded-lg bg-purple-50 dark:bg-purple-950/30 px-3 py-2 text-xs text-purple-700 dark:text-purple-300 text-center">
+                Show UPI QR on your terminal screen
+              </div>
+            )}
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowPaymentModal(false)} data-testid="button-payment-cancel">Cancel</Button>
+            <Button onClick={confirmPaymentAndPlace} data-testid="button-confirm-payment"
+              disabled={paymentMethod === "cash" && (tenderedAmount === "" || Number(tenderedAmount) < total)}>
+              Confirm &amp; Place Order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!paymentLinkModal?.open} onOpenChange={(o) => !o && setPaymentLinkModal(null)}>
         <DialogContent>
