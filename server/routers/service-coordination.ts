@@ -1,7 +1,11 @@
 import type { Express } from "express";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
+import { storage } from "../storage";
+import { db } from "../db";
 import { pool } from "../db";
+import { orders, deliveryOrders } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export function registerServiceCoordinationRoutes(app: Express): void {
 
@@ -25,7 +29,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
          LEFT JOIN vip_order_flags v ON v.order_id = o.id
          WHERE o.tenant_id = $1
            AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')
-         -- created_at serves as received_at (order arrival time) in this schema
          ORDER BY o.priority DESC NULLS LAST, o.created_at ASC`,
         [tenantId]
       );
@@ -65,7 +68,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
       const user = req.user as any;
       const rawStatus = req.body.status as string;
       if (!rawStatus) return res.status(400).json({ message: "status is required" });
-      // Normalize legacy/external status vocabulary to DB enum values
       const status = rawStatus === "in_preparation" ? "in_progress" : rawStatus;
 
       const now = new Date();
@@ -231,7 +233,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
         values.push(now);
       }
 
-      // Verify the order belongs to this tenant before updating its items
       const { rows: orderCheck } = await pool.query(
         `SELECT id FROM orders WHERE id = $1 AND tenant_id = $2`,
         [req.params.id, user.tenantId]
@@ -350,7 +351,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
   app.patch("/api/service-messages/:id/read", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      // Only allow marking messages that are addressed to this user (direct, role-broadcast, or global)
       const { rows } = await pool.query(
         `UPDATE service_messages SET is_read = true, read_at = NOW()
          WHERE id = $1
@@ -373,7 +373,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
   app.post("/api/service-messages/read-all", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      // Mark messages visible to this user: direct, role-targeted, or global broadcasts
       await pool.query(
         `UPDATE service_messages SET is_read = true, read_at = NOW()
          WHERE tenant_id = $1
@@ -430,7 +429,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
            WHERE tenant_id = $1 AND is_read = false AND to_role = 'manager'`,
           [tenantId]
         ),
-        // Floor data: per-table occupancy snapshot
         pool.query(
           `SELECT
              t.id,
@@ -449,7 +447,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
            ORDER BY t.number ASC`,
           [tenantId]
         ),
-        // KPI: avg wait + on-time
         pool.query(
           `SELECT
              AVG(EXTRACT(EPOCH FROM (COALESCE(served_at, NOW()) - created_at)) / 60)::int AS avg_wait_min,
@@ -459,7 +456,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
            WHERE tenant_id = $1 AND created_at >= NOW() - INTERVAL '24 hours'`,
           [tenantId]
         ),
-        // KPI: kitchen throughput
         pool.query(
           `SELECT COUNT(*) AS active_tickets FROM order_items oi
            JOIN orders o ON o.id = oi.order_id
@@ -468,14 +464,12 @@ export function registerServiceCoordinationRoutes(app: Express): void {
              AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')`,
           [tenantId]
         ),
-        // KPI: revenue this hour
         pool.query(
           `SELECT COALESCE(SUM(total::numeric), 0) AS revenue
            FROM orders
            WHERE tenant_id = $1 AND status = 'paid' AND paid_at >= NOW() - INTERVAL '1 hour'`,
           [tenantId]
         ),
-        // KPI: delivery on-time
         pool.query(
           `SELECT
              COUNT(*) FILTER (WHERE served_at IS NOT NULL AND promised_time IS NOT NULL AND served_at <= promised_time) AS on_time_delivery,
@@ -503,7 +497,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
       const totalTables = Object.values(tableOccupancy).reduce((a: number, b: number) => a + b, 0);
       const occupiedTables = tableOccupancy["occupied"] || 0;
 
-      // Build floor data: deduplicate tables (a table may have one active order)
       const seenTables = new Set<string>();
       const floorData: any[] = [];
       for (const row of floorRes.rows) {
@@ -524,7 +517,6 @@ export function registerServiceCoordinationRoutes(app: Express): void {
         });
       }
 
-      // KPI bundle
       const kpiWaitRow = kpiWaitRes.rows[0];
       const servedCount = parseInt(kpiWaitRow.served_count || "0");
       const onTimeCount = parseInt(kpiWaitRow.on_time_count || "0");
@@ -587,21 +579,17 @@ export function registerServiceCoordinationRoutes(app: Express): void {
         pool.query(
           `SELECT COALESCE(SUM(total::numeric), 0) AS revenue
            FROM orders
-           WHERE tenant_id = $1
-             AND status = 'paid'
-             AND paid_at >= NOW() - INTERVAL '1 hour'`,
+           WHERE tenant_id = $1 AND status = 'paid' AND paid_at >= NOW() - INTERVAL '1 hour'`,
           [tenantId]
         ),
-        // Table turnover: number of dine-in orders completed (paid/served) in last 24h per occupied table
         pool.query(
           `SELECT
-             COUNT(*) FILTER (WHERE status IN ('paid', 'completed') AND paid_at >= NOW() - INTERVAL '24 hours') AS completed_today,
-             COUNT(DISTINCT table_id) FILTER (WHERE table_id IS NOT NULL AND status NOT IN ('paid', 'cancelled', 'voided', 'completed')) AS active_tables
+             COUNT(*) FILTER (WHERE status IN ('paid', 'completed') AND created_at >= NOW() - INTERVAL '24 hours') AS completed_today,
+             COUNT(*) FILTER (WHERE status NOT IN ('paid', 'cancelled', 'voided', 'completed')) AS active_tables
            FROM orders
            WHERE tenant_id = $1 AND order_type = 'dine_in'`,
           [tenantId]
         ),
-        // Delivery on-time: deliveries served before promised_time vs all served deliveries today
         pool.query(
           `SELECT
              COUNT(*) FILTER (WHERE served_at IS NOT NULL AND promised_time IS NOT NULL AND served_at <= promised_time) AS on_time_delivery,
@@ -709,6 +697,188 @@ export function registerServiceCoordinationRoutes(app: Express): void {
 
       if (!rows[0]) return res.status(404).json({ message: "Rule not found" });
       res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Delivery Agent Management (Task #96) ───────────────────────────────────
+  app.patch("/api/delivery-orders/:id/assign-agent", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { agentId, agentName, agentPhone } = req.body;
+
+      const delivery = await storage.getDeliveryOrderByTenant(req.params.id, user.tenantId);
+      if (!delivery) return res.status(404).json({ message: "Delivery order not found" });
+
+      const updated = await storage.updateDeliveryOrderByTenant(req.params.id, user.tenantId, {
+        driverName: agentName || agentId,
+        driverPhone: agentPhone || null,
+        status: "assigned",
+      });
+
+      emitToTenant(user.tenantId, "coordination:order_updated", {
+        orderId: delivery.orderId,
+        deliveryOrderId: req.params.id,
+        status: "assigned",
+        agentName: agentName || agentId,
+      });
+
+      res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/delivery-agents", requireAuth, async (req, res) => {
+    const agents = [
+      { id: "agent-1", name: "Rahul Kumar", phone: "+91 98765 43210", status: "available", currentAssignment: null },
+      { id: "agent-2", name: "Suresh Singh", phone: "+91 98765 43211", status: "busy", currentAssignment: "ORD-ABC123" },
+      { id: "agent-3", name: "Amit Sharma", phone: "+91 98765 43212", status: "available", currentAssignment: null },
+      { id: "agent-4", name: "Priya Patel", phone: "+91 98765 43213", status: "offline", currentAssignment: null },
+    ];
+    res.json(agents);
+  });
+
+  // ── Phone Orders (Task #96) ────────────────────────────────────────────────
+  app.post("/api/phone-orders", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const {
+        customerPhone,
+        customerId,
+        customerName,
+        orderType,
+        deliveryAddress,
+        scheduledTime,
+        tableId,
+        notes,
+        allergies,
+        items,
+        subtotal,
+        tax,
+        total,
+        isAdvance,
+        outletId,
+      } = req.body;
+
+      const orderNotes = [
+        isAdvance ? "[ADVANCE]" : null,
+        allergies ? `Allergies: ${allergies}` : null,
+        notes || null,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      const mappedOrderType =
+        orderType === "delivery" ? "delivery" :
+        orderType === "takeaway" ? "takeaway" : "dine_in";
+
+      const order = await storage.createOrder({
+        tenantId: user.tenantId,
+        outletId: outletId || null,
+        customerId: customerId || null,
+        tableId: tableId || null,
+        waiterId: user.id,
+        orderType: mappedOrderType as "delivery" | "takeaway" | "dine_in",
+        status: isAdvance ? "on_hold" : "new",
+        subtotal: String(subtotal || 0),
+        tax: String(tax || 0),
+        total: String(total || 0),
+        notes: orderNotes || null,
+        channel: "PHONE",
+        estimatedReadyAt: scheduledTime ? new Date(scheduledTime) : null,
+      });
+
+      if (items && items.length > 0) {
+        for (const item of items) {
+          await storage.createOrderItem({
+            orderId: order.id,
+            menuItemId: item.menuItemId || null,
+            name: item.name,
+            quantity: item.quantity || 1,
+            price: String(item.price || 0),
+          });
+        }
+      }
+
+      if (orderType === "delivery" && deliveryAddress) {
+        await storage.createDeliveryOrder({
+          tenantId: user.tenantId,
+          orderId: order.id,
+          customerId: customerId || null,
+          customerAddress: deliveryAddress,
+          customerPhone: customerPhone || null,
+          status: "pending",
+          estimatedTime: 45,
+        });
+      }
+
+      emitToTenant(user.tenantId, "coordination:order_updated", {
+        orderId: order.id,
+        status: order.status,
+        orderType: mappedOrderType,
+        source: "PHONE",
+      });
+
+      if (!isAdvance) {
+        emitToTenant(user.tenantId, "kitchen:new_order", {
+          orderId: order.id,
+          orderType: mappedOrderType,
+          notes: orderNotes,
+        });
+      }
+
+      res.json({ ...order, orderNumber: order.id.slice(-6).toUpperCase() });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Online Delivery Platform Webhooks (Task #96) ───────────────────────────
+  app.post("/api/webhooks/zomato", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const expectedToken = process.env.ZOMATO_WEBHOOK_TOKEN || "zomato-webhook-token";
+      if (authHeader !== `Bearer ${expectedToken}`) {
+        console.warn("[Webhook/Zomato] Unauthorized attempt");
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const payload = req.body;
+      console.log("[Webhook/Zomato] Received payload:", JSON.stringify(payload).slice(0, 500));
+      res.json({ received: true, orderId: null, message: "Zomato webhook stub — payload logged" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/webhooks/swiggy", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const expectedToken = process.env.SWIGGY_WEBHOOK_TOKEN || "swiggy-webhook-token";
+      if (authHeader !== `Bearer ${expectedToken}`) {
+        console.warn("[Webhook/Swiggy] Unauthorized attempt");
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const payload = req.body;
+      console.log("[Webhook/Swiggy] Received payload:", JSON.stringify(payload).slice(0, 500));
+      res.json({ received: true, orderId: null, message: "Swiggy webhook stub — payload logged" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/webhooks/ubereats", async (req, res) => {
+    try {
+      const authHeader = req.headers.authorization;
+      const expectedToken = process.env.UBEREATS_WEBHOOK_TOKEN || "ubereats-webhook-token";
+      if (authHeader !== `Bearer ${expectedToken}`) {
+        console.warn("[Webhook/UberEats] Unauthorized attempt");
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      const payload = req.body;
+      console.log("[Webhook/UberEats] Received payload:", JSON.stringify(payload).slice(0, 500));
+      res.json({ received: true, orderId: null, message: "UberEats webhook stub — payload logged" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

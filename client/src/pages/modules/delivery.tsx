@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -7,11 +7,12 @@ import { motion } from "framer-motion";
 import {
   Truck, Package, MapPin, Phone, Clock, User, Plus,
   ChevronRight, CheckCircle, AlertCircle, XCircle,
-  Settings, ToggleLeft, ToggleRight,
+  Settings, ToggleLeft, ToggleRight, Zap, Timer,
+  UserCheck, Send, LayoutGrid, List, MoreVertical,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -19,6 +20,9 @@ import {
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 
 interface DeliveryOrder {
@@ -46,6 +50,14 @@ interface CustomerData {
   phone: string | null;
 }
 
+interface DeliveryAgent {
+  id: string;
+  name: string;
+  phone: string;
+  status: "available" | "busy" | "offline";
+  currentAssignment: string | null;
+}
+
 type DeliveryStatus = "pending" | "assigned" | "picked_up" | "in_transit" | "delivered" | "cancelled" | "returned";
 
 const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon: typeof Package }> = {
@@ -60,10 +72,51 @@ const statusConfig: Record<DeliveryStatus, { label: string; color: string; icon:
 
 const statusFlow: DeliveryStatus[] = ["pending", "assigned", "picked_up", "in_transit", "delivered"];
 
+const KANBAN_COLUMNS = [
+  {
+    key: "preparing",
+    label: "Preparing",
+    subtitle: "Kitchen working",
+    statuses: ["pending"] as DeliveryStatus[],
+    colorClass: "border-t-amber-400",
+    badgeColor: "bg-amber-100 text-amber-700",
+  },
+  {
+    key: "ready",
+    label: "Ready to Go",
+    subtitle: "Awaiting agent",
+    statuses: ["assigned", "picked_up"] as DeliveryStatus[],
+    colorClass: "border-t-blue-400",
+    badgeColor: "bg-blue-100 text-blue-700",
+  },
+  {
+    key: "out",
+    label: "Out for Delivery",
+    subtitle: "Dispatched",
+    statuses: ["in_transit"] as DeliveryStatus[],
+    colorClass: "border-t-purple-400",
+    badgeColor: "bg-purple-100 text-purple-700",
+  },
+];
+
 interface TenantConfig {
   moduleConfig?: {
     deliveryEnabled?: boolean;
   };
+}
+
+function getElapsedMinutes(createdAt: string | null) {
+  if (!createdAt) return 0;
+  return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
+}
+
+function platformIcon(partner: string | null) {
+  if (!partner) return "🔵";
+  const p = partner.toLowerCase();
+  if (p.includes("zomato")) return "🔴";
+  if (p.includes("swiggy")) return "🟠";
+  if (p.includes("phone") || p.includes("call")) return "📞";
+  return "🔵";
 }
 
 export default function DeliveryPage() {
@@ -71,12 +124,19 @@ export default function DeliveryPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const currency = user?.tenant?.currency || "USD";
-  const currencyOpts: FormatCurrencyOptions = { position: (user?.tenant?.currencyPosition || "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 };
+  const currencyOpts: FormatCurrencyOptions = {
+    position: (user?.tenant?.currencyPosition || "before") as "before" | "after",
+    decimals: user?.tenant?.currencyDecimals ?? 2,
+  };
   const fmt = (val: string | number) => formatCurrency(val, currency, currencyOpts);
 
+  const [viewMode, setViewMode] = useState<"kanban" | "list">("kanban");
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryOrder | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+  const [showAgentDialog, setShowAgentDialog] = useState(false);
+  const [selectedAgent, setSelectedAgent] = useState("");
+  const [assigningDelivery, setAssigningDelivery] = useState<DeliveryOrder | null>(null);
 
   const { data: tenantConfig } = useQuery<TenantConfig>({
     queryKey: ["/api/tenant"],
@@ -104,6 +164,7 @@ export default function DeliveryPage() {
   const { data: deliveriesRes, isLoading } = useQuery<{ data: DeliveryOrder[]; total: number }>({
     queryKey: ["/api/delivery-orders"],
     enabled: deliveryEnabled,
+    refetchInterval: 30000,
   });
   const deliveries = deliveriesRes?.data ?? [];
 
@@ -113,6 +174,11 @@ export default function DeliveryPage() {
   });
   const customers = customersRes?.data ?? [];
 
+  const { data: agents = [] } = useQuery<DeliveryAgent[]>({
+    queryKey: ["/api/delivery-agents"],
+    enabled: deliveryEnabled,
+  });
+
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
       const res = await apiRequest("PATCH", `/api/delivery-orders/${id}`, data);
@@ -121,6 +187,28 @@ export default function DeliveryPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
       toast({ title: "Delivery updated" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const assignAgentMutation = useMutation({
+    mutationFn: async ({ deliveryId, agentId }: { deliveryId: string; agentId: string }) => {
+      const agent = agents.find((a) => a.id === agentId);
+      const res = await apiRequest("PATCH", `/api/delivery-orders/${deliveryId}/assign-agent`, {
+        agentId,
+        agentName: agent?.name,
+        agentPhone: agent?.phone,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
+      setShowAgentDialog(false);
+      setSelectedAgent("");
+      setAssigningDelivery(null);
+      toast({ title: "Agent assigned successfully" });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -139,8 +227,6 @@ export default function DeliveryPage() {
     return acc;
   }, {});
 
-  /* EXTENSION POINT: Integrate with third-party delivery APIs (Uber Eats, DoorDash, etc.)
-     to automatically advance status based on webhook callbacks from delivery partners. */
   const advanceStatus = (delivery: DeliveryOrder) => {
     const currentIdx = statusFlow.indexOf(delivery.status as DeliveryStatus);
     if (currentIdx >= 0 && currentIdx < statusFlow.length - 1) {
@@ -149,7 +235,6 @@ export default function DeliveryPage() {
       if (nextStatus === "delivered") {
         updateData.deliveredAt = new Date().toISOString();
       }
-      /* EXTENSION POINT: Send delivery notification to customer via SMS/push when status changes */
       updateMutation.mutate({ id: delivery.id, data: updateData });
     }
   };
@@ -158,9 +243,20 @@ export default function DeliveryPage() {
     d.status && !["delivered", "cancelled", "returned"].includes(d.status)
   ).length;
 
-  /* EXTENSION POINT: When delivery module goes live, replace this placeholder with full
-     operational view. The deliveryEnabled flag is persisted in tenant.moduleConfig and
-     can be extended to include partner API keys, default delivery radius, fee structure, etc. */
+  const deliveredToday = deliveries.filter((d) => {
+    if (d.status !== "delivered" || !d.deliveredAt) return false;
+    const today = new Date();
+    const del = new Date(d.deliveredAt);
+    return del.toDateString() === today.toDateString();
+  }).length;
+
+  const avgDeliveryTime = (() => {
+    const completed = deliveries.filter((d) => d.actualTime != null);
+    if (!completed.length) return null;
+    const avg = completed.reduce((sum, d) => sum + (d.actualTime || 0), 0) / completed.length;
+    return Math.round(avg);
+  })();
+
   if (!deliveryEnabled) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
@@ -195,7 +291,7 @@ export default function DeliveryPage() {
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Planned Features</p>
               {[
                 "Real-time order tracking & driver dispatch",
-                "Delivery partner integrations (Uber Eats, DoorDash)",
+                "Delivery partner integrations (Zomato, Swiggy)",
                 "Automated delivery fee calculation",
                 "Driver performance analytics",
                 "Customer delivery notifications",
@@ -207,7 +303,6 @@ export default function DeliveryPage() {
               ))}
             </div>
             <div className="border-t pt-4 mt-4">
-              {/* EXTENSION POINT: Replace with subscription-gated activation when delivery goes live */}
               <Button
                 onClick={() => toggleDeliveryMutation.mutate(true)}
                 variant="outline"
@@ -237,157 +332,398 @@ export default function DeliveryPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold font-heading" data-testid="text-delivery-title">
-              Delivery Management
+              Delivery Coordination
             </h1>
-            <p className="text-muted-foreground text-sm">Track and manage delivery orders</p>
+            <p className="text-muted-foreground text-sm">Manage delivery agents and track orders</p>
           </div>
         </div>
-        {/* EXTENSION POINT: Add delivery partner integration controls here */}
-        <Button variant="outline" size="sm" onClick={() => toggleDeliveryMutation.mutate(false)} disabled={toggleDeliveryMutation.isPending} data-testid="button-disable-delivery">
-          <ToggleLeft className="w-4 h-4 mr-1" /> Disable Module
-        </Button>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-sm text-muted-foreground">Total</p>
-            <p className="text-2xl font-bold" data-testid="text-total-deliveries">{deliveries.length}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-sm text-muted-foreground">Active</p>
-            <p className="text-2xl font-bold text-amber-600" data-testid="text-active-deliveries">{activeDeliveries}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-sm text-muted-foreground">Delivered</p>
-            <p className="text-2xl font-bold text-green-600" data-testid="text-delivered-count">{statusCounts.delivered || 0}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="text-sm text-muted-foreground">Cancelled</p>
-            <p className="text-2xl font-bold text-red-600" data-testid="text-cancelled-count">{statusCounts.cancelled || 0}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={filterStatus === "all" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setFilterStatus("all")}
-          data-testid="button-filter-all"
-        >
-          All ({deliveries.length})
-        </Button>
-        {Object.entries(statusConfig).map(([key, cfg]) => (
-          <Button
-            key={key}
-            variant={filterStatus === key ? "default" : "outline"}
-            size="sm"
-            onClick={() => setFilterStatus(key)}
-            data-testid={`button-filter-${key}`}
-          >
-            {cfg.label} ({statusCounts[key] || 0})
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border overflow-hidden">
+            <Button
+              variant={viewMode === "kanban" ? "default" : "ghost"}
+              size="sm"
+              className="rounded-none"
+              onClick={() => setViewMode("kanban")}
+              data-testid="button-view-kanban"
+            >
+              <LayoutGrid className="w-4 h-4" />
+            </Button>
+            <Button
+              variant={viewMode === "list" ? "default" : "ghost"}
+              size="sm"
+              className="rounded-none"
+              onClick={() => setViewMode("list")}
+              data-testid="button-view-list"
+            >
+              <List className="w-4 h-4" />
+            </Button>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => toggleDeliveryMutation.mutate(false)} disabled={toggleDeliveryMutation.isPending} data-testid="button-disable-delivery">
+            <ToggleLeft className="w-4 h-4 mr-1" /> Disable Module
           </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {[
+          { label: "Preparing", value: statusCounts.pending || 0, color: "text-amber-600", testId: "text-kpi-preparing" },
+          { label: "Ready to Dispatch", value: (statusCounts.assigned || 0) + (statusCounts.picked_up || 0), color: "text-blue-600", testId: "text-kpi-ready" },
+          { label: "Out for Delivery", value: statusCounts.in_transit || 0, color: "text-purple-600", testId: "text-kpi-out" },
+          { label: "Delivered Today", value: deliveredToday, color: "text-green-600", testId: "text-kpi-delivered" },
+          { label: "Avg Delivery", value: avgDeliveryTime != null ? `${avgDeliveryTime}min` : "—", color: "text-muted-foreground", testId: "text-kpi-avg" },
+        ].map((kpi) => (
+          <Card key={kpi.label}>
+            <CardContent className="p-3 text-center">
+              <p className="text-xs text-muted-foreground">{kpi.label}</p>
+              <p className={`text-xl font-bold ${kpi.color}`} data-testid={kpi.testId}>{kpi.value}</p>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      {isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />
-          ))}
-        </div>
-      ) : filteredDeliveries.length === 0 ? (
-        <Card>
-          <CardContent className="py-12 text-center">
-            <Truck className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground" data-testid="text-no-deliveries">No delivery orders found.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {filteredDeliveries.map((delivery, idx) => {
-            const status = (delivery.status || "pending") as DeliveryStatus;
-            const cfg = statusConfig[status] || statusConfig.pending;
-            const StatusIcon = cfg.icon;
-            const customer = delivery.customerId ? customerMap.get(delivery.customerId) : null;
-            const canAdvance = statusFlow.indexOf(status) >= 0 && statusFlow.indexOf(status) < statusFlow.length - 1;
+      {viewMode === "kanban" ? (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {KANBAN_COLUMNS.map((col) => {
+            const colDeliveries = deliveries.filter((d) =>
+              col.statuses.includes((d.status || "pending") as DeliveryStatus)
+            );
 
             return (
-              <motion.div
-                key={delivery.id}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
-              >
-                <Card
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => { setSelectedDelivery(delivery); setShowDetailDialog(true); }}
-                  data-testid={`card-delivery-${delivery.id}`}
-                >
-                  <CardContent className="p-4 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${cfg.color}`}>
-                        <StatusIcon className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="font-semibold">{customer?.name || "Guest"}</p>
-                          <Badge className={cfg.color} data-testid={`badge-delivery-status-${delivery.id}`}>
-                            {cfg.label}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
-                          <span className="flex items-center gap-1">
-                            <MapPin className="w-3 h-3" />
-                            {delivery.customerAddress.length > 40
-                              ? delivery.customerAddress.substring(0, 40) + "..."
-                              : delivery.customerAddress}
-                          </span>
-                          {delivery.deliveryPartner && (
-                            <span className="flex items-center gap-1">
-                              <Truck className="w-3 h-3" /> {delivery.deliveryPartner}
-                            </span>
-                          )}
-                          {delivery.estimatedTime && (
-                            <span className="flex items-center gap-1">
-                              <Clock className="w-3 h-3" /> {delivery.estimatedTime} min
-                            </span>
-                          )}
-                        </div>
-                      </div>
+              <div key={col.key} className="space-y-3">
+                <div className={`border-t-4 ${col.colorClass} rounded-lg bg-muted/30 p-3`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-semibold text-sm">{col.label}</p>
+                      <p className="text-xs text-muted-foreground">{col.subtitle}</p>
                     </div>
-                    <div className="flex items-center gap-3">
-                      {delivery.deliveryFee && (
-                        <span className="font-medium text-sm">
-                          Fee: {fmt(Number(delivery.deliveryFee))}
-                        </span>
-                      )}
-                      {canAdvance && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => { e.stopPropagation(); advanceStatus(delivery); }}
-                          disabled={updateMutation.isPending}
-                          data-testid={`button-advance-${delivery.id}`}
-                        >
-                          Next <ChevronRight className="w-3 h-3 ml-1" />
-                        </Button>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </motion.div>
+                    <Badge className={col.badgeColor} data-testid={`badge-col-count-${col.key}`}>
+                      {colDeliveries.length}
+                    </Badge>
+                  </div>
+                </div>
+
+                {colDeliveries.length === 0 ? (
+                  <div className="border-2 border-dashed rounded-lg p-6 text-center text-muted-foreground text-sm">
+                    No orders
+                  </div>
+                ) : (
+                  colDeliveries.map((delivery) => {
+                    const status = (delivery.status || "pending") as DeliveryStatus;
+                    const customer = delivery.customerId ? customerMap.get(delivery.customerId) : null;
+                    const elapsed = getElapsedMinutes(delivery.createdAt);
+                    const platform = platformIcon(delivery.deliveryPartner);
+                    const isReady = col.key === "ready";
+                    const isOut = col.key === "out";
+
+                    return (
+                      <Card
+                        key={delivery.id}
+                        className="cursor-pointer hover:shadow-md transition-shadow"
+                        onClick={() => { setSelectedDelivery(delivery); setShowDetailDialog(true); }}
+                        data-testid={`card-delivery-${delivery.id}`}
+                      >
+                        <CardContent className="p-3 space-y-2">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base">{platform}</span>
+                              <div>
+                                <p className="font-semibold text-sm">{customer?.name || "Guest"}</p>
+                                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                  <MapPin className="w-3 h-3" />
+                                  {delivery.customerAddress.length > 30
+                                    ? delivery.customerAddress.substring(0, 30) + "..."
+                                    : delivery.customerAddress}
+                                </p>
+                              </div>
+                            </div>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                  <MoreVertical className="w-3 h-3" />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {statusFlow.map((s) => (
+                                  <DropdownMenuItem
+                                    key={s}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const updateData: Record<string, unknown> = { status: s };
+                                      if (s === "delivered") updateData.deliveredAt = new Date().toISOString();
+                                      updateMutation.mutate({ id: delivery.id, data: updateData });
+                                    }}
+                                  >
+                                    {statusConfig[s].label}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <Timer className="w-3 h-3" />
+                              {elapsed}min elapsed
+                            </span>
+                            {delivery.deliveryFee && (
+                              <span className="font-medium">{fmt(Number(delivery.deliveryFee))}</span>
+                            )}
+                          </div>
+
+                          {delivery.driverName && (
+                            <p className="text-xs flex items-center gap-1 text-blue-700">
+                              <UserCheck className="w-3 h-3" />
+                              {delivery.driverName}
+                            </p>
+                          )}
+
+                          <div className="flex gap-1.5">
+                            {col.key === "preparing" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="flex-1 text-xs h-7"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setAssigningDelivery(delivery);
+                                  setShowAgentDialog(true);
+                                }}
+                                data-testid={`button-assign-agent-${delivery.id}`}
+                              >
+                                <UserCheck className="w-3 h-3 mr-1" /> Assign Agent
+                              </Button>
+                            )}
+                            {isReady && (
+                              <Button
+                                size="sm"
+                                className="flex-1 text-xs h-7"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateMutation.mutate({ id: delivery.id, data: { status: "in_transit" } });
+                                }}
+                                data-testid={`button-dispatch-${delivery.id}`}
+                              >
+                                <Send className="w-3 h-3 mr-1" /> Dispatch
+                              </Button>
+                            )}
+                            {isOut && (
+                              <Button
+                                size="sm"
+                                variant="default"
+                                className="flex-1 text-xs h-7 bg-green-600 hover:bg-green-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateMutation.mutate({
+                                    id: delivery.id,
+                                    data: { status: "delivered", deliveredAt: new Date().toISOString() },
+                                  });
+                                }}
+                                data-testid={`button-mark-delivered-${delivery.id}`}
+                              >
+                                <CheckCircle className="w-3 h-3 mr-1" /> Mark Delivered
+                              </Button>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })
+                )}
+              </div>
             );
           })}
         </div>
+      ) : (
+        <>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant={filterStatus === "all" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setFilterStatus("all")}
+              data-testid="button-filter-all"
+            >
+              All ({deliveries.length})
+            </Button>
+            {Object.entries(statusConfig).map(([key, cfg]) => (
+              <Button
+                key={key}
+                variant={filterStatus === key ? "default" : "outline"}
+                size="sm"
+                onClick={() => setFilterStatus(key)}
+                data-testid={`button-filter-${key}`}
+              >
+                {cfg.label} ({statusCounts[key] || 0})
+              </Button>
+            ))}
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : filteredDeliveries.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Truck className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground" data-testid="text-no-deliveries">No delivery orders found.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {filteredDeliveries.map((delivery, idx) => {
+                const status = (delivery.status || "pending") as DeliveryStatus;
+                const cfg = statusConfig[status] || statusConfig.pending;
+                const StatusIcon = cfg.icon;
+                const customer = delivery.customerId ? customerMap.get(delivery.customerId) : null;
+                const canAdvance = statusFlow.indexOf(status) >= 0 && statusFlow.indexOf(status) < statusFlow.length - 1;
+                const elapsed = getElapsedMinutes(delivery.createdAt);
+
+                return (
+                  <motion.div
+                    key={delivery.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.03 }}
+                  >
+                    <Card
+                      className="cursor-pointer hover:shadow-md transition-shadow"
+                      onClick={() => { setSelectedDelivery(delivery); setShowDetailDialog(true); }}
+                      data-testid={`card-delivery-${delivery.id}`}
+                    >
+                      <CardContent className="p-4 flex items-center justify-between">
+                        <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${cfg.color}`}>
+                            <StatusIcon className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-base">{platformIcon(delivery.deliveryPartner)}</span>
+                              <p className="font-semibold">{customer?.name || "Guest"}</p>
+                              <Badge className={cfg.color} data-testid={`badge-delivery-status-${delivery.id}`}>
+                                {cfg.label}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-3 text-sm text-muted-foreground mt-0.5">
+                              <span className="flex items-center gap-1">
+                                <MapPin className="w-3 h-3" />
+                                {delivery.customerAddress.length > 40
+                                  ? delivery.customerAddress.substring(0, 40) + "..."
+                                  : delivery.customerAddress}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Timer className="w-3 h-3" /> {elapsed}min
+                              </span>
+                              {delivery.driverName && (
+                                <span className="flex items-center gap-1">
+                                  <UserCheck className="w-3 h-3" /> {delivery.driverName}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          {delivery.deliveryFee && (
+                            <span className="font-medium text-sm">
+                              Fee: {fmt(Number(delivery.deliveryFee))}
+                            </span>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setAssigningDelivery(delivery);
+                              setShowAgentDialog(true);
+                            }}
+                            data-testid={`button-assign-list-${delivery.id}`}
+                          >
+                            <UserCheck className="w-3 h-3 mr-1" /> Assign
+                          </Button>
+                          {canAdvance && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={(e) => { e.stopPropagation(); advanceStatus(delivery); }}
+                              disabled={updateMutation.isPending}
+                              data-testid={`button-advance-${delivery.id}`}
+                            >
+                              Next <ChevronRight className="w-3 h-3 ml-1" />
+                            </Button>
+                          )}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </>
       )}
+
+      <Dialog open={showAgentDialog} onOpenChange={(open) => { setShowAgentDialog(open); if (!open) { setSelectedAgent(""); setAssigningDelivery(null); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assign Delivery Agent</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Select an available agent to assign to this delivery order.
+            </p>
+            <div className="space-y-2">
+              {agents.map((agent) => (
+                <button
+                  key={agent.id}
+                  className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                    selectedAgent === agent.id
+                      ? "border-primary bg-primary/5"
+                      : "hover:bg-muted/50"
+                  } ${agent.status === "offline" ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                  onClick={() => agent.status !== "offline" && setSelectedAgent(agent.id)}
+                  disabled={agent.status === "offline"}
+                  data-testid={`button-select-agent-${agent.id}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-2.5 h-2.5 rounded-full ${
+                      agent.status === "available" ? "bg-green-500" :
+                      agent.status === "busy" ? "bg-amber-500" : "bg-gray-400"
+                    }`} />
+                    <div className="text-left">
+                      <p className="font-medium text-sm">{agent.name}</p>
+                      <p className="text-xs text-muted-foreground">{agent.phone}</p>
+                    </div>
+                  </div>
+                  <Badge variant="outline" className={
+                    agent.status === "available" ? "text-green-700 border-green-300" :
+                    agent.status === "busy" ? "text-amber-700 border-amber-300" : "text-gray-500"
+                  }>
+                    {agent.status}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                disabled={!selectedAgent || assignAgentMutation.isPending}
+                onClick={() => {
+                  if (assigningDelivery && selectedAgent) {
+                    assignAgentMutation.mutate({ deliveryId: assigningDelivery.id, agentId: selectedAgent });
+                  }
+                }}
+                data-testid="button-confirm-assign"
+              >
+                Assign Agent
+              </Button>
+              <Button variant="outline" onClick={() => setShowAgentDialog(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
         <DialogContent>
@@ -402,6 +738,7 @@ export default function DeliveryPage() {
             return (
               <div className="space-y-4">
                 <div className="flex items-center gap-3">
+                  <span className="text-2xl">{platformIcon(selectedDelivery.deliveryPartner)}</span>
                   <Badge className={`${cfg.color} text-sm`} data-testid="badge-detail-status">
                     {cfg.label}
                   </Badge>
@@ -479,6 +816,19 @@ export default function DeliveryPage() {
                     ))}
                   </div>
                 </div>
+
+                <Button
+                  variant="outline"
+                  className="w-full gap-2"
+                  onClick={() => {
+                    setShowDetailDialog(false);
+                    setAssigningDelivery(selectedDelivery);
+                    setShowAgentDialog(true);
+                  }}
+                  data-testid="button-assign-agent-detail"
+                >
+                  <UserCheck className="w-4 h-4" /> Assign / Change Agent
+                </Button>
               </div>
             );
           })()}
