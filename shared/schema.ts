@@ -1703,3 +1703,82 @@ export const insertTicketAssignmentSchema = createInsertSchema(ticketAssignments
 export type TicketAssignment = typeof ticketAssignments.$inferSelect;
 export type InsertTicketAssignment = z.infer<typeof insertTicketAssignmentSchema>;
 export type InsertPosSession = z.infer<typeof insertPosSessionSchema>;
+// ─── Stock Check Reports ────────────────────────────────────────────────────
+export const stockCheckReports = pgTable("stock_check_reports", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  reportType: varchar("report_type", { length: 30 }).notNull().default("MANUAL"),
+  targetDate: text("target_date").notNull(),
+  shiftType: varchar("shift_type", { length: 20 }),
+  generatedAt: timestamp("generated_at").defaultNow(),
+  generatedBy: varchar("generated_by", { length: 50 }).default("SYSTEM"),
+  totalItemsChecked: integer("total_items_checked").default(0),
+  itemsSufficient: integer("items_sufficient").default(0),
+  itemsLimited: integer("items_limited").default(0),
+  itemsCritical: integer("items_critical").default(0),
+  itemsUnavailable: integer("items_unavailable").default(0),
+  overallStatus: varchar("overall_status", { length: 20 }).default("GREEN"),
+  totalShortfallValue: decimal("total_shortfall_value", { precision: 10, scale: 2 }).default("0"),
+  acknowledgedBy: varchar("acknowledged_by", { length: 36 }),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  actionsTaken: jsonb("actions_taken"),
+}, (t) => [
+  index("idx_stock_check_reports_tenant").on(t.tenantId),
+  index("idx_stock_check_reports_date").on(t.tenantId, t.targetDate),
+]);
+
+export const insertStockCheckReportSchema = createInsertSchema(stockCheckReports).omit({ id: true, generatedAt: true });
+export type StockCheckReport = typeof stockCheckReports.$inferSelect;
+export type InsertStockCheckReport = z.infer<typeof insertStockCheckReportSchema>;
+
+export const stockCheckReportItems = pgTable("stock_check_report_items", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  reportId: varchar("report_id", { length: 36 }).notNull().references(() => stockCheckReports.id),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull(),
+  menuItemName: text("menu_item_name"),
+  category: text("category"),
+  recipeId: varchar("recipe_id", { length: 36 }),
+  plannedQuantity: integer("planned_quantity").default(20),
+  maxPossiblePortions: integer("max_possible_portions").notNull().default(0),
+  bottleneckIngredient: text("bottleneck_ingredient"),
+  bottleneckStock: decimal("bottleneck_stock", { precision: 10, scale: 3 }),
+  bottleneckRequired: decimal("bottleneck_required", { precision: 10, scale: 3 }),
+  status: varchar("status", { length: 20 }).default("SUFFICIENT"),
+  ingredientBreakdown: jsonb("ingredient_breakdown").notNull().default("[]"),
+  recommendedAction: varchar("recommended_action", { length: 50 }).default("OK"),
+  shortfallCost: decimal("shortfall_cost", { precision: 10, scale: 2 }).default("0"),
+  isDisabled: boolean("is_disabled").default(false),
+  maxLimit: integer("max_limit"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_stock_report_items_report").on(t.reportId),
+  index("idx_stock_report_items_tenant").on(t.tenantId),
+]);
+
+export const insertStockCheckReportItemSchema = createInsertSchema(stockCheckReportItems).omit({ id: true, createdAt: true });
+export type StockCheckReportItem = typeof stockCheckReportItems.$inferSelect;
+export type InsertStockCheckReportItem = z.infer<typeof insertStockCheckReportItemSchema>;
+
+export const dailyPlannedQuantities = pgTable("daily_planned_quantities", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull(),
+  plannedDate: text("planned_date").notNull(),
+  plannedQty: integer("planned_qty").notNull().default(20),
+  actualQtySold: integer("actual_qty_sold").default(0),
+  maxLimit: integer("max_limit"),
+  isDisabled: boolean("is_disabled").default(false),
+  disabledReason: text("disabled_reason"),
+  createdBy: varchar("created_by", { length: 36 }),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("idx_daily_planned_qty_tenant_date").on(t.tenantId, t.plannedDate),
+  index("idx_daily_planned_qty_menu_item").on(t.menuItemId),
+]);
+
+export const insertDailyPlannedQtySchema = createInsertSchema(dailyPlannedQuantities).omit({ id: true, updatedAt: true });
+export type DailyPlannedQty = typeof dailyPlannedQuantities.$inferSelect;
+export type InsertDailyPlannedQty = z.infer<typeof insertDailyPlannedQtySchema>;

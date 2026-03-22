@@ -208,6 +208,13 @@ app.use((req, res, next) => {
     console.error("Chef assignment escalation checker init error:", e);
   }
 
+  try {
+    const { startStockReportScheduler } = await import("./services/stock-report-scheduler");
+    startStockReportScheduler();
+  } catch (e) {
+    console.error("Stock report scheduler init error:", e);
+  }
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

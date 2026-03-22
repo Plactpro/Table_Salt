@@ -466,4 +466,76 @@ export async function runAdminMigrations(): Promise<void> {
       );
     }
   }
+
+  // ─── Stock Capacity Report tables ─────────────────────────────────────────
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_check_reports (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      report_type VARCHAR(30) NOT NULL DEFAULT 'MANUAL',
+      target_date TEXT NOT NULL,
+      shift_type VARCHAR(20),
+      generated_at TIMESTAMPTZ DEFAULT now(),
+      generated_by VARCHAR(50) DEFAULT 'SYSTEM',
+      total_items_checked INT DEFAULT 0,
+      items_sufficient INT DEFAULT 0,
+      items_limited INT DEFAULT 0,
+      items_critical INT DEFAULT 0,
+      items_unavailable INT DEFAULT 0,
+      overall_status VARCHAR(20) DEFAULT 'GREEN',
+      total_shortfall_value DECIMAL(10,2) DEFAULT 0,
+      acknowledged_by VARCHAR(36),
+      acknowledged_at TIMESTAMPTZ,
+      actions_taken JSONB
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_check_reports_tenant ON stock_check_reports (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_check_reports_date ON stock_check_reports (tenant_id, target_date)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_check_report_items (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      report_id VARCHAR(36) NOT NULL REFERENCES stock_check_reports(id) ON DELETE CASCADE,
+      tenant_id VARCHAR(36) NOT NULL,
+      menu_item_id VARCHAR(36) NOT NULL,
+      menu_item_name TEXT,
+      category TEXT,
+      recipe_id VARCHAR(36),
+      planned_quantity INT DEFAULT 20,
+      max_possible_portions INT NOT NULL DEFAULT 0,
+      bottleneck_ingredient TEXT,
+      bottleneck_stock DECIMAL(10,3),
+      bottleneck_required DECIMAL(10,3),
+      status VARCHAR(20) DEFAULT 'SUFFICIENT',
+      ingredient_breakdown JSONB NOT NULL DEFAULT '[]',
+      recommended_action VARCHAR(50) DEFAULT 'OK',
+      shortfall_cost DECIMAL(10,2) DEFAULT 0,
+      is_disabled BOOLEAN DEFAULT false,
+      max_limit INT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_report_items_report ON stock_check_report_items (report_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_report_items_tenant ON stock_check_report_items (tenant_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_planned_quantities (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36),
+      menu_item_id VARCHAR(36) NOT NULL,
+      planned_date TEXT NOT NULL,
+      planned_qty INT NOT NULL DEFAULT 20,
+      actual_qty_sold INT DEFAULT 0,
+      max_limit INT,
+      is_disabled BOOLEAN DEFAULT false,
+      disabled_reason TEXT,
+      created_by VARCHAR(36),
+      updated_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_daily_planned_qty_tenant_date ON daily_planned_quantities (tenant_id, planned_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_daily_planned_qty_menu_item ON daily_planned_quantities (menu_item_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_planned_qty_unique ON daily_planned_quantities (tenant_id, menu_item_id, planned_date)`);
 }
