@@ -13,6 +13,14 @@ import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
 import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
+import { autoAssignTicket } from "../services/chef-assignment";
+
+function fireAutoAssign(tenantId: string, outletId: string | null | undefined, orderId: string, label?: string) {
+  if (!outletId) return;
+  setImmediate(() => {
+    autoAssignTicket(tenantId, outletId, { orderId, menuItemName: label ?? undefined }).catch(() => {});
+  });
+}
 
 /** Server-side whitelist of modifier size multipliers (fractional, e.g. 0.3 = +30%).
  *  Labels and multipliers must exactly match SIZE_MODIFIERS / SPICE_MODIFIERS in pos.tsx.
@@ -490,6 +498,9 @@ export function registerOrdersRoutes(app: Express): void {
       }
 
       emitToTenant(user.tenantId, "order:new", { orderId: order.id, status: order.status, tableId: order.tableId, orderType: order.orderType });
+      if (order.status === "sent_to_kitchen" || order.status === "new") {
+        fireAutoAssign(user.tenantId, order.outletId, order.id, `${order.orderType ?? "order"} #${order.id.slice(-6)}`);
+      }
       res.json({ ...order, items: orderItems });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -679,6 +690,10 @@ export function registerOrdersRoutes(app: Express): void {
           }
         }
       }
+    }
+
+    if (req.body.status === "sent_to_kitchen" && existing.status !== "sent_to_kitchen") {
+      fireAutoAssign(user.tenantId, existing.outletId, req.params.id, `${existing.orderType ?? "order"} #${req.params.id.slice(-6)}`);
     }
 
     if (req.body.status === "paid" && existing.status !== "paid" && existing.tableId) {
