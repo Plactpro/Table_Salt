@@ -785,4 +785,196 @@ export async function runAdminMigrations(): Promise<void> {
       created_at timestamptz DEFAULT now()
     )
   `);
+
+  // Task #94: Service Coordination System — orders table additions
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS priority integer DEFAULT 2`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_number varchar(50)`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS confirmed_at timestamptz`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS order_source varchar(30) DEFAULT 'POS'`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS section varchar(50)`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS covers integer DEFAULT 1`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS special_instructions text`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS allergies text`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS vip_notes text`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS promised_time timestamptz`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS actual_ready_time timestamptz`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS first_item_ready_at timestamptz`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS fully_ready_at timestamptz`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS served_at timestamptz`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS paid_at timestamptz`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_split_bill boolean DEFAULT false`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status varchar(20) DEFAULT 'pending'`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS coordinator_id varchar(36)`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS waiter_name varchar(255)`);
+
+  // Task #94: Service Coordination System — order_items table additions
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS chef_id varchar(36)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS chef_name varchar(255)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS counter_id varchar(36)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS counter_name varchar(100)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS preparation_started_at timestamptz`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS served_at timestamptz`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS prep_time_minutes integer`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS special_note text`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS is_addon boolean NOT NULL DEFAULT false`);
+
+  // Task #94: Fix tenant_id type in coordination tables (if they were created with integer type)
+  // This handles the case where tables were created with incorrect integer type for tenant_id
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'coordination_rules' AND column_name = 'tenant_id' AND data_type = 'integer'
+      ) THEN
+        ALTER TABLE coordination_rules ALTER COLUMN tenant_id TYPE varchar(36) USING tenant_id::varchar;
+      END IF;
+    END $$
+  `);
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'service_messages' AND column_name = 'tenant_id' AND data_type = 'integer'
+      ) THEN
+        ALTER TABLE service_messages ALTER COLUMN tenant_id TYPE varchar(36) USING tenant_id::varchar;
+        ALTER TABLE service_messages ALTER COLUMN from_staff_id TYPE varchar(36) USING from_staff_id::varchar;
+        ALTER TABLE service_messages ALTER COLUMN to_staff_id TYPE varchar(36) USING to_staff_id::varchar;
+      END IF;
+    END $$
+  `);
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'vip_order_flags' AND column_name = 'tenant_id' AND data_type = 'integer'
+      ) THEN
+        ALTER TABLE vip_order_flags ALTER COLUMN tenant_id TYPE varchar(36) USING tenant_id::varchar;
+      END IF;
+    END $$
+  `);
+
+  // Task #94: vip_order_flags table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vip_order_flags (
+      id serial PRIMARY KEY,
+      tenant_id varchar(36) NOT NULL,
+      order_id varchar(36) NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      vip_level varchar(20) DEFAULT 'VIP',
+      special_notes text,
+      special_setup text,
+      manager_notified boolean DEFAULT false,
+      flagged_by varchar(36),
+      created_at timestamptz DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_vip_order_flags_order_unique ON vip_order_flags(order_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vip_order_flags_tenant ON vip_order_flags(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_vip_order_flags_order ON vip_order_flags(order_id)`);
+
+  // Task #94: service_messages table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS service_messages (
+      id serial PRIMARY KEY,
+      tenant_id varchar(36) NOT NULL,
+      outlet_id varchar(36),
+      order_id varchar(36) REFERENCES orders(id) ON DELETE SET NULL,
+      from_staff_id varchar(36) NOT NULL,
+      from_name varchar(255),
+      from_role varchar(50),
+      to_staff_id varchar(36),
+      to_role varchar(50),
+      message text NOT NULL,
+      message_type varchar(30) DEFAULT 'GENERAL',
+      priority varchar(10) DEFAULT 'normal',
+      is_read boolean DEFAULT false,
+      read_at timestamptz,
+      created_at timestamptz DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_messages_tenant ON service_messages(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_messages_to_staff ON service_messages(to_staff_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_service_messages_created ON service_messages(created_at DESC)`);
+
+  // Task #94: coordination_rules table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS coordination_rules (
+      id serial PRIMARY KEY,
+      tenant_id varchar(36) NOT NULL,
+      rule_name varchar(255) NOT NULL,
+      trigger_event varchar(50) NOT NULL,
+      condition_json jsonb NOT NULL,
+      action varchar(50) NOT NULL,
+      message_template text NOT NULL,
+      is_active boolean DEFAULT true,
+      created_at timestamptz DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_coordination_rules_tenant ON coordination_rules(tenant_id)`);
+
+  // Task #94: Seed default coordination rules for existing tenants that have none
+  const { rows: tenantsWithoutRules } = await pool.query(`
+    SELECT t.id AS tenant_id
+    FROM tenants t
+    WHERE t.slug != 'platform'
+      AND NOT EXISTS (
+        SELECT 1 FROM coordination_rules cr WHERE cr.tenant_id = t.id
+      )
+    LIMIT 50
+  `);
+
+  const defaultRules = [
+    { name: "Order Age Exceeds 20min in Preparation", event: "order_age_exceeds", cond: { threshold_minutes: 20, status: "in_progress" }, action: "notify_coordinator", template: "Order #{{orderNumber}} has been in preparation for {{minutes}} minutes. Please check status.", active: true },
+    { name: "Item Ready Unserved for 5min", event: "item_ready_unserved", cond: { threshold_minutes: 5 }, action: "notify_waiter", template: "Order #{{orderNumber}} is ready and has not been served for {{minutes}} minutes.", active: true },
+    { name: "VIP Order Delayed 5min", event: "vip_order_delayed", cond: { threshold_minutes: 5 }, action: "notify_manager_urgent", template: "URGENT: VIP Order #{{orderNumber}} has been waiting for {{minutes}} minutes.", active: true },
+    { name: "Order Stuck in Served State 30min", event: "order_status_stuck", cond: { threshold_minutes: 30, status: "served" }, action: "prompt_coordinator", template: "Order #{{orderNumber}} has been in '{{status}}' state for {{minutes}} minutes. Please close the order.", active: true },
+    { name: "Kitchen Overload — More than 15 Active Tickets", event: "active_kitchen_tickets_exceed", cond: { threshold: 15 }, action: "notify_manager_urgent", template: "Kitchen is overloaded with {{count}} active tickets (threshold: {{threshold}}). Immediate attention required.", active: true },
+    { name: "Delivery Time at Risk — Less than 10min Remaining", event: "delivery_time_at_risk", cond: { threshold_minutes: 10 }, action: "notify_coordinator", template: "Delivery Order #{{orderNumber}} is at risk — only {{minutes}} minutes until promised time.", active: false },
+    { name: "Order Age Exceeds 45min Any Status", event: "order_age_exceeds", cond: { threshold_minutes: 45, status: "any" }, action: "notify_manager_urgent", template: "Order #{{orderNumber}} is {{minutes}} minutes old. Please investigate.", active: false },
+    { name: "Order Paid Status Confirmation", event: "order_status_stuck", cond: { threshold_minutes: 5, status: "paid" }, action: "notify_coordinator", template: "Order #{{orderNumber}} marked paid — please ensure table has been cleared.", active: false },
+  ];
+
+  for (const { tenant_id } of tenantsWithoutRules) {
+    for (const rule of defaultRules) {
+      await pool.query(
+        `INSERT INTO coordination_rules (tenant_id, rule_name, trigger_event, condition_json, action, message_template, is_active)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT DO NOTHING`,
+        [tenant_id, rule.name, rule.event, JSON.stringify(rule.cond), rule.action, rule.template, rule.active]
+      );
+    }
+  }
+
+  // Task #94: Add delivery_agent to user_role enum if not present
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumtypid = 'user_role'::regtype
+          AND enumlabel = 'delivery_agent'
+      ) THEN
+        ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'delivery_agent';
+      END IF;
+    END $$
+  `);
+
+  // Task #94: Add confirmed to order_status enum if not present
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_enum
+        WHERE enumtypid = 'order_status'::regtype
+          AND enumlabel = 'confirmed'
+      ) THEN
+        ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'confirmed';
+      END IF;
+    END $$
+  `);
+
+  // Note: delivery_agent user seeding is done in seed.ts only (dev/demo data)
+  // Migrations are schema-only and must not provision user accounts in production
 }
