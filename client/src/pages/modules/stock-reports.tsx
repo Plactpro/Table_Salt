@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -22,6 +22,9 @@ import {
   Save,
   X,
   Eye,
+  Ban,
+  ShoppingCart,
+  Sliders,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -51,14 +54,18 @@ import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type IngredientBreakdown = {
-  inventoryItemId: string;
-  name: string;
+  inventoryItemId?: string;
+  ingredientName?: string;
+  name?: string;
   unit: string;
-  currentStock: number;
+  currentStock?: number;
+  stockLeft?: number;
   requiredPerPortion: number;
-  maxPortions: number;
-  availabilityPct: number;
-  costPrice: number;
+  maxPortions?: number;
+  maxPortionsFromThis?: number;
+  availabilityPct?: number;
+  costPrice?: number;
+  status?: string;
 };
 
 type ReportItem = {
@@ -76,6 +83,8 @@ type ReportItem = {
   ingredientBreakdown: IngredientBreakdown[];
   recommendedAction: string;
   shortfallCost: number;
+  isDisabled?: boolean;
+  maxLimit?: number | null;
 };
 
 type Report = {
@@ -92,7 +101,7 @@ type Report = {
   itemsLimited: number;
   itemsCritical: number;
   itemsUnavailable: number;
-  overallStatus: "GREEN" | "YELLOW" | "RED";
+  overallStatus: "GREEN" | "AMBER" | "RED" | "YELLOW";
   totalShortfallValue: string;
   acknowledgedBy: string | null;
   acknowledgedAt: string | null;
@@ -111,6 +120,7 @@ const STATUS_META = {
 
 const OVERALL_META = {
   GREEN:  { label: "All Good",          cls: "text-emerald-700 bg-emerald-50 border-emerald-200", dot: "bg-emerald-500" },
+  AMBER:  { label: "Attention Needed",  cls: "text-amber-700  bg-amber-50  border-amber-200",    dot: "bg-amber-400" },
   YELLOW: { label: "Attention Needed",  cls: "text-amber-700  bg-amber-50  border-amber-200",    dot: "bg-amber-400" },
   RED:    { label: "Critical Shortages",cls: "text-red-700    bg-red-50    border-red-200",       dot: "bg-red-500" },
 };
@@ -127,11 +137,11 @@ const ACTION_LABEL: Record<string, string> = {
 function exportCsv(report: Report) {
   if (!report.items) return;
   const rows = [
-    ["Dish","Category","Planned Qty","Max Portions","Status","Bottleneck Ingredient","Shortfall Cost (₹)","Recommended Action"],
+    ["Dish","Category","Planned Qty","Max Portions","Status","Bottleneck Ingredient","Shortfall Cost","Recommended Action"],
     ...report.items.map((i) => [
       i.menuItemName, i.category, i.plannedQuantity, i.maxPossiblePortions,
       i.status, i.bottleneckIngredient || "—",
-      i.shortfallCost.toFixed(2), ACTION_LABEL[i.recommendedAction] || i.recommendedAction,
+      Number(i.shortfallCost ?? 0).toFixed(2), ACTION_LABEL[i.recommendedAction] || i.recommendedAction,
     ]),
   ];
   const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
@@ -144,33 +154,111 @@ function exportCsv(report: Report) {
 
 // ─── Ingredient row ──────────────────────────────────────────────────────────
 function IngredientRow({ ing, planned }: { ing: IngredientBreakdown; planned: number }) {
-  const ok = ing.maxPortions >= planned;
+  const name = ing.ingredientName ?? ing.name ?? "Unknown";
+  const maxPortions = ing.maxPortions ?? ing.maxPortionsFromThis ?? 0;
+  const currentStock = ing.currentStock ?? ing.stockLeft ?? 0;
+  const ok = maxPortions >= planned;
+  const isBottleneck = ing.status === "BOTTLENECK";
+
   return (
-    <div className={cn("flex items-center gap-3 py-1.5 px-2 rounded-md text-sm", !ok && "bg-red-50/60")}>
-      <span className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", ok ? "bg-emerald-400" : "bg-red-500")} />
-      <span className="flex-1 min-w-0 truncate text-muted-foreground">{ing.name}</span>
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        Stock: <strong>{Number(ing.currentStock).toFixed(2)}</strong> {ing.unit}
-      </span>
-      <span className="text-xs text-muted-foreground whitespace-nowrap">
-        Need: <strong>{(ing.requiredPerPortion * planned).toFixed(2)}</strong> {ing.unit}
-      </span>
-      <span className={cn("text-xs font-semibold whitespace-nowrap", ok ? "text-emerald-700" : "text-red-700")}>
-        {ing.maxPortions} portions
-      </span>
-      <div className="w-20">
-        <Progress value={Math.min(100, ing.availabilityPct)} className="h-1.5" />
-      </div>
-    </div>
+    <TableRow className={cn(!ok && "bg-red-50/60")}>
+      <TableCell className="text-sm font-medium">
+        <div className="flex items-center gap-2">
+          <span className={cn("w-2 h-2 rounded-full flex-shrink-0", ok ? "bg-emerald-400" : "bg-red-500")} />
+          {name}
+          {isBottleneck && (
+            <span className="ml-1 text-[10px] font-bold uppercase bg-red-100 text-red-700 px-1.5 py-0.5 rounded">
+              BOTTLENECK
+            </span>
+          )}
+        </div>
+      </TableCell>
+      <TableCell className="text-sm text-right">
+        {Number(ing.requiredPerPortion).toFixed(3)} {ing.unit}
+      </TableCell>
+      <TableCell className="text-sm text-right">
+        {Number(currentStock).toFixed(3)} {ing.unit}
+      </TableCell>
+      <TableCell className={cn("text-sm text-right font-semibold", ok ? "text-emerald-700" : "text-red-700")}>
+        {maxPortions}
+      </TableCell>
+      <TableCell className="text-center">
+        {ok
+          ? <CheckCircle2 className="h-4 w-4 text-emerald-500 mx-auto" />
+          : <XCircle className="h-4 w-4 text-red-500 mx-auto" />}
+      </TableCell>
+    </TableRow>
   );
 }
 
-// ─── Dish row with drill-down ─────────────────────────────────────────────────
-function DishRow({ item }: { item: ReportItem }) {
+// ─── Dish row with drill-down and per-dish actions ────────────────────────────
+function DishRow({ item, reportTargetDate, onMutationSuccess }: {
+  item: ReportItem;
+  reportTargetDate: string;
+  onMutationSuccess: () => void;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [editQty, setEditQty] = useState(String(item.plannedQuantity));
+  const [maxInput, setMaxInput] = useState(String(item.maxLimit ?? ""));
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
   const meta = STATUS_META[item.status] ?? STATUS_META.SUFFICIENT;
   const Icon = meta.icon;
   const hasIngredients = item.ingredientBreakdown && item.ingredientBreakdown.length > 0;
+
+  const plannedQtyMut = useMutation({
+    mutationFn: (qty: number) =>
+      apiRequest("PUT", "/api/stock-reports/planned-quantities", {
+        targetDate: reportTargetDate,
+        items: [{ menuItemId: item.menuItemId, plannedQty: qty }],
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      toast({ title: "Planned quantity saved", description: "Change applies on the next report run." });
+      onMutationSuccess();
+    },
+    onError: () => toast({ title: "Failed to save planned qty", variant: "destructive" }),
+  });
+
+  const disableMut = useMutation({
+    mutationFn: () =>
+      apiRequest("PUT", "/api/stock-reports/planned-quantities", {
+        targetDate: reportTargetDate,
+        items: [{ menuItemId: item.menuItemId, plannedQty: 0, isDisabled: true }],
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      toast({ title: "Dish disabled for this date" });
+      onMutationSuccess();
+    },
+    onError: () => toast({ title: "Failed to disable dish", variant: "destructive" }),
+  });
+
+  const setMaxMut = useMutation({
+    mutationFn: (maxLimit: number) =>
+      apiRequest("PUT", "/api/stock-reports/planned-quantities", {
+        targetDate: reportTargetDate,
+        items: [{ menuItemId: item.menuItemId, plannedQty: item.plannedQuantity, maxLimit }],
+      }).then((r) => r.json()),
+    onSuccess: () => {
+      toast({ title: "Max quantity saved" });
+      onMutationSuccess();
+    },
+    onError: () => toast({ title: "Failed to set max quantity", variant: "destructive" }),
+  });
+
+  const handleQtyBlur = () => {
+    const n = parseInt(editQty, 10);
+    if (!isNaN(n) && n !== item.plannedQuantity) {
+      plannedQtyMut.mutate(n);
+    }
+  };
+
+  const handleRaisePo = () => {
+    toast({
+      title: "Purchase Order",
+      description: `PO request noted for bottleneck: ${item.bottleneckIngredient ?? item.menuItemName}`,
+    });
+  };
 
   return (
     <>
@@ -181,119 +269,146 @@ function DishRow({ item }: { item: ReportItem }) {
           item.status === "UNAVAILABLE" && "bg-red-50/60"
         )}
         onClick={() => hasIngredients && setExpanded((v) => !v)}
-        data-testid={`row-dish-${item.menuItemId}`}
+        data-testid={`row-dish-${item.id}`}
       >
         <TableCell className="w-8 pl-3">
           {hasIngredients
-            ? (expanded ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />)
+            ? (expanded
+                ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                : <ChevronRight className="h-4 w-4 text-muted-foreground" />)
             : <span className="w-4 h-4 block" />}
         </TableCell>
         <TableCell>
           <div className="flex items-center gap-2">
             <span className={cn("w-2 h-2 rounded-full flex-shrink-0", meta.dot)} />
-            <span className="font-medium text-sm">{item.menuItemName}</span>
+            <span className="font-medium text-sm" data-testid={`text-dish-name-${item.id}`}>
+              {item.menuItemName}
+              {item.isDisabled && <span className="ml-2 text-xs text-gray-400 italic">(disabled)</span>}
+            </span>
           </div>
         </TableCell>
         <TableCell className="text-muted-foreground text-sm">{item.category}</TableCell>
-        <TableCell className="text-center font-mono text-sm">{item.plannedQuantity}</TableCell>
+        <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+          <Input
+            type="number"
+            min={0}
+            value={editQty}
+            onChange={(e) => setEditQty(e.target.value)}
+            onBlur={handleQtyBlur}
+            onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+            className="w-20 h-7 text-sm text-center mx-auto"
+            data-testid={`input-planned-qty-${item.id}`}
+          />
+        </TableCell>
         <TableCell className="text-center">
-          <span className={cn("font-bold text-sm", item.maxPossiblePortions < item.plannedQuantity ? "text-red-600" : "text-emerald-700")}>
+          <span className={cn("font-bold text-sm", item.maxPossiblePortions < item.plannedQuantity ? "text-red-600" : "text-emerald-700")} data-testid={`text-can-make-${item.id}`}>
             {item.maxPossiblePortions}
           </span>
         </TableCell>
         <TableCell>
-          <Badge className={cn("text-xs font-medium gap-1", meta.color)} variant="secondary" data-testid={`status-${item.menuItemId}`}>
+          <Badge className={cn("text-xs font-medium gap-1", meta.color)} variant="secondary" data-testid={`badge-status-${item.id}`}>
             <Icon className="h-3 w-3" />{meta.label}
           </Badge>
         </TableCell>
-        <TableCell className="text-sm text-muted-foreground truncate max-w-[160px]">
+        <TableCell className="text-sm text-muted-foreground truncate max-w-[140px]" data-testid={`text-bottleneck-${item.id}`}>
           {item.bottleneckIngredient || "—"}
         </TableCell>
         <TableCell className="text-sm text-right">
-          {item.shortfallCost > 0 ? <span className="text-red-600 font-medium">₹{Number(item.shortfallCost).toFixed(2)}</span> : "—"}
-        </TableCell>
-        <TableCell className="text-xs text-muted-foreground">
-          {ACTION_LABEL[item.recommendedAction] || item.recommendedAction}
+          {Number(item.shortfallCost ?? 0) > 0
+            ? <span className="text-red-600 font-medium">{Number(item.shortfallCost).toFixed(2)}</span>
+            : "—"}
         </TableCell>
       </TableRow>
+
       {expanded && hasIngredients && (
-        <TableRow data-testid={`expand-${item.menuItemId}`}>
-          <TableCell colSpan={9} className="bg-muted/20 px-4 py-2">
-            <div className="space-y-1 pl-4 border-l-2 border-muted">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Ingredient breakdown (vs {item.plannedQuantity} planned portions)
+        <TableRow data-testid={`row-expanded-${item.id}`}>
+          <TableCell colSpan={8} className="bg-muted/20 px-4 py-3">
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                Ingredient Breakdown (vs {item.plannedQuantity} planned portions)
               </p>
-              {item.ingredientBreakdown.map((ing) => (
-                <IngredientRow key={ing.inventoryItemId} ing={ing} planned={item.plannedQuantity} />
-              ))}
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Ingredient</TableHead>
+                    <TableHead className="text-right">Req / Portion</TableHead>
+                    <TableHead className="text-right">Stock Left</TableHead>
+                    <TableHead className="text-right">Max Portions</TableHead>
+                    <TableHead className="text-center">OK?</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {item.ingredientBreakdown.map((ing, i) => (
+                    <IngredientRow
+                      key={(ing.inventoryItemId ?? ing.ingredientName ?? i)}
+                      ing={ing}
+                      planned={item.plannedQuantity}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+
+              {Number(item.shortfallCost ?? 0) > 0 && (
+                <p className="text-sm text-red-600 font-medium">
+                  Estimated restock cost: {Number(item.shortfallCost).toFixed(2)}
+                </p>
+              )}
+
+              <div className="flex flex-wrap gap-2 pt-1" onClick={(e) => e.stopPropagation()}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRaisePo}
+                  data-testid={`btn-raise-po-${item.id}`}
+                >
+                  <ShoppingCart className="h-3.5 w-3.5 mr-1" />
+                  Raise PO
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-red-600 border-red-200 hover:bg-red-50"
+                  onClick={() => disableMut.mutate()}
+                  disabled={disableMut.isPending}
+                  data-testid={`btn-disable-dish-${item.id}`}
+                >
+                  {disableMut.isPending
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    : <Ban className="h-3.5 w-3.5 mr-1" />}
+                  Disable Dish
+                </Button>
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min={0}
+                    placeholder="Max qty"
+                    value={maxInput}
+                    onChange={(e) => setMaxInput(e.target.value)}
+                    className="w-24 h-8 text-sm"
+                    data-testid={`input-max-qty-${item.id}`}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const n = parseInt(maxInput, 10);
+                      if (!isNaN(n)) setMaxMut.mutate(n);
+                    }}
+                    disabled={setMaxMut.isPending}
+                    data-testid={`btn-save-max-qty-${item.id}`}
+                  >
+                    {setMaxMut.isPending
+                      ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      : <Sliders className="h-3.5 w-3.5 mr-1" />}
+                    Set Max
+                  </Button>
+                </div>
+              </div>
             </div>
           </TableCell>
         </TableRow>
       )}
     </>
-  );
-}
-
-// ─── Planned quantity edit modal ──────────────────────────────────────────────
-function PlannedQtyModal({ open, onClose, items, targetDate }: {
-  open: boolean; onClose: () => void; items: ReportItem[]; targetDate: string;
-}) {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(items.map((i) => [i.menuItemId, String(i.plannedQuantity)]))
-  );
-
-  const saveMut = useMutation({
-    mutationFn: () =>
-      apiRequest("PUT", "/api/stock-reports/planned-quantities", {
-        targetDate,
-        items: Object.entries(values).map(([menuItemId, v]) => ({
-          menuItemId,
-          plannedQty: Math.max(1, parseInt(v) || 20),
-        })),
-      }).then((r) => r.json()),
-    onSuccess: () => {
-      toast({ title: "Planned quantities saved" });
-      qc.invalidateQueries({ queryKey: ["/api/stock-reports"] });
-      onClose();
-    },
-    onError: () => toast({ title: "Failed to save", variant: "destructive" }),
-  });
-
-  return (
-    <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Pencil className="h-4 w-4" /> Edit Planned Quantities — {targetDate}
-          </DialogTitle>
-        </DialogHeader>
-        <div className="space-y-2 py-2">
-          {items.map((item) => (
-            <div key={item.menuItemId} className="flex items-center gap-3">
-              <span className="flex-1 text-sm font-medium truncate">{item.menuItemName}</span>
-              <span className="text-xs text-muted-foreground w-28 text-right truncate">{item.category}</span>
-              <Input
-                type="number" min={1} className="w-20 text-center"
-                value={values[item.menuItemId] ?? "20"}
-                onChange={(e) => setValues((p) => ({ ...p, [item.menuItemId]: e.target.value }))}
-                data-testid={`qty-input-${item.menuItemId}`}
-              />
-            </div>
-          ))}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose} data-testid="button-cancel-planned">
-            <X className="h-4 w-4 mr-1" /> Cancel
-          </Button>
-          <Button onClick={() => saveMut.mutate()} disabled={saveMut.isPending} data-testid="button-save-planned">
-            {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Save className="h-4 w-4 mr-1" />}
-            Save
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -312,6 +427,7 @@ function AcknowledgeModal({ open, onClose, reportId }: {
     onSuccess: () => {
       toast({ title: "Report acknowledged" });
       qc.invalidateQueries({ queryKey: ["/api/stock-reports"] });
+      qc.invalidateQueries({ queryKey: ["/api/stock-reports", reportId] });
       onClose();
     },
     onError: () => toast({ title: "Failed to acknowledge", variant: "destructive" }),
@@ -346,17 +462,42 @@ function AcknowledgeModal({ open, onClose, reportId }: {
 }
 
 // ─── Report detail panel ──────────────────────────────────────────────────────
-function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: () => void }) {
+function ReportDetail({ reportId }: { reportId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [filter, setFilter] = useState<string>("ALL");
-  const [editPlanned, setEditPlanned] = useState(false);
   const [showAck, setShowAck] = useState(false);
   const [search, setSearch] = useState("");
 
   const { data: report, isLoading } = useQuery<Report>({
     queryKey: ["/api/stock-reports", reportId],
     queryFn: () => apiRequest("GET", `/api/stock-reports/${reportId}`).then((r) => r.json()),
+  });
+
+  const handleItemMutationSuccess = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["/api/stock-reports", reportId] });
+    qc.invalidateQueries({ queryKey: ["/api/stock-reports"] });
+  }, [qc, reportId]);
+
+  const bulkDisableMut = useMutation({
+    mutationFn: () => {
+      const criticalItems = (report?.items ?? []).filter(
+        (i) => i.status === "CRITICAL" || i.status === "UNAVAILABLE"
+      );
+      return apiRequest("PUT", "/api/stock-reports/planned-quantities", {
+        targetDate: report?.targetDate ?? new Date().toISOString().slice(0, 10),
+        items: criticalItems.map((i) => ({
+          menuItemId: i.menuItemId,
+          plannedQty: 0,
+          isDisabled: true,
+        })),
+      }).then((r) => r.json());
+    },
+    onSuccess: () => {
+      toast({ title: "All critical dishes disabled" });
+      qc.invalidateQueries({ queryKey: ["/api/stock-reports", reportId] });
+    },
+    onError: () => toast({ title: "Failed to disable critical dishes", variant: "destructive" }),
   });
 
   const filteredItems = useMemo(() => {
@@ -388,16 +529,17 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
 
   const overall = OVERALL_META[report.overallStatus] ?? OVERALL_META.GREEN;
   const shortfallValue = parseFloat(report.totalShortfallValue) || 0;
+  const criticalCount = report.itemsCritical + report.itemsUnavailable;
 
   return (
     <div className="space-y-4" data-testid="report-detail">
       {/* Header card */}
-      <div className={cn("rounded-xl border p-4", overall.cls)}>
+      <div className={cn("rounded-xl border p-4", overall.cls)} data-testid="card-report-header">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <div className="flex items-center gap-2 mb-1">
               <span className={cn("w-3 h-3 rounded-full", overall.dot)} />
-              <span className="font-semibold text-lg">{overall.label}</span>
+              <span className="font-semibold text-lg" data-testid="chip-overall-status">{overall.label}</span>
               <Badge variant="outline" className="text-xs font-mono">{report.reportType}</Badge>
             </div>
             <p className="text-sm opacity-80">
@@ -405,7 +547,7 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
               {report.outletName && ` · ${report.outletName}`}
             </p>
             {report.acknowledgedAt && (
-              <p className="text-xs mt-1 opacity-70 flex items-center gap-1">
+              <p className="text-xs mt-1 opacity-70 flex items-center gap-1" data-testid="badge-acknowledged">
                 <BadgeCheck className="h-3 w-3" /> Acknowledged {format(new Date(report.acknowledgedAt), "PP")}
                 {report.actionsTaken?.note && ` — "${report.actionsTaken.note}"`}
               </p>
@@ -413,16 +555,28 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
           </div>
           <div className="flex gap-2 flex-wrap">
             {!report.acknowledgedAt && (
-              <Button size="sm" variant="outline" onClick={() => setShowAck(true)} data-testid="button-acknowledge">
+              <Button size="sm" variant="outline" onClick={() => setShowAck(true)} data-testid="btn-acknowledge">
                 <BadgeCheck className="h-4 w-4 mr-1" /> Acknowledge
               </Button>
             )}
-            <Button size="sm" variant="outline" onClick={() => setEditPlanned(true)} data-testid="button-edit-planned">
-              <Pencil className="h-4 w-4 mr-1" /> Edit Planned
-            </Button>
-            <Button size="sm" variant="outline" onClick={() => exportCsv(report)} data-testid="button-export-csv">
+            <Button size="sm" variant="outline" onClick={() => exportCsv(report)} data-testid="btn-export-csv">
               <Download className="h-4 w-4 mr-1" /> Export CSV
             </Button>
+            {criticalCount > 0 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-600 border-red-200 hover:bg-red-50"
+                onClick={() => bulkDisableMut.mutate()}
+                disabled={bulkDisableMut.isPending}
+                data-testid="btn-disable-all-critical"
+              >
+                {bulkDisableMut.isPending
+                  ? <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  : <Ban className="h-4 w-4 mr-1" />}
+                Disable All Critical ({criticalCount})
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -441,7 +595,7 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
               key={s}
               className={cn("rounded-lg border p-3 text-left transition-all hover:shadow-sm", filter === s && "ring-2 ring-primary")}
               onClick={() => setFilter(filter === s ? "ALL" : s)}
-              data-testid={`filter-${s.toLowerCase()}`}
+              data-testid={`tile-${s.toLowerCase()}`}
             >
               <div className="flex items-center gap-2 mb-1">
                 <Icon className={cn("h-4 w-4", m.color.split(" ")[1])} />
@@ -460,8 +614,8 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
             <p className="text-sm font-semibold text-red-800">Total Shortfall Value</p>
             <p className="text-xs text-red-600">Estimated cost to meet planned quantities</p>
           </div>
-          <div className="ml-auto text-xl font-bold text-red-700" data-testid="text-shortfall-value">
-            ₹{shortfallValue.toFixed(2)}
+          <div className="ml-auto text-xl font-bold text-red-700" data-testid="text-restock-cost">
+            {shortfallValue.toFixed(2)}
           </div>
         </div>
       )}
@@ -496,9 +650,9 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
           <p>No dishes match the current filter</p>
         </div>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-5" data-testid="section-dish-table">
           {Object.entries(groupedByCategory).map(([category, items]) => (
-            <div key={category}>
+            <div key={category} data-testid={`section-category-${category}`}>
               <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-2 flex items-center gap-2">
                 <span className="h-px flex-1 bg-border" />
                 {category}
@@ -512,16 +666,22 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
                       <TableHead className="w-8 pl-3" />
                       <TableHead>Dish</TableHead>
                       <TableHead>Category</TableHead>
-                      <TableHead className="text-center">Planned</TableHead>
-                      <TableHead className="text-center">Max Portions</TableHead>
+                      <TableHead className="text-center">Planned Qty</TableHead>
+                      <TableHead className="text-center">Can Make</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Bottleneck</TableHead>
                       <TableHead className="text-right">Shortfall</TableHead>
-                      <TableHead>Action</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {items.map((item) => <DishRow key={item.id} item={item} />)}
+                    {items.map((item) => (
+                      <DishRow
+                        key={item.id}
+                        item={item}
+                        reportTargetDate={report.targetDate}
+                        onMutationSuccess={handleItemMutationSuccess}
+                      />
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -530,12 +690,6 @@ function ReportDetail({ reportId, onRefresh }: { reportId: string; onRefresh: ()
         </div>
       )}
 
-      {editPlanned && report.items && (
-        <PlannedQtyModal
-          open={editPlanned} onClose={() => setEditPlanned(false)}
-          items={report.items} targetDate={report.targetDate}
-        />
-      )}
       {showAck && (
         <AcknowledgeModal open={showAck} onClose={() => setShowAck(false)} reportId={report.id} />
       )}
@@ -555,7 +709,7 @@ function ReportHistoryItem({ report, active, onClick }: {
         active ? "ring-2 ring-primary bg-primary/5" : "hover:bg-muted/30"
       )}
       onClick={onClick}
-      data-testid={`history-item-${report.id}`}
+      data-testid={`btn-history-report-${report.id}`}
     >
       <div className="flex items-center gap-2 mb-1">
         <span className={cn("w-2.5 h-2.5 rounded-full flex-shrink-0", overall.dot)} />
@@ -612,7 +766,7 @@ function LivePreviewTab() {
             </div>
             <p className="text-sm opacity-80 mt-0.5">{data?.totalItemsChecked ?? 0} dishes · live stock snapshot</p>
           </div>
-          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching} data-testid="button-refresh-preview">
+          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching} data-testid="btn-refresh-preview">
             <RefreshCw className={cn("h-4 w-4 mr-1", isFetching && "animate-spin")} /> Refresh
           </Button>
         </div>
@@ -715,6 +869,13 @@ export default function StockReportsPage() {
     queryFn: () => apiRequest("GET", "/api/stock-reports").then((r) => r.json()),
   });
 
+  // Auto-select latest report
+  useEffect(() => {
+    if (!selectedReportId && reports.length > 0) {
+      setSelectedReportId(reports[0].id);
+    }
+  }, [reports, selectedReportId]);
+
   const generateMut = useMutation({
     mutationFn: () =>
       apiRequest("POST", "/api/stock-reports/generate", {
@@ -734,7 +895,7 @@ export default function StockReportsPage() {
   }, []);
 
   return (
-    <div className="p-6 space-y-6 min-h-full">
+    <div className="p-6 space-y-6 min-h-full" data-testid="stock-reports-page">
       {/* Page header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">
@@ -747,17 +908,17 @@ export default function StockReportsPage() {
           </div>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-list">
+          <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="btn-refresh-list">
             <RefreshCw className="h-4 w-4 mr-1" /> Refresh
           </Button>
           <Button
             size="sm" onClick={() => generateMut.mutate()} disabled={generateMut.isPending}
-            data-testid="button-generate-report"
+            data-testid="btn-generate-report"
           >
             {generateMut.isPending
               ? <Loader2 className="h-4 w-4 animate-spin mr-1" />
               : <Play className="h-4 w-4 mr-1" />}
-            Generate Today's Report
+            Run Now
           </Button>
         </div>
       </div>
@@ -775,7 +936,7 @@ export default function StockReportsPage() {
         <TabsContent value="reports" className="mt-4">
           <div className="flex gap-4 min-h-[500px]">
             {/* History sidebar */}
-            <div className="w-72 flex-shrink-0 space-y-2" data-testid="report-history-list">
+            <div className="w-72 flex-shrink-0 space-y-2" data-testid="panel-history">
               {reportsLoading ? (
                 <div className="flex items-center justify-center h-32">
                   <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -783,7 +944,7 @@ export default function StockReportsPage() {
               ) : reports.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-sm text-center gap-2 border rounded-lg p-4" data-testid="empty-reports">
                   <ClipboardList className="h-8 w-8 opacity-40" />
-                  <p>No reports yet. Generate your first report above.</p>
+                  <p>No reports yet. Click "Run Now" to generate the first report.</p>
                 </div>
               ) : (
                 reports.map((r) => (
@@ -810,14 +971,14 @@ export default function StockReportsPage() {
                   <Button
                     size="sm" variant="outline"
                     onClick={() => generateMut.mutate()} disabled={generateMut.isPending}
-                    data-testid="button-generate-empty"
+                    data-testid="btn-generate-empty"
                   >
                     {generateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Play className="h-4 w-4 mr-1" />}
-                    Generate Today's Report
+                    Run Now
                   </Button>
                 </div>
               ) : (
-                <ReportDetail reportId={selectedReportId} onRefresh={() => setSelectedReportId(null)} />
+                <ReportDetail reportId={selectedReportId} />
               )}
             </div>
           </div>
