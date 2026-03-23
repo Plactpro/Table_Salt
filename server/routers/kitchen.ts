@@ -1,13 +1,16 @@
 import type { Express } from "express";
 import { db } from "../db";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, sql, inArray } from "drizzle-orm";
 import { storage } from "../storage";
-import { requireAuth, requireRole } from "../auth";
+import { requireAuth, requireRole, comparePasswords } from "../auth";
+import { verifySupervisorOverride } from "./_shared";
 import { emitToTenant } from "../realtime";
-import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts } from "@shared/schema";
+import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts, orderItems as orderItemsTable } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { getNextKotSequence } from "./print-jobs";
 import { triggerWastageDailySummary } from "./wastage";
+import { calculateSuggestedStartTimes } from "../services/cooking-timer";
+import { deductRecipeInventoryForItem } from "../lib/deduct-recipe-inventory";
 
 export function registerKitchenRoutes(app: Express): void {
   app.get("/api/kitchen-stations", requireAuth, async (req, res) => {
@@ -625,6 +628,499 @@ export function registerKitchenRoutes(app: Express): void {
         .set({ acknowledged: true, acknowledgedAt: new Date(), acknowledgedBy: user.id })
         .where(and(eq(securityAlerts.tenantId, user.tenantId), eq(securityAlerts.type, "LOW_STOCK"), eq(securityAlerts.acknowledged, false)));
       res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Task #108: Selective Item Cooking Control endpoints
+
+  // GET /api/kitchen-settings — returns tenant kitchen settings (or defaults)
+  app.get("/api/kitchen-settings", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const settings = await storage.getKitchenSettings(user.tenantId);
+      if (!settings) {
+        return res.json({
+          cookingControlMode: "selective",
+          showTimingSuggestions: true,
+          alertOverdueMinutes: 3,
+          allowRushOverride: true,
+          rushRequiresManagerPin: true,
+          autoHoldBarItems: true,
+          defaultPrepSource: "recipe",
+          hasManagerPin: false,
+        });
+      }
+      const { managerPinHash: _hash, ...safeSettings } = settings as any;
+      res.json({ ...safeSettings, hasManagerPin: !!settings.managerPinHash });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // PUT /api/kitchen-settings — owner/manager: update cooking control settings
+  app.put("/api/kitchen-settings", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const body = req.body as Record<string, unknown>;
+      // Build safe update: strip direct managerPinHash (prevent override), then hash managerPin if provided
+      const updateData: Record<string, unknown> = { ...body };
+      delete updateData.managerPinHash;
+      delete updateData.managerPin;
+      if (typeof body.managerPin === "string" && body.managerPin.length > 0) {
+        const { hashPassword } = await import("../auth");
+        updateData.managerPinHash = await hashPassword(body.managerPin);
+      }
+      const settings = await storage.upsertKitchenSettings(user.tenantId, updateData as any);
+      // Strip the hash from the response for security
+      const { managerPinHash: _, ...safeSettings } = settings as any;
+      res.json({ ...safeSettings, hasManagerPin: !!settings.managerPinHash });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // PUT /api/kds/items/:id/start — start cooking a single item
+  app.put("/api/kds/items/:id/start", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const item = await storage.getOrderItem(req.params.id);
+      if (!item) return res.status(404).json({ message: "Order item not found" });
+      const order = await storage.getOrder(item.orderId);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const kitSettings = await storage.getKitchenSettings(user.tenantId);
+      if (kitSettings?.cookingControlMode === "auto_start") {
+        return res.status(400).json({ message: "Individual item start not available in auto_start mode" });
+      }
+
+      const now = new Date();
+      const chefName = (user as any).name || (user as any).username || "Chef";
+      const prepMinutes = item.itemPrepMinutes ?? 0;
+      const estimatedReadyAt = new Date(now.getTime() + prepMinutes * 60 * 1000);
+
+      // Update both new cookingStatus and legacy status field for backward compatibility
+      await storage.updateOrderItemCooking(item.id, {
+        cookingStatus: "started",
+        actualStartAt: now,
+        estimatedReadyAt,
+        startedById: user.id,
+        startedByName: chefName,
+      });
+      // Maintain legacy status field used by existing KDS consumers
+      await storage.updateOrderItem(item.id, { status: "cooking", startedAt: now });
+      const updated = await storage.getOrderItem(item.id);
+
+      // Deduct inventory for this single item (non-fatal, mirrors bulk-start pattern)
+      setImmediate(() => {
+        deductRecipeInventoryForItem(item, order.id, user.tenantId).catch(err => {
+          console.error(`[kds/items/start] Inventory deduction failed for item ${item.id}:`, err);
+        });
+      });
+
+      // Recalculate timing for remaining course-1 queued items
+      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const remainingCourse1 = allItems
+        .filter(i =>
+          i.id !== item.id &&
+          (i.courseNumber ?? 1) === 1 &&
+          ["queued", "hold", "ready_to_start"].includes(i.cookingStatus || "queued")
+        )
+        .map(i => ({ id: i.id, name: i.name, prepMinutes: i.itemPrepMinutes ?? 0, courseNumber: 1 }));
+
+      if (remainingCourse1.length > 0) {
+        const timings = calculateSuggestedStartTimes(remainingCourse1);
+        for (const t of timings) {
+          await storage.updateOrderItemCooking(t.itemId, { suggestedStartAt: t.suggestedStartAt });
+        }
+      }
+
+      if (order.status === "new" || order.status === "sent_to_kitchen") {
+        await storage.updateOrder(order.id, { status: "in_progress" });
+      }
+
+      emitToTenant(user.tenantId, "kds:item_started", { itemId: item.id, orderId: order.id, startedBy: chefName });
+
+      // Note: hold-release only happens when dependency item is READY (see /ready endpoint)
+
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // PUT /api/kds/items/:id/hold — put an item on hold
+  app.put("/api/kds/items/:id/hold", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { holdReason, holdUntilItemId, holdUntilMinutes } = req.body;
+      const item = await storage.getOrderItem(req.params.id);
+      if (!item) return res.status(404).json({ message: "Order item not found" });
+      const order = await storage.getOrder(item.orderId);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const updated = await storage.updateOrderItemCooking(item.id, {
+        cookingStatus: "hold",
+        holdReason: holdReason || null,
+        holdUntilItemId: holdUntilItemId || null,
+        holdUntilMinutes: holdUntilMinutes || null,
+      });
+
+      emitToTenant(user.tenantId, "kds:item_held", { itemId: item.id, orderId: order.id, holdReason });
+
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // PUT /api/kds/items/:id/ready — mark item as ready
+  app.put("/api/kds/items/:id/ready", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const item = await storage.getOrderItem(req.params.id);
+      if (!item) return res.status(404).json({ message: "Order item not found" });
+      const order = await storage.getOrder(item.orderId);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const now = new Date();
+      await storage.updateOrderItemCooking(item.id, {
+        cookingStatus: "ready",
+        actualReadyAt: now,
+      });
+      // Maintain legacy status field used by existing KDS consumers
+      await storage.updateOrderItem(item.id, { status: "ready", readyAt: now });
+      const updated = await storage.getOrderItem(item.id);
+
+      // Check order status
+      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const allReadyOrServed = allItems.every(i => ["ready", "served"].includes(i.cookingStatus || "queued"));
+      const allServed = allItems.every(i => i.cookingStatus === "served");
+
+      if (allServed) {
+        await storage.updateOrder(order.id, { status: "served" });
+        emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "served" });
+      } else if (allReadyOrServed) {
+        await storage.updateOrder(order.id, { status: "ready" });
+        emitToTenant(user.tenantId, "order:ready", { orderId: order.id });
+      } else {
+        // Some items ready, some still cooking — keep order in_progress
+        await storage.updateOrder(order.id, { status: "in_progress" });
+      }
+
+      emitToTenant(user.tenantId, "kds:item_ready", { itemId: item.id, orderId: order.id });
+      emitToTenant(user.tenantId, "coordination:item_ready", { itemId: item.id, orderId: order.id });
+
+      // Auto-release hold items waiting on this item
+      for (const i of allItems) {
+        if (i.cookingStatus === "hold" && i.holdUntilItemId === item.id) {
+          emitToTenant(user.tenantId, "kds:hold_released", { itemId: i.id, orderId: order.id, releasedByItemId: item.id });
+        }
+      }
+
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // PUT /api/kds/items/:id/rush — rush all items in an order (manager/owner)
+  app.put("/api/kds/items/:id/rush", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const item = await storage.getOrderItem(req.params.id);
+      if (!item) return res.status(404).json({ message: "Order item not found" });
+      const order = await storage.getOrder(item.orderId);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const kitSettings = await storage.getKitchenSettings(user.tenantId);
+
+      // Check allowRushOverride setting — if disabled, rush is blocked entirely
+      if (kitSettings && kitSettings.allowRushOverride === false) {
+        return res.status(403).json({ message: "Rush override is disabled in kitchen settings" });
+      }
+
+      // Enforce manager PIN if configured. PIN is validated against the hashed PIN stored
+      // in kitchen_settings.manager_pin_hash (set via PUT /api/kitchen-settings { managerPin }).
+      if (kitSettings?.rushRequiresManagerPin ?? true) {
+        const { pin } = req.body as { pin?: string };
+        if (!pin) {
+          return res.status(400).json({ message: "Manager PIN is required to rush an order" });
+        }
+        const pinHash = kitSettings?.managerPinHash;
+        if (!pinHash) {
+          return res.status(400).json({ message: "No manager PIN has been configured for this tenant. Set one via kitchen settings." });
+        }
+        const pinValid = await comparePasswords(pin, pinHash);
+        if (!pinValid) {
+          return res.status(403).json({ message: "Invalid manager PIN" });
+        }
+      }
+
+      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const now = new Date();
+      const chefName = (user as any).name || (user as any).username || "Chef";
+
+      for (const i of allItems) {
+        if (["queued", "hold", "ready_to_start"].includes(i.cookingStatus || "queued")) {
+          const prepMinutes = i.itemPrepMinutes ?? 0;
+          await storage.updateOrderItemCooking(i.id, {
+            cookingStatus: "started",
+            actualStartAt: now,
+            estimatedReadyAt: new Date(now.getTime() + prepMinutes * 60 * 1000),
+            startedById: user.id,
+            startedByName: chefName,
+          });
+          // Sync legacy status field for backward compatibility with existing KDS consumers
+          await storage.updateOrderItem(i.id, { status: "cooking", startedAt: now });
+        }
+      }
+
+      if (order.status === "new" || order.status === "sent_to_kitchen") {
+        await storage.updateOrder(order.id, { status: "in_progress" });
+      }
+
+      emitToTenant(user.tenantId, "kds:order_rushed", { orderId: order.id, rushedBy: chefName });
+
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // POST /api/kds/orders/:id/timing — calculate and save timing suggestions
+  app.post("/api/kds/orders/:id/timing", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const { targetReadyTime } = req.body;
+      const targetReady = targetReadyTime ? new Date(targetReadyTime) : undefined;
+
+      const items = await storage.getOrderItemsByOrder(order.id);
+      // Only calculate timing for course-1 items; course 2+ are deferred until fired
+      const course1Items = items.filter(i => (i.courseNumber ?? 1) === 1);
+      const laterCourseItems = items.filter(i => (i.courseNumber ?? 1) > 1);
+
+      const timingInput = course1Items.map(i => ({
+        id: i.id,
+        name: i.name,
+        prepMinutes: i.itemPrepMinutes ?? 0,
+        courseNumber: 1,
+      }));
+
+      const timings = calculateSuggestedStartTimes(timingInput, targetReady);
+
+      for (const t of timings) {
+        await storage.updateOrderItemCooking(t.itemId, {
+          suggestedStartAt: t.suggestedStartAt,
+          estimatedReadyAt: t.estimatedReadyAt,
+        });
+      }
+
+      // Ensure course 2+ items remain with null timing
+      for (const item of laterCourseItems) {
+        await storage.updateOrderItemCooking(item.id, {
+          suggestedStartAt: null,
+          estimatedReadyAt: null,
+        });
+      }
+
+      res.json(timings);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // GET /api/kds/orders/:id/item-status — get all items with full cooking status + timing
+  app.get("/api/kds/orders/:id/item-status", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const items = await storage.getOrderItemsByOrder(order.id);
+      const kitSettings = await storage.getKitchenSettings(user.tenantId);
+      const alertOverdueMinutes = kitSettings?.alertOverdueMinutes ?? 3;
+      const now = new Date();
+
+      // Staged overdue thresholds:
+      //   amber = alertOverdueMinutes (default 3 min) — item-level overdue alert
+      //   manager escalation = max(alertOverdueMinutes + 2, 5) min — critical escalation to manager
+      const amberThreshold = alertOverdueMinutes;
+      const managerThreshold = Math.max(alertOverdueMinutes + 2, 5);
+
+      // Step 1: Promote "queued" items to "ready_to_start" if suggestedStartAt has arrived (0-min overdue).
+      // This is the nominal transition — fired here so KDS consumers always see the correct state.
+      const readyToStartTransitions: string[] = [];
+      for (const item of items) {
+        if (item.cookingStatus === "queued" && item.suggestedStartAt && item.suggestedStartAt <= now) {
+          await storage.updateOrderItemCooking(item.id, { cookingStatus: "ready_to_start" });
+          item.cookingStatus = "ready_to_start";
+          readyToStartTransitions.push(item.id);
+        }
+      }
+      if (readyToStartTransitions.length > 0) {
+        emitToTenant(user.tenantId, "kds:items_ready_to_start", {
+          orderId: order.id,
+          itemIds: readyToStartTransitions,
+        });
+      }
+
+      // Step 2: Compute per-item status enrichment and overdue classification
+      const result = items.map(item => {
+        let minutesRemaining: number | null = null;
+        let minutesOverdueToStart: number | null = null;
+        let overdueLevel: "none" | "amber" | "critical" = "none";
+
+        if (item.cookingStatus === "started" && item.estimatedReadyAt) {
+          minutesRemaining = Math.round((item.estimatedReadyAt.getTime() - now.getTime()) / 60000);
+        }
+
+        // Overdue-to-start: item not yet started but suggestedStartAt has passed.
+        // Include ready_to_start and hold states (hold items with suggestedStartAt are
+        // overdue if their blocking dependency resolved but they were never unblocked).
+        if (
+          item.suggestedStartAt &&
+          ["ready_to_start", "hold"].includes(item.cookingStatus || "queued")
+        ) {
+          const overdueMs = now.getTime() - item.suggestedStartAt.getTime();
+          if (overdueMs > 0) {
+            minutesOverdueToStart = Math.round(overdueMs / 60000);
+            if (minutesOverdueToStart >= managerThreshold) overdueLevel = "critical";
+            else if (minutesOverdueToStart >= amberThreshold) overdueLevel = "amber";
+          }
+        }
+
+        return { ...item, minutesRemaining, minutesOverdueToStart, overdueLevel };
+      });
+
+      // Step 3: Emit staged overdue alerts for items past the amber/critical thresholds
+      const amberItems = result.filter(r => r.overdueLevel !== "none");
+      const criticalItems = result.filter(r => r.overdueLevel === "critical");
+
+      if (amberItems.length > 0) {
+        emitToTenant(user.tenantId, "kds:item_overdue", {
+          orderId: order.id,
+          overdueItems: amberItems.map(r => ({
+            itemId: r.id,
+            itemName: r.name,
+            minutesOverdue: r.minutesOverdueToStart,
+            overdueLevel: r.overdueLevel,
+            suggestedStartAt: r.suggestedStartAt,
+          })),
+        });
+      }
+      if (criticalItems.length > 0) {
+        emitToTenant(user.tenantId, "kds:manager_alert", {
+          type: "items_overdue_critical",
+          orderId: order.id,
+          count: criticalItems.length,
+          items: criticalItems.map(r => ({ itemId: r.id, itemName: r.name, minutesOverdue: r.minutesOverdueToStart })),
+        });
+      }
+
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // POST /api/orders/:id/courses — set up courses for an order
+  app.post("/api/orders/:id/courses", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const { courses } = req.body as { courses: Array<{ courseNumber: number; courseName?: string; itemIds: string[] }> };
+      if (!Array.isArray(courses)) return res.status(400).json({ message: "courses array required" });
+
+      // Verify all itemIds belong to this order (security: prevent cross-order mutation)
+      const orderItems = await storage.getOrderItemsByOrder(order.id);
+      const validItemIds = new Set(orderItems.map(i => i.id));
+      for (const c of courses) {
+        for (const itemId of c.itemIds) {
+          if (!validItemIds.has(itemId)) {
+            return res.status(403).json({ message: `Item ${itemId} does not belong to this order` });
+          }
+        }
+      }
+
+      const createdCourses = [];
+      for (const c of courses) {
+        const created = await storage.createOrderCourse({
+          tenantId: user.tenantId,
+          orderId: order.id,
+          courseNumber: c.courseNumber,
+          courseName: c.courseName || null,
+          status: c.courseNumber === 1 ? "cooking" : "waiting",
+        });
+        createdCourses.push(created);
+
+        // Update item course numbers
+        for (const itemId of c.itemIds) {
+          await storage.updateOrderItemCooking(itemId, { courseNumber: c.courseNumber });
+        }
+      }
+
+      res.json(createdCourses);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // PUT /api/orders/:id/courses/:num/fire — fire a course
+  app.put("/api/orders/:id/courses/:num/fire", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id);
+      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const courseNumber = parseInt(req.params.num, 10);
+      const chefName = (user as any).name || (user as any).username || "Chef";
+      const now = new Date();
+
+      await storage.updateOrderCourse(order.id, courseNumber, {
+        status: "cooking",
+        fireAt: now,
+        firedBy: user.id,
+        firedByName: chefName,
+      });
+
+      // Recalculate timing for items in this course
+      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const courseItems = allItems
+        .filter(i => (i.courseNumber ?? 1) === courseNumber)
+        .map(i => ({ id: i.id, name: i.name, prepMinutes: i.itemPrepMinutes ?? 0, courseNumber: i.courseNumber ?? 1 }));
+
+      if (courseItems.length > 0) {
+        const timings = calculateSuggestedStartTimes(courseItems);
+        for (const t of timings) {
+          await storage.updateOrderItemCooking(t.itemId, { suggestedStartAt: t.suggestedStartAt, estimatedReadyAt: t.estimatedReadyAt });
+        }
+      }
+
+      emitToTenant(user.tenantId, "kds:course_fired", { orderId: order.id, courseNumber, firedBy: chefName });
+
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // GET /api/kds/coordinator/live — expeditor live view
+  app.get("/api/kds/coordinator/live", requireRole("owner", "manager", "kitchen"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allOrders = await storage.getOrdersByTenant(user.tenantId);
+      const activeOrders = allOrders.filter(o => ["new", "sent_to_kitchen", "in_progress", "partially_ready", "ready"].includes(o.status || ""));
+      const now = new Date();
+
+      const result = [];
+      for (const order of activeOrders) {
+        const items = await storage.getOrderItemsByOrder(order.id);
+        const itemsWithTiming = items.map(item => {
+          let minutesRemaining: number | null = null;
+          if (item.cookingStatus === "started" && item.estimatedReadyAt) {
+            minutesRemaining = Math.round((item.estimatedReadyAt.getTime() - now.getTime()) / 60000);
+          }
+          return { ...item, minutesRemaining };
+        });
+
+        const stationSummary: Record<string, { total: number; started: number; ready: number }> = {};
+        for (const item of items) {
+          const st = item.station || "unknown";
+          if (!stationSummary[st]) stationSummary[st] = { total: 0, started: 0, ready: 0 };
+          stationSummary[st].total++;
+          if (item.cookingStatus === "started") stationSummary[st].started++;
+          if (item.cookingStatus === "ready") stationSummary[st].ready++;
+        }
+
+        result.push({ ...order, items: itemsWithTiming, stationSummary });
+      }
+
+      res.json(result);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

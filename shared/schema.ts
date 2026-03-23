@@ -196,6 +196,7 @@ export const menuItems = pgTable("menu_items", {
   station: text("station"),
   course: text("course"),
   hsnCode: text("hsn_code"),
+  prepTimeMinutes: integer("prep_time_minutes"),
 }, (t) => [
   index("idx_menu_items_tenant_id").on(t.tenantId),
   index("idx_menu_items_tenant_category").on(t.tenantId, t.categoryId),
@@ -342,6 +343,18 @@ export const orderItems = pgTable("order_items", {
   metadata: jsonb("metadata"),
   isAddon: boolean("is_addon").default(false),
   modifiers: jsonb("modifiers"),
+  cookingStatus: varchar("cooking_status", { length: 30 }).default("queued"),
+  suggestedStartAt: timestamp("suggested_start_at"),
+  actualStartAt: timestamp("actual_start_at"),
+  estimatedReadyAt: timestamp("estimated_ready_at"),
+  actualReadyAt: timestamp("actual_ready_at"),
+  itemPrepMinutes: integer("item_prep_minutes"),
+  startedById: varchar("started_by_id", { length: 36 }),
+  startedByName: varchar("started_by_name", { length: 255 }),
+  holdReason: text("hold_reason"),
+  holdUntilItemId: varchar("hold_until_item_id", { length: 36 }),
+  holdUntilMinutes: integer("hold_until_minutes"),
+  courseNumber: integer("course_number").default(1),
 }, (t) => [
   index("idx_order_items_order_id").on(t.orderId),
 ]);
@@ -2366,3 +2379,41 @@ export const priceResolutionLog = pgTable("price_resolution_log", {
 export const insertPriceResolutionLogSchema = createInsertSchema(priceResolutionLog).omit({ id: true, resolvedAt: true });
 export type PriceResolutionLogEntry = typeof priceResolutionLog.$inferSelect;
 export type InsertPriceResolutionLogEntry = z.infer<typeof insertPriceResolutionLogSchema>;
+
+export const orderCourses = pgTable("order_courses", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  courseNumber: integer("course_number").notNull(),
+  courseName: varchar("course_name", { length: 50 }),
+  status: varchar("status", { length: 20 }).default("waiting"),
+  fireAt: timestamp("fire_at"),
+  firedBy: varchar("fired_by", { length: 36 }),
+  firedByName: varchar("fired_by_name", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  index("idx_order_courses_order_id").on(t.orderId),
+]);
+
+export const insertOrderCourseSchema = createInsertSchema(orderCourses).omit({ id: true, createdAt: true });
+export type OrderCourse = typeof orderCourses.$inferSelect;
+export type InsertOrderCourse = z.infer<typeof insertOrderCourseSchema>;
+
+export const kitchenSettings = pgTable("kitchen_settings", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().unique(),
+  cookingControlMode: varchar("cooking_control_mode", { length: 20 }).default("selective"),
+  showTimingSuggestions: boolean("show_timing_suggestions").default(true),
+  alertOverdueMinutes: integer("alert_overdue_minutes").default(3),
+  allowRushOverride: boolean("allow_rush_override").default(true),
+  rushRequiresManagerPin: boolean("rush_requires_manager_pin").default(true),
+  managerPinHash: text("manager_pin_hash"),
+  autoHoldBarItems: boolean("auto_hold_bar_items").default(true),
+  defaultPrepSource: varchar("default_prep_source", { length: 20 }).default("recipe"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertKitchenSettingsSchema = createInsertSchema(kitchenSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type KitchenSettings = typeof kitchenSettings.$inferSelect;
+export type InsertKitchenSettings = z.infer<typeof insertKitchenSettingsSchema>;

@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { pool } from "../db";
 import { storage } from "../storage";
+import { snapshotPrepTime } from "../lib/snapshot-prep-time";
 import { requireAuth, requireRole } from "../middleware";
 import { isStripeConfigured, getUncachableStripeClient, getPaymentStripeClient } from "../stripe";
 import { createPaymentLink, getPaymentLink } from "../razorpay";
@@ -246,10 +247,12 @@ export function registerKioskRoutes(app: Express): void {
 
       for (const item of serverItems) {
         const mi = menuMap.get(item.menuItemId);
+        const itemPrepMinutes = await snapshotPrepTime(item.menuItemId, mi?.prepTimeMinutes);
         await storage.createOrderItem({
           orderId: order.id, menuItemId: item.menuItemId, name: item.name,
           quantity: item.quantity, price: item.price.toFixed(2),
           station: mi?.station || null, course: mi?.course || null, notes: item.notes || null,
+          itemPrepMinutes,
         });
       }
 
@@ -327,10 +330,12 @@ export function registerKioskRoutes(app: Express): void {
 
       for (const item of serverItems) {
         const mi = menuMap.get(item.menuItemId);
+        const itemPrepMinutes = await snapshotPrepTime(item.menuItemId, mi?.prepTimeMinutes);
         await storage.createOrderItem({
           orderId: order.id, menuItemId: item.menuItemId, name: item.name,
           quantity: item.quantity, price: item.price.toFixed(2),
           station: mi?.station || null, course: mi?.course || null, notes: item.notes || null,
+          itemPrepMinutes,
         });
       }
 
@@ -418,10 +423,12 @@ export function registerKioskRoutes(app: Express): void {
 
       for (const item of serverItems) {
         const mi = menuMap.get(item.menuItemId);
+        const itemPrepMinutes = await snapshotPrepTime(item.menuItemId, mi?.prepTimeMinutes);
         await storage.createOrderItem({
           orderId: order.id, menuItemId: item.menuItemId, name: item.name,
           quantity: item.quantity, price: item.price.toFixed(2),
           station: mi?.station || null, course: mi?.course || null, notes: item.notes || null,
+          itemPrepMinutes,
         });
       }
 

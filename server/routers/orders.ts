@@ -16,11 +16,71 @@ import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 import { autoAssignTicket } from "../services/chef-assignment";
 import { routeAndPrint } from "../services/printer-service";
 import { resolvePrice } from "../services/price-resolution";
+import { calculateSuggestedStartTimes } from "../services/cooking-timer";
+import { bulkStartOrderItems } from "../services/bulk-start-order";
 
 function fireAutoAssign(tenantId: string, outletId: string | null | undefined, orderId: string, label?: string) {
   if (!outletId) return;
   setImmediate(() => {
     autoAssignTicket(tenantId, outletId, { orderId, menuItemName: label ?? undefined }).catch(() => {});
+  });
+}
+
+/**
+ * Trigger KDS arrival logic: timing engine (selective/course_only) or auto-start.
+ * Must be called whenever an order first enters sent_to_kitchen or in_progress state.
+ */
+function fireKdsArrival(tenantId: string, orderId: string, userId: string, userName: string) {
+  setImmediate(async () => {
+    try {
+      const kitSettings = await storage.getKitchenSettings(tenantId);
+      const mode = kitSettings?.cookingControlMode ?? "selective";
+      const autoHoldBar = kitSettings?.autoHoldBarItems ?? true;
+      const orderItemsList = await storage.getOrderItemsByOrder(orderId);
+
+      if (mode === "auto_start") {
+        const freshOrder = await storage.getOrder(orderId);
+        if (freshOrder) {
+          await bulkStartOrderItems(freshOrder, orderItemsList, tenantId, userId, userName);
+        }
+        emitToTenant(tenantId, "kds:order_arrived", { orderId, mode: "auto_start" });
+      } else if (mode === "selective" || mode === "course_only") {
+        const course1Items = orderItemsList.filter(i => (i.courseNumber ?? 1) === 1);
+        const laterCourseItems = orderItemsList.filter(i => (i.courseNumber ?? 1) > 1);
+
+        const timingInput = course1Items.map(i => ({
+          id: i.id,
+          name: i.name,
+          prepMinutes: i.itemPrepMinutes ?? 0,
+          courseNumber: 1,
+        }));
+        const timings = calculateSuggestedStartTimes(timingInput);
+
+        for (const t of timings) {
+          const oi = course1Items.find(i => i.id === t.itemId);
+          const isBarItem = oi?.station?.toLowerCase() === "bar";
+          await storage.updateOrderItemCooking(t.itemId, {
+            cookingStatus: autoHoldBar && isBarItem ? "hold" : "queued",
+            suggestedStartAt: t.suggestedStartAt,
+            estimatedReadyAt: t.estimatedReadyAt,
+            holdReason: autoHoldBar && isBarItem ? "Auto-held: start when food is ready" : null,
+          });
+        }
+
+        for (const item of laterCourseItems) {
+          await storage.updateOrderItemCooking(item.id, {
+            cookingStatus: "hold",
+            holdReason: `Course ${item.courseNumber ?? 2}: start when fired`,
+            suggestedStartAt: null,
+            estimatedReadyAt: null,
+          });
+        }
+
+        emitToTenant(tenantId, "kds:order_arrived", { orderId, timings });
+      }
+    } catch (err) {
+      console.error("[orders] KDS arrival logic failed (non-fatal):", err);
+    }
   });
 }
 
@@ -464,12 +524,22 @@ export function registerOrdersRoutes(app: Express): void {
             const effectivePrice2 = Array.isArray(item.modifiers) && item.modifiers.length > 0
               ? computeEffectivePrice(resolvedCanonical2, item.modifiers as Array<{ groupId?: string; type?: string; label?: string }>)
               : resolvedCanonical2;
+            // Snapshot prep time for timing engine (Task #108).
+            // Priority: menuItems.prepTimeMinutes → recipe.prepTimeMinutes → null
+            let itemPrepMinutes: number | null = mi?.prepTimeMinutes ?? null;
+            if (itemPrepMinutes === null && item.menuItemId) {
+              try {
+                const recipe = await storage.getRecipeByMenuItem(item.menuItemId);
+                if (recipe?.prepTimeMinutes) itemPrepMinutes = recipe.prepTimeMinutes;
+              } catch (_) { /* non-fatal */ }
+            }
             await storage.createOrderItem({
               ...item,
               price: effectivePrice2.toFixed(2),
               orderId: order.id,
               station: item.station || mi?.station || null,
               course: item.course || mi?.course || null,
+              itemPrepMinutes,
             });
           }
         }
@@ -556,6 +626,10 @@ export function registerOrdersRoutes(app: Express): void {
       }
       if (order.status === "sent_to_kitchen" || order.status === "new") {
         fireAutoAssign(user.tenantId, order.outletId, order.id, `${order.orderType ?? "order"} #${order.id.slice(-6)}`);
+      }
+      // Task #108: Trigger KDS timing engine on order creation if it arrives directly in kitchen
+      if (order.status === "sent_to_kitchen" || order.status === "in_progress") {
+        fireKdsArrival(user.tenantId, order.id, user.id, user.name || user.username || "System");
       }
       res.json({ ...order, items: orderItems });
     } catch (err: any) {
@@ -761,6 +835,9 @@ export function registerOrdersRoutes(app: Express): void {
         });
       });
       fireAutoAssign(user.tenantId, existing.outletId, req.params.id, `${existing.orderType ?? "order"} #${req.params.id.slice(-6)}`);
+
+      // Task #108: Trigger timing engine / auto-start on order arrival
+      fireKdsArrival(user.tenantId, req.params.id, user.id, user.name || user.username || "System");
     }
 
     if (req.body.status === "paid" && existing.status !== "paid" && existing.tableId) {

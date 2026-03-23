@@ -1650,6 +1650,7 @@ export async function seedDatabase() {
   await seedServiceCoordination(tenant.id, outlet.id, waiter.id, manager.id, kitchen.id);
   await seedFoodModifications(tenant.id);
   await seedWastageData(tenant.id, outlet.id, kitchen.id, manager.id);
+  await seedSelectiveCookingData(tenant.id, outlet.id, kitchen.id, waiter.id);
 }
 
 async function seedWastageData(
@@ -2402,4 +2403,158 @@ export async function seedPricingData(): Promise<void> {
   }
 
   console.log("[Pricing] Pricing seed data complete.");
+}
+
+async function seedSelectiveCookingData(
+  tenantId: string,
+  outletId: string,
+  chefId: string,
+  waiterId: string,
+): Promise<void> {
+  const existing = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM order_courses WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (parseInt(existing.rows[0].cnt) > 0) {
+    console.log("[SelectiveCooking] Seed data already exists, skipping.");
+    return;
+  }
+
+  console.log("[SelectiveCooking] Seeding selective cooking demo data...");
+
+  const { rows: menuRows } = await pool.query(
+    `SELECT id, name, price FROM menu_items WHERE tenant_id = $1 LIMIT 10`,
+    [tenantId]
+  );
+  if (menuRows.length < 4) {
+    console.log("[SelectiveCooking] Not enough menu items to seed, skipping.");
+    return;
+  }
+
+  const now = new Date();
+  const makeOrderId = () => require("crypto").randomUUID();
+
+  // Helper to create an order and items via pool
+  async function createSeedOrder(label: string, items: Array<{
+    name: string; price: string; station: string; cookingStatus: string;
+    itemPrepMinutes: number; courseNumber: number;
+    suggestedStartAt?: Date; actualStartAt?: Date; estimatedReadyAt?: Date; actualReadyAt?: Date;
+    holdReason?: string; holdUntilItemId?: string;
+  }>) {
+    const orderId = makeOrderId();
+    await pool.query(
+      `INSERT INTO orders (id, tenant_id, outlet_id, order_type, status, order_number)
+       VALUES ($1,$2,$3,'dine_in','in_progress',$4)
+       ON CONFLICT (id) DO NOTHING`,
+      [orderId, tenantId, outletId, `SEED-SC-${label}`]
+    );
+
+    const itemIds: string[] = [];
+    for (const item of items) {
+      const itemId = makeOrderId();
+      itemIds.push(itemId);
+      await pool.query(
+        `INSERT INTO order_items
+         (id, order_id, name, price, status, station, cooking_status, item_prep_minutes, course_number,
+          suggested_start_at, actual_start_at, estimated_ready_at, actual_ready_at,
+          hold_reason, hold_until_item_id, started_by_id, started_by_name)
+         VALUES ($1,$2,$3,$4,'pending',$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+         ON CONFLICT (id) DO NOTHING`,
+        [
+          itemId, orderId, item.name, item.price, item.station,
+          item.cookingStatus, item.itemPrepMinutes, item.courseNumber,
+          item.suggestedStartAt || null,
+          item.actualStartAt || null,
+          item.estimatedReadyAt || null,
+          item.actualReadyAt || null,
+          item.holdReason || null,
+          item.holdUntilItemId || null,
+          item.actualStartAt ? chefId : null,
+          item.actualStartAt ? "Pat Garcia" : null,
+        ]
+      );
+    }
+    return { orderId, itemIds };
+  }
+
+  // Order 1: Mixed states — queued/started/ready/hold
+  const m0 = menuRows[0];
+  const m1 = menuRows[1];
+  const m2 = menuRows[2];
+  const m3 = menuRows[3];
+
+  const startedAt1 = new Date(now.getTime() - 8 * 60000);
+  const estReady1 = new Date(startedAt1.getTime() + 15 * 60000);
+
+  await createSeedOrder("O1", [
+    { name: m0.name, price: m0.price, station: "grill", cookingStatus: "queued", itemPrepMinutes: 15, courseNumber: 1, suggestedStartAt: new Date(now.getTime() + 2 * 60000) },
+    { name: m1.name, price: m1.price, station: "cold", cookingStatus: "started", itemPrepMinutes: 10, courseNumber: 1, actualStartAt: startedAt1, estimatedReadyAt: estReady1 },
+    { name: m2.name, price: m2.price, station: "grill", cookingStatus: "ready", itemPrepMinutes: 12, courseNumber: 1, actualStartAt: new Date(now.getTime() - 15 * 60000), actualReadyAt: new Date(now.getTime() - 2 * 60000) },
+    { name: m3.name, price: m3.price, station: "bar",   cookingStatus: "hold",  itemPrepMinutes: 5,  courseNumber: 1, holdReason: "Auto-held: start when food is ready" },
+  ]);
+
+  // Order 2: Course-based — course 1 served, course 2 fired
+  if (menuRows.length >= 5) {
+    const m4 = menuRows[4 % menuRows.length];
+    const { orderId: o2Id, itemIds: o2Items } = await createSeedOrder("O2", [
+      { name: m0.name, price: m0.price, station: "cold", cookingStatus: "served", itemPrepMinutes: 8, courseNumber: 1, actualStartAt: new Date(now.getTime() - 30 * 60000), actualReadyAt: new Date(now.getTime() - 15 * 60000) },
+      { name: m1.name, price: m1.price, station: "grill", cookingStatus: "started", itemPrepMinutes: 20, courseNumber: 2, actualStartAt: new Date(now.getTime() - 5 * 60000), estimatedReadyAt: new Date(now.getTime() + 15 * 60000) },
+      { name: m4.name, price: m4.price, station: "cold", cookingStatus: "queued", itemPrepMinutes: 10, courseNumber: 2 },
+    ]);
+    await pool.query(
+      `INSERT INTO order_courses (tenant_id, order_id, course_number, course_name, status, fire_at, fired_by, fired_by_name)
+       VALUES ($1,$2,1,'Starters','served',$3,$4,'Pat Garcia'),
+              ($1,$2,2,'Mains','cooking',$5,$4,'Pat Garcia')
+       ON CONFLICT DO NOTHING`,
+      [tenantId, o2Id, new Date(now.getTime() - 30 * 60000), chefId, new Date(now.getTime() - 5 * 60000)]
+    );
+  }
+
+  // Order 3: 1 item on HOLD (waiting for another), 2 started, 1 queued
+  const { orderId: o3Id, itemIds: o3Items } = await createSeedOrder("O3", [
+    { name: m0.name, price: m0.price, station: "grill", cookingStatus: "started", itemPrepMinutes: 18, courseNumber: 1, actualStartAt: new Date(now.getTime() - 3 * 60000), estimatedReadyAt: new Date(now.getTime() + 15 * 60000) },
+    { name: m1.name, price: m1.price, station: "grill", cookingStatus: "started", itemPrepMinutes: 18, courseNumber: 1, actualStartAt: new Date(now.getTime() - 3 * 60000), estimatedReadyAt: new Date(now.getTime() + 15 * 60000) },
+    { name: m2.name, price: m2.price, station: "cold",  cookingStatus: "queued",  itemPrepMinutes: 5, courseNumber: 1 },
+    { name: m3.name, price: m3.price, station: "bar",   cookingStatus: "hold",   itemPrepMinutes: 5, courseNumber: 1, holdReason: "Waiting for grilled chicken to be ready" },
+  ]);
+  // Update the hold item to reference the first item
+  if (o3Items.length >= 4) {
+    await pool.query(
+      `UPDATE order_items SET hold_until_item_id=$1 WHERE id=$2`,
+      [o3Items[0], o3Items[3]]
+    );
+  }
+
+  // Order 4: Rush triggered — all started
+  const rushAt = new Date(now.getTime() - 2 * 60000);
+  await createSeedOrder("O4", [
+    { name: m0.name, price: m0.price, station: "grill", cookingStatus: "started", itemPrepMinutes: 15, courseNumber: 1, actualStartAt: rushAt, estimatedReadyAt: new Date(rushAt.getTime() + 15 * 60000) },
+    { name: m1.name, price: m1.price, station: "cold",  cookingStatus: "started", itemPrepMinutes: 10, courseNumber: 1, actualStartAt: rushAt, estimatedReadyAt: new Date(rushAt.getTime() + 10 * 60000) },
+    { name: m2.name, price: m2.price, station: "grill", cookingStatus: "started", itemPrepMinutes: 20, courseNumber: 1, actualStartAt: rushAt, estimatedReadyAt: new Date(rushAt.getTime() + 20 * 60000) },
+  ]);
+
+  // Order 5: All items ready, waiting for waiter
+  const readyAt5 = new Date(now.getTime() - 3 * 60000);
+  await pool.query(
+    `INSERT INTO orders (id, tenant_id, outlet_id, order_type, status, order_number)
+     SELECT gen_random_uuid()::text,$1,$2,'dine_in','ready','SEED-SC-O5'
+     WHERE NOT EXISTS (SELECT 1 FROM orders WHERE tenant_id=$1 AND order_number='SEED-SC-O5')`,
+    [tenantId, outletId]
+  );
+  const { rows: o5Rows } = await pool.query(
+    `SELECT id FROM orders WHERE tenant_id=$1 AND order_number='SEED-SC-O5' LIMIT 1`,
+    [tenantId]
+  );
+  if (o5Rows.length > 0) {
+    const o5Id = o5Rows[0].id;
+    for (const mi of [m0, m1, m2].slice(0, 3)) {
+      await pool.query(
+        `INSERT INTO order_items (id, order_id, name, price, status, station, cooking_status, item_prep_minutes, course_number, actual_start_at, actual_ready_at)
+         VALUES (gen_random_uuid()::text,$1,$2,$3,'ready','grill','ready',$4,1,$5,$6)`,
+        [o5Id, mi.name, mi.price, 12, new Date(now.getTime() - 15 * 60000), readyAt5]
+      );
+    }
+  }
+
+  console.log("[SelectiveCooking] Selective cooking seed data complete.");
 }

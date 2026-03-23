@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { requireAuth, requireRole } from "../auth";
+import { snapshotPrepTime } from "../lib/snapshot-prep-time";
 import { emitToTenant } from "../realtime";
 import { storage } from "../storage";
 import { db } from "../db";
@@ -806,12 +807,14 @@ export function registerServiceCoordinationRoutes(app: Express): void {
 
       if (items && items.length > 0) {
         for (const item of items) {
+          const itemPrepMinutes = await snapshotPrepTime(item.menuItemId || null);
           await storage.createOrderItem({
             orderId: order.id,
             menuItemId: item.menuItemId || null,
             name: item.name,
             quantity: item.quantity || 1,
             price: String(item.price || 0),
+            itemPrepMinutes,
           });
         }
       }

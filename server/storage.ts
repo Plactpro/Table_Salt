@@ -141,6 +141,9 @@ import {
   type ChefRoster, type InsertChefRoster,
   type ChefAvailability, type InsertChefAvailability,
   type TicketAssignment, type InsertTicketAssignment,
+  orderCourses, kitchenSettings,
+  type OrderCourse, type InsertOrderCourse,
+  type KitchenSettings, type InsertKitchenSettings,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -615,6 +618,33 @@ export interface IStorage {
     perCounter: Array<{ counterId: string; counterName: string; total: number; unassignedRate: number; avgTicketsPerHour: number }>;
     efficiency: { autoAssignRate: number; avgOrderToAssignSec: number | null; avgAssignToStartSec: number | null };
   }>;
+
+  // Selective Cooking Control (Task #108)
+  getOrderItemCookingStatuses(orderId: string): Promise<OrderItem[]>;
+  updateOrderItemCooking(id: string, data: {
+    cookingStatus?: string;
+    suggestedStartAt?: Date | null;
+    actualStartAt?: Date | null;
+    estimatedReadyAt?: Date | null;
+    actualReadyAt?: Date | null;
+    itemPrepMinutes?: number | null;
+    startedById?: string | null;
+    startedByName?: string | null;
+    holdReason?: string | null;
+    holdUntilItemId?: string | null;
+    holdUntilMinutes?: number | null;
+    courseNumber?: number | null;
+  }): Promise<OrderItem>;
+  getOrderCourses(orderId: string): Promise<OrderCourse[]>;
+  createOrderCourse(data: InsertOrderCourse): Promise<OrderCourse>;
+  updateOrderCourse(orderId: string, courseNumber: number, data: {
+    status?: string;
+    fireAt?: Date | null;
+    firedBy?: string | null;
+    firedByName?: string | null;
+  }): Promise<void>;
+  getKitchenSettings(tenantId: string): Promise<KitchenSettings | undefined>;
+  upsertKitchenSettings(tenantId: string, data: Partial<InsertKitchenSettings>): Promise<KitchenSettings>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2866,6 +2896,88 @@ export class DatabaseStorage implements IStorage {
         avgAssignToStartSec: assignToStartCount > 0 ? Math.round(totalAssignToStartSec / assignToStartCount) : null,
       },
     };
+  }
+
+  async getOrderItemCookingStatuses(orderId: string): Promise<OrderItem[]> {
+    return db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  }
+
+  async updateOrderItemCooking(id: string, data: {
+    cookingStatus?: string;
+    suggestedStartAt?: Date | null;
+    actualStartAt?: Date | null;
+    estimatedReadyAt?: Date | null;
+    actualReadyAt?: Date | null;
+    itemPrepMinutes?: number | null;
+    startedById?: string | null;
+    startedByName?: string | null;
+    holdReason?: string | null;
+    holdUntilItemId?: string | null;
+    holdUntilMinutes?: number | null;
+    courseNumber?: number | null;
+  }): Promise<OrderItem> {
+    const [updated] = await db.update(orderItems).set(data).where(eq(orderItems.id, id)).returning();
+    return updated;
+  }
+
+  async getOrderCourses(orderId: string): Promise<OrderCourse[]> {
+    return db.select().from(orderCourses).where(eq(orderCourses.orderId, orderId));
+  }
+
+  async createOrderCourse(data: InsertOrderCourse): Promise<OrderCourse> {
+    const [course] = await db.insert(orderCourses).values(data).returning();
+    return course;
+  }
+
+  async updateOrderCourse(orderId: string, courseNumber: number, data: {
+    status?: string;
+    fireAt?: Date | null;
+    firedBy?: string | null;
+    firedByName?: string | null;
+  }): Promise<void> {
+    await db.update(orderCourses)
+      .set(data)
+      .where(and(eq(orderCourses.orderId, orderId), eq(orderCourses.courseNumber, courseNumber)));
+  }
+
+  async getKitchenSettings(tenantId: string): Promise<KitchenSettings | undefined> {
+    const [row] = await db.select().from(kitchenSettings).where(eq(kitchenSettings.tenantId, tenantId));
+    return row;
+  }
+
+  async upsertKitchenSettings(tenantId: string, data: Partial<InsertKitchenSettings>): Promise<KitchenSettings> {
+    const existing = await this.getKitchenSettings(tenantId);
+    if (existing) {
+      const allowedFields: Partial<InsertKitchenSettings> = {};
+      if (data.cookingControlMode !== undefined) allowedFields.cookingControlMode = data.cookingControlMode;
+      if (data.showTimingSuggestions !== undefined) allowedFields.showTimingSuggestions = data.showTimingSuggestions;
+      if (data.alertOverdueMinutes !== undefined) allowedFields.alertOverdueMinutes = data.alertOverdueMinutes;
+      if (data.allowRushOverride !== undefined) allowedFields.allowRushOverride = data.allowRushOverride;
+      if (data.rushRequiresManagerPin !== undefined) allowedFields.rushRequiresManagerPin = data.rushRequiresManagerPin;
+      if (data.managerPinHash !== undefined) allowedFields.managerPinHash = data.managerPinHash;
+      if (data.autoHoldBarItems !== undefined) allowedFields.autoHoldBarItems = data.autoHoldBarItems;
+      if (data.defaultPrepSource !== undefined) allowedFields.defaultPrepSource = data.defaultPrepSource;
+      const [updated] = await db.update(kitchenSettings)
+        .set(allowedFields)
+        .where(eq(kitchenSettings.tenantId, tenantId))
+        .returning();
+      return updated;
+    } else {
+      // Explicitly whitelist fields to prevent caller-supplied tenantId override
+      const safeFields: Partial<InsertKitchenSettings> = {};
+      if (data.cookingControlMode !== undefined) safeFields.cookingControlMode = data.cookingControlMode;
+      if (data.showTimingSuggestions !== undefined) safeFields.showTimingSuggestions = data.showTimingSuggestions;
+      if (data.alertOverdueMinutes !== undefined) safeFields.alertOverdueMinutes = data.alertOverdueMinutes;
+      if (data.allowRushOverride !== undefined) safeFields.allowRushOverride = data.allowRushOverride;
+      if (data.rushRequiresManagerPin !== undefined) safeFields.rushRequiresManagerPin = data.rushRequiresManagerPin;
+      if (data.managerPinHash !== undefined) safeFields.managerPinHash = data.managerPinHash;
+      if (data.autoHoldBarItems !== undefined) safeFields.autoHoldBarItems = data.autoHoldBarItems;
+      if (data.defaultPrepSource !== undefined) safeFields.defaultPrepSource = data.defaultPrepSource;
+      const [created] = await db.insert(kitchenSettings)
+        .values({ ...safeFields, tenantId })
+        .returning();
+      return created;
+    }
   }
 }
 

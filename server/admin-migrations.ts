@@ -1752,4 +1752,56 @@ export async function runAdminMigrations(): Promise<void> {
       END IF;
     END $$
   `);
+
+}
+
+export async function runTask108Migrations(): Promise<void> {
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS cooking_status VARCHAR(30) DEFAULT 'queued'`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS suggested_start_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS actual_start_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS estimated_ready_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS actual_ready_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS item_prep_minutes INT`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS started_by_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS started_by_name VARCHAR(255)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS hold_reason TEXT`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS hold_until_item_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS hold_until_minutes INT`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS course_number INT DEFAULT 1`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_courses (
+      id            VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id     VARCHAR(36) NOT NULL,
+      order_id      VARCHAR(36) NOT NULL,
+      course_number INT NOT NULL,
+      course_name   VARCHAR(50),
+      status        VARCHAR(20) DEFAULT 'waiting',
+      fire_at       TIMESTAMP,
+      fired_by      VARCHAR(36),
+      fired_by_name VARCHAR(255),
+      created_at    TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_order_courses_order_id ON order_courses (order_id)`);
+
+  // Create kitchen_settings first (fresh DB), then ALTER for pre-existing tables missing the column
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS kitchen_settings (
+      id                        VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id                 VARCHAR(36) NOT NULL UNIQUE,
+      cooking_control_mode      VARCHAR(20) DEFAULT 'selective',
+      show_timing_suggestions   BOOLEAN DEFAULT true,
+      alert_overdue_minutes     INT DEFAULT 3,
+      allow_rush_override       BOOLEAN DEFAULT true,
+      rush_requires_manager_pin BOOLEAN DEFAULT true,
+      manager_pin_hash          TEXT,
+      auto_hold_bar_items       BOOLEAN DEFAULT true,
+      default_prep_source       VARCHAR(20) DEFAULT 'recipe',
+      created_at                TIMESTAMP DEFAULT NOW(),
+      updated_at                TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  // For tenants already on a previous version of this table, add the column idempotently
+  await pool.query(`ALTER TABLE kitchen_settings ADD COLUMN IF NOT EXISTS manager_pin_hash TEXT`);
 }
