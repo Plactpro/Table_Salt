@@ -229,7 +229,9 @@ export interface IStorage {
   createOrderItem(data: InsertOrderItem): Promise<OrderItem>;
   updateOrderItem(id: string, data: Record<string, any>): Promise<OrderItem | undefined>;
 
-  getInventoryByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<InventoryItem[]>;
+  getInventoryByTenant(tenantId: string, opts?: { limit?: number; offset?: number; itemCategory?: string }): Promise<InventoryItem[]>;
+  getPiecewiseInventory(tenantId: string, opts?: { outletId?: string }): Promise<any[]>;
+  getBreakageReport(tenantId: string, month: string): Promise<any>;
   getInventoryItem(id: string): Promise<InventoryItem | undefined>;
   createInventoryItem(data: InsertInventoryItem): Promise<InventoryItem>;
   updateInventoryItem(id: string, data: Partial<InsertInventoryItem>): Promise<InventoryItem | undefined>;
@@ -487,7 +489,7 @@ export interface IStorage {
   countStockCountsByTenant(tenantId: string): Promise<number>;
 
   // Damaged Inventory
-  getDamagedInventoryByTenant(tenantId: string): Promise<DamagedInventory[]>;
+  getDamagedInventoryByTenant(tenantId: string, opts?: { itemCategory?: string }): Promise<DamagedInventory[]>;
   getDamagedInventoryItem(id: string, tenantId: string): Promise<DamagedInventory | undefined>;
   createDamagedInventory(data: InsertDamagedInventory): Promise<DamagedInventory>;
   updateDamagedInventory(id: string, tenantId: string, data: Partial<InsertDamagedInventory>): Promise<DamagedInventory | undefined>;
@@ -984,11 +986,88 @@ export class DatabaseStorage implements IStorage {
     return i;
   }
 
-  async getInventoryByTenant(tenantId: string, opts?: { limit?: number; offset?: number }) {
-    const q = db.select().from(inventoryItems).where(eq(inventoryItems.tenantId, tenantId));
+  async getInventoryByTenant(tenantId: string, opts?: { limit?: number; offset?: number; itemCategory?: string }) {
+    const conditions = [eq(inventoryItems.tenantId, tenantId)];
+    if (opts?.itemCategory) {
+      conditions.push(eq(inventoryItems.itemCategory, opts.itemCategory));
+    }
+    const whereClause = and(...conditions);
+    const q = db.select().from(inventoryItems).where(whereClause);
     if (opts?.limit !== undefined && opts?.offset !== undefined) return q.limit(opts.limit).offset(opts.offset);
     if (opts?.limit !== undefined) return q.limit(opts.limit);
     return q;
+  }
+  async getPiecewiseInventory(tenantId: string, _opts?: { outletId?: string }) {
+    const result = await pool.query(
+      `SELECT id, name, item_category, current_stock::numeric AS "currentStock",
+              par_level_per_shift AS "parLevelPerShift", reorder_pieces AS "reorderPieces",
+              cost_per_piece::numeric AS "costPerPiece"
+       FROM inventory_items
+       WHERE tenant_id = $1
+         AND item_category IN ('CROCKERY','CUTLERY','GLASSWARE')
+       ORDER BY item_category, name`,
+      [tenantId]
+    );
+    return result.rows.map((r: any) => ({
+      ...r,
+      currentStock: Math.round(Number(r.currentStock)),
+      parLevelPerShift: r.parLevelPerShift ? Number(r.parLevelPerShift) : null,
+      reorderPieces: r.reorderPieces ? Number(r.reorderPieces) : null,
+      costPerPiece: r.costPerPiece ? Number(r.costPerPiece) : null,
+      isBelowPar: r.parLevelPerShift !== null && Math.round(Number(r.currentStock)) < Number(r.parLevelPerShift),
+      isBelowReorder: r.reorderPieces !== null && Math.round(Number(r.currentStock)) < Number(r.reorderPieces),
+    }));
+  }
+  async getBreakageReport(tenantId: string, month: string) {
+    const result = await pool.query(
+      `SELECT
+         ii.id, ii.name, ii.item_category AS "itemCategory", ii.cost_per_piece::numeric AS "costPerPiece",
+         SUM(di.damaged_qty)::int AS "totalPieces",
+         SUM(di.total_value)::numeric AS "totalValue",
+         di.damage_type AS "damageType",
+         di.caused_by_name AS "causedByName",
+         COUNT(*) AS "incidentCount"
+       FROM damaged_inventory di
+       JOIN inventory_items ii ON di.inventory_item_id = ii.id
+       WHERE di.tenant_id = $1
+         AND ii.item_category IN ('CROCKERY','CUTLERY','GLASSWARE')
+         AND di.status = 'approved'
+         AND DATE_TRUNC('month', di.damage_date::date) = DATE_TRUNC('month', $2::date)
+       GROUP BY ii.id, ii.name, ii.item_category, ii.cost_per_piece, di.damage_type, di.caused_by_name
+       ORDER BY "totalValue" DESC`,
+      [tenantId, month + '-01']
+    );
+    const byItem = result.rows;
+    const byCause: Record<string, { pieces: number; pct: number }> = {};
+    let totalPieces = 0;
+    let totalValue = 0;
+    for (const row of byItem) {
+      totalPieces += Number(row.totalPieces);
+      totalValue += Number(row.totalValue);
+      const cause = row.damageType || 'UNKNOWN';
+      if (!byCause[cause]) byCause[cause] = { pieces: 0, pct: 0 };
+      byCause[cause].pieces += Number(row.totalPieces);
+    }
+    for (const cause of Object.keys(byCause)) {
+      byCause[cause].pct = totalPieces > 0 ? Math.round((byCause[cause].pieces / totalPieces) * 100) : 0;
+    }
+    const byStaff: Record<string, { pieces: number; value: number }> = {};
+    for (const row of byItem) {
+      if (row.causedByName) {
+        if (!byStaff[row.causedByName]) byStaff[row.causedByName] = { pieces: 0, value: 0 };
+        byStaff[row.causedByName].pieces += Number(row.totalPieces);
+        byStaff[row.causedByName].value += Number(row.totalValue);
+      }
+    }
+    const date = new Date(month + '-01');
+    const monthLabel = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+    return {
+      month: monthLabel,
+      byItem,
+      byCause,
+      byStaff: Object.entries(byStaff).map(([name, v]) => ({ name, ...v })),
+      totals: { pieces: totalPieces, value: Number(totalValue.toFixed(2)) },
+    };
   }
   async getInventoryItem(id: string) {
     const [i] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id));
@@ -2076,7 +2155,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Damaged Inventory
-  async getDamagedInventoryByTenant(tenantId: string) {
+  async getDamagedInventoryByTenant(tenantId: string, opts?: { itemCategory?: string }) {
+    if (opts?.itemCategory) {
+      const result = await pool.query(
+        `SELECT di.* FROM damaged_inventory di
+         JOIN inventory_items ii ON di.inventory_item_id = ii.id
+         WHERE di.tenant_id = $1 AND ii.item_category = $2
+         ORDER BY di.created_at DESC`,
+        [tenantId, opts.itemCategory]
+      );
+      return result.rows as DamagedInventory[];
+    }
     return db.select().from(damagedInventory).where(eq(damagedInventory.tenantId, tenantId)).orderBy(desc(damagedInventory.createdAt));
   }
   async getDamagedInventoryItem(id: string, tenantId: string) {

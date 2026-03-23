@@ -186,6 +186,13 @@ app.use((req, res, next) => {
     console.error("Alert definitions seed error:", e);
   }
 
+  try {
+    const { seedCrockeryItems } = await import("./seed");
+    await seedCrockeryItems();
+  } catch (e) {
+    console.error("Crockery seed error:", e);
+  }
+
   // Initialize Stripe schema (stripe-replit-sync manages the stripe.* tables)
   try {
     const { runMigrations } = await import("stripe-replit-sync");

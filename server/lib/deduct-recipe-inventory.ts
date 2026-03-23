@@ -51,6 +51,8 @@ export async function deductRecipeInventoryForOrder(
     for (const ing of recipeIngs) {
       const invItem = await storage.getInventoryItem(ing.inventoryItemId);
       if (!invItem) continue;
+      // Guard: never auto-deduct crockery/cutlery/glassware items
+      if (invItem.itemCategory === 'CROCKERY' || invItem.itemCategory === 'CUTLERY' || invItem.itemCategory === 'GLASSWARE') continue;
       const ingUnit = ing.unit || invItem.unit || "pcs";
       const invUnit = invItem.unit || "pcs";
       const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);
@@ -129,6 +131,8 @@ export async function deductRecipeInventoryForItem(
   for (const ing of recipeIngs) {
     const invItem = await storage.getInventoryItem(ing.inventoryItemId);
     if (!invItem) continue;
+    // Guard: never auto-deduct crockery/cutlery/glassware items
+    if (invItem.itemCategory === 'CROCKERY' || invItem.itemCategory === 'CUTLERY' || invItem.itemCategory === 'GLASSWARE') continue;
     const ingUnit = ing.unit || invItem.unit || "pcs";
     const invUnit = invItem.unit || "pcs";
     const baseQty = Number(ing.quantity) / (1 - Number(ing.wastePct || 0) / 100);

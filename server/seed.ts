@@ -2881,6 +2881,135 @@ export async function seedTicketHistoryData(): Promise<void> {
 
   console.log("[TicketHistory] Void/refire/reprint seed data complete.");
 }
+export async function seedCrockeryItems(): Promise<void> {
+  const tenantRes = await pool.query(`SELECT id FROM tenants WHERE slug != 'platform' LIMIT 1`);
+  if (!tenantRes.rows[0]) return;
+  const tenantId = tenantRes.rows[0].id;
+
+  const existingRes = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM inventory_items WHERE tenant_id = $1 AND item_category IN ('CROCKERY','CUTLERY','GLASSWARE')`,
+    [tenantId]
+  );
+  const alreadyHasItems = Number(existingRes.rows[0].cnt) > 0;
+
+  const items: Array<{
+    name: string; itemCategory: string; unitType: string;
+    parLevelPerShift: number; reorderPieces: number; costPerPiece: number; currentStock: number;
+  }> = [
+    { name: 'Dinner Plate',   itemCategory: 'CROCKERY',  unitType: 'PIECE', parLevelPerShift: 80, reorderPieces: 60, costPerPiece: 350, currentStock: 80 },
+    { name: 'Side Plate',     itemCategory: 'CROCKERY',  unitType: 'PIECE', parLevelPerShift: 60, reorderPieces: 40, costPerPiece: 180, currentStock: 60 },
+    { name: 'Soup Bowl',      itemCategory: 'CROCKERY',  unitType: 'PIECE', parLevelPerShift: 40, reorderPieces: 30, costPerPiece: 220, currentStock: 40 },
+    { name: 'Dessert Bowl',   itemCategory: 'CROCKERY',  unitType: 'PIECE', parLevelPerShift: 30, reorderPieces: 20, costPerPiece: 180, currentStock: 30 },
+    { name: 'Serving Dish',   itemCategory: 'CROCKERY',  unitType: 'PIECE', parLevelPerShift: 20, reorderPieces: 12, costPerPiece: 480, currentStock: 20 },
+    { name: 'Sauce Boat',     itemCategory: 'CROCKERY',  unitType: 'PIECE', parLevelPerShift: 15, reorderPieces: 10, costPerPiece: 320, currentStock: 15 },
+    { name: 'Bread Basket',   itemCategory: 'CROCKERY',  unitType: 'PIECE', parLevelPerShift: 20, reorderPieces: 12, costPerPiece: 280, currentStock: 20 },
+    { name: 'Dinner Fork',    itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 100, reorderPieces: 80, costPerPiece: 120, currentStock: 100 },
+    { name: 'Dessert Fork',   itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 60, reorderPieces: 40, costPerPiece: 100, currentStock: 60 },
+    { name: 'Table Spoon',    itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 100, reorderPieces: 80, costPerPiece: 100, currentStock: 100 },
+    { name: 'Dessert Spoon',  itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 60, reorderPieces: 40, costPerPiece: 90, currentStock: 60 },
+    { name: 'Tea Spoon',      itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 80, reorderPieces: 60, costPerPiece: 80, currentStock: 80 },
+    { name: 'Dinner Knife',   itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 100, reorderPieces: 80, costPerPiece: 150, currentStock: 100 },
+    { name: 'Serving Spoon',  itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 20, reorderPieces: 12, costPerPiece: 180, currentStock: 20 },
+    { name: 'Tongs',          itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 10, reorderPieces: 6,  costPerPiece: 220, currentStock: 10 },
+    { name: 'Butter Knife',   itemCategory: 'CUTLERY',   unitType: 'PIECE', parLevelPerShift: 40, reorderPieces: 30, costPerPiece: 90, currentStock: 40 },
+    { name: 'Water Glass',    itemCategory: 'GLASSWARE', unitType: 'PIECE', parLevelPerShift: 80, reorderPieces: 60, costPerPiece: 180, currentStock: 74 },
+    { name: 'Juice Glass',    itemCategory: 'GLASSWARE', unitType: 'PIECE', parLevelPerShift: 60, reorderPieces: 40, costPerPiece: 160, currentStock: 60 },
+    { name: 'Wine Glass',     itemCategory: 'GLASSWARE', unitType: 'PIECE', parLevelPerShift: 40, reorderPieces: 30, costPerPiece: 320, currentStock: 38 },
+    { name: 'Beer Mug',       itemCategory: 'GLASSWARE', unitType: 'PIECE', parLevelPerShift: 30, reorderPieces: 20, costPerPiece: 280, currentStock: 30 },
+    { name: 'Tea Cup+Saucer', itemCategory: 'GLASSWARE', unitType: 'PIECE', parLevelPerShift: 40, reorderPieces: 30, costPerPiece: 260, currentStock: 40 },
+    { name: 'Coffee Mug',     itemCategory: 'GLASSWARE', unitType: 'PIECE', parLevelPerShift: 30, reorderPieces: 20, costPerPiece: 220, currentStock: 30 },
+    { name: 'Water Jug',      itemCategory: 'GLASSWARE', unitType: 'PIECE', parLevelPerShift: 10, reorderPieces: 6,  costPerPiece: 480, currentStock: 10 },
+  ];
+
+  const insertedIds: Record<string, string> = {};
+  if (!alreadyHasItems) {
+    for (const item of items) {
+      const res = await pool.query(
+        `INSERT INTO inventory_items (tenant_id, name, unit, current_stock, item_category, unit_type, par_level_per_shift, reorder_pieces, cost_per_piece, cost_price)
+         VALUES ($1,$2,'pcs',$3,$4,$5,$6,$7,$8,$8) RETURNING id`,
+        [tenantId, item.name, item.currentStock, item.itemCategory, item.unitType, item.parLevelPerShift, item.reorderPieces, item.costPerPiece]
+      );
+      insertedIds[item.name] = res.rows[0].id;
+    }
+  } else {
+    const existingItems = await pool.query(
+      `SELECT id, name FROM inventory_items WHERE tenant_id = $1 AND item_category IN ('CROCKERY','CUTLERY','GLASSWARE')`,
+      [tenantId]
+    );
+    for (const row of existingItems.rows) {
+      insertedIds[row.name] = row.id;
+    }
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  const wineGlassId = insertedIds['Wine Glass'];
+  const waterGlassId = insertedIds['Water Glass'];
+  const dinnerPlateId = insertedIds['Dinner Plate'];
+
+  if (wineGlassId && waterGlassId && dinnerPlateId) {
+    const dmgCheck = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM damaged_inventory WHERE tenant_id = $1 AND damage_number IN ('DMG-CRK-001','DMG-CRK-002','DMG-CRK-003')`,
+      [tenantId]
+    );
+    if (Number(dmgCheck.rows[0].cnt) === 0) {
+      await pool.query(
+        `INSERT INTO damaged_inventory (tenant_id, damage_number, inventory_item_id, damaged_qty, unit_cost, total_value, damage_type, damage_date, disposal_method, status, caused_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [tenantId, 'DMG-CRK-001', wineGlassId, 2, 320, 640, 'BREAKAGE_SERVICE', today, 'DISCARDED', 'approved', 'Service Staff']
+      );
+      await pool.query(
+        `INSERT INTO damaged_inventory (tenant_id, damage_number, inventory_item_id, damaged_qty, unit_cost, total_value, damage_type, damage_date, disposal_method, status, caused_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [tenantId, 'DMG-CRK-002', waterGlassId, 3, 180, 540, 'BREAKAGE_WASHING', today, 'DISCARDED', 'approved', 'Kitchen Staff']
+      );
+      await pool.query(
+        `INSERT INTO damaged_inventory (tenant_id, damage_number, inventory_item_id, damaged_qty, unit_cost, total_value, damage_type, damage_date, disposal_method, status, caused_by_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [tenantId, 'DMG-CRK-003', dinnerPlateId, 2, 350, 700, 'LOST_MISSING', today, 'DISCARDED', 'approved', null]
+      );
+    }
+
+    const sessionCheck = await pool.query(
+      `SELECT id FROM stock_count_sessions WHERE tenant_id = $1 AND count_number = 'CNT-CRK-001'`,
+      [tenantId]
+    );
+    if (!sessionCheck.rows[0]) {
+      const userRes = await pool.query(
+        `SELECT id FROM users WHERE tenant_id = $1 LIMIT 1`,
+        [tenantId]
+      );
+      const userId = userRes.rows[0]?.id;
+      const sessionRes = await pool.query(
+        `INSERT INTO stock_count_sessions (tenant_id, count_number, status, scheduled_date, approved_at, approved_by, created_by)
+         VALUES ($1,$2,$3,$4,NOW(),$5,$5) RETURNING id`,
+        [tenantId, 'CNT-CRK-001', 'approved', today, userId]
+      );
+      if (sessionRes.rows[0]) {
+        const sessionId = sessionRes.rows[0].id;
+        const crockeryCountItems = [
+          { itemId: dinnerPlateId, system: 80, physical: 78, reason: 'BREAKAGE_SERVICE' },
+          { itemId: insertedIds['Soup Bowl'], system: 40, physical: 38, reason: 'BREAKAGE_WASHING' },
+          { itemId: insertedIds['Wine Glass'], system: 40, physical: 38, reason: 'BREAKAGE_SERVICE' },
+          { itemId: waterGlassId, system: 80, physical: 74, reason: 'BREAKAGE_WASHING' },
+          { itemId: insertedIds['Dinner Fork'], system: 100, physical: 98, reason: 'LOST_MISSING' },
+          { itemId: insertedIds['Tea Spoon'], system: 80, physical: 79, reason: 'UNKNOWN' },
+        ];
+        for (const ci of crockeryCountItems) {
+          if (!ci.itemId) continue;
+          await pool.query(
+            `INSERT INTO stock_count_items (session_id, inventory_item_id, system_qty, physical_qty, counted, variance_reason)
+             VALUES ($1,$2,$3,$4,true,$5)`,
+            [sessionId, ci.itemId, ci.system, ci.physical, ci.reason]
+          );
+        }
+      }
+    }
+  }
+
+  console.log("[CrockeryItems] Seeded 23 crockery/cutlery/glassware items + damage records + stock count session.");
+}
+
 export async function seedAlertDefinitions(): Promise<void> {
   const alertDefs = [
     { code: 'ALERT-01', name: 'New Order Received', soundKey: 'new_order', urgency: 'normal', targetRoles: ['kitchen', 'manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },

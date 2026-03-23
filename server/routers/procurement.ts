@@ -1,5 +1,5 @@
 import type { Express } from "express";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { storage } from "../storage";
 import { requireRole } from "../middleware";
 import { emitToTenant } from "../realtime";
@@ -746,8 +746,31 @@ export function registerProcurementRoutes(app: Express): void {
   app.get("/api/stock-counts", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
+      const scope = req.query.scope as string | undefined;
       const sessions = await storage.getStockCountsByTenant(user.tenantId);
-      const result = await Promise.all(sessions.map(async s => ({
+      let filtered = sessions;
+      if (scope === 'CROCKERY_ONLY') {
+        const crockeryCheck = await pool.query(
+          `SELECT DISTINCT sci.session_id FROM stock_count_items sci
+           JOIN inventory_items ii ON sci.inventory_item_id = ii.id
+           JOIN stock_count_sessions scs ON sci.session_id = scs.id
+           WHERE scs.tenant_id = $1 AND ii.item_category IN ('CROCKERY','CUTLERY','GLASSWARE')`,
+          [user.tenantId]
+        );
+        const crockerySessionIds = new Set(crockeryCheck.rows.map((r: any) => r.session_id));
+        filtered = sessions.filter(s => crockerySessionIds.has(s.id));
+      } else if (scope === 'FOOD_ONLY') {
+        const crockeryCheck = await pool.query(
+          `SELECT DISTINCT sci.session_id FROM stock_count_items sci
+           JOIN inventory_items ii ON sci.inventory_item_id = ii.id
+           JOIN stock_count_sessions scs ON sci.session_id = scs.id
+           WHERE scs.tenant_id = $1 AND ii.item_category IN ('CROCKERY','CUTLERY','GLASSWARE')`,
+          [user.tenantId]
+        );
+        const crockerySessionIds = new Set(crockeryCheck.rows.map((r: any) => r.session_id));
+        filtered = sessions.filter(s => !crockerySessionIds.has(s.id));
+      }
+      const result = await Promise.all(filtered.map(async s => ({
         ...s,
         items: await storage.getStockCountItems(s.id),
       })));
@@ -788,6 +811,22 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.get("/api/stock-counts/:id/items", procurementRead, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const session = await storage.getStockCount(req.params.id, user.tenantId);
+      if (!session) return res.status(404).json({ message: "Count session not found" });
+      const result = await pool.query(
+        `SELECT sci.*, ii.item_category AS "itemCategory", ii.unit_type AS "unitType", ii.name AS "itemName"
+         FROM stock_count_items sci
+         JOIN inventory_items ii ON sci.inventory_item_id = ii.id
+         WHERE sci.session_id = $1`,
+        [session.id]
+      );
+      res.json(result.rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.patch("/api/stock-counts/:id/items/:itemId", procurementWrite, async (req, res) => {
     try {
       const user = req.user as any;
@@ -796,9 +835,19 @@ export function registerProcurementRoutes(app: Express): void {
       if (!session) return res.status(404).json({ message: "Count session not found" });
       // Verify item belongs to this session
       const sessionItems = await storage.getStockCountItems(session.id);
-      const itemExists = sessionItems.some(i => i.id === req.params.itemId);
-      if (!itemExists) return res.status(404).json({ message: "Count item not found" });
-      const item = await storage.updateStockCountItem(req.params.itemId, req.body);
+      const sessionItem = sessionItems.find(i => i.id === req.params.itemId);
+      if (!sessionItem) return res.status(404).json({ message: "Count item not found" });
+      const { varianceReason, ...rest } = req.body;
+      const updateData: Record<string, any> = { ...rest };
+      if (varianceReason !== undefined) updateData.varianceReason = varianceReason;
+      // For PIECE items, normalize physicalQty to whole integer before persisting
+      if (updateData.physicalQty !== undefined) {
+        const inv = await storage.getInventoryItem(sessionItem.inventoryItemId);
+        if (inv?.unitType === 'PIECE') {
+          updateData.physicalQty = String(Math.round(parseFloat(String(updateData.physicalQty))));
+        }
+      }
+      const item = await storage.updateStockCountItem(req.params.itemId, updateData);
       if (!item) return res.status(404).json({ message: "Count item not found" });
       res.json(item);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -815,10 +864,15 @@ export function registerProcurementRoutes(app: Express): void {
         if (item.counted && item.physicalQty !== null) {
           const inv = await storage.getInventoryItem(item.inventoryItemId);
           if (inv) {
-            const variance = parseFloat(item.physicalQty) - parseFloat(item.systemQty);
+            const rawVariance = parseFloat(item.physicalQty) - parseFloat(item.systemQty);
+            // For PIECE unit_type items, round to whole integers
+            const isPiece = inv.unitType === 'PIECE';
+            const variance = isPiece ? Math.round(rawVariance) : rawVariance;
+            const newStock = isPiece ? String(Math.round(parseFloat(item.physicalQty))) : item.physicalQty;
             if (Math.abs(variance) > 0.001) {
-              await storage.updateInventoryItem(inv.id, { currentStock: item.physicalQty });
-              await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "adjustment", quantity: variance.toFixed(2), reason: `Stock count ${session.countNumber}` });
+              await storage.updateInventoryItem(inv.id, { currentStock: newStock });
+              const movementQty = isPiece ? String(variance) : variance.toFixed(2);
+              await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "adjustment", quantity: movementQty, reason: `Stock count ${session.countNumber}` });
             }
           }
         }
@@ -833,7 +887,8 @@ export function registerProcurementRoutes(app: Express): void {
   app.get("/api/damaged-inventory", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
-      res.json(await storage.getDamagedInventoryByTenant(user.tenantId));
+      const itemCategory = req.query.itemCategory as string | undefined;
+      res.json(await storage.getDamagedInventoryByTenant(user.tenantId, itemCategory ? { itemCategory } : undefined));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -842,16 +897,26 @@ export function registerProcurementRoutes(app: Express): void {
       const user = req.user as any;
       const n = await storage.countDamagedInventoryByTenant(user.tenantId);
       const damageNumber = `DMG-${String(n + 1).padStart(4, "0")}`;
-      const totalValue = (parseFloat(req.body.damagedQty || "0") * parseFloat(req.body.unitCost || "0")).toFixed(2);
+      // Normalize damagedQty to whole integer for PIECE items before persisting
+      let normalizedBody = { ...req.body };
+      if (req.body.inventoryItemId && req.body.damagedQty !== undefined) {
+        const invItem = await storage.getInventoryItem(req.body.inventoryItemId);
+        if (invItem?.unitType === 'PIECE') {
+          normalizedBody.damagedQty = String(Math.round(parseFloat(String(req.body.damagedQty))));
+        }
+      }
+      const totalValue = (parseFloat(normalizedBody.damagedQty || "0") * parseFloat(normalizedBody.unitCost || "0")).toFixed(2);
       const damage = await storage.createDamagedInventory(
-        insertDamagedInventorySchema.parse({ ...req.body, tenantId: user.tenantId, damageNumber, totalValue, createdBy: user.id })
+        insertDamagedInventorySchema.parse({ ...normalizedBody, tenantId: user.tenantId, damageNumber, totalValue, createdBy: user.id })
       );
       // Deduct from inventory
       const inv = await storage.getInventoryItem(damage.inventoryItemId);
       if (inv) {
-        const newStock = Math.max(0, parseFloat(inv.currentStock || "0") - parseFloat(damage.damagedQty));
-        await storage.updateInventoryItem(inv.id, { currentStock: newStock.toFixed(2) });
-        await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "waste", quantity: `-${damage.damagedQty}`, reason: `Damage ${damageNumber}` });
+        const rawNewStock = Math.max(0, parseFloat(inv.currentStock || "0") - parseFloat(damage.damagedQty));
+        const newStock = inv.unitType === 'PIECE' ? Math.round(rawNewStock) : rawNewStock;
+        const damagedQtyRounded = inv.unitType === 'PIECE' ? Math.round(parseFloat(damage.damagedQty)) : parseFloat(damage.damagedQty);
+        await storage.updateInventoryItem(inv.id, { currentStock: String(newStock) });
+        await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "waste", quantity: String(-damagedQtyRounded), reason: `Damage ${damageNumber}` });
       }
       res.json(damage);
     } catch (err: any) { res.status(400).json({ message: err.message }); }
@@ -863,6 +928,18 @@ export function registerProcurementRoutes(app: Express): void {
       const damage = await storage.updateDamagedInventory(req.params.id, user.tenantId, { ...req.body, reviewedBy: req.body.status !== undefined ? user.id : undefined, reviewedAt: req.body.status !== undefined ? new Date() : undefined });
       if (!damage) return res.status(404).json({ message: "Damage record not found" });
       res.json(damage);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Breakage Monthly Report ───────────────────────────────────────────────
+  app.get("/api/reports/breakage-monthly", procurementRead, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const year = req.query.year as string || String(new Date().getFullYear());
+      const month = String(req.query.month || (new Date().getMonth() + 1)).padStart(2, '0');
+      const monthStr = `${year}-${month}`;
+      const report = await storage.getBreakageReport(user.tenantId, monthStr);
+      res.json(report);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

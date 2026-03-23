@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { db } from "../db";
-import { eq, sql } from "drizzle-orm";
+import { eq, sql, and } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
 import { requirePermission } from "../permissions";
 import { can } from "../permissions";
@@ -17,11 +17,33 @@ export function registerInventoryRoutes(app: Express): void {
       const user = req.user as any;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const itemCategory = req.query.itemCategory as string | undefined;
+      const countWhere = itemCategory
+        ? and(eq(inventoryItemsTable.tenantId, user.tenantId), eq(inventoryItemsTable.itemCategory, itemCategory))
+        : eq(inventoryItemsTable.tenantId, user.tenantId);
       const [data, [{ total }]] = await Promise.all([
-        storage.getInventoryByTenant(user.tenantId, { limit, offset }),
-        db.select({ total: sql<number>`count(*)::int` }).from(inventoryItemsTable).where(eq(inventoryItemsTable.tenantId, user.tenantId)),
+        storage.getInventoryByTenant(user.tenantId, { limit, offset, itemCategory }),
+        db.select({ total: sql<number>`count(*)::int` }).from(inventoryItemsTable).where(countWhere),
       ]);
       res.json({ data, total: Number(total), limit, offset });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/inventory/par-check/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const items = await storage.getPiecewiseInventory(user.tenantId, { outletId: req.params.outletId });
+      for (const item of items) {
+        if (item.isBelowReorder) {
+          alertEngine.trigger('ALERT-10', {
+            tenantId: user.tenantId,
+            outletId: req.params.outletId,
+            referenceId: item.id,
+            message: `${item.name} below par level: ${item.currentStock} pcs (Par: ${item.parLevelPerShift} pcs)`,
+          }).catch(() => {});
+        }
+      }
+      res.json(items);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -58,7 +80,8 @@ export function registerInventoryRoutes(app: Express): void {
       }
     }
 
-    const newStock = Number(item.currentStock) + (type === "in" ? Number(quantity) : -Number(quantity));
+    const rawNewStock = Number(item.currentStock) + (type === "in" ? Number(quantity) : -Number(quantity));
+    const newStock = item.unitType === 'PIECE' ? Math.round(rawNewStock) : rawNewStock;
     await storage.updateInventoryItem(req.params.id, { currentStock: String(newStock) });
     await storage.createStockMovement({
       tenantId: user.tenantId,

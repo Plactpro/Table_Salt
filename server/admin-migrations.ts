@@ -2002,6 +2002,23 @@ export async function runTask108Migrations(): Promise<void> {
   `);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_def_system_default ON alert_definitions(alert_code) WHERE tenant_id IS NULL`);
 
+  // Task #116: Crockery & Cutlery Tracking — inventory_items new columns
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS item_category VARCHAR(30) DEFAULT 'INGREDIENT'`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS unit_type VARCHAR(20) DEFAULT 'WEIGHT'`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS par_level_per_shift INT`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS reorder_pieces INT`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS cost_per_piece DECIMAL(10,2)`);
+  await pool.query(`ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS supplier_id_ref VARCHAR(36)`);
+  await pool.query(`UPDATE inventory_items SET item_category = 'INGREDIENT' WHERE item_category IS NULL`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_inventory_item_category ON inventory_items(tenant_id, item_category)`);
+
+  // Task #116: stock_count_items — variance_reason column
+  await pool.query(`ALTER TABLE stock_count_items ADD COLUMN IF NOT EXISTS variance_reason VARCHAR(50)`);
+
+  // Task #116: damaged_inventory — photo_url and caused_by_name columns
+  await pool.query(`ALTER TABLE damaged_inventory ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+  await pool.query(`ALTER TABLE damaged_inventory ADD COLUMN IF NOT EXISTS caused_by_name VARCHAR(100)`);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS alert_outlet_configs (
       id            VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
