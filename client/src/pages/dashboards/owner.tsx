@@ -14,6 +14,8 @@ import { motion } from "framer-motion";
 import { useAuth, useSubscription } from "@/lib/auth";
 import { BusinessType, tierPricing, businessConfig } from "@/lib/subscription";
 import { formatCurrency } from "@shared/currency";
+import { TrialBanner } from "@/components/layout/TrialBanner";
+import { GettingStartedChecklist } from "@/components/onboarding/GettingStartedChecklist";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -254,6 +256,8 @@ export default function OwnerDashboard() {
       initial="hidden"
       animate="show"
     >
+      <TrialBanner />
+      <GettingStartedChecklist />
       <motion.div variants={fadeUp}>
         <Card className="overflow-hidden border-0 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent">
           <CardContent className="p-6">

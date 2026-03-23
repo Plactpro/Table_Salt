@@ -12,10 +12,11 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { motion, AnimatePresence } from "framer-motion";
+import { useLocation } from "wouter";
 import {
   Save, Building2, Receipt, Settings, CheckCircle2, Crown, Store,
   Clock, Globe, DollarSign, Search, Eye, RotateCcw,
-  CreditCard, Printer,
+  CreditCard, Printer, Zap, Phone,
 } from "lucide-react";
 import PrintQueuePanel from "@/components/pos/PrintQueuePanel";
 import {
@@ -35,6 +36,126 @@ interface TenantData {
   currency?: string;
   currencyPosition?: string;
   currencyDecimals?: number;
+}
+
+function getDaysRemaining(trialEndsAt: string | null | undefined): number {
+  if (!trialEndsAt) return 0;
+  const end = new Date(trialEndsAt);
+  const now = new Date();
+  return Math.max(0, Math.ceil((end.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)));
+}
+
+function SubscriptionPlanCard() {
+  const { tenant } = useAuth();
+  const [, navigate] = useLocation();
+
+  if (!tenant) return null;
+
+  const status = tenant.subscriptionStatus ?? "trialing";
+  const days = getDaysRemaining(tenant.trialEndsAt);
+  const isTrialing = status === "trialing";
+  const isActive = status === "active";
+
+  let statusLabel = "Trial";
+  let statusColor = "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200";
+  if (isActive) {
+    statusLabel = "Active";
+    statusColor = "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200";
+  } else if (status === "canceled") {
+    statusLabel = "Canceled";
+    statusColor = "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200";
+  } else if (status === "past_due") {
+    statusLabel = "Past Due";
+    statusColor = "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200";
+  }
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.02 }}>
+      <Card data-testid="card-current-plan" className="border-primary/20 bg-gradient-to-r from-primary/5 to-transparent max-w-4xl">
+        <CardContent className="p-5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="p-2.5 rounded-xl bg-primary/10">
+                <Crown className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your Plan</span>
+                  <Badge className={`text-xs px-2 py-0 ${statusColor}`} data-testid="text-plan-name">
+                    {statusLabel}
+                  </Badge>
+                </div>
+                {isTrialing ? (
+                  <div>
+                    <p className="text-sm font-medium">Free trial</p>
+                    <p className="text-xs text-muted-foreground" data-testid="text-trial-days">
+                      {days > 0 ? `${days} ${days === 1 ? "day" : "days"} remaining — ₹0/month during trial` : "Trial ended"}
+                    </p>
+                  </div>
+                ) : isActive && tenant.stripeSubscriptionId ? (
+                  <div>
+                    <p className="text-sm font-medium capitalize">{tenant.plan} Plan</p>
+                    <p className="text-xs text-muted-foreground">Subscription active</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-sm font-medium capitalize">{tenant.plan} Plan</p>
+                    <p className="text-xs text-muted-foreground capitalize">{status.replace("_", " ")}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              {isTrialing ? (
+                <>
+                  <p className="text-xs text-muted-foreground hidden sm:block">Full access to all features</p>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      className="gap-1.5"
+                      onClick={() => navigate("/billing")}
+                      data-testid="button-upgrade-plan"
+                    >
+                      <Zap className="h-3.5 w-3.5" />
+                      Upgrade to Pro — ₹2,999/mo
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate("/billing")}
+                      data-testid="button-contact-sales"
+                    >
+                      <Phone className="h-3.5 w-3.5 mr-1" />
+                      Contact sales
+                    </Button>
+                  </div>
+                </>
+              ) : isActive && tenant.stripeSubscriptionId ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => navigate("/billing")}
+                  data-testid="button-upgrade-plan"
+                >
+                  Manage subscription
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  className="gap-1.5"
+                  onClick={() => navigate("/billing")}
+                  data-testid="button-upgrade-plan"
+                >
+                  <Zap className="h-3.5 w-3.5" />
+                  Upgrade Plan
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
 }
 
 export default function SettingsPage() {
@@ -309,6 +430,8 @@ export default function SettingsPage() {
           <p className="text-muted-foreground">Manage your restaurant configuration</p>
         </div>
       </div>
+
+      <SubscriptionPlanCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-4xl">
         <div className="lg:col-span-2 space-y-6">
