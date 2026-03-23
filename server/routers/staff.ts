@@ -5,6 +5,7 @@ import {
   filterValidOrders, computeHourlySales, computeChannelMix, computeHeatmap,
   computeTopItems, computeFinanceTotals, computeWeeklyForecast, isVoidOrCancelled,
 } from "../analytics-helpers";
+import { pool } from "../db";
 
 export function registerStaffRoutes(app: Express): void {
   app.get("/api/staff-schedules", requireAuth, async (req, res) => {
@@ -60,6 +61,21 @@ export function registerStaffRoutes(app: Express): void {
     res.json(report);
   });
 
+  app.get("/api/analytics/summary", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const from = req.query.from ? new Date(req.query.from as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const to = req.query.to ? new Date(req.query.to as string) : new Date();
+    const report = await storage.getSalesReport(user.tenantId, from, to);
+    res.json({
+      totalRevenue: Number(report.totals?.revenue ?? 0),
+      totalRefunds: report.totalRefunds,
+      totalRefunded: report.totalRefunded,
+      refundCount: report.refundCount,
+      netRevenue: report.netRevenue,
+      orderCount: Number(report.totals?.orderCount ?? 0),
+    });
+  });
+
   app.get("/api/reports/operations", requireAuth, async (req, res) => {
     const user = req.user as any;
     const from = req.query.from ? new Date(req.query.from as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
@@ -72,7 +88,22 @@ export function registerStaffRoutes(app: Express): void {
     const validOrders = filterValidOrders(rangeOrders);
     const totalRevenue = validOrders.reduce((s, o) => s + (Number(o.total) || 0), 0);
     const totalOrders = validOrders.length;
-    const hourlySales = computeHourlySales(rangeOrders);
+
+    // Fetch refunds for net revenue calculations
+    const { rows: opRefundRows } = await pool.query(
+      `SELECT bp.bill_id, bp.amount, bp.created_at, b.created_at AS bill_created_at
+       FROM bill_payments bp
+       JOIN bills b ON b.id = bp.bill_id
+       WHERE bp.tenant_id = $1 AND bp.is_refund = true AND b.created_at >= $2 AND b.created_at <= $3`,
+      [user.tenantId, from, to]
+    );
+    const opRefunds = opRefundRows.map((r: { bill_id: string; amount: string; created_at: Date | null; bill_created_at: Date | null }) => ({
+      billId: r.bill_id,
+      amount: r.amount,
+      createdAt: r.created_at,
+      billCreatedAt: r.bill_created_at,
+    }));
+    const hourlySales = computeHourlySales(rangeOrders, opRefunds);
     const channelMix = computeChannelMix(rangeOrders);
     const heatmapData = computeHeatmap(rangeOrders);
     const allItems = await storage.getOrderItemsByTenant(user.tenantId);
@@ -155,15 +186,33 @@ export function registerStaffRoutes(app: Express): void {
     }
     const labourSnapshots = await storage.getLabourCostSnapshots(user.tenantId, from, to);
     const totalLabourCost = labourSnapshots.reduce((s, l) => s + (Number(l.actualCost) || 0) + (Number(l.overtimeCost) || 0), 0);
+
+    // Fetch refunds, attributed to the bill's creation date (order revenue date)
+    const { rows: refundRows } = await pool.query(
+      `SELECT bp.bill_id, bp.amount
+       FROM bill_payments bp
+       JOIN bills b ON b.id = bp.bill_id
+       WHERE bp.tenant_id = $1 AND bp.is_refund = true AND b.created_at >= $2 AND b.created_at <= $3`,
+      [user.tenantId, from, to]
+    );
+    const totalRefunded = refundRows.reduce((s: number, r: { amount: string }) => s + Math.abs(Number(r.amount)), 0);
+    const refundCount = refundRows.length;
+
     const grossSales = netSales + totalTax;
+    const netRevenue = Math.max(0, grossSales - totalRefunded);
     const foodCostPct = grossSales > 0 ? (totalFoodCost / grossSales) * 100 : 0;
     const labourPct = grossSales > 0 ? (totalLabourCost / grossSales) * 100 : 0;
     const grossMargin = grossSales - totalFoodCost - totalLabourCost;
     const grossMarginPct = grossSales > 0 ? (grossMargin / grossSales) * 100 : 0;
+    const totalRefundedRounded = Math.round(totalRefunded * 100) / 100;
     res.json({
       netSales: Math.round(netSales * 100) / 100,
       totalTax: Math.round(totalTax * 100) / 100,
       totalDiscount: Math.round(totalDiscount * 100) / 100,
+      totalRefunded: totalRefundedRounded,
+      totalRefunds: totalRefundedRounded,
+      refundCount,
+      netRevenue: Math.round(netRevenue * 100) / 100,
       voidCount,
       voidAmount: Math.round(voidAmount * 100) / 100,
       foodCostPct: Math.round(foodCostPct * 10) / 10,

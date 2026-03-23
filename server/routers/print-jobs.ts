@@ -7,7 +7,7 @@ import { routeAndPrint } from "../services/printer-service";
 const VALID_PRINT_JOB_STATUSES = ["queued", "printing", "printed", "completed", "failed", "cancelled"] as const;
 type PrintJobStatus = typeof VALID_PRINT_JOB_STATUSES[number];
 
-const VALID_PRINT_JOB_TYPES = ["kot", "bill", "receipt", "label", "report", "test", "reprint_kot", "reprint_bill"] as const;
+const VALID_PRINT_JOB_TYPES = ["kot", "bill", "receipt", "label", "report", "test", "reprint_kot", "reprint_bill", "refund_receipt"] as const;
 type PrintJobType = typeof VALID_PRINT_JOB_TYPES[number];
 
 export async function getNextKotSequence(tenantId: string, orderId: string): Promise<number> {
@@ -254,6 +254,37 @@ export function registerPrintJobRoutes(app: Express): void {
         outletId: orderRows[0].outlet_id ?? user.outletId ?? null,
         tenantId: user.tenantId,
         triggeredByName: user.name || user.username,
+      });
+
+      res.json({
+        success: true,
+        jobIds: result.jobIds,
+        ...(result.htmlFallback ? { htmlFallback: result.htmlFallback } : {}),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/print/refund-receipt/:billId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { billId } = req.params;
+      const { refundPaymentId } = req.body as { refundPaymentId?: string };
+      const { rows: billRows } = await pool.query(
+        `SELECT outlet_id FROM bills WHERE id = $1 AND tenant_id = $2`,
+        [billId, user.tenantId]
+      );
+      if (billRows.length === 0) return res.status(404).json({ message: "Bill not found" });
+      const outletId = billRows[0].outlet_id ?? user.outletId ?? null;
+
+      const result = await routeAndPrint({
+        jobType: "refund_receipt",
+        referenceId: billId,
+        outletId,
+        tenantId: user.tenantId,
+        triggeredByName: user.name || user.username,
+        ...(refundPaymentId ? { payload: { refundPaymentId } } : {}),
       });
 
       res.json({

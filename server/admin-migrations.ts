@@ -240,6 +240,9 @@ export async function runAdminMigrations(): Promise<void> {
   // Razorpay payment ID stored on bill_payments for reconciliation
   await pool.query(`ALTER TABLE bill_payments ADD COLUMN IF NOT EXISTS razorpay_payment_id TEXT`);
 
+  // Task #105: Razorpay refund ID stored on refund bill_payments for reconciliation
+  await pool.query(`ALTER TABLE bill_payments ADD COLUMN IF NOT EXISTS razorpay_refund_id TEXT`);
+
   // Per-tenant Razorpay key secret (stored encrypted-at-rest by DB; only accessible server-side)
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS razorpay_key_secret TEXT`);
 

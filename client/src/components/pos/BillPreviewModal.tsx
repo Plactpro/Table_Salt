@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogPageContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -151,6 +152,9 @@ export default function BillPreviewModal({
   const [voidNotes, setVoidNotes] = useState("");
   const [refundAmount, setRefundAmount] = useState("");
   const [refundReason, setRefundReason] = useState("");
+  const [refundedItemIds, setRefundedItemIds] = useState<string[]>([]);
+  const [refundMode, setRefundMode] = useState<"items" | "manual">("items");
+  const [refundStep, setRefundStep] = useState(false);
   const [upiMarkedPaid, setUpiMarkedPaid] = useState(false);
   const [loyaltySearchPhone, setLoyaltySearchPhone] = useState("");
   const [lookedUpCustomer, setLookedUpCustomer] = useState<{
@@ -209,6 +213,34 @@ export default function BillPreviewModal({
     enabled: !!orderId,
     retry: false,
   });
+
+  const { data: orderItemsData } = useQuery<{ id: string; menuItemId: string | null; name: string | null; quantity: number | null; price: string | null }[]>({
+    queryKey: ["/api/orders/items", orderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/orders/${orderId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.items ?? [];
+    },
+    enabled: !!orderId && refundStep,
+    staleTime: 60000,
+  });
+
+  const refundItems = orderItemsData && orderItemsData.length > 0
+    ? orderItemsData.map(oi => ({
+        id: oi.id,
+        menuItemId: oi.menuItemId ?? oi.id,
+        name: oi.name ?? "",
+        quantity: oi.quantity ?? 1,
+        price: Number(oi.price ?? 0),
+      }))
+    : cart.map(item => ({
+        id: item.menuItemId,
+        menuItemId: item.menuItemId,
+        name: item.name,
+        quantity: item.quantity,
+        price: item.price,
+      }));
 
   useEffect(() => {
     if (existingBillData && !createdBill) {
@@ -393,15 +425,28 @@ export default function BillPreviewModal({
         amount: parseFloat(refundAmount),
         reason: refundReason,
         paymentMethod: "CASH",
+        refundedItemIds: refundedItemIds.length > 0 ? refundedItemIds : undefined,
       });
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: { billPaymentStatus?: string; refundPaymentId?: string }) => {
       setStep("receipt");
+      if (data?.billPaymentStatus && createdBill) {
+        setCreatedBill(prev => prev ? { ...prev, paymentStatus: data.billPaymentStatus! } : prev);
+      }
       setRefundAmount("");
       setRefundReason("");
+      setRefundedItemIds([]);
       queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
       toast({ title: "Refund recorded", description: `${fmt(parseFloat(refundAmount))} refunded` });
+      if (createdBill?.id) {
+        fetch(`/api/print/refund-receipt/${createdBill.id}`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refundPaymentId: data?.refundPaymentId }),
+        }).catch(() => {});
+      }
     },
     onError: (err: Error) => toast({ title: "Refund failed", description: err.message, variant: "destructive" }),
   });
@@ -546,6 +591,9 @@ export default function BillPreviewModal({
     setVoidNotes("");
     setRefundAmount("");
     setRefundReason("");
+    setRefundedItemIds([]);
+    setRefundMode("items");
+    setRefundStep(false);
     setUpiMarkedPaid(false);
     setLoyaltySearchPhone("");
     setLookedUpCustomer(null);
@@ -687,7 +735,10 @@ export default function BillPreviewModal({
   const stepLabel = step === "preview" ? "Bill Preview" : step === "payment" ? "Payment" : step === "void" ? "Void Bill" : step === "refund" ? "Issue Refund" : "Receipt";
   const goBack = () => {
     if (step === "payment") setStep("preview");
-    else if (step === "void" || step === "refund") setStep("receipt");
+    else if (step === "void" || step === "refund") {
+      if (step === "refund") setRefundStep(false);
+      setStep("receipt");
+    }
     else setStep("payment");
   };
 
@@ -1495,6 +1546,16 @@ export default function BillPreviewModal({
                   </p>
                 )}
                 <p className="font-bold text-xl text-primary mt-1">{fmt(grandTotal)}</p>
+                {createdBill?.paymentStatus === "partially_refunded" && (
+                  <Badge variant="outline" className="mt-1 text-orange-600 border-orange-400 bg-orange-50 dark:bg-orange-950/30" data-testid="badge-partially-refunded">
+                    Partially Refunded
+                  </Badge>
+                )}
+                {createdBill?.paymentStatus === "refunded" && (
+                  <Badge variant="outline" className="mt-1 text-red-600 border-red-400 bg-red-50 dark:bg-red-950/30" data-testid="badge-refunded">
+                    Fully Refunded
+                  </Badge>
+                )}
               </div>
 
               {lookedUpCustomer && (
@@ -1583,7 +1644,7 @@ export default function BillPreviewModal({
                   <Mail className="h-4 w-4 mr-2" /> Email
                 </Button>
                 {isManagerOrOwner && createdBill && (
-                  <Button variant="outline" onClick={() => setStep("refund")}
+                  <Button variant="outline" onClick={() => { setStep("refund"); setRefundStep(true); }}
                     className="text-orange-600 border-orange-300 hover:bg-orange-50 col-span-2" data-testid="button-refund">
                     <RotateCcw className="h-4 w-4 mr-2" /> Issue Refund
                   </Button>
@@ -1649,6 +1710,87 @@ export default function BillPreviewModal({
               <div className="text-sm text-muted-foreground bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
                 Refund for bill <strong>{billNumber}</strong> · Total paid: {fmt(grandTotal)}
               </div>
+
+              {/* Mode toggle */}
+              <div className="flex gap-2">
+                <Button size="sm" variant={refundMode === "items" ? "default" : "outline"}
+                  className="flex-1 text-xs" onClick={() => setRefundMode("items")}
+                  data-testid="button-refund-mode-items">
+                  Select Items
+                </Button>
+                <Button size="sm" variant={refundMode === "manual" ? "default" : "outline"}
+                  className="flex-1 text-xs" onClick={() => {
+                    setRefundMode("manual");
+                    setRefundedItemIds([]);
+                  }} data-testid="button-refund-mode-manual">
+                  Manual Amount
+                </Button>
+              </div>
+
+              {refundMode === "items" && refundItems.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-medium">Select items to refund</p>
+                    <Button size="sm" variant="ghost" className="text-xs h-6 px-2"
+                      data-testid="button-refund-select-all"
+                      onClick={() => {
+                        const allIds = refundItems.map(item => item.id);
+                        if (refundedItemIds.length === allIds.length) {
+                          setRefundedItemIds([]);
+                          setRefundAmount("");
+                        } else {
+                          setRefundedItemIds(allIds);
+                          const total = refundItems.reduce((s, item) => s + (item.price * item.quantity), 0);
+                          setRefundAmount(total.toFixed(2));
+                        }
+                      }}>
+                      {refundedItemIds.length === refundItems.length ? "Deselect All" : "Select All"}
+                    </Button>
+                  </div>
+                  <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
+                    {refundItems.map((item, idx) => {
+                      const itemId = item.id;
+                      const checked = refundedItemIds.includes(itemId);
+                      const lineTotal = item.price * item.quantity;
+                      return (
+                        <div key={itemId} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/40 cursor-pointer"
+                          data-testid={`refund-item-row-${idx}`}
+                          onClick={() => {
+                            let newIds: string[];
+                            if (checked) {
+                              newIds = refundedItemIds.filter(id => id !== itemId);
+                            } else {
+                              newIds = [...refundedItemIds, itemId];
+                            }
+                            setRefundedItemIds(newIds);
+                            const newTotal = refundItems.reduce((s, it) => {
+                              return newIds.includes(it.id) ? s + (it.price * it.quantity) : s;
+                            }, 0);
+                            setRefundAmount(newTotal > 0 ? newTotal.toFixed(2) : "");
+                          }}>
+                          <Checkbox checked={checked} data-testid={`checkbox-refund-item-${idx}`}
+                            onCheckedChange={() => {}} />
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm truncate">{item.quantity}× {item.name}</span>
+                          </div>
+                          <span className="text-sm font-medium shrink-0">{fmt(lineTotal)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {refundedItemIds.length > 0 && (
+                    <div className="text-xs text-muted-foreground space-y-0.5" data-testid="text-refund-items-subtotal">
+                      <p>
+                        {refundedItemIds.length} item(s) selected · Subtotal: {fmt(parseFloat(refundAmount || "0"))}
+                      </p>
+                      <p className="italic truncate">
+                        {refundItems.filter(item => refundedItemIds.includes(item.id)).map(item => `${item.quantity}× ${item.name}`).join(", ")}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1">
                 <p className="text-xs font-medium">Refund Amount <span className="text-destructive">*</span></p>
                 <div className="flex gap-2">
@@ -1664,7 +1806,10 @@ export default function BillPreviewModal({
                     className="flex-1"
                   />
                   <Button size="sm" variant="outline" className="text-xs whitespace-nowrap"
-                    onClick={() => setRefundAmount(grandTotal.toFixed(2))}>
+                    onClick={() => {
+                      setRefundAmount(grandTotal.toFixed(2));
+                      setRefundedItemIds(refundItems.map(item => item.id));
+                    }}>
                     Full ({fmt(grandTotal)})
                   </Button>
                 </div>
@@ -1681,7 +1826,7 @@ export default function BillPreviewModal({
                 </Select>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => setStep("receipt")}>Cancel</Button>
+                <Button variant="outline" className="flex-1" onClick={() => { setRefundStep(false); setStep("receipt"); }}>Cancel</Button>
                 <Button className="flex-1 bg-orange-600 hover:bg-orange-700"
                   disabled={!refundAmount || !refundReason || refundBillMutation.isPending}
                   onClick={() => refundBillMutation.mutate()} data-testid="button-confirm-refund">

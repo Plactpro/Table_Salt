@@ -10,6 +10,10 @@ export interface RazorpayPaymentLink {
   payments?: Array<{ payment_id: string; status: string; method?: string }>;
 }
 
+interface RazorpayApiError {
+  error?: { description?: string };
+}
+
 function getCredentials(tenantKeyId?: string | null, tenantKeySecret?: string | null): { keyId: string; keySecret: string } {
   const keyId = tenantKeyId || process.env.RAZORPAY_KEY_ID;
   const keySecret = tenantKeySecret || process.env.RAZORPAY_KEY_SECRET;
@@ -19,6 +23,11 @@ function getCredentials(tenantKeyId?: string | null, tenantKeySecret?: string | 
 
 function authHeader(keyId: string, keySecret: string): string {
   return "Basic " + Buffer.from(`${keyId}:${keySecret}`).toString("base64");
+}
+
+function razorpayErrorMessage(err: unknown, status: number, prefix: string): string {
+  const body = err as RazorpayApiError;
+  return body?.error?.description || `${prefix} ${status}`;
 }
 
 export async function createPaymentLink(params: {
@@ -49,8 +58,8 @@ export async function createPaymentLink(params: {
   });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({})) as any;
-    throw new Error(err?.error?.description || `Razorpay API error ${response.status}`);
+    const err = await response.json().catch(() => ({}));
+    throw new Error(razorpayErrorMessage(err, response.status, "Razorpay API error"));
   }
   return response.json() as Promise<RazorpayPaymentLink>;
 }
@@ -61,8 +70,8 @@ export async function getPaymentLink(linkId: string, tenantKeyId?: string | null
     headers: { Authorization: authHeader(keyId, keySecret) },
   });
   if (!response.ok) {
-    const err = await response.json().catch(() => ({})) as any;
-    throw new Error(err?.error?.description || `Razorpay API error ${response.status}`);
+    const err = await response.json().catch(() => ({}));
+    throw new Error(razorpayErrorMessage(err, response.status, "Razorpay API error"));
   }
   return response.json() as Promise<RazorpayPaymentLink>;
 }
@@ -72,4 +81,27 @@ export function verifyWebhookSignature(rawBody: string, signature: string): bool
   if (!secret) return false;
   const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
   return expected === signature;
+}
+
+export async function refundRazorpayPayment(
+  paymentId: string,
+  amountPaise: number,
+  reason: string,
+  keyId: string,
+  keySecret: string,
+): Promise<{ id: string; [key: string]: unknown }> {
+  const body = {
+    amount: amountPaise,
+    notes: { reason: reason.slice(0, 255) },
+  };
+  const response = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: authHeader(keyId, keySecret) },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(razorpayErrorMessage(err, response.status, "Razorpay refund API error"));
+  }
+  return response.json() as Promise<{ id: string; [key: string]: unknown }>;
 }

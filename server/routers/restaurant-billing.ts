@@ -6,7 +6,7 @@ import { verifySupervisorOverride } from "./_shared";
 import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { tenants as tenantsTable, type InsertCustomer } from "@shared/schema";
-import { createPaymentLink, getPaymentLink } from "../razorpay";
+import { createPaymentLink, getPaymentLink, refundRazorpayPayment } from "../razorpay";
 import { routeAndPrint } from "../services/printer-service";
 
 function getFiscalYear(date: Date): string {
@@ -301,7 +301,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
           routeAndPrint({
             jobType: "receipt",
             referenceId: bill.id,
-            outletId: (bill as any).outletId ?? null,
+            outletId: bill.outletId ?? null,
             tenantId: user.tenantId,
             triggeredByName: user.name || user.username,
           }).catch(err => {
@@ -388,9 +388,12 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const bill = await storage.getBill(req.params.id);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
-      if (bill.paymentStatus !== "paid") return res.status(400).json({ message: "Bill is not paid" });
-      const { amount, reason, paymentMethod } = req.body;
+      if (!["paid", "partially_refunded"].includes(bill.paymentStatus || "")) {
+        return res.status(400).json({ message: "Bill is not in a refundable state" });
+      }
+      const { amount, reason, paymentMethod, refundedItemIds } = req.body;
       if (!amount || !reason) return res.status(400).json({ message: "amount and reason required" });
+      if (Number(amount) <= 0) return res.status(400).json({ message: "Refund amount must be greater than zero" });
 
       const allPayments = await storage.getBillPayments(bill.id);
       const totalPaid = allPayments.filter(p => !p.isRefund).reduce((s, p) => s + Number(p.amount), 0);
@@ -400,16 +403,53 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         return res.status(400).json({ message: `Refund amount (${Number(amount).toFixed(2)}) exceeds net paid balance (${netPaid.toFixed(2)})` });
       }
 
+      // Mandatory Razorpay gateway reversal if original payment used Razorpay
+      let razorpayRefundId: string | null = null;
+      const razorpayOriginalPayment = allPayments.find(p => !p.isRefund && p.razorpayPaymentId);
+      if (razorpayOriginalPayment?.razorpayPaymentId) {
+        const tenant = await storage.getTenant(user.tenantId);
+        if (!tenant?.razorpayKeyId || !tenant?.razorpayKeySecret) {
+          return res.status(502).json({ message: "Razorpay keys are not configured for this tenant — cannot process gateway reversal" });
+        }
+        try {
+          const amountPaise = Math.round(Number(amount) * 100);
+          const rzpRefund = await refundRazorpayPayment(
+            razorpayOriginalPayment.razorpayPaymentId,
+            amountPaise,
+            reason,
+            tenant.razorpayKeyId,
+            tenant.razorpayKeySecret,
+          );
+          razorpayRefundId = rzpRefund.id;
+        } catch (rzpErr: unknown) {
+          const msg = rzpErr instanceof Error ? rzpErr.message : "Unknown Razorpay error";
+          return res.status(502).json({ message: `Razorpay refund failed: ${msg}` });
+        }
+      }
+
+      const refundMetadata = refundedItemIds && Array.isArray(refundedItemIds) && refundedItemIds.length > 0
+        ? { refundedItems: refundedItemIds }
+        : undefined;
+
       const refund = await storage.createBillPayment({
         tenantId: user.tenantId,
         billId: bill.id,
         paymentMethod: paymentMethod || "CASH",
         amount: String(-Math.abs(Number(amount))),
         isRefund: true,
-        refundReason: reason,
+        refundReason: refundMetadata
+          ? `${reason} | items:${JSON.stringify(refundedItemIds)}`
+          : reason,
         collectedBy: user.id,
+        ...(razorpayRefundId ? { razorpayRefundId } : {}),
       });
 
+      // Recalculate net balance and update bill status
+      const newTotalRefunded = totalRefunded + Number(amount);
+      const newPaymentStatus = newTotalRefunded >= totalPaid - 0.01 ? "refunded" : "partially_refunded";
+      await storage.updateBill(bill.id, user.tenantId, { paymentStatus: newPaymentStatus });
+
+      // Loyalty adjustments
       const customerId = bill.customerId;
       if (customerId) {
         try {
@@ -431,7 +471,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         } catch (_) {}
       }
 
-      res.json(refund);
+      res.json({ ...refund, billPaymentStatus: newPaymentStatus, refundPaymentId: refund.id });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
