@@ -1377,4 +1377,376 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_price_resolution_log_tenant ON price_resolution_log (tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_price_resolution_log_menu_item ON price_resolution_log (menu_item_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_price_resolution_log_order ON price_resolution_log (order_id)`);
+
+  // Task #106: Procurement & Inventory Control — extended existing tables
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS supplier_code VARCHAR(30)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS city VARCHAR(100)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS state VARCHAR(100)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS country VARCHAR(100) DEFAULT 'India'`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS gst_number VARCHAR(50)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS pan_number VARCHAR(30)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS credit_limit DECIMAL(12,2)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS currency VARCHAR(10) DEFAULT 'INR'`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS bank_name VARCHAR(255)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS bank_account VARCHAR(50)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS bank_ifsc VARCHAR(20)`);
+  await pool.query(`ALTER TABLE suppliers ADD COLUMN IF NOT EXISTS is_preferred BOOLEAN DEFAULT false`);
+
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS po_source VARCHAR(20) DEFAULT 'DIRECT'`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS quotation_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS priority VARCHAR(20) DEFAULT 'normal'`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(50)`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS delivery_outlet_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS delivery_address TEXT`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS billing_address TEXT`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS subtotal DECIMAL(12,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS tax_amount DECIMAL(12,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS discount_amount DECIMAL(12,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS shipping_charge DECIMAL(10,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS amount_paid DECIMAL(12,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS balance_due DECIMAL(12,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS internal_notes TEXT`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS sent_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS supplier_name VARCHAR(255)`);
+  await pool.query(`ALTER TABLE purchase_orders ADD COLUMN IF NOT EXISTS created_by_name VARCHAR(255)`);
+
+  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS ingredient_name VARCHAR(255)`);
+  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS unit VARCHAR(20)`);
+  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS received_quantity DECIMAL(10,3) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS pending_quantity DECIMAL(10,3)`);
+  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS tax_percent DECIMAL(5,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS tax_amount DECIMAL(10,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE purchase_order_items ADD COLUMN IF NOT EXISTS item_status VARCHAR(20) DEFAULT 'pending'`);
+
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS supplier_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS supplier_invoice_no VARCHAR(100)`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS supplier_invoice_date DATE`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS received_by_name VARCHAR(255)`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'draft'`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS total_items INT`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS total_value DECIMAL(12,2)`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS variance_notes TEXT`);
+  await pool.query(`ALTER TABLE goods_received_notes ADD COLUMN IF NOT EXISTS po_delivery_id VARCHAR(36)`);
+
+  await pool.query(`ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS accepted_qty DECIMAL(10,3)`);
+  await pool.query(`ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS rejected_qty DECIMAL(10,3) DEFAULT 0`);
+  await pool.query(`ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS batch_number VARCHAR(100)`);
+  await pool.query(`ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS expiry_date DATE`);
+  await pool.query(`ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS storage_location VARCHAR(100)`);
+  await pool.query(`ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS quality_status VARCHAR(20) DEFAULT 'accepted'`);
+  await pool.query(`ALTER TABLE grn_items ADD COLUMN IF NOT EXISTS rejection_reason TEXT`);
+
+  // Task #106: New procurement tables
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotation_requests (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      rfq_number VARCHAR(50) NOT NULL,
+      status VARCHAR(30) DEFAULT 'draft',
+      requested_by VARCHAR(36) REFERENCES users(id),
+      requested_by_name VARCHAR(255),
+      required_by_date DATE,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_quotation_requests_tenant ON quotation_requests (tenant_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS quotation_request_items (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      rfq_id VARCHAR(36) NOT NULL REFERENCES quotation_requests(id),
+      inventory_item_id VARCHAR(36) REFERENCES inventory_items(id),
+      ingredient_name VARCHAR(255),
+      required_quantity DECIMAL(10,3),
+      unit VARCHAR(30),
+      specifications TEXT
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_quotation_request_items_rfq ON quotation_request_items (rfq_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS supplier_quotations (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      rfq_id VARCHAR(36) REFERENCES quotation_requests(id),
+      supplier_id VARCHAR(36) NOT NULL REFERENCES suppliers(id),
+      quotation_number VARCHAR(50) NOT NULL,
+      status VARCHAR(30) DEFAULT 'received',
+      validity_date DATE,
+      payment_terms VARCHAR(100),
+      delivery_days INT,
+      total_amount DECIMAL(12,2),
+      notes TEXT,
+      received_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_supplier_quotations_tenant ON supplier_quotations (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_supplier_quotations_rfq ON supplier_quotations (rfq_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS supplier_quotation_items (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      quotation_id VARCHAR(36) NOT NULL REFERENCES supplier_quotations(id),
+      inventory_item_id VARCHAR(36) REFERENCES inventory_items(id),
+      ingredient_name VARCHAR(255),
+      quoted_quantity DECIMAL(10,3),
+      unit VARCHAR(30),
+      unit_price DECIMAL(10,4),
+      total_price DECIMAL(12,2),
+      tax_percent DECIMAL(5,2) DEFAULT 0,
+      tax_amount DECIMAL(10,2) DEFAULT 0,
+      delivery_days INT,
+      notes TEXT
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_supplier_quotation_items_quotation ON supplier_quotation_items (quotation_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS po_delivery_schedule (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      po_id VARCHAR(36) NOT NULL REFERENCES purchase_orders(id),
+      delivery_number INT,
+      scheduled_date DATE,
+      scheduled_time VARCHAR(10),
+      delivery_outlet_id VARCHAR(36) REFERENCES outlets(id),
+      delivery_address TEXT,
+      status VARCHAR(30) DEFAULT 'scheduled',
+      items JSONB,
+      actual_delivery_date DATE,
+      delivery_note TEXT,
+      received_by VARCHAR(36),
+      received_by_name VARCHAR(255),
+      delay_reason TEXT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_po_delivery_schedule_tenant ON po_delivery_schedule (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_po_delivery_schedule_po ON po_delivery_schedule (po_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS purchase_returns (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      return_number VARCHAR(50) NOT NULL,
+      grn_id VARCHAR(36) REFERENCES goods_received_notes(id),
+      po_id VARCHAR(36) REFERENCES purchase_orders(id),
+      supplier_id VARCHAR(36) REFERENCES suppliers(id),
+      supplier_name VARCHAR(255),
+      return_type VARCHAR(30),
+      status VARCHAR(30) DEFAULT 'draft',
+      total_items INT,
+      total_value DECIMAL(12,2),
+      debit_note_number VARCHAR(50),
+      recovery_option VARCHAR(30),
+      notes TEXT,
+      approved_by VARCHAR(36),
+      approved_at TIMESTAMPTZ,
+      dispatched_at TIMESTAMPTZ,
+      created_by VARCHAR(36),
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_purchase_returns_tenant ON purchase_returns (tenant_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_purchase_returns_number ON purchase_returns (tenant_id, return_number)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS purchase_return_items (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      return_id VARCHAR(36) NOT NULL REFERENCES purchase_returns(id),
+      grn_item_id VARCHAR(36),
+      inventory_item_id VARCHAR(36) REFERENCES inventory_items(id),
+      ingredient_name VARCHAR(255),
+      return_quantity DECIMAL(10,3),
+      unit VARCHAR(30),
+      unit_price DECIMAL(10,4),
+      total_value DECIMAL(12,2),
+      return_reason TEXT,
+      condition VARCHAR(30),
+      photo_url TEXT
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_purchase_return_items_return ON purchase_return_items (return_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_transfers (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      transfer_number VARCHAR(50) NOT NULL,
+      from_outlet_id VARCHAR(36) REFERENCES outlets(id),
+      from_outlet_name VARCHAR(255),
+      to_outlet_id VARCHAR(36) REFERENCES outlets(id),
+      to_outlet_name VARCHAR(255),
+      status VARCHAR(30) DEFAULT 'draft',
+      priority VARCHAR(20) DEFAULT 'normal',
+      transfer_reason TEXT,
+      requested_by VARCHAR(36),
+      requested_by_name VARCHAR(255),
+      approved_by VARCHAR(36),
+      approved_at TIMESTAMPTZ,
+      dispatched_by VARCHAR(36),
+      dispatched_at TIMESTAMPTZ,
+      received_by VARCHAR(36),
+      received_at TIMESTAMPTZ,
+      expected_arrival DATE,
+      transport_mode VARCHAR(50),
+      vehicle_number VARCHAR(50),
+      driver_name VARCHAR(255),
+      driver_phone VARCHAR(30),
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_transfers_tenant ON stock_transfers (tenant_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_transfers_number ON stock_transfers (tenant_id, transfer_number)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_transfer_items (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      transfer_id VARCHAR(36) NOT NULL REFERENCES stock_transfers(id),
+      inventory_item_id VARCHAR(36) REFERENCES inventory_items(id),
+      ingredient_name VARCHAR(255),
+      requested_qty DECIMAL(10,3),
+      approved_qty DECIMAL(10,3),
+      dispatched_qty DECIMAL(10,3),
+      received_qty DECIMAL(10,3),
+      unit VARCHAR(30),
+      unit_cost DECIMAL(10,4),
+      total_cost DECIMAL(12,2),
+      batch_number VARCHAR(100),
+      expiry_date DATE,
+      condition_at_dispatch VARCHAR(30),
+      condition_at_receipt VARCHAR(30),
+      variance_qty DECIMAL(10,3),
+      variance_reason TEXT
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_transfer_items_transfer ON stock_transfer_items (transfer_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_counts (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      count_number VARCHAR(50) NOT NULL,
+      count_type VARCHAR(30),
+      count_scope VARCHAR(30),
+      scope_details JSONB,
+      status VARCHAR(30) DEFAULT 'draft',
+      scheduled_date DATE,
+      scheduled_time VARCHAR(10),
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      total_items_counted INT DEFAULT 0,
+      items_with_variance INT DEFAULT 0,
+      total_variance_value DECIMAL(12,2),
+      count_reason TEXT,
+      notes TEXT,
+      approved_by VARCHAR(36),
+      approved_at TIMESTAMPTZ,
+      created_by VARCHAR(36),
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_counts_tenant ON stock_counts (tenant_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_stock_counts_number ON stock_counts (tenant_id, count_number)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS stock_count_items (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      count_id VARCHAR(36) NOT NULL REFERENCES stock_counts(id),
+      inventory_item_id VARCHAR(36) REFERENCES inventory_items(id),
+      ingredient_name VARCHAR(255),
+      unit VARCHAR(30),
+      system_quantity DECIMAL(10,3),
+      physical_quantity DECIMAL(10,3),
+      variance_quantity DECIMAL(10,3),
+      variance_value DECIMAL(12,2),
+      variance_percent DECIMAL(7,2),
+      variance_type VARCHAR(20),
+      variance_reason TEXT,
+      counted_by VARCHAR(36),
+      counted_by_name VARCHAR(255),
+      counted_at TIMESTAMPTZ,
+      recount_required BOOLEAN DEFAULT false,
+      recount_quantity DECIMAL(10,3),
+      adjustment_approved BOOLEAN DEFAULT false,
+      adjustment_approved_by VARCHAR(36),
+      storage_location VARCHAR(100),
+      notes TEXT
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_stock_count_items_count ON stock_count_items (count_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS damaged_inventory (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      damage_number VARCHAR(50) NOT NULL,
+      inventory_item_id VARCHAR(36) REFERENCES inventory_items(id),
+      ingredient_name VARCHAR(255),
+      damaged_quantity DECIMAL(10,3),
+      unit VARCHAR(30),
+      unit_cost DECIMAL(10,4),
+      total_value DECIMAL(12,2),
+      damage_type VARCHAR(30),
+      damage_cause TEXT,
+      damage_date DATE,
+      damage_location VARCHAR(255),
+      discovered_by VARCHAR(36),
+      discovered_by_name VARCHAR(255),
+      status VARCHAR(30) DEFAULT 'reported',
+      disposal_method VARCHAR(50),
+      insurance_claim_no VARCHAR(100),
+      insurance_amount DECIMAL(12,2),
+      photo_urls JSONB,
+      approved_by VARCHAR(36),
+      approved_at TIMESTAMPTZ,
+      disposed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_damaged_inventory_tenant ON damaged_inventory (tenant_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_damaged_inventory_number ON damaged_inventory (tenant_id, damage_number)`);
+
+  // Normalize procurement status defaults to match spec
+  await pool.query(`ALTER TABLE stock_transfers ALTER COLUMN status SET DEFAULT 'requested'`);
+  await pool.query(`ALTER TABLE stock_counts ALTER COLUMN status SET DEFAULT 'planned'`);
+
+  // Add missing FK constraints and unique indexes for procurement tables
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_quotation_requests_tenant_rfq ON quotation_requests (tenant_id, rfq_number)`);
+  // Add FK from purchase_orders.quotation_id → supplier_quotations.id (if not already present)
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_purchase_orders_quotation_id'
+        AND table_name = 'purchase_orders'
+      ) THEN
+        ALTER TABLE purchase_orders
+          ADD CONSTRAINT fk_purchase_orders_quotation_id
+          FOREIGN KEY (quotation_id) REFERENCES supplier_quotations(id);
+      END IF;
+    END $$
+  `);
+  // Add FK from purchase_orders.delivery_outlet_id → outlets.id (if not already present)
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_purchase_orders_delivery_outlet_id'
+        AND table_name = 'purchase_orders'
+      ) THEN
+        ALTER TABLE purchase_orders
+          ADD CONSTRAINT fk_purchase_orders_delivery_outlet_id
+          FOREIGN KEY (delivery_outlet_id) REFERENCES outlets(id);
+      END IF;
+    END $$
+  `);
 }

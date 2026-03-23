@@ -78,6 +78,9 @@ import {
   regions, franchiseInvoices, outletMenuOverrides,
   suppliers, supplierCatalogItems, purchaseOrders, purchaseOrderItems,
   goodsReceivedNotes, grnItems, procurementApprovals,
+  quotationRequests, quotationRequestItems, supplierQuotations, supplierQuotationItems,
+  poDeliverySchedule, purchaseReturns, purchaseReturnItems,
+  stockTransfers, stockTransferItems, stockCounts, stockCountItems, damagedInventory,
   type OrderChannel, type InsertOrderChannel,
   type ChannelConfig, type InsertChannelConfig,
   type OnlineMenuMapping, type InsertOnlineMenuMapping,
@@ -91,6 +94,18 @@ import {
   type GoodsReceivedNote, type InsertGoodsReceivedNote,
   type GrnItem, type InsertGrnItem,
   type ProcurementApproval, type InsertProcurementApproval,
+  type QuotationRequest, type InsertQuotationRequest,
+  type QuotationRequestItem, type InsertQuotationRequestItem,
+  type SupplierQuotation, type InsertSupplierQuotation,
+  type SupplierQuotationItem, type InsertSupplierQuotationItem,
+  type PoDeliverySchedule, type InsertPoDeliverySchedule,
+  type PurchaseReturn, type InsertPurchaseReturn,
+  type PurchaseReturnItem, type InsertPurchaseReturnItem,
+  type StockTransfer, type InsertStockTransfer,
+  type StockTransferItem, type InsertStockTransferItem,
+  type StockCount, type InsertStockCount,
+  type StockCountItem, type InsertStockCountItem,
+  type DamagedInventory, type InsertDamagedInventory,
   labourCostSnapshots,
   type LabourCostSnapshot, type InsertLabourCostSnapshot,
   auditEvents,
@@ -390,6 +405,8 @@ export interface IStorage {
   updateSupplierCatalogItem(id: string, tenantId: string, data: Partial<InsertSupplierCatalogItem>): Promise<SupplierCatalogItem | undefined>;
   deleteSupplierCatalogItem(id: string, tenantId: string): Promise<void>;
 
+  updateInventoryItemStock(opts: { tx: any; tenantId: string; inventoryItemId: string; deltaQty: number; outletId?: string | null; movementType: string; reason: string; unitCost?: string | null }): Promise<void>;
+
   getPurchaseOrdersByTenant(tenantId: string): Promise<PurchaseOrder[]>;
   countPurchaseOrdersByTenant(tenantId: string): Promise<number>;
   getPurchaseOrder(id: string, tenantId: string): Promise<PurchaseOrder | undefined>;
@@ -403,11 +420,59 @@ export interface IStorage {
   getGRNsByTenant(tenantId: string): Promise<GoodsReceivedNote[]>;
   getGRNsByPO(poId: string): Promise<GoodsReceivedNote[]>;
   createGRN(data: InsertGoodsReceivedNote): Promise<GoodsReceivedNote>;
+  updateGRN(id: string, tenantId: string, data: Partial<InsertGoodsReceivedNote>): Promise<GoodsReceivedNote | undefined>;
   getGRNItems(grnId: string): Promise<GrnItem[]>;
   createGRNItem(data: InsertGrnItem): Promise<GrnItem>;
 
   getProcurementApprovals(poId: string): Promise<ProcurementApproval[]>;
   createProcurementApproval(data: InsertProcurementApproval): Promise<ProcurementApproval>;
+
+  createRFQ(data: InsertQuotationRequest): Promise<QuotationRequest>;
+  getRFQsByTenant(tenantId: string): Promise<QuotationRequest[]>;
+  getRFQ(id: string, tenantId: string): Promise<QuotationRequest | undefined>;
+  updateRFQ(id: string, tenantId: string, data: Partial<InsertQuotationRequest>): Promise<QuotationRequest | undefined>;
+  createRFQItem(data: InsertQuotationRequestItem): Promise<QuotationRequestItem>;
+  getRFQItems(rfqId: string): Promise<QuotationRequestItem[]>;
+  deleteRFQItem(id: string): Promise<void>;
+  createSupplierQuotation(data: InsertSupplierQuotation): Promise<SupplierQuotation>;
+  getSupplierQuotations(rfqId: string): Promise<SupplierQuotation[]>;
+  getSupplierQuotationsByTenant(tenantId: string): Promise<SupplierQuotation[]>;
+  updateSupplierQuotation(id: string, tenantId: string, data: Partial<InsertSupplierQuotation>): Promise<SupplierQuotation | undefined>;
+  createSupplierQuotationItem(data: InsertSupplierQuotationItem): Promise<SupplierQuotationItem>;
+  getSupplierQuotationItems(quotationId: string): Promise<SupplierQuotationItem[]>;
+
+  createPODeliverySchedule(data: InsertPoDeliverySchedule): Promise<PoDeliverySchedule>;
+  getPODeliverySchedules(poId: string): Promise<PoDeliverySchedule[]>;
+  updatePODeliverySchedule(id: string, tenantId: string, data: Partial<InsertPoDeliverySchedule>): Promise<PoDeliverySchedule | undefined>;
+
+  createPurchaseReturn(data: InsertPurchaseReturn): Promise<PurchaseReturn>;
+  getPurchaseReturnsByTenant(tenantId: string): Promise<PurchaseReturn[]>;
+  getPurchaseReturn(id: string, tenantId: string): Promise<PurchaseReturn | undefined>;
+  updatePurchaseReturn(id: string, tenantId: string, data: Partial<InsertPurchaseReturn>): Promise<PurchaseReturn | undefined>;
+  createPurchaseReturnItem(data: InsertPurchaseReturnItem): Promise<PurchaseReturnItem>;
+  getPurchaseReturnItems(returnId: string): Promise<PurchaseReturnItem[]>;
+
+  createStockTransfer(data: InsertStockTransfer): Promise<StockTransfer>;
+  getStockTransfersByTenant(tenantId: string): Promise<StockTransfer[]>;
+  getStockTransfer(id: string, tenantId: string): Promise<StockTransfer | undefined>;
+  updateStockTransfer(id: string, tenantId: string, data: Partial<InsertStockTransfer>): Promise<StockTransfer | undefined>;
+  createStockTransferItem(data: InsertStockTransferItem): Promise<StockTransferItem>;
+  getStockTransferItems(transferId: string): Promise<StockTransferItem[]>;
+  updateStockTransferItem(id: string, data: Partial<InsertStockTransferItem>): Promise<StockTransferItem | undefined>;
+
+  createStockCount(data: InsertStockCount): Promise<StockCount>;
+  getStockCountsByTenant(tenantId: string): Promise<StockCount[]>;
+  getStockCount(id: string, tenantId: string): Promise<StockCount | undefined>;
+  updateStockCount(id: string, tenantId: string, data: Partial<InsertStockCount>): Promise<StockCount | undefined>;
+  createStockCountItem(data: InsertStockCountItem): Promise<StockCountItem>;
+  getStockCountItems(countId: string): Promise<StockCountItem[]>;
+  updateStockCountItem(id: string, data: Partial<InsertStockCountItem>): Promise<StockCountItem | undefined>;
+  bulkCreateStockCountItems(items: InsertStockCountItem[]): Promise<StockCountItem[]>;
+
+  createDamagedInventory(data: InsertDamagedInventory): Promise<DamagedInventory>;
+  getDamagedInventoryByTenant(tenantId: string): Promise<DamagedInventory[]>;
+  getDamagedInventoryItem(id: string, tenantId: string): Promise<DamagedInventory | undefined>;
+  updateDamagedInventory(id: string, tenantId: string, data: Partial<InsertDamagedInventory>): Promise<DamagedInventory | undefined>;
 
   getAuditEventsByTenant(tenantId: string, filters?: {
     from?: Date; to?: Date; userId?: string; action?: string; entityType?: string; outletId?: string; entityId?: string; limit?: number; offset?: number;
@@ -1619,7 +1684,19 @@ export class DatabaseStorage implements IStorage {
     return s;
   }
   async createSupplier(data: InsertSupplier) {
-    const [s] = await db.insert(suppliers).values(data).returning();
+    let supplierCode = data.supplierCode;
+    if (!supplierCode) {
+      const existing = await db.select({ supplierCode: suppliers.supplierCode }).from(suppliers).where(eq(suppliers.tenantId, data.tenantId));
+      let maxNum = 0;
+      for (const row of existing) {
+        if (row.supplierCode && row.supplierCode.startsWith("SUP-")) {
+          const n = parseInt(row.supplierCode.replace("SUP-", ""), 10);
+          if (!isNaN(n) && n > maxNum) maxNum = n;
+        }
+      }
+      supplierCode = `SUP-${String(maxNum + 1).padStart(4, "0")}`;
+    }
+    const [s] = await db.insert(suppliers).values({ ...data, supplierCode }).returning();
     return s;
   }
   async updateSupplier(id: string, tenantId: string, data: Partial<InsertSupplier>) {
@@ -1663,6 +1740,17 @@ export class DatabaseStorage implements IStorage {
     const [po] = await db.insert(purchaseOrders).values(data).returning();
     return po;
   }
+  async updateInventoryItemStock(opts: { tx: any; tenantId: string; inventoryItemId: string; deltaQty: number; outletId?: string | null; movementType: string; reason: string; unitCost?: string | null }): Promise<void> {
+    const { tx, tenantId, inventoryItemId, deltaQty, outletId, movementType, reason, unitCost } = opts;
+    const [inv] = await tx.select().from(inventoryItems).where(and(eq(inventoryItems.id, inventoryItemId), eq(inventoryItems.tenantId, tenantId)));
+    if (!inv) return;
+    const newStock = parseFloat(inv.currentStock || "0") + deltaQty;
+    const updateFields: Partial<InsertInventoryItem> = { currentStock: Math.max(0, newStock).toFixed(2) };
+    if (unitCost && deltaQty > 0) updateFields.costPrice = unitCost;
+    await tx.update(inventoryItems).set(updateFields).where(and(eq(inventoryItems.id, inventoryItemId), eq(inventoryItems.tenantId, tenantId)));
+    await tx.insert(stockMovements).values({ tenantId, itemId: inventoryItemId, type: movementType, quantity: deltaQty.toFixed(4), reason, ...(outletId ? { outletId } : {}) });
+  }
+
   async updatePurchaseOrder(id: string, tenantId: string, data: Partial<InsertPurchaseOrder>) {
     const [po] = await db.update(purchaseOrders).set(data).where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.tenantId, tenantId))).returning();
     return po;
@@ -1690,6 +1778,10 @@ export class DatabaseStorage implements IStorage {
     const [grn] = await db.insert(goodsReceivedNotes).values(data).returning();
     return grn;
   }
+  async updateGRN(id: string, tenantId: string, data: Partial<InsertGoodsReceivedNote>) {
+    const [grn] = await db.update(goodsReceivedNotes).set(data).where(and(eq(goodsReceivedNotes.id, id), eq(goodsReceivedNotes.tenantId, tenantId))).returning();
+    return grn;
+  }
   async getGRNItems(grnId: string) {
     return db.select().from(grnItems).where(eq(grnItems.grnId, grnId));
   }
@@ -1704,6 +1796,162 @@ export class DatabaseStorage implements IStorage {
   async createProcurementApproval(data: InsertProcurementApproval) {
     const [a] = await db.insert(procurementApprovals).values(data).returning();
     return a;
+  }
+
+  async createRFQ(data: InsertQuotationRequest) {
+    const [r] = await db.insert(quotationRequests).values(data).returning();
+    return r;
+  }
+  async getRFQsByTenant(tenantId: string) {
+    return db.select().from(quotationRequests).where(eq(quotationRequests.tenantId, tenantId)).orderBy(desc(quotationRequests.createdAt));
+  }
+  async getRFQ(id: string, tenantId: string) {
+    const [r] = await db.select().from(quotationRequests).where(and(eq(quotationRequests.id, id), eq(quotationRequests.tenantId, tenantId)));
+    return r;
+  }
+  async updateRFQ(id: string, tenantId: string, data: Partial<InsertQuotationRequest>) {
+    const [r] = await db.update(quotationRequests).set(data).where(and(eq(quotationRequests.id, id), eq(quotationRequests.tenantId, tenantId))).returning();
+    return r;
+  }
+  async createRFQItem(data: InsertQuotationRequestItem) {
+    const [r] = await db.insert(quotationRequestItems).values(data).returning();
+    return r;
+  }
+  async getRFQItems(rfqId: string) {
+    return db.select().from(quotationRequestItems).where(eq(quotationRequestItems.rfqId, rfqId));
+  }
+  async deleteRFQItem(id: string) {
+    await db.delete(quotationRequestItems).where(eq(quotationRequestItems.id, id));
+  }
+  async createSupplierQuotation(data: InsertSupplierQuotation) {
+    const [q] = await db.insert(supplierQuotations).values(data).returning();
+    return q;
+  }
+  async getSupplierQuotations(rfqId: string) {
+    return db.select().from(supplierQuotations).where(eq(supplierQuotations.rfqId, rfqId)).orderBy(desc(supplierQuotations.receivedAt));
+  }
+  async getSupplierQuotationsByTenant(tenantId: string) {
+    return db.select().from(supplierQuotations).where(eq(supplierQuotations.tenantId, tenantId)).orderBy(desc(supplierQuotations.receivedAt));
+  }
+  async updateSupplierQuotation(id: string, tenantId: string, data: Partial<InsertSupplierQuotation>) {
+    const [q] = await db.update(supplierQuotations).set(data).where(and(eq(supplierQuotations.id, id), eq(supplierQuotations.tenantId, tenantId))).returning();
+    return q;
+  }
+  async createSupplierQuotationItem(data: InsertSupplierQuotationItem) {
+    const [i] = await db.insert(supplierQuotationItems).values(data).returning();
+    return i;
+  }
+  async getSupplierQuotationItems(quotationId: string) {
+    return db.select().from(supplierQuotationItems).where(eq(supplierQuotationItems.quotationId, quotationId));
+  }
+
+  async createPODeliverySchedule(data: InsertPoDeliverySchedule) {
+    const [d] = await db.insert(poDeliverySchedule).values(data).returning();
+    return d;
+  }
+  async getPODeliverySchedules(poId: string) {
+    return db.select().from(poDeliverySchedule).where(eq(poDeliverySchedule.poId, poId)).orderBy(poDeliverySchedule.deliveryNumber);
+  }
+  async updatePODeliverySchedule(id: string, tenantId: string, data: Partial<InsertPoDeliverySchedule>) {
+    const [d] = await db.update(poDeliverySchedule).set(data).where(and(eq(poDeliverySchedule.id, id), eq(poDeliverySchedule.tenantId, tenantId))).returning();
+    return d;
+  }
+
+  async createPurchaseReturn(data: InsertPurchaseReturn) {
+    const [r] = await db.insert(purchaseReturns).values(data).returning();
+    return r;
+  }
+  async getPurchaseReturnsByTenant(tenantId: string) {
+    return db.select().from(purchaseReturns).where(eq(purchaseReturns.tenantId, tenantId)).orderBy(desc(purchaseReturns.createdAt));
+  }
+  async getPurchaseReturn(id: string, tenantId: string) {
+    const [r] = await db.select().from(purchaseReturns).where(and(eq(purchaseReturns.id, id), eq(purchaseReturns.tenantId, tenantId)));
+    return r;
+  }
+  async updatePurchaseReturn(id: string, tenantId: string, data: Partial<InsertPurchaseReturn>) {
+    const [r] = await db.update(purchaseReturns).set(data).where(and(eq(purchaseReturns.id, id), eq(purchaseReturns.tenantId, tenantId))).returning();
+    return r;
+  }
+  async createPurchaseReturnItem(data: InsertPurchaseReturnItem) {
+    const [i] = await db.insert(purchaseReturnItems).values(data).returning();
+    return i;
+  }
+  async getPurchaseReturnItems(returnId: string) {
+    return db.select().from(purchaseReturnItems).where(eq(purchaseReturnItems.returnId, returnId));
+  }
+
+  async createStockTransfer(data: InsertStockTransfer) {
+    const [t] = await db.insert(stockTransfers).values(data).returning();
+    return t;
+  }
+  async getStockTransfersByTenant(tenantId: string) {
+    return db.select().from(stockTransfers).where(eq(stockTransfers.tenantId, tenantId)).orderBy(desc(stockTransfers.createdAt));
+  }
+  async getStockTransfer(id: string, tenantId: string) {
+    const [t] = await db.select().from(stockTransfers).where(and(eq(stockTransfers.id, id), eq(stockTransfers.tenantId, tenantId)));
+    return t;
+  }
+  async updateStockTransfer(id: string, tenantId: string, data: Partial<InsertStockTransfer>) {
+    const [t] = await db.update(stockTransfers).set(data).where(and(eq(stockTransfers.id, id), eq(stockTransfers.tenantId, tenantId))).returning();
+    return t;
+  }
+  async createStockTransferItem(data: InsertStockTransferItem) {
+    const [i] = await db.insert(stockTransferItems).values(data).returning();
+    return i;
+  }
+  async getStockTransferItems(transferId: string) {
+    return db.select().from(stockTransferItems).where(eq(stockTransferItems.transferId, transferId));
+  }
+  async updateStockTransferItem(id: string, data: Partial<InsertStockTransferItem>) {
+    const [i] = await db.update(stockTransferItems).set(data).where(eq(stockTransferItems.id, id)).returning();
+    return i;
+  }
+
+  async createStockCount(data: InsertStockCount) {
+    const [c] = await db.insert(stockCounts).values(data).returning();
+    return c;
+  }
+  async getStockCountsByTenant(tenantId: string) {
+    return db.select().from(stockCounts).where(eq(stockCounts.tenantId, tenantId)).orderBy(desc(stockCounts.createdAt));
+  }
+  async getStockCount(id: string, tenantId: string) {
+    const [c] = await db.select().from(stockCounts).where(and(eq(stockCounts.id, id), eq(stockCounts.tenantId, tenantId)));
+    return c;
+  }
+  async updateStockCount(id: string, tenantId: string, data: Partial<InsertStockCount>) {
+    const [c] = await db.update(stockCounts).set(data).where(and(eq(stockCounts.id, id), eq(stockCounts.tenantId, tenantId))).returning();
+    return c;
+  }
+  async createStockCountItem(data: InsertStockCountItem) {
+    const [i] = await db.insert(stockCountItems).values(data).returning();
+    return i;
+  }
+  async getStockCountItems(countId: string) {
+    return db.select().from(stockCountItems).where(eq(stockCountItems.countId, countId));
+  }
+  async updateStockCountItem(id: string, data: Partial<InsertStockCountItem>) {
+    const [i] = await db.update(stockCountItems).set(data).where(eq(stockCountItems.id, id)).returning();
+    return i;
+  }
+  async bulkCreateStockCountItems(items: InsertStockCountItem[]) {
+    if (!items.length) return [];
+    return db.insert(stockCountItems).values(items).returning();
+  }
+
+  async createDamagedInventory(data: InsertDamagedInventory) {
+    const [d] = await db.insert(damagedInventory).values(data).returning();
+    return d;
+  }
+  async getDamagedInventoryByTenant(tenantId: string) {
+    return db.select().from(damagedInventory).where(eq(damagedInventory.tenantId, tenantId)).orderBy(desc(damagedInventory.createdAt));
+  }
+  async getDamagedInventoryItem(id: string, tenantId: string) {
+    const [d] = await db.select().from(damagedInventory).where(and(eq(damagedInventory.id, id), eq(damagedInventory.tenantId, tenantId)));
+    return d;
+  }
+  async updateDamagedInventory(id: string, tenantId: string, data: Partial<InsertDamagedInventory>) {
+    const [d] = await db.update(damagedInventory).set(data).where(and(eq(damagedInventory.id, id), eq(damagedInventory.tenantId, tenantId))).returning();
+    return d;
   }
 
   async getAuditEventsByTenant(tenantId: string, filters?: {
