@@ -1321,4 +1321,60 @@ export async function runAdminMigrations(): Promise<void> {
   } catch (seedErr) {
     console.error("[Admin migrations] Printer seed error (non-fatal):", seedErr);
   }
+
+  // Task #103: Multi-Outlet Pricing — outlet_menu_prices table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS outlet_menu_prices (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      menu_item_id VARCHAR(36) NOT NULL,
+      price_type TEXT NOT NULL,
+      price NUMERIC(10,2) NOT NULL,
+      currency TEXT DEFAULT 'USD',
+      order_type TEXT,
+      time_slot_start TEXT,
+      time_slot_end TEXT,
+      day_of_week JSONB,
+      customer_segment TEXT,
+      valid_from DATE,
+      valid_until DATE,
+      priority INT NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      notes TEXT,
+      created_by VARCHAR(36),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_outlet_menu_prices_tenant ON outlet_menu_prices (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_outlet_menu_prices_outlet ON outlet_menu_prices (outlet_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_outlet_menu_prices_item ON outlet_menu_prices (menu_item_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_outlet_menu_prices_tenant_outlet_item ON outlet_menu_prices (tenant_id, outlet_id, menu_item_id)`);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_outlet_menu_prices_unique
+    ON outlet_menu_prices (tenant_id, outlet_id, menu_item_id, price_type, COALESCE(order_type,''), COALESCE(time_slot_start,''), COALESCE(day_of_week::text,'[]'), COALESCE(customer_segment,''))
+  `);
+
+  // Task #103: price_resolution_log table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS price_resolution_log (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36),
+      order_id VARCHAR(36),
+      order_item_id VARCHAR(36),
+      menu_item_id VARCHAR(36) NOT NULL,
+      menu_item_name TEXT,
+      base_price NUMERIC(10,2) NOT NULL,
+      resolved_price NUMERIC(10,2) NOT NULL,
+      price_rule_id VARCHAR(36),
+      price_type_applied TEXT,
+      resolution_reason TEXT,
+      resolved_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_price_resolution_log_tenant ON price_resolution_log (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_price_resolution_log_menu_item ON price_resolution_log (menu_item_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_price_resolution_log_order ON price_resolution_log (order_id)`);
 }

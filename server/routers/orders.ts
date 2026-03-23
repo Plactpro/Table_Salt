@@ -15,6 +15,7 @@ import { convertUnits } from "@shared/units";
 import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 import { autoAssignTicket } from "../services/chef-assignment";
 import { routeAndPrint } from "../services/printer-service";
+import { resolvePrice } from "../services/price-resolution";
 
 function fireAutoAssign(tenantId: string, outletId: string | null | undefined, orderId: string, label?: string) {
   if (!outletId) return;
@@ -289,9 +290,29 @@ export function registerOrdersRoutes(app: Express): void {
           } else {
             const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
             const canonicalPrice = mi ? Number(mi.price) : 0;
+
+            let resolvedCanonical = canonicalPrice;
+            if (mi && orderData.outletId) {
+              try {
+                const resolved = await resolvePrice({
+                  tenantId: user.tenantId,
+                  outletId: orderData.outletId,
+                  menuItemId: mi.id,
+                  menuItemName: mi.name,
+                  basePrice: canonicalPrice,
+                  orderType: orderData.orderType,
+                  customerSegment: req.body.customerSegment,
+                  currentTime: new Date(),
+                });
+                resolvedCanonical = resolved.price;
+              } catch (_) {
+                resolvedCanonical = canonicalPrice;
+              }
+            }
+
             const effectivePrice = Array.isArray(item.modifiers) && item.modifiers.length > 0
-              ? computeEffectivePrice(canonicalPrice, item.modifiers as Array<{ groupId?: string; type?: string; label?: string }>)
-              : canonicalPrice;
+              ? computeEffectivePrice(resolvedCanonical, item.modifiers as Array<{ groupId?: string; type?: string; label?: string }>)
+              : resolvedCanonical;
             const qty = Number(item.quantity) || 1;
             serverSubtotal += effectivePrice * qty;
             serverItems.push({
@@ -420,10 +441,29 @@ export function registerOrdersRoutes(app: Express): void {
             }
           } else {
             const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
-            const canonicalPrice = mi ? Number(mi.price) : 0;
+            const canonicalPrice2 = mi ? Number(mi.price) : 0;
+            let resolvedCanonical2 = canonicalPrice2;
+            if (mi && orderData.outletId) {
+              try {
+                const resolved2 = await resolvePrice({
+                  tenantId: user.tenantId,
+                  outletId: orderData.outletId,
+                  menuItemId: mi.id,
+                  menuItemName: mi.name,
+                  basePrice: canonicalPrice2,
+                  orderType: orderData.orderType,
+                  customerSegment: req.body.customerSegment,
+                  orderId: order.id,
+                  currentTime: new Date(),
+                });
+                resolvedCanonical2 = resolved2.price;
+              } catch (_) {
+                resolvedCanonical2 = canonicalPrice2;
+              }
+            }
             const effectivePrice2 = Array.isArray(item.modifiers) && item.modifiers.length > 0
-              ? computeEffectivePrice(canonicalPrice, item.modifiers as Array<{ groupId?: string; type?: string; label?: string }>)
-              : canonicalPrice;
+              ? computeEffectivePrice(resolvedCanonical2, item.modifiers as Array<{ groupId?: string; type?: string; label?: string }>)
+              : resolvedCanonical2;
             await storage.createOrderItem({
               ...item,
               price: effectivePrice2.toFixed(2),

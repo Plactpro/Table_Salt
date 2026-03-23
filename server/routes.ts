@@ -45,6 +45,7 @@ import { registerCoordinationRoutes } from "./routers/coordination";
 import { registerModificationsRoutes } from "./routers/modifications";
 import { registerWastageRoutes } from "./routers/wastage";
 import { registerPrinterRoutes } from "./routers/printers";
+import { registerPricingRoutes } from "./routers/pricing";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -127,6 +128,7 @@ export async function registerRoutes(
   registerModificationsRoutes(app);
   registerWastageRoutes(app);
   registerPrinterRoutes(app);
+  registerPricingRoutes(app);
 
   return httpServer;
 }

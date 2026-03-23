@@ -1978,3 +1978,61 @@ export const printerTemplates = pgTable("printer_templates", {
 export const insertPrinterTemplateSchema = createInsertSchema(printerTemplates).omit({ id: true, createdAt: true });
 export type PrinterTemplate = typeof printerTemplates.$inferSelect;
 export type InsertPrinterTemplate = z.infer<typeof insertPrinterTemplateSchema>;
+
+// ─── Task #103: Multi-Outlet Pricing ─────────────────────────────────────────
+
+export const outletMenuPrices = pgTable("outlet_menu_prices", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull(),
+  priceType: text("price_type").notNull(),
+  price: decimal("price", { precision: 10, scale: 2 }).notNull(),
+  currency: text("currency").default("USD"),
+  orderType: text("order_type"),
+  timeSlotStart: text("time_slot_start"),
+  timeSlotEnd: text("time_slot_end"),
+  dayOfWeek: jsonb("day_of_week"),
+  customerSegment: text("customer_segment"),
+  validFrom: text("valid_from"),
+  validUntil: text("valid_until"),
+  priority: integer("priority").default(0),
+  isActive: boolean("is_active").default(true),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 36 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (t) => [
+  index("idx_outlet_menu_prices_tenant").on(t.tenantId),
+  index("idx_outlet_menu_prices_outlet").on(t.outletId),
+  index("idx_outlet_menu_prices_item").on(t.menuItemId),
+  index("idx_outlet_menu_prices_tenant_outlet_item").on(t.tenantId, t.outletId, t.menuItemId),
+]);
+
+export const insertOutletMenuPriceSchema = createInsertSchema(outletMenuPrices).omit({ id: true, createdAt: true, updatedAt: true });
+export type OutletMenuPrice = typeof outletMenuPrices.$inferSelect;
+export type InsertOutletMenuPrice = z.infer<typeof insertOutletMenuPriceSchema>;
+
+export const priceResolutionLog = pgTable("price_resolution_log", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  orderId: varchar("order_id", { length: 36 }),
+  orderItemId: varchar("order_item_id", { length: 36 }),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull(),
+  menuItemName: text("menu_item_name"),
+  basePrice: decimal("base_price", { precision: 10, scale: 2 }).notNull(),
+  resolvedPrice: decimal("resolved_price", { precision: 10, scale: 2 }).notNull(),
+  priceRuleId: varchar("price_rule_id", { length: 36 }),
+  priceTypeApplied: text("price_type_applied"),
+  resolutionReason: text("resolution_reason"),
+  resolvedAt: timestamp("resolved_at").defaultNow(),
+}, (t) => [
+  index("idx_price_resolution_log_tenant").on(t.tenantId),
+  index("idx_price_resolution_log_menu_item").on(t.menuItemId),
+  index("idx_price_resolution_log_order").on(t.orderId),
+]);
+
+export const insertPriceResolutionLogSchema = createInsertSchema(priceResolutionLog).omit({ id: true, resolvedAt: true });
+export type PriceResolutionLogEntry = typeof priceResolutionLog.$inferSelect;
+export type InsertPriceResolutionLogEntry = z.infer<typeof insertPriceResolutionLogSchema>;
