@@ -1542,10 +1542,38 @@ export default function BillPreviewModal({
               )}
 
               <div className="grid grid-cols-2 gap-2 no-print">
-                <Button variant="outline" onClick={handlePrint} data-testid="button-print-receipt">
+                <Button variant="outline" onClick={async () => {
+                  if (createdBill?.id) {
+                    try {
+                      const res = await fetch(`/api/print/receipt/${createdBill.id}`, { method: "POST", credentials: "include" });
+                      const data = await res.json();
+                      if (data.fallback && data.html) {
+                        const w = window.open("", "_blank");
+                        if (w) { w.document.write(data.html); w.document.close(); }
+                        return;
+                      }
+                      if (data.success) return;
+                    } catch (_) {}
+                  }
+                  handlePrint();
+                }} data-testid="button-print-receipt">
                   <Printer className="h-4 w-4 mr-2" /> Print
                 </Button>
-                <Button variant="outline" onClick={() => { document.title = `Receipt-${billNumber}`; handlePrint(); }} data-testid="button-download-pdf">
+                <Button variant="outline" onClick={async () => {
+                  if (createdBill?.id) {
+                    try {
+                      const res = await fetch(`/api/print/bill/${createdBill.id}`, { method: "POST", credentials: "include" });
+                      const data = await res.json();
+                      if (data.fallback && data.html) {
+                        const w = window.open("", "_blank");
+                        if (w) { w.document.write(data.html); w.document.close(); }
+                        return;
+                      }
+                      if (data.success) return;
+                    } catch (_) {}
+                  }
+                  document.title = `Receipt-${billNumber}`; handlePrint();
+                }} data-testid="button-download-pdf">
                   <FileDown className="h-4 w-4 mr-2" /> Download PDF
                 </Button>
                 <Button variant="outline" onClick={handleWhatsApp} data-testid="button-whatsapp-receipt">

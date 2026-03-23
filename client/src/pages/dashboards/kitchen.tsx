@@ -520,6 +520,15 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
       jobId = job?.id;
     } catch (_) {}
 
+    try {
+      await fetch("/api/print/reprint", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ orderId: ticket.id, type: "kot", isReprint: true, reason: "KDS reprint" }),
+      });
+    } catch (_) {}
+
     const html = renderKotHtml({
       restaurantName: restaurantName || "Kitchen",
       kotNumber: ticket.id.slice(-6).toUpperCase(),
@@ -752,6 +761,66 @@ function StatusDot({ status }: { status: string | null }) {
     served: "bg-blue-500",
   };
   return <div className={`w-2 h-2 rounded-full ${colors[status || "pending"] || "bg-gray-300"}`} />;
+}
+
+interface PrinterDevice {
+  id: string;
+  name: string;
+  type: string;
+  status: "online" | "offline" | "error" | "unknown";
+  ipAddress?: string;
+  port?: number;
+}
+
+function PrinterStatusMiniBar() {
+  const queryClient = useQueryClient();
+  const { data: printers = [] } = useQuery<PrinterDevice[]>({
+    queryKey: ["/api/printers"],
+    queryFn: () => fetch("/api/printers", { credentials: "include" }).then(r => r.json()),
+    refetchInterval: 30000,
+  });
+
+  useRealtimeEvent("printer:status_changed", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+  }, [queryClient]));
+
+  if (printers.length === 0) return null;
+
+  const statusColor: Record<string, string> = {
+    online: "bg-green-500",
+    offline: "bg-gray-400",
+    error: "bg-red-500 animate-pulse",
+    unknown: "bg-yellow-400",
+  };
+  const statusLabel: Record<string, string> = {
+    online: "Online",
+    offline: "Offline",
+    error: "Error",
+    unknown: "Unknown",
+  };
+
+  const onlineCount = printers.filter(p => p.status === "online").length;
+  const errorCount = printers.filter(p => p.status === "error").length;
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border text-xs overflow-x-auto" data-testid="printer-status-minibar">
+      <Printer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+      <span className="text-muted-foreground shrink-0">Printers:</span>
+      {printers.map(p => (
+        <div key={p.id} className="flex items-center gap-1 shrink-0" data-testid={`printer-status-${p.id}`}>
+          <span className={`inline-block w-2 h-2 rounded-full ${statusColor[p.status] || "bg-gray-400"}`} />
+          <span className="font-medium">{p.name}</span>
+          <span className="text-muted-foreground">({statusLabel[p.status] || p.status})</span>
+        </div>
+      ))}
+      {errorCount > 0 && (
+        <span className="ml-auto shrink-0 text-red-600 font-medium">{errorCount} error{errorCount > 1 ? "s" : ""}</span>
+      )}
+      {errorCount === 0 && (
+        <span className="ml-auto shrink-0 text-green-600">{onlineCount}/{printers.length} online</span>
+      )}
+    </div>
+  );
 }
 
 export default function KitchenDashboard() {
@@ -1337,6 +1406,8 @@ export default function KitchenDashboard() {
           )}
         </div>
       </div>
+
+      <PrinterStatusMiniBar />
 
       {user?.role === "kitchen" && (
         <div className="space-y-2">
