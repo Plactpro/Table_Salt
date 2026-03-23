@@ -10,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { StatCard } from "@/components/widgets/stat-card";
 import { motion } from "framer-motion";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, FileText, FileDown } from "lucide-react";
+import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, FileText, FileDown, RotateCcw } from "lucide-react";
 import { exportToPdf } from "@/lib/pdf-export";
 import { format, subDays } from "date-fns";
 
@@ -46,6 +46,8 @@ export default function ReportsPage() {
       date: d.date ? format(new Date(d.date), "MMM dd") : "",
       revenue: Number(d.revenue || 0),
       orders: Number(d.orderCount || 0),
+      refund: Number(d.refund || 0),
+      netRevenue: Number(d.netRevenue ?? d.revenue ?? 0),
     })),
     [salesByDay]
   );
@@ -156,7 +158,7 @@ export default function ReportsPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { title: "Total Revenue", value: fmt(Number(totals.revenue || 0)), icon: DollarSign, color: "text-green-600", bg: "bg-green-100", testId: "stat-total-revenue", delay: 0 },
+          { title: "Gross Revenue", value: fmt(Number(totals.revenue || 0)), icon: DollarSign, color: "text-green-600", bg: "bg-green-100", testId: "stat-total-revenue", delay: 0 },
           { title: "Total Orders", value: Number(totals.orderCount || 0), icon: ShoppingCart, color: "text-orange-500", bg: "bg-orange-100", testId: "stat-total-orders", delay: 0.1 },
           { title: "Avg Order Value", value: fmt(Number(avgOrderValue)), icon: TrendingUp, color: "text-purple-600", bg: "bg-purple-100", testId: "stat-avg-order", delay: 0.2 },
           { title: "Tax Collected", value: fmt(Number(totals.tax || 0)), icon: Percent, color: "text-orange-600", bg: "bg-orange-100", testId: "stat-tax-collected", delay: 0.3 },
@@ -178,6 +180,41 @@ export default function ReportsPage() {
           </motion.div>
         ))}
       </div>
+
+      {(report?.totalRefunded > 0 || report?.netRevenue !== undefined) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+            <StatCard
+              title="Total Refunded"
+              value={fmt(Number(report?.totalRefunded || 0))}
+              icon={RotateCcw}
+              iconColor="text-red-600"
+              iconBg="bg-red-100"
+              testId="stat-total-refunded"
+            />
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+            <StatCard
+              title="Refund Count"
+              value={Number(report?.refundCount || 0)}
+              icon={RotateCcw}
+              iconColor="text-amber-600"
+              iconBg="bg-amber-100"
+              testId="stat-refund-count"
+            />
+          </motion.div>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+            <StatCard
+              title="Net Revenue"
+              value={fmt(Number(report?.netRevenue || 0))}
+              icon={DollarSign}
+              iconColor="text-teal-600"
+              iconBg="bg-teal-100"
+              testId="stat-net-revenue"
+            />
+          </motion.div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div
@@ -335,14 +372,16 @@ export default function ReportsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Date</TableHead>
-                    <TableHead className="text-right">Revenue</TableHead>
+                    <TableHead className="text-right">Gross Revenue</TableHead>
+                    <TableHead className="text-right text-red-600">Refunds</TableHead>
+                    <TableHead className="text-right text-teal-700">Net Revenue</TableHead>
                     <TableHead className="text-right">Orders</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {chartData.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="text-center py-4 text-muted-foreground">
+                      <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
                         {isLoading ? "Loading..." : "No data for selected period"}
                       </TableCell>
                     </TableRow>
@@ -351,6 +390,12 @@ export default function ReportsPage() {
                       <TableRow key={idx} data-testid={`row-daily-sales-${idx}`} className="hover:bg-muted/50 transition-colors">
                         <TableCell>{day.date}</TableCell>
                         <TableCell className="text-right">{fmt(day.revenue)}</TableCell>
+                        <TableCell className="text-right text-red-600" data-testid={`text-day-refund-${idx}`}>
+                          {day.refund > 0 ? `-${fmt(day.refund)}` : "—"}
+                        </TableCell>
+                        <TableCell className="text-right text-teal-700 font-medium" data-testid={`text-day-net-${idx}`}>
+                          {fmt(day.netRevenue ?? day.revenue)}
+                        </TableCell>
                         <TableCell className="text-right">{day.orders}</TableCell>
                       </TableRow>
                     ))

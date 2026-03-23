@@ -4,13 +4,15 @@ import { emitToTenant } from "../realtime";
 import {
   buildKOT, buildBill, buildLabel, buildTestPage,
   buildKOTHtml, buildBillHtml,
+  buildRefundReceipt, buildRefundReceiptHtml,
   type KOTOrder, type KOTItem, type BillData, type BillItem, type PrintTemplate,
+  type RefundPaymentData, type RefundReceiptData,
 } from "./escpos-builder";
 
 export type PrinterType = "KITCHEN" | "CASHIER" | "BAR" | "EXPEDITOR" | "LABEL" | "MANAGER";
 export type ConnectionType = "NETWORK_IP" | "USB" | "BLUETOOTH" | "CLOUD" | "BROWSER";
 export type PrinterStatus = "online" | "offline" | "error" | "low_paper" | "unknown";
-export type PrintJobType = "kot" | "bill" | "receipt" | "label" | "report" | "test" | "reprint_kot" | "reprint_bill";
+export type PrintJobType = "kot" | "bill" | "receipt" | "label" | "report" | "test" | "reprint_kot" | "reprint_bill" | "refund_receipt";
 
 export interface Printer {
   id: string;
@@ -64,8 +66,9 @@ class BrowserPrintHandler {
     items: BillItem[],
     template?: PrintTemplate,
     tenantName?: string,
+    payments?: RefundPaymentData[],
   ): string {
-    return buildBillHtml(bill, order, items, template, tenantName);
+    return buildBillHtml(bill, order, items, template, tenantName, payments);
   }
 }
 
@@ -222,8 +225,9 @@ export async function routeAndPrint(params: {
   triggeredByName?: string;
   isReprint?: boolean;
   reprintReason?: string;
+  payload?: Record<string, unknown>;
 }): Promise<{ jobIds: string[]; htmlFallback?: string }> {
-  const { jobType, referenceId, outletId, tenantId, triggeredByName, isReprint, reprintReason } = params;
+  const { jobType, referenceId, outletId, tenantId, triggeredByName, isReprint, reprintReason, payload: inputPayload } = params;
 
   const printers = await getPrintersByOutlet(tenantId, outletId);
   const results: { jobIds: string[]; htmlFallback?: string } = { jobIds: [] };
@@ -398,6 +402,19 @@ export async function routeAndPrint(params: {
     const { rows: tenantRows } = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tenantId]);
     const tenantName = tenantRows[0]?.name;
 
+    // Fetch refund payments so they appear on reprinted bills
+    const { rows: refundPaymentRows } = await pool.query(
+      `SELECT id, amount, refund_reason, payment_method, created_at FROM bill_payments WHERE bill_id = $1 AND is_refund = true ORDER BY created_at ASC`,
+      [billRow.id]
+    );
+    const billRefundPayments: RefundPaymentData[] = refundPaymentRows.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      amount: r.amount as string,
+      refundReason: r.refund_reason as string | null,
+      paymentMethod: r.payment_method as string | null,
+      createdAt: r.created_at as Date | null,
+    }));
+
     const cashierPrinter = printers.find(p => p.printerType === "CASHIER" && p.isDefault) ?? printers.find(p => p.printerType === "CASHIER");
     let targetPrinter = cashierPrinter ?? printers[0];
 
@@ -405,13 +422,13 @@ export async function routeAndPrint(params: {
     let escposData: Buffer | undefined;
 
     if (!targetPrinter || targetPrinter.connectionType === "BROWSER" || targetPrinter.connectionType === "USB" || targetPrinter.connectionType === "BLUETOOTH") {
-      htmlFallback = browserHandler.generateBillHtml(bill, order, items, undefined, tenantName);
+      htmlFallback = browserHandler.generateBillHtml(bill, order, items, undefined, tenantName, billRefundPayments.length > 0 ? billRefundPayments : undefined);
       results.htmlFallback = htmlFallback;
     } else {
       try {
-        escposData = buildBill(bill, order, items, undefined, tenantName);
+        escposData = buildBill(bill, order, items, undefined, tenantName, billRefundPayments.length > 0 ? billRefundPayments : undefined);
       } catch (_) {
-        htmlFallback = browserHandler.generateBillHtml(bill, order, items, undefined, tenantName);
+        htmlFallback = browserHandler.generateBillHtml(bill, order, items, undefined, tenantName, billRefundPayments.length > 0 ? billRefundPayments : undefined);
         results.htmlFallback = htmlFallback;
       }
     }
@@ -434,6 +451,101 @@ export async function routeAndPrint(params: {
     if (escposData && targetPrinter) {
       sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
         console.error(`[PrinterService] Bill print failed for job ${jobId}:`, err);
+      });
+    }
+  } else if (jobType === "refund_receipt") {
+    // referenceId is the bill ID; inputPayload.refundPaymentId narrows to the specific refund to print
+    const { rows: billRows } = await pool.query(
+      `SELECT b.*, o.order_number, t.number AS table_number
+       FROM bills b
+       LEFT JOIN orders o ON o.id = b.order_id
+       LEFT JOIN tables t ON t.id = b.table_id
+       WHERE b.id = $1`,
+      [referenceId]
+    );
+    if (billRows.length === 0) return results;
+    const billRow = billRows[0];
+
+    const refundPaymentId = inputPayload?.refundPaymentId as string | undefined;
+    let paymentQuery: string;
+    let paymentParams: unknown[];
+
+    if (refundPaymentId) {
+      // Print only the specific refund payment
+      paymentQuery = `SELECT * FROM bill_payments WHERE id = $1 AND bill_id = $2 AND is_refund = true`;
+      paymentParams = [refundPaymentId, referenceId];
+    } else {
+      // Fallback: print only the most recent refund
+      paymentQuery = `SELECT * FROM bill_payments WHERE bill_id = $1 AND is_refund = true ORDER BY created_at DESC LIMIT 1`;
+      paymentParams = [referenceId];
+    }
+
+    const { rows: paymentRows } = await pool.query(paymentQuery, paymentParams);
+    if (paymentRows.length === 0) {
+      throw new Error(refundPaymentId
+        ? `Refund payment ${refundPaymentId} not found for bill ${referenceId}`
+        : `No refund payments found for bill ${referenceId}`);
+    }
+
+    const { rows: tenantRows } = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tenantId]);
+    const tenantName = tenantRows[0]?.name;
+
+    const refunds: RefundPaymentData[] = paymentRows.map((r: Record<string, unknown>) => ({
+      id: r.id as string,
+      amount: r.amount as string,
+      refundReason: r.refund_reason as string | null,
+      paymentMethod: r.payment_method as string | null,
+      createdAt: r.created_at as Date | null,
+    }));
+
+    const refundData: RefundReceiptData = {
+      billRef: billRow.invoice_number || billRow.bill_number || billRow.id,
+      tableNumber: billRow.table_number,
+      totalBillAmount: billRow.total_amount,
+      refunds,
+      tenantName,
+    };
+
+    const cashierPrinter = printers.find(p => p.printerType === "CASHIER" && p.isDefault) ?? printers.find(p => p.printerType === "CASHIER");
+
+    let htmlFallback: string | undefined;
+    let escposData: Buffer | undefined;
+    let targetPrinter: (typeof printers)[0] | undefined;
+
+    if (!cashierPrinter) {
+      // No CASHIER printer configured — force browser fallback
+      htmlFallback = buildRefundReceiptHtml(refundData);
+      results.htmlFallback = htmlFallback;
+    } else if (cashierPrinter.connectionType === "BROWSER" || cashierPrinter.connectionType === "USB" || cashierPrinter.connectionType === "BLUETOOTH") {
+      htmlFallback = buildRefundReceiptHtml(refundData);
+      results.htmlFallback = htmlFallback;
+      targetPrinter = cashierPrinter;
+    } else {
+      targetPrinter = cashierPrinter;
+      try {
+        escposData = buildRefundReceipt(refundData);
+      } catch (_) {
+        htmlFallback = buildRefundReceiptHtml(refundData);
+        results.htmlFallback = htmlFallback;
+      }
+    }
+
+    const jobId = await createPrintJobRecord({
+      tenantId,
+      outletId,
+      printerId: targetPrinter?.id ?? null,
+      type: jobType,
+      referenceId,
+      content: htmlFallback ?? null,
+      contentFormat: htmlFallback ? "html" : "escpos",
+      payload: { refundData },
+      triggeredByName,
+    });
+    results.jobIds.push(jobId);
+
+    if (escposData && targetPrinter) {
+      sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
+        console.error(`[PrinterService] Refund receipt print failed for job ${jobId}:`, err);
       });
     }
   } else if (jobType === "label") {

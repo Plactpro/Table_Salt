@@ -143,6 +143,14 @@ export interface BillData {
   covers?: number;
 }
 
+export interface RefundPaymentData {
+  id: string;
+  amount: string | number;
+  refundReason?: string | null;
+  paymentMethod?: string | null;
+  createdAt?: Date | string | null;
+}
+
 export interface PrinterInfo {
   printerName: string;
   ipAddress?: string | null;
@@ -260,6 +268,7 @@ export function buildBill(
   items: BillItem[],
   template?: PrintTemplate,
   tenantName?: string,
+  payments?: RefundPaymentData[],
 ): Buffer {
   const b = new EscPosBuilder();
   const cpl = 42;
@@ -319,7 +328,30 @@ export function buildBill(
   if (bill.paymentMethod) {
     b.text(`Payment: ${bill.paymentMethod.toUpperCase()}`).newLine();
   }
-  b.separator("-", cpl);
+
+  const refunds = payments?.filter(p => Number(p.amount) < 0) ?? [];
+  if (refunds.length > 0) {
+    const totalRefunded = refunds.reduce((s, p) => s + Math.abs(Number(p.amount)), 0);
+    const netSettled = Number(bill.totalAmount) - totalRefunded;
+    b.separator("-", cpl);
+    b.bold().center().text("REFUND ISSUED").boldOff().newLine();
+    b.separator("-", cpl);
+    for (const r of refunds) {
+      const refundDate = r.createdAt
+        ? new Date(r.createdAt).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+        : "";
+      b.left();
+      b.text(padRight("Refund Amount:", colW) + padLeft(`-${formatMoney(Math.abs(Number(r.amount)))}`, 12)).newLine();
+      if (r.refundReason) {
+        const cleanReason = r.refundReason.split(" | items:")[0];
+        b.text(`Reason: ${cleanReason}`).newLine();
+      }
+      if (refundDate) b.text(`Refunded on: ${refundDate}`).newLine();
+    }
+    b.separator("-", cpl);
+    b.text(padRight("Net Settled:", colW) + padLeft(formatMoney(netSettled), 12)).newLine();
+    b.separator("-", cpl);
+  }
 
   if (template?.footerLines && template.footerLines.length > 0) {
     b.center();
@@ -377,6 +409,7 @@ export function buildBillHtml(
   items: BillItem[],
   template?: PrintTemplate,
   tenantName?: string,
+  payments?: RefundPaymentData[],
 ): string {
   const billRef = bill.invoiceNumber || bill.billNumber || "N/A";
   const now = new Date().toLocaleString();
@@ -442,6 +475,24 @@ ${bill.waiterName ? `<div>Served by: ${escHtml(bill.waiterName)}</div>` : ""}
   <tr class="total-row"><td>TOTAL</td><td class="right">${formatMoney(bill.totalAmount)}</td></tr>
 </table>
 ${bill.paymentMethod ? `<div>Payment: ${escHtml(bill.paymentMethod.toUpperCase())}</div>` : ""}
+${(() => {
+  const refunds = payments?.filter(p => Number(p.amount) < 0) ?? [];
+  if (refunds.length === 0) return "";
+  const totalRefunded = refunds.reduce((s, p) => s + Math.abs(Number(p.amount)), 0);
+  const netSettled = Number(bill.totalAmount) - totalRefunded;
+  return `<div class="sep"></div>
+<div class="center" style="font-weight:bold;">REFUND ISSUED</div>
+<div class="sep"></div>
+<table>${refunds.map(r => {
+  const cleanReason = (r.refundReason || "").split(" | items:")[0];
+  const refundDate = r.createdAt ? new Date(r.createdAt as string).toLocaleString() : "";
+  return `<tr><td>Refund Amount</td><td class="right">-${formatMoney(Math.abs(Number(r.amount)))}</td></tr>
+${cleanReason ? `<tr><td colspan="2">Reason: ${escHtml(cleanReason)}</td></tr>` : ""}
+${refundDate ? `<tr><td colspan="2" style="font-size:10px;">${escHtml(refundDate)}</td></tr>` : ""}`;
+}).join("")}
+<tr style="font-weight:bold;border-top:1px solid #000;"><td>Net Settled</td><td class="right">${formatMoney(netSettled)}</td></tr>
+</table>`;
+})()}
 <div class="sep"></div>
 <div class="center">${footerHtml}</div>
 ${template?.showQrCode && template.qrCodeContent ? `<div class="center" style="margin-top:8px;">[QR: ${escHtml(template.qrCodeContent)}]</div>` : ""}
@@ -513,6 +564,135 @@ ${isVIP ? '<div class="vip-header">⭐ VIP ORDER ⭐</div>' : ""}
 <div class="sep"></div>
 <table><tbody>${itemRows}</tbody></table>
 <div class="sep"></div>
+<script>window.onload = function() { window.print(); setTimeout(window.close, 500); };</script>
+</body>
+</html>`;
+}
+
+export interface RefundReceiptData {
+  billRef: string;
+  tableNumber?: number | null;
+  totalBillAmount: string | number;
+  refunds: RefundPaymentData[];
+  tenantName?: string;
+  refundedAt?: Date | string | null;
+}
+
+export function buildRefundReceipt(data: RefundReceiptData, template?: PrintTemplate): Buffer {
+  const b = new EscPosBuilder();
+  const cpl = 42;
+  const colW = 28;
+
+  b.center();
+  if (template?.headerLines && template.headerLines.length > 0) {
+    for (const line of template.headerLines) b.text(line).newLine();
+  } else {
+    b.bold().text(data.tenantName || "Restaurant").boldOff().newLine();
+  }
+  b.text("REFUND RECEIPT").newLine();
+  b.separator("=", cpl);
+  b.left();
+  b.text(`Bill Ref: ${data.billRef}`).newLine();
+  if (data.tableNumber) b.text(`Table: ${data.tableNumber}`).newLine();
+  const printTime = new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  b.text(`Date: ${printTime}`).newLine();
+  b.separator("-", cpl);
+  b.text(padRight("Original Total:", colW) + padLeft(formatMoney(data.totalBillAmount), 12)).newLine();
+  b.separator("-", cpl);
+
+  let cumulativeRefund = 0;
+  for (const r of data.refunds) {
+    const refundAmt = Math.abs(Number(r.amount));
+    cumulativeRefund += refundAmt;
+    b.bold().text(`Refund: -${formatMoney(refundAmt)}`).boldOff().newLine();
+    if (r.paymentMethod) b.text(`  Method: ${r.paymentMethod.toUpperCase()}`).newLine();
+    if (r.refundReason) {
+      const cleanReason = r.refundReason.split(" | items:")[0];
+      b.text(`  Reason: ${cleanReason}`).newLine();
+    }
+    if (r.createdAt) {
+      const rd = new Date(r.createdAt as string).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      b.text(`  Date: ${rd}`).newLine();
+    }
+  }
+  b.separator("-", cpl);
+  b.text(padRight("Total Refunded:", colW) + padLeft(formatMoney(cumulativeRefund), 12)).newLine();
+  const netSettled = Number(data.totalBillAmount) - cumulativeRefund;
+  b.bold().text(padRight("Net Settled:", colW) + padLeft(formatMoney(netSettled), 12)).boldOff().newLine();
+  b.separator("=", cpl);
+
+  if (template?.footerLines && template.footerLines.length > 0) {
+    b.center();
+    for (const line of template.footerLines) b.text(line).newLine();
+  } else {
+    b.center().text("We apologize for the inconvenience.").newLine();
+  }
+  b.newLine(3).cutPaper();
+  return b.build();
+}
+
+export function buildRefundReceiptHtml(data: RefundReceiptData, template?: PrintTemplate): string {
+  const billRef = data.billRef;
+  const printTime = new Date().toLocaleString();
+  const headerHtml = (template?.headerLines && template.headerLines.length > 0)
+    ? template.headerLines.map(l => `<div>${escHtml(l)}</div>`).join("")
+    : `<div class="title">${escHtml(data.tenantName || "Restaurant")}</div>`;
+  const footerHtml = (template?.footerLines && template.footerLines.length > 0)
+    ? template.footerLines.map(l => `<div>${escHtml(l)}</div>`).join("")
+    : "<div>We apologize for the inconvenience.</div>";
+
+  let cumulativeRefund = 0;
+  const refundRows = data.refunds.map(r => {
+    const refundAmt = Math.abs(Number(r.amount));
+    cumulativeRefund += refundAmt;
+    const cleanReason = (r.refundReason || "").split(" | items:")[0];
+    const refundDate = r.createdAt ? new Date(r.createdAt as string).toLocaleString() : "";
+    return `<tr><td><strong>Refund</strong></td><td class="right">-${formatMoney(refundAmt)}</td></tr>
+${r.paymentMethod ? `<tr><td style="padding-left:8px;">Method</td><td class="right">${escHtml(r.paymentMethod.toUpperCase())}</td></tr>` : ""}
+${cleanReason ? `<tr><td colspan="2" style="padding-left:8px;">Reason: ${escHtml(cleanReason)}</td></tr>` : ""}
+${refundDate ? `<tr><td colspan="2" style="padding-left:8px;font-size:10px;">${escHtml(refundDate)}</td></tr>` : ""}`;
+  }).join("");
+
+  const netSettled = Number(data.totalBillAmount) - cumulativeRefund;
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Courier New', monospace; font-size: 12px; width: 80mm; margin: 0 auto; }
+  .center { text-align: center; }
+  .right { text-align: right; }
+  .title { font-size: 18px; font-weight: bold; }
+  .refund-header { font-size: 16px; font-weight: bold; color: #c00; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 2px 0; }
+  .total-row td { font-size: 14px; font-weight: bold; border-top: 2px solid #000; padding-top: 4px; }
+  .sep { border-top: 1px dashed #000; margin: 4px 0; }
+  @media print { body { width: 80mm; } @page { margin: 0; size: 80mm auto; } }
+</style>
+</head>
+<body>
+<div class="center">${headerHtml}</div>
+<div class="center refund-header">REFUND RECEIPT</div>
+<div class="sep"></div>
+<div>Bill Ref: ${escHtml(billRef)}</div>
+${data.tableNumber ? `<div>Table: ${data.tableNumber}</div>` : ""}
+<div>${escHtml(printTime)}</div>
+<div class="sep"></div>
+<table>
+  <tr><td>Original Total</td><td class="right">${formatMoney(data.totalBillAmount)}</td></tr>
+</table>
+<div class="sep"></div>
+<table>${refundRows}</table>
+<div class="sep"></div>
+<table>
+  <tr><td>Total Refunded</td><td class="right">-${formatMoney(cumulativeRefund)}</td></tr>
+  <tr class="total-row"><td>Net Settled</td><td class="right">${formatMoney(netSettled)}</td></tr>
+</table>
+<div class="sep"></div>
+<div class="center">${footerHtml}</div>
 <script>window.onload = function() { window.print(); setTimeout(window.close, 500); };</script>
 </body>
 </html>`;

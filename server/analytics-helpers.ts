@@ -12,6 +12,37 @@ export interface OrderData {
   createdAt: Date | string | null;
 }
 
+export interface RefundData {
+  billId: string;
+  amount: string | number;
+  createdAt: Date | string | null;
+  billCreatedAt?: Date | string | null;
+}
+
+export function buildRefundByBillMap(refunds: RefundData[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of refunds) {
+    const prev = map.get(r.billId) ?? 0;
+    map.set(r.billId, prev + Math.abs(Number(r.amount)));
+  }
+  return map;
+}
+
+export function buildRefundByDayMap(refunds: RefundData[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const r of refunds) {
+    const attributeDate = r.billCreatedAt ?? r.createdAt;
+    if (!attributeDate) continue;
+    const dateStr = new Date(attributeDate).toISOString().split("T")[0];
+    map.set(dateStr, (map.get(dateStr) ?? 0) + Math.abs(Number(r.amount)));
+  }
+  return map;
+}
+
+export function totalRefundsAmount(refunds: RefundData[]): number {
+  return refunds.reduce((s, r) => s + Math.abs(Number(r.amount)), 0);
+}
+
 export interface OrderItemData {
   id: string;
   orderId: string | null;
@@ -37,27 +68,53 @@ export function filterValidOrders(orders: OrderData[]): OrderData[] {
   return orders.filter(o => !isVoidOrCancelled(o.status));
 }
 
-export function computeRevenueByDay(orders: OrderData[]): Record<string, { date: string; revenue: number; count: number }> {
-  const byDay: Record<string, { date: string; revenue: number; count: number }> = {};
+export function computeRevenueByDay(
+  orders: OrderData[],
+  refunds?: RefundData[],
+): Record<string, { date: string; revenue: number; netRevenue: number; count: number; refundAmount: number }> {
+  const refundByDay = refunds ? buildRefundByDayMap(refunds) : new Map<string, number>();
+  const byDay: Record<string, { date: string; revenue: number; netRevenue: number; count: number; refundAmount: number }> = {};
   for (const o of orders) {
     if (!o.createdAt || isVoidOrCancelled(o.status)) continue;
     const dateStr = new Date(o.createdAt).toISOString().split("T")[0];
-    if (!byDay[dateStr]) byDay[dateStr] = { date: dateStr, revenue: 0, count: 0 };
+    if (!byDay[dateStr]) byDay[dateStr] = { date: dateStr, revenue: 0, netRevenue: 0, count: 0, refundAmount: 0 };
     byDay[dateStr].revenue += Number(o.total) || 0;
     byDay[dateStr].count++;
+  }
+  // Subtract refunds per day
+  for (const [dateStr, refundAmt] of refundByDay.entries()) {
+    if (!byDay[dateStr]) byDay[dateStr] = { date: dateStr, revenue: 0, netRevenue: 0, count: 0, refundAmount: 0 };
+    byDay[dateStr].refundAmount += refundAmt;
+  }
+  for (const entry of Object.values(byDay)) {
+    entry.netRevenue = Math.max(0, entry.revenue - entry.refundAmount);
   }
   return byDay;
 }
 
-export function computeHourlySales(orders: OrderData[]): { hour: number; revenue: number; count: number }[] {
-  const hourly: Record<number, { hour: number; revenue: number; count: number }> = {};
-  for (let h = 0; h < 24; h++) hourly[h] = { hour: h, revenue: 0, count: 0 };
+export function computeHourlySales(
+  orders: OrderData[],
+  refunds?: RefundData[],
+): { hour: number; revenue: number; netRevenue: number; count: number }[] {
+  const hourly: Record<number, { hour: number; revenue: number; netRevenue: number; refundAmount: number; count: number }> = {};
+  for (let h = 0; h < 24; h++) hourly[h] = { hour: h, revenue: 0, netRevenue: 0, refundAmount: 0, count: 0 };
   for (const o of orders) {
     if (!o.createdAt || isVoidOrCancelled(o.status)) continue;
     const h = new Date(o.createdAt).getHours();
     const rev = Number(o.total) || 0;
     hourly[h].revenue += rev;
     hourly[h].count++;
+  }
+  if (refunds) {
+    for (const r of refunds) {
+      const attributeDate = r.billCreatedAt ?? r.createdAt;
+      if (!attributeDate) continue;
+      const h = new Date(attributeDate).getHours();
+      hourly[h].refundAmount += Math.abs(Number(r.amount));
+    }
+  }
+  for (const entry of Object.values(hourly)) {
+    entry.netRevenue = Math.max(0, entry.revenue - entry.refundAmount);
   }
   return Object.values(hourly).filter(h => h.count > 0);
 }

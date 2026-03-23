@@ -1842,6 +1842,7 @@ export const billPayments = pgTable("bill_payments", {
   isRefund: boolean("is_refund").default(false),
   refundReason: text("refund_reason"),
   razorpayPaymentId: text("razorpay_payment_id"),
+  razorpayRefundId: text("razorpay_refund_id"),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_bill_payments_bill_id").on(t.billId),

@@ -1,5 +1,5 @@
 import { eq, and, desc, sql, gte, lte, lt, count, sum, inArray } from "drizzle-orm";
-import { db } from "./db";
+import { db, pool } from "./db";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
 
 function encryptPiiFields<T extends Record<string, unknown>>(data: T, fields: string[]): T {
@@ -1132,7 +1132,43 @@ export class DatabaseStorage implements IStorage {
         lte(orders.createdAt, to),
       ));
 
-    return { salesByDay, totals };
+    // Fetch refunds grouped by the bill's creation date (order revenue date), not refund date.
+    // This correctly attributes refunds to the day the original revenue was earned.
+    const { rows: refundDayRows } = await pool.query(
+      `SELECT DATE(b.created_at) AS bill_date, SUM(ABS(bp.amount)) AS refund_total, COUNT(*) AS refund_count
+       FROM bill_payments bp
+       JOIN bills b ON b.id = bp.bill_id
+       WHERE bp.tenant_id = $1
+         AND bp.is_refund = true
+         AND b.created_at >= $2
+         AND b.created_at <= $3
+       GROUP BY DATE(b.created_at)`,
+      [tenantId, from, to]
+    );
+    const refundsByDay: Record<string, number> = {};
+    let totalRefunded = 0;
+    let refundCount = 0;
+    for (const r of refundDayRows) {
+      const dateStr = String(r.bill_date).split("T")[0];
+      const amt = Number(r.refund_total);
+      refundsByDay[dateStr] = (refundsByDay[dateStr] ?? 0) + amt;
+      totalRefunded += amt;
+      refundCount += Number(r.refund_count);
+    }
+
+    // Merge refunds into salesByDay — net revenue per day = gross revenue − refunds on that day's bills
+    const salesByDayWithRefunds = salesByDay.map((d: { date: string; revenue: string | null; orderCount: number }) => {
+      const dateStr = String(d.date).split("T")[0];
+      const refund = refundsByDay[dateStr] ?? 0;
+      const revenue = Number(d.revenue ?? 0);
+      const netRevenue = Math.max(0, revenue - refund);
+      return { ...d, refund, netRevenue };
+    });
+
+    const grossRevenue = Number(totals?.revenue ?? 0);
+    const netRevenue = Math.max(0, grossRevenue - totalRefunded);
+
+    return { salesByDay: salesByDayWithRefunds, totals, totalRefunded, totalRefunds: totalRefunded, refundCount, netRevenue };
   }
 
   async createSalesInquiry(data: InsertSalesInquiry) {
