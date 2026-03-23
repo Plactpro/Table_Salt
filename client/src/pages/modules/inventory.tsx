@@ -9,8 +9,8 @@ import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Package, Plus, Search, AlertTriangle, Edit, Trash2, ArrowUpDown,
-  Warehouse, BoxIcon, TrendingDown, TrendingUp, ChefHat, ClipboardList, DollarSign,
-  BookOpen, X, Percent, Activity, ChevronLeft, ChevronRight, FileDown,
+  Warehouse, BoxIcon, TrendingDown, ChefHat, ClipboardList, DollarSign,
+  BookOpen, X, Percent, Activity, ChevronLeft, ChevronRight, FileDown, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { exportToPdf } from "@/lib/pdf-export";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,6 +32,20 @@ import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
 import { Textarea } from "@/components/ui/textarea";
 
+const ITEM_CATEGORIES = ["INGREDIENT", "CROCKERY", "CUTLERY", "GLASSWARE"] as const;
+type ItemCategory = typeof ITEM_CATEGORIES[number];
+
+function isPieceCategory(cat: string) {
+  return cat === "CROCKERY" || cat === "CUTLERY" || cat === "GLASSWARE";
+}
+
+function formatStock(stock: number, unit: string | null) {
+  if (unit === "pcs" || isPieceCategory(unit || "")) {
+    return Math.round(stock).toString() + " pcs";
+  }
+  return stock.toFixed(1) + " " + (unit || "");
+}
+
 function StockBar({ current, reorder }: { current: number; reorder: number }) {
   const max = Math.max(current, reorder * 2, 1);
   const pct = Math.min((current / max) * 100, 100);
@@ -48,16 +62,138 @@ function StockBar({ current, reorder }: { current: number; reorder: number }) {
   );
 }
 
+interface ParCheckItem {
+  itemId: string;
+  itemName: string;
+  category: string;
+  currentStock: number;
+  parLevelPerShift: number;
+  reorderPieces: number;
+  status: "OK" | "BELOW_PAR" | "BELOW_REORDER";
+}
+
+function ParLevelStatusPanel({ outletId }: { outletId?: string }) {
+  const [open, setOpen] = useState(true);
+  const { user } = useAuth();
+
+  const id = outletId || user?.outletId || "";
+  const { data: parItems = [], isLoading, isError } = useQuery<ParCheckItem[]>({
+    queryKey: ["/api/inventory/par-check", id],
+    queryFn: async () => {
+      const url = id ? `/api/inventory/par-check/${id}` : "/api/inventory/par-check";
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) throw new Error("No par-check endpoint");
+      return res.json();
+    },
+    retry: false,
+  });
+
+  if (isError || (parItems.length === 0 && !isLoading)) return null;
+
+  return (
+    <Card data-testid="section-par-status">
+      <CardHeader className="pb-2 cursor-pointer" onClick={() => setOpen(p => !p)}>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Par Level Status — Crockery &amp; Glassware
+          </CardTitle>
+          {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </div>
+      </CardHeader>
+      {open && (
+        <CardContent className="pt-0">
+          {isLoading ? (
+            <p className="text-sm text-muted-foreground py-2">Loading par levels...</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">Current</TableHead>
+                  <TableHead className="text-right">Par/Shift</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {parItems.map(item => (
+                  <TableRow key={item.itemId} data-testid={`row-par-${item.itemId}`}>
+                    <TableCell className="font-medium">{item.itemName}</TableCell>
+                    <TableCell className="text-right">{Math.round(item.currentStock)} pcs</TableCell>
+                    <TableCell className="text-right">{Math.round(item.parLevelPerShift)} pcs</TableCell>
+                    <TableCell>
+                      {item.status === "OK" ? (
+                        <Badge variant="secondary" className="text-green-700 bg-green-100" data-testid={`badge-par-status-${item.itemId}`}>✅ OK</Badge>
+                      ) : item.status === "BELOW_PAR" ? (
+                        <Badge variant="destructive" data-testid={`badge-par-status-${item.itemId}`}>🔴 Below par</Badge>
+                      ) : (
+                        <Badge className="bg-amber-100 text-amber-700 border-amber-300" data-testid={`badge-par-status-${item.itemId}`}>🟡 Below par</Badge>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+type ExtendedInventoryItem = InventoryItem & {
+  itemCategory?: string | null;
+  unitType?: string | null;
+  parLevelPerShift?: string | null;
+  reorderPieces?: string | null;
+  costPerPiece?: string | null;
+};
+
+type ExtendedFormData = {
+  name: string;
+  sku: string;
+  category: string;
+  unit: string;
+  currentStock: string;
+  reorderLevel: string;
+  costPrice: string;
+  supplier: string;
+  itemCategory: ItemCategory;
+  parLevelPerShift: string;
+  reorderPieces: string;
+  costPerPiece: string;
+};
+
+const CATEGORY_FILTERS = [
+  { value: "ALL", label: "All" },
+  { value: "INGREDIENT", label: "Food" },
+  { value: "CROCKERY", label: "Crockery" },
+  { value: "CUTLERY", label: "Cutlery" },
+  { value: "GLASSWARE", label: "Glassware" },
+];
+
+const TEST_IDS: Record<string, string> = {
+  ALL: "tab-filter-all",
+  INGREDIENT: "tab-filter-food",
+  CROCKERY: "tab-filter-crockery",
+  CUTLERY: "tab-filter-cutlery",
+  GLASSWARE: "tab-filter-glassware",
+};
+
 function InventoryTab() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [search, setSearch] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [adjustingItem, setAdjustingItem] = useState<InventoryItem | null>(null);
-  const [formData, setFormData] = useState({ name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10", costPrice: "0", supplier: "" });
+  const [editingItem, setEditingItem] = useState<ExtendedInventoryItem | null>(null);
+  const [adjustingItem, setAdjustingItem] = useState<ExtendedInventoryItem | null>(null);
+  const [formData, setFormData] = useState<ExtendedFormData>({
+    name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10",
+    costPrice: "0", supplier: "",
+    itemCategory: "INGREDIENT", parLevelPerShift: "", reorderPieces: "", costPerPiece: "",
+  });
   const [adjustData, setAdjustData] = useState({ type: "in" as "in" | "out", quantity: "", reason: "" });
   const [supervisorDialog, setSupervisorDialog] = useState<{
     open: boolean; action: string; actionLabel: string;
@@ -71,10 +207,13 @@ function InventoryTab() {
     return formatCurrency(v, tenant?.currency || "AED", tenant?.currencyPosition || "before", tenant?.currencyDecimals ?? 2);
   };
 
-  const { data: inventoryRes, isLoading } = useQuery<{ data: InventoryItem[]; total: number }>({
-    queryKey: ["/api/inventory", inventoryPage],
+  const queryParams = new URLSearchParams({ limit: String(INVENTORY_LIMIT), offset: String(inventoryPage * INVENTORY_LIMIT) });
+  if (categoryFilter !== "ALL") queryParams.set("itemCategory", categoryFilter);
+
+  const { data: inventoryRes, isLoading } = useQuery<{ data: ExtendedInventoryItem[]; total: number }>({
+    queryKey: ["/api/inventory", inventoryPage, categoryFilter],
     queryFn: async () => {
-      const res = await fetch(`/api/inventory?limit=${INVENTORY_LIMIT}&offset=${inventoryPage * INVENTORY_LIMIT}`, { credentials: "include" });
+      const res = await fetch(`/api/inventory?${queryParams}`, { credentials: "include" });
       return res.json();
     },
   });
@@ -82,12 +221,12 @@ function InventoryTab() {
   const inventoryTotal = inventoryRes?.total ?? 0;
 
   const createMutation = useMutation({
-    mutationFn: async (data: typeof formData) => { const res = await apiRequest("POST", "/api/inventory", data); return res.json(); },
+    mutationFn: async (data: ExtendedFormData) => { const res = await apiRequest("POST", "/api/inventory", data); return res.json(); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); resetForm(); toast({ title: "Item added" }); },
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: typeof formData }) => { const res = await apiRequest("PATCH", `/api/inventory/${id}`, data); return res.json(); },
+    mutationFn: async ({ id, data }: { id: string; data: ExtendedFormData }) => { const res = await apiRequest("PATCH", `/api/inventory/${id}`, data); return res.json(); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); setEditingItem(null); resetForm(); toast({ title: "Item updated" }); },
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
@@ -135,11 +274,32 @@ function InventoryTab() {
     setSupervisorDialog(null);
   }, [supervisorDialog, adjustMutation]);
 
-  function resetForm() { setFormData({ name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10", costPrice: "0", supplier: "" }); }
-  function openEditDialog(item: InventoryItem) {
+  function resetForm() {
+    setFormData({ name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10", costPrice: "0", supplier: "", itemCategory: "INGREDIENT", parLevelPerShift: "", reorderPieces: "", costPerPiece: "" });
+  }
+
+  function openEditDialog(item: ExtendedInventoryItem) {
     setEditingItem(item);
-    setFormData({ name: item.name, sku: item.sku || "", category: item.category || "", unit: item.unit || "pcs", currentStock: item.currentStock?.toString() || "0", reorderLevel: item.reorderLevel?.toString() || "10", costPrice: item.costPrice?.toString() || "0", supplier: item.supplier || "" });
+    const cat = (item.itemCategory || "INGREDIENT") as ItemCategory;
+    setFormData({
+      name: item.name, sku: item.sku || "", category: item.category || "",
+      unit: item.unit || "pcs", currentStock: item.currentStock?.toString() || "0",
+      reorderLevel: item.reorderLevel?.toString() || "10", costPrice: item.costPrice?.toString() || "0",
+      supplier: item.supplier || "",
+      itemCategory: cat,
+      parLevelPerShift: item.parLevelPerShift?.toString() || "",
+      reorderPieces: item.reorderPieces?.toString() || "",
+      costPerPiece: item.costPerPiece?.toString() || "",
+    });
     setItemDialogOpen(true);
+  }
+
+  function handleCategoryChange(cat: ItemCategory) {
+    setFormData(f => ({
+      ...f,
+      itemCategory: cat,
+      unit: isPieceCategory(cat) ? "pcs" : f.unit,
+    }));
   }
 
   const filtered = inventory.filter((item) =>
@@ -149,8 +309,26 @@ function InventoryTab() {
   );
   const lowStockItems = inventory.filter((item) => Number(item.currentStock) <= Number(item.reorderLevel));
   const totalValue = inventory.reduce((sum, item) => sum + Number(item.currentStock) * Number(item.costPrice), 0);
-  const isLowStock = (item: InventoryItem) => Number(item.currentStock) <= Number(item.reorderLevel);
   const canEdit = user?.role === "owner" || user?.role === "manager";
+  const isCrockeryTab = categoryFilter === "CROCKERY" || categoryFilter === "CUTLERY" || categoryFilter === "GLASSWARE";
+
+  function getRowHighlight(item: ExtendedInventoryItem) {
+    if (!isPieceCategory(item.itemCategory || "")) {
+      return Number(item.currentStock) <= Number(item.reorderLevel) ? "bg-red-50 dark:bg-red-950/20" : "";
+    }
+    const stock = Number(item.currentStock);
+    const par = Number(item.parLevelPerShift || 0);
+    const reorder = Number(item.reorderPieces || item.reorderLevel || 0);
+    if (par > 0 && stock < par) return "bg-red-50 dark:bg-red-950/20";
+    if (reorder > 0 && stock < reorder) return "bg-amber-50 dark:bg-amber-950/20";
+    return "";
+  }
+
+  const isBelowPar = (item: ExtendedInventoryItem) => {
+    if (!isPieceCategory(item.itemCategory || "")) return false;
+    const par = Number(item.parLevelPerShift || 0);
+    return par > 0 && Number(item.currentStock) < par;
+  };
 
   return (
     <div className="space-y-6">
@@ -163,9 +341,9 @@ function InventoryTab() {
 
       <Card>
         <CardHeader className="pb-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-lg flex items-center gap-2"><Package className="h-4 w-4 text-muted-foreground" />Inventory Items</CardTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <div className="relative w-64">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Search items..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" data-testid="input-search-inventory" />
@@ -187,9 +365,9 @@ function InventoryTab() {
                       item.name,
                       item.sku || "—",
                       item.category || "—",
-                      Number(item.currentStock).toFixed(2),
+                      isPieceCategory(item.itemCategory || "") ? Math.round(Number(item.currentStock)).toString() : Number(item.currentStock).toFixed(2),
                       item.unit || "pcs",
-                      Number(item.reorderLevel).toFixed(2),
+                      Number(item.reorderLevel).toFixed(0),
                       fmt(Number(item.costPrice)),
                       fmt(Number(item.currentStock) * Number(item.costPrice)),
                       Number(item.currentStock) <= Number(item.reorderLevel) ? "LOW STOCK" : "OK",
@@ -204,6 +382,22 @@ function InventoryTab() {
               {canEdit && <Button onClick={() => { setEditingItem(null); resetForm(); setItemDialogOpen(true); }} data-testid="button-add-inventory"><Plus className="h-4 w-4 mr-2" />Add Item</Button>}
             </div>
           </div>
+
+          {/* Category filter tabs */}
+          <div className="flex gap-1 mt-3 flex-wrap">
+            {CATEGORY_FILTERS.map(f => (
+              <Button
+                key={f.value}
+                variant={categoryFilter === f.value ? "default" : "outline"}
+                size="sm"
+                data-testid={TEST_IDS[f.value]}
+                onClick={() => { setCategoryFilter(f.value); setInventoryPage(0); }}
+                className="h-7 text-xs px-3"
+              >
+                {f.label}
+              </Button>
+            ))}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? <div className="text-center py-8 text-muted-foreground">Loading...</div> : filtered.length === 0 ? (
@@ -212,39 +406,81 @@ function InventoryTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead><TableHead>SKU</TableHead><TableHead>Category</TableHead><TableHead>Stock Level</TableHead><TableHead>Current</TableHead><TableHead>Reorder</TableHead><TableHead>Unit</TableHead><TableHead>Cost</TableHead><TableHead>Supplier</TableHead><TableHead>Status</TableHead>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Current Stock</TableHead>
+                  {isCrockeryTab && <TableHead className="text-right">Par/Shift</TableHead>}
+                  {!isCrockeryTab && <><TableHead>Stock Level</TableHead><TableHead>Reorder</TableHead><TableHead>Unit</TableHead></>}
+                  <TableHead>Cost</TableHead>
+                  {!isCrockeryTab && <TableHead>Supplier</TableHead>}
+                  <TableHead>Status</TableHead>
                   {canEdit && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((item, index) => (
-                  <motion.tr key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.02 }} className={`border-b transition-colors hover:bg-muted/50 ${isLowStock(item) ? "bg-red-50 dark:bg-red-950/20" : ""}`} data-testid={`row-inventory-${item.id}`}>
-                    <TableCell className="font-medium">
-                      <div className="flex items-center gap-2">
-                        {isLowStock(item) && <AlertTriangle className="h-4 w-4 text-red-500" />}
-                        {item.name}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{item.sku || "—"}</TableCell>
-                    <TableCell>{item.category || "—"}</TableCell>
-                    <TableCell><StockBar current={Number(item.currentStock)} reorder={Number(item.reorderLevel)} /></TableCell>
-                    <TableCell className={isLowStock(item) ? "text-red-600 font-semibold" : ""} data-testid={`text-stock-${item.id}`}>{Number(item.currentStock).toFixed(1)}</TableCell>
-                    <TableCell>{Number(item.reorderLevel).toFixed(0)}</TableCell>
-                    <TableCell>{item.unit}</TableCell>
-                    <TableCell>{fmt(Number(item.costPrice))}</TableCell>
-                    <TableCell>{item.supplier || "—"}</TableCell>
-                    <TableCell>{isLowStock(item) ? <Badge variant="destructive">Low Stock</Badge> : <Badge variant="secondary">In Stock</Badge>}</TableCell>
-                    {canEdit && (
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => { setAdjustingItem(item); setAdjustData({ type: "in", quantity: "", reason: "" }); setAdjustDialogOpen(true); }} data-testid={`button-adjust-${item.id}`}><ArrowUpDown className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => openEditDialog(item)} data-testid={`button-edit-${item.id}`}><Edit className="h-4 w-4" /></Button>
-                          <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(item.id)} data-testid={`button-delete-${item.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                {filtered.map((item, index) => {
+                  const isLowStock = Number(item.currentStock) <= Number(item.reorderLevel);
+                  const belowPar = isBelowPar(item);
+                  const rowClass = getRowHighlight(item);
+                  const isPiece = isPieceCategory(item.itemCategory || "");
+                  const displayStock = isPiece
+                    ? Math.round(Number(item.currentStock)).toString()
+                    : Number(item.currentStock).toFixed(1);
+
+                  return (
+                    <motion.tr key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.02 }} className={`border-b transition-colors hover:bg-muted/50 ${rowClass}`} data-testid={`row-inventory-${item.id}`}>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-2">
+                          {(isLowStock || belowPar) && <AlertTriangle className="h-4 w-4 text-red-500" />}
+                          {item.name}
                         </div>
                       </TableCell>
-                    )}
-                  </motion.tr>
-                ))}
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {item.itemCategory || item.category || "INGREDIENT"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className={(isLowStock || belowPar) ? "text-red-600 font-semibold" : ""} data-testid={`text-stock-${item.id}`}>
+                        <div className="flex items-center gap-1">
+                          {displayStock} {isPiece ? "pcs" : (item.unit || "")}
+                          {belowPar && <span data-testid={`badge-below-par-${item.id}`} className="text-red-600">🔴</span>}
+                        </div>
+                      </TableCell>
+                      {isCrockeryTab && (
+                        <TableCell className="text-right">
+                          {item.parLevelPerShift ? `${Math.round(Number(item.parLevelPerShift))} pcs` : "—"}
+                        </TableCell>
+                      )}
+                      {!isCrockeryTab && (
+                        <>
+                          <TableCell><StockBar current={Number(item.currentStock)} reorder={Number(item.reorderLevel)} /></TableCell>
+                          <TableCell>{Number(item.reorderLevel).toFixed(0)}</TableCell>
+                          <TableCell>{item.unit}</TableCell>
+                        </>
+                      )}
+                      <TableCell>
+                        {isPiece && item.costPerPiece
+                          ? fmt(Number(item.costPerPiece))
+                          : fmt(Number(item.costPrice))}
+                      </TableCell>
+                      {!isCrockeryTab && <TableCell>{item.supplier || "—"}</TableCell>}
+                      <TableCell>
+                        {isLowStock || belowPar
+                          ? <Badge variant="destructive">{belowPar ? "Below Par" : "Low Stock"}</Badge>
+                          : <Badge variant="secondary">In Stock</Badge>}
+                      </TableCell>
+                      {canEdit && (
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <Button variant="ghost" size="sm" onClick={() => { setAdjustingItem(item); setAdjustData({ type: "in", quantity: "", reason: "" }); setAdjustDialogOpen(true); }} data-testid={`button-adjust-${item.id}`}><ArrowUpDown className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="sm" onClick={() => openEditDialog(item)} data-testid={`button-edit-${item.id}`}><Edit className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(item.id)} data-testid={`button-delete-${item.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                          </div>
+                        </TableCell>
+                      )}
+                    </motion.tr>
+                  );
+                })}
               </TableBody>
             </Table>
           )}
@@ -255,13 +491,11 @@ function InventoryTab() {
               </p>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setInventoryPage((p) => Math.max(0, p - 1))} disabled={inventoryPage === 0} data-testid="button-prev-page-inventory">
-                  <ChevronLeft className="h-4 w-4" />
-                  Prev
+                  <ChevronLeft className="h-4 w-4" />Prev
                 </Button>
                 <span className="text-sm font-medium px-2" data-testid="text-page-inventory">Page {inventoryPage + 1}</span>
                 <Button variant="outline" size="sm" onClick={() => setInventoryPage((p) => p + 1)} disabled={(inventoryPage + 1) * INVENTORY_LIMIT >= inventoryTotal} data-testid="button-next-page-inventory">
-                  Next
-                  <ChevronRight className="h-4 w-4" />
+                  Next<ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -269,50 +503,146 @@ function InventoryTab() {
         </CardContent>
       </Card>
 
+      {/* Par Level Status Panel — shown for crockery tabs */}
+      <AnimatePresence>
+        {isCrockeryTab && (
+          <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
+            <ParLevelStatusPanel />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Add/Edit Item Dialog */}
       <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
-        <DialogContent>
-          <DialogHeader><DialogTitle>{editingItem ? "Edit Inventory Item" : "Add Inventory Item"}</DialogTitle><DialogDescription>{editingItem ? "Update the details." : "Add a new item."}</DialogDescription></DialogHeader>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{editingItem ? "Edit Inventory Item" : "Add Inventory Item"}</DialogTitle>
+            <DialogDescription>{editingItem ? "Update the details." : "Add a new item."}</DialogDescription>
+          </DialogHeader>
           <div className="grid gap-4 py-2">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2"><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} data-testid="input-inventory-name" /></div>
               <div className="space-y-2"><Label>SKU</Label><Input value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} data-testid="input-inventory-sku" /></div>
             </div>
+
+            {/* Item Category */}
+            <div className="space-y-2">
+              <Label>Item Category</Label>
+              <Select value={formData.itemCategory} onValueChange={(v) => handleCategoryChange(v as ItemCategory)}>
+                <SelectTrigger data-testid="select-item-category"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="INGREDIENT">Ingredient (food/beverage)</SelectItem>
+                  <SelectItem value="CROCKERY">Crockery</SelectItem>
+                  <SelectItem value="CUTLERY">Cutlery</SelectItem>
+                  <SelectItem value="GLASSWARE">Glassware</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Category</Label><Input value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} data-testid="input-inventory-category" /></div>
-              <div className="space-y-2"><Label>Unit</Label>
-                <Select value={formData.unit} onValueChange={(v) => setFormData({ ...formData, unit: v })}>
-                  <SelectTrigger data-testid="select-inventory-unit"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pcs">Pieces</SelectItem><SelectItem value="kg">Kilograms</SelectItem><SelectItem value="g">Grams</SelectItem>
-                    <SelectItem value="ltr">Litres</SelectItem><SelectItem value="ml">Millilitres</SelectItem>
-                    <SelectItem value="box">Boxes</SelectItem><SelectItem value="pack">Packs</SelectItem><SelectItem value="bottles">Bottles</SelectItem><SelectItem value="bunches">Bunches</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="space-y-2"><Label>Category / Tag</Label><Input value={formData.category} onChange={(e) => setFormData({ ...formData, category: e.target.value })} data-testid="input-inventory-category" /></div>
+              <div className="space-y-2">
+                <Label>Unit Type</Label>
+                {isPieceCategory(formData.itemCategory) ? (
+                  <Input value="Piece (pcs)" readOnly className="bg-muted text-muted-foreground" />
+                ) : (
+                  <Select value={formData.unit} onValueChange={(v) => setFormData({ ...formData, unit: v })}>
+                    <SelectTrigger data-testid="select-inventory-unit"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pcs">Pieces</SelectItem><SelectItem value="kg">Kilograms</SelectItem><SelectItem value="g">Grams</SelectItem>
+                      <SelectItem value="ltr">Litres</SelectItem><SelectItem value="ml">Millilitres</SelectItem>
+                      <SelectItem value="box">Boxes</SelectItem><SelectItem value="pack">Packs</SelectItem><SelectItem value="bottles">Bottles</SelectItem><SelectItem value="bunches">Bunches</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2"><Label>Current Stock</Label><Input type="number" value={formData.currentStock} onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })} data-testid="input-inventory-stock" /></div>
-              <div className="space-y-2"><Label>Reorder Level</Label><Input type="number" value={formData.reorderLevel} onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })} data-testid="input-inventory-reorder" /></div>
-              <div className="space-y-2"><Label>Cost Price</Label><Input type="number" step="0.01" value={formData.costPrice} onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })} data-testid="input-inventory-cost" /></div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Current Stock</Label>
+                <Input
+                  type="number"
+                  step={isPieceCategory(formData.itemCategory) ? "1" : "0.01"}
+                  value={formData.currentStock}
+                  onChange={(e) => setFormData({ ...formData, currentStock: e.target.value })}
+                  data-testid="input-inventory-stock"
+                />
+              </div>
+              {isPieceCategory(formData.itemCategory) ? (
+                <div className="space-y-2">
+                  <Label>Cost Per Piece</Label>
+                  <Input type="number" step="0.01" value={formData.costPerPiece} onChange={(e) => setFormData({ ...formData, costPerPiece: e.target.value })} data-testid="input-cost-per-piece" />
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <Label>Cost Price</Label>
+                  <Input type="number" step="0.01" value={formData.costPrice} onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })} data-testid="input-inventory-cost" />
+                </div>
+              )}
             </div>
-            <div className="space-y-2"><Label>Supplier</Label><Input value={formData.supplier} onChange={(e) => setFormData({ ...formData, supplier: e.target.value })} data-testid="input-inventory-supplier" /></div>
+
+            {isPieceCategory(formData.itemCategory) ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Par Level / Shift (pcs)</Label>
+                  <Input type="number" step="1" value={formData.parLevelPerShift} onChange={(e) => setFormData({ ...formData, parLevelPerShift: e.target.value })} placeholder="e.g. 80" data-testid="input-par-level-shift" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Reorder Alert At (pcs)</Label>
+                  <Input type="number" step="1" value={formData.reorderPieces} onChange={(e) => setFormData({ ...formData, reorderPieces: e.target.value })} placeholder="e.g. 60" data-testid="input-reorder-pieces" />
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2"><Label>Reorder Level</Label><Input type="number" value={formData.reorderLevel} onChange={(e) => setFormData({ ...formData, reorderLevel: e.target.value })} data-testid="input-inventory-reorder" /></div>
+                <div className="space-y-2"><Label>Supplier</Label><Input value={formData.supplier} onChange={(e) => setFormData({ ...formData, supplier: e.target.value })} data-testid="input-inventory-supplier" /></div>
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setItemDialogOpen(false)}>Cancel</Button>
-            <Button onClick={() => { if (!formData.name.trim()) return; editingItem ? updateMutation.mutate({ id: editingItem.id, data: formData }) : createMutation.mutate(formData); }} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-inventory">{editingItem ? "Update" : "Add Item"}</Button>
+            <Button
+              onClick={() => {
+                if (!formData.name.trim()) return;
+                const payload = {
+                  ...formData,
+                  unit: isPieceCategory(formData.itemCategory) ? "pcs" : formData.unit,
+                  costPrice: isPieceCategory(formData.itemCategory) ? formData.costPerPiece : formData.costPrice,
+                };
+                editingItem ? updateMutation.mutate({ id: editingItem.id, data: payload }) : createMutation.mutate(payload);
+              }}
+              disabled={createMutation.isPending || updateMutation.isPending}
+              data-testid="button-save-inventory"
+            >
+              {editingItem ? "Update" : "Add Item"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Adjust Stock — {adjustingItem?.name}</DialogTitle><DialogDescription>Current: {adjustingItem ? Number(adjustingItem.currentStock).toFixed(1) : 0} {adjustingItem?.unit}</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Adjust Stock — {adjustingItem?.name}</DialogTitle>
+            <DialogDescription>
+              Current: {adjustingItem ? (isPieceCategory(adjustingItem.itemCategory || "") ? Math.round(Number(adjustingItem.currentStock)) + " pcs" : Number(adjustingItem.currentStock).toFixed(1) + " " + (adjustingItem.unit || "")) : 0}
+            </DialogDescription>
+          </DialogHeader>
           <div className="grid gap-4 py-2">
             <Select value={adjustData.type} onValueChange={(v) => setAdjustData({ ...adjustData, type: v as "in" | "out" })}>
               <SelectTrigger data-testid="select-adjust-type"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="in">Stock In (Add)</SelectItem><SelectItem value="out">Stock Out (Remove)</SelectItem></SelectContent>
             </Select>
-            <Input type="number" min="0" value={adjustData.quantity} onChange={(e) => setAdjustData({ ...adjustData, quantity: e.target.value })} placeholder="Quantity" data-testid="input-adjust-quantity" />
+            <Input
+              type="number"
+              min="0"
+              step={adjustingItem && isPieceCategory(adjustingItem.itemCategory || "") ? "1" : "0.01"}
+              value={adjustData.quantity}
+              onChange={(e) => setAdjustData({ ...adjustData, quantity: e.target.value })}
+              placeholder="Quantity"
+              data-testid="input-adjust-quantity"
+            />
             <Input value={adjustData.reason} onChange={(e) => setAdjustData({ ...adjustData, reason: e.target.value })} placeholder="Reason" data-testid="input-adjust-reason" />
           </div>
           <DialogFooter>
@@ -360,6 +690,7 @@ function RecipesTab() {
   const { data: menuItemsList = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
 
   const invMap = new Map((inventoryAllRes?.data ?? []).map(i => [i.id, i]));
+  const inventory = inventoryAllRes?.data ?? [];
   const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
 
   const createMutation = useMutation({
@@ -598,101 +929,116 @@ function StockTakesTab() {
   const { data: stockTakeInventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory", "stock-takes-all"], queryFn: async () => { const res = await fetch("/api/inventory?limit=200&offset=0", { credentials: "include" }); return res.json(); } });
   const { data: takeDetail } = useQuery<any>({ queryKey: ["/api/stock-takes", selectedTakeId], queryFn: async () => { if (!selectedTakeId) return null; const res = await fetch(`/api/stock-takes/${selectedTakeId}`, { credentials: "include" }); return res.json(); }, enabled: !!selectedTakeId });
 
-  const invMap = new Map((stockTakeInventoryRes?.data ?? []).map(i => [i.id, i]));
+  const invItems = stockTakeInventoryRes?.data ?? [];
+  const invMap = new Map(invItems.map(i => [i.id, i]));
 
-  const createMutation = useMutation({
-    mutationFn: async () => { const res = await apiRequest("POST", "/api/stock-takes", {}); return res.json(); },
-    onSuccess: (data) => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); setSelectedTakeId(data.id); toast({ title: "Stock take started" }); },
+  const createTakeMutation = useMutation({
+    mutationFn: async () => {
+      const items = invItems.map(i => ({ inventoryItemId: i.id, expectedQty: Number(i.currentStock), countedQty: null }));
+      const res = await apiRequest("POST", "/api/stock-takes", { items });
+      return res.json();
+    },
+    onSuccess: (data: any) => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); setSelectedTakeId(data.id); toast({ title: "Stock take created" }); },
+    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
-
   const updateLineMutation = useMutation({
-    mutationFn: async ({ takeId, lineId, countedQty }: { takeId: string; lineId: string; countedQty: string }) => { const res = await apiRequest("PATCH", `/api/stock-takes/${takeId}/lines/${lineId}`, { countedQty }); return res.json(); },
+    mutationFn: async ({ takeId, lineId, countedQty }: { takeId: string; lineId: string; countedQty: number }) => {
+      const res = await apiRequest("PATCH", `/api/stock-takes/${takeId}/lines/${lineId}`, { countedQty });
+      return res.json();
+    },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes", selectedTakeId] }); },
+    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+  });
+  const approveMutation = useMutation({
+    mutationFn: async (takeId: string) => { const res = await apiRequest("POST", `/api/stock-takes/${takeId}/approve`); return res.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); toast({ title: "Stock take approved. Inventory adjusted." }); },
+    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
-  const completeMutation = useMutation({
-    mutationFn: async (id: string) => { const res = await apiRequest("PATCH", `/api/stock-takes/${id}/complete`, {}); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setSelectedTakeId(null); toast({ title: "Stock take completed", description: "Inventory levels updated." }); },
-  });
-
-  const canEdit = user?.role === "owner" || user?.role === "manager";
+  const lines = takeDetail?.lines || [];
+  const varianceLines = lines.filter((l: any) => l.countedQty !== null && Math.abs(Number(l.countedQty) - Number(l.expectedQty)) > 0.001);
+  const totalVarianceValue = varianceLines.reduce((s: number, l: any) => {
+    const item = invMap.get(l.inventoryItemId);
+    return s + Math.abs(Number(l.countedQty) - Number(l.expectedQty)) * Number(item?.costPrice || 0);
+  }, 0);
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-lg font-semibold">Stock Takes</h3>
-          <p className="text-sm text-muted-foreground">Count physical inventory and reconcile variance</p>
-        </div>
-        {canEdit && <Button onClick={() => createMutation.mutate()} disabled={createMutation.isPending} data-testid="button-new-stock-take"><ClipboardList className="h-4 w-4 mr-2" />New Stock Take</Button>}
+        <h3 className="text-base font-semibold">Stock Takes</h3>
+        <Button onClick={() => createTakeMutation.mutate()} disabled={createTakeMutation.isPending} data-testid="button-new-stock-take">
+          <Plus className="h-4 w-4 mr-2" />New Stock Take
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-1">
-          <CardHeader className="pb-2"><CardTitle className="text-sm">History</CardTitle></CardHeader>
-          <CardContent className="space-y-2 max-h-[500px] overflow-y-auto">
-            {takes.length === 0 ? <p className="text-sm text-muted-foreground py-4">No stock takes yet</p> : takes.map((t: any) => (
-              <button key={t.id} onClick={() => setSelectedTakeId(t.id)} className={`w-full text-left p-3 rounded-lg border transition-colors ${selectedTakeId === t.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`} data-testid={`button-stock-take-${t.id}`}>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">#{t.id.slice(0, 8)}</span>
-                  <Badge variant={t.status === "completed" ? "secondary" : "default"}>{t.status}</Badge>
-                </div>
-                <div className="text-xs text-muted-foreground mt-1">{new Date(t.createdAt).toLocaleDateString()}</div>
-              </button>
-            ))}
-          </CardContent>
-        </Card>
+      {takes.length === 0 && <div className="text-center py-8 text-muted-foreground" data-testid="text-no-stock-takes">No stock takes yet.</div>}
 
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-sm">
-                {selectedTakeId ? `Stock Take #${selectedTakeId.slice(0, 8)}` : "Select a stock take"}
-              </CardTitle>
-              {takeDetail && takeDetail.status === "draft" && canEdit && (
-                <Button size="sm" onClick={() => completeMutation.mutate(selectedTakeId!)} disabled={completeMutation.isPending} data-testid="button-complete-stock-take">Complete & Apply</Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            {!takeDetail ? <p className="text-sm text-muted-foreground py-8 text-center">Select or create a stock take to begin</p> : (
-              <div className="max-h-[500px] overflow-y-auto">
+      <div className="space-y-3">
+        {takes.map((take: any) => (
+          <Card key={take.id} data-testid={`card-stock-take-${take.id}`} className={selectedTakeId === take.id ? "ring-2 ring-primary" : ""}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-sm">Stock Take #{take.id.slice(0, 8)}</CardTitle>
+                  <p className="text-xs text-muted-foreground">{new Date(take.createdAt).toLocaleDateString()} · {take.status}</p>
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setSelectedTakeId(take.id === selectedTakeId ? null : take.id)} data-testid={`button-view-take-${take.id}`}>
+                    {selectedTakeId === take.id ? "Collapse" : "View"}
+                  </Button>
+                  {take.status === "draft" && (
+                    <Button size="sm" onClick={() => approveMutation.mutate(take.id)} disabled={approveMutation.isPending} data-testid={`button-approve-take-${take.id}`}>
+                      Approve
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </CardHeader>
+            {selectedTakeId === take.id && takeDetail && (
+              <CardContent>
+                {varianceLines.length > 0 && (
+                  <div className="mb-3 p-2 bg-amber-50 border border-amber-200 rounded text-sm">
+                    <Activity className="h-4 w-4 text-amber-600 inline mr-1" />
+                    {varianceLines.length} variance item(s) · Est. loss: {fmt(totalVarianceValue)}
+                  </div>
+                )}
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Item</TableHead><TableHead>Expected</TableHead><TableHead>Counted</TableHead><TableHead>Variance</TableHead><TableHead>Cost Impact</TableHead>
-                    </TableRow>
-                  </TableHeader>
+                  <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Expected</TableHead><TableHead>Counted</TableHead><TableHead>Variance</TableHead></TableRow></TableHeader>
                   <TableBody>
-                    {(takeDetail.lines || []).map((line: any) => {
+                    {lines.map((line: any) => {
                       const item = invMap.get(line.inventoryItemId);
-                      const variance = line.varianceQty !== null ? Number(line.varianceQty) : null;
+                      const exp = Number(line.expectedQty);
+                      const cnt = line.countedQty !== null ? Number(line.countedQty) : null;
+                      const vr = cnt !== null ? cnt - exp : null;
                       return (
-                        <TableRow key={line.id}>
-                          <TableCell className="font-medium">{item?.name || "Unknown"}<div className="text-xs text-muted-foreground">{item?.unit}</div></TableCell>
-                          <TableCell>{Number(line.expectedQty).toFixed(1)}</TableCell>
+                        <TableRow key={line.id} data-testid={`row-take-line-${line.id}`}>
+                          <TableCell className="font-medium text-sm">{item?.name || line.inventoryItemId}</TableCell>
+                          <TableCell>{exp.toFixed(2)} {item?.unit || ""}</TableCell>
                           <TableCell>
-                            {takeDetail.status === "draft" ? (
-                              <Input type="number" step="0.1" className="w-24" defaultValue={line.countedQty || ""} onBlur={(e) => { if (e.target.value) updateLineMutation.mutate({ takeId: selectedTakeId!, lineId: line.id, countedQty: e.target.value }); }} data-testid={`input-counted-${line.id}`} />
-                            ) : <span>{line.countedQty !== null ? Number(line.countedQty).toFixed(1) : "—"}</span>}
+                            <Input
+                              type="number"
+                              className="w-24 h-7 text-sm text-right"
+                              defaultValue={line.countedQty ?? ""}
+                              onBlur={e => {
+                                const v = parseFloat(e.target.value);
+                                if (!isNaN(v)) updateLineMutation.mutate({ takeId: take.id, lineId: line.id, countedQty: v });
+                              }}
+                              disabled={take.status !== "draft"}
+                              data-testid={`input-counted-${line.id}`}
+                            />
                           </TableCell>
-                          <TableCell className={variance !== null ? (variance < 0 ? "text-red-600 font-semibold" : variance > 0 ? "text-green-600" : "") : ""}>{variance !== null ? (variance > 0 ? "+" : "") + variance.toFixed(1) : "—"}</TableCell>
-                          <TableCell className={line.varianceCost ? (Number(line.varianceCost) < 0 ? "text-red-600" : "text-green-600") : ""}>{line.varianceCost ? fmt(Number(line.varianceCost)) : "—"}</TableCell>
+                          <TableCell className={vr === null ? "" : vr < 0 ? "text-red-600 font-medium" : vr > 0 ? "text-amber-600 font-medium" : "text-green-600"}>
+                            {vr !== null ? (vr > 0 ? "+" : "") + vr.toFixed(2) : "—"}
+                          </TableCell>
                         </TableRow>
                       );
                     })}
                   </TableBody>
                 </Table>
-                {takeDetail.status === "completed" && (
-                  <div className="mt-4 p-3 rounded-lg bg-muted/50 text-center">
-                    <div className="text-sm text-muted-foreground">Total Variance Cost</div>
-                    <div className="text-xl font-bold">{fmt((takeDetail.lines || []).reduce((s: number, l: any) => s + Number(l.varianceCost || 0), 0))}</div>
-                  </div>
-                )}
-              </div>
+              </CardContent>
             )}
-          </CardContent>
-        </Card>
+          </Card>
+        ))}
       </div>
     </div>
   );
@@ -705,98 +1051,21 @@ function FoodCostTab() {
     return formatCurrency(v, tenant?.currency || "AED", tenant?.currencyPosition || "before", tenant?.currencyDecimals ?? 2);
   };
 
-  const { data: report, isLoading } = useQuery<any>({ queryKey: ["/api/food-cost-report"] });
-
-  if (isLoading) return <div className="text-center py-8 text-muted-foreground">Loading report...</div>;
-  if (!report) return <div className="text-center py-8 text-muted-foreground">No data available</div>;
-
-  const topMovers = report.topMovers || [];
-  const reorderSuggestions = report.reorderSuggestions || [];
-  const varianceData = report.varianceByIngredient || [];
+  const { data: varianceData = [] } = useQuery<any[]>({ queryKey: ["/api/reports/food-cost-variance"] });
+  const { data: analyticsData } = useQuery<any>({ queryKey: ["/api/reports/food-cost-analytics"] });
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard title="Avg Food Cost %" value={`${report.summary?.avgFoodCostPct || 0}%`} icon={Percent} iconColor={Number(report.summary?.avgFoodCostPct) > 35 ? "text-red-600" : "text-green-600"} iconBg={Number(report.summary?.avgFoodCostPct) > 35 ? "bg-red-100" : "bg-green-100"} testId="stat-avg-food-cost-report" />
-        <StatCard title="Total Plate Cost" value={fmt(report.summary?.totalCost || 0)} icon={DollarSign} iconColor="text-blue-600" iconBg="bg-blue-100" testId="stat-total-plate-cost" />
-        <StatCard title="Total Revenue Potential" value={fmt(report.summary?.totalRevenue || 0)} icon={Activity} iconColor="text-emerald-600" iconBg="bg-emerald-100" testId="stat-total-revenue" />
-      </div>
-
-      <Card>
-        <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><DollarSign className="h-4 w-4" />Food Cost Analysis</CardTitle></CardHeader>
-        <CardContent>
-          {(report.recipes || []).length === 0 ? <div className="text-center py-8 text-muted-foreground">No recipes to analyze. Create recipes first.</div> : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Recipe</TableHead><TableHead>Menu Item</TableHead><TableHead>Plate Cost</TableHead><TableHead>Selling Price</TableHead><TableHead>Food Cost %</TableHead><TableHead>Margin</TableHead><TableHead>Sold</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {(report.recipes || []).map((r: any) => (
-                  <TableRow key={r.recipeId} data-testid={`row-food-cost-${r.recipeId}`}>
-                    <TableCell className="font-medium">{r.recipeName}</TableCell>
-                    <TableCell>{r.menuItemName || "—"}</TableCell>
-                    <TableCell>{fmt(r.plateCost)}</TableCell>
-                    <TableCell>{r.sellingPrice > 0 ? fmt(r.sellingPrice) : "—"}</TableCell>
-                    <TableCell><Badge variant={r.foodCostPct > 35 ? "destructive" : r.foodCostPct > 30 ? "default" : "secondary"}>{r.foodCostPct}%</Badge></TableCell>
-                    <TableCell className={r.margin >= 0 ? "text-green-600 font-medium" : "text-red-600 font-medium"}>{r.sellingPrice > 0 ? fmt(r.margin) : "—"}</TableCell>
-                    <TableCell>{r.soldQty || 0}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><TrendingUp className="h-4 w-4" />Top 10 Movers</CardTitle></CardHeader>
-          <CardContent>
-            {topMovers.length === 0 ? <div className="text-center py-4 text-muted-foreground text-sm">No usage data yet</div> : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Ingredient</TableHead><TableHead>Usage</TableHead><TableHead>Unit</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {topMovers.filter((m: any) => m.usage > 0).map((m: any) => (
-                    <TableRow key={m.itemId} data-testid={`row-top-mover-${m.itemId}`}>
-                      <TableCell className="font-medium">{m.itemName}</TableCell>
-                      <TableCell>{m.usage}</TableCell>
-                      <TableCell className="text-muted-foreground">{m.unit}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-500" />Reorder Suggestions</CardTitle></CardHeader>
-          <CardContent>
-            {reorderSuggestions.length === 0 ? <div className="text-center py-4 text-muted-foreground text-sm">All items above par level</div> : (
-              <Table>
-                <TableHeader><TableRow><TableHead>Item</TableHead><TableHead>Stock</TableHead><TableHead>Par</TableHead><TableHead>Lead</TableHead><TableHead>Suggested Order</TableHead></TableRow></TableHeader>
-                <TableBody>
-                  {reorderSuggestions.map((s: any) => (
-                    <TableRow key={s.itemId} data-testid={`row-reorder-${s.itemId}`}>
-                      <TableCell className="font-medium">{s.itemName}</TableCell>
-                      <TableCell className="text-red-600">{s.currentStock} {s.unit}</TableCell>
-                      <TableCell>{s.parLevel} {s.unit}</TableCell>
-                      <TableCell>{s.leadTimeDays}d</TableCell>
-                      <TableCell className="font-bold text-primary">{Math.round(s.suggestedOrder * 100) / 100} {s.unit}</TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
+      {analyticsData && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <StatCard title="Theoretical Cost" value={fmt(analyticsData.theoreticalCost || 0)} icon={Activity} iconColor="text-blue-600" iconBg="bg-blue-100" testId="stat-theoretical-cost" />
+          <StatCard title="Actual Cost" value={fmt(analyticsData.actualCost || 0)} icon={Activity} iconColor="text-red-600" iconBg="bg-red-100" testId="stat-actual-cost" />
+          <StatCard title="Variance" value={fmt(Math.abs(analyticsData.variance || 0))} icon={AlertTriangle} iconColor="text-amber-600" iconBg="bg-amber-100" testId="stat-cost-variance" />
+        </div>
+      )}
       {varianceData.length > 0 && (
         <Card>
-          <CardHeader className="pb-3"><CardTitle className="text-lg flex items-center gap-2"><Activity className="h-4 w-4" />Ideal vs Actual Usage Variance</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">Ingredient Variance</CardTitle></CardHeader>
           <CardContent>
             <Table>
               <TableHeader><TableRow><TableHead>Ingredient</TableHead><TableHead>Ideal</TableHead><TableHead>Actual</TableHead><TableHead>Variance</TableHead><TableHead>Unit</TableHead><TableHead>Ideal Cost</TableHead><TableHead>Actual Cost</TableHead><TableHead>Variance Cost</TableHead></TableRow></TableHeader>
@@ -817,6 +1086,11 @@ function FoodCostTab() {
             </Table>
           </CardContent>
         </Card>
+      )}
+      {varianceData.length === 0 && (
+        <div className="text-center py-12 text-muted-foreground" data-testid="text-no-food-cost">
+          No food cost data available yet.
+        </div>
       )}
     </div>
   );

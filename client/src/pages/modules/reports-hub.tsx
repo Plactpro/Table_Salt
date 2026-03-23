@@ -1,7 +1,7 @@
 import { useState, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag } from "lucide-react";
+import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag, UtensilsCrossed } from "lucide-react";
 import ReportsPage from "./reports";
 import BIDashboard from "./bi-dashboard";
 import AuditLogPage from "./audit-log";
@@ -10,6 +10,7 @@ import ChefReport from "./chef-report";
 import ShiftReconciliation from "./shift-reconciliation";
 import CustomerRequestsAnalytics from "./customer-requests-analytics";
 import PriceAnalysis from "./price-analysis";
+import CrockeryBreakageReport from "./crockery-breakage-report";
 
 class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -62,6 +63,9 @@ export default function ReportsHub() {
           <TabsTrigger value="price-analysis" data-testid="tab-price-analysis">
             <Tag className="h-4 w-4 mr-1.5" />Price Analysis
           </TabsTrigger>
+          <TabsTrigger value="crockery-breakage" data-testid="tab-crockery-breakage">
+            <UtensilsCrossed className="h-4 w-4 mr-1.5" />Crockery Breakage
+          </TabsTrigger>
           <TabsTrigger value="audit-log" data-testid="tab-audit-log">
             <ScrollText className="h-4 w-4 mr-1.5" />Audit Log
           </TabsTrigger>
@@ -99,6 +103,11 @@ export default function ReportsHub() {
         <TabsContent value="price-analysis" className="mt-4">
           <TabErrorBoundary label="Price Analysis">
             <PriceAnalysis />
+          </TabErrorBoundary>
+        </TabsContent>
+        <TabsContent value="crockery-breakage" className="mt-4">
+          <TabErrorBoundary label="Crockery Breakage">
+            <CrockeryBreakageReport />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="audit-log" className="mt-4" forceMount>
