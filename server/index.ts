@@ -200,6 +200,13 @@ app.use((req, res, next) => {
     console.error("Cash session seed error:", e);
   }
 
+  try {
+    const { seedTipSettings } = await import("./seed");
+    await seedTipSettings();
+  } catch (e) {
+    console.error("Tip settings seed error:", e);
+  }
+
   // Initialize Stripe schema (stripe-replit-sync manages the stripe.* tables)
   try {
     const { runMigrations } = await import("stripe-replit-sync");

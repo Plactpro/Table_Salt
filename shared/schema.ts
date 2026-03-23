@@ -1795,6 +1795,8 @@ export const bills = pgTable("bills", {
   cgstAmount: decimal("cgst_amount", { precision: 10, scale: 2 }),
   sgstAmount: decimal("sgst_amount", { precision: 10, scale: 2 }),
   razorpayOrderId: text("razorpay_order_id"),
+  tipType: varchar("tip_type", { length: 20 }),
+  tipWaiterId: varchar("tip_waiter_id", { length: 36 }),
   createdAt: timestamp("created_at").defaultNow(),
   paidAt: timestamp("paid_at"),
 }, (t) => [
@@ -2814,3 +2816,77 @@ export const cashHandovers = pgTable("cash_handovers", {
 export const insertCashHandoverSchema = createInsertSchema(cashHandovers).omit({ id: true, createdAt: true });
 export type CashHandover = typeof cashHandovers.$inferSelect;
 export type InsertCashHandover = z.infer<typeof insertCashHandoverSchema>;
+
+// Task #120: Tip Management System
+
+export const outletTipSettings = pgTable("outlet_tip_settings", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  tipsEnabled: boolean("tips_enabled").default(false),
+  showOnPos: boolean("show_on_pos").default(true),
+  showOnQr: boolean("show_on_qr").default(false),
+  showOnReceipt: boolean("show_on_receipt").default(true),
+  promptStyle: varchar("prompt_style", { length: 20 }).default("BUTTONS"),
+  suggestedPct1: integer("suggested_pct_1").default(5),
+  suggestedPct2: integer("suggested_pct_2").default(10),
+  suggestedPct3: integer("suggested_pct_3").default(15),
+  allowCustomAmount: boolean("allow_custom_amount").default(true),
+  tipBasis: varchar("tip_basis", { length: 20 }).default("SUBTOTAL"),
+  distributionMethod: varchar("distribution_method", { length: 20 }).default("INDIVIDUAL"),
+  waiterSharePct: integer("waiter_share_pct").default(70),
+  kitchenSharePct: integer("kitchen_share_pct").default(30),
+  tipIsTaxable: boolean("tip_is_taxable").default(false),
+  currencyCode: varchar("currency_code", { length: 10 }).default("INR"),
+  currencySymbol: varchar("currency_symbol", { length: 5 }).default("₹"),
+  updatedBy: varchar("updated_by", { length: 36 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertOutletTipSettingsSchema = createInsertSchema(outletTipSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type OutletTipSettings = typeof outletTipSettings.$inferSelect;
+export type InsertOutletTipSettings = z.infer<typeof insertOutletTipSettingsSchema>;
+
+export const billTips = pgTable("bill_tips", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  billId: varchar("bill_id", { length: 36 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  tipAmount: decimal("tip_amount", { precision: 10, scale: 2 }).notNull(),
+  tipType: varchar("tip_type", { length: 20 }).notNull(),
+  tipPercentage: decimal("tip_percentage", { precision: 5, scale: 2 }),
+  tipBasisAmount: decimal("tip_basis_amount", { precision: 10, scale: 2 }),
+  paymentMethod: varchar("payment_method", { length: 30 }),
+  waiterId: varchar("waiter_id", { length: 36 }),
+  waiterName: varchar("waiter_name", { length: 255 }),
+  distributionMethod: varchar("distribution_method", { length: 20 }),
+  isDistributed: boolean("is_distributed").default(false),
+  distributedAt: timestamp("distributed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertBillTipSchema = createInsertSchema(billTips).omit({ id: true, createdAt: true });
+export type BillTip = typeof billTips.$inferSelect;
+export type InsertBillTip = z.infer<typeof insertBillTipSchema>;
+
+export const tipDistributions = pgTable("tip_distributions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  billTipId: varchar("bill_tip_id", { length: 36 }).notNull(),
+  staffId: varchar("staff_id", { length: 36 }).notNull(),
+  staffName: varchar("staff_name", { length: 255 }),
+  staffRole: varchar("staff_role", { length: 50 }),
+  sharePercentage: decimal("share_percentage", { precision: 5, scale: 2 }),
+  shareAmount: decimal("share_amount", { precision: 10, scale: 2 }),
+  distributionDate: text("distribution_date"),
+  isPaid: boolean("is_paid").default(false),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertTipDistributionSchema = createInsertSchema(tipDistributions).omit({ id: true, createdAt: true });
+export type TipDistribution = typeof tipDistributions.$inferSelect;
+export type InsertTipDistribution = z.infer<typeof insertTipDistributionSchema>;

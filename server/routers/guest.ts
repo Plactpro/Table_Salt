@@ -5,6 +5,7 @@ import { snapshotPrepTime } from "../lib/snapshot-prep-time";
 import { requireAuth } from "../middleware";
 import { isStripeConfigured, getUncachableStripeClient, getPaymentStripeClient } from "../stripe";
 import { createPaymentLink } from "../razorpay";
+import { getTipConfig, recordAndDistributeTip } from "../services/tip-service";
 
 async function getPlatformGatewaySettings(): Promise<{ activeGateway: string; razorpayKeyId: string | null; razorpayKeySecret: string | null }> {
   try {
@@ -379,5 +380,85 @@ export function registerGuestRoutes(app: Express): void {
 
       return res.json({ status: link.status === "cancelled" || link.status === "expired" ? "cancelled" : "pending" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // GET tip config for a QR session (no auth)
+  app.get("/api/guest/session/:sessionId/tip-config", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const tableSession = await storage.getTableSession(sessionId);
+      if (!tableSession) return res.json(null);
+
+      const { rows: outletRows } = await pool.query(
+        `SELECT id FROM outlets WHERE id = $1 LIMIT 1`,
+        [tableSession.outletId]
+      );
+      if (!outletRows[0]) return res.json(null);
+
+      const config = await getTipConfig(tableSession.outletId!, tableSession.tenantId);
+      res.json(config);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // POST QR cash payment with optional tip
+  app.post("/api/guest/session/:sessionId/cash-payment", async (req, res) => {
+    try {
+      const { sessionId } = req.params;
+      const { tip_amount } = req.body;
+      const tableSession = await storage.getTableSession(sessionId);
+      if (!tableSession) return res.status(404).json({ message: "Session not found" });
+
+      const allOrders = await storage.getOrdersByTenant(tableSession.tenantId);
+      const tableOrders = allOrders.filter(o =>
+        o.tableId === tableSession.tableId &&
+        o.status !== "cancelled" && o.status !== "voided" && o.status !== "paid"
+      );
+
+      for (const o of tableOrders) {
+        await storage.updateOrder(o.id, { status: "paid", paymentMethod: "cash" });
+      }
+
+      // Fire-and-forget tip recording
+      if (tip_amount && Number(tip_amount) > 0 && tableSession.outletId) {
+        (async () => {
+          try {
+            const { rows: [tipSettings] } = await pool.query(
+              `SELECT * FROM outlet_tip_settings WHERE outlet_id = $1 AND tenant_id = $2 AND tips_enabled = true LIMIT 1`,
+              [tableSession.outletId, tableSession.tenantId]
+            );
+            if (tipSettings && tableOrders[0]) {
+              const firstOrder = tableOrders[0];
+              const { rows: billRows } = await pool.query(
+                `SELECT id, waiter_id, waiter_name FROM bills WHERE order_id = $1 LIMIT 1`,
+                [firstOrder.id]
+              );
+              if (billRows[0]) {
+                const bill = billRows[0];
+                await recordAndDistributeTip({
+                  billId: bill.id,
+                  orderId: firstOrder.id,
+                  tenantId: tableSession.tenantId,
+                  outletId: tableSession.outletId!,
+                  tipAmount: Number(tip_amount),
+                  tipType: "CUSTOM",
+                  tipPercentage: null,
+                  tipBasisAmount: Number(firstOrder.total || 0),
+                  waiterId: bill.waiter_id || tableSession.tenantId,
+                  waiterName: bill.waiter_name || "Guest Order",
+                  paymentMethod: "CASH",
+                  settings: tipSettings,
+                });
+              }
+            }
+          } catch (e) { /* silent */ }
+        })();
+      }
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 }

@@ -2167,4 +2167,83 @@ export async function runTask108Migrations(): Promise<void> {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_cash_handovers_session ON cash_handovers(session_id)`);
+
+  // Task #120: Tip Management System
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS outlet_tip_settings (
+      id                    VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id             VARCHAR(36) NOT NULL,
+      outlet_id             VARCHAR(36) NOT NULL,
+      tips_enabled          BOOLEAN DEFAULT false,
+      show_on_pos           BOOLEAN DEFAULT true,
+      show_on_qr            BOOLEAN DEFAULT false,
+      show_on_receipt       BOOLEAN DEFAULT true,
+      prompt_style          VARCHAR(20) DEFAULT 'BUTTONS',
+      suggested_pct_1       INT DEFAULT 5,
+      suggested_pct_2       INT DEFAULT 10,
+      suggested_pct_3       INT DEFAULT 15,
+      allow_custom_amount   BOOLEAN DEFAULT true,
+      tip_basis             VARCHAR(20) DEFAULT 'SUBTOTAL',
+      distribution_method   VARCHAR(20) DEFAULT 'INDIVIDUAL',
+      waiter_share_pct      INT DEFAULT 70,
+      kitchen_share_pct     INT DEFAULT 30,
+      tip_is_taxable        BOOLEAN DEFAULT false,
+      currency_code         VARCHAR(10) DEFAULT 'INR',
+      currency_symbol       VARCHAR(5) DEFAULT '₹',
+      updated_by            VARCHAR(36),
+      updated_at            TIMESTAMPTZ DEFAULT NOW(),
+      created_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uidx_outlet_tip_settings ON outlet_tip_settings(tenant_id, outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bill_tips (
+      id                    VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id             VARCHAR(36) NOT NULL,
+      outlet_id             VARCHAR(36) NOT NULL,
+      bill_id               VARCHAR(36) NOT NULL,
+      order_id              VARCHAR(36) NOT NULL,
+      tip_amount            DECIMAL(10,2) NOT NULL,
+      tip_type              VARCHAR(20) NOT NULL,
+      tip_percentage        DECIMAL(5,2),
+      tip_basis_amount      DECIMAL(10,2),
+      payment_method        VARCHAR(30),
+      waiter_id             VARCHAR(36),
+      waiter_name           VARCHAR(255),
+      distribution_method   VARCHAR(20),
+      is_distributed        BOOLEAN DEFAULT false,
+      distributed_at        TIMESTAMPTZ,
+      created_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_tips_tenant ON bill_tips(tenant_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_tips_bill ON bill_tips(bill_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_tips_waiter ON bill_tips(waiter_id, created_at DESC)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uidx_bill_tips_bill ON bill_tips(bill_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tip_distributions (
+      id                    VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id             VARCHAR(36) NOT NULL,
+      outlet_id             VARCHAR(36) NOT NULL,
+      bill_tip_id           VARCHAR(36) NOT NULL,
+      staff_id              VARCHAR(36) NOT NULL,
+      staff_name            VARCHAR(255),
+      staff_role            VARCHAR(50),
+      share_percentage      DECIMAL(5,2),
+      share_amount          DECIMAL(10,2),
+      distribution_date     DATE,
+      is_paid               BOOLEAN DEFAULT false,
+      paid_at               TIMESTAMPTZ,
+      created_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tip_distributions_tip ON tip_distributions(bill_tip_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tip_distributions_staff ON tip_distributions(staff_id, distribution_date DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tip_distributions_tenant ON tip_distributions(tenant_id, distribution_date DESC)`);
+
+  // Task #120: Add tip_type and tip_waiter_id to bills
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS tip_type VARCHAR(20)`);
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS tip_waiter_id VARCHAR(36)`);
 }
