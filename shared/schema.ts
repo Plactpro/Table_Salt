@@ -12,6 +12,7 @@ import {
   index,
   uniqueIndex,
   date,
+  numeric,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -1050,28 +1051,28 @@ export const suppliers = pgTable("suppliers", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
   name: text("name").notNull(),
+  supplierCode: varchar("supplier_code", { length: 30 }),
   contactName: text("contact_name"),
   email: text("email"),
   phone: text("phone"),
   address: text("address"),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  country: varchar("country", { length: 100 }),
   paymentTerms: text("payment_terms").default("Net 30"),
+  creditLimit: numeric("credit_limit", { precision: 12, scale: 2 }),
+  currency: varchar("currency", { length: 10 }).default("AED"),
+  gstNumber: varchar("gst_number", { length: 30 }),
+  panNumber: varchar("pan_number", { length: 20 }),
+  bankName: varchar("bank_name", { length: 100 }),
+  bankAccount: varchar("bank_account", { length: 40 }),
+  bankIfsc: varchar("bank_ifsc", { length: 20 }),
   leadTimeDays: integer("lead_time_days").default(3),
   rating: decimal("rating", { precision: 2, scale: 1 }).default("0"),
+  isPreferred: boolean("is_preferred").default(false),
   notes: text("notes"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
-  supplierCode: varchar("supplier_code", { length: 30 }),
-  city: varchar("city", { length: 100 }),
-  state: varchar("state", { length: 100 }),
-  country: varchar("country", { length: 100 }).default("India"),
-  gstNumber: varchar("gst_number", { length: 50 }),
-  panNumber: varchar("pan_number", { length: 30 }),
-  creditLimit: decimal("credit_limit", { precision: 12, scale: 2 }),
-  currency: varchar("currency", { length: 10 }).default("INR"),
-  bankName: varchar("bank_name", { length: 255 }),
-  bankAccount: varchar("bank_account", { length: 50 }),
-  bankIfsc: varchar("bank_ifsc", { length: 20 }),
-  isPreferred: boolean("is_preferred").default(false),
 }, (t) => [
   index("idx_suppliers_tenant_id").on(t.tenantId),
 ]);
@@ -1207,6 +1208,196 @@ export const insertGoodsReceivedNoteSchema = createInsertSchema(goodsReceivedNot
 export const insertGrnItemSchema = createInsertSchema(grnItems).omit({ id: true });
 export const insertProcurementApprovalSchema = createInsertSchema(procurementApprovals).omit({ id: true, performedAt: true });
 
+// ─── RFQ / Quotations ─────────────────────────────────────────────────────────
+export const rfqStatusEnum = pgEnum("rfq_status", ["draft", "sent", "received", "comparing", "approved", "rejected", "expired"]);
+
+export const rfqs = pgTable("rfqs", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  rfqNumber: varchar("rfq_number", { length: 30 }).notNull(),
+  status: rfqStatusEnum("status").default("draft"),
+  requiredBy: date("required_by"),
+  notes: text("notes"),
+  supplierIds: text("supplier_ids").array().default([]),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const rfqItems = pgTable("rfq_items", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  rfqId: varchar("rfq_id", { length: 36 }).notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  quantity: numeric("quantity", { precision: 10, scale: 2 }).notNull().default("1"),
+  unit: varchar("unit", { length: 20 }).notNull().default("kg"),
+  specifications: text("specifications"),
+});
+
+export const supplierQuotations = pgTable("supplier_quotations", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  rfqId: varchar("rfq_id", { length: 36 }).notNull().references(() => rfqs.id, { onDelete: "cascade" }),
+  supplierId: varchar("supplier_id", { length: 36 }).notNull().references(() => suppliers.id),
+  quotationNumber: varchar("quotation_number", { length: 50 }),
+  validityDate: date("validity_date"),
+  paymentTerms: varchar("payment_terms", { length: 20 }),
+  deliveryDays: integer("delivery_days"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const quotationItems = pgTable("quotation_items", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  quotationId: varchar("quotation_id", { length: 36 }).notNull().references(() => supplierQuotations.id, { onDelete: "cascade" }),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  unitPrice: numeric("unit_price", { precision: 10, scale: 2 }),
+  taxPct: numeric("tax_pct", { precision: 5, scale: 2 }).default("0"),
+  notAvailable: boolean("not_available").default(false),
+  notes: text("notes"),
+});
+
+export const insertRfqSchema = createInsertSchema(rfqs).omit({ id: true, createdAt: true });
+export const insertRfqItemSchema = createInsertSchema(rfqItems).omit({ id: true });
+export const insertSupplierQuotationSchema = createInsertSchema(supplierQuotations).omit({ id: true, createdAt: true });
+export const insertQuotationItemSchema = createInsertSchema(quotationItems).omit({ id: true });
+export type RFQ = typeof rfqs.$inferSelect;
+export type InsertRFQ = z.infer<typeof insertRfqSchema>;
+export type RFQItem = typeof rfqItems.$inferSelect;
+export type SupplierQuotation = typeof supplierQuotations.$inferSelect;
+export type QuotationItem = typeof quotationItems.$inferSelect;
+
+// ─── Purchase Returns ──────────────────────────────────────────────────────────
+export const returnStatusEnum = pgEnum("return_status", ["draft", "approved", "dispatched", "acknowledged", "closed"]);
+
+export const purchaseReturns = pgTable("purchase_returns", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  returnNumber: varchar("return_number", { length: 30 }).notNull(),
+  supplierId: varchar("supplier_id", { length: 36 }).notNull().references(() => suppliers.id),
+  purchaseOrderId: varchar("purchase_order_id", { length: 36 }).references(() => purchaseOrders.id),
+  returnType: varchar("return_type", { length: 40 }).notNull(),
+  recoveryOption: varchar("recovery_option", { length: 30 }).notNull().default("Credit Note"),
+  status: returnStatusEnum("status").default("draft"),
+  totalValue: numeric("total_value", { precision: 12, scale: 2 }).default("0"),
+  debitNote: varchar("debit_note", { length: 50 }),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const purchaseReturnItems = pgTable("purchase_return_items", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  returnId: varchar("return_id", { length: 36 }).notNull().references(() => purchaseReturns.id, { onDelete: "cascade" }),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  returnQty: numeric("return_qty", { precision: 10, scale: 2 }).notNull(),
+  unitPrice: numeric("unit_price", { precision: 10, scale: 2 }).notNull(),
+  reason: text("reason"),
+  condition: varchar("condition", { length: 30 }),
+});
+
+export const insertPurchaseReturnSchema = createInsertSchema(purchaseReturns).omit({ id: true, createdAt: true });
+export const insertPurchaseReturnItemSchema = createInsertSchema(purchaseReturnItems).omit({ id: true });
+export type PurchaseReturn = typeof purchaseReturns.$inferSelect;
+export type InsertPurchaseReturn = z.infer<typeof insertPurchaseReturnSchema>;
+export type PurchaseReturnItem = typeof purchaseReturnItems.$inferSelect;
+
+// ─── Stock Transfers ───────────────────────────────────────────────────────────
+export const transferStatusEnum = pgEnum("transfer_status", ["pending", "approved", "in_transit", "received", "partially_received", "cancelled"]);
+
+export const stockTransfers = pgTable("stock_transfers", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  transferNumber: varchar("transfer_number", { length: 30 }).notNull(),
+  fromOutletId: varchar("from_outlet_id", { length: 36 }).references(() => outlets.id),
+  toOutletId: varchar("to_outlet_id", { length: 36 }).references(() => outlets.id),
+  status: transferStatusEnum("status").default("pending"),
+  driverName: varchar("driver_name", { length: 100 }),
+  vehicleNumber: varchar("vehicle_number", { length: 30 }),
+  estimatedArrival: date("estimated_arrival"),
+  dispatchedAt: timestamp("dispatched_at"),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const stockTransferItems = pgTable("stock_transfer_items", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  transferId: varchar("transfer_id", { length: 36 }).notNull().references(() => stockTransfers.id, { onDelete: "cascade" }),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  requestedQty: numeric("requested_qty", { precision: 10, scale: 2 }).notNull(),
+  actualQty: numeric("actual_qty", { precision: 10, scale: 2 }),
+  notes: text("notes"),
+});
+
+export const insertStockTransferSchema = createInsertSchema(stockTransfers).omit({ id: true, createdAt: true, dispatchedAt: true });
+export const insertStockTransferItemSchema = createInsertSchema(stockTransferItems).omit({ id: true });
+export type StockTransfer = typeof stockTransfers.$inferSelect;
+export type InsertStockTransfer = z.infer<typeof insertStockTransferSchema>;
+export type StockTransferItem = typeof stockTransferItems.$inferSelect;
+
+// ─── Stock Count Sessions ──────────────────────────────────────────────────────
+export const countStatusEnum = pgEnum("count_status", ["scheduled", "in_progress", "completed", "approved"]);
+
+export const stockCountSessions = pgTable("stock_count_sessions", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  countNumber: varchar("count_number", { length: 30 }).notNull(),
+  countType: varchar("count_type", { length: 30 }).notNull().default("Full"),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  status: countStatusEnum("status").default("scheduled"),
+  scheduledDate: date("scheduled_date").notNull(),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: varchar("approved_by", { length: 36 }).references(() => users.id),
+  reason: text("reason"),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const stockCountItems = pgTable("stock_count_items", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  sessionId: varchar("session_id", { length: 36 }).notNull().references(() => stockCountSessions.id, { onDelete: "cascade" }),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  systemQty: numeric("system_qty", { precision: 10, scale: 2 }).notNull().default("0"),
+  physicalQty: numeric("physical_qty", { precision: 10, scale: 2 }),
+  counted: boolean("counted").default(false),
+  notes: text("notes"),
+});
+
+export const insertStockCountSessionSchema = createInsertSchema(stockCountSessions).omit({ id: true, createdAt: true, startedAt: true, completedAt: true, approvedAt: true });
+export const insertStockCountItemSchema = createInsertSchema(stockCountItems).omit({ id: true });
+export type StockCountSession = typeof stockCountSessions.$inferSelect;
+export type InsertStockCountSession = z.infer<typeof insertStockCountSessionSchema>;
+export type StockCountItem = typeof stockCountItems.$inferSelect;
+
+// ─── Damaged Inventory ─────────────────────────────────────────────────────────
+export const damageStatusEnum = pgEnum("damage_status", ["reported", "under_review", "approved", "disposed", "written_off"]);
+
+export const damagedInventory = pgTable("damaged_inventory", {
+  id: varchar("id", { length: 36 }).primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  damageNumber: varchar("damage_number", { length: 30 }).notNull(),
+  inventoryItemId: varchar("inventory_item_id", { length: 36 }).notNull().references(() => inventoryItems.id),
+  damagedQty: numeric("damaged_qty", { precision: 10, scale: 2 }).notNull(),
+  unitCost: numeric("unit_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  totalValue: numeric("total_value", { precision: 12, scale: 2 }).notNull().default("0"),
+  damageType: varchar("damage_type", { length: 40 }).notNull(),
+  damageCause: text("damage_cause"),
+  damageDate: date("damage_date").notNull(),
+  damageLocation: varchar("damage_location", { length: 100 }),
+  disposalMethod: varchar("disposal_method", { length: 40 }).notNull().default("DISCARDED"),
+  insuranceClaimNo: varchar("insurance_claim_no", { length: 50 }),
+  insuranceAmount: numeric("insurance_amount", { precision: 10, scale: 2 }),
+  status: damageStatusEnum("status").default("reported"),
+  reviewedBy: varchar("reviewed_by", { length: 36 }).references(() => users.id),
+  reviewedAt: timestamp("reviewed_at"),
+  notes: text("notes"),
+  createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertDamagedInventorySchema = createInsertSchema(damagedInventory).omit({ id: true, createdAt: true, reviewedAt: true });
+export type DamagedInventory = typeof damagedInventory.$inferSelect;
+export type InsertDamagedInventory = z.infer<typeof insertDamagedInventorySchema>;
+
 export type Region = typeof regions.$inferSelect;
 export type InsertRegion = z.infer<typeof insertRegionSchema>;
 export type FranchiseInvoice = typeof franchiseInvoices.$inferSelect;
@@ -1258,255 +1449,6 @@ export const quotationRequestItems = pgTable("quotation_request_items", {
   unit: varchar("unit", { length: 30 }),
   specifications: text("specifications"),
 });
-
-export const supplierQuotations = pgTable("supplier_quotations", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
-  rfqId: varchar("rfq_id", { length: 36 }).references(() => quotationRequests.id),
-  supplierId: varchar("supplier_id", { length: 36 }).notNull().references(() => suppliers.id),
-  quotationNumber: varchar("quotation_number", { length: 50 }).notNull(),
-  status: varchar("status", { length: 30 }).default("received"),
-  validityDate: date("validity_date"),
-  paymentTerms: varchar("payment_terms", { length: 100 }),
-  deliveryDays: integer("delivery_days"),
-  totalAmount: decimal("total_amount", { precision: 12, scale: 2 }),
-  notes: text("notes"),
-  receivedAt: timestamp("received_at").defaultNow(),
-});
-
-export const supplierQuotationItems = pgTable("supplier_quotation_items", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  quotationId: varchar("quotation_id", { length: 36 }).notNull().references(() => supplierQuotations.id),
-  inventoryItemId: varchar("inventory_item_id", { length: 36 }).references(() => inventoryItems.id),
-  ingredientName: varchar("ingredient_name", { length: 255 }),
-  quotedQuantity: decimal("quoted_quantity", { precision: 10, scale: 3 }),
-  unit: varchar("unit", { length: 30 }),
-  unitPrice: decimal("unit_price", { precision: 10, scale: 4 }),
-  totalPrice: decimal("total_price", { precision: 12, scale: 2 }),
-  taxPercent: decimal("tax_percent", { precision: 5, scale: 2 }).default("0"),
-  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
-  deliveryDays: integer("delivery_days"),
-  notes: text("notes"),
-});
-
-export const poDeliverySchedule = pgTable("po_delivery_schedule", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
-  poId: varchar("po_id", { length: 36 }).notNull().references(() => purchaseOrders.id),
-  deliveryNumber: integer("delivery_number"),
-  scheduledDate: date("scheduled_date"),
-  scheduledTime: varchar("scheduled_time", { length: 10 }),
-  deliveryOutletId: varchar("delivery_outlet_id", { length: 36 }).references(() => outlets.id),
-  deliveryAddress: text("delivery_address"),
-  status: varchar("status", { length: 30 }).default("scheduled"),
-  items: jsonb("items"),
-  actualDeliveryDate: date("actual_delivery_date"),
-  deliveryNote: text("delivery_note"),
-  receivedBy: varchar("received_by", { length: 36 }),
-  receivedByName: varchar("received_by_name", { length: 255 }),
-  delayReason: text("delay_reason"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const purchaseReturns = pgTable("purchase_returns", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
-  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
-  returnNumber: varchar("return_number", { length: 50 }).notNull(),
-  grnId: varchar("grn_id", { length: 36 }).references(() => goodsReceivedNotes.id),
-  poId: varchar("po_id", { length: 36 }).references(() => purchaseOrders.id),
-  supplierId: varchar("supplier_id", { length: 36 }).references(() => suppliers.id),
-  supplierName: varchar("supplier_name", { length: 255 }),
-  returnType: varchar("return_type", { length: 30 }),
-  status: varchar("status", { length: 30 }).default("draft"),
-  totalItems: integer("total_items"),
-  totalValue: decimal("total_value", { precision: 12, scale: 2 }),
-  debitNoteNumber: varchar("debit_note_number", { length: 50 }),
-  recoveryOption: varchar("recovery_option", { length: 30 }),
-  notes: text("notes"),
-  approvedBy: varchar("approved_by", { length: 36 }),
-  approvedAt: timestamp("approved_at"),
-  dispatchedAt: timestamp("dispatched_at"),
-  createdBy: varchar("created_by", { length: 36 }),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const purchaseReturnItems = pgTable("purchase_return_items", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  returnId: varchar("return_id", { length: 36 }).notNull().references(() => purchaseReturns.id),
-  grnItemId: varchar("grn_item_id", { length: 36 }),
-  inventoryItemId: varchar("inventory_item_id", { length: 36 }).references(() => inventoryItems.id),
-  ingredientName: varchar("ingredient_name", { length: 255 }),
-  returnQuantity: decimal("return_quantity", { precision: 10, scale: 3 }),
-  unit: varchar("unit", { length: 30 }),
-  unitPrice: decimal("unit_price", { precision: 10, scale: 4 }),
-  totalValue: decimal("total_value", { precision: 12, scale: 2 }),
-  returnReason: text("return_reason"),
-  condition: varchar("condition", { length: 30 }),
-  photoUrl: text("photo_url"),
-});
-
-export const stockTransfers = pgTable("stock_transfers", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
-  transferNumber: varchar("transfer_number", { length: 50 }).notNull(),
-  fromOutletId: varchar("from_outlet_id", { length: 36 }).references(() => outlets.id),
-  fromOutletName: varchar("from_outlet_name", { length: 255 }),
-  toOutletId: varchar("to_outlet_id", { length: 36 }).references(() => outlets.id),
-  toOutletName: varchar("to_outlet_name", { length: 255 }),
-  status: varchar("status", { length: 30 }).default("requested"),
-  priority: varchar("priority", { length: 20 }).default("normal"),
-  transferReason: text("transfer_reason"),
-  requestedBy: varchar("requested_by", { length: 36 }),
-  requestedByName: varchar("requested_by_name", { length: 255 }),
-  approvedBy: varchar("approved_by", { length: 36 }),
-  approvedAt: timestamp("approved_at"),
-  dispatchedBy: varchar("dispatched_by", { length: 36 }),
-  dispatchedAt: timestamp("dispatched_at"),
-  receivedBy: varchar("received_by", { length: 36 }),
-  receivedAt: timestamp("received_at"),
-  expectedArrival: date("expected_arrival"),
-  transportMode: varchar("transport_mode", { length: 50 }),
-  vehicleNumber: varchar("vehicle_number", { length: 50 }),
-  driverName: varchar("driver_name", { length: 255 }),
-  driverPhone: varchar("driver_phone", { length: 30 }),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const stockTransferItems = pgTable("stock_transfer_items", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  transferId: varchar("transfer_id", { length: 36 }).notNull().references(() => stockTransfers.id),
-  inventoryItemId: varchar("inventory_item_id", { length: 36 }).references(() => inventoryItems.id),
-  ingredientName: varchar("ingredient_name", { length: 255 }),
-  requestedQty: decimal("requested_qty", { precision: 10, scale: 3 }),
-  approvedQty: decimal("approved_qty", { precision: 10, scale: 3 }),
-  dispatchedQty: decimal("dispatched_qty", { precision: 10, scale: 3 }),
-  receivedQty: decimal("received_qty", { precision: 10, scale: 3 }),
-  unit: varchar("unit", { length: 30 }),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 4 }),
-  totalCost: decimal("total_cost", { precision: 12, scale: 2 }),
-  batchNumber: varchar("batch_number", { length: 100 }),
-  expiryDate: date("expiry_date"),
-  conditionAtDispatch: varchar("condition_at_dispatch", { length: 30 }),
-  conditionAtReceipt: varchar("condition_at_receipt", { length: 30 }),
-  varianceQty: decimal("variance_qty", { precision: 10, scale: 3 }),
-  varianceReason: text("variance_reason"),
-});
-
-export const stockCounts = pgTable("stock_counts", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
-  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
-  countNumber: varchar("count_number", { length: 50 }).notNull(),
-  countType: varchar("count_type", { length: 30 }),
-  countScope: varchar("count_scope", { length: 30 }),
-  scopeDetails: jsonb("scope_details"),
-  status: varchar("status", { length: 30 }).default("planned"),
-  scheduledDate: date("scheduled_date"),
-  scheduledTime: varchar("scheduled_time", { length: 10 }),
-  startedAt: timestamp("started_at"),
-  completedAt: timestamp("completed_at"),
-  totalItemsCounted: integer("total_items_counted").default(0),
-  itemsWithVariance: integer("items_with_variance").default(0),
-  totalVarianceValue: decimal("total_variance_value", { precision: 12, scale: 2 }),
-  countReason: text("count_reason"),
-  notes: text("notes"),
-  approvedBy: varchar("approved_by", { length: 36 }),
-  approvedAt: timestamp("approved_at"),
-  createdBy: varchar("created_by", { length: 36 }),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const stockCountItems = pgTable("stock_count_items", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  countId: varchar("count_id", { length: 36 }).notNull().references(() => stockCounts.id),
-  inventoryItemId: varchar("inventory_item_id", { length: 36 }).references(() => inventoryItems.id),
-  ingredientName: varchar("ingredient_name", { length: 255 }),
-  unit: varchar("unit", { length: 30 }),
-  systemQuantity: decimal("system_quantity", { precision: 10, scale: 3 }),
-  physicalQuantity: decimal("physical_quantity", { precision: 10, scale: 3 }),
-  varianceQuantity: decimal("variance_quantity", { precision: 10, scale: 3 }),
-  varianceValue: decimal("variance_value", { precision: 12, scale: 2 }),
-  variancePercent: decimal("variance_percent", { precision: 7, scale: 2 }),
-  varianceType: varchar("variance_type", { length: 20 }),
-  varianceReason: text("variance_reason"),
-  countedBy: varchar("counted_by", { length: 36 }),
-  countedByName: varchar("counted_by_name", { length: 255 }),
-  countedAt: timestamp("counted_at"),
-  recountRequired: boolean("recount_required").default(false),
-  recountQuantity: decimal("recount_quantity", { precision: 10, scale: 3 }),
-  adjustmentApproved: boolean("adjustment_approved").default(false),
-  adjustmentApprovedBy: varchar("adjustment_approved_by", { length: 36 }),
-  storageLocation: varchar("storage_location", { length: 100 }),
-  notes: text("notes"),
-});
-
-export const damagedInventory = pgTable("damaged_inventory", {
-  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
-  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
-  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
-  damageNumber: varchar("damage_number", { length: 50 }).notNull(),
-  inventoryItemId: varchar("inventory_item_id", { length: 36 }).references(() => inventoryItems.id),
-  ingredientName: varchar("ingredient_name", { length: 255 }),
-  damagedQuantity: decimal("damaged_quantity", { precision: 10, scale: 3 }),
-  unit: varchar("unit", { length: 30 }),
-  unitCost: decimal("unit_cost", { precision: 10, scale: 4 }),
-  totalValue: decimal("total_value", { precision: 12, scale: 2 }),
-  damageType: varchar("damage_type", { length: 30 }),
-  damageCause: text("damage_cause"),
-  damageDate: date("damage_date"),
-  damageLocation: varchar("damage_location", { length: 255 }),
-  discoveredBy: varchar("discovered_by", { length: 36 }),
-  discoveredByName: varchar("discovered_by_name", { length: 255 }),
-  status: varchar("status", { length: 30 }).default("reported"),
-  disposalMethod: varchar("disposal_method", { length: 50 }),
-  insuranceClaimNo: varchar("insurance_claim_no", { length: 100 }),
-  insuranceAmount: decimal("insurance_amount", { precision: 12, scale: 2 }),
-  photoUrls: jsonb("photo_urls"),
-  approvedBy: varchar("approved_by", { length: 36 }),
-  approvedAt: timestamp("approved_at"),
-  disposedAt: timestamp("disposed_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const insertQuotationRequestSchema = createInsertSchema(quotationRequests).omit({ id: true, createdAt: true });
-export const insertQuotationRequestItemSchema = createInsertSchema(quotationRequestItems).omit({ id: true });
-export const insertSupplierQuotationSchema = createInsertSchema(supplierQuotations).omit({ id: true, receivedAt: true });
-export const insertSupplierQuotationItemSchema = createInsertSchema(supplierQuotationItems).omit({ id: true });
-export const insertPoDeliveryScheduleSchema = createInsertSchema(poDeliverySchedule).omit({ id: true, createdAt: true });
-export const insertPurchaseReturnSchema = createInsertSchema(purchaseReturns).omit({ id: true, createdAt: true });
-export const insertPurchaseReturnItemSchema = createInsertSchema(purchaseReturnItems).omit({ id: true });
-export const insertStockTransferSchema = createInsertSchema(stockTransfers).omit({ id: true, createdAt: true });
-export const insertStockTransferItemSchema = createInsertSchema(stockTransferItems).omit({ id: true });
-export const insertStockCountSchema = createInsertSchema(stockCounts).omit({ id: true, createdAt: true });
-export const insertStockCountItemSchema = createInsertSchema(stockCountItems).omit({ id: true });
-export const insertDamagedInventorySchema = createInsertSchema(damagedInventory).omit({ id: true, createdAt: true });
-
-export type QuotationRequest = typeof quotationRequests.$inferSelect;
-export type InsertQuotationRequest = z.infer<typeof insertQuotationRequestSchema>;
-export type QuotationRequestItem = typeof quotationRequestItems.$inferSelect;
-export type InsertQuotationRequestItem = z.infer<typeof insertQuotationRequestItemSchema>;
-export type SupplierQuotation = typeof supplierQuotations.$inferSelect;
-export type InsertSupplierQuotation = z.infer<typeof insertSupplierQuotationSchema>;
-export type SupplierQuotationItem = typeof supplierQuotationItems.$inferSelect;
-export type InsertSupplierQuotationItem = z.infer<typeof insertSupplierQuotationItemSchema>;
-export type PoDeliverySchedule = typeof poDeliverySchedule.$inferSelect;
-export type InsertPoDeliverySchedule = z.infer<typeof insertPoDeliveryScheduleSchema>;
-export type PurchaseReturn = typeof purchaseReturns.$inferSelect;
-export type InsertPurchaseReturn = z.infer<typeof insertPurchaseReturnSchema>;
-export type PurchaseReturnItem = typeof purchaseReturnItems.$inferSelect;
-export type InsertPurchaseReturnItem = z.infer<typeof insertPurchaseReturnItemSchema>;
-export type StockTransfer = typeof stockTransfers.$inferSelect;
-export type InsertStockTransfer = z.infer<typeof insertStockTransferSchema>;
-export type StockTransferItem = typeof stockTransferItems.$inferSelect;
-export type InsertStockTransferItem = z.infer<typeof insertStockTransferItemSchema>;
-export type StockCount = typeof stockCounts.$inferSelect;
-export type InsertStockCount = z.infer<typeof insertStockCountSchema>;
-export type StockCountItem = typeof stockCountItems.$inferSelect;
-export type InsertStockCountItem = z.infer<typeof insertStockCountItemSchema>;
-export type DamagedInventory = typeof damagedInventory.$inferSelect;
-export type InsertDamagedInventory = z.infer<typeof insertDamagedInventorySchema>;
 
 export const labourCostSnapshots = pgTable("labour_cost_snapshots", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
