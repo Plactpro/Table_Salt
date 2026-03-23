@@ -170,6 +170,9 @@ import {
   type PackingChargeCategory, type InsertPackingChargeCategory,
   type PackingChargeExemption, type InsertPackingChargeExemption,
   type BillPackingCharge, type InsertBillPackingCharge,
+  inAppSupportTickets, inAppSupportTicketReplies,
+  type InAppSupportTicket, type InsertInAppSupportTicket,
+  type InAppSupportTicketReply, type InsertInAppSupportTicketReply,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -771,6 +774,16 @@ export interface IStorage {
   deletePackingExemption(id: string, tenantId: string): Promise<void>;
   createBillPackingCharge(data: InsertBillPackingCharge): Promise<BillPackingCharge>;
   getBillPackingCharge(billId: string): Promise<BillPackingCharge | null>;
+
+  // In-App Support Tickets
+  createInAppSupportTicket(data: InsertInAppSupportTicket): Promise<InAppSupportTicket>;
+  getInAppSupportTicket(id: string): Promise<InAppSupportTicket | null>;
+  getInAppSupportTickets(tenantId: string): Promise<InAppSupportTicket[]>;
+  updateInAppSupportTicket(id: string, data: Partial<InAppSupportTicket>): Promise<InAppSupportTicket | null>;
+  createInAppSupportTicketReply(data: InsertInAppSupportTicketReply): Promise<InAppSupportTicketReply>;
+  getInAppSupportTicketReplies(ticketId: string): Promise<InAppSupportTicketReply[]>;
+  getAllInAppSupportTickets(filters: { status?: string; priority?: string; category?: string; tenantId?: string; assignedTo?: string; dateFrom?: string }): Promise<any[]>;
+  getInAppSupportStats(): Promise<{ open: number; in_progress: number; replied: number; resolved: number; closed: number; awaiting_support: number; avgResponseTime: number | null; byCategory: Record<string, number> }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4052,6 +4065,120 @@ export class DatabaseStorage implements IStorage {
   async getBillPackingCharge(billId: string): Promise<BillPackingCharge | null> {
     const [row] = await db.select().from(billPackingCharges).where(eq(billPackingCharges.billId, billId));
     return row || null;
+  }
+
+  async createInAppSupportTicket(data: InsertInAppSupportTicket): Promise<InAppSupportTicket> {
+    const { rows } = await pool.query(`
+      INSERT INTO in_app_support_tickets (tenant_id, created_by, created_by_name, subject, description, category, priority, status, page_context, browser_info, tenant_plan)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9, $10)
+      RETURNING *
+    `, [data.tenantId, data.createdBy, data.createdByName, data.subject, data.description, data.category, data.priority, data.pageContext, data.browserInfo, data.tenantPlan]);
+    return rows[0];
+  }
+
+  async getInAppSupportTicket(id: string): Promise<InAppSupportTicket | null> {
+    const { rows } = await pool.query(`SELECT * FROM in_app_support_tickets WHERE id = $1`, [id]);
+    return rows[0] || null;
+  }
+
+  async getInAppSupportTickets(tenantId: string): Promise<InAppSupportTicket[]> {
+    const { rows } = await pool.query(`
+      SELECT t.*,
+        (SELECT message FROM in_app_support_ticket_replies r WHERE r.ticket_id = t.id ORDER BY r.created_at DESC LIMIT 1) AS latest_reply_preview,
+        (SELECT is_admin FROM in_app_support_ticket_replies r WHERE r.ticket_id = t.id ORDER BY r.created_at DESC LIMIT 1) AS latest_reply_is_admin
+      FROM in_app_support_tickets t
+      WHERE t.tenant_id = $1
+      ORDER BY t.created_at DESC
+    `, [tenantId]);
+    return rows;
+  }
+
+  async updateInAppSupportTicket(id: string, data: Partial<InAppSupportTicket>): Promise<InAppSupportTicket | null> {
+    const setClauses: string[] = ["updated_at = NOW()"];
+    const values: any[] = [];
+    let i = 1;
+    if (data.status !== undefined) { setClauses.push(`status = $${i++}`); values.push(data.status); }
+    if (data.priority !== undefined) { setClauses.push(`priority = $${i++}`); values.push(data.priority); }
+    if (data.assignedTo !== undefined) { setClauses.push(`assigned_to = $${i++}`); values.push(data.assignedTo); }
+    if (data.resolvedAt !== undefined) { setClauses.push(`resolved_at = $${i++}`); values.push(data.resolvedAt); }
+    if (data.lastRepliedAt !== undefined) { setClauses.push(`last_replied_at = $${i++}`); values.push(data.lastRepliedAt); }
+    if (data.replyCount !== undefined) { setClauses.push(`reply_count = $${i++}`); values.push(data.replyCount); }
+    values.push(id);
+    const { rows } = await pool.query(`UPDATE in_app_support_tickets SET ${setClauses.join(", ")} WHERE id = $${i} RETURNING *`, values);
+    return rows[0] || null;
+  }
+
+  async createInAppSupportTicketReply(data: InsertInAppSupportTicketReply): Promise<InAppSupportTicketReply> {
+    const { rows } = await pool.query(`
+      INSERT INTO in_app_support_ticket_replies (ticket_id, tenant_id, author_id, author_name, is_admin, message)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+    `, [data.ticketId, data.tenantId, data.authorId, data.authorName, data.isAdmin ?? false, data.message]);
+    return rows[0];
+  }
+
+  async getInAppSupportTicketReplies(ticketId: string): Promise<InAppSupportTicketReply[]> {
+    const { rows } = await pool.query(`
+      SELECT * FROM in_app_support_ticket_replies WHERE ticket_id = $1 ORDER BY created_at ASC
+    `, [ticketId]);
+    return rows;
+  }
+
+  async getAllInAppSupportTickets(filters: { status?: string; priority?: string; category?: string; tenantId?: string; assignedTo?: string; dateFrom?: string }): Promise<any[]> {
+    const conditions: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+    if (filters.status) { conditions.push(`t.status = $${i++}`); values.push(filters.status); }
+    if (filters.priority) { conditions.push(`t.priority = $${i++}`); values.push(filters.priority); }
+    if (filters.category) { conditions.push(`t.category = $${i++}`); values.push(filters.category); }
+    if (filters.tenantId) { conditions.push(`t.tenant_id = $${i++}`); values.push(filters.tenantId); }
+    if (filters.assignedTo) { conditions.push(`t.assigned_to = $${i++}`); values.push(filters.assignedTo); }
+    if (filters.dateFrom) { conditions.push(`t.created_at >= $${i++}`); values.push(filters.dateFrom); }
+    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const { rows } = await pool.query(`
+      SELECT t.*, tn.name AS tenant_name, tn.plan AS tenant_plan_name,
+        u.name AS assigned_to_name
+      FROM in_app_support_tickets t
+      LEFT JOIN tenants tn ON tn.id = t.tenant_id
+      LEFT JOIN users u ON u.id = t.assigned_to
+      ${where}
+      ORDER BY t.created_at DESC
+      LIMIT 500
+    `, values);
+    return rows;
+  }
+
+  async getInAppSupportStats(): Promise<{ open: number; in_progress: number; replied: number; resolved: number; closed: number; awaiting_support: number; avgResponseTime: number | null; byCategory: Record<string, number> }> {
+    const { rows: statusRows } = await pool.query(`
+      SELECT status, COUNT(*) AS count FROM in_app_support_tickets GROUP BY status
+    `);
+    const { rows: catRows } = await pool.query(`
+      SELECT category, COUNT(*) AS count FROM in_app_support_tickets GROUP BY category
+    `);
+    const { rows: avgRows } = await pool.query(`
+      SELECT AVG(EXTRACT(EPOCH FROM (r.created_at - t.created_at)) / 60)::float AS avg_minutes
+      FROM in_app_support_tickets t
+      JOIN in_app_support_ticket_replies r ON r.ticket_id = t.id AND r.is_admin = true
+      WHERE r.created_at = (
+        SELECT MIN(r2.created_at) FROM in_app_support_ticket_replies r2
+        WHERE r2.ticket_id = t.id AND r2.is_admin = true
+      )
+    `);
+    const statusMap: Record<string, number> = {};
+    for (const r of statusRows) statusMap[r.status] = Number(r.count);
+    const byCategory: Record<string, number> = {};
+    for (const r of catRows) byCategory[r.category] = Number(r.count);
+    const avgResponseTime = avgRows[0]?.avg_minutes ? Number(avgRows[0].avg_minutes) : null;
+    return {
+      open: statusMap["open"] ?? 0,
+      in_progress: statusMap["in_progress"] ?? 0,
+      replied: statusMap["replied"] ?? 0,
+      resolved: statusMap["resolved"] ?? 0,
+      closed: statusMap["closed"] ?? 0,
+      awaiting_support: statusMap["awaiting_support"] ?? 0,
+      avgResponseTime: avgRows[0]?.avg_minutes ? Number(avgRows[0].avg_minutes) : null,
+      byCategory,
+    };
   }
 }
 

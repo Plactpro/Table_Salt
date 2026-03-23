@@ -2325,4 +2325,45 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS packing_charge DECIMAL(10,2) DEFAULT 0`);
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS packing_charge_label VARCHAR(100) DEFAULT 'Packing Charge'`);
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS packing_charge_tax DECIMAL(10,2) DEFAULT 0`);
+
+  // Task #125: In-App Support Ticket System
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS in_app_support_tickets (
+      id                VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id         VARCHAR(36) NOT NULL,
+      created_by        VARCHAR(36) NOT NULL,
+      created_by_name   VARCHAR(255),
+      subject           VARCHAR(255) NOT NULL,
+      description       TEXT NOT NULL,
+      category          VARCHAR(50) NOT NULL DEFAULT 'general',
+      priority          VARCHAR(20) DEFAULT 'normal',
+      status            VARCHAR(20) DEFAULT 'open',
+      assigned_to       VARCHAR(36),
+      page_context      TEXT,
+      browser_info      TEXT,
+      tenant_plan       VARCHAR(50),
+      resolved_at       TIMESTAMPTZ,
+      last_replied_at   TIMESTAMPTZ,
+      reply_count       INT DEFAULT 0,
+      created_at        TIMESTAMPTZ DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_in_app_support_tickets_tenant ON in_app_support_tickets(tenant_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_in_app_support_tickets_status ON in_app_support_tickets(status, created_at DESC)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS in_app_support_ticket_replies (
+      id            VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      ticket_id     VARCHAR(36) NOT NULL,
+      tenant_id     VARCHAR(36) NOT NULL,
+      author_id     VARCHAR(36) NOT NULL,
+      author_name   VARCHAR(255),
+      is_admin      BOOLEAN DEFAULT false,
+      message       TEXT NOT NULL,
+      attachments   JSONB,
+      created_at    TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_in_app_support_replies_ticket ON in_app_support_ticket_replies(ticket_id, created_at ASC)`);
 }
