@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -6,7 +6,7 @@ import type { Outlet } from "@shared/schema";
 import { motion } from "framer-motion";
 import {
   MapPin, Plus, Search, Edit, Trash2, Building2, Truck, Cloud, Store,
-  Navigation, Globe, Clock, CheckCircle2, Banknote, DollarSign, Save, AlertCircle,
+  Navigation, Globe, Clock, CheckCircle2, Banknote, DollarSign, Save, AlertCircle, Package, X,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,11 +14,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
+import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
 import { currencyMap } from "@shared/currency";
@@ -438,6 +440,621 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
         {saveMutation.isPending ? "Saving..." : "Save Settings"}
       </Button>
     </div>
+  );
+}
+
+const CHARGE_TYPES = [
+  { value: "FIXED_PER_ORDER", label: "Fixed amount per order" },
+  { value: "FIXED_PER_ITEM", label: "Fixed amount per item" },
+  { value: "PERCENTAGE", label: "Percentage of subtotal" },
+  { value: "PER_CATEGORY", label: "Per food category" },
+];
+
+function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const isOwner = user?.role === "owner";
+
+  const [selectedOutletId, setSelectedOutletId] = useState<string>(outlets[0]?.id || "");
+  const currencyInfo = currencyMap[(user?.tenant?.currency?.toUpperCase() || "USD") as keyof typeof currencyMap];
+  const symbol = currencyInfo?.symbol || "$";
+
+  const [form, setForm] = useState({
+    takeawayChargeEnabled: false,
+    deliveryChargeEnabled: false,
+    chargeType: "FIXED_PER_ORDER",
+    takeawayChargeAmount: "0",
+    deliveryChargeAmount: "0",
+    takeawayPerItem: "0",
+    deliveryPerItem: "0",
+    maxChargePerOrder: "",
+    chargeLabel: "Packing Charge",
+    packingChargeTaxable: false,
+    packingChargeTaxPct: "0",
+    showOnReceipt: true,
+  });
+
+  const { data: settingsData, isLoading: settingsLoading } = useQuery<any>({
+    queryKey: ["/api/packing/settings", selectedOutletId],
+    queryFn: async () => {
+      if (!selectedOutletId) return null;
+      const res = await apiRequest("GET", `/api/packing/settings/${selectedOutletId}`);
+      return res.json();
+    },
+    enabled: !!selectedOutletId,
+  });
+
+  useEffect(() => {
+    if (settingsData) {
+      setForm({
+        takeawayChargeEnabled: settingsData.takeawayChargeEnabled ?? false,
+        deliveryChargeEnabled: settingsData.deliveryChargeEnabled ?? false,
+        chargeType: settingsData.chargeType || "FIXED_PER_ORDER",
+        takeawayChargeAmount: String(settingsData.takeawayChargeAmount ?? 0),
+        deliveryChargeAmount: String(settingsData.deliveryChargeAmount ?? 0),
+        takeawayPerItem: String(settingsData.takeawayPerItem ?? 0),
+        deliveryPerItem: String(settingsData.deliveryPerItem ?? 0),
+        maxChargePerOrder: settingsData.maxChargePerOrder != null ? String(settingsData.maxChargePerOrder) : "",
+        chargeLabel: settingsData.chargeLabel || "Packing Charge",
+        packingChargeTaxable: settingsData.packingChargeTaxable ?? false,
+        packingChargeTaxPct: String(settingsData.packingChargeTaxPct ?? 0),
+        showOnReceipt: settingsData.showOnReceipt !== false,
+      });
+    }
+  }, [settingsData]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/packing/settings/${selectedOutletId}`, {
+        ...form,
+        takeawayChargeAmount: parseFloat(form.takeawayChargeAmount) || 0,
+        deliveryChargeAmount: parseFloat(form.deliveryChargeAmount) || 0,
+        takeawayPerItem: parseFloat(form.takeawayPerItem) || 0,
+        deliveryPerItem: parseFloat(form.deliveryPerItem) || 0,
+        maxChargePerOrder: form.maxChargePerOrder !== "" ? parseFloat(form.maxChargePerOrder) : null,
+        packingChargeTaxPct: parseFloat(form.packingChargeTaxPct) || 0,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Packing settings saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/packing/settings", selectedOutletId] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const { data: categories = [], refetch: refetchCategories } = useQuery<any[]>({
+    queryKey: ["/api/packing/categories", selectedOutletId],
+    queryFn: async () => {
+      if (!selectedOutletId) return [];
+      const res = await apiRequest("GET", `/api/packing/categories/${selectedOutletId}`);
+      return res.json();
+    },
+    enabled: !!selectedOutletId && form.chargeType === "PER_CATEGORY",
+  });
+
+  const [newCat, setNewCat] = useState({ categoryName: "", takeawayCharge: "", deliveryCharge: "" });
+  const [addingCat, setAddingCat] = useState(false);
+
+  const addCatMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/packing/categories/${selectedOutletId}`, {
+        categoryName: newCat.categoryName,
+        takeawayCharge: parseFloat(newCat.takeawayCharge) || 0,
+        deliveryCharge: parseFloat(newCat.deliveryCharge) || 0,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchCategories();
+      setNewCat({ categoryName: "", takeawayCharge: "", deliveryCharge: "" });
+      setAddingCat(false);
+      toast({ title: "Category added" });
+    },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteCatMutation = useMutation({
+    mutationFn: async (catId: string) => {
+      await apiRequest("DELETE", `/api/packing/categories/${selectedOutletId}/${catId}`);
+    },
+    onSuccess: () => { refetchCategories(); toast({ title: "Category deleted" }); },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const { data: exemptions = [], refetch: refetchExemptions } = useQuery<any[]>({
+    queryKey: ["/api/packing/exemptions", selectedOutletId],
+    queryFn: async () => {
+      if (!selectedOutletId) return [];
+      const res = await apiRequest("GET", `/api/packing/exemptions/${selectedOutletId}`);
+      return res.json();
+    },
+    enabled: !!selectedOutletId,
+  });
+
+  const { data: menuItems = [] } = useQuery<any[]>({ queryKey: ["/api/menu-items"] });
+  const { data: menuCategories = [] } = useQuery<any[]>({ queryKey: ["/api/menu-categories"] });
+
+  const [showItemExemptPicker, setShowItemExemptPicker] = useState(false);
+  const [showCatExemptPicker, setShowCatExemptPicker] = useState(false);
+
+  const addExemptionMutation = useMutation({
+    mutationFn: async (payload: any) => {
+      const res = await apiRequest("POST", `/api/packing/exemptions/${selectedOutletId}`, payload);
+      return res.json();
+    },
+    onSuccess: () => { refetchExemptions(); },
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteExemptionMutation = useMutation({
+    mutationFn: async (exId: string) => {
+      await apiRequest("DELETE", `/api/packing/exemptions/${selectedOutletId}/${exId}`);
+    },
+    onSuccess: () => refetchExemptions(),
+    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+  });
+
+  const anyEnabled = form.takeawayChargeEnabled || form.deliveryChargeEnabled;
+
+  return (
+    <Card data-testid="tab-packing-settings">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Package className="h-5 w-5 text-amber-600" />
+          Packing Charge Settings
+        </CardTitle>
+        <CardDescription>Configure packing charges for takeaway and delivery orders</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {outlets.length > 1 && (
+          <div>
+            <Label>Select Outlet</Label>
+            <Select value={selectedOutletId} onValueChange={setSelectedOutletId}>
+              <SelectTrigger className="mt-1 w-64">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {outlets.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="space-y-3">
+          <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Enable Packing Charge</p>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="takeaway-toggle"
+              checked={form.takeawayChargeEnabled}
+              onCheckedChange={(v) => setForm(f => ({ ...f, takeawayChargeEnabled: v }))}
+              disabled={!isOwner}
+              data-testid="toggle-takeaway-charge-enabled"
+            />
+            <Label htmlFor="takeaway-toggle">Takeaway orders</Label>
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="delivery-toggle"
+              checked={form.deliveryChargeEnabled}
+              onCheckedChange={(v) => setForm(f => ({ ...f, deliveryChargeEnabled: v }))}
+              disabled={!isOwner}
+              data-testid="toggle-delivery-charge-enabled"
+            />
+            <Label htmlFor="delivery-toggle">Delivery orders</Label>
+          </div>
+        </div>
+
+        {anyEnabled && (
+          <>
+            <Separator />
+            <div className="space-y-3">
+              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Charge Type</p>
+              <RadioGroup
+                value={form.chargeType}
+                onValueChange={(v) => setForm(f => ({ ...f, chargeType: v }))}
+                disabled={!isOwner}
+                className="space-y-2"
+              >
+                {CHARGE_TYPES.map(ct => (
+                  <div key={ct.value} className="flex items-center gap-2">
+                    <RadioGroupItem value={ct.value} id={`ct-${ct.value}`} data-testid={`radio-charge-type-${ct.value}`} />
+                    <Label htmlFor={`ct-${ct.value}`}>{ct.label}</Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+
+            {form.chargeType === "FIXED_PER_ORDER" && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Rates (per order)</p>
+                  {form.takeawayChargeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <Label className="w-24 shrink-0">Takeaway</Label>
+                      <span className="text-muted-foreground text-sm">{symbol}</span>
+                      <Input
+                        type="number" min="0" step="0.5"
+                        value={form.takeawayChargeAmount}
+                        onChange={(e) => setForm(f => ({ ...f, takeawayChargeAmount: e.target.value }))}
+                        className="w-28"
+                        disabled={!isOwner}
+                        data-testid="input-takeaway-charge"
+                      />
+                    </div>
+                  )}
+                  {form.deliveryChargeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <Label className="w-24 shrink-0">Delivery</Label>
+                      <span className="text-muted-foreground text-sm">{symbol}</span>
+                      <Input
+                        type="number" min="0" step="0.5"
+                        value={form.deliveryChargeAmount}
+                        onChange={(e) => setForm(f => ({ ...f, deliveryChargeAmount: e.target.value }))}
+                        className="w-28"
+                        disabled={!isOwner}
+                        data-testid="input-delivery-charge"
+                      />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {form.chargeType === "FIXED_PER_ITEM" && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Rates (per item)</p>
+                  {form.takeawayChargeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <Label className="w-24 shrink-0">Takeaway</Label>
+                      <span className="text-muted-foreground text-sm">{symbol}</span>
+                      <Input
+                        type="number" min="0" step="0.5"
+                        value={form.takeawayPerItem}
+                        onChange={(e) => setForm(f => ({ ...f, takeawayPerItem: e.target.value }))}
+                        className="w-28"
+                        disabled={!isOwner}
+                        data-testid="input-takeaway-per-item"
+                      />
+                      <span className="text-muted-foreground text-xs">per item</span>
+                    </div>
+                  )}
+                  {form.deliveryChargeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <Label className="w-24 shrink-0">Delivery</Label>
+                      <span className="text-muted-foreground text-sm">{symbol}</span>
+                      <Input
+                        type="number" min="0" step="0.5"
+                        value={form.deliveryPerItem}
+                        onChange={(e) => setForm(f => ({ ...f, deliveryPerItem: e.target.value }))}
+                        className="w-28"
+                        disabled={!isOwner}
+                        data-testid="input-delivery-per-item"
+                      />
+                      <span className="text-muted-foreground text-xs">per item</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            {form.chargeType === "PERCENTAGE" && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Rates (% of subtotal)</p>
+                  {form.takeawayChargeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <Label className="w-24 shrink-0">Takeaway</Label>
+                      <Input
+                        type="number" min="0" step="0.5"
+                        value={form.takeawayChargeAmount}
+                        onChange={(e) => setForm(f => ({ ...f, takeawayChargeAmount: e.target.value }))}
+                        className="w-24"
+                        disabled={!isOwner}
+                        data-testid="input-takeaway-charge"
+                      />
+                      <span className="text-muted-foreground text-sm">% of subtotal</span>
+                    </div>
+                  )}
+                  {form.deliveryChargeEnabled && (
+                    <div className="flex items-center gap-2">
+                      <Label className="w-24 shrink-0">Delivery</Label>
+                      <Input
+                        type="number" min="0" step="0.5"
+                        value={form.deliveryChargeAmount}
+                        onChange={(e) => setForm(f => ({ ...f, deliveryChargeAmount: e.target.value }))}
+                        className="w-24"
+                        disabled={!isOwner}
+                        data-testid="input-delivery-charge"
+                      />
+                      <span className="text-muted-foreground text-sm">% of subtotal</span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+
+            <Separator />
+            <div className="flex items-center gap-2">
+              <Label className="w-40 shrink-0">Maximum cap</Label>
+              <span className="text-muted-foreground text-sm">{symbol}</span>
+              <Input
+                type="number" min="0" step="1"
+                value={form.maxChargePerOrder}
+                onChange={(e) => setForm(f => ({ ...f, maxChargePerOrder: e.target.value }))}
+                placeholder="No cap"
+                className="w-28"
+                disabled={!isOwner}
+                data-testid="input-max-charge"
+              />
+              <span className="text-muted-foreground text-xs">(blank = no cap)</span>
+            </div>
+
+            <Separator />
+            <div className="space-y-2">
+              <Label>Charge label on receipt</Label>
+              <Input
+                value={form.chargeLabel}
+                onChange={(e) => setForm(f => ({ ...f, chargeLabel: e.target.value }))}
+                className="max-w-xs"
+                disabled={!isOwner}
+                data-testid="input-charge-label"
+              />
+            </div>
+
+            <Separator />
+            <div className="space-y-3">
+              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Tax on Packing Charge</p>
+              <div className="flex items-center gap-3">
+                <Switch
+                  id="taxable-toggle"
+                  checked={form.packingChargeTaxable}
+                  onCheckedChange={(v) => setForm(f => ({ ...f, packingChargeTaxable: v }))}
+                  disabled={!isOwner}
+                  data-testid="toggle-packing-taxable"
+                />
+                <Label htmlFor="taxable-toggle">Is packing charge taxable?</Label>
+              </div>
+              {form.packingChargeTaxable && (
+                <div className="flex items-center gap-2">
+                  <Label className="w-16 shrink-0">Tax %</Label>
+                  <Input
+                    type="number" min="0" step="0.5"
+                    value={form.packingChargeTaxPct}
+                    onChange={(e) => setForm(f => ({ ...f, packingChargeTaxPct: e.target.value }))}
+                    className="w-24"
+                    disabled={!isOwner}
+                    data-testid="input-packing-tax-pct"
+                  />
+                  <span className="text-muted-foreground text-sm">%</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Switch
+                id="show-receipt-toggle"
+                checked={form.showOnReceipt}
+                onCheckedChange={(v) => setForm(f => ({ ...f, showOnReceipt: v }))}
+                disabled={!isOwner}
+                data-testid="toggle-show-on-receipt"
+              />
+              <Label htmlFor="show-receipt-toggle">Show on receipt</Label>
+            </div>
+
+            {isOwner && (
+              <Button
+                onClick={() => saveMutation.mutate()}
+                disabled={saveMutation.isPending || !selectedOutletId}
+                data-testid="button-save-packing-settings"
+              >
+                {saveMutation.isPending ? "Saving..." : "Save Settings"}
+              </Button>
+            )}
+
+            {form.chargeType === "PER_CATEGORY" && (
+              <>
+                <Separator />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Per Category Rates</p>
+                    {isOwner && (
+                      <Button size="sm" variant="outline" onClick={() => setAddingCat(true)} data-testid="button-add-category">
+                        <Plus className="h-3.5 w-3.5 mr-1" /> Add Category
+                      </Button>
+                    )}
+                  </div>
+                  <div className="rounded-lg border overflow-hidden" data-testid="table-packing-categories">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted/50">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium">Category Name</th>
+                          <th className="text-right px-3 py-2 font-medium">Takeaway</th>
+                          <th className="text-right px-3 py-2 font-medium">Delivery</th>
+                          {isOwner && <th className="px-3 py-2" />}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y">
+                        {categories.map((cat: any) => (
+                          <tr key={cat.id} data-testid={`row-category-${cat.id}`}>
+                            <td className="px-3 py-2">{cat.categoryName}</td>
+                            <td className="px-3 py-2 text-right">{symbol}{cat.takeawayCharge}</td>
+                            <td className="px-3 py-2 text-right">{symbol}{cat.deliveryCharge}</td>
+                            {isOwner && (
+                              <td className="px-3 py-2 text-right">
+                                <Button
+                                  size="icon" variant="ghost"
+                                  className="h-7 w-7 text-red-500"
+                                  onClick={() => { if (confirm("Delete this category rate?")) deleteCatMutation.mutate(cat.id); }}
+                                  data-testid={`button-delete-category-${cat.id}`}
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </Button>
+                              </td>
+                            )}
+                          </tr>
+                        ))}
+                        {categories.length === 0 && !addingCat && (
+                          <tr><td colSpan={4} className="px-3 py-4 text-center text-muted-foreground text-xs">No category rates added yet</td></tr>
+                        )}
+                        {addingCat && (
+                          <tr>
+                            <td className="px-3 py-2">
+                              <Input
+                                value={newCat.categoryName}
+                                onChange={(e) => setNewCat(c => ({ ...c, categoryName: e.target.value }))}
+                                placeholder="Category name"
+                                className="h-7 text-xs"
+                                data-testid="input-category-name-new"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <Input
+                                type="number" min="0" step="0.5"
+                                value={newCat.takeawayCharge}
+                                onChange={(e) => setNewCat(c => ({ ...c, takeawayCharge: e.target.value }))}
+                                placeholder="0"
+                                className="h-7 text-xs text-right"
+                                data-testid="input-category-takeaway-new"
+                              />
+                            </td>
+                            <td className="px-3 py-2">
+                              <Input
+                                type="number" min="0" step="0.5"
+                                value={newCat.deliveryCharge}
+                                onChange={(e) => setNewCat(c => ({ ...c, deliveryCharge: e.target.value }))}
+                                placeholder="0"
+                                className="h-7 text-xs text-right"
+                                data-testid="input-category-delivery-new"
+                              />
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              <div className="flex gap-1 justify-end">
+                                <Button size="sm" className="h-7 text-xs" onClick={() => addCatMutation.mutate()} data-testid="button-save-category">Save</Button>
+                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddingCat(false)}>Cancel</Button>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            <Separator />
+            <div className="space-y-3" data-testid="list-packing-exemptions">
+              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Exemptions</p>
+              <p className="text-xs text-muted-foreground">Items or categories exempt from packing charge</p>
+              {exemptions.length > 0 && (
+                <div className="space-y-2">
+                  {exemptions.filter((e: any) => e.exemptionType === "MENU_ITEM").length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium mb-1">Exempted items:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {exemptions.filter((e: any) => e.exemptionType === "MENU_ITEM").map((e: any) => (
+                          <Badge key={e.id} variant="secondary" className="gap-1" data-testid={`tag-exemption-${e.id}`}>
+                            {e.referenceName}
+                            {isOwner && (
+                              <button onClick={() => deleteExemptionMutation.mutate(e.id)} className="ml-1 hover:text-red-500" data-testid={`button-remove-exemption-${e.id}`}>
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {exemptions.filter((e: any) => e.exemptionType === "CATEGORY").length > 0 && (
+                    <div>
+                      <p className="text-xs font-medium mb-1">Exempted categories:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {exemptions.filter((e: any) => e.exemptionType === "CATEGORY").map((e: any) => (
+                          <Badge key={e.id} variant="secondary" className="gap-1 bg-purple-100 text-purple-800" data-testid={`tag-exemption-${e.id}`}>
+                            {e.referenceName}
+                            {isOwner && (
+                              <button onClick={() => deleteExemptionMutation.mutate(e.id)} className="ml-1 hover:text-red-500" data-testid={`button-remove-exemption-${e.id}`}>
+                                <X className="h-3 w-3" />
+                              </button>
+                            )}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {isOwner && (
+                <div className="flex gap-2 flex-wrap">
+                  <div className="relative">
+                    <Button size="sm" variant="outline" onClick={() => { setShowItemExemptPicker(v => !v); setShowCatExemptPicker(false); }} data-testid="button-add-item-exemption">
+                      + Add Item Exemption
+                    </Button>
+                    {showItemExemptPicker && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-background border rounded-lg shadow-lg p-2 w-64 max-h-48 overflow-y-auto">
+                        {menuItems.map((item: any) => (
+                          <button
+                            key={item.id}
+                            className="w-full text-left px-2 py-1.5 text-sm hover:bg-muted rounded"
+                            onClick={() => {
+                              addExemptionMutation.mutate({ exemptionType: "MENU_ITEM", referenceId: item.id, referenceName: item.name });
+                              setShowItemExemptPicker(false);
+                            }}
+                          >
+                            {item.name}
+                          </button>
+                        ))}
+                        {menuItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No items found</p>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Button size="sm" variant="outline" onClick={() => { setShowCatExemptPicker(v => !v); setShowItemExemptPicker(false); }} data-testid="button-add-category-exemption">
+                      + Add Category Exemption
+                    </Button>
+                    {showCatExemptPicker && (
+                      <div className="absolute top-full left-0 mt-1 z-50 bg-background border rounded-lg shadow-lg p-2 w-64 max-h-48 overflow-y-auto">
+                        {menuCategories.map((cat: any) => (
+                          <button
+                            key={cat.id}
+                            className="w-full text-left px-2 py-1.5 text-sm hover:bg-muted rounded"
+                            onClick={() => {
+                              addExemptionMutation.mutate({ exemptionType: "CATEGORY", referenceId: cat.id, referenceName: cat.name });
+                              setShowCatExemptPicker(false);
+                            }}
+                          >
+                            {cat.name}
+                          </button>
+                        ))}
+                        {menuCategories.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No categories found</p>}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {!anyEnabled && isOwner && (
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || !selectedOutletId}
+            data-testid="button-save-packing-settings"
+          >
+            {saveMutation.isPending ? "Saving..." : "Save Settings"}
+          </Button>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -952,6 +1569,12 @@ export default function OutletsPage() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
         <CashCurrencySettings />
       </motion.div>
+
+      {outlets.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+          <PackingChargeSettings outlets={outlets} />
+        </motion.div>
+      )}
     </motion.div>
   );
 }

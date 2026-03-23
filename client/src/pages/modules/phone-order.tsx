@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -6,7 +6,7 @@ import { formatCurrency, type FormatCurrencyOptions } from "@shared/currency";
 import { motion } from "framer-motion";
 import {
   Phone, Search, Plus, Minus, Trash2, Clock, MapPin,
-  User, CheckCircle, RefreshCw, Printer, X, Utensils,
+  User, CheckCircle, RefreshCw, Printer, X, Utensils, Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -187,6 +187,26 @@ export default function PhoneOrderPage() {
   const total = subtotal + tax;
 
   const isAdvance = orderType === "advance";
+
+  const { data: outletsData = [] } = useQuery<any[]>({ queryKey: ["/api/outlets"] });
+  const outletId = outletsData[0]?.id || null;
+  const [packingCharge, setPackingCharge] = useState<{ applicable: boolean; total: number; label: string } | null>(null);
+
+  useEffect(() => {
+    const isTakDel = orderType === "takeaway" || orderType === "delivery";
+    if (!isTakDel || !outletId || orderItems.length === 0) { setPackingCharge(null); return; }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiRequest("POST", "/api/packing/calculate", {
+          outletId, orderType,
+          items: orderItems.map(i => ({ menuItemId: i.menuItemId, name: i.name, price: i.price, quantity: i.quantity })),
+        });
+        if (!cancelled && res.ok) { const data = await res.json(); setPackingCharge(data); }
+      } catch { }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [orderType, outletId, orderItems]);
 
   const placeMutation = useMutation({
     mutationFn: async (isDraft = false) => {
@@ -545,9 +565,15 @@ export default function PhoneOrderPage() {
                         <span data-testid="text-tax">{fmt(tax)}</span>
                       </div>
                     )}
+                    {packingCharge?.applicable && (
+                      <div className="flex justify-between text-sm text-muted-foreground" data-testid="text-phone-order-packing">
+                        <span className="flex items-center gap-1"><Package className="h-3 w-3 text-amber-600" />{packingCharge.label}</span>
+                        <span>{fmt(packingCharge.total)}</span>
+                      </div>
+                    )}
                     <div className="flex justify-between font-bold">
                       <span>Total</span>
-                      <span data-testid="text-total">{fmt(total)}</span>
+                      <span data-testid="text-phone-order-total-with-packing">{fmt(total + (packingCharge?.applicable ? packingCharge.total : 0))}</span>
                     </div>
                   </div>
                 </div>
