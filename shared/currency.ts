@@ -131,3 +131,59 @@ export function getCurrencySymbol(currencyCode: string): string {
 export function getSupportedCurrencies(): CurrencyInfo[] {
   return Object.values(currencyMap);
 }
+
+// ── Task #118: Cash Machine — Denomination configs & helpers ────────────────
+
+export interface DenominationConfig {
+  notes: number[];
+  coins: number[];
+  rounding: 'NONE' | 'ROUND_0.05' | 'ROUND_0.25' | 'ROUND_1';
+  subunit: string;
+  subunitValue: number;
+}
+
+export const currencyDenominations: Partial<Record<CurrencyCode, DenominationConfig>> = {
+  INR: { notes: [2000,500,200,100,50,20,10], coins: [10,5,2,1], rounding: 'ROUND_1', subunit: 'Paise', subunitValue: 100 },
+  AED: { notes: [1000,500,200,100,50,20,10,5], coins: [1,0.50,0.25], rounding: 'ROUND_0.25', subunit: 'Fils', subunitValue: 100 },
+  USD: { notes: [100,50,20,10,5,1], coins: [0.25,0.10,0.05,0.01], rounding: 'NONE', subunit: 'Cents', subunitValue: 100 },
+  GBP: { notes: [50,20,10,5], coins: [2,1,0.50,0.20,0.10,0.05,0.02,0.01], rounding: 'NONE', subunit: 'Pence', subunitValue: 100 },
+  EUR: { notes: [500,200,100,50,20,10,5], coins: [2,1,0.50,0.20,0.10,0.05,0.02,0.01], rounding: 'NONE', subunit: 'Cents', subunitValue: 100 },
+  SGD: { notes: [1000,100,50,10,5,2], coins: [1,0.50,0.20,0.10,0.05], rounding: 'ROUND_0.05', subunit: 'Cents', subunitValue: 100 },
+};
+
+export function applyRounding(amount: number, rounding: DenominationConfig['rounding']): number {
+  switch (rounding) {
+    case 'ROUND_0.05': return Math.round(amount / 0.05) * 0.05;
+    case 'ROUND_0.25': return Math.round(amount / 0.25) * 0.25;
+    case 'ROUND_1':    return Math.round(amount);
+    default:           return amount;
+  }
+}
+
+export interface DenominationBreakdown {
+  denomination: number;
+  count: number;
+  value: number;
+  label: string;
+}
+
+export function denominationBreakdown(amount: number, config: DenominationConfig, symbol: string): DenominationBreakdown[] {
+  const result: DenominationBreakdown[] = [];
+  let remaining = Math.round(amount * 100) / 100;
+  const all = [...config.notes, ...config.coins].sort((a, b) => b - a);
+  for (const denom of all) {
+    if (remaining >= denom - 0.001) {
+      const count = Math.floor(Math.round(remaining / denom * 1000) / 1000);
+      if (count > 0) {
+        result.push({
+          denomination: denom,
+          count,
+          value: count * denom,
+          label: denom >= 1 ? `${symbol}${denom}` : `${Math.round(denom * config.subunitValue)} ${config.subunit}`,
+        });
+        remaining = Math.round((remaining - count * denom) * 100) / 100;
+      }
+    }
+  }
+  return result;
+}

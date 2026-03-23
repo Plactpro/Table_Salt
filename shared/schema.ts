@@ -162,6 +162,13 @@ export const outlets = pgTable("outlets", {
   royaltyRate: decimal("royalty_rate", { precision: 5, scale: 2 }).default("0"),
   minimumGuarantee: decimal("minimum_guarantee", { precision: 10, scale: 2 }).default("0"),
   active: boolean("active").default(true),
+  currencyCode: varchar("currency_code", { length: 10 }).default("INR"),
+  currencySymbol: varchar("currency_symbol", { length: 10 }).default("₹"),
+  currencyName: varchar("currency_name", { length: 50 }).default("Indian Rupee"),
+  currencyPosition: varchar("currency_position", { length: 10 }).default("before"),
+  decimalPlaces: integer("decimal_places").default(2),
+  denominationConfig: jsonb("denomination_config"),
+  cashRounding: varchar("cash_rounding", { length: 20 }).default("NONE"),
 }, (t) => [
   index("idx_outlets_tenant_id").on(t.tenantId),
   index("idx_outlets_tenant_active").on(t.tenantId, t.active),
@@ -2695,3 +2702,115 @@ export const alertEvents = pgTable("alert_events", {
 export const insertAlertEventSchema = createInsertSchema(alertEvents).omit({ id: true, createdAt: true });
 export type AlertEvent = typeof alertEvents.$inferSelect;
 export type InsertAlertEvent = z.infer<typeof insertAlertEventSchema>;
+
+// ── Task #118: Cash Machine ────────────────────────────────────────────────
+
+export const cashSessions = pgTable("cash_sessions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  posSessionId: varchar("pos_session_id", { length: 36 }),
+  sessionNumber: varchar("session_number", { length: 50 }).notNull(),
+  cashierId: varchar("cashier_id", { length: 36 }).notNull(),
+  cashierName: varchar("cashier_name", { length: 255 }),
+  currencyCode: varchar("currency_code", { length: 10 }).notNull().default("INR"),
+  currencySymbol: varchar("currency_symbol", { length: 10 }).default("₹"),
+  status: varchar("status", { length: 20 }).default("open"),
+  openingFloat: decimal("opening_float", { precision: 12, scale: 2 }).notNull().default("0"),
+  openingFloatBreakdown: jsonb("opening_float_breakdown"),
+  expectedClosingCash: decimal("expected_closing_cash", { precision: 12, scale: 2 }).default("0"),
+  physicalClosingCash: decimal("physical_closing_cash", { precision: 12, scale: 2 }),
+  closingBreakdown: jsonb("closing_breakdown"),
+  cashVariance: decimal("cash_variance", { precision: 12, scale: 2 }),
+  varianceReason: text("variance_reason"),
+  totalCashSales: decimal("total_cash_sales", { precision: 12, scale: 2 }).default("0"),
+  totalCashRefunds: decimal("total_cash_refunds", { precision: 12, scale: 2 }).default("0"),
+  totalCashPayouts: decimal("total_cash_payouts", { precision: 12, scale: 2 }).default("0"),
+  totalTransactions: integer("total_transactions").default(0),
+  openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  approvedBy: varchar("approved_by", { length: 36 }),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  uniqueIndex("idx_cash_sessions_number").on(t.tenantId, t.sessionNumber),
+  index("idx_cash_sessions_cashier").on(t.tenantId, t.cashierId, t.status),
+  index("idx_cash_sessions_outlet").on(t.outletId, t.status),
+]);
+
+export const insertCashSessionSchema = createInsertSchema(cashSessions).omit({ id: true, createdAt: true });
+export type CashSession = typeof cashSessions.$inferSelect;
+export type InsertCashSession = z.infer<typeof insertCashSessionSchema>;
+
+export const cashDrawerEvents = pgTable("cash_drawer_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  sessionId: varchar("session_id", { length: 36 }).notNull(),
+  eventType: varchar("event_type", { length: 30 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }),
+  billId: varchar("bill_id", { length: 36 }),
+  referenceNumber: varchar("reference_number", { length: 50 }),
+  amount: decimal("amount", { precision: 12, scale: 2 }),
+  tenderedAmount: decimal("tendered_amount", { precision: 12, scale: 2 }),
+  changeGiven: decimal("change_given", { precision: 12, scale: 2 }),
+  changeBreakdown: jsonb("change_breakdown"),
+  runningBalance: decimal("running_balance", { precision: 12, scale: 2 }),
+  performedBy: varchar("performed_by", { length: 36 }).notNull(),
+  performedByName: varchar("performed_by_name", { length: 255 }),
+  reason: text("reason"),
+  isManual: boolean("is_manual").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_cash_events_session").on(t.sessionId, t.createdAt),
+  index("idx_cash_events_tenant").on(t.tenantId, t.createdAt),
+]);
+
+export const insertCashDrawerEventSchema = createInsertSchema(cashDrawerEvents).omit({ id: true, createdAt: true });
+export type CashDrawerEvent = typeof cashDrawerEvents.$inferSelect;
+export type InsertCashDrawerEvent = z.infer<typeof insertCashDrawerEventSchema>;
+
+export const cashPayouts = pgTable("cash_payouts", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  sessionId: varchar("session_id", { length: 36 }).notNull(),
+  payoutNumber: varchar("payout_number", { length: 50 }),
+  payoutType: varchar("payout_type", { length: 30 }).notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  recipient: varchar("recipient", { length: 255 }),
+  reason: text("reason").notNull(),
+  approvedBy: varchar("approved_by", { length: 36 }),
+  receiptUrl: text("receipt_url"),
+  performedBy: varchar("performed_by", { length: 36 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_cash_payouts_session").on(t.sessionId),
+]);
+
+export const insertCashPayoutSchema = createInsertSchema(cashPayouts).omit({ id: true, createdAt: true });
+export type CashPayout = typeof cashPayouts.$inferSelect;
+export type InsertCashPayout = z.infer<typeof insertCashPayoutSchema>;
+
+export const cashHandovers = pgTable("cash_handovers", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  sessionId: varchar("session_id", { length: 36 }).notNull(),
+  handoverNumber: varchar("handover_number", { length: 50 }),
+  amountHandedOver: decimal("amount_handed_over", { precision: 12, scale: 2 }).notNull(),
+  denominationBreakdown: jsonb("denomination_breakdown"),
+  handedBy: varchar("handed_by", { length: 36 }).notNull(),
+  handedByName: varchar("handed_by_name", { length: 255 }),
+  receivedBy: varchar("received_by", { length: 36 }),
+  receivedByName: varchar("received_by_name", { length: 255 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_cash_handovers_session").on(t.sessionId),
+]);
+
+export const insertCashHandoverSchema = createInsertSchema(cashHandovers).omit({ id: true, createdAt: true });
+export type CashHandover = typeof cashHandovers.$inferSelect;
+export type InsertCashHandover = z.infer<typeof insertCashHandoverSchema>;
