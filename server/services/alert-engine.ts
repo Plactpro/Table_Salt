@@ -47,6 +47,7 @@ class AlertEngine {
       emitToTenant(tenantId, "alert:trigger", {
         eventId,
         alertCode,
+        alertName: def.alert_name,
         soundKey: def.sound_key,
         volume,
         urgency: def.urgency,
@@ -74,6 +75,7 @@ class AlertEngine {
       emitToTenant(tenantId, "alert:trigger", {
         eventId,
         alertCode,
+        alertName: def.alert_name,
         soundKey: def.sound_key,
         volume,
         urgency: def.urgency,

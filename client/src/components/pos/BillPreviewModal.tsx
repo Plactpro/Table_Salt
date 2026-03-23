@@ -226,11 +226,11 @@ export default function BillPreviewModal({
     enabled: open,
     staleTime: 60000,
   });
-  const outletId = outletsData[0]?.id || null;
+  const packingOutletId = outletId || outletsData[0]?.id || null;
   const isTakeawayOrDelivery = orderType === "takeaway" || orderType === "delivery";
 
   useEffect(() => {
-    if (!open || !isTakeawayOrDelivery || !outletId || cart.length === 0) {
+    if (!open || !isTakeawayOrDelivery || !packingOutletId || cart.length === 0) {
       setPackingResult(null);
       return;
     }
@@ -239,7 +239,7 @@ export default function BillPreviewModal({
       setPackingLoading(true);
       try {
         const res = await apiRequest("POST", "/api/packing/calculate", {
-          outletId,
+          outletId: packingOutletId,
           orderType,
           items: cart.filter(i => !i.is_voided).map(i => ({
             menuItemId: i.menuItemId,
@@ -259,7 +259,7 @@ export default function BillPreviewModal({
       }
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [open, outletId, orderType, isTakeawayOrDelivery, cart]);
+  }, [open, packingOutletId, orderType, isTakeawayOrDelivery, cart]);
 
   const { data: tenantOffers = [] } = useQuery<{ id: string; name: string; type: string; value: string; maxDiscount?: string | null }[]>({
     queryKey: ["/api/offers", "active"],
