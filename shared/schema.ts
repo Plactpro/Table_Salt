@@ -1787,3 +1787,48 @@ export const dailyPlannedQuantities = pgTable("daily_planned_quantities", {
 export const insertDailyPlannedQtySchema = createInsertSchema(dailyPlannedQuantities).omit({ id: true, updatedAt: true });
 export type DailyPlannedQty = typeof dailyPlannedQuantities.$inferSelect;
 export type InsertDailyPlannedQty = z.infer<typeof insertDailyPlannedQtySchema>;
+
+// Task #97: Food Modification System
+
+export const orderItemModifications = pgTable("order_item_modifications", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  orderItemId: varchar("order_item_id", { length: 36 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }),
+  spiceLevel: varchar("spice_level", { length: 30 }),
+  saltLevel: varchar("salt_level", { length: 20 }),
+  removedIngredients: text("removed_ingredients").array().notNull().default([]),
+  hasAllergy: boolean("has_allergy").notNull().default(false),
+  allergyFlags: text("allergy_flags").array().notNull().default([]),
+  allergyDetails: text("allergy_details"),
+  specialNotes: text("special_notes"),
+  chefAcknowledged: boolean("chef_acknowledged").notNull().default(false),
+  acknowledgedBy: varchar("acknowledged_by", { length: 36 }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_order_item_modifications_tenant").on(t.tenantId),
+  index("idx_order_item_modifications_item").on(t.orderItemId),
+]);
+
+export const insertOrderItemModificationSchema = createInsertSchema(orderItemModifications).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrderItemModification = typeof orderItemModifications.$inferSelect;
+export type InsertOrderItemModification = z.infer<typeof insertOrderItemModificationSchema>;
+
+export const recipeComponents = pgTable("recipe_components", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull(),
+  ingredientName: text("ingredient_name").notNull(),
+  isRemovable: boolean("is_removable").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_recipe_components_menu_item").on(t.menuItemId),
+  index("idx_recipe_components_tenant").on(t.tenantId),
+]);
+
+export const insertRecipeComponentSchema = createInsertSchema(recipeComponents).omit({ id: true, createdAt: true });
+export type RecipeComponent = typeof recipeComponents.$inferSelect;
+export type InsertRecipeComponent = z.infer<typeof insertRecipeComponentSchema>;

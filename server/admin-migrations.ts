@@ -977,4 +977,49 @@ export async function runAdminMigrations(): Promise<void> {
 
   // Note: delivery_agent user seeding is done in seed.ts only (dev/demo data)
   // Migrations are schema-only and must not provision user accounts in production
+
+  // Task #97: Food Modification System — order_item_modifications table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_item_modifications (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      order_item_id VARCHAR(36) NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+      order_id VARCHAR(36) REFERENCES orders(id) ON DELETE CASCADE,
+      spice_level VARCHAR(30),
+      salt_level VARCHAR(20),
+      removed_ingredients TEXT[] NOT NULL DEFAULT '{}',
+      has_allergy BOOLEAN NOT NULL DEFAULT false,
+      allergy_flags TEXT[] NOT NULL DEFAULT '{}',
+      allergy_details TEXT,
+      special_notes TEXT,
+      chef_acknowledged BOOLEAN NOT NULL DEFAULT false,
+      acknowledged_by VARCHAR(36),
+      acknowledged_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`ALTER TABLE order_item_modifications ADD COLUMN IF NOT EXISTS order_id VARCHAR(36) REFERENCES orders(id) ON DELETE CASCADE`);
+  await pool.query(`ALTER TABLE order_item_modifications ADD COLUMN IF NOT EXISTS allergy_flags TEXT[] NOT NULL DEFAULT '{}'`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_order_item_modifications_order ON order_item_modifications (order_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_order_item_modifications_item ON order_item_modifications (order_item_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_order_item_modifications_tenant ON order_item_modifications (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_order_item_modifications_allergy ON order_item_modifications (tenant_id, has_allergy) WHERE has_allergy = true`);
+
+  // Task #97: recipe_components table with is_removable flag for ingredient removal workflow
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recipe_components (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      menu_item_id VARCHAR(36) NOT NULL REFERENCES menu_items(id) ON DELETE CASCADE,
+      ingredient_name TEXT NOT NULL,
+      is_removable BOOLEAN NOT NULL DEFAULT true,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`ALTER TABLE recipe_components ADD COLUMN IF NOT EXISTS is_removable BOOLEAN NOT NULL DEFAULT true`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipe_components_menu_item ON recipe_components (menu_item_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipe_components_tenant ON recipe_components (tenant_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_recipe_components_unique ON recipe_components (menu_item_id, ingredient_name)`);
 }
