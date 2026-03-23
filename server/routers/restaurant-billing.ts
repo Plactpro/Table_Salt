@@ -7,6 +7,7 @@ import { db } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { tenants as tenantsTable, type InsertCustomer } from "@shared/schema";
 import { createPaymentLink, getPaymentLink } from "../razorpay";
+import { routeAndPrint } from "../services/printer-service";
 
 function getFiscalYear(date: Date): string {
   const m = date.getMonth() + 1;
@@ -295,6 +296,18 @@ export function registerRestaurantBillingRoutes(app: Express): void {
           } catch (_) {}
         }
         emitToTenant(user.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
+
+        setImmediate(() => {
+          routeAndPrint({
+            jobType: "receipt",
+            referenceId: bill.id,
+            outletId: (bill as any).outletId ?? null,
+            tenantId: user.tenantId,
+            triggeredByName: user.name || user.username,
+          }).catch(err => {
+            console.error(`[billing] Auto-print receipt failed for bill ${bill.id}:`, err);
+          });
+        });
       }
 
       res.json({ bill: updatedBill, payments: createdPayments });
