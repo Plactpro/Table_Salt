@@ -1,0 +1,516 @@
+Here is the complete prompt. Paste directly into Replit AI.
+
+***
+
+### Order Ticket History — Phase 1 (View, Reprint, Void, Refire)
+
+This is a continuation of the existing restaurant SaaS project in Replit. The following are already built: multi-tenant architecture, POS, KDS, order management, billing, printer integration, service coordination, and time tracking.
+
+Now build **Phase 1 of the Order Ticket History system** — focused only on the 4 features used daily: view old tickets, reprint documents, void items, and refire items to kitchen. Keep everything fast, simple, and practical.
+
+***
+
+#### 1. What to build in Phase 1 only
+
+```
+✅ FEATURE 1: Ticket history search and view
+   → Search any past order instantly
+   → See full details including modifications,
+     timings, payment, and staff
+
+✅ FEATURE 2: Reprint (receipt, KOT, bill)
+   → One-tap reprint from any past ticket
+   → Logged automatically
+
+✅ FEATURE 3: Void item with approval
+   → Void wrong/cancelled item on active
+     or recently closed order
+   → Manager approval required
+   → Audit log written automatically
+
+✅ FEATURE 4: Refire item to kitchen
+   → Send a specific item back to kitchen
+     for remake
+   → New KOT generated with REFIRE header
+   → Linked to original order
+
+❌ NOT IN PHASE 1:
+   Full order reopen, payment change,
+   add item after close, partial refund,
+   reopen session timer, split bill correction
+```
+
+***
+
+#### 2. Database schema — Phase 1 only
+
+```sql
+-- Audit trail for every action
+CREATE TABLE order_audit_trail (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  order_number        VARCHAR(50),
+  action_type         VARCHAR(50) NOT NULL,
+    -- 'TICKET_VIEWED', 'RECEIPT_REPRINTED',
+    -- 'KOT_REPRINTED', 'BILL_REPRINTED',
+    -- 'ITEM_VOID_REQUESTED', 'ITEM_VOID_APPROVED',
+    -- 'ITEM_VOID_REJECTED', 'ITEM_VOIDED',
+    -- 'ITEM_REFIRE_REQUESTED', 'ITEM_REFIRED'
+  action_description  TEXT NOT NULL,
+  previous_value      JSONB,
+  new_value           JSONB,
+  performed_by        UUID NOT NULL,
+  performed_by_name   VARCHAR(255),
+  performed_by_role   VARCHAR(50),
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+-- Void requests
+CREATE TABLE item_void_requests (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  order_number        VARCHAR(50),
+  order_item_id       UUID NOT NULL,
+  menu_item_name      VARCHAR(255),
+  quantity            INT,
+  unit_price          DECIMAL(10,2),
+  total_value         DECIMAL(10,2),
+  void_reason         TEXT NOT NULL,
+  void_type           VARCHAR(30) NOT NULL,
+    -- 'WRONG_ORDER', 'CUSTOMER_CANCELLED',
+    -- 'KITCHEN_ERROR', 'QUALITY_ISSUE',
+    -- 'DUPLICATE_ENTRY', 'MANAGER_VOID'
+  status              VARCHAR(20) DEFAULT 'pending',
+    -- 'pending', 'approved', 'rejected'
+  requested_by        UUID NOT NULL,
+  requested_by_name   VARCHAR(255),
+  requested_by_role   VARCHAR(50),
+  approved_by         UUID,
+  approved_by_name    VARCHAR(255),
+  rejected_reason     TEXT,
+  approved_at         TIMESTAMP,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+-- Voided items record
+CREATE TABLE voided_items (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  order_item_id       UUID NOT NULL,
+  void_request_id     UUID NOT NULL,
+  menu_item_name      VARCHAR(255),
+  quantity            INT,
+  unit_price          DECIMAL(10,2),
+  total_value         DECIMAL(10,2),
+  void_reason         TEXT,
+  void_type           VARCHAR(30),
+  voided_by           UUID NOT NULL,
+  voided_by_name      VARCHAR(255),
+  approved_by         UUID NOT NULL,
+  approved_by_name    VARCHAR(255),
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+-- Refire requests
+CREATE TABLE item_refire_requests (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  order_number        VARCHAR(50),
+  order_item_id       UUID NOT NULL,
+  menu_item_name      VARCHAR(255),
+  quantity            INT,
+  refire_reason       TEXT NOT NULL,
+    -- 'CUSTOMER_RETURNED', 'WRONG_PREPARATION',
+    -- 'MODIFICATION_MISSED', 'DAMAGED_IN_SERVICE',
+    -- 'QUALITY_ISSUE'
+  priority            VARCHAR(20) DEFAULT 'high',
+    -- always high since customer is waiting
+  assign_to_chef_id   UUID,
+  assign_to_chef_name VARCHAR(255),
+  new_kot_number      VARCHAR(50),
+  status              VARCHAR(20) DEFAULT 'sent',
+    -- 'sent', 'acknowledged', 'cooking', 'ready'
+  requested_by        UUID NOT NULL,
+  requested_by_name   VARCHAR(255),
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+```
+
+***
+
+#### 3. Feature 1 — Ticket history search
+
+##### Access points
+```
+→ POS top menu: "History" icon 🕐
+→ Manager dashboard: "Tickets" section
+→ KDS: Chef can view own station's past tickets
+→ Cashier screen: "Past Bills" button
+```
+
+##### Search screen
+```
+┌──────────────────────────────────────────────────────┐
+│  🕐 TICKET HISTORY                                   │
+├──────────────────────────────────────────────────────┤
+│  [🔍 Search by order#, table, customer, amount  ]   │
+├──────────┬──────────┬──────────┬────────────────────┤
+│ Date     │ Status   │ Type     │ Staff              │
+│[Today ▼] │[All   ▼] │[All   ▼] │[All            ▼] │
+└──────────┴──────────┴──────────┴────────────────────┘
+
+Quick filters:
+[Today] [Yesterday] [This Week]
+[Paid] [Void] [With Refire] [High Value >₹2000]
+
+RESULTS (84 tickets):
+┌──────┬───────┬───────┬──────────┬────────┬──────────┐
+│ #    │ Table │ Time  │ Items    │ Amount │ Status   │
+├──────┼───────┼───────┼──────────┼────────┼──────────┤
+│ 047  │ T-5   │ 13:45 │ 4 items  │ ₹1,185 │ ✅ Paid  │
+│ 046  │ T-3   │ 13:32 │ 2 items  │ ₹680   │ ✅ Paid  │
+│ 045  │ T/A   │ 13:18 │ 6 items  │ ₹2,340 │ ✅ Paid  │
+│ 044  │ T-8   │ 13:05 │ 3 items  │ ₹920   │ 🔴 Void  │
+│ 043  │ T-2   │ 12:58 │ 5 items  │ ₹1,560 │ 🔥 Refire│
+└──────┴───────┴───────┴──────────┴────────┴──────────┘
+```
+
+##### Role-based search scope
+```
+Waiter:   Own orders only | Today only
+Cashier:  All orders | Last 7 days
+Chef:     Own station orders | Today only
+Manager:  All orders | Last 90 days
+Owner:    All orders | All outlets | All time
+```
+
+***
+
+#### 4. Feature 1 — Full ticket detail view
+
+Tapping any ticket opens the full detail:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  ORDER #047                          🕐 23 Mar 13:45 │
+│  Table 5 | Dine-In | Covers: 3                       │
+│  Waiter: John Kumar | ✅ PAID & CLOSED               │
+├──────────────────────────────────────────────────────┤
+│  ITEMS:                                              │
+│  ─────────────────────────────────────              │
+│  1x Grilled Chicken              ₹380               │
+│     🌶️ Mild | 🧂 Less Salt | ➖ No Onion            │
+│     Chef: Ravi | ⏱️ 14 min                          │
+│                                                      │
+│  2x Margherita Pizza             ₹700               │
+│     🔥 Extra Spicy                                   │
+│     Chef: Tom | ⏱️ 16 min                           │
+│                                                      │
+│  1x Caesar Salad                 ₹220               │
+│     Chef: Anita | ⏱️ 5 min                          │
+│                                                      │
+│  ~~1x Coke~~                     ~~₹60~~            │
+│  🔴 VOIDED — Customer changed mind                  │
+│     Voided by: John | Approved: Manager             │
+├──────────────────────────────────────────────────────┤
+│  BILL:                                               │
+│  Subtotal: ₹1,300 | Discount: -₹130                 │
+│  Service: ₹58.50 | GST: ₹56.27                      │
+│  TOTAL: ₹1,184.77 | Paid: Cash ✅                   │
+├──────────────────────────────────────────────────────┤
+│  TIMELINE:                                           │
+│  13:45 Order created                                 │
+│  13:46 KOT sent to kitchen                          │
+│  13:48 Coke voided (approved: Manager)              │
+│  14:03 All items ready                              │
+│  14:06 Served                                        │
+│  14:22 Paid and closed                              │
+├──────────────────────────────────────────────────────┤
+│  PRINT HISTORY:                                      │
+│  KOT: 13:46 | Bill: 14:18 | Receipt: 14:22         │
+└──────────────────────────────────────────────────────┘
+
+ACTIONS (shown based on role):
+┌──────────────┬──────────────┬──────────────┐
+│  🖨️ REPRINT  │  🔴 VOID     │  🔥 REFIRE   │
+│   RECEIPT    │   ITEM       │   ITEM       │
+└──────────────┴──────────────┴──────────────┘
+```
+
+***
+
+#### 5. Feature 2 — Reprint
+
+Single tap reprinting from the ticket detail screen:
+
+##### Reprint options popup
+```
+┌──────────────────────────────┐
+│  🖨️ REPRINT                  │
+│  Order #047                  │
+├──────────────────────────────┤
+│  [🧾 Customer Receipt]       │
+│  [📋 Kitchen KOT]            │
+│  [💰 Bill / Invoice]         │
+│  [📱 Send via WhatsApp]      │
+│  [📧 Send via Email]         │
+└──────────────────────────────┘
+```
+
+##### Reprint rules
+```
+WHO CAN REPRINT:
+  Receipt:    Waiter, Cashier, Manager, Owner
+  KOT:        Chef, Waiter, Manager
+  Bill:       Cashier, Manager, Owner (logged)
+
+WHAT APPEARS ON REPRINT:
+  "*** REPRINT ***"
+  "Original: 23 Mar 2026 14:22"
+  "Reprinted: 23 Mar 2026 15:10"
+  "By: Cashier Priya"
+
+ALL REPRINTS LOGGED in audit trail:
+  action_type: 'RECEIPT_REPRINTED'
+  performed_by: staff name + role
+  created_at: timestamp
+```
+
+***
+
+#### 6. Feature 3 — Void item
+
+##### Void item flow
+
+**Step 1: Staff taps "VOID ITEM"**
+```
+┌──────────────────────────────────────┐
+│  🔴 VOID ITEM                        │
+│  Order #047 | Table 5               │
+├──────────────────────────────────────┤
+│  Select item to void:               │
+│  ○ 1x Grilled Chicken     ₹380     │
+│  ○ 2x Margherita Pizza    ₹700     │
+│  ○ 1x Caesar Salad        ₹220     │
+├──────────────────────────────────────┤
+│  Void Reason:                        │
+│  ○ Wrong item ordered               │
+│  ○ Customer cancelled               │
+│  ○ Kitchen error                    │
+│  ○ Duplicate entry                  │
+│  ○ Quality issue                    │
+│  ○ Other: [                ]        │
+├──────────────────────────────────────┤
+│  ⚠️ Requires Manager approval       │
+│  [SUBMIT VOID REQUEST]              │
+└──────────────────────────────────────┘
+```
+
+**Step 2: Manager receives notification**
+```
+┌──────────────────────────────────────┐
+│  🔔 VOID REQUEST                     │
+│  From: John Kumar (Waiter)          │
+│  Order #047 | Table 5               │
+│  Item: 1x Grilled Chicken (₹380)   │
+│  Reason: Wrong item ordered         │
+│  Time: 14:35                        │
+├──────────────────────────────────────┤
+│  [VIEW ORDER]                        │
+│  [✅ APPROVE VOID]                   │
+│  [❌ REJECT]                         │
+│  Reject reason: [           ]       │
+└──────────────────────────────────────┘
+```
+
+**Step 3: After approval**
+```
+→ Item status: VOIDED (strikethrough on bill)
+→ Bill total recalculated automatically
+→ Voided item record saved
+→ Audit trail written
+→ Waiter notified: "Void approved — bill updated"
+→ If order already paid: note shown to manager:
+  "⚠️ Order was already paid — manual refund
+   of ₹380 needed at cashier counter"
+```
+
+##### Void display on bill
+```
+  1x Grilled Chicken        ~~₹380~~
+  🔴 VOIDED — Wrong item ordered
+     Voided: 14:36 | Approved: Manager Sanjay
+```
+
+***
+
+#### 7. Feature 4 — Refire item to kitchen
+
+##### Refire flow
+
+**Step 1: Waiter/manager taps "REFIRE ITEM"**
+```
+┌──────────────────────────────────────┐
+│  🔥 REFIRE ITEM TO KITCHEN          │
+│  Order #047 | Table 5               │
+├──────────────────────────────────────┤
+│  Select item to refire:             │
+│  ○ 1x Grilled Chicken     ₹380     │
+│  ○ 2x Margherita Pizza    ₹700     │
+├──────────────────────────────────────┤
+│  Refire Reason:                      │
+│  ○ Customer returned — not satisfied│
+│  ○ Wrong preparation                │
+│  ○ Modification was missed          │
+│  ○ Damaged during service           │
+│  ○ Quality issue                    │
+├──────────────────────────────────────┤
+│  Assign to:                          │
+│  ○ Same chef (Ravi Kumar)           │
+│  ● Any available chef               │
+│  ○ Head Chef                        │
+├──────────────────────────────────────┤
+│  Priority: 🔴 HIGH (auto-set)       │
+│  (customer is waiting)              │
+│                                      │
+│  [🔥 SEND TO KITCHEN]               │
+└──────────────────────────────────────┘
+```
+
+**Step 2: New KOT appears on KDS**
+```
+┌──────────────────────────────────────┐
+│  🔥🔥 REFIRE — ORDER #047           │
+│  TABLE 5 | HIGH PRIORITY            │
+│  Original order: 13:45              │
+│  Refire reason: Customer returned   │
+├──────────────────────────────────────┤
+│  1x GRILLED CHICKEN                 │
+│     🌶️ MILD | 🧂 LESS SALT         │
+│     ➖ NO ONION                      │
+│     ⚠️ SAME MODIFICATIONS APPLY    │
+├──────────────────────────────────────┤
+│  [▶ START]  [✅ READY]              │
+└──────────────────────────────────────┘
+```
+
+**Step 3: After refire is ready**
+```
+→ Waiter notified: "🔥 Refire ready: Grilled
+  Chicken for Table 5 — collect from pass"
+→ Original item in wastage logged automatically:
+  Category: PLATE_RETURN
+  Reason: Customer returned
+→ Audit trail updated on original order:
+  "Item refired at 14:38 — customer returned"
+→ Time tracking restarts for new preparation
+→ No extra charge to customer (same order)
+```
+
+***
+
+#### 8. Audit trail display
+
+A simple collapsible timeline on every ticket:
+
+```
+ORDER #047 — FULL TIMELINE:
+
+13:45  📝 Order created
+       John Kumar (Waiter)
+
+13:46  🖨️ KOT sent to kitchen
+       John Kumar (Waiter)
+
+13:47  👨‍🍳 Cooking started — Grilled Chicken
+       Ravi Kumar (Chef, Grill Station)
+
+13:48  🔴 Void requested — Coke x1
+       John Kumar (Waiter)
+       Reason: Customer changed mind
+
+13:49  ✅ Void approved — Coke x1
+       Manager Sanjay
+       Bill updated: ₹1,240 → ₹1,180
+
+14:01  ✅ Item ready — Grilled Chicken
+       Ravi Kumar (Chef)
+
+14:03  ✅ All items ready
+
+14:06  🍽️ Items served
+       John Kumar (Waiter)
+
+14:18  🧾 Bill generated
+       John Kumar (Waiter)
+
+14:22  💰 Payment received — Cash ₹1,200
+       Cashier Priya
+
+14:22  🔒 Order closed
+
+14:35  👁️ Ticket viewed
+       Manager Sanjay
+
+14:38  🖨️ Receipt reprinted
+       Cashier Priya
+       Reason: Customer request
+```
+
+***
+
+#### 9. APIs required — Phase 1 only
+
+```
+-- Ticket history
+GET    /api/tickets/history              → list with filters
+GET    /api/tickets/:orderId             → full ticket detail
+GET    /api/tickets/:orderId/timeline    → audit trail
+
+-- Reprint
+POST   /api/tickets/:orderId/reprint/receipt  → reprint receipt
+POST   /api/tickets/:orderId/reprint/kot      → reprint KOT
+POST   /api/tickets/:orderId/reprint/bill     → reprint bill
+POST   /api/tickets/:orderId/send-whatsapp    → send receipt
+POST   /api/tickets/:orderId/send-email       → send receipt
+
+-- Void
+POST   /api/tickets/:orderId/void-request     → request void
+GET    /api/tickets/void-requests/pending     → pending approvals
+PUT    /api/tickets/void-requests/:id/approve → approve void
+PUT    /api/tickets/void-requests/:id/reject  → reject void
+
+-- Refire
+POST   /api/tickets/:orderId/refire           → send item to kitchen
+GET    /api/tickets/:orderId/refires          → refire history
+```
+
+***
+
+#### 10. Seed demo data
+
+```
+- 3 days of order history (80+ orders per day)
+- Today: 84 closed orders, 3 still active
+- 3 voided items across different orders:
+    1. Approved void (wrong item) — completed
+    2. Pending void — shows in manager dashboard
+    3. Rejected void — with rejection reason
+- 2 refired items:
+    1. Completed refire (customer returned food)
+    2. Active refire (currently cooking on KDS)
+- 5 reprints logged in audit trail
+- Complete timeline for 10 orders
+- Void request notification visible in
+  manager dashboard as pending action
+```
+
+***
+
+Ensure all audit trail writes happen in the same DB transaction as the action they record. Refire must copy all original modifications (spice, salt, notes, allergies) to the new KOT automatically — never send a blank ticket. Index `order_id`, `action_type`, `performed_by`, `created_at`, and `tenant_id` on `order_audit_trail`. Void approval must trigger bill recalculation immediately via WebSocket so cashier screen updates in real time without page refresh.
