@@ -43,6 +43,7 @@ import {
   Workflow,
   Trash2,
   Printer,
+  Tag,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -65,6 +66,7 @@ const navItems: NavItem[] = [
   { id: "m-6", name: "Tables", icon: Utensils, path: "/tables", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
   { id: "m-33", name: "Live Requests", icon: Bell, path: "/live-requests", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
   { id: "m-7", name: "Menu", icon: MenuSquare, path: "/menu", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "menu" },
+  { id: "m-40", name: "Menu Pricing", icon: Tag, path: "/menu-pricing", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "menu" },
   { id: "m-12", name: "Promotions", icon: Zap, path: "/promotions", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
   { id: "m-15", name: "Delivery & Online", icon: Truck, path: "/delivery", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
   { id: "m-30", name: "Kiosk", icon: MonitorSmartphone, path: "/kiosk-management", roles: ["owner", "manager"] },
@@ -86,9 +88,9 @@ const navItems: NavItem[] = [
   { id: "m-37", name: "Stock Capacity", icon: ClipboardList, path: "/stock-reports", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
   { id: "m-38", name: "Phone Orders", icon: Phone, path: "/phone-order", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "orders" },
   { id: "m-39", name: "Service Hub", icon: Workflow, path: "/service-hub", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "orders" },
-  { id: "m-40", name: "Wastage Control", icon: Trash2, path: "/wastage", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   { id: "m-41", name: "Log Wastage", icon: Trash2, path: "/wastage-log", roles: ["kitchen"] },
   { id: "m-42", name: "Printer Setup", icon: Printer, path: "/settings/printers", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  { id: "m-43", name: "Wastage Control", icon: Trash2, path: "/wastage", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
 ];
 
 function SandDecoration() {

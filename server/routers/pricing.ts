@@ -1,7 +1,7 @@
 import type { Express } from "express";
-import { pool } from "../db";
+import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
-import { resolvePrice, resolvePriceBatch, type PriceContext } from "../services/price-resolution";
+import { pool } from "../db";
 
 function tenantGuard(req: any, res: any): string | null {
   const user = req.user as any;
@@ -42,214 +42,561 @@ function toCSV(rows: any[]): string {
 
 export function registerPricingRoutes(app: Express): void {
 
-  app.get("/api/pricing/rules", requireAuth, async (req, res) => {
+  // ─── Outlets ───────────────────────────────────────────────────────────────
+  app.get("/api/pricing/outlets", requireAuth, async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { outletId, menuItemId, isActive } = req.query;
-      let query = `SELECT * FROM outlet_menu_prices WHERE tenant_id = $1`;
-      const params: any[] = [tenantId];
-      let idx = 2;
-      if (outletId) { query += ` AND outlet_id = $${idx++}`; params.push(outletId); }
-      if (menuItemId) { query += ` AND menu_item_id = $${idx++}`; params.push(menuItemId); }
-      if (isActive !== undefined) { query += ` AND is_active = $${idx++}`; params.push(isActive === "true"); }
-      query += ` ORDER BY priority DESC, created_at DESC`;
-      const { rows } = await pool.query(query, params);
-      res.json(rows);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/pricing/rules", requireAuth, requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
       const user = req.user as any;
-      const {
-        outletId, menuItemId, priceType, price, currency,
-        orderType, timeSlotStart, timeSlotEnd, dayOfWeek,
-        customerSegment, validFrom, validUntil, priority, notes,
-      } = req.body;
-
-      if (!outletId || !menuItemId || !priceType || price === undefined) {
-        return res.status(400).json({ message: "outletId, menuItemId, priceType, and price are required" });
-      }
-      if (Number(price) <= 0) {
-        return res.status(400).json({ message: "price must be greater than 0" });
-      }
-      if (timeSlotStart && timeSlotEnd) {
-        const startM = timeSlotStart.split(":").map(Number).reduce((h: number, m: number, i: number) => i === 0 ? h * 60 : h + m, 0);
-        const endM = timeSlotEnd.split(":").map(Number).reduce((h: number, m: number, i: number) => i === 0 ? h * 60 : h + m, 0);
-        if (endM <= startM) {
-          return res.status(400).json({ message: "time_slot_end must be after time_slot_start" });
-        }
-      }
-      if (validFrom && validUntil && validUntil < validFrom) {
-        return res.status(400).json({ message: "valid_until must be on or after valid_from" });
-      }
-
-      const { rows } = await pool.query(
-        `INSERT INTO outlet_menu_prices
-         (tenant_id, outlet_id, menu_item_id, price_type, price, currency, order_type,
-          time_slot_start, time_slot_end, day_of_week, customer_segment, valid_from, valid_until,
-          priority, is_active, notes, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,true,$15,$16)
-         RETURNING *`,
-        [
-          tenantId, outletId, menuItemId, priceType.toUpperCase(), Number(price).toFixed(2),
-          currency || "USD", orderType || null, timeSlotStart || null, timeSlotEnd || null,
-          dayOfWeek ? JSON.stringify(dayOfWeek) : null, customerSegment || null,
-          validFrom || null, validUntil || null, Number(priority) || 0,
-          notes || null, user.id,
-        ]
-      );
-      res.status(201).json(rows[0]);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      res.json(outlets);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
-  app.put("/api/pricing/rules/:id", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+  // ─── Overrides (per-outlet item price overrides) ───────────────────────────
+  app.get("/api/pricing/overrides", requireAuth, async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { rows: existing } = await pool.query(
-        `SELECT id FROM outlet_menu_prices WHERE id = $1 AND tenant_id = $2`,
-        [req.params.id, tenantId]
-      );
-      if (existing.length === 0) return res.status(404).json({ message: "Rule not found" });
-
-      const {
-        price, priceType, orderType, timeSlotStart, timeSlotEnd, dayOfWeek,
-        customerSegment, validFrom, validUntil, priority, notes, isActive, currency,
-      } = req.body;
-
-      if (price !== undefined && Number(price) <= 0) {
-        return res.status(400).json({ message: "price must be greater than 0" });
+      const user = req.user as any;
+      const { outletId } = req.query;
+      if (!outletId || typeof outletId !== "string") {
+        return res.status(400).json({ message: "outletId is required" });
       }
-      if (timeSlotStart && timeSlotEnd) {
-        const startM = timeSlotStart.split(":").map(Number).reduce((h: number, m: number, i: number) => i === 0 ? h * 60 : h + m, 0);
-        const endM = timeSlotEnd.split(":").map(Number).reduce((h: number, m: number, i: number) => i === 0 ? h * 60 : h + m, 0);
-        if (endM <= startM) {
-          return res.status(400).json({ message: "time_slot_end must be after time_slot_start" });
-        }
-      }
-      if (validFrom && validUntil && validUntil < validFrom) {
-        return res.status(400).json({ message: "valid_until must be on or after valid_from" });
-      }
-
-      const sets: string[] = ["updated_at = now()"];
-      const params: any[] = [];
-      let idx = 1;
-      const set = (col: string, val: any) => { sets.push(`${col} = $${idx++}`); params.push(val); };
-
-      if (price !== undefined) set("price", Number(price).toFixed(2));
-      if (priceType !== undefined) set("price_type", priceType.toUpperCase());
-      if (currency !== undefined) set("currency", currency);
-      if (orderType !== undefined) set("order_type", orderType || null);
-      if (timeSlotStart !== undefined) set("time_slot_start", timeSlotStart || null);
-      if (timeSlotEnd !== undefined) set("time_slot_end", timeSlotEnd || null);
-      if (dayOfWeek !== undefined) set("day_of_week", dayOfWeek ? JSON.stringify(dayOfWeek) : null);
-      if (customerSegment !== undefined) set("customer_segment", customerSegment || null);
-      if (validFrom !== undefined) set("valid_from", validFrom || null);
-      if (validUntil !== undefined) set("valid_until", validUntil || null);
-      if (priority !== undefined) set("priority", Number(priority) || 0);
-      if (notes !== undefined) set("notes", notes || null);
-      if (isActive !== undefined) set("is_active", Boolean(isActive));
-
-      params.push(req.params.id, tenantId);
-      const { rows } = await pool.query(
-        `UPDATE outlet_menu_prices SET ${sets.join(", ")} WHERE id = $${idx++} AND tenant_id = $${idx++} RETURNING *`,
-        params
-      );
-      res.json(rows[0]);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      const overrides = await storage.getOutletMenuOverrides(outletId, user.tenantId);
+      res.json(overrides);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
-  app.delete("/api/pricing/rules/:id", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/pricing/overrides", requireRole("owner", "manager", "outlet_manager"), async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { rows } = await pool.query(
-        `UPDATE outlet_menu_prices SET is_active = false, updated_at = now()
-         WHERE id = $1 AND tenant_id = $2 RETURNING id`,
-        [req.params.id, tenantId]
-      );
-      if (rows.length === 0) return res.status(404).json({ message: "Rule not found" });
-      res.json({ success: true, id: rows[0].id });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/pricing/rules/conflict-check", requireAuth, async (req, res) => {
-    try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { outletId, menuItemId, priceType, orderType, timeSlotStart, dayOfWeek, customerSegment, priority } = req.body;
-
-      let query = `SELECT * FROM outlet_menu_prices
-        WHERE tenant_id = $1 AND is_active = true`;
-      const params: any[] = [tenantId];
-      let idx = 2;
-      if (outletId) { query += ` AND outlet_id = $${idx++}`; params.push(outletId); }
-      if (menuItemId) { query += ` AND menu_item_id = $${idx++}`; params.push(menuItemId); }
-      if (priceType) { query += ` AND price_type = $${idx++}`; params.push(priceType.toUpperCase()); }
-      if (orderType !== undefined) { query += ` AND COALESCE(order_type,'') = $${idx++}`; params.push(orderType || ""); }
-      if (timeSlotStart !== undefined) { query += ` AND COALESCE(time_slot_start,'') = $${idx++}`; params.push(timeSlotStart || ""); }
-      if (customerSegment !== undefined) { query += ` AND COALESCE(customer_segment,'') = $${idx++}`; params.push(customerSegment || ""); }
-      if (priority !== undefined) { query += ` AND priority = $${idx++}`; params.push(Number(priority) || 0); }
-
-      const { rows } = await pool.query(query, params);
-      res.json({ conflicts: rows, count: rows.length });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/pricing/resolve", requireAuth, async (req, res) => {
-    try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { outletId, menuItemId, menuItemName, basePrice, orderType, customerSegment, orderId, orderItemId } = req.body;
-      if (!outletId || !menuItemId || basePrice === undefined) {
-        return res.status(400).json({ message: "outletId, menuItemId, and basePrice are required" });
+      const user = req.user as any;
+      const { outletId, menuItemId, overridePrice, available } = req.body;
+      if (!outletId || !menuItemId) {
+        return res.status(400).json({ message: "outletId and menuItemId are required" });
       }
-      const ctx: PriceContext = {
-        tenantId,
+      const existing = await storage.getOutletMenuOverrides(outletId, user.tenantId);
+      const existingOverride = existing.find(o => o.menuItemId === menuItemId);
+      if (existingOverride) {
+        const updated = await storage.updateOutletMenuOverride(existingOverride.id, user.tenantId, {
+          overridePrice: overridePrice != null ? String(overridePrice) : existingOverride.overridePrice,
+          available: available !== undefined ? available : existingOverride.available,
+        });
+        return res.json(updated);
+      }
+      const override = await storage.createOutletMenuOverride({
+        tenantId: user.tenantId,
         outletId,
         menuItemId,
-        menuItemName,
-        basePrice: Number(basePrice),
-        orderType,
-        customerSegment,
-        orderId,
-        orderItemId,
-        currentTime: new Date(),
-      };
-      const resolved = await resolvePrice(ctx);
-      res.json(resolved);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+        overridePrice: overridePrice != null ? String(overridePrice) : null,
+        available: available !== undefined ? available : true,
+      });
+      res.json(override);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
+  app.post("/api/pricing/overrides/bulk", requireRole("owner", "manager", "outlet_manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId, updates } = req.body;
+      if (!outletId || !Array.isArray(updates)) {
+        return res.status(400).json({ message: "outletId and updates array are required" });
+      }
+      const existing = await storage.getOutletMenuOverrides(outletId, user.tenantId);
+      const existingMap = new Map(existing.map(o => [o.menuItemId, o]));
+      const results = [];
+      for (const update of updates) {
+        const { menuItemId, overridePrice, available } = update;
+        if (!menuItemId) continue;
+        const existingOverride = existingMap.get(menuItemId);
+        if (existingOverride) {
+          const updated = await storage.updateOutletMenuOverride(existingOverride.id, user.tenantId, {
+            overridePrice: overridePrice != null ? String(overridePrice) : existingOverride.overridePrice,
+            available: available !== undefined ? available : existingOverride.available,
+          });
+          results.push(updated);
+        } else {
+          const created = await storage.createOutletMenuOverride({
+            tenantId: user.tenantId,
+            outletId,
+            menuItemId,
+            overridePrice: overridePrice != null ? String(overridePrice) : null,
+            available: available !== undefined ? available : true,
+          });
+          results.push(created);
+        }
+      }
+      res.json({ updated: results.length, results });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Price Rules (named adjustment rules) ─────────────────────────────────
+  app.get("/api/pricing/rules", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.query;
+      const { rows } = await pool.query(
+        `SELECT * FROM price_rules WHERE tenant_id = $1 ${outletId ? "AND (outlet_id = $2 OR outlet_id IS NULL)" : ""} ORDER BY priority DESC, created_at DESC`,
+        outletId ? [user.tenantId, outletId] : [user.tenantId]
+      );
+      res.json(rows);
+    } catch (err: any) {
+      if (err.message?.includes("price_rules") && err.message?.includes("does not exist")) {
+        return res.json([]);
+      }
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/pricing/rules", requireRole("owner", "manager", "outlet_manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const {
+        name, outletId, ruleType, conditionValue, adjustmentType, adjustmentValue,
+        applyTo, applyToRef, priority, validFrom, validTo, active
+      } = req.body;
+      if (!name || !ruleType || !adjustmentType || adjustmentValue == null) {
+        return res.status(400).json({ message: "name, ruleType, adjustmentType, and adjustmentValue are required" });
+      }
+      await pool.query(
+        `CREATE TABLE IF NOT EXISTS price_rules (
+          id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+          tenant_id VARCHAR(36) NOT NULL,
+          outlet_id VARCHAR(36),
+          name TEXT NOT NULL,
+          rule_type TEXT NOT NULL,
+          condition_value JSONB,
+          adjustment_type TEXT NOT NULL,
+          adjustment_value DECIMAL(10,2) NOT NULL,
+          apply_to TEXT DEFAULT 'all',
+          apply_to_ref TEXT,
+          priority INTEGER DEFAULT 0,
+          valid_from TIMESTAMP,
+          valid_to TIMESTAMP,
+          active BOOLEAN DEFAULT true,
+          created_at TIMESTAMP DEFAULT NOW(),
+          created_by VARCHAR(36)
+        )`
+      );
+      const { rows } = await pool.query(
+        `INSERT INTO price_rules (tenant_id, outlet_id, name, rule_type, condition_value, adjustment_type, adjustment_value, apply_to, apply_to_ref, priority, valid_from, valid_to, active, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+        [
+          user.tenantId,
+          outletId || null,
+          name,
+          ruleType,
+          conditionValue ? JSON.stringify(conditionValue) : null,
+          adjustmentType,
+          adjustmentValue,
+          applyTo || "all",
+          applyToRef || null,
+          priority || 0,
+          validFrom || null,
+          validTo || null,
+          active !== false,
+          user.id,
+        ]
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.patch("/api/pricing/rules/:id", requireRole("owner", "manager", "outlet_manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const fields: string[] = [];
+      const values: any[] = [];
+      let idx = 1;
+      const allowed = ["name", "rule_type", "condition_value", "adjustment_type", "adjustment_value", "apply_to", "apply_to_ref", "priority", "valid_from", "valid_to", "active", "outlet_id"];
+      const mapping: Record<string, string> = {
+        ruleType: "rule_type", conditionValue: "condition_value", adjustmentType: "adjustment_type",
+        adjustmentValue: "adjustment_value", applyTo: "apply_to", applyToRef: "apply_to_ref",
+        validFrom: "valid_from", validTo: "valid_to", outletId: "outlet_id",
+      };
+      for (const [key, val] of Object.entries(req.body)) {
+        const col = mapping[key] || key;
+        if (allowed.includes(col)) {
+          fields.push(`${col} = $${idx++}`);
+          values.push(val);
+        }
+      }
+      if (!fields.length) return res.status(400).json({ message: "No valid fields to update" });
+      values.push(req.params.id, user.tenantId);
+      const { rows } = await pool.query(
+        `UPDATE price_rules SET ${fields.join(", ")} WHERE id = $${idx++} AND tenant_id = $${idx++} RETURNING *`,
+        values
+      );
+      if (!rows.length) return res.status(404).json({ message: "Rule not found" });
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/pricing/rules/:id", requireRole("owner", "manager", "outlet_manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      await pool.query("DELETE FROM price_rules WHERE id = $1 AND tenant_id = $2", [req.params.id, user.tenantId]);
+      res.json({ message: "Deleted" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Conflict check for named rules ───────────────────────────────────────
+  app.post("/api/pricing/conflict-check", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId, ruleType, conditionValue, applyTo, applyToRef, excludeRuleId } = req.body;
+
+      let conflicts: any[] = [];
+      try {
+        const { rows } = await pool.query(
+          `SELECT * FROM price_rules WHERE tenant_id = $1 AND (outlet_id = $2 OR outlet_id IS NULL) AND active = true
+           AND rule_type = $3 ${excludeRuleId ? "AND id != $4" : ""}`,
+          excludeRuleId ? [user.tenantId, outletId || null, ruleType, excludeRuleId] : [user.tenantId, outletId || null, ruleType]
+        );
+        conflicts = rows.filter((r: any) => {
+          if (applyTo === "all" || r.apply_to === "all") return true;
+          if (applyTo === r.apply_to && applyToRef === r.apply_to_ref) return true;
+          return false;
+        });
+      } catch {}
+
+      res.json({
+        hasConflicts: conflicts.length > 0,
+        conflicts: conflicts.map((c: any) => ({ id: c.id, name: c.name, priority: c.priority })),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Price Resolution (single item) ───────────────────────────────────────
+  app.post("/api/pricing/resolve", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { menuItemId, outletId, orderType, orderTime } = req.body;
+      if (!menuItemId) return res.status(400).json({ message: "menuItemId is required" });
+
+      const menuItem = await storage.getMenuItem(menuItemId);
+      if (!menuItem || menuItem.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Menu item not found" });
+      }
+
+      let resolvedPrice = Number(menuItem.price);
+      let appliedRule: string | null = null;
+      let ruleReason: string | null = null;
+
+      if (outletId) {
+        const overrides = await storage.getOutletMenuOverrides(outletId, user.tenantId);
+        const override = overrides.find(o => o.menuItemId === menuItemId);
+        if (override?.overridePrice) {
+          resolvedPrice = Number(override.overridePrice);
+        }
+      }
+
+      if (outletId) {
+        try {
+          const { rows: rules } = await pool.query(
+            `SELECT * FROM price_rules WHERE tenant_id = $1 AND (outlet_id = $2 OR outlet_id IS NULL) AND active = true
+             AND (valid_from IS NULL OR valid_from <= NOW()) AND (valid_to IS NULL OR valid_to >= NOW())
+             ORDER BY priority DESC LIMIT 20`,
+            [user.tenantId, outletId]
+          );
+
+          const now = orderTime ? new Date(orderTime) : new Date();
+          for (const rule of rules) {
+            let matches = false;
+            if (rule.apply_to === "specific_item" && rule.apply_to_ref !== menuItemId) continue;
+            if (rule.apply_to === "category" && rule.apply_to_ref !== menuItem.categoryId) continue;
+
+            if (rule.rule_type === "ORDER_TYPE" && orderType) {
+              const cv = rule.condition_value as { orderType?: string } | null;
+              matches = !cv?.orderType || cv.orderType === orderType;
+            } else if (rule.rule_type === "TIME_SLOT") {
+              const cv = rule.condition_value as { startTime?: string; endTime?: string } | null;
+              if (cv?.startTime && cv?.endTime) {
+                const hour = now.getHours();
+                const minute = now.getMinutes();
+                const current = hour * 60 + minute;
+                const [sh, sm] = (cv.startTime || "00:00").split(":").map(Number);
+                const [eh, em] = (cv.endTime || "23:59").split(":").map(Number);
+                const start = sh * 60 + (sm || 0);
+                const end = eh * 60 + (em || 0);
+                matches = current >= start && current <= end;
+              } else {
+                matches = true;
+              }
+            } else if (rule.rule_type === "DAY_BASED") {
+              const cv = rule.condition_value as { days?: number[] } | null;
+              if (cv?.days && Array.isArray(cv.days)) {
+                matches = cv.days.includes(now.getDay());
+              } else {
+                matches = true;
+              }
+            } else if (rule.rule_type === "OUTLET_BASE") {
+              matches = true;
+            } else {
+              matches = true;
+            }
+
+            if (matches) {
+              const adj = Number(rule.adjustment_value);
+              if (rule.adjustment_type === "fixed") {
+                resolvedPrice = adj;
+              } else if (rule.adjustment_type === "increase_pct") {
+                resolvedPrice = resolvedPrice * (1 + adj / 100);
+              } else if (rule.adjustment_type === "decrease_pct") {
+                resolvedPrice = resolvedPrice * (1 - adj / 100);
+              } else if (rule.adjustment_type === "increase_fixed") {
+                resolvedPrice = resolvedPrice + adj;
+              } else if (rule.adjustment_type === "decrease_fixed") {
+                resolvedPrice = resolvedPrice - adj;
+              }
+              resolvedPrice = Math.max(0, resolvedPrice);
+              appliedRule = rule.id;
+              ruleReason = rule.name;
+              break;
+            }
+          }
+        } catch {
+        }
+      }
+
+      res.json({
+        menuItemId,
+        basePrice: Number(menuItem.price),
+        resolvedPrice: Math.round(resolvedPrice * 100) / 100,
+        appliedRule,
+        ruleReason,
+        hasRule: appliedRule !== null,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Public guest pricing resolution (for QR ordering without auth) ────────
+  app.post("/api/guest/pricing/resolve/batch", async (req, res) => {
+    try {
+      const { items, outletId, orderType, orderTime } = req.body;
+      if (!Array.isArray(items) || !outletId) return res.status(400).json({ message: "items and outletId are required" });
+
+      const outlet = await storage.getOutlet(outletId);
+      if (!outlet) return res.status(404).json({ message: "Outlet not found" });
+      const tenantId = outlet.tenantId;
+
+      const menuItemsList = await storage.getMenuItemsByTenant(tenantId);
+      const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+
+      const overrides = await storage.getOutletMenuOverrides(outletId, tenantId);
+      const overrideMap = new Map(overrides.map(o => [o.menuItemId, o.overridePrice]));
+
+      let rules: any[] = [];
+      try {
+        const { rows } = await pool.query(
+          `SELECT * FROM price_rules WHERE tenant_id = $1 AND (outlet_id = $2 OR outlet_id IS NULL) AND active = true
+           AND (valid_from IS NULL OR valid_from <= NOW()) AND (valid_to IS NULL OR valid_to >= NOW())
+           ORDER BY priority DESC LIMIT 50`,
+          [tenantId, outletId]
+        );
+        rules = rows;
+      } catch {}
+
+      const now = orderTime ? new Date(orderTime) : new Date();
+      const results: any[] = [];
+
+      for (const reqItem of items) {
+        const { menuItemId } = reqItem;
+        const menuItem = menuMap.get(menuItemId);
+        if (!menuItem) continue;
+
+        let resolvedPrice = Number(menuItem.price);
+        let appliedRule: string | null = null;
+        let ruleReason: string | null = null;
+
+        const overridePrice = overrideMap.get(menuItemId);
+        if (overridePrice) resolvedPrice = Number(overridePrice);
+
+        for (const rule of rules) {
+          let matches = false;
+          if (rule.apply_to === "specific_item" && rule.apply_to_ref !== menuItemId) continue;
+          if (rule.apply_to === "category" && rule.apply_to_ref !== menuItem.categoryId) continue;
+
+          if (rule.rule_type === "ORDER_TYPE" && orderType) {
+            const cv = rule.condition_value as { orderType?: string } | null;
+            matches = !cv?.orderType || cv.orderType === orderType;
+          } else if (rule.rule_type === "TIME_SLOT") {
+            const cv = rule.condition_value as { startTime?: string; endTime?: string } | null;
+            if (cv?.startTime && cv?.endTime) {
+              const hour = now.getHours();
+              const minute = now.getMinutes();
+              const current = hour * 60 + minute;
+              const [sh, sm] = (cv.startTime || "00:00").split(":").map(Number);
+              const [eh, em] = (cv.endTime || "23:59").split(":").map(Number);
+              const start = sh * 60 + (sm || 0);
+              const end = eh * 60 + (em || 0);
+              matches = current >= start && current <= end;
+            } else matches = true;
+          } else if (rule.rule_type === "DAY_BASED") {
+            const cv = rule.condition_value as { days?: number[] } | null;
+            matches = cv?.days && Array.isArray(cv.days) ? cv.days.includes(now.getDay()) : true;
+          } else {
+            matches = true;
+          }
+
+          if (matches) {
+            const adj = Number(rule.adjustment_value);
+            if (rule.adjustment_type === "fixed") resolvedPrice = adj;
+            else if (rule.adjustment_type === "increase_pct") resolvedPrice = resolvedPrice * (1 + adj / 100);
+            else if (rule.adjustment_type === "decrease_pct") resolvedPrice = resolvedPrice * (1 - adj / 100);
+            else if (rule.adjustment_type === "increase_fixed") resolvedPrice = resolvedPrice + adj;
+            else if (rule.adjustment_type === "decrease_fixed") resolvedPrice = resolvedPrice - adj;
+            resolvedPrice = Math.max(0, resolvedPrice);
+            appliedRule = rule.id;
+            ruleReason = rule.name;
+            break;
+          }
+        }
+
+        results.push({
+          menuItemId,
+          basePrice: Number(menuItem.price),
+          resolvedPrice: Math.round(resolvedPrice * 100) / 100,
+          appliedRule,
+          ruleReason,
+          hasRule: appliedRule !== null,
+        });
+      }
+
+      res.json(results);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Price Resolution Batch (authed, for POS) ─────────────────────────────
   app.post("/api/pricing/resolve/batch", requireAuth, async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { items } = req.body;
-      if (!Array.isArray(items) || items.length === 0) {
-        return res.status(400).json({ message: "items must be a non-empty array" });
+      const user = req.user as any;
+      const { items, outletId, orderType, orderTime } = req.body;
+      if (!Array.isArray(items)) return res.status(400).json({ message: "items array is required" });
+
+      const menuItemsList = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItemsList.map(m => [m.id, m]));
+
+      let overrideMap = new Map<string, string | null>();
+      if (outletId) {
+        const overrides = await storage.getOutletMenuOverrides(outletId, user.tenantId);
+        overrideMap = new Map(overrides.map(o => [o.menuItemId, o.overridePrice]));
       }
-      const contexts: PriceContext[] = items.map((item: any) => ({
-        tenantId,
-        outletId: item.outletId,
-        menuItemId: item.menuItemId,
-        menuItemName: item.menuItemName,
-        basePrice: Number(item.basePrice),
-        orderType: item.orderType,
-        customerSegment: item.customerSegment,
-        orderId: item.orderId,
-        orderItemId: item.orderItemId,
-        currentTime: new Date(),
-      }));
-      const results = await resolvePriceBatch(contexts);
+
+      let rules: any[] = [];
+      if (outletId) {
+        try {
+          const { rows } = await pool.query(
+            `SELECT * FROM price_rules WHERE tenant_id = $1 AND (outlet_id = $2 OR outlet_id IS NULL) AND active = true
+             AND (valid_from IS NULL OR valid_from <= NOW()) AND (valid_to IS NULL OR valid_to >= NOW())
+             ORDER BY priority DESC LIMIT 50`,
+            [user.tenantId, outletId]
+          );
+          rules = rows;
+        } catch {}
+      }
+
+      const now = orderTime ? new Date(orderTime) : new Date();
+      const results: any[] = [];
+
+      for (const reqItem of items) {
+        const { menuItemId } = reqItem;
+        const menuItem = menuMap.get(menuItemId);
+        if (!menuItem) continue;
+
+        let resolvedPrice = Number(menuItem.price);
+        let appliedRule: string | null = null;
+        let ruleReason: string | null = null;
+
+        const overridePrice = overrideMap.get(menuItemId);
+        if (overridePrice) resolvedPrice = Number(overridePrice);
+
+        for (const rule of rules) {
+          let matches = false;
+          if (rule.apply_to === "specific_item" && rule.apply_to_ref !== menuItemId) continue;
+          if (rule.apply_to === "category" && rule.apply_to_ref !== menuItem.categoryId) continue;
+
+          if (rule.rule_type === "ORDER_TYPE" && orderType) {
+            const cv = rule.condition_value as { orderType?: string } | null;
+            matches = !cv?.orderType || cv.orderType === orderType;
+          } else if (rule.rule_type === "TIME_SLOT") {
+            const cv = rule.condition_value as { startTime?: string; endTime?: string } | null;
+            if (cv?.startTime && cv?.endTime) {
+              const hour = now.getHours();
+              const minute = now.getMinutes();
+              const current = hour * 60 + minute;
+              const [sh, sm] = (cv.startTime || "00:00").split(":").map(Number);
+              const [eh, em] = (cv.endTime || "23:59").split(":").map(Number);
+              const start = sh * 60 + (sm || 0);
+              const end = eh * 60 + (em || 0);
+              matches = current >= start && current <= end;
+            } else {
+              matches = true;
+            }
+          } else if (rule.rule_type === "DAY_BASED") {
+            const cv = rule.condition_value as { days?: number[] } | null;
+            if (cv?.days && Array.isArray(cv.days)) {
+              matches = cv.days.includes(now.getDay());
+            } else {
+              matches = true;
+            }
+          } else {
+            matches = true;
+          }
+
+          if (matches) {
+            const adj = Number(rule.adjustment_value);
+            if (rule.adjustment_type === "fixed") {
+              resolvedPrice = adj;
+            } else if (rule.adjustment_type === "increase_pct") {
+              resolvedPrice = resolvedPrice * (1 + adj / 100);
+            } else if (rule.adjustment_type === "decrease_pct") {
+              resolvedPrice = resolvedPrice * (1 - adj / 100);
+            } else if (rule.adjustment_type === "increase_fixed") {
+              resolvedPrice = resolvedPrice + adj;
+            } else if (rule.adjustment_type === "decrease_fixed") {
+              resolvedPrice = resolvedPrice - adj;
+            }
+            resolvedPrice = Math.max(0, resolvedPrice);
+            appliedRule = rule.id;
+            ruleReason = rule.name;
+            break;
+          }
+        }
+
+        results.push({
+          menuItemId,
+          basePrice: Number(menuItem.price),
+          resolvedPrice: Math.round(resolvedPrice * 100) / 100,
+          appliedRule,
+          ruleReason,
+          hasRule: appliedRule !== null,
+        });
+      }
+
       res.json(results);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
+  // ─── Bulk update (HEAD feature: direct outlet_menu_prices table) ──────────
   app.post("/api/pricing/bulk-update", requireAuth, requireRole("owner", "manager"), async (req, res) => {
     try {
       const tenantId = tenantGuard(req, res);
@@ -269,26 +616,22 @@ export function registerPricingRoutes(app: Express): void {
           if (!menuItemId || !outletId || !price || Number(price) <= 0) {
             throw new Error(`Invalid item: ${JSON.stringify(item)}`);
           }
-          const { rows: existing } = await client.query(
-            `SELECT id FROM outlet_menu_prices
-             WHERE tenant_id = $1 AND outlet_id = $2 AND menu_item_id = $3 AND price_type = 'OUTLET_BASE'`,
-            [tenantId, outletId, menuItemId]
-          );
-          if (existing.length > 0) {
-            const { rows } = await client.query(
-              `UPDATE outlet_menu_prices SET price = $1, updated_at = now()
-               WHERE id = $2 RETURNING *`,
-              [Number(price).toFixed(2), existing[0].id]
-            );
-            results.push(rows[0]);
+          const existing = await storage.getOutletMenuOverrides(outletId, tenantId);
+          const existingOverride = existing.find(o => o.menuItemId === menuItemId);
+          if (existingOverride) {
+            const updated = await storage.updateOutletMenuOverride(existingOverride.id, tenantId, {
+              overridePrice: String(Number(price).toFixed(2)),
+            });
+            results.push(updated);
           } else {
-            const { rows } = await client.query(
-              `INSERT INTO outlet_menu_prices
-               (tenant_id, outlet_id, menu_item_id, price_type, price, is_active, created_by)
-               VALUES ($1,$2,$3,'OUTLET_BASE',$4,true,$5) RETURNING *`,
-              [tenantId, outletId, menuItemId, Number(price).toFixed(2), user.id]
-            );
-            results.push(rows[0]);
+            const created = await storage.createOutletMenuOverride({
+              tenantId,
+              outletId,
+              menuItemId,
+              overridePrice: String(Number(price).toFixed(2)),
+              available: true,
+            });
+            results.push(created);
           }
         }
         await client.query("COMMIT");
@@ -302,65 +645,88 @@ export function registerPricingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/pricing/copy-outlet", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+  // ─── Copy Outlet (preview) ─────────────────────────────────────────────────
+  app.get("/api/pricing/copy-outlet", requireAuth, async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
       const user = req.user as any;
-      const { sourceOutletId, targetOutletId, adjustmentPercent } = req.body;
+      const { sourceOutletId, targetOutletId, adjustmentPct } = req.query;
       if (!sourceOutletId || !targetOutletId) {
         return res.status(400).json({ message: "sourceOutletId and targetOutletId are required" });
       }
-      const adjustment = Number(adjustmentPercent) || 0;
+      const sourceOverrides = await storage.getOutletMenuOverrides(sourceOutletId as string, user.tenantId);
+      const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItems.map(m => [m.id, m]));
+      const adjustment = adjustmentPct ? Number(adjustmentPct) : 0;
 
-      const client = await (await import("../db")).pool.connect();
-      try {
-        await client.query("BEGIN");
-        const { rows: sourceRules } = await client.query(
-          `SELECT * FROM outlet_menu_prices
-           WHERE tenant_id = $1 AND outlet_id = $2 AND price_type = 'OUTLET_BASE' AND is_active = true`,
-          [tenantId, sourceOutletId]
-        );
-        const results = [];
-        for (const rule of sourceRules) {
-          const newPrice = Number(rule.price) * (1 + adjustment / 100);
-          const { rows: existing } = await client.query(
-            `SELECT id FROM outlet_menu_prices
-             WHERE tenant_id = $1 AND outlet_id = $2 AND menu_item_id = $3 AND price_type = 'OUTLET_BASE'`,
-            [tenantId, targetOutletId, rule.menu_item_id]
-          );
-          if (existing.length > 0) {
-            const { rows } = await client.query(
-              `UPDATE outlet_menu_prices SET price = $1, updated_at = now()
-               WHERE id = $2 RETURNING *`,
-              [newPrice.toFixed(2), existing[0].id]
-            );
-            results.push(rows[0]);
-          } else {
-            const { rows } = await client.query(
-              `INSERT INTO outlet_menu_prices
-               (tenant_id, outlet_id, menu_item_id, price_type, price, currency, is_active, created_by)
-               VALUES ($1,$2,$3,'OUTLET_BASE',$4,$5,true,$6) RETURNING *`,
-              [tenantId, targetOutletId, rule.menu_item_id, newPrice.toFixed(2), rule.currency || "USD", user.id]
-            );
-            results.push(rows[0]);
-          }
-        }
-        await client.query("COMMIT");
-        res.json({ success: true, copied: results.length, adjustmentPercent: adjustment });
-      } catch (err) {
-        await client.query("ROLLBACK");
-        throw err;
-      } finally {
-        client.release();
-      }
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      const preview = sourceOverrides.map(o => {
+        const item = menuMap.get(o.menuItemId);
+        const basePrice = Number(o.overridePrice || item?.price || 0);
+        const newPrice = adjustment !== 0 ? basePrice * (1 + adjustment / 100) : basePrice;
+        return {
+          menuItemId: o.menuItemId,
+          menuItemName: item?.name || "Unknown",
+          sourcePrice: basePrice,
+          newPrice: Math.round(newPrice * 100) / 100,
+        };
+      });
+      res.json({ preview });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
+  // ─── Copy Outlet (execute) ─────────────────────────────────────────────────
+  app.post("/api/pricing/copy-outlet", requireRole("owner", "manager", "outlet_manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { sourceOutletId, targetOutletId, adjustmentPct, categoryId } = req.body;
+      if (!sourceOutletId || !targetOutletId) {
+        return res.status(400).json({ message: "sourceOutletId and targetOutletId are required" });
+      }
+      const sourceOverrides = await storage.getOutletMenuOverrides(sourceOutletId, user.tenantId);
+      const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuMap = new Map(menuItems.map(m => [m.id, m]));
+      const adjustment = adjustmentPct ? Number(adjustmentPct) : 0;
+
+      const filtered = sourceOverrides.filter(o => {
+        if (categoryId) {
+          const item = menuMap.get(o.menuItemId);
+          return item?.categoryId === categoryId;
+        }
+        return true;
+      });
+
+      let copied = 0;
+      for (const o of filtered) {
+        const basePrice = Number(o.overridePrice || menuMap.get(o.menuItemId)?.price || 0);
+        const newPrice = adjustment !== 0 ? basePrice * (1 + adjustment / 100) : basePrice;
+        const targetOverrides = await storage.getOutletMenuOverrides(targetOutletId, user.tenantId);
+        const existing = targetOverrides.find(x => x.menuItemId === o.menuItemId);
+        if (existing) {
+          await storage.updateOutletMenuOverride(existing.id, user.tenantId, {
+            overridePrice: String(Math.round(newPrice * 100) / 100),
+          });
+        } else {
+          await storage.createOutletMenuOverride({
+            tenantId: user.tenantId,
+            outletId: targetOutletId,
+            menuItemId: o.menuItemId,
+            overridePrice: String(Math.round(newPrice * 100) / 100),
+            available: o.available,
+          });
+        }
+        copied++;
+      }
+
+      res.json({ copied });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── CSV Import ────────────────────────────────────────────────────────────
   app.post("/api/pricing/import", requireAuth, requireRole("owner", "manager"), async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
       const user = req.user as any;
       const { csvBody, preview: previewOnly, outletId } = req.body;
       if (!csvBody) return res.status(400).json({ message: "csvBody is required" });
@@ -384,7 +750,6 @@ export function registerPricingRoutes(app: Express): void {
         valid.push({
           menuItemId: row.menu_item_id || row.menuItemId,
           outletId: row.outlet_id || row.outletId || outletId,
-          priceType: (row.price_type || row.priceType || "OUTLET_BASE").toUpperCase(),
           price: price.toFixed(2),
           orderType: row.order_type || row.orderType || null,
           notes: row.notes || null,
@@ -395,206 +760,261 @@ export function registerPricingRoutes(app: Express): void {
         return res.json({ preview: valid, errors });
       }
 
-      const client = await (await import("../db")).pool.connect();
-      try {
-        await client.query("BEGIN");
-        const committed = [];
-        for (const item of valid) {
-          if (!item.outletId) {
-            errors.push(`menu_item_id ${item.menuItemId}: outletId is required`);
-            continue;
-          }
-          const { rows: existing } = await client.query(
-            `SELECT id FROM outlet_menu_prices
-             WHERE tenant_id=$1 AND outlet_id=$2 AND menu_item_id=$3 AND price_type=$4
-             AND COALESCE(order_type,'')=$5`,
-            [tenantId, item.outletId, item.menuItemId, item.priceType, item.orderType || ""]
-          );
-          if (existing.length > 0) {
-            await client.query(
-              `UPDATE outlet_menu_prices SET price=$1, updated_at=now() WHERE id=$2`,
-              [item.price, existing[0].id]
-            );
-            committed.push(existing[0].id);
-          } else {
-            const { rows } = await client.query(
-              `INSERT INTO outlet_menu_prices
-               (tenant_id, outlet_id, menu_item_id, price_type, price, order_type, is_active, created_by, notes)
-               VALUES ($1,$2,$3,$4,$5,$6,true,$7,$8) RETURNING id`,
-              [tenantId, item.outletId, item.menuItemId, item.priceType, item.price, item.orderType, user.id, item.notes]
-            );
-            committed.push(rows[0].id);
-          }
+      const committed = [];
+      for (const item of valid) {
+        if (!item.outletId) {
+          errors.push(`menu_item_id ${item.menuItemId}: outletId is required`);
+          continue;
         }
-        if (errors.length > 0) {
-          await client.query("ROLLBACK");
-          return res.json({ preview: valid, errors });
+        const existing = await storage.getOutletMenuOverrides(item.outletId, user.tenantId);
+        const existingOverride = existing.find(o => o.menuItemId === item.menuItemId);
+        if (existingOverride) {
+          const updated = await storage.updateOutletMenuOverride(existingOverride.id, user.tenantId, {
+            overridePrice: item.price,
+          });
+          committed.push(updated);
+        } else {
+          const created = await storage.createOutletMenuOverride({
+            tenantId: user.tenantId,
+            outletId: item.outletId,
+            menuItemId: item.menuItemId,
+            overridePrice: item.price,
+            available: true,
+          });
+          committed.push(created);
         }
-        await client.query("COMMIT");
-        res.json({ success: true, imported: committed.length, errors: [] });
-      } catch (err) {
-        await client.query("ROLLBACK");
-        throw err;
-      } finally {
-        client.release();
       }
+
+      if (errors.length > 0) {
+        return res.json({ preview: valid, errors });
+      }
+      res.json({ success: true, imported: committed.length, errors: [] });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // ─── CSV Export ────────────────────────────────────────────────────────────
   app.get("/api/pricing/export", requireAuth, async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
+      const user = req.user as any;
       const { outletId } = req.query;
-      let query = `SELECT id, tenant_id, outlet_id, menu_item_id, price_type, price, currency, order_type,
-        time_slot_start, time_slot_end, day_of_week, customer_segment, valid_from, valid_until,
-        priority, is_active, notes, created_at
-        FROM outlet_menu_prices WHERE tenant_id = $1`;
-      const params: any[] = [tenantId];
-      if (outletId) { query += ` AND outlet_id = $2`; params.push(outletId); }
-      query += ` ORDER BY outlet_id, menu_item_id, price_type`;
-      const { rows } = await pool.query(query, params);
+      const outlets = outletId
+        ? [await storage.getOutlet(outletId as string)].filter(Boolean)
+        : await storage.getOutletsByTenant(user.tenantId);
+
+      const rows: any[] = [];
+      for (const outlet of outlets as any[]) {
+        if (!outlet) continue;
+        const overrides = await storage.getOutletMenuOverrides(outlet.id, user.tenantId);
+        const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+        const menuMap = new Map(menuItems.map(m => [m.id, m]));
+        for (const o of overrides) {
+          const item = menuMap.get(o.menuItemId);
+          rows.push({
+            outlet_id: outlet.id,
+            outlet_name: outlet.name,
+            menu_item_id: o.menuItemId,
+            menu_item_name: item?.name || "",
+            override_price: o.overridePrice || "",
+            available: o.available,
+          });
+        }
+      }
+
       const csv = toCSV(rows);
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", `attachment; filename="pricing-rules-${tenantId}.csv"`);
+      res.setHeader("Content-Disposition", `attachment; filename="pricing-overrides.csv"`);
       res.send(csv);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/pricing/global-adjustment", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+  // ─── Global Adjustment ────────────────────────────────────────────────────
+  app.post("/api/pricing/global-adjustment", requireRole("owner", "manager", "outlet_manager"), async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { percent, scope, outletId, categoryId, menuItemIds, roundTo: roundNearest } = req.body;
-      if (percent === undefined) return res.status(400).json({ message: "percent is required" });
-
-      const pct = Number(percent);
-      const nearest = Number(roundNearest) || 0;
-
-      let selectQuery = `SELECT id, price FROM outlet_menu_prices WHERE tenant_id = $1 AND is_active = true`;
-      const params: any[] = [tenantId];
-      let idx = 2;
-      if (outletId) { selectQuery += ` AND outlet_id = $${idx++}`; params.push(outletId); }
-      if (menuItemIds && Array.isArray(menuItemIds) && menuItemIds.length > 0) {
-        selectQuery += ` AND menu_item_id = ANY($${idx++})`; params.push(menuItemIds);
-      } else if (categoryId) {
-        selectQuery += ` AND menu_item_id IN (SELECT id FROM menu_items WHERE tenant_id = $1 AND category_id = $${idx++})`;
-        params.push(categoryId);
+      const user = req.user as any;
+      const { outletId, categoryId, menuItemId, adjustmentType, adjustmentValue, roundTo: roundToVal } = req.body;
+      if (!adjustmentType || adjustmentValue == null) {
+        return res.status(400).json({ message: "adjustmentType and adjustmentValue are required" });
       }
 
-      const { rows } = await pool.query(selectQuery, params);
+      const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+      let targetItems = menuItems;
+      if (menuItemId) targetItems = menuItems.filter(m => m.id === menuItemId);
+      else if (categoryId) targetItems = menuItems.filter(m => m.categoryId === categoryId);
 
-      const client = await (await import("../db")).pool.connect();
-      try {
-        await client.query("BEGIN");
-        let updated = 0;
-        for (const rule of rows) {
-          let newPrice = Number(rule.price) * (1 + pct / 100);
-          if (nearest > 0) newPrice = roundTo(newPrice, nearest);
-          newPrice = Math.max(0.01, Math.round(newPrice * 100) / 100);
-          await client.query(
-            `UPDATE outlet_menu_prices SET price = $1, updated_at = now() WHERE id = $2`,
-            [newPrice.toFixed(2), rule.id]
-          );
-          updated++;
+      const outlets = outletId ? [await storage.getOutlet(outletId)] : await storage.getOutletsByTenant(user.tenantId);
+      const validOutlets = outlets.filter(Boolean) as any[];
+
+      let adjustedCount = 0;
+      for (const outlet of validOutlets) {
+        const existingOverrides = await storage.getOutletMenuOverrides(outlet.id, user.tenantId);
+        const overrideMap = new Map(existingOverrides.map(o => [o.menuItemId, o]));
+        for (const item of targetItems) {
+          const currentOverride = overrideMap.get(item.id);
+          const currentPrice = currentOverride?.overridePrice ? Number(currentOverride.overridePrice) : Number(item.price);
+          let newPrice = currentPrice;
+          if (adjustmentType === "increase_pct") newPrice = currentPrice * (1 + Number(adjustmentValue) / 100);
+          else if (adjustmentType === "decrease_pct") newPrice = currentPrice * (1 - Number(adjustmentValue) / 100);
+          else if (adjustmentType === "increase_fixed") newPrice = currentPrice + Number(adjustmentValue);
+          else if (adjustmentType === "decrease_fixed") newPrice = currentPrice - Number(adjustmentValue);
+          newPrice = Math.max(0, newPrice);
+          if (roundToVal) {
+            newPrice = roundTo(newPrice, Number(roundToVal));
+          }
+
+          if (currentOverride) {
+            await storage.updateOutletMenuOverride(currentOverride.id, user.tenantId, {
+              overridePrice: String(Math.round(newPrice * 100) / 100),
+            });
+          } else {
+            await storage.createOutletMenuOverride({
+              tenantId: user.tenantId,
+              outletId: outlet.id,
+              menuItemId: item.id,
+              overridePrice: String(Math.round(newPrice * 100) / 100),
+              available: true,
+            });
+          }
+          adjustedCount++;
         }
-        await client.query("COMMIT");
-        res.json({ success: true, updated, percent: pct });
-      } catch (err) {
-        await client.query("ROLLBACK");
-        throw err;
-      } finally {
-        client.release();
       }
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+
+      res.json({ adjusted: adjustedCount });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
-  app.get("/api/pricing/history/:menuItemId", requireAuth, async (req, res) => {
-    try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { outletId, limit: limitParam } = req.query;
-      const limit = Math.min(parseInt(limitParam as string) || 50, 200);
-      let query = `SELECT * FROM price_resolution_log WHERE tenant_id = $1 AND menu_item_id = $2`;
-      const params: any[] = [tenantId, req.params.menuItemId];
-      let idx = 3;
-      if (outletId) { query += ` AND outlet_id = $${idx++}`; params.push(outletId); }
-      query += ` ORDER BY resolved_at DESC LIMIT $${idx++}`;
-      params.push(limit);
-      const { rows } = await pool.query(query, params);
-      res.json(rows);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.get("/api/pricing/audit", requireAuth, async (req, res) => {
-    try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
-      const { outletId, date } = req.query;
-      const targetDate = (date as string) || new Date().toISOString().slice(0, 10);
-      let query = `SELECT * FROM price_resolution_log
-        WHERE tenant_id = $1 AND DATE(resolved_at) = $2`;
-      const params: any[] = [tenantId, targetDate];
-      let idx = 3;
-      if (outletId) { query += ` AND outlet_id = $${idx++}`; params.push(outletId); }
-      query += ` ORDER BY resolved_at DESC`;
-      const { rows } = await pool.query(query, params);
-      res.json({ date: targetDate, entries: rows, count: rows.length });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
+  // ─── Cross-outlet price comparison ────────────────────────────────────────
   app.get("/api/pricing/comparison", requireAuth, async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
+      const user = req.user as any;
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
 
-      const { rows: outlets } = await pool.query(
-        `SELECT id, name FROM outlets WHERE tenant_id = $1 AND active = true ORDER BY name`,
-        [tenantId]
-      );
-      const { rows: items } = await pool.query(
-        `SELECT id, name FROM menu_items WHERE tenant_id = $1 ORDER BY name`,
-        [tenantId]
-      );
-      const { rows: prices } = await pool.query(
-        `SELECT outlet_id, menu_item_id, price FROM outlet_menu_prices
-         WHERE tenant_id = $1 AND price_type = 'OUTLET_BASE' AND is_active = true`,
-        [tenantId]
-      );
-
-      const priceMap = new Map<string, number>();
-      for (const p of prices) {
-        priceMap.set(`${p.outlet_id}:${p.menu_item_id}`, Number(p.price));
+      const allOverrides: any[] = [];
+      for (const outlet of outlets) {
+        const overrides = await storage.getOutletMenuOverrides(outlet.id, user.tenantId);
+        for (const o of overrides) {
+          allOverrides.push({ ...o, outletName: outlet.name });
+        }
       }
 
-      const comparison = items.map(item => {
-        const row: Record<string, any> = { menuItemId: item.id, menuItemName: item.name };
+      const overrideMap = new Map<string, Map<string, string | null>>();
+      for (const o of allOverrides) {
+        if (!overrideMap.has(o.menuItemId)) overrideMap.set(o.menuItemId, new Map());
+        overrideMap.get(o.menuItemId)!.set(o.outletId, o.overridePrice);
+      }
+
+      const comparison = menuItems.map(item => {
+        const outletPrices: Record<string, number | null> = {};
         for (const outlet of outlets) {
-          row[outlet.name] = priceMap.get(`${outlet.id}:${item.id}`) ?? null;
+          const override = overrideMap.get(item.id)?.get(outlet.id);
+          outletPrices[outlet.id] = override != null ? Number(override) : Number(item.price);
         }
-        return row;
+        const prices = Object.values(outletPrices).filter(p => p != null) as number[];
+        const maxPrice = prices.length ? Math.max(...prices) : Number(item.price);
+        const minPrice = prices.length ? Math.min(...prices) : Number(item.price);
+        const basePrice = Number(item.price);
+        const maxVariance = basePrice > 0 ? ((maxPrice - basePrice) / basePrice) * 100 : 0;
+
+        return {
+          menuItemId: item.id,
+          menuItemName: item.name,
+          basePrice,
+          outletPrices,
+          maxPrice,
+          minPrice,
+          maxVariance: Math.round(maxVariance),
+        };
       });
 
-      res.json({ outlets: outlets.map(o => ({ id: o.id, name: o.name })), items: comparison });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      res.json({
+        outlets: outlets.map(o => ({ id: o.id, name: o.name })),
+        comparison,
+        insights: generateInsights(comparison, outlets),
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
+  // ─── Dish view (per-item outlet breakdown) ────────────────────────────────
+  app.get("/api/pricing/dish-view/:menuItemId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { menuItemId } = req.params;
+      const menuItem = await storage.getMenuItem(menuItemId);
+      if (!menuItem || menuItem.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "Menu item not found" });
+      }
+      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      const result = [];
+      for (const outlet of outlets) {
+        const overrides = await storage.getOutletMenuOverrides(outlet.id, user.tenantId);
+        const override = overrides.find(o => o.menuItemId === menuItemId);
+        let rules: any[] = [];
+        try {
+          const { rows } = await pool.query(
+            `SELECT * FROM price_rules WHERE tenant_id = $1 AND outlet_id = $2 AND active = true ORDER BY priority DESC LIMIT 5`,
+            [user.tenantId, outlet.id]
+          );
+          rules = rows;
+        } catch {}
+        result.push({
+          outletId: outlet.id,
+          outletName: outlet.name,
+          basePrice: Number(menuItem.price),
+          overridePrice: override?.overridePrice ? Number(override.overridePrice) : null,
+          effectivePrice: override?.overridePrice ? Number(override.overridePrice) : Number(menuItem.price),
+          rulesCount: rules.length,
+          ruleSummary: rules.slice(0, 2).map((r: any) => r.name).join(", ") || null,
+        });
+      }
+      res.json({ menuItem, outlets: result });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ─── Active rules (HEAD feature, from outlet_menu_prices if table exists) ─
   app.get("/api/pricing/active-rules", requireAuth, async (req, res) => {
     try {
-      const tenantId = tenantGuard(req, res);
-      if (!tenantId) return;
+      const user = req.user as any;
       const { outletId } = req.query;
-      const today = new Date().toISOString().slice(0, 10);
-      let query = `SELECT * FROM outlet_menu_prices
-        WHERE tenant_id = $1 AND is_active = true
-        AND (valid_from IS NULL OR valid_from <= $2)
-        AND (valid_until IS NULL OR valid_until >= $2)`;
-      const params: any[] = [tenantId, today];
-      let idx = 3;
-      if (outletId) { query += ` AND outlet_id = $${idx++}`; params.push(outletId); }
-      query += ` ORDER BY priority DESC, price_type, created_at DESC`;
-      const { rows } = await pool.query(query, params);
-      res.json(rows);
+      try {
+        const today = new Date().toISOString().slice(0, 10);
+        let query = `SELECT * FROM price_rules
+          WHERE tenant_id = $1 AND active = true
+          AND (valid_from IS NULL OR valid_from <= $2)
+          AND (valid_to IS NULL OR valid_to >= $2)`;
+        const params: any[] = [user.tenantId, today];
+        let idx = 3;
+        if (outletId) { query += ` AND (outlet_id = $${idx++} OR outlet_id IS NULL)`; params.push(outletId); }
+        query += ` ORDER BY priority DESC, created_at DESC`;
+        const { rows } = await pool.query(query, params);
+        res.json(rows);
+      } catch {
+        res.json([]);
+      }
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
+}
+
+function generateInsights(
+  comparison: { menuItemName: string; basePrice: number; maxPrice: number; minPrice: number; maxVariance: number }[],
+  outlets: { id: string; name: string }[]
+): string[] {
+  const insights: string[] = [];
+  const highVariance = comparison.filter(c => c.maxVariance > 50);
+  if (highVariance.length > 0) {
+    insights.push(`${highVariance.length} item(s) have prices 50%+ above base (e.g., "${highVariance[0].menuItemName}")`);
+  }
+  if (outlets.length > 1) {
+    insights.push(`Comparing prices across ${outlets.length} outlets`);
+  }
+  const noOverrides = comparison.filter(c => c.maxPrice === c.basePrice && c.minPrice === c.basePrice);
+  if (noOverrides.length === comparison.length) {
+    insights.push("All items use base pricing — no outlet-specific overrides set yet");
+  }
+  return insights;
 }

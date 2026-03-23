@@ -497,6 +497,8 @@ function FoodOrderFlow({
   const [placing, setPlacing] = useState(false);
   const [customizeItem, setCustomizeItem] = useState<{ menuItemId: string; name: string } | null>(null);
 
+  const [resolvedPriceMap, setResolvedPriceMap] = useState<Map<string, { resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean; validTo?: string | null }>>(new Map());
+
   useEffect(() => {
     if (!ctx.outletId) return;
     Promise.all([
@@ -506,6 +508,26 @@ function FoodOrderFlow({
       setMenuData(menu);
       if (menu.categories?.length) setSelCat(menu.categories[0]?.id ?? null);
       if (guestData.session?.id) setSessionId(guestData.session.id);
+
+      if (menu.items?.length && ctx.outletId) {
+        fetch("/api/guest/pricing/resolve/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: menu.items.map((m: MenuItem) => ({ menuItemId: m.id })),
+            outletId: ctx.outletId,
+            orderType: "dine_in",
+            orderTime: new Date().toISOString(),
+          }),
+        })
+          .then(r => r.ok ? r.json() : [])
+          .then((resolved: { menuItemId: string; resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean }[]) => {
+            const map = new Map<string, { resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean }>();
+            for (const r of resolved) map.set(r.menuItemId, r);
+            setResolvedPriceMap(map);
+          })
+          .catch(() => {});
+      }
     }).finally(() => setMenuLoading(false));
   }, [ctx.outletId, token]);
 
@@ -515,7 +537,9 @@ function FoodOrderFlow({
     setCart(prev => {
       const existing = prev.find(c => c.menuItemId === item.id);
       if (existing) return prev.map(c => c.menuItemId === item.id ? { ...c, quantity: c.quantity + 1 } : c);
-      return [...prev, { menuItemId: item.id, name: item.name, price: Number(item.price), quantity: 1, note }];
+      const resolved = resolvedPriceMap.get(item.id);
+      const resolvedPrice = resolved?.resolvedPrice ?? Number(item.price);
+      return [...prev, { menuItemId: item.id, name: item.name, price: resolvedPrice, quantity: 1, note }];
     });
   }
 
@@ -709,6 +733,9 @@ function FoodOrderFlow({
       <div className="flex flex-col gap-3">
         {filteredItems.map(item => {
           const cartEntry = cart.find(c => c.menuItemId === item.id);
+          const resolved = resolvedPriceMap.get(item.id);
+          const hasSpecialPrice = resolved?.hasRule && resolved.resolvedPrice !== resolved.basePrice;
+          const displayPrice = resolved?.resolvedPrice ?? Number(item.price);
           return (
             <div key={item.id} data-testid={`card-item-${item.id}`} className="bg-white rounded-xl p-3 border border-gray-100 flex gap-3">
               {item.image ? (
@@ -726,8 +753,22 @@ function FoodOrderFlow({
                       {item.isVeg && <span className="text-green-600"><Leaf className="w-3 h-3" /></span>}
                     </div>
                     {item.description && <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{item.description}</p>}
+                    {hasSpecialPrice && resolved?.ruleReason && (
+                      <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-teal-50 text-teal-700 border border-teal-200" data-testid={`badge-special-price-${item.id}`}>
+                        🏷️ {resolved.ruleReason}
+                      </span>
+                    )}
                   </div>
-                  <p className="text-sm font-bold text-teal-700 whitespace-nowrap">{formatPrice(Number(item.price), menuData?.currency ?? "USD")}</p>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-teal-700 whitespace-nowrap" data-testid={`text-price-qr-${item.id}`}>
+                      {formatPrice(displayPrice, menuData?.currency ?? "USD")}
+                    </p>
+                    {hasSpecialPrice && (
+                      <p className="text-xs text-gray-400 line-through" data-testid={`text-base-price-qr-${item.id}`}>
+                        {formatPrice(Number(item.price), menuData?.currency ?? "USD")}
+                      </p>
+                    )}
+                  </div>
                 </div>
                 <div className="mt-2">
                   {cartEntry ? (

@@ -56,6 +56,7 @@ import WastageDashboard from "@/pages/dashboards/wastage-dashboard";
 import WastageLogPage from "@/pages/modules/wastage-log";
 import WastageShiftPage from "@/pages/modules/wastage-shift";
 import PrinterSettingsPage from "@/pages/settings/printer-settings";
+import MenuPricingPage from "@/pages/menu/menu-pricing";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -112,6 +113,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/wastage-log": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "kitchen"] },
   "/wastage-shift": { roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   "/settings/printers": { roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  "/menu-pricing": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "menu" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -305,6 +307,7 @@ function ProtectedPages() {
         <Route path="/wastage-log">{() => <GuardedRoute path="/wastage-log" component={WastageLogPage} />}</Route>
         <Route path="/wastage-shift">{() => <GuardedRoute path="/wastage-shift" component={WastageShiftPage} />}</Route>
         <Route path="/settings/printers">{() => <GuardedRoute path="/settings/printers" component={PrinterSettingsPage} />}</Route>
+        <Route path="/menu-pricing">{() => <GuardedRoute path="/menu-pricing" component={MenuPricingPage} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsHub} />}</Route>
         <Route path="/stock-movements">{() => <GuardedRoute path="/inventory" component={StockMovementLog} />}</Route>
         <Route path="/chef-report">{() => <GuardedRoute path="/reports" component={ChefReport} />}</Route>
