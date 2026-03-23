@@ -145,6 +145,13 @@ app.use((req, res, next) => {
   }
 
   try {
+    const { runTask108Migrations } = await import("./admin-migrations");
+    await runTask108Migrations();
+  } catch (e) {
+    console.error("Task 108 migrations error:", e);
+  }
+
+  try {
     const { seedDatabase } = await import("./seed");
     await seedDatabase();
   } catch (e) {

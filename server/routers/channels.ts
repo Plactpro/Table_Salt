@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
+import { snapshotPrepTime } from "../lib/snapshot-prep-time";
 import { requireRole } from "../middleware";
 import { getAdapter } from "../aggregator-adapters";
 
@@ -122,7 +123,7 @@ export function registerChannelsRoutes(app: Express): void {
       const mappings = await storage.getOnlineMenuMappingsByTenant(user.tenantId);
       const externalToMenuId = new Map(mappings.filter(m => m.channelId === ch.id).map(m => [m.externalItemId, m.menuItemId]));
       let subtotal = 0;
-      const orderItemsData: Array<{ menuItemId: string | null; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
+      const orderItemsData: Array<{ menuItemId: string | null; name: string; quantity: number; price: string; station: string | null; course: string | null; itemPrepMinutes: number | null }> = [];
       for (const item of normalizedOrder.items) {
         let menuItemId: string | undefined = item.menuItemId;
         if (!menuItemId && item.externalItemId) menuItemId = externalToMenuId.get(item.externalItemId);
@@ -130,7 +131,8 @@ export function registerChannelsRoutes(app: Express): void {
         if (menuItemId && !mi) menuItemId = undefined;
         const price = item.price || (mi ? mi.price : "0");
         subtotal += parseFloat(price) * item.quantity;
-        orderItemsData.push({ menuItemId: menuItemId || null, name: item.name || mi?.name || "Unknown Item", quantity: item.quantity, price, station: mi?.station || null, course: mi?.course || null });
+        const itemPrepMinutes = await snapshotPrepTime(menuItemId, mi?.prepTimeMinutes);
+        orderItemsData.push({ menuItemId: menuItemId || null, name: item.name || mi?.name || "Unknown Item", quantity: item.quantity, price, station: mi?.station || null, course: mi?.course || null, itemPrepMinutes });
       }
       const tenant = await storage.getTenant(user.tenantId);
       const taxRate = parseFloat(tenant?.taxRate || "0");
@@ -144,7 +146,7 @@ export function registerChannelsRoutes(app: Express): void {
         notes: normalizedOrder.notes || null,
       });
       for (const oi of orderItemsData) {
-        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course });
+        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course, itemPrepMinutes: oi.itemPrepMinutes });
       }
       res.json(order);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -165,7 +167,7 @@ export function registerChannelsRoutes(app: Express): void {
       const mappings = await storage.getOnlineMenuMappingsByTenant(user.tenantId);
       const externalToMenuId = new Map(mappings.filter(m => m.channelId === ch.id).map(m => [m.externalItemId, m.menuItemId]));
       let subtotal = 0;
-      const orderItemsData: Array<{ menuItemId: string | null; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
+      const orderItemsData: Array<{ menuItemId: string | null; name: string; quantity: number; price: string; station: string | null; course: string | null; itemPrepMinutes: number | null }> = [];
       for (const item of parsed.items) {
         let menuItemId: string | undefined = item.menuItemId;
         if (!menuItemId && item.externalItemId) menuItemId = externalToMenuId.get(item.externalItemId);
@@ -173,7 +175,8 @@ export function registerChannelsRoutes(app: Express): void {
         if (menuItemId && !mi) menuItemId = undefined;
         const price = item.price || (mi ? mi.price : "0");
         subtotal += parseFloat(price) * item.quantity;
-        orderItemsData.push({ menuItemId: menuItemId || null, name: item.name || mi?.name || "Unknown", quantity: item.quantity, price, station: mi?.station || null, course: mi?.course || null });
+        const itemPrepMinutes = await snapshotPrepTime(menuItemId, mi?.prepTimeMinutes);
+        orderItemsData.push({ menuItemId: menuItemId || null, name: item.name || mi?.name || "Unknown", quantity: item.quantity, price, station: mi?.station || null, course: mi?.course || null, itemPrepMinutes });
       }
       const tenant = await storage.getTenant(user.tenantId);
       const taxRate = parseFloat(tenant?.taxRate || "0");
@@ -188,7 +191,7 @@ export function registerChannelsRoutes(app: Express): void {
         notes: parsed.notes || null,
       });
       for (const oi of orderItemsData) {
-        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course });
+        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course, itemPrepMinutes: oi.itemPrepMinutes });
       }
       res.json(order);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -208,11 +211,12 @@ export function registerChannelsRoutes(app: Express): void {
       const mockOrder = adapter.generateMockOrder(menuItems.map(m => ({ id: m.id, name: m.name, price: m.price })));
       const menuMap = new Map(menuItems.map(m => [m.id, m]));
       let subtotal = 0;
-      const orderItemsData: Array<{ menuItemId: string; name: string; quantity: number; price: string; station: string | null; course: string | null }> = [];
+      const orderItemsData: Array<{ menuItemId: string; name: string; quantity: number; price: string; station: string | null; course: string | null; itemPrepMinutes: number | null }> = [];
       for (const item of mockOrder.items) {
         const mi = item.menuItemId ? menuMap.get(item.menuItemId) : undefined;
         subtotal += parseFloat(item.price) * item.quantity;
-        orderItemsData.push({ menuItemId: item.menuItemId || "", name: item.name, quantity: item.quantity, price: item.price, station: mi?.station || null, course: mi?.course || null });
+        const itemPrepMinutes = await snapshotPrepTime(item.menuItemId, mi?.prepTimeMinutes);
+        orderItemsData.push({ menuItemId: item.menuItemId || "", name: item.name, quantity: item.quantity, price: item.price, station: mi?.station || null, course: mi?.course || null, itemPrepMinutes });
       }
       const tenant = await storage.getTenant(user.tenantId);
       const taxRate = parseFloat(tenant?.taxRate || "0");
@@ -227,7 +231,7 @@ export function registerChannelsRoutes(app: Express): void {
         notes: mockOrder.notes || null,
       });
       for (const oi of orderItemsData) {
-        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course });
+        await storage.createOrderItem({ orderId: order.id, menuItemId: oi.menuItemId, name: oi.name, quantity: oi.quantity, price: oi.price, station: oi.station, course: oi.course, itemPrepMinutes: oi.itemPrepMinutes });
       }
       res.json({ order, simulatedPayload: mockOrder });
     } catch (err: any) { res.status(500).json({ message: err.message }); }

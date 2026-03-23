@@ -31,7 +31,8 @@ export type PermissionAction =
   | "view_audit_log"
   | "manage_security"
   | "supervisor_override"
-  | "close_shift";
+  | "close_shift"
+  | "kitchen_rush";
 
 export type UserRole =
   | "owner"
@@ -60,7 +61,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
-    "close_shift",
+    "close_shift", "kitchen_rush",
   ],
   franchise_owner: [
     "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
@@ -70,7 +71,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
-    "close_shift",
+    "close_shift", "kitchen_rush",
   ],
   hq_admin: [
     "view_reports", "view_cost_reports", "manage_menu", "manage_inventory",
@@ -86,7 +87,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_staff", "manage_tables", "manage_outlets", "manage_offers", "manage_crm",
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_users", "view_audit_log", "supervisor_override",
-    "close_shift",
+    "close_shift", "kitchen_rush",
   ],
   outlet_manager: [
     "create_order", "edit_order", "void_order", "apply_discount",
@@ -95,14 +96,14 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_staff", "manage_tables", "manage_offers", "manage_crm",
     "manage_delivery", "manage_cleaning", "manage_audits",
     "manage_users", "view_audit_log", "supervisor_override",
-    "close_shift",
+    "close_shift", "kitchen_rush",
   ],
   supervisor: [
     "create_order", "edit_order", "void_order", "apply_discount", "apply_large_discount",
     "change_price", "close_day", "view_reports",
     "manage_menu", "manage_inventory", "adjust_stock", "large_stock_adjustment",
     "manage_tables", "manage_cleaning", "supervisor_override",
-    "close_shift",
+    "close_shift", "kitchen_rush",
   ],
   cashier: [
     "create_order", "edit_order", "apply_discount", "manage_tables",
@@ -128,7 +129,7 @@ export const rolePermissions: Record<UserRole, PermissionAction[]> = {
     "manage_delivery", "manage_cleaning", "manage_audits", "manage_suppliers",
     "manage_procurement", "approve_purchase", "manage_integrations", "manage_settings",
     "manage_billing", "manage_users", "view_audit_log", "manage_security", "supervisor_override",
-    "close_shift",
+    "close_shift", "kitchen_rush",
   ],
   delivery_agent: [
     "create_order", "edit_order",
@@ -141,6 +142,7 @@ export const supervisorRequiredActions: PermissionAction[] = [
   "change_price",
   "large_stock_adjustment",
   "close_shift",
+  "kitchen_rush",
 ];
 
 export const actionLabels: Record<PermissionAction, string> = {
@@ -177,6 +179,7 @@ export const actionLabels: Record<PermissionAction, string> = {
   manage_security: "Manage Security",
   supervisor_override: "Supervisor Override",
   close_shift: "Close Shift",
+  kitchen_rush: "Kitchen Rush Order",
 };
 
 export const roleLabels: Record<UserRole, string> = {

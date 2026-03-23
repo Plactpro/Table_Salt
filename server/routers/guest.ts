@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { pool } from "../db";
 import { storage } from "../storage";
+import { snapshotPrepTime } from "../lib/snapshot-prep-time";
 import { requireAuth } from "../middleware";
 import { isStripeConfigured, getUncachableStripeClient, getPaymentStripeClient } from "../stripe";
 import { createPaymentLink } from "../razorpay";
@@ -199,7 +200,8 @@ export function registerGuestRoutes(app: Express): void {
       });
 
       for (const ci of cartItems) {
-        await storage.createOrderItem({ orderId: order.id, menuItemId: ci.menuItemId, name: ci.name, quantity: ci.quantity, price: ci.price, notes: ci.notes });
+        const itemPrepMinutes = await snapshotPrepTime(ci.menuItemId);
+        await storage.createOrderItem({ orderId: order.id, menuItemId: ci.menuItemId, name: ci.name, quantity: ci.quantity, price: ci.price, notes: ci.notes, itemPrepMinutes });
       }
 
       await storage.clearGuestCart(sessionId);
