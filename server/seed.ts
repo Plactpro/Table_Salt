@@ -1648,6 +1648,7 @@ export async function seedDatabase() {
   console.log("  Airport T3: /kiosk?token=kiosk-demo-token-airport-001");
 
   await seedServiceCoordination(tenant.id, outlet.id, waiter.id, manager.id, kitchen.id);
+  await seedFoodModifications(tenant.id);
 }
 
 async function seedServiceCoordination(
@@ -1941,4 +1942,82 @@ async function seedServiceCoordination(
   }
 
   console.log("Service coordination seed data added successfully!");
+}
+
+async function seedFoodModifications(tenantId: string): Promise<void> {
+  const existing = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM order_item_modifications WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (parseInt(existing.rows[0].cnt) > 0) return;
+
+  const { rows: orderItems } = await pool.query(
+    `SELECT oi.id, oi.name, o.id AS order_id
+     FROM order_items oi
+     JOIN orders o ON o.id = oi.order_id
+     WHERE o.tenant_id = $1
+     ORDER BY oi.id
+     LIMIT 10`,
+    [tenantId]
+  );
+
+  if (orderItems.length < 3) return;
+
+  const [item1, item2, item3] = orderItems;
+
+  const { rows: orderItemOrders } = await pool.query(
+    `SELECT oi.id AS order_item_id, oi.order_id
+     FROM order_items oi WHERE oi.id = ANY($1::varchar[])`,
+    [[item1.id, item2.id, item3.id]]
+  );
+  const orderIdByItem: Record<string, string> = {};
+  for (const r of orderItemOrders) orderIdByItem[r.order_item_id] = r.order_id;
+
+  await pool.query(
+    `INSERT INTO order_item_modifications
+       (tenant_id, order_item_id, order_id, has_allergy, allergy_flags, allergy_details, spice_level, salt_level, removed_ingredients, special_notes)
+     VALUES ($1, $2, $3, true, $4, $5, 'MILD', 'LESS', '{}', $6)
+     ON CONFLICT (order_item_id) DO NOTHING`,
+    [tenantId, item1.id, orderIdByItem[item1.id] ?? null, ["nut_allergy", "cross_contamination"], "Guest has severe nut allergy — please verify no cross-contamination", "Please plate separately from other items"]
+  );
+
+  await pool.query(
+    `INSERT INTO order_item_modifications
+       (tenant_id, order_item_id, order_id, has_allergy, allergy_flags, allergy_details, spice_level, salt_level, removed_ingredients, special_notes)
+     VALUES ($1, $2, $3, false, '{}', null, 'SPICY', 'NORMAL', $4, null)
+     ON CONFLICT (order_item_id) DO NOTHING`,
+    [tenantId, item2.id, orderIdByItem[item2.id] ?? null, ["onions", "garlic", "mushrooms"]]
+  );
+
+  await pool.query(
+    `INSERT INTO order_item_modifications
+       (tenant_id, order_item_id, order_id, has_allergy, allergy_flags, allergy_details, spice_level, salt_level, removed_ingredients, special_notes)
+     VALUES ($1, $2, $3, false, '{}', null, null, null, '{}', $4)
+     ON CONFLICT (order_item_id) DO NOTHING`,
+    [tenantId, item3.id, orderIdByItem[item3.id] ?? null, "No sauce please, dressing on the side. Extra napkins requested."]
+  );
+
+  const { rows: menuItems } = await pool.query(
+    `SELECT id, name FROM menu_items WHERE tenant_id = $1 LIMIT 3`,
+    [tenantId]
+  );
+
+  for (const mi of menuItems) {
+    const components = [
+      { name: "onions", removable: true, sort: 1 },
+      { name: "garlic", removable: true, sort: 2 },
+      { name: "chili", removable: true, sort: 3 },
+      { name: "salt", removable: false, sort: 4 },
+    ];
+    for (const comp of components) {
+      await pool.query(
+        `INSERT INTO recipe_components (tenant_id, menu_item_id, ingredient_name, is_removable, sort_order)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT DO NOTHING`,
+        [tenantId, mi.id, comp.name, comp.removable, comp.sort]
+      );
+    }
+  }
+
+  console.log("Food modification seed data added successfully!");
 }

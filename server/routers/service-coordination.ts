@@ -239,6 +239,20 @@ export function registerServiceCoordinationRoutes(app: Express): void {
       );
       if (!orderCheck[0]) return res.status(404).json({ message: "Order not found" });
 
+      if (status === "in_preparation") {
+        const { rows: allergyCheck } = await pool.query(
+          `SELECT id FROM order_item_modifications
+           WHERE order_item_id = $1 AND tenant_id = $2 AND has_allergy = true AND chef_acknowledged = false`,
+          [req.params.itemId, user.tenantId]
+        );
+        if (allergyCheck.length > 0) {
+          return res.status(409).json({
+            message: "Allergy alert: chef must acknowledge the modification before preparation can begin.",
+            code: "ALLERGY_NOT_ACKNOWLEDGED",
+          });
+        }
+      }
+
       values.push(req.params.itemId, req.params.id);
       const { rows } = await pool.query(
         `UPDATE order_items SET ${setClauses.join(", ")} WHERE id = $${values.length - 1} AND order_id = $${values.length} RETURNING *`,

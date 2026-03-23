@@ -5,6 +5,7 @@ import { requirePermission } from "../permissions";
 import { can } from "../permissions";
 import { auditLogFromReq } from "../audit";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
+import { pool } from "../db";
 
 export function registerMenuRoutes(app: Express): void {
   app.get("/api/menu-categories", async (req, res) => {
@@ -106,5 +107,26 @@ export function registerMenuRoutes(app: Express): void {
     await storage.deleteMenuItem(req.params.id);
     if (existing) auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
     res.json({ message: "Deleted" });
+  });
+
+  app.get("/api/menu-items/:id/removable-ingredients", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const item = await storage.getMenuItem(req.params.id);
+      if (!item) return res.status(404).json({ message: "Menu item not found" });
+      if (item.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const { rows } = await pool.query(
+        `SELECT id, ingredient_name AS name, is_removable, sort_order
+         FROM recipe_components
+         WHERE menu_item_id = $1 AND is_removable = true
+         ORDER BY sort_order ASC, ingredient_name ASC`,
+        [req.params.id]
+      );
+
+      res.json(rows);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 }
