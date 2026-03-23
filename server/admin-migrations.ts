@@ -1100,4 +1100,225 @@ export async function runAdminMigrations(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_targets_tenant ON wastage_targets (tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_targets_active ON wastage_targets (tenant_id, is_active)`);
+
+  // Task #101: Printer Integration — extend print_job_type enum
+  try {
+    await pool.query(`ALTER TYPE print_job_type ADD VALUE IF NOT EXISTS 'label'`);
+  } catch (_) {}
+  try {
+    await pool.query(`ALTER TYPE print_job_type ADD VALUE IF NOT EXISTS 'report'`);
+  } catch (_) {}
+  try {
+    await pool.query(`ALTER TYPE print_job_type ADD VALUE IF NOT EXISTS 'test'`);
+  } catch (_) {}
+  try {
+    await pool.query(`ALTER TYPE print_job_type ADD VALUE IF NOT EXISTS 'reprint_kot'`);
+  } catch (_) {}
+  try {
+    await pool.query(`ALTER TYPE print_job_type ADD VALUE IF NOT EXISTS 'reprint_bill'`);
+  } catch (_) {}
+
+  // Task #101: Extend print_job_status enum
+  try {
+    await pool.query(`ALTER TYPE print_job_status ADD VALUE IF NOT EXISTS 'printing'`);
+  } catch (_) {}
+  try {
+    await pool.query(`ALTER TYPE print_job_status ADD VALUE IF NOT EXISTS 'completed'`);
+  } catch (_) {}
+  try {
+    await pool.query(`ALTER TYPE print_job_status ADD VALUE IF NOT EXISTS 'cancelled'`);
+  } catch (_) {}
+
+  // Task #101: Extend print_jobs table with new columns
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(36) REFERENCES outlets(id)`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS printer_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS content TEXT`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS content_format TEXT DEFAULT 'escpos'`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS max_attempts INTEGER NOT NULL DEFAULT 3`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS error_message TEXT`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS triggered_by_name TEXT`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS is_reprint BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS reprint_reason TEXT`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`);
+
+  // Add reference_id column alias if missing (existing column is reference_id)
+  // The existing print_jobs table uses reference_id already from Task #68
+
+  // Task #101: printers table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS printers (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      printer_name TEXT NOT NULL,
+      printer_type VARCHAR(30) NOT NULL DEFAULT 'KITCHEN',
+      connection_type VARCHAR(30) NOT NULL DEFAULT 'NETWORK_IP',
+      ip_address TEXT,
+      port INTEGER DEFAULT 9100,
+      usb_device_path TEXT,
+      paper_width VARCHAR(10) DEFAULT '80mm',
+      characters_per_line INTEGER DEFAULT 42,
+      print_language VARCHAR(20) DEFAULT 'ESC_POS',
+      counter_id VARCHAR(36) REFERENCES kitchen_counters(id),
+      is_default BOOLEAN DEFAULT false,
+      is_active BOOLEAN DEFAULT true,
+      status VARCHAR(20) DEFAULT 'unknown',
+      last_ping_at TIMESTAMPTZ,
+      last_print_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_printers_tenant ON printers (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_printers_outlet ON printers (outlet_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_printers_tenant_active ON printers (tenant_id, is_active)`);
+
+  // Task #101: printer_templates table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS printer_templates (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      template_type VARCHAR(20) NOT NULL,
+      template_name TEXT NOT NULL,
+      header_lines JSONB DEFAULT '[]'::jsonb,
+      footer_lines JSONB DEFAULT '["Thank you for dining with us!"]'::jsonb,
+      show_logo BOOLEAN DEFAULT false,
+      logo_url TEXT,
+      show_tax_breakdown BOOLEAN DEFAULT true,
+      show_item_notes BOOLEAN DEFAULT true,
+      show_modifications BOOLEAN DEFAULT true,
+      show_qr_code BOOLEAN DEFAULT false,
+      qr_code_content TEXT,
+      font_size VARCHAR(20) DEFAULT 'normal',
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_printer_templates_tenant ON printer_templates (tenant_id)`);
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_printer_templates_tenant_type
+    ON printer_templates (tenant_id, template_type)
+  `);
+
+  // Task #101: print_settings JSONB column on outlets
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS print_settings JSONB`);
+
+  // Task #101: Seed printers for existing tenants that have none
+  try {
+    const { rows: tenantsWithoutPrinters } = await pool.query(`
+      SELECT DISTINCT t.id AS tenant_id, o.id AS outlet_id
+      FROM tenants t
+      JOIN outlets o ON o.tenant_id = t.id
+      WHERE t.slug != 'platform'
+        AND NOT EXISTS (SELECT 1 FROM printers p WHERE p.tenant_id = t.id)
+      LIMIT 10
+    `);
+
+    for (const { tenant_id, outlet_id } of tenantsWithoutPrinters) {
+      const { rows: counters } = await pool.query(
+        `SELECT id FROM kitchen_counters WHERE tenant_id = $1 LIMIT 1`,
+        [tenant_id]
+      );
+      const grillCounterId = counters[0]?.id ?? null;
+
+      const printerDefs = [
+        { name: "Grill KOT", type: "KITCHEN", conn: "NETWORK_IP", ip: "192.168.1.101", port: 9100, status: "online", isDefault: true },
+        { name: "Bar Printer", type: "BAR", conn: "NETWORK_IP", ip: "192.168.1.102", port: 9100, status: "online", isDefault: false },
+        { name: "Cashier Printer", type: "CASHIER", conn: "NETWORK_IP", ip: "192.168.1.103", port: 9100, status: "low_paper", isDefault: true },
+        { name: "Label Printer", type: "LABEL", conn: "USB", ip: null, port: null, status: "online", isDefault: true },
+        { name: "Manager Printer", type: "MANAGER", conn: "NETWORK_IP", ip: "192.168.1.105", port: 9100, status: "offline", isDefault: false },
+      ];
+
+      for (const def of printerDefs) {
+        const printerId = `seed-prt-${tenant_id.slice(0, 8)}-${def.name.replace(/\s+/g, "-").toLowerCase()}`;
+        await pool.query(
+          `INSERT INTO printers
+           (id, tenant_id, outlet_id, printer_name, printer_type, connection_type,
+            ip_address, port, paper_width, characters_per_line, print_language,
+            counter_id, is_default, is_active, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, '80mm', 42, 'ESC_POS', $9, $10, true, $11)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            printerId, tenant_id, outlet_id, def.name, def.type, def.conn,
+            def.ip, def.port,
+            def.type === "KITCHEN" ? grillCounterId : null,
+            def.isDefault, def.status,
+          ]
+        );
+      }
+
+      // Seed 10 print jobs in history
+      const { rows: printerRows } = await pool.query(
+        `SELECT id, printer_type FROM printers WHERE tenant_id = $1 LIMIT 5`,
+        [tenant_id]
+      );
+
+      const jobTypes = ["kot", "bill", "receipt", "kot", "label", "kot", "bill", "receipt", "kot", "bill"];
+      const jobStatuses = ["completed", "completed", "completed", "failed", "completed", "completed", "completed", "completed", "completed", "failed"];
+
+      for (let i = 0; i < 10; i++) {
+        const seedJobId = `seed-job-${tenant_id.slice(0, 8)}-${i}`;
+        const printer = printerRows[i % printerRows.length];
+        const minsAgo = (i + 1) * 15;
+        await pool.query(
+          `INSERT INTO print_jobs
+           (id, tenant_id, outlet_id, printer_id, type, reference_id, status,
+            attempts, max_attempts, payload, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 1, 3, '{}', now() - interval '${minsAgo} minutes')
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            seedJobId, tenant_id, outlet_id, printer?.id ?? null,
+            jobTypes[i], `seed-ref-${i}`, jobStatuses[i],
+          ]
+        );
+      }
+
+      // Seed KOT, BILL, and LABEL templates
+      const templateDefs = [
+        {
+          type: "KOT", name: "Default KOT Template",
+          header: [],
+          footer: [],
+          showTax: false, showNotes: true, showMods: true, showQr: false,
+        },
+        {
+          type: "BILL", name: "Default Bill Template",
+          header: [],
+          footer: ["Thank you for dining with us!", "Please visit us again"],
+          showTax: true, showNotes: true, showMods: false, showQr: false,
+        },
+        {
+          type: "LABEL", name: "Default Label Template",
+          header: [],
+          footer: [],
+          showTax: false, showNotes: false, showMods: false, showQr: false,
+        },
+      ];
+
+      for (const td of templateDefs) {
+        const seedTemplateId = `seed-tmpl-${tenant_id.slice(0, 8)}-${td.type.toLowerCase()}`;
+        await pool.query(
+          `INSERT INTO printer_templates
+           (id, tenant_id, template_type, template_name, header_lines, footer_lines,
+            show_tax_breakdown, show_item_notes, show_modifications, show_qr_code, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, true)
+           ON CONFLICT (id) DO NOTHING`,
+          [
+            seedTemplateId, tenant_id, td.type, td.name,
+            JSON.stringify(td.header), JSON.stringify(td.footer),
+            td.showTax, td.showNotes, td.showMods, td.showQr,
+          ]
+        );
+      }
+
+      // Seed auto-print settings on outlet
+      await pool.query(
+        `UPDATE outlets SET print_settings = $2 WHERE id = $1 AND print_settings IS NULL`,
+        [outlet_id, JSON.stringify({ autoKot: true, autoReceipt: true, autoBill: false, autoLabel: false })]
+      );
+    }
+  } catch (seedErr) {
+    console.error("[Admin migrations] Printer seed error (non-fatal):", seedErr);
+  }
 }

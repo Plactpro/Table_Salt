@@ -1920,3 +1920,61 @@ export const wastageTargets = pgTable("wastage_targets", {
 export const insertWastageTargetSchema = createInsertSchema(wastageTargets).omit({ id: true, createdAt: true });
 export type WastageTarget = typeof wastageTargets.$inferSelect;
 export type InsertWastageTarget = z.infer<typeof insertWastageTargetSchema>;
+
+// Task #101: Printer Integration
+
+export const printers = pgTable("printers", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  printerName: text("printer_name").notNull(),
+  printerType: varchar("printer_type", { length: 30 }).notNull().default("KITCHEN"),
+  connectionType: varchar("connection_type", { length: 30 }).notNull().default("NETWORK_IP"),
+  ipAddress: text("ip_address"),
+  port: integer("port").default(9100),
+  usbDevicePath: text("usb_device_path"),
+  paperWidth: varchar("paper_width", { length: 10 }).default("80mm"),
+  charactersPerLine: integer("characters_per_line").default(42),
+  printLanguage: varchar("print_language", { length: 20 }).default("ESC_POS"),
+  counterId: varchar("counter_id", { length: 36 }),
+  isDefault: boolean("is_default").default(false),
+  isActive: boolean("is_active").default(true),
+  status: varchar("status", { length: 20 }).default("unknown"),
+  lastPingAt: timestamp("last_ping_at", { withTimezone: true }),
+  lastPrintAt: timestamp("last_print_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_printers_tenant").on(t.tenantId),
+  index("idx_printers_outlet").on(t.outletId),
+  index("idx_printers_tenant_active").on(t.tenantId, t.isActive),
+]);
+
+export const insertPrinterSchema = createInsertSchema(printers).omit({ id: true, createdAt: true });
+export type Printer = typeof printers.$inferSelect;
+export type InsertPrinter = z.infer<typeof insertPrinterSchema>;
+
+export const printerTemplates = pgTable("printer_templates", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  templateType: varchar("template_type", { length: 20 }).notNull(),
+  templateName: text("template_name").notNull(),
+  headerLines: jsonb("header_lines").default([]),
+  footerLines: jsonb("footer_lines").default(["Thank you for dining with us!"]),
+  showLogo: boolean("show_logo").default(false),
+  logoUrl: text("logo_url"),
+  showTaxBreakdown: boolean("show_tax_breakdown").default(true),
+  showItemNotes: boolean("show_item_notes").default(true),
+  showModifications: boolean("show_modifications").default(true),
+  showQrCode: boolean("show_qr_code").default(false),
+  qrCodeContent: text("qr_code_content"),
+  fontSize: varchar("font_size", { length: 20 }).default("normal"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_printer_templates_tenant").on(t.tenantId),
+  uniqueIndex("idx_printer_templates_tenant_type").on(t.tenantId, t.templateType),
+]);
+
+export const insertPrinterTemplateSchema = createInsertSchema(printerTemplates).omit({ id: true, createdAt: true });
+export type PrinterTemplate = typeof printerTemplates.$inferSelect;
+export type InsertPrinterTemplate = z.infer<typeof insertPrinterTemplateSchema>;

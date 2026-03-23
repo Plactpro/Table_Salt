@@ -14,6 +14,7 @@ import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMove
 import { convertUnits } from "@shared/units";
 import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 import { autoAssignTicket } from "../services/chef-assignment";
+import { routeAndPrint } from "../services/printer-service";
 
 function fireAutoAssign(tenantId: string, outletId: string | null | undefined, orderId: string, label?: string) {
   if (!outletId) return;
@@ -708,6 +709,17 @@ export function registerOrdersRoutes(app: Express): void {
     }
 
     if (req.body.status === "sent_to_kitchen" && existing.status !== "sent_to_kitchen") {
+      setImmediate(() => {
+        routeAndPrint({
+          jobType: "kot",
+          referenceId: req.params.id,
+          outletId: existing.outletId ?? null,
+          tenantId: user.tenantId,
+          triggeredByName: user.name || user.username,
+        }).catch(err => {
+          console.error(`[orders] Auto-print KOT failed for order ${req.params.id}:`, err);
+        });
+      });
       fireAutoAssign(user.tenantId, existing.outletId, req.params.id, `${existing.orderType ?? "order"} #${req.params.id.slice(-6)}`);
     }
 
