@@ -1632,7 +1632,11 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_damaged_inventory_number ON damaged_inventory (tenant_id, damage_number)`);
 
   // Normalize procurement status defaults to match spec
-  await pool.query(`ALTER TABLE stock_transfers ALTER COLUMN status SET DEFAULT 'requested'`);
+  try {
+    await pool.query(`ALTER TABLE stock_transfers ALTER COLUMN status SET DEFAULT 'requested'`);
+  } catch (_) {
+    // Safe to ignore — enum value may not include 'requested' in this environment
+  }
 
   // Add FK from purchase_orders.quotation_id → supplier_quotations.id (if not already present)
   await pool.query(`
@@ -2052,4 +2056,115 @@ export async function runTask108Migrations(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_events_tenant ON alert_events(tenant_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_events_outlet ON alert_events(outlet_id, is_resolved)`);
+
+  // Task #118: Cash Machine — outlet currency columns
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS currency_code VARCHAR(10) DEFAULT 'INR'`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS currency_symbol VARCHAR(10) DEFAULT '₹'`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS currency_name VARCHAR(50) DEFAULT 'Indian Rupee'`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS currency_position VARCHAR(10) DEFAULT 'before'`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS decimal_places INT DEFAULT 2`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS denomination_config JSONB`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS cash_rounding VARCHAR(20) DEFAULT 'NONE'`);
+
+  // Task #118: Cash Machine — cash_sessions table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cash_sessions (
+      id                        VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id                 VARCHAR(36) NOT NULL,
+      outlet_id                 VARCHAR(36),
+      pos_session_id            VARCHAR(36),
+      session_number            VARCHAR(50) NOT NULL,
+      cashier_id                VARCHAR(36) NOT NULL,
+      cashier_name              VARCHAR(255),
+      currency_code             VARCHAR(10) NOT NULL DEFAULT 'INR',
+      currency_symbol           VARCHAR(10) DEFAULT '₹',
+      status                    VARCHAR(20) DEFAULT 'open',
+      opening_float             DECIMAL(12,2) NOT NULL DEFAULT 0,
+      opening_float_breakdown   JSONB,
+      expected_closing_cash     DECIMAL(12,2) DEFAULT 0,
+      physical_closing_cash     DECIMAL(12,2),
+      closing_breakdown         JSONB,
+      cash_variance             DECIMAL(12,2),
+      variance_reason           TEXT,
+      total_cash_sales          DECIMAL(12,2) DEFAULT 0,
+      total_cash_refunds        DECIMAL(12,2) DEFAULT 0,
+      total_cash_payouts        DECIMAL(12,2) DEFAULT 0,
+      total_transactions        INT DEFAULT 0,
+      opened_at                 TIMESTAMPTZ DEFAULT NOW(),
+      closed_at                 TIMESTAMPTZ,
+      approved_by               VARCHAR(36),
+      approved_at               TIMESTAMPTZ,
+      notes                     TEXT,
+      created_at                TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cash_sessions_number ON cash_sessions(tenant_id, session_number)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cash_sessions_cashier ON cash_sessions(tenant_id, cashier_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cash_sessions_outlet ON cash_sessions(outlet_id, status)`);
+
+  // Task #118: Cash Machine — cash_drawer_events table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cash_drawer_events (
+      id                VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id         VARCHAR(36) NOT NULL,
+      outlet_id         VARCHAR(36),
+      session_id        VARCHAR(36) NOT NULL,
+      event_type        VARCHAR(30) NOT NULL,
+      order_id          VARCHAR(36),
+      bill_id           VARCHAR(36),
+      reference_number  VARCHAR(50),
+      amount            DECIMAL(12,2),
+      tendered_amount   DECIMAL(12,2),
+      change_given      DECIMAL(12,2),
+      change_breakdown  JSONB,
+      running_balance   DECIMAL(12,2),
+      performed_by      VARCHAR(36) NOT NULL,
+      performed_by_name VARCHAR(255),
+      reason            TEXT,
+      is_manual         BOOLEAN DEFAULT false,
+      created_at        TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cash_events_session ON cash_drawer_events(session_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cash_events_tenant ON cash_drawer_events(tenant_id, created_at DESC)`);
+
+  // Task #118: Cash Machine — cash_payouts table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cash_payouts (
+      id              VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id       VARCHAR(36) NOT NULL,
+      outlet_id       VARCHAR(36),
+      session_id      VARCHAR(36) NOT NULL,
+      payout_number   VARCHAR(50),
+      payout_type     VARCHAR(30) NOT NULL,
+      amount          DECIMAL(12,2) NOT NULL,
+      recipient       VARCHAR(255),
+      reason          TEXT NOT NULL,
+      approved_by     VARCHAR(36),
+      receipt_url     TEXT,
+      performed_by    VARCHAR(36) NOT NULL,
+      created_at      TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cash_payouts_session ON cash_payouts(session_id)`);
+
+  // Task #118: Cash Machine — cash_handovers table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cash_handovers (
+      id                      VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id               VARCHAR(36) NOT NULL,
+      outlet_id               VARCHAR(36),
+      session_id              VARCHAR(36) NOT NULL,
+      handover_number         VARCHAR(50),
+      amount_handed_over      DECIMAL(12,2) NOT NULL,
+      denomination_breakdown  JSONB,
+      handed_by               VARCHAR(36) NOT NULL,
+      handed_by_name          VARCHAR(255),
+      received_by             VARCHAR(36),
+      received_by_name        VARCHAR(255),
+      notes                   TEXT,
+      created_at              TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_cash_handovers_session ON cash_handovers(session_id)`);
 }

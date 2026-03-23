@@ -157,6 +157,10 @@ import {
   alertDefinitions, type AlertDefinition, type InsertAlertDefinition,
   alertOutletConfigs, type AlertOutletConfig, type InsertAlertOutletConfig,
   alertEvents, type AlertEvent, type InsertAlertEvent,
+  cashSessions, type CashSession, type InsertCashSession,
+  cashDrawerEvents, type CashDrawerEvent, type InsertCashDrawerEvent,
+  cashPayouts, type CashPayout, type InsertCashPayout,
+  cashHandovers, type CashHandover, type InsertCashHandover,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -721,6 +725,21 @@ export interface IStorage {
   getUnresolvedAlertEvents(tenantId: string, outletId?: string): Promise<AlertEvent[]>;
   getAlertOutletConfigs(tenantId: string, outletId: string): Promise<AlertOutletConfig[]>;
   upsertAlertOutletConfig(data: { tenantId: string; outletId: string; alertCode: string; isEnabled?: boolean; volumeLevel?: number }): Promise<AlertOutletConfig>;
+
+  // Task #118: Cash Machine
+  createCashSession(data: InsertCashSession): Promise<CashSession>;
+  getCashSession(id: string): Promise<CashSession | undefined>;
+  getActiveCashSession(tenantId: string, cashierId: string): Promise<CashSession | undefined>;
+  updateCashSession(id: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined>;
+  getCashSessions(tenantId: string, opts?: { status?: string; date?: string; cashierId?: string }): Promise<CashSession[]>;
+  createCashDrawerEvent(data: InsertCashDrawerEvent): Promise<CashDrawerEvent>;
+  getCashDrawerEvents(sessionId: string): Promise<CashDrawerEvent[]>;
+  createCashPayout(data: InsertCashPayout): Promise<CashPayout>;
+  getCashPayouts(sessionId: string): Promise<CashPayout[]>;
+  createCashHandover(data: InsertCashHandover): Promise<CashHandover>;
+  getCashHandovers(sessionId: string): Promise<CashHandover[]>;
+  getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined>;
+  updateOutletCurrencySettings(outletId: string, data: Record<string, any>): Promise<Record<string, any>>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3516,6 +3535,236 @@ export class DatabaseStorage implements IStorage {
       [data.tenantId, data.outletId, data.alertCode, data.isEnabled ?? true, data.volumeLevel ?? 80]
     );
     return rows[0] as AlertOutletConfig;
+  }
+
+  // ── Task #118: Cash Machine ────────────────────────────────────────────
+
+  async createCashSession(data: InsertCashSession): Promise<CashSession> {
+    const { rows } = await pool.query(
+      `INSERT INTO cash_sessions (
+         tenant_id, outlet_id, pos_session_id, session_number, cashier_id, cashier_name,
+         currency_code, currency_symbol, status, opening_float, opening_float_breakdown,
+         expected_closing_cash, notes
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       RETURNING *`,
+      [
+        data.tenantId, data.outletId || null, data.posSessionId || null, data.sessionNumber,
+        data.cashierId, data.cashierName || null, data.currencyCode || 'INR',
+        data.currencySymbol || '₹', data.status || 'open', data.openingFloat || '0',
+        data.openingFloatBreakdown ? JSON.stringify(data.openingFloatBreakdown) : null,
+        data.expectedClosingCash || '0', data.notes || null,
+      ]
+    );
+    return rows[0] as CashSession;
+  }
+
+  async getCashSession(id: string): Promise<CashSession | undefined> {
+    const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1`, [id]);
+    return rows[0] as CashSession | undefined;
+  }
+
+  async getActiveCashSession(tenantId: string, cashierId: string): Promise<CashSession | undefined> {
+    const { rows } = await pool.query(
+      `SELECT * FROM cash_sessions WHERE tenant_id = $1 AND cashier_id = $2 AND status = 'open' LIMIT 1`,
+      [tenantId, cashierId]
+    );
+    return rows[0] as CashSession | undefined;
+  }
+
+  async updateCashSession(id: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined> {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+
+    const colMap: Record<string, string> = {
+      status: 'status',
+      physicalClosingCash: 'physical_closing_cash',
+      closingBreakdown: 'closing_breakdown',
+      cashVariance: 'cash_variance',
+      varianceReason: 'variance_reason',
+      expectedClosingCash: 'expected_closing_cash',
+      closedAt: 'closed_at',
+      approvedBy: 'approved_by',
+      approvedAt: 'approved_at',
+      notes: 'notes',
+    };
+
+    for (const [key, col] of Object.entries(colMap)) {
+      if (key in data) {
+        const val = (data as any)[key];
+        if (key === 'closingBreakdown' && val && typeof val === 'object' && !Array.isArray(val)) {
+          fields.push(`${col} = $${i++}`);
+          values.push(JSON.stringify(val));
+        } else {
+          fields.push(`${col} = $${i++}`);
+          values.push(val);
+        }
+      }
+    }
+
+    if (fields.length === 0) {
+      const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1`, [id]);
+      return rows[0] as CashSession;
+    }
+
+    values.push(id);
+    const { rows } = await pool.query(
+      `UPDATE cash_sessions SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
+      values
+    );
+    return rows[0] as CashSession | undefined;
+  }
+
+  async getCashSessions(tenantId: string, opts?: { status?: string; date?: string; cashierId?: string }): Promise<CashSession[]> {
+    const conditions = [`tenant_id = $1`];
+    const values: any[] = [tenantId];
+    let i = 2;
+
+    if (opts?.status) {
+      conditions.push(`status = $${i++}`);
+      values.push(opts.status);
+    }
+    if (opts?.cashierId) {
+      conditions.push(`cashier_id = $${i++}`);
+      values.push(opts.cashierId);
+    }
+    if (opts?.date) {
+      conditions.push(`opened_at::date = $${i++}`);
+      values.push(opts.date);
+    }
+
+    const { rows } = await pool.query(
+      `SELECT * FROM cash_sessions WHERE ${conditions.join(' AND ')} ORDER BY opened_at DESC`,
+      values
+    );
+    return rows as CashSession[];
+  }
+
+  async createCashDrawerEvent(data: InsertCashDrawerEvent): Promise<CashDrawerEvent> {
+    const { rows } = await pool.query(
+      `INSERT INTO cash_drawer_events (
+         tenant_id, outlet_id, session_id, event_type, order_id, bill_id, reference_number,
+         amount, tendered_amount, change_given, change_breakdown, running_balance,
+         performed_by, performed_by_name, reason, is_manual
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+       RETURNING *`,
+      [
+        data.tenantId, data.outletId || null, data.sessionId, data.eventType,
+        data.orderId || null, data.billId || null, data.referenceNumber || null,
+        data.amount || null, data.tenderedAmount || null, data.changeGiven || null,
+        data.changeBreakdown ? JSON.stringify(data.changeBreakdown) : null,
+        data.runningBalance || null, data.performedBy, data.performedByName || null,
+        data.reason || null, data.isManual ?? false,
+      ]
+    );
+    return rows[0] as CashDrawerEvent;
+  }
+
+  async getCashDrawerEvents(sessionId: string): Promise<CashDrawerEvent[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM cash_drawer_events WHERE session_id = $1 ORDER BY created_at DESC`,
+      [sessionId]
+    );
+    return rows as CashDrawerEvent[];
+  }
+
+  async createCashPayout(data: InsertCashPayout): Promise<CashPayout> {
+    const { rows } = await pool.query(
+      `INSERT INTO cash_payouts (
+         tenant_id, outlet_id, session_id, payout_number, payout_type, amount,
+         recipient, reason, approved_by, performed_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+       RETURNING *`,
+      [
+        data.tenantId, data.outletId || null, data.sessionId, data.payoutNumber || null,
+        data.payoutType, data.amount, data.recipient || null, data.reason,
+        data.approvedBy || null, data.performedBy,
+      ]
+    );
+    return rows[0] as CashPayout;
+  }
+
+  async getCashPayouts(sessionId: string): Promise<CashPayout[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM cash_payouts WHERE session_id = $1 ORDER BY created_at DESC`,
+      [sessionId]
+    );
+    return rows as CashPayout[];
+  }
+
+  async createCashHandover(data: InsertCashHandover): Promise<CashHandover> {
+    const { rows } = await pool.query(
+      `INSERT INTO cash_handovers (
+         tenant_id, outlet_id, session_id, handover_number, amount_handed_over,
+         denomination_breakdown, handed_by, handed_by_name, received_by, received_by_name, notes
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       RETURNING *`,
+      [
+        data.tenantId, data.outletId || null, data.sessionId, data.handoverNumber || null,
+        data.amountHandedOver,
+        data.denominationBreakdown ? JSON.stringify(data.denominationBreakdown) : null,
+        data.handedBy, data.handedByName || null, data.receivedBy || null,
+        data.receivedByName || null, data.notes || null,
+      ]
+    );
+    return rows[0] as CashHandover;
+  }
+
+  async getCashHandovers(sessionId: string): Promise<CashHandover[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM cash_handovers WHERE session_id = $1 ORDER BY created_at DESC`,
+      [sessionId]
+    );
+    return rows as CashHandover[];
+  }
+
+  async getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined> {
+    const { rows } = await pool.query(
+      `SELECT id, currency_code, currency_symbol, currency_name, currency_position, decimal_places, denomination_config, cash_rounding
+       FROM outlets WHERE id = $1`,
+      [outletId]
+    );
+    return rows[0];
+  }
+
+  async updateOutletCurrencySettings(outletId: string, data: Record<string, any>): Promise<Record<string, any>> {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let i = 1;
+
+    const colMap: Record<string, string> = {
+      currencyCode: 'currency_code',
+      currencySymbol: 'currency_symbol',
+      currencyName: 'currency_name',
+      currencyPosition: 'currency_position',
+      decimalPlaces: 'decimal_places',
+      denominationConfig: 'denomination_config',
+      cashRounding: 'cash_rounding',
+    };
+
+    for (const [key, col] of Object.entries(colMap)) {
+      if (key in data && data[key] !== undefined) {
+        if (key === 'denominationConfig' && data[key] && typeof data[key] === 'object') {
+          fields.push(`${col} = $${i++}`);
+          values.push(JSON.stringify(data[key]));
+        } else {
+          fields.push(`${col} = $${i++}`);
+          values.push(data[key]);
+        }
+      }
+    }
+
+    if (fields.length === 0) {
+      const { rows } = await pool.query(`SELECT * FROM outlets WHERE id = $1`, [outletId]);
+      return rows[0];
+    }
+
+    values.push(outletId);
+    const { rows } = await pool.query(
+      `UPDATE outlets SET ${fields.join(', ')} WHERE id = $${i} RETURNING id, currency_code, currency_symbol, currency_name, currency_position, decimal_places, denomination_config, cash_rounding`,
+      values
+    );
+    return rows[0];
   }
 }
 

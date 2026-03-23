@@ -253,6 +253,46 @@ export function registerRestaurantBillingRoutes(app: Express): void {
           isRefund: false,
         });
         createdPayments.push(payment);
+
+        // Task #118: Fire-and-forget cash session update for CASH payments
+        if (p.paymentMethod === "CASH") {
+          setImmediate(async () => {
+            try {
+              const { pool: billingPool } = await import("../db");
+              const activeSession = await billingPool.query(
+                `SELECT id FROM cash_sessions WHERE cashier_id = $1 AND status = 'open' AND tenant_id = $2 LIMIT 1`,
+                [user.id, user.tenantId]
+              );
+              if (activeSession.rows[0]) {
+                const sessionId = activeSession.rows[0].id;
+                await billingPool.query(
+                  `UPDATE cash_sessions
+                   SET total_cash_sales = total_cash_sales + $1,
+                       total_transactions = total_transactions + 1,
+                       expected_closing_cash = opening_float + total_cash_sales + $1 - total_cash_refunds - total_cash_payouts
+                   WHERE id = $2`,
+                  [Number(p.amount), sessionId]
+                );
+                const sessionRes = await billingPool.query(
+                  `SELECT opening_float, total_cash_sales, total_cash_refunds, total_cash_payouts FROM cash_sessions WHERE id = $1`,
+                  [sessionId]
+                );
+                const s = sessionRes.rows[0];
+                const runningBalance = Number(s.opening_float) + Number(s.total_cash_sales) - Number(s.total_cash_refunds) - Number(s.total_cash_payouts);
+                await billingPool.query(
+                  `INSERT INTO cash_drawer_events (
+                     tenant_id, outlet_id, session_id, event_type, bill_id, amount, running_balance, performed_by, performed_by_name, is_manual
+                   )
+                   SELECT $1, outlet_id, $2, 'SALE', $3, $4, $5, $6, $7, false
+                   FROM cash_sessions WHERE id = $2`,
+                  [user.tenantId, sessionId, bill.id, Number(p.amount), runningBalance, user.id, user.name || user.username]
+                );
+              }
+            } catch (err) {
+              console.error("[billing] Cash session update failed:", err);
+            }
+          });
+        }
       }
 
       const allPayments = await storage.getBillPayments(bill.id);

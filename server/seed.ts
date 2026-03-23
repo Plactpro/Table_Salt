@@ -3010,6 +3010,153 @@ export async function seedCrockeryItems(): Promise<void> {
   console.log("[CrockeryItems] Seeded 23 crockery/cutlery/glassware items + damage records + stock count session.");
 }
 
+export async function seedCashSessionData(): Promise<void> {
+  const tenantsRes = await pool.query(`SELECT id FROM tenants WHERE slug != 'platform' LIMIT 1`);
+  if (!tenantsRes.rows[0]) return;
+  const tenantId = tenantsRes.rows[0].id;
+
+  const existing = await pool.query(`SELECT id FROM cash_sessions WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (existing.rows[0]) {
+    console.log("[CashSession] Seed data already exists, skipping.");
+    return;
+  }
+
+  const outletRes = await pool.query(`SELECT id FROM outlets WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  const outletId = outletRes.rows[0]?.id || null;
+
+  const cashierRes = await pool.query(
+    `SELECT id, name FROM users WHERE tenant_id = $1 AND role IN ('cashier','manager','owner') LIMIT 1`,
+    [tenantId]
+  );
+  const cashier = cashierRes.rows[0];
+  if (!cashier) {
+    console.log("[CashSession] No cashier/manager/owner found, skipping.");
+    return;
+  }
+
+  const managerRes = await pool.query(
+    `SELECT id, name FROM users WHERE tenant_id = $1 AND role = 'manager' LIMIT 1`,
+    [tenantId]
+  );
+  const manager = managerRes.rows[0];
+
+  await pool.query(
+    `UPDATE outlets SET currency_code = 'INR', currency_symbol = '₹', currency_name = 'Indian Rupee',
+     currency_position = 'before', decimal_places = 2, cash_rounding = 'ROUND_1',
+     denomination_config = $1
+     WHERE id = $2`,
+    [
+      JSON.stringify({
+        notes: [2000,500,200,100,50,20,10],
+        coins: [10,5,2,1],
+        rounding: 'ROUND_1',
+        subunit: 'Paise',
+        subunitValue: 100,
+      }),
+      outletId,
+    ]
+  );
+
+  const today = new Date();
+  const dateStr = today.toISOString().slice(0, 10).replace(/-/g, "");
+  const sessionNumber = `CS-${dateStr}-0001`;
+
+  const openingFloat = 5000.00;
+  const sale1 = 1185.00;
+  const sale2 = 2340.00;
+  const sale3 = 890.00;
+  const payoutAmount = 500.00;
+  const totalSales = sale1 + sale2 + sale3;
+  const expectedClosing = openingFloat + totalSales - payoutAmount;
+  const physicalClosing = expectedClosing - 15;
+  const variance = physicalClosing - expectedClosing;
+
+  const sessionRes = await pool.query(
+    `INSERT INTO cash_sessions (
+       tenant_id, outlet_id, session_number, cashier_id, cashier_name,
+       currency_code, currency_symbol, status, opening_float, opening_float_breakdown,
+       expected_closing_cash, physical_closing_cash, closing_breakdown,
+       cash_variance, variance_reason, total_cash_sales, total_cash_refunds,
+       total_cash_payouts, total_transactions, opened_at, closed_at
+     ) VALUES ($1,$2,$3,$4,$5,'INR','₹','closed',$6,$7,$8,$9,$10,$11,$12,$13,0,$14,3,NOW()-INTERVAL '4 hours',NOW()-INTERVAL '10 minutes')
+     RETURNING id`,
+    [
+      tenantId, outletId, sessionNumber, cashier.id, cashier.name,
+      openingFloat,
+      JSON.stringify({ "₹500": 8, "₹200": 2, "₹100": 4 }),
+      expectedClosing.toFixed(2),
+      physicalClosing.toFixed(2),
+      JSON.stringify({ "₹2000": 4, "₹500": 2, "₹200": 1, "₹100": 0, "₹50": 1 }),
+      variance.toFixed(2),
+      "Change error during rush hour",
+      totalSales.toFixed(2),
+      payoutAmount.toFixed(2),
+    ]
+  );
+  const sessionId = sessionRes.rows[0].id;
+
+  let runningBalance = openingFloat;
+
+  await pool.query(
+    `INSERT INTO cash_drawer_events (tenant_id, outlet_id, session_id, event_type, amount, running_balance, performed_by, performed_by_name, reason)
+     VALUES ($1,$2,$3,'OPENING',$4,$5,$6,$7,'Opening float for shift')`,
+    [tenantId, outletId, sessionId, openingFloat, runningBalance, cashier.id, cashier.name]
+  );
+
+  runningBalance += sale1;
+  await pool.query(
+    `INSERT INTO cash_drawer_events (tenant_id, outlet_id, session_id, event_type, amount, tendered_amount, change_given, running_balance, performed_by, performed_by_name)
+     VALUES ($1,$2,$3,'SALE',$4,$5,$6,$7,$8,$9)`,
+    [tenantId, outletId, sessionId, sale1, 1200, 15, runningBalance, cashier.id, cashier.name]
+  );
+
+  runningBalance += sale2;
+  await pool.query(
+    `INSERT INTO cash_drawer_events (tenant_id, outlet_id, session_id, event_type, amount, tendered_amount, change_given, running_balance, performed_by, performed_by_name)
+     VALUES ($1,$2,$3,'SALE',$4,$5,$6,$7,$8,$9)`,
+    [tenantId, outletId, sessionId, sale2, 2500, 160, runningBalance, cashier.id, cashier.name]
+  );
+
+  runningBalance += sale3;
+  await pool.query(
+    `INSERT INTO cash_drawer_events (tenant_id, outlet_id, session_id, event_type, amount, tendered_amount, change_given, running_balance, performed_by, performed_by_name)
+     VALUES ($1,$2,$3,'SALE',$4,$5,$6,$7,$8,$9)`,
+    [tenantId, outletId, sessionId, sale3, 1000, 110, runningBalance, cashier.id, cashier.name]
+  );
+
+  runningBalance -= payoutAmount;
+  await pool.query(
+    `INSERT INTO cash_drawer_events (tenant_id, outlet_id, session_id, event_type, amount, running_balance, performed_by, performed_by_name, reason, is_manual)
+     VALUES ($1,$2,$3,'PAYOUT',$4,$5,$6,$7,'Petty cash — delivery supplies',true)`,
+    [tenantId, outletId, sessionId, payoutAmount, runningBalance, cashier.id, cashier.name]
+  );
+
+  await pool.query(
+    `INSERT INTO cash_payouts (tenant_id, outlet_id, session_id, payout_number, payout_type, amount, recipient, reason, performed_by)
+     VALUES ($1,$2,$3,'PYT-${dateStr}-0001','PETTY_CASH',$4,'Delivery Vendor','Delivery supplies for the day',$5)`,
+    [tenantId, outletId, sessionId, payoutAmount, cashier.id]
+  );
+
+  await pool.query(
+    `INSERT INTO cash_drawer_events (tenant_id, outlet_id, session_id, event_type, amount, running_balance, performed_by, performed_by_name, reason)
+     VALUES ($1,$2,$3,'CLOSING',$4,$5,$6,$7,$8)`,
+    [tenantId, outletId, sessionId, physicalClosing, physicalClosing, cashier.id, cashier.name, "Change error during rush hour"]
+  );
+
+  await pool.query(
+    `INSERT INTO cash_handovers (tenant_id, outlet_id, session_id, handover_number, amount_handed_over, denomination_breakdown, handed_by, handed_by_name, received_by_name, notes)
+     VALUES ($1,$2,$3,'HND-${dateStr}-0001',$4,$5,$6,$7,$8,'End of shift handover to night manager')`,
+    [
+      tenantId, outletId, sessionId,
+      physicalClosing.toFixed(2),
+      JSON.stringify({ "₹2000": 4, "₹500": 2, "₹200": 1, "₹50": 1 }),
+      cashier.id, cashier.name, manager?.name || "Night Manager",
+    ]
+  );
+
+  console.log("[CashSession] Seed data complete — 1 closed session, 6 events, 1 payout, 1 handover.");
+}
+
 export async function seedAlertDefinitions(): Promise<void> {
   const alertDefs = [
     { code: 'ALERT-01', name: 'New Order Received', soundKey: 'new_order', urgency: 'normal', targetRoles: ['kitchen', 'manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
