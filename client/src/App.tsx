@@ -58,6 +58,7 @@ import WastageLogPage from "@/pages/modules/wastage-log";
 import WastageShiftPage from "@/pages/modules/wastage-shift";
 import PrinterSettingsPage from "@/pages/settings/printer-settings";
 import MenuPricingPage from "@/pages/menu/menu-pricing";
+import ProcurementHubPage from "@/pages/procurement/index";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -116,6 +117,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/wastage-shift": { roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   "/settings/printers": { roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   "/menu-pricing": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "menu" },
+  "/procurement": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -323,8 +325,8 @@ function ProtectedPages() {
         <Route path="/billing">{() => <GuardedRoute path="/billing" component={BillingPage} />}</Route>
         <Route path="/settings">{() => <GuardedRoute path="/settings" component={SettingsHub} />}</Route>
         <Route path="/offers">{() => <Redirect to="/promotions" />}</Route>
-        <Route path="/suppliers">{() => <Redirect to="/inventory" />}</Route>
-        <Route path="/procurement">{() => <Redirect to="/inventory" />}</Route>
+        <Route path="/suppliers">{() => <Redirect to="/procurement" />}</Route>
+        <Route path="/procurement">{() => <GuardedRoute path="/procurement" component={ProcurementHubPage} />}</Route>
         <Route path="/workforce">{() => <Redirect to="/staff" />}</Route>
         <Route path="/performance">{() => <Redirect to="/staff" />}</Route>
         <Route path="/bi-dashboard">{() => <Redirect to="/reports" />}</Route>

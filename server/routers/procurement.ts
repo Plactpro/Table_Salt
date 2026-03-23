@@ -3,6 +3,13 @@ import { db } from "../db";
 import { storage } from "../storage";
 import { requireRole } from "../middleware";
 import { emitToTenant } from "../realtime";
+
+// Broader read access for roles that can view procurement
+const procurementRead = requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager");
+// Write access for roles that can create/modify procurement records
+const procurementWrite = requireRole("owner", "franchise_owner", "hq_admin", "manager");
+// Approval-only routes remain owner-only
+
 import {
   purchaseOrders,
   purchaseOrderItems,
@@ -13,7 +20,7 @@ import {
   purchaseReturnItems,
   stockTransfers,
   stockTransferItems,
-  stockCounts,
+  stockCountSessions,
   stockCountItems,
   damagedInventory,
   inventoryItems,
@@ -21,16 +28,15 @@ import {
   insertPurchaseOrderItemSchema,
   insertGoodsReceivedNoteSchema,
   insertGrnItemSchema,
-  insertQuotationRequestSchema,
-  insertQuotationRequestItemSchema,
+  insertRfqSchema,
+  insertRfqItemSchema,
   insertSupplierQuotationSchema,
-  insertSupplierQuotationItemSchema,
-  insertPoDeliveryScheduleSchema,
+  insertQuotationItemSchema,
   insertPurchaseReturnSchema,
   insertPurchaseReturnItemSchema,
   insertStockTransferSchema,
   insertStockTransferItemSchema,
-  insertStockCountSchema,
+  insertStockCountSessionSchema,
   insertStockCountItemSchema,
   insertDamagedInventorySchema,
 } from "@shared/schema";
@@ -49,71 +55,14 @@ function generateSequenceNumber(prefix: string, existingNumbers: string[]): stri
 }
 
 export function registerProcurementRoutes(app: Express): void {
-  app.get("/api/purchase-orders", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/purchase-orders", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
       res.json(await storage.getPurchaseOrdersByTenant(user.tenantId));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/purchase-orders/:id/approve", requireRole("owner"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
-      if (!po) return res.status(404).json({ message: "PO not found" });
-      if (po.status !== "draft") return res.status(400).json({ message: "Only draft POs can be approved" });
-      await storage.updatePurchaseOrder(po.id, user.tenantId, { status: "approved", approvedBy: user.id, approvedAt: new Date() });
-      await storage.createProcurementApproval({ tenantId: user.tenantId, purchaseOrderId: po.id, action: "approved", performedBy: user.id, notes: req.body.notes || null });
-      res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/purchase-orders/:id/send", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
-      if (!po) return res.status(404).json({ message: "PO not found" });
-      if (po.status !== "approved") return res.status(400).json({ message: "PO must be approved before sending" });
-      await storage.updatePurchaseOrder(po.id, user.tenantId, { status: "sent_to_supplier", sentAt: new Date() });
-      await storage.createProcurementApproval({ tenantId: user.tenantId, purchaseOrderId: po.id, action: "sent_to_supplier", performedBy: user.id, notes: null });
-      res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.get("/api/purchase-orders/:id/deliveries", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
-      if (!po) return res.status(404).json({ message: "PO not found" });
-      res.json(await storage.getPODeliverySchedules(po.id));
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/purchase-orders/:id/deliveries", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
-      if (!po) return res.status(404).json({ message: "PO not found" });
-      const existing = await storage.getPODeliverySchedules(po.id);
-      const deliveryNumber = existing.length + 1;
-      const data = insertPoDeliveryScheduleSchema.parse({ ...req.body, tenantId: user.tenantId, poId: po.id, deliveryNumber });
-      const delivery = await storage.createPODeliverySchedule(data);
-      res.json(delivery);
-    } catch (err: any) { res.status(400).json({ message: err.message }); }
-  });
-
-  app.patch("/api/purchase-orders/:id/deliveries/:deliveryId", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
-      if (!po) return res.status(404).json({ message: "PO not found" });
-      const delivery = await storage.updatePODeliverySchedule(req.params.deliveryId, user.tenantId, req.body);
-      if (!delivery) return res.status(404).json({ message: "Delivery schedule not found" });
-      res.json(delivery);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.get("/api/purchase-orders/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/purchase-orders/:id", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
       const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
@@ -125,7 +74,7 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/purchase-orders", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/purchase-orders", procurementWrite, async (req, res) => {
     try {
       const user = req.user as any;
       const { items, ...poBody } = req.body;
@@ -158,7 +107,7 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
 
-  app.patch("/api/purchase-orders/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/purchase-orders/:id", procurementWrite, async (req, res) => {
     try {
       const user = req.user as any;
       if (req.body.expectedDelivery && typeof req.body.expectedDelivery === "string") {
@@ -178,7 +127,7 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/goods-received-notes", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/goods-received-notes", procurementWrite, async (req, res) => {
     try {
       const user = req.user as any;
       const { items, purchaseOrderId, notes, status, ...grnBody } = req.body;
@@ -312,14 +261,14 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/grns", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/grns", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
       res.json(await storage.getGRNsByTenant(user.tenantId));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/grns", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/grns", procurementWrite, async (req, res) => {
     try {
       const user = req.user as any;
       const { items, purchaseOrderId, notes } = req.body;
@@ -380,7 +329,7 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
 
-  app.get("/api/grns/:id/items", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/grns/:id/items", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
       const grns = await storage.getGRNsByTenant(user.tenantId);
@@ -390,36 +339,7 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/rfqs", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      res.json(await storage.getRFQsByTenant(user.tenantId));
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
 
-  app.post("/api/rfqs", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const { items, ...rfqBody } = req.body;
-      const rfqList = await storage.getRFQsByTenant(user.tenantId);
-      const rfqNumber = rfqBody.rfqNumber || generateSequenceNumber("RFQ", rfqList.map(r => r.rfqNumber));
-      const data = insertQuotationRequestSchema.parse({
-        ...rfqBody,
-        tenantId: user.tenantId,
-        rfqNumber,
-        requestedBy: user.id,
-        requestedByName: rfqBody.requestedByName || null,
-      });
-      const rfq = await storage.createRFQ(data);
-      if (items && Array.isArray(items)) {
-        for (const item of items) {
-          await storage.createRFQItem(insertQuotationRequestItemSchema.parse({ ...item, rfqId: rfq.id }));
-        }
-      }
-      const rfqItems = await storage.getRFQItems(rfq.id);
-      res.json({ ...rfq, items: rfqItems });
-    } catch (err: any) { res.status(400).json({ message: err.message }); }
-  });
 
   app.get("/api/rfqs/:id/quotations", requireRole("owner", "manager"), async (req, res) => {
     try {
@@ -440,7 +360,7 @@ export function registerProcurementRoutes(app: Express): void {
       const user = req.user as any;
       const rfq = await storage.getRFQ(req.params.id, user.tenantId);
       if (!rfq) return res.status(404).json({ message: "RFQ not found" });
-      const item = await storage.createRFQItem(insertQuotationRequestItemSchema.parse({ ...req.body, rfqId: rfq.id }));
+      const item = await storage.createRFQItem(insertRfqItemSchema.parse({ ...req.body, rfqId: rfq.id }));
       res.json(item);
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
@@ -473,14 +393,6 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/rfqs/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const rfq = await storage.updateRFQ(req.params.id, user.tenantId, req.body);
-      if (!rfq) return res.status(404).json({ message: "RFQ not found" });
-      res.json(rfq);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
 
   app.get("/api/supplier-quotations", requireRole("owner", "manager"), async (req, res) => {
     try {
@@ -574,401 +486,7 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
 
-  app.get("/api/purchase-returns", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      res.json(await storage.getPurchaseReturnsByTenant(user.tenantId));
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/purchase-returns", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const { items, ...returnBody } = req.body;
-      const existingReturns = await storage.getPurchaseReturnsByTenant(user.tenantId);
-      const returnNumber = returnBody.returnNumber || generateSequenceNumber("PR", existingReturns.map(r => r.returnNumber));
-      const data = insertPurchaseReturnSchema.parse({ ...returnBody, tenantId: user.tenantId, returnNumber, createdBy: user.id });
-      const purchaseReturn = await storage.createPurchaseReturn(data);
-      if (items && Array.isArray(items)) {
-        for (const item of items) {
-          await storage.createPurchaseReturnItem(insertPurchaseReturnItemSchema.parse({ ...item, returnId: purchaseReturn.id }));
-        }
-        await storage.updatePurchaseReturn(purchaseReturn.id, user.tenantId, { totalItems: items.length });
-      }
-      const returnItems = await storage.getPurchaseReturnItems(purchaseReturn.id);
-      res.json({ ...purchaseReturn, items: returnItems });
-    } catch (err: any) { res.status(400).json({ message: err.message }); }
-  });
-
-  app.get("/api/purchase-returns/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const purchaseReturn = await storage.getPurchaseReturn(req.params.id, user.tenantId);
-      if (!purchaseReturn) return res.status(404).json({ message: "Purchase return not found" });
-      const items = await storage.getPurchaseReturnItems(purchaseReturn.id);
-      res.json({ ...purchaseReturn, items });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.patch("/api/purchase-returns/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const purchaseReturn = await storage.getPurchaseReturn(req.params.id, user.tenantId);
-      if (!purchaseReturn) return res.status(404).json({ message: "Purchase return not found" });
-
-      if (req.body.status === "approved" && purchaseReturn.status !== "approved") {
-        const updated = await db.transaction(async (tx) => {
-          const today = new Date();
-          const datePart = `${today.getFullYear()}${String(today.getMonth()+1).padStart(2,"0")}${String(today.getDate()).padStart(2,"0")}`;
-          const prefix = `DN-${datePart}-`;
-          const existingDNs = await tx.select({ debitNoteNumber: purchaseReturns.debitNoteNumber }).from(purchaseReturns).where(eq(purchaseReturns.tenantId, user.tenantId));
-          const dn = req.body.debitNoteNumber || prefix + String(generateSequenceNumber(prefix.slice(0, -1), existingDNs.map(r => r.debitNoteNumber || "").filter(Boolean)).split("-").pop()).padStart(4, "0");
-
-          const retItems = await tx.select().from(purchaseReturnItems).where(eq(purchaseReturnItems.returnId, purchaseReturn.id));
-          for (const item of retItems) {
-            if (!item.inventoryItemId) continue;
-            const returnQty = parseFloat(item.returnQuantity || "0");
-            if (returnQty > 0) {
-              await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: item.inventoryItemId, deltaQty: -returnQty, outletId: purchaseReturn.outletId || null, movementType: "adjustment", reason: `Purchase return ${purchaseReturn.returnNumber} approved` });
-            }
-          }
-          const [result] = await tx.update(purchaseReturns).set({
-            ...req.body,
-            debitNoteNumber: dn,
-            approvedBy: user.id,
-            approvedAt: new Date(),
-          }).where(and(eq(purchaseReturns.id, purchaseReturn.id), eq(purchaseReturns.tenantId, user.tenantId))).returning();
-          return result;
-        });
-
-        emitToTenant(user.tenantId, "stock:updated", { returnId: purchaseReturn.id, source: "purchase_return" });
-        return res.json(updated);
-      }
-
-      const updated = await storage.updatePurchaseReturn(req.params.id, user.tenantId, req.body);
-      res.json(updated);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/purchase-returns/:id/items", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const purchaseReturn = await storage.getPurchaseReturn(req.params.id, user.tenantId);
-      if (!purchaseReturn) return res.status(404).json({ message: "Purchase return not found" });
-      const item = await storage.createPurchaseReturnItem(insertPurchaseReturnItemSchema.parse({ ...req.body, returnId: purchaseReturn.id }));
-      res.json(item);
-    } catch (err: any) { res.status(400).json({ message: err.message }); }
-  });
-
-  app.get("/api/stock-transfers", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      res.json(await storage.getStockTransfersByTenant(user.tenantId));
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/stock-transfers", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const { items, ...transferBody } = req.body;
-      const existingTransfers = await storage.getStockTransfersByTenant(user.tenantId);
-      const transferNumber = transferBody.transferNumber || generateSequenceNumber("TRF", existingTransfers.map(t => t.transferNumber));
-      const data = insertStockTransferSchema.parse({
-        ...transferBody,
-        tenantId: user.tenantId,
-        transferNumber,
-        requestedBy: user.id,
-        requestedByName: transferBody.requestedByName || null,
-      });
-      const transfer = await storage.createStockTransfer(data);
-      if (items && Array.isArray(items)) {
-        for (const item of items) {
-          await storage.createStockTransferItem(insertStockTransferItemSchema.parse({ ...item, transferId: transfer.id }));
-        }
-      }
-      const transferItems = await storage.getStockTransferItems(transfer.id);
-      res.json({ ...transfer, items: transferItems });
-    } catch (err: any) { res.status(400).json({ message: err.message }); }
-  });
-
-  app.get("/api/stock-transfers/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const transfer = await storage.getStockTransfer(req.params.id, user.tenantId);
-      if (!transfer) return res.status(404).json({ message: "Stock transfer not found" });
-      const items = await storage.getStockTransferItems(transfer.id);
-      res.json({ ...transfer, items });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.patch("/api/stock-transfers/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const transfer = await storage.getStockTransfer(req.params.id, user.tenantId);
-      if (!transfer) return res.status(404).json({ message: "Stock transfer not found" });
-      const newStatus = req.body.status;
-      const updatePayload: Record<string, any> = { ...req.body };
-
-      if (newStatus === "approved" && transfer.status !== "approved") {
-        updatePayload.approvedBy = user.id;
-        updatePayload.approvedAt = new Date();
-      }
-
-      if (newStatus === "dispatched" && transfer.status !== "dispatched") {
-        updatePayload.dispatchedBy = user.id;
-        updatePayload.dispatchedAt = new Date();
-
-        await db.transaction(async (tx) => {
-          const transferItems = await tx.select().from(stockTransferItems).where(eq(stockTransferItems.transferId, transfer.id));
-          for (const item of transferItems) {
-            if (!item.inventoryItemId) continue;
-            const dispatchQty = parseFloat(item.dispatchedQty || item.approvedQty || item.requestedQty || "0");
-            if (dispatchQty > 0) {
-              await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: item.inventoryItemId, deltaQty: -dispatchQty, outletId: transfer.fromOutletId || null, movementType: "adjustment", reason: `Transfer ${transfer.transferNumber} dispatched from ${transfer.fromOutletName || "outlet"}` });
-            }
-          }
-        });
-        emitToTenant(user.tenantId, "stock:updated", { transferId: transfer.id, source: "transfer_dispatch" });
-      }
-
-      if (newStatus === "received" && transfer.status !== "received") {
-        updatePayload.receivedBy = user.id;
-        updatePayload.receivedAt = new Date();
-
-        await db.transaction(async (tx) => {
-          const transferItems = await tx.select().from(stockTransferItems).where(eq(stockTransferItems.transferId, transfer.id));
-          for (const item of transferItems) {
-            if (!item.inventoryItemId) continue;
-            const receivedQty = parseFloat(item.receivedQty || item.dispatchedQty || item.approvedQty || item.requestedQty || "0");
-            const dispatchedQty = parseFloat(item.dispatchedQty || item.approvedQty || item.requestedQty || "0");
-            const variance = receivedQty - dispatchedQty;
-            if (receivedQty > 0) {
-              await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: item.inventoryItemId, deltaQty: receivedQty, outletId: transfer.toOutletId || null, movementType: "received", reason: `Transfer ${transfer.transferNumber} received at ${transfer.toOutletName || "outlet"}` });
-            }
-            if (Math.abs(variance) > 0.001) {
-              await tx.update(stockTransferItems).set({ varianceQty: variance.toFixed(3) }).where(eq(stockTransferItems.id, item.id));
-            }
-          }
-        });
-        emitToTenant(user.tenantId, "stock:updated", { transferId: transfer.id, source: "transfer_receive" });
-      }
-
-      if (newStatus === "cancelled" && transfer.status === "dispatched") {
-        await db.transaction(async (tx) => {
-          const transferItems = await tx.select().from(stockTransferItems).where(eq(stockTransferItems.transferId, transfer.id));
-          for (const item of transferItems) {
-            if (!item.inventoryItemId) continue;
-            const dispatchQty = parseFloat(item.dispatchedQty || item.approvedQty || item.requestedQty || "0");
-            if (dispatchQty > 0) {
-              await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: item.inventoryItemId, deltaQty: dispatchQty, outletId: transfer.fromOutletId || null, movementType: "received", reason: `Transfer ${transfer.transferNumber} cancelled - stock reversed` });
-            }
-          }
-        });
-        emitToTenant(user.tenantId, "stock:updated", { transferId: transfer.id, source: "transfer_cancel" });
-      }
-
-      const updated = await storage.updateStockTransfer(req.params.id, user.tenantId, updatePayload);
-      res.json(updated);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.get("/api/stock-counts", requireRole("owner", "manager", "staff"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      res.json(await storage.getStockCountsByTenant(user.tenantId));
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/stock-counts", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const existingCounts = await storage.getStockCountsByTenant(user.tenantId);
-      const countNumber = req.body.countNumber || generateSequenceNumber("STC", existingCounts.map(c => c.countNumber));
-      const data = insertStockCountSchema.parse({ ...req.body, tenantId: user.tenantId, countNumber, createdBy: user.id });
-      const count = await storage.createStockCount(data);
-
-      const allInventoryItems = await storage.getInventoryByTenant(user.tenantId);
-      const countItems = allInventoryItems.map(inv => insertStockCountItemSchema.parse({
-        countId: count.id,
-        inventoryItemId: inv.id,
-        ingredientName: inv.name,
-        unit: inv.unit || null,
-        systemQuantity: inv.currentStock || "0",
-      }));
-      if (countItems.length > 0) {
-        await storage.bulkCreateStockCountItems(countItems);
-      }
-      await storage.updateStockCount(count.id, user.tenantId, { totalItemsCounted: countItems.length });
-      const createdItems = await storage.getStockCountItems(count.id);
-      res.json({ ...count, items: createdItems });
-    } catch (err: any) { res.status(400).json({ message: err.message }); }
-  });
-
-  app.get("/api/stock-counts/:id", requireRole("owner", "manager", "staff"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const count = await storage.getStockCount(req.params.id, user.tenantId);
-      if (!count) return res.status(404).json({ message: "Stock count not found" });
-      const items = await storage.getStockCountItems(count.id);
-      res.json({ ...count, items });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.patch("/api/stock-counts/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const count = await storage.getStockCount(req.params.id, user.tenantId);
-      if (!count) return res.status(404).json({ message: "Stock count not found" });
-      const updatePayload: Record<string, any> = { ...req.body };
-      if (req.body.status === "in_progress" && count.status !== "in_progress") {
-        updatePayload.startedAt = new Date();
-      }
-      if (req.body.status === "completed" && count.status !== "completed") {
-        updatePayload.completedAt = new Date();
-      }
-      if (req.body.status === "approved" && count.status !== "approved") {
-        updatePayload.approvedBy = user.id;
-        updatePayload.approvedAt = new Date();
-      }
-      const updated = await storage.updateStockCount(req.params.id, user.tenantId, updatePayload);
-      res.json(updated);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.patch("/api/stock-counts/:id/items/:itemId", requireRole("owner", "manager", "staff"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const count = await storage.getStockCount(req.params.id, user.tenantId);
-      if (!count) return res.status(404).json({ message: "Stock count not found" });
-      const items = await storage.getStockCountItems(count.id);
-      const item = items.find(i => i.id === req.params.itemId);
-      if (!item) return res.status(404).json({ message: "Stock count item not found" });
-
-      const { physicalQuantity, varianceReason, notes } = req.body;
-      const physical = parseFloat(physicalQuantity);
-      const system = parseFloat(item.systemQuantity || "0");
-      const variance = physical - system;
-      const variancePercent = system !== 0 ? (variance / system) * 100 : 0;
-      const varianceType = Math.abs(variance) < 0.001 ? "none" : variance > 0 ? "overage" : "shortage";
-
-      const invItem = item.inventoryItemId ? await storage.getInventoryItem(item.inventoryItemId) : null;
-      const unitCost = invItem ? parseFloat(invItem.costPrice || "0") : 0;
-      const varianceValue = Math.abs(variance) * unitCost;
-
-      const updated = await storage.updateStockCountItem(req.params.itemId, {
-        physicalQuantity: physical.toFixed(3),
-        varianceQuantity: variance.toFixed(3),
-        varianceValue: varianceValue.toFixed(2),
-        variancePercent: variancePercent.toFixed(2),
-        varianceType,
-        varianceReason: varianceReason || null,
-        notes: notes || null,
-        countedBy: user.id,
-        countedByName: user.name || null,
-        countedAt: new Date(),
-      });
-
-      const allItems = await storage.getStockCountItems(count.id);
-      const itemsWithVariance = allItems.filter(i => i.varianceQuantity && Math.abs(parseFloat(i.varianceQuantity)) > 0.001).length;
-      const totalVarianceValue = allItems.reduce((s, i) => s + parseFloat(i.varianceValue || "0"), 0);
-      await storage.updateStockCount(count.id, user.tenantId, {
-        itemsWithVariance,
-        totalVarianceValue: totalVarianceValue.toFixed(2),
-      });
-
-      res.json(updated);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/stock-counts/:id/approve-adjustments", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const count = await storage.getStockCount(req.params.id, user.tenantId);
-      if (!count) return res.status(404).json({ message: "Stock count not found" });
-      const items = await storage.getStockCountItems(count.id);
-
-      let adjustedCount = 0;
-      await db.transaction(async (tx) => {
-        for (const item of items) {
-          if (!item.inventoryItemId || !item.physicalQuantity) continue;
-          const variance = parseFloat(item.varianceQuantity || "0");
-          if (Math.abs(variance) < 0.001) continue;
-          await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: item.inventoryItemId, deltaQty: variance, outletId: count.outletId || null, movementType: "adjustment", reason: `Stock count ${count.countNumber} adjustment approved` });
-          await tx.update(stockCountItems).set({ adjustmentApproved: true, adjustmentApprovedBy: user.id }).where(eq(stockCountItems.id, item.id));
-          adjustedCount++;
-        }
-        await tx.update(stockCounts).set({ status: "approved", approvedBy: user.id, approvedAt: new Date() }).where(and(eq(stockCounts.id, count.id), eq(stockCounts.tenantId, user.tenantId)));
-      });
-
-      emitToTenant(user.tenantId, "stock:updated", { countId: count.id, source: "stock_count_adjustment", adjustedCount });
-      res.json({ success: true, adjustedCount });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.get("/api/damaged-inventory", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      res.json(await storage.getDamagedInventoryByTenant(user.tenantId));
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.post("/api/damaged-inventory", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const existing = await storage.getDamagedInventoryByTenant(user.tenantId);
-      const damageNumber = req.body.damageNumber || generateSequenceNumber("DMG", existing.map(d => d.damageNumber));
-      const data = insertDamagedInventorySchema.parse({
-        ...req.body,
-        tenantId: user.tenantId,
-        damageNumber,
-        discoveredBy: user.id,
-        discoveredByName: req.body.discoveredByName || null,
-      });
-
-      const damaged = await db.transaction(async (tx) => {
-        const [dmg] = await tx.insert(damagedInventory).values(data).returning();
-        if (dmg.inventoryItemId && dmg.damagedQuantity) {
-          const damagedQty = parseFloat(dmg.damagedQuantity);
-          if (damagedQty > 0) {
-            await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: dmg.inventoryItemId, deltaQty: -damagedQty, outletId: dmg.outletId || null, movementType: "damaged", reason: `Damaged inventory ${damageNumber}: ${dmg.damageCause || "declared"}` });
-          }
-        }
-        return dmg;
-      });
-
-      emitToTenant(user.tenantId, "stock:updated", { damageId: damaged.id, source: "damaged_inventory" });
-      res.json(damaged);
-    } catch (err: any) { res.status(400).json({ message: err.message }); }
-  });
-
-  app.get("/api/damaged-inventory/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const item = await storage.getDamagedInventoryItem(req.params.id, user.tenantId);
-      if (!item) return res.status(404).json({ message: "Damaged inventory record not found" });
-      res.json(item);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.patch("/api/damaged-inventory/:id", requireRole("owner", "manager"), async (req, res) => {
-    try {
-      const user = req.user as any;
-      const item = await storage.getDamagedInventoryItem(req.params.id, user.tenantId);
-      if (!item) return res.status(404).json({ message: "Damaged inventory record not found" });
-      const updatePayload: Record<string, any> = { ...req.body };
-      if (req.body.status === "approved" && item.status !== "approved") {
-        updatePayload.approvedBy = user.id;
-        updatePayload.approvedAt = new Date();
-      }
-      if (["disposed", "written_off", "insurance_claimed"].includes(req.body.status) && !item.disposedAt) {
-        updatePayload.disposedAt = new Date();
-      }
-      const updated = await storage.updateDamagedInventory(req.params.id, user.tenantId, updatePayload);
-      res.json(updated);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
-  });
-
-  app.get("/api/procurement/analytics", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/procurement/analytics", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
       const pos = await storage.getPurchaseOrdersByTenant(user.tenantId);
@@ -1033,7 +551,7 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/procurement/low-stock", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/procurement/low-stock", procurementRead, async (req, res) => {
     try {
       const user = req.user as any;
       const items = await storage.getInventoryByTenant(user.tenantId);
@@ -1046,6 +564,305 @@ export function registerProcurementRoutes(app: Express): void {
         suggestedQty: Math.max(0, parseFloat(i.parLevel || "0") - parseFloat(i.currentStock || "0")).toFixed(2),
       }));
       res.json(lowStock);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── RFQ Routes ────────────────────────────────────────────────────────────
+  app.get("/api/rfqs", procurementRead, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rfqList = await storage.getRFQsByTenant(user.tenantId);
+      const result = await Promise.all(rfqList.map(async r => ({
+        ...r,
+        items: await storage.getRFQItems(r.id),
+        quotations: await Promise.all((await storage.getQuotationsByRFQ(r.id)).map(async q => ({
+          ...q,
+          items: await storage.getQuotationItems(q.id),
+        }))),
+      })));
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/rfqs", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { items, ...body } = req.body;
+      const rfqCount = await storage.getRFQsByTenant(user.tenantId).then(l => l.length);
+      const rfqNumber = `RFQ-${String(rfqCount + 1).padStart(4, "0")}`;
+      const rfq = await storage.createRFQ(insertRfqSchema.parse({ ...body, tenantId: user.tenantId, rfqNumber, createdBy: user.id }));
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          await storage.createRFQItem(insertRfqItemSchema.parse({ rfqId: rfq.id, ...item }));
+        }
+      }
+      const rfqItems = await storage.getRFQItems(rfq.id);
+      res.json({ ...rfq, items: rfqItems, quotations: [] });
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  app.patch("/api/rfqs/:id", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rfq = await storage.updateRFQ(req.params.id, user.tenantId, req.body);
+      if (!rfq) return res.status(404).json({ message: "RFQ not found" });
+      res.json(rfq);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/rfqs/:id/send", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rfq = await storage.getRFQ(req.params.id, user.tenantId);
+      if (!rfq) return res.status(404).json({ message: "RFQ not found" });
+      if (rfq.status !== "draft") return res.status(400).json({ message: "Only draft RFQs can be sent" });
+      const updated = await storage.updateRFQ(rfq.id, user.tenantId, { status: "sent" });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/rfqs/:id/quotations", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const rfq = await storage.getRFQ(req.params.id, user.tenantId);
+      if (!rfq) return res.status(404).json({ message: "RFQ not found" });
+      const { items, ...body } = req.body;
+      const quotation = await storage.createSupplierQuotation(insertSupplierQuotationSchema.parse({ rfqId: rfq.id, ...body }));
+      if (Array.isArray(items)) {
+        for (const qi of items) {
+          await storage.createQuotationItem(insertQuotationItemSchema.parse({ quotationId: quotation.id, ...qi }));
+        }
+      }
+      await storage.updateRFQ(rfq.id, user.tenantId, { status: "received" });
+      const qItems = await storage.getQuotationItems(quotation.id);
+      res.json({ ...quotation, items: qItems });
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  // ─── Purchase Return Routes ────────────────────────────────────────────────
+  app.get("/api/purchase-returns", procurementRead, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const returns = await storage.getPurchaseReturnsByTenant(user.tenantId);
+      const result = await Promise.all(returns.map(async r => ({
+        ...r,
+        items: await storage.getPurchaseReturnItems(r.id),
+      })));
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/purchase-returns", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { items, ...body } = req.body;
+      const n = await storage.countPurchaseReturnsByTenant(user.tenantId);
+      const returnNumber = `RET-${String(n + 1).padStart(4, "0")}`;
+      const totalValue = Array.isArray(items)
+        ? items.reduce((s: number, i: { returnQty: string; unitPrice: string }) =>
+            s + (parseFloat(i.returnQty) || 0) * (parseFloat(i.unitPrice) || 0), 0)
+        : 0;
+      const ret = await storage.createPurchaseReturn(
+        insertPurchaseReturnSchema.parse({ ...body, tenantId: user.tenantId, returnNumber, totalValue: totalValue.toFixed(2), createdBy: user.id })
+      );
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          await storage.createPurchaseReturnItem(insertPurchaseReturnItemSchema.parse({ returnId: ret.id, ...item }));
+        }
+      }
+      res.json({ ...ret, items: await storage.getPurchaseReturnItems(ret.id) });
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  app.patch("/api/purchase-returns/:id", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const existing = await storage.getPurchaseReturn(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Return not found" });
+      let update = req.body;
+      if (req.body.status === "approved" && !existing.debitNote) {
+        const n = await storage.countPurchaseReturnsByTenant(user.tenantId);
+        update = { ...update, debitNote: `DN-${new Date().toISOString().slice(0,10).replace(/-/g,"")}-${String(n).padStart(4,"0")}` };
+      }
+      const ret = await storage.updatePurchaseReturn(req.params.id, user.tenantId, update);
+      if (!ret) return res.status(404).json({ message: "Return not found" });
+      res.json(ret);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Stock Transfer Routes ─────────────────────────────────────────────────
+  app.get("/api/stock-transfers", procurementRead, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const transfers = await storage.getStockTransfersByTenant(user.tenantId);
+      const result = await Promise.all(transfers.map(async t => ({
+        ...t,
+        items: await storage.getStockTransferItems(t.id),
+      })));
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/stock-transfers", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { items, ...body } = req.body;
+      const n = await storage.countStockTransfersByTenant(user.tenantId);
+      const transferNumber = `IST-${String(n + 1).padStart(4, "0")}`;
+      const transfer = await storage.createStockTransfer(
+        insertStockTransferSchema.parse({ ...body, tenantId: user.tenantId, transferNumber, createdBy: user.id })
+      );
+      if (Array.isArray(items)) {
+        for (const item of items) {
+          await storage.createStockTransferItem(insertStockTransferItemSchema.parse({ transferId: transfer.id, ...item }));
+        }
+      }
+      res.json({ ...transfer, items: await storage.getStockTransferItems(transfer.id) });
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  app.patch("/api/stock-transfers/:id", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const existing = await storage.getStockTransfer(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Transfer not found" });
+      let update = req.body;
+      if (req.body.status === "in_transit") update = { ...update, dispatchedAt: new Date() };
+      const transfer = await storage.updateStockTransfer(req.params.id, user.tenantId, update);
+      if (!transfer) return res.status(404).json({ message: "Transfer not found" });
+      // Handle receive with actual quantities
+      if ((req.body.status === "received" || req.body.status === "partially_received") && Array.isArray(req.body.receiveLines)) {
+        for (const line of req.body.receiveLines as Array<{ inventoryItemId: string; actualQty: string }>) {
+          const items = await storage.getStockTransferItems(transfer.id);
+          const tItem = items.find(i => i.inventoryItemId === line.inventoryItemId);
+          if (tItem) await storage.updateStockTransferItem(tItem.id, { actualQty: line.actualQty });
+        }
+      }
+      res.json(transfer);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Stock Count Routes ────────────────────────────────────────────────────
+  app.get("/api/stock-counts", procurementRead, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const sessions = await storage.getStockCountsByTenant(user.tenantId);
+      const result = await Promise.all(sessions.map(async s => ({
+        ...s,
+        items: await storage.getStockCountItems(s.id),
+      })));
+      res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/stock-counts", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const n = await storage.countStockCountsByTenant(user.tenantId);
+      const countNumber = `CNT-${String(n + 1).padStart(4, "0")}`;
+      const session = await storage.createStockCount(
+        insertStockCountSessionSchema.parse({ ...req.body, tenantId: user.tenantId, countNumber, createdBy: user.id })
+      );
+      // Seed items from current inventory
+      const invItems = await storage.getInventoryByTenant(user.tenantId);
+      for (const inv of invItems) {
+        await storage.createStockCountItem(insertStockCountItemSchema.parse({
+          sessionId: session.id,
+          inventoryItemId: inv.id,
+          systemQty: inv.currentStock || "0",
+          physicalQty: null,
+          counted: false,
+        }));
+      }
+      const items = await storage.getStockCountItems(session.id);
+      res.json({ ...session, items });
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  app.patch("/api/stock-counts/:id", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const session = await storage.updateStockCount(req.params.id, user.tenantId, req.body);
+      if (!session) return res.status(404).json({ message: "Count session not found" });
+      res.json(session);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/stock-counts/:id/items/:itemId", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      // Verify session belongs to tenant (prevent IDOR)
+      const session = await storage.getStockCount(req.params.id, user.tenantId);
+      if (!session) return res.status(404).json({ message: "Count session not found" });
+      // Verify item belongs to this session
+      const sessionItems = await storage.getStockCountItems(session.id);
+      const itemExists = sessionItems.some(i => i.id === req.params.itemId);
+      if (!itemExists) return res.status(404).json({ message: "Count item not found" });
+      const item = await storage.updateStockCountItem(req.params.itemId, req.body);
+      if (!item) return res.status(404).json({ message: "Count item not found" });
+      res.json(item);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/stock-counts/:id/approve", requireRole("owner"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const session = await storage.getStockCount(req.params.id, user.tenantId);
+      if (!session) return res.status(404).json({ message: "Count session not found" });
+      const items = await storage.getStockCountItems(session.id);
+      // Adjust inventory for counted items
+      for (const item of items) {
+        if (item.counted && item.physicalQty !== null) {
+          const inv = await storage.getInventoryItem(item.inventoryItemId);
+          if (inv) {
+            const variance = parseFloat(item.physicalQty) - parseFloat(item.systemQty);
+            if (Math.abs(variance) > 0.001) {
+              await storage.updateInventoryItem(inv.id, { currentStock: item.physicalQty });
+              await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "adjustment", quantity: variance.toFixed(2), reason: `Stock count ${session.countNumber}` });
+            }
+          }
+        }
+      }
+      const updated = await storage.updateStockCount(session.id, user.tenantId, { status: "approved", approvedAt: new Date(), approvedBy: user.id });
+      emitToTenant(user.tenantId, "stock:updated", { source: "stock_count", sessionId: session.id });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Damaged Inventory Routes ──────────────────────────────────────────────
+  app.get("/api/damaged-inventory", procurementRead, async (req, res) => {
+    try {
+      const user = req.user as any;
+      res.json(await storage.getDamagedInventoryByTenant(user.tenantId));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/damaged-inventory", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const n = await storage.countDamagedInventoryByTenant(user.tenantId);
+      const damageNumber = `DMG-${String(n + 1).padStart(4, "0")}`;
+      const totalValue = (parseFloat(req.body.damagedQty || "0") * parseFloat(req.body.unitCost || "0")).toFixed(2);
+      const damage = await storage.createDamagedInventory(
+        insertDamagedInventorySchema.parse({ ...req.body, tenantId: user.tenantId, damageNumber, totalValue, createdBy: user.id })
+      );
+      // Deduct from inventory
+      const inv = await storage.getInventoryItem(damage.inventoryItemId);
+      if (inv) {
+        const newStock = Math.max(0, parseFloat(inv.currentStock || "0") - parseFloat(damage.damagedQty));
+        await storage.updateInventoryItem(inv.id, { currentStock: newStock.toFixed(2) });
+        await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "waste", quantity: `-${damage.damagedQty}`, reason: `Damage ${damageNumber}` });
+      }
+      res.json(damage);
+    } catch (err: any) { res.status(400).json({ message: err.message }); }
+  });
+
+  app.patch("/api/damaged-inventory/:id", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const damage = await storage.updateDamagedInventory(req.params.id, user.tenantId, { ...req.body, reviewedBy: req.body.status !== undefined ? user.id : undefined, reviewedAt: req.body.status !== undefined ? new Date() : undefined });
+      if (!damage) return res.status(404).json({ message: "Damage record not found" });
+      res.json(damage);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }
