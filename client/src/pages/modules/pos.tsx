@@ -23,6 +23,9 @@ import {
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
@@ -70,6 +73,7 @@ interface CartItem {
   isAddon?: boolean;
   hsnCode?: string | null;
   foodModification?: FoodModification;
+  pricingRuleReason?: string | null;
 }
 
 interface OrderTab {
@@ -481,6 +485,31 @@ export default function POSPage() {
   const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
 
+  const { data: resolvedPrices = [] } = useQuery<{ menuItemId: string; basePrice: number; resolvedPrice: number; appliedRule: string | null; ruleReason: string | null; hasRule: boolean }[]>({
+    queryKey: ["/api/pricing/resolve/batch", userOutletId, orderType, menuItems.map(m => m.id).join(",")],
+    queryFn: async () => {
+      if (!menuItems.length || !userOutletId) return [];
+      const res = await apiRequest("POST", "/api/pricing/resolve/batch", {
+        items: menuItems.map(m => ({ menuItemId: m.id })),
+        outletId: userOutletId,
+        orderType,
+        orderTime: new Date().toISOString(),
+      });
+      return res.json();
+    },
+    enabled: !!userOutletId && menuItems.length > 0,
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const resolvedPriceMap = useMemo(() => {
+    const map = new Map<string, { resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean }>();
+    for (const r of resolvedPrices) {
+      map.set(r.menuItemId, { resolvedPrice: r.resolvedPrice, basePrice: r.basePrice, ruleReason: r.ruleReason, hasRule: r.hasRule });
+    }
+    return map;
+  }, [resolvedPrices]);
+
   const { data: activeSessionData } = useQuery<{ id: string; shiftName: string | null; openedAt: string } | null>({
     queryKey: ["/api/pos/session"],
     queryFn: async () => {
@@ -608,14 +637,20 @@ export default function POSPage() {
         return prev.map((c) => c.cartKey === existing.cartKey ? { ...c, quantity: c.quantity + 1 } : c);
       }
       const cartKey = makeid();
+      const resolved = resolvedPriceMap.get(item.id);
+      const basePrice = parseFloat(item.price);
+      const resolvedPrice = resolved?.resolvedPrice ?? basePrice;
+      const ruleReason = resolved?.ruleReason ?? null;
       return [...prev, {
         menuItemId: item.id, name: item.name,
-        price: parseFloat(item.price), basePrice: parseFloat(item.price),
+        price: resolvedPrice, basePrice,
         quantity: 1, notes: "", isVeg: item.isVeg, categoryId: item.categoryId,
         cartKey, hsnCode: item.hsnCode || null,
+        originalPrice: (resolved?.hasRule && resolvedPrice !== basePrice) ? basePrice : undefined,
+        ...(ruleReason ? { pricingRuleReason: ruleReason } : {}),
       }];
     });
-  }, [setCart]);
+  }, [setCart, resolvedPriceMap]);
 
   const addComboToCart = useCallback((combo: ComboOffer) => {
     const mainItems = (combo.mainItems as ComboItemRef[]) || [];
@@ -1203,6 +1238,8 @@ export default function POSPage() {
                 const inCart = cart.find((c) => c.menuItemId === item.id && !c.isCombo);
                 const justAdded = addedItemId === item.id;
                 const isUnavailable = item.available === false;
+                const resolvedItemPrice = resolvedPriceMap.get(item.id);
+                const hasSpecialPrice = resolvedItemPrice?.hasRule && resolvedItemPrice.resolvedPrice !== resolvedItemPrice.basePrice;
                 return (
                   <motion.div key={item.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.03, duration: 0.3 }}>
                     <Card data-testid={`card-menu-item-${item.id}`} className={`transition-all duration-200 relative overflow-hidden ${isUnavailable ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:shadow-lg hover:scale-[1.02]"} ${inCart && !isUnavailable ? "border-primary/40 ring-1 ring-primary/20" : ""}`}
@@ -1245,7 +1282,24 @@ export default function POSPage() {
                         </div>
                         {item.description && <p className="text-[10px] text-muted-foreground line-clamp-1 mb-1.5">{item.description}</p>}
                         <div className="flex items-center justify-between">
-                          <span className="font-semibold text-sm text-primary" data-testid={`text-price-${item.id}`}>{fmt(item.price)}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="font-semibold text-sm text-primary" data-testid={`text-price-${item.id}`}>
+                              {fmt(resolvedItemPrice?.resolvedPrice ?? item.price)}
+                            </span>
+                            {hasSpecialPrice && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="text-[10px] cursor-help" data-testid={`icon-pricing-tag-${item.id}`}>🏷️</span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>{resolvedItemPrice?.ruleReason || "Special price active"}</p>
+                                    <p className="text-xs opacity-70">Base: {fmt(item.price)}</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
+                          </div>
                           {inCart && !isUnavailable ? (
                             <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
                               <button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-decrease-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button>
@@ -1456,6 +1510,24 @@ export default function POSPage() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>
                             {item.isCombo && item.originalPrice && <span className="text-xs text-muted-foreground line-through">{fmt(item.originalPrice)}</span>}
+                            {!item.isCombo && item.originalPrice && item.price !== item.basePrice && (
+                              <span className="text-xs text-muted-foreground line-through">{fmt(item.originalPrice)}</span>
+                            )}
+                            {item.pricingRuleReason && (
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <Badge variant="outline" className="text-[9px] h-4 px-1 border-teal-400 text-teal-700 bg-teal-50 dark:bg-teal-950/30 cursor-help" data-testid={`badge-pricing-rule-${item.cartKey}`}>
+                                      🏷️ {item.pricingRuleReason}
+                                    </Badge>
+                                  </TooltipTrigger>
+                                  <TooltipContent side="top" className="max-w-xs">
+                                    <p>Special price applied: {item.pricingRuleReason}</p>
+                                    {item.originalPrice && <p className="text-xs opacity-70">Original: {fmt(item.originalPrice)}</p>}
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            )}
                             {item.modifiers?.filter(m => m.label && m.label !== "Regular" && m.label !== "Medium").map((m, i) => (
                               <Badge key={i} variant="secondary" className="text-[9px] h-4 px-1">{m.label}</Badge>
                             ))}
