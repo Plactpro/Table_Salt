@@ -1022,4 +1022,82 @@ export async function runAdminMigrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipe_components_menu_item ON recipe_components (menu_item_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipe_components_tenant ON recipe_components (tenant_id)`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_recipe_components_unique ON recipe_components (menu_item_id, ingredient_name)`);
+
+  // Task #99: Food Wastage Tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wastage_logs (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      wastage_number TEXT NOT NULL,
+      wastage_date TEXT NOT NULL,
+      wastage_category TEXT NOT NULL,
+      ingredient_id VARCHAR(36) REFERENCES inventory_items(id),
+      ingredient_name TEXT NOT NULL,
+      quantity NUMERIC(10,3) NOT NULL,
+      unit TEXT NOT NULL DEFAULT 'kg',
+      unit_cost NUMERIC(10,4) NOT NULL DEFAULT 0,
+      total_cost NUMERIC(10,2) NOT NULL DEFAULT 0,
+      reason TEXT,
+      is_preventable BOOLEAN NOT NULL DEFAULT false,
+      chef_id VARCHAR(36) REFERENCES users(id),
+      chef_name TEXT,
+      counter_id VARCHAR(36),
+      counter_name TEXT,
+      shift_id VARCHAR(36),
+      stock_movement_id VARCHAR(36),
+      is_voided BOOLEAN NOT NULL DEFAULT false,
+      void_reason TEXT,
+      voided_at TIMESTAMPTZ,
+      voided_by VARCHAR(36),
+      is_recovery BOOLEAN NOT NULL DEFAULT false,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_logs_tenant ON wastage_logs (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_logs_date ON wastage_logs (tenant_id, wastage_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_logs_category ON wastage_logs (tenant_id, wastage_category)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_logs_chef ON wastage_logs (tenant_id, chef_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_logs_counter ON wastage_logs (tenant_id, counter_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_logs_ingredient ON wastage_logs (tenant_id, ingredient_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wastage_daily_summary (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      summary_date TEXT NOT NULL,
+      total_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_entries INT NOT NULL DEFAULT 0,
+      preventable_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+      preventable_entries INT NOT NULL DEFAULT 0,
+      target_amount NUMERIC(12,2),
+      revenue_for_day NUMERIC(12,2),
+      category_breakdown JSONB DEFAULT '{}',
+      counter_breakdown JSONB DEFAULT '{}',
+      chef_breakdown JSONB DEFAULT '{}',
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_daily_summary_tenant_date ON wastage_daily_summary (tenant_id, summary_date)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_wastage_daily_summary_unique ON wastage_daily_summary (tenant_id, COALESCE(outlet_id, ''), summary_date)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS wastage_targets (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
+      outlet_id VARCHAR(36) REFERENCES outlets(id),
+      period_type TEXT NOT NULL DEFAULT 'daily',
+      target_amount NUMERIC(12,2) NOT NULL,
+      currency TEXT DEFAULT 'INR',
+      effective_from TEXT NOT NULL,
+      effective_to TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_by VARCHAR(36),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_targets_tenant ON wastage_targets (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_wastage_targets_active ON wastage_targets (tenant_id, is_active)`);
 }

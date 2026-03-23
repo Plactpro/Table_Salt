@@ -236,6 +236,13 @@ app.use((req, res, next) => {
     console.error("Advance order scheduler init error:", e);
   }
 
+  try {
+    const { startWastageSummaryScheduler } = await import("./services/wastage-summary-scheduler");
+    startWastageSummaryScheduler();
+  } catch (e) {
+    console.error("Wastage summary scheduler init error:", e);
+  }
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

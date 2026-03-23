@@ -1832,3 +1832,91 @@ export const recipeComponents = pgTable("recipe_components", {
 export const insertRecipeComponentSchema = createInsertSchema(recipeComponents).omit({ id: true, createdAt: true });
 export type RecipeComponent = typeof recipeComponents.$inferSelect;
 export type InsertRecipeComponent = z.infer<typeof insertRecipeComponentSchema>;
+
+// ─── Task #99: Food Wastage Tracking ─────────────────────────────────────────
+
+export const wastageLogs = pgTable("wastage_logs", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  wastageNumber: text("wastage_number").notNull(),
+  wastageDate: text("wastage_date").notNull(),
+  wastageCategory: text("wastage_category").notNull(),
+  ingredientId: varchar("ingredient_id", { length: 36 }).references(() => inventoryItems.id),
+  ingredientName: text("ingredient_name").notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 3 }).notNull(),
+  unit: text("unit").notNull().default("kg"),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 4 }).notNull().default("0"),
+  totalCost: decimal("total_cost", { precision: 10, scale: 2 }).notNull().default("0"),
+  reason: text("reason"),
+  isPreventable: boolean("is_preventable").notNull().default(false),
+  chefId: varchar("chef_id", { length: 36 }).references(() => users.id),
+  chefName: text("chef_name"),
+  counterId: varchar("counter_id", { length: 36 }),
+  counterName: text("counter_name"),
+  shiftId: varchar("shift_id", { length: 36 }),
+  stockMovementId: varchar("stock_movement_id", { length: 36 }),
+  isVoided: boolean("is_voided").notNull().default(false),
+  voidReason: text("void_reason"),
+  voidedAt: timestamp("voided_at", { withTimezone: true }),
+  voidedBy: varchar("voided_by", { length: 36 }),
+  isRecovery: boolean("is_recovery").notNull().default(false),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_wastage_logs_tenant").on(t.tenantId),
+  index("idx_wastage_logs_date").on(t.tenantId, t.wastageDate),
+  index("idx_wastage_logs_category").on(t.tenantId, t.wastageCategory),
+  index("idx_wastage_logs_chef").on(t.tenantId, t.chefId),
+  index("idx_wastage_logs_counter").on(t.tenantId, t.counterId),
+  index("idx_wastage_logs_ingredient").on(t.tenantId, t.ingredientId),
+]);
+
+export const insertWastageLogSchema = createInsertSchema(wastageLogs).omit({ id: true, createdAt: true });
+export type WastageLog = typeof wastageLogs.$inferSelect;
+export type InsertWastageLog = z.infer<typeof insertWastageLogSchema>;
+
+export const wastageDailySummary = pgTable("wastage_daily_summary", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  summaryDate: text("summary_date").notNull(),
+  totalCost: decimal("total_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalEntries: integer("total_entries").notNull().default(0),
+  preventableCost: decimal("preventable_cost", { precision: 12, scale: 2 }).notNull().default("0"),
+  preventableEntries: integer("preventable_entries").notNull().default(0),
+  targetAmount: decimal("target_amount", { precision: 12, scale: 2 }),
+  revenueForDay: decimal("revenue_for_day", { precision: 12, scale: 2 }),
+  categoryBreakdown: jsonb("category_breakdown").default("{}"),
+  counterBreakdown: jsonb("counter_breakdown").default("{}"),
+  chefBreakdown: jsonb("chef_breakdown").default("{}"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_wastage_daily_summary_tenant_date").on(t.tenantId, t.summaryDate),
+  uniqueIndex("idx_wastage_daily_summary_unique").on(t.tenantId, t.outletId, t.summaryDate),
+]);
+
+export const insertWastageDailySummarySchema = createInsertSchema(wastageDailySummary).omit({ id: true, updatedAt: true });
+export type WastageDailySummary = typeof wastageDailySummary.$inferSelect;
+export type InsertWastageDailySummary = z.infer<typeof insertWastageDailySummarySchema>;
+
+export const wastageTargets = pgTable("wastage_targets", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
+  periodType: text("period_type").notNull().default("daily"),
+  targetAmount: decimal("target_amount", { precision: 12, scale: 2 }).notNull(),
+  currency: text("currency").default("INR"),
+  effectiveFrom: text("effective_from").notNull(),
+  effectiveTo: text("effective_to"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdBy: varchar("created_by", { length: 36 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_wastage_targets_tenant").on(t.tenantId),
+  index("idx_wastage_targets_active").on(t.tenantId, t.isActive),
+]);
+
+export const insertWastageTargetSchema = createInsertSchema(wastageTargets).omit({ id: true, createdAt: true });
+export type WastageTarget = typeof wastageTargets.$inferSelect;
+export type InsertWastageTarget = z.infer<typeof insertWastageTargetSchema>;

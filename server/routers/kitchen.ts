@@ -7,6 +7,7 @@ import { emitToTenant } from "../realtime";
 import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { getNextKotSequence } from "./print-jobs";
+import { triggerWastageDailySummary } from "./wastage";
 
 export function registerKitchenRoutes(app: Express): void {
   app.get("/api/kitchen-stations", requireAuth, async (req, res) => {
@@ -447,6 +448,10 @@ export function registerKitchenRoutes(app: Express): void {
       const user = req.user as any;
       const s = await storage.updateShift(req.params.id, user.tenantId, req.body);
       if (!s) return res.status(404).json({ message: "Shift not found" });
+      if (req.body.active === false) {
+        const today = new Date().toISOString().slice(0, 10);
+        triggerWastageDailySummary(user.tenantId, s.outletId || null, today).catch(() => {});
+      }
       res.json(s);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
