@@ -6,7 +6,7 @@ import type { Outlet } from "@shared/schema";
 import { motion } from "framer-motion";
 import {
   MapPin, Plus, Search, Edit, Trash2, Building2, Truck, Cloud, Store,
-  Navigation, Globe, Clock, CheckCircle2,
+  Navigation, Globe, Clock, CheckCircle2, Banknote,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,177 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
+import { currencyMap } from "@shared/currency";
+
+const ROUNDING_OPTIONS = [
+  { value: "none", label: "None" },
+  { value: "1", label: "Round to nearest 1 unit" },
+  { value: "5", label: "Round to nearest 5 paise" },
+  { value: "25", label: "Round to nearest 25 fils" },
+];
+
+function CashCurrencySettings() {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const currencyOptions = Object.values(currencyMap);
+  const [selectedCurrency, setSelectedCurrency] = useState(user?.tenant?.currency?.toUpperCase() || "USD");
+  const [cashRounding, setCashRounding] = useState("1");
+  const [currencyPosition, setCurrencyPosition] = useState(user?.tenant?.currencyPosition || "before");
+  const [decimalPlaces, setDecimalPlaces] = useState(String(user?.tenant?.currencyDecimals ?? 2));
+
+  const currencyInfo = currencyMap[selectedCurrency as keyof typeof currencyMap];
+  const symbol = currencyInfo?.symbol || selectedCurrency;
+
+  const DENOM_MAP: Record<string, { notes: number[]; coins: number[] }> = {
+    INR: { notes: [2000, 500, 200, 100, 50, 20, 10], coins: [10, 5, 2, 1] },
+    USD: { notes: [100, 50, 20, 10, 5, 1], coins: [0.25, 0.10, 0.05, 0.01] },
+    AED: { notes: [1000, 500, 200, 100, 50, 20, 10, 5], coins: [1, 0.50, 0.25] },
+    GBP: { notes: [50, 20, 10, 5], coins: [2, 1, 0.50, 0.20, 0.10, 0.05] },
+    EUR: { notes: [500, 200, 100, 50, 20, 10, 5], coins: [2, 1, 0.50, 0.20, 0.10, 0.05] },
+  };
+
+  const denoms = DENOM_MAP[selectedCurrency] || { notes: [100, 50, 20, 10, 5, 1], coins: [1, 0.50, 0.25] };
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/outlets/currency-settings`, {
+        currencyCode: selectedCurrency,
+        cashRounding,
+        currencyPosition,
+        decimalPlaces: parseInt(decimalPlaces) || 2,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Currency settings saved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const previewAmount = currencyPosition === "before" ? `${symbol}1,500` : `1,500 ${symbol}`;
+
+  return (
+    <Card data-testid="card-cash-currency-settings">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Banknote className="h-5 w-5 text-emerald-600" />
+          Cash & Currency Settings
+        </CardTitle>
+        <CardDescription>Configure how currency is displayed and how cash amounts are rounded</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label>Currency</Label>
+            <Select value={selectedCurrency} onValueChange={setSelectedCurrency} data-testid="select-currency-code">
+              <SelectTrigger className="mt-1" data-testid="select-currency-code">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {currencyOptions.map(c => (
+                  <SelectItem key={c.code} value={c.code}>
+                    {c.code} — {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Currency Symbol (auto-filled)</Label>
+            <Input value={symbol} readOnly className="mt-1 bg-muted" />
+          </div>
+
+          <div>
+            <Label>Symbol Position</Label>
+            <Select value={currencyPosition} onValueChange={setCurrencyPosition} data-testid="select-currency-position">
+              <SelectTrigger className="mt-1" data-testid="select-currency-position">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="before">Before amount → {symbol}1,500</SelectItem>
+                <SelectItem value="after">After amount → 1,500 {symbol}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Decimal Places</Label>
+            <Input
+              type="number"
+              min="0"
+              max="4"
+              value={decimalPlaces}
+              onChange={e => setDecimalPlaces(e.target.value)}
+              className="mt-1"
+              data-testid="input-decimal-places"
+            />
+          </div>
+
+          <div>
+            <Label>Cash Rounding</Label>
+            <Select value={cashRounding} onValueChange={setCashRounding} data-testid="select-cash-rounding">
+              <SelectTrigger className="mt-1" data-testid="select-cash-rounding">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {ROUNDING_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Preview</Label>
+            <div className="mt-1 px-3 py-2 rounded-md border bg-muted text-sm font-medium" data-testid="text-denomination-preview">
+              {previewAmount}
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Denomination Preview</p>
+          <div className="space-y-2">
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Notes</p>
+              <div className="flex flex-wrap gap-2">
+                {denoms.notes.map(d => (
+                  <Badge key={d} variant="outline" className="text-sm">
+                    {symbol}{d}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="text-xs text-muted-foreground mb-1">Coins</p>
+              <div className="flex flex-wrap gap-2">
+                {denoms.coins.map(d => (
+                  <Badge key={d} variant="secondary" className="text-sm">
+                    {symbol}{d}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          data-testid="button-save-currency"
+        >
+          {saveMutation.isPending ? "Saving..." : "Save Currency Settings"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 function getBusinessTypeView(businessType: string | undefined) {
   switch (businessType) {
@@ -484,6 +655,10 @@ export default function OutletsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+        <CashCurrencySettings />
+      </motion.div>
     </motion.div>
   );
 }
