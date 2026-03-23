@@ -133,6 +133,16 @@ export default function GuestPage() {
   const [splitCount, setSplitCount] = useState(2);
   const [selectedSplitItems, setSelectedSplitItems] = useState<Set<number>>(new Set());
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+  const [guestTipPct, setGuestTipPct] = useState(0);
+  const [guestCustomTip, setGuestCustomTip] = useState("");
+  const [guestTipConfig, setGuestTipConfig] = useState<{
+    tipsEnabled: boolean;
+    showOnQr: boolean;
+    promptStyle: "BUTTONS" | "INPUT" | "NONE";
+    suggestedPercentages: number[];
+    allowCustom: boolean;
+    tipBasis: "SUBTOTAL" | "TOTAL";
+  } | null>(null);
   const [stripeRedirecting, setStripeRedirecting] = useState(false);
   const [razorpayRedirecting, setRazorpayRedirecting] = useState(false);
   const [razorpayUrl, setRazorpayUrl] = useState<string | null>(null);
@@ -154,6 +164,14 @@ export default function GuestPage() {
       .then(data => setActiveGateway(data.activePaymentGateway ?? "stripe"))
       .catch(() => setActiveGateway("stripe"));
   }, []);
+
+  useEffect(() => {
+    if (!session?.id) return;
+    fetch(`/api/guest/session/${session.id}/tip-config`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => setGuestTipConfig(data))
+      .catch(() => {});
+  }, [session?.id]);
 
   useEffect(() => {
     if (!razorpayLinkId || !outletId || !tableToken || razorpayPollStatus !== "pending") return;
@@ -941,6 +959,64 @@ export default function GuestPage() {
                     <p className="text-sm text-gray-500">Amount Due</p>
                     <p className="text-3xl font-bold text-teal-700" data-testid="text-payment-total">{fmt(bill.total)}</p>
                   </div>
+
+                  {guestTipConfig && guestTipConfig.tipsEnabled && guestTipConfig.showOnQr && guestTipConfig.promptStyle !== "NONE" && bill && (
+                    <div className="mb-6 text-left" data-testid="section-guest-tip">
+                      <p className="text-sm font-semibold mb-2 text-gray-700">Would you like to add a tip?</p>
+                      <div className="flex gap-2 flex-wrap mb-2">
+                        {guestTipConfig.promptStyle === "BUTTONS" && (
+                          <>
+                            <button
+                              className={`px-3 py-1.5 rounded-xl border text-sm font-medium ${guestTipPct === 0 && !guestCustomTip ? "bg-teal-600 text-white border-teal-600" : "bg-white text-gray-700 border-gray-200"}`}
+                              onClick={() => { setGuestTipPct(0); setGuestCustomTip(""); }}
+                              data-testid="button-guest-no-tip"
+                            >
+                              No Tip
+                            </button>
+                            {(guestTipConfig.suggestedPercentages || [5, 10, 15]).map(pct => {
+                              const basis = guestTipConfig.tipBasis === "TOTAL" ? bill.total : bill.subtotal;
+                              return (
+                                <button
+                                  key={pct}
+                                  className={`px-3 py-1.5 rounded-xl border text-sm font-medium ${guestTipPct === pct && !guestCustomTip ? "bg-teal-600 text-white border-teal-600" : "bg-white text-gray-700 border-gray-200"}`}
+                                  onClick={() => { setGuestTipPct(pct); setGuestCustomTip(""); }}
+                                  data-testid={`button-guest-tip-pct-${pct}`}
+                                >
+                                  {pct}% ({fmt(basis * pct / 100)})
+                                </button>
+                              );
+                            })}
+                          </>
+                        )}
+                        {guestTipConfig.promptStyle === "INPUT" && (
+                          <button
+                            className={`px-3 py-1.5 rounded-xl border text-sm font-medium ${guestTipPct === 0 && !guestCustomTip ? "bg-teal-600 text-white border-teal-600" : "bg-white text-gray-700 border-gray-200"}`}
+                            onClick={() => { setGuestTipPct(0); setGuestCustomTip(""); }}
+                            data-testid="button-guest-no-tip"
+                          >
+                            No Tip
+                          </button>
+                        )}
+                      </div>
+                      {(guestTipConfig.allowCustom || guestTipConfig.promptStyle === "INPUT") && (
+                        <input
+                          type="number"
+                          placeholder="Custom tip amount"
+                          value={guestCustomTip}
+                          onChange={e => { setGuestCustomTip(e.target.value); setGuestTipPct(0); }}
+                          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm"
+                          min="0"
+                          step="0.01"
+                          data-testid="input-guest-custom-tip"
+                        />
+                      )}
+                      {(guestTipPct > 0 || parseFloat(guestCustomTip || "0") > 0) && (
+                        <p className="text-sm text-teal-600 font-semibold mt-1" data-testid="text-guest-tip-amount">
+                          Tip: {fmt(guestCustomTip ? parseFloat(guestCustomTip) || 0 : (guestTipConfig.tipBasis === "TOTAL" ? bill.total : bill.subtotal) * guestTipPct / 100)}
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   {razorpayUrl ? (
                     <div className="mb-6 p-4 bg-blue-50 rounded-xl border border-blue-200 text-center space-y-3">

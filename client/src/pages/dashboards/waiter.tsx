@@ -6,7 +6,7 @@ import { StatCard } from "@/components/widgets/stat-card";
 import {
   Armchair, ClipboardList, DollarSign, Clock, Users, Coffee, UtensilsCrossed,
   CircleDot, Plus, LogIn, LogOut, CheckCircle, AlertCircle, Bell,
-  CheckCheck, ChefHat, Package, Star, Trash2,
+  CheckCheck, ChefHat, Package, Star, Trash2, Coins,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -475,6 +475,22 @@ export default function WaiterDashboard() {
   });
   const tableRequests = Array.isArray(tableRequestsData) ? tableRequestsData : [];
 
+  const { data: myTipsData } = useQuery<{
+    today: number;
+    todayCount: number;
+    week: number;
+    month: number;
+    recent: { id: string; amount: number; billNumber: string; createdAt: string; isPaid: boolean }[];
+  } | null>({
+    queryKey: ["/api/tips/my-tips"],
+    queryFn: async () => {
+      const res = await fetch("/api/tips/my-tips", { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 60000,
+  });
+
   const myOrders = orders.filter((o: any) => o.waiterId === user?.id);
   const myOpenOrders = myOrders.filter((o: any) =>
     ["new", "sent_to_kitchen", "in_progress", "ready"].includes(o.status)
@@ -793,6 +809,70 @@ export default function WaiterDashboard() {
           </Card>
         </motion.div>
       </motion.div>
+
+      {myTipsData && myTipsData.today > 0 && (
+        <motion.div
+          variants={fadeUp}
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.35 }}
+        >
+          <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/20 dark:to-yellow-950/20" data-testid="card-my-tips">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-amber-600" />
+                My Tip Earnings
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">Today</p>
+                  <p className="text-lg font-bold text-amber-600" data-testid="text-tips-today">{fmt(myTipsData.today)}</p>
+                  <p className="text-xs text-muted-foreground">{myTipsData.todayCount} tips</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">This Week</p>
+                  <p className="text-lg font-bold" data-testid="text-tips-week">{fmt(myTipsData.week)}</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-xs text-muted-foreground">This Month</p>
+                  <p className="text-lg font-bold" data-testid="text-tips-month">{fmt(myTipsData.month)}</p>
+                </div>
+              </div>
+
+              {myTipsData.recent && myTipsData.recent.length > 0 && (
+                <div className="space-y-2" data-testid="list-recent-tips">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Recent Tips</p>
+                  {myTipsData.recent.slice(0, 5).map((tip) => (
+                    <div
+                      key={tip.id}
+                      className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-card border"
+                      data-testid={`row-tip-${tip.id}`}
+                    >
+                      <div>
+                        <span className="text-sm font-semibold text-amber-600">{fmt(tip.amount)}</span>
+                        {tip.billNumber && <span className="text-xs text-muted-foreground ml-2">Bill #{tip.billNumber}</span>}
+                        {tip.createdAt && (
+                          <span className="text-xs text-muted-foreground ml-2">
+                            {new Date(tip.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        )}
+                      </div>
+                      <Badge
+                        className={tip.isPaid ? "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"}
+                        data-testid={`badge-tip-status-${tip.id}`}
+                      >
+                        {tip.isPaid ? "✅ Paid" : "⏳ Pending"}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

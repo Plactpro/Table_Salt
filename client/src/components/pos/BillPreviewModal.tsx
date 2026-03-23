@@ -136,6 +136,27 @@ export default function BillPreviewModal({
     },
     staleTime: 60_000,
   });
+
+  const outletId = user?.outletId || user?.tenant?.defaultOutletId || null;
+  const { data: tipConfig } = useQuery<{
+    tipsEnabled: boolean;
+    showOnPos: boolean;
+    showOnReceipt: boolean;
+    promptStyle: "BUTTONS" | "INPUT" | "NONE";
+    suggestedPercentages: number[];
+    allowCustom: boolean;
+    tipBasis: "SUBTOTAL" | "TOTAL";
+  } | null>({
+    queryKey: ["/api/tips/config", outletId],
+    queryFn: async () => {
+      if (!outletId) return null;
+      const res = await fetch(`/api/tips/config/${outletId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: open && !!outletId,
+    staleTime: 60_000,
+  });
   const activeGateway: "stripe" | "razorpay" | "both" = gatewayConfig?.activePaymentGateway ?? "stripe";
   const razorpayAvailableForPOS = (activeGateway === "razorpay" || activeGateway === "both") && !!user?.tenant?.razorpayEnabled;
   const stripeAvailableForPOS = activeGateway === "stripe" || activeGateway === "both";
@@ -329,7 +350,8 @@ export default function BillPreviewModal({
     }
   };
 
-  const tipAmount = customTip ? parseFloat(customTip) || 0 : total * (tipPct / 100);
+  const tipBasis = tipConfig?.tipBasis === "TOTAL" ? total : subtotal;
+  const tipAmount = customTip ? parseFloat(customTip) || 0 : tipBasis * (tipPct / 100);
   const loyaltyRedemptionValue = loyaltyPointsToRedeem * 0.01;
   const grandTotal = Math.max(0, total - tierDiscountAmount + tipAmount - loyaltyRedemptionValue);
 
@@ -1186,20 +1208,95 @@ export default function BillPreviewModal({
                 {billNumber && <Badge variant="outline" className="mt-1 text-xs">{billNumber}</Badge>}
               </div>
 
-              <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tips</p>
-                <div className="flex gap-1.5">
-                  {[0, 5, 10, 15].map(pct => (
-                    <Button key={pct} size="sm" variant={tipPct === pct && !customTip ? "default" : "outline"}
-                      className="flex-1 text-xs" onClick={() => { setTipPct(pct); setCustomTip(""); }}>
-                      {pct === 0 ? "None" : `${pct}%`}
-                    </Button>
-                  ))}
-                  <Input placeholder="Custom" type="number" value={customTip} onChange={e => { setCustomTip(e.target.value); setTipPct(0); }}
-                    className="w-24 text-xs h-8" min="0" step="0.01" />
+              {tipConfig && tipConfig.tipsEnabled && tipConfig.showOnPos && tipConfig.promptStyle !== "NONE" && (
+                <div className="space-y-2" data-testid="section-tip">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Add Tip? (Optional)</p>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {tipConfig.promptStyle === "BUTTONS" && (
+                      <>
+                        <Button
+                          key="no-tip"
+                          size="sm"
+                          variant={tipPct === 0 && !customTip ? "default" : "outline"}
+                          className="flex-1 text-xs"
+                          onClick={() => { setTipPct(0); setCustomTip(""); }}
+                          data-testid="button-no-tip"
+                        >
+                          No Tip
+                        </Button>
+                        {(tipConfig.suggestedPercentages || [5, 10, 15]).map(pct => (
+                          <Button
+                            key={pct}
+                            size="sm"
+                            variant={tipPct === pct && !customTip ? "default" : "outline"}
+                            className="flex-1 text-xs"
+                            onClick={() => { setTipPct(pct); setCustomTip(""); }}
+                            data-testid={`button-tip-pct-${pct}`}
+                          >
+                            {pct}% +{fmt(tipBasis * pct / 100)}
+                          </Button>
+                        ))}
+                        {tipConfig.allowCustom && (
+                          <Button
+                            size="sm"
+                            variant={customTip ? "default" : "outline"}
+                            className="flex-1 text-xs"
+                            onClick={() => { setTipPct(0); }}
+                            data-testid="button-tip-custom"
+                          >
+                            Custom
+                          </Button>
+                        )}
+                      </>
+                    )}
+                    {tipConfig.promptStyle === "INPUT" && (
+                      <Button
+                        key="no-tip-input"
+                        size="sm"
+                        variant={tipPct === 0 && !customTip ? "default" : "outline"}
+                        className="text-xs"
+                        onClick={() => { setTipPct(0); setCustomTip(""); }}
+                        data-testid="button-no-tip"
+                      >
+                        No Tip
+                      </Button>
+                    )}
+                  </div>
+                  {(tipConfig.allowCustom || tipConfig.promptStyle === "INPUT") && (
+                    <Input
+                      placeholder="Custom tip amount"
+                      type="number"
+                      value={customTip}
+                      onChange={e => { setCustomTip(e.target.value); setTipPct(0); }}
+                      className="text-xs h-8"
+                      min="0"
+                      step="0.01"
+                      data-testid="input-custom-tip"
+                    />
+                  )}
+                  {tipAmount > 0 && (
+                    <p className="text-xs text-muted-foreground" data-testid="text-tip-amount">
+                      Tip ({tipPct ? `${tipPct}%` : "custom"}): {fmt(tipAmount)} · <span data-testid="text-grand-total-with-tip">Grand total: {fmt(grandTotal)}</span>
+                    </p>
+                  )}
                 </div>
-                {tipAmount > 0 && <p className="text-xs text-muted-foreground">Tips: {fmt(tipAmount)} · Grand total: {fmt(grandTotal)}</p>}
-              </div>
+              )}
+              {(!tipConfig || !tipConfig.tipsEnabled || !tipConfig.showOnPos) && false && (
+                <div className="space-y-2">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Tips</p>
+                  <div className="flex gap-1.5">
+                    {[0, 5, 10, 15].map(pct => (
+                      <Button key={pct} size="sm" variant={tipPct === pct && !customTip ? "default" : "outline"}
+                        className="flex-1 text-xs" onClick={() => { setTipPct(pct); setCustomTip(""); }}>
+                        {pct === 0 ? "None" : `${pct}%`}
+                      </Button>
+                    ))}
+                    <Input placeholder="Custom" type="number" value={customTip} onChange={e => { setCustomTip(e.target.value); setTipPct(0); }}
+                      className="w-24 text-xs h-8" min="0" step="0.01" />
+                  </div>
+                  {tipAmount > 0 && <p className="text-xs text-muted-foreground">Tips: {fmt(tipAmount)} · Grand total: {fmt(grandTotal)}</p>}
+                </div>
+              )}
 
               <div className="flex items-center justify-between">
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
