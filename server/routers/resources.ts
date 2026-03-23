@@ -12,8 +12,8 @@ import {
 } from "../services/resource-service";
 
 export function registerResourceRoutes(app: Express): void {
-  // GET /api/resources?outletId=... — list all resources for outlet (owner/manager only)
-  app.get("/api/resources", requireRole("owner", "manager"), async (req: any, res: any) => {
+  // GET /api/resources?outletId=... — list all resources for outlet (all authenticated staff)
+  app.get("/api/resources", requireAuth, async (req: any, res: any) => {
     const user = req.user as any;
     const outletId = req.query.outletId as string;
     if (!outletId) return res.status(400).json({ message: "outletId required" });
@@ -207,6 +207,39 @@ export function registerResourceRoutes(app: Express): void {
       await recalculateAvailability(updated.resourceId);
     }
     res.json(updated);
+  });
+
+  // GET /api/resources/assignments/by-outlet?outletId=... — active assignments per table
+  app.get("/api/resources/assignments/by-outlet", requireAuth, async (req: any, res: any) => {
+    const user = req.user as any;
+    const outletId = req.query.outletId as string;
+    if (!outletId) return res.status(400).json({ message: "outletId required" });
+
+    const { rows } = await pool.query(
+      `SELECT ra.id, ra.table_id, ra.table_number, ra.resource_id, ra.quantity, ra.status, ra.assigned_at,
+              sr.resource_name, sr.resource_icon, sr.resource_code
+       FROM resource_assignments ra
+       JOIN special_resources sr ON sr.id = ra.resource_id
+       WHERE ra.tenant_id = $1 AND ra.outlet_id = $2 AND ra.status IN ('assigned', 'in_use')
+       ORDER BY ra.assigned_at DESC`,
+      [user.tenantId, outletId]
+    );
+
+    const byTable: Record<string, { resourceId: string; resourceName: string; resourceIcon: string; resourceCode: string; quantity: number; assignedAt: string | null }[]> = {};
+    for (const row of rows) {
+      const tableId = row.table_id;
+      if (!byTable[tableId]) byTable[tableId] = [];
+      byTable[tableId].push({
+        resourceId: row.resource_id,
+        resourceName: row.resource_name,
+        resourceIcon: row.resource_icon,
+        resourceCode: row.resource_code,
+        quantity: row.quantity,
+        assignedAt: row.assigned_at ? new Date(row.assigned_at).toISOString() : null,
+      });
+    }
+
+    res.json(byTable);
   });
 
   // POST /api/resources/assign — supervisor+ required for resource operations

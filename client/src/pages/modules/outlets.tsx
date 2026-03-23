@@ -7,6 +7,7 @@ import { motion } from "framer-motion";
 import {
   MapPin, Plus, Search, Edit, Trash2, Building2, Truck, Cloud, Store,
   Navigation, Globe, Clock, CheckCircle2, Banknote, DollarSign, Save, AlertCircle, Package, X,
+  Settings, Wrench, Shield,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
 import { currencyMap } from "@shared/currency";
@@ -1058,6 +1060,478 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
   );
 }
 
+const RESOURCE_CODES = [
+  { code: "HIGH_CHAIR", label: "High Chair", icon: "🪑" },
+  { code: "BOOSTER_SEAT", label: "Booster Seat", icon: "🪑" },
+  { code: "BABY_COT", label: "Baby Cot", icon: "🛏️" },
+  { code: "WHEELCHAIR", label: "Wheelchair", icon: "♿" },
+  { code: "PRAYER_MAT", label: "Prayer Mat", icon: "🕌" },
+  { code: "WALKING_FRAME", label: "Walking Frame", icon: "🦯" },
+  { code: "CUSTOM", label: "Custom", icon: "🪑" },
+];
+
+const UNIT_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  available: { label: "Available", color: "bg-green-100 text-green-700 border-green-200" },
+  in_use: { label: "In Use", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  cleaning: { label: "Cleaning", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  damaged: { label: "Damaged", color: "bg-red-100 text-red-700 border-red-200" },
+};
+
+interface SpecialResource {
+  id: string;
+  resourceCode: string;
+  resourceName: string;
+  resourceIcon: string;
+  totalUnits: number;
+  availableUnits: number;
+  isTrackable: boolean;
+  requiresSetupTime: number | null;
+  notes: string | null;
+  isActive: boolean;
+}
+
+interface ResourceUnit {
+  id: string;
+  unitCode: string;
+  unitName: string;
+  status: string;
+  lastCleanedAt: string | null;
+}
+
+function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [selectedOutletId, setSelectedOutletId] = useState<string>(outlets[0]?.id || "");
+  const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showUnitsDialog, setShowUnitsDialog] = useState(false);
+  const [editingResource, setEditingResource] = useState<SpecialResource | null>(null);
+  const [managingResource, setManagingResource] = useState<SpecialResource | null>(null);
+  const [resourceForm, setResourceForm] = useState({
+    resourceCode: "HIGH_CHAIR",
+    resourceName: "High Chair",
+    resourceIcon: "🪑",
+    totalUnits: "2",
+    isTrackable: true,
+    requiresSetupTime: "0",
+    notes: "",
+  });
+
+  const { data: resources = [], isLoading } = useQuery<SpecialResource[]>({
+    queryKey: ["/api/resources", selectedOutletId],
+    queryFn: async () => {
+      if (!selectedOutletId) return [];
+      const res = await fetch(`/api/resources?outletId=${selectedOutletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!selectedOutletId,
+  });
+
+  const { data: units = [] } = useQuery<ResourceUnit[]>({
+    queryKey: ["/api/resources", managingResource?.id, "units"],
+    queryFn: async () => {
+      if (!managingResource) return [];
+      const res = await fetch(`/api/resources/${managingResource.id}/units`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!managingResource && showUnitsDialog,
+  });
+
+  const createMut = useMutation({
+    mutationFn: async (data: typeof resourceForm) => {
+      const res = await apiRequest("POST", "/api/resources", {
+        outletId: selectedOutletId,
+        resourceCode: data.resourceCode,
+        resourceName: data.resourceName,
+        resourceIcon: data.resourceIcon,
+        totalUnits: parseInt(data.totalUnits) || 0,
+        isTrackable: data.isTrackable,
+        requiresSetupTime: parseInt(data.requiresSetupTime) || 0,
+        notes: data.notes || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resources", selectedOutletId] });
+      setShowAddDialog(false);
+      resetForm();
+      toast({ title: "Resource created" });
+    },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: typeof resourceForm }) => {
+      const res = await apiRequest("PATCH", `/api/resources/${id}`, {
+        resourceCode: data.resourceCode,
+        resourceName: data.resourceName,
+        resourceIcon: data.resourceIcon,
+        totalUnits: parseInt(data.totalUnits) || 0,
+        isTrackable: data.isTrackable,
+        requiresSetupTime: parseInt(data.requiresSetupTime) || 0,
+        notes: data.notes || null,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resources", selectedOutletId] });
+      setShowEditDialog(false);
+      toast({ title: "Resource updated" });
+    },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/resources/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resources", selectedOutletId] });
+      toast({ title: "Resource removed" });
+    },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const updateUnitMut = useMutation({
+    mutationFn: async ({ unitId, status }: { unitId: string; status: string }) => {
+      const res = await apiRequest("PATCH", `/api/resources/units/${unitId}`, { status });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resources", managingResource?.id, "units"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/resources", selectedOutletId] });
+      toast({ title: "Unit status updated" });
+    },
+    onError: (e: Error) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const addUnitMut = useMutation({
+    mutationFn: async () => {
+      if (!managingResource) return;
+      const prefix = managingResource.resourceCode.split(/[_\s]+/).map((w: string) => w[0] ?? "").join("").toUpperCase().slice(0, 3) || managingResource.resourceCode.slice(0, 2).toUpperCase();
+      const nextNum = units.length + 1;
+      const unitCode = `${prefix}-${String(nextNum).padStart(2, "0")}`;
+      const unitName = `${managingResource.resourceName} ${nextNum}`;
+      const res = await apiRequest("POST", `/api/resources/${managingResource.id}/units`, { unitCode, unitName });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/resources", managingResource?.id, "units"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/resources", selectedOutletId] });
+      toast({ title: "Unit added" });
+    },
+    onError: (e: Error) => toast({ title: "Failed to add unit", description: e.message, variant: "destructive" }),
+  });
+
+  function resetForm() {
+    setResourceForm({ resourceCode: "HIGH_CHAIR", resourceName: "High Chair", resourceIcon: "🪑", totalUnits: "2", isTrackable: true, requiresSetupTime: "0", notes: "" });
+  }
+
+  function openEditDialog(resource: SpecialResource) {
+    setEditingResource(resource);
+    setResourceForm({
+      resourceCode: resource.resourceCode,
+      resourceName: resource.resourceName,
+      resourceIcon: resource.resourceIcon,
+      totalUnits: String(resource.totalUnits),
+      isTrackable: resource.isTrackable,
+      requiresSetupTime: String(resource.requiresSetupTime || 0),
+      notes: resource.notes || "",
+    });
+    setShowEditDialog(true);
+  }
+
+  function openUnitsDialog(resource: SpecialResource) {
+    setManagingResource(resource);
+    setShowUnitsDialog(true);
+  }
+
+  function handleCodeChange(code: string) {
+    const found = RESOURCE_CODES.find(r => r.code === code);
+    setResourceForm(f => ({ ...f, resourceCode: code, resourceName: found?.label || f.resourceName, resourceIcon: found?.icon || f.resourceIcon }));
+  }
+
+  if (user?.role !== "owner") return null;
+  if (outlets.length === 0) return null;
+
+  return (
+    <Card data-testid="section-special-resources">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <span className="text-lg">🪑</span>
+              Special Resources
+            </CardTitle>
+            <CardDescription>Manage high chairs, baby cots, wheelchairs, and other special equipment</CardDescription>
+          </div>
+          <Button size="sm" onClick={() => { resetForm(); setShowAddDialog(true); }} data-testid="button-add-resource">
+            <Plus className="h-4 w-4 mr-1.5" />Add Resource
+          </Button>
+        </div>
+        {outlets.length > 1 && (
+          <div className="mt-3">
+            <Select value={selectedOutletId} onValueChange={setSelectedOutletId}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Select outlet" />
+              </SelectTrigger>
+              <SelectContent>
+                {outlets.map(o => (
+                  <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading resources...</p>
+        ) : resources.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <span className="text-4xl block mb-3">🪑</span>
+            <p className="text-sm">No special resources configured yet.</p>
+            <p className="text-xs mt-1">Add high chairs, baby cots, or other equipment.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="text-left py-2 pr-4">Icon</th>
+                  <th className="text-left py-2 pr-4">Name</th>
+                  <th className="text-center py-2 pr-4">Total</th>
+                  <th className="text-center py-2 pr-4">Available</th>
+                  <th className="text-center py-2 pr-4">In Use</th>
+                  <th className="text-right py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {resources.map(resource => (
+                  <tr key={resource.id} className="border-b last:border-0 hover:bg-muted/20" data-testid={`row-resource-${resource.id}`}>
+                    <td className="py-3 pr-4 text-xl">{resource.resourceIcon}</td>
+                    <td className="py-3 pr-4">
+                      <div className="font-medium">{resource.resourceName}</div>
+                      <div className="text-xs text-muted-foreground">{resource.resourceCode}</div>
+                      {!resource.isTrackable && <div className="text-xs text-muted-foreground italic">Unlimited / Not tracked</div>}
+                    </td>
+                    <td className="py-3 pr-4 text-center font-medium">{resource.isTrackable ? resource.totalUnits : "∞"}</td>
+                    <td className="py-3 pr-4 text-center">
+                      {resource.isTrackable ? (
+                        <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">{resource.availableUnits}</Badge>
+                      ) : "—"}
+                    </td>
+                    <td className="py-3 pr-4 text-center">
+                      {resource.isTrackable ? (resource.totalUnits - resource.availableUnits) : "—"}
+                    </td>
+                    <td className="py-3 text-right">
+                      <div className="flex justify-end gap-1">
+                        {resource.isTrackable && (
+                          <Button variant="outline" size="sm" className="h-7 text-xs px-2" onClick={() => openUnitsDialog(resource)} data-testid="button-manage-units">
+                            <Wrench className="h-3 w-3 mr-1" />Units
+                          </Button>
+                        )}
+                        <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => openEditDialog(resource)}>
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs px-2 text-destructive hover:text-destructive" onClick={() => { if (confirm("Remove this resource?")) deleteMut.mutate(resource.id); }}>
+                          <Trash2 className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+
+      {/* Add Resource Dialog */}
+      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+        <DialogContent className="max-w-md" data-testid="dialog-add-resource">
+          <DialogHeader>
+            <DialogTitle>Add Special Resource</DialogTitle>
+            <DialogDescription>Configure a new special resource for this outlet</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Resource Type</Label>
+              <Select value={resourceForm.resourceCode} onValueChange={handleCodeChange} data-testid="select-resource-code">
+                <SelectTrigger className="mt-1" data-testid="select-resource-code">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RESOURCE_CODES.map(r => (
+                    <SelectItem key={r.code} value={r.code}>{r.icon} {r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Display Name</Label>
+                <Input className="mt-1" value={resourceForm.resourceName} onChange={e => setResourceForm(f => ({ ...f, resourceName: e.target.value }))} data-testid="input-resource-name" />
+              </div>
+              <div>
+                <Label>Icon (emoji)</Label>
+                <Input className="mt-1" value={resourceForm.resourceIcon} onChange={e => setResourceForm(f => ({ ...f, resourceIcon: e.target.value }))} maxLength={4} placeholder="🪑" />
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+              <div>
+                <p className="text-sm font-medium">Trackable</p>
+                <p className="text-xs text-muted-foreground">Track individual units (off = unlimited like ramp)</p>
+              </div>
+              <Switch checked={resourceForm.isTrackable} onCheckedChange={v => setResourceForm(f => ({ ...f, isTrackable: v }))} />
+            </div>
+            {resourceForm.isTrackable && (
+              <div>
+                <Label>Total Units</Label>
+                <Input className="mt-1" type="number" min="0" value={resourceForm.totalUnits} onChange={e => setResourceForm(f => ({ ...f, totalUnits: e.target.value }))} data-testid="input-resource-units" />
+              </div>
+            )}
+            <div>
+              <Label>Setup Time (minutes)</Label>
+              <Input className="mt-1" type="number" min="0" value={resourceForm.requiresSetupTime} onChange={e => setResourceForm(f => ({ ...f, requiresSetupTime: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea className="mt-1" value={resourceForm.notes} onChange={e => setResourceForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
+            <Button onClick={() => createMut.mutate(resourceForm)} disabled={!resourceForm.resourceName || createMut.isPending} data-testid="button-save-resource">
+              {createMut.isPending ? "Saving..." : "Add Resource"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Resource Dialog */}
+      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Resource</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Resource Type</Label>
+              <Select value={resourceForm.resourceCode} onValueChange={handleCodeChange}>
+                <SelectTrigger className="mt-1">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {RESOURCE_CODES.map(r => (
+                    <SelectItem key={r.code} value={r.code}>{r.icon} {r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label>Display Name</Label>
+                <Input className="mt-1" value={resourceForm.resourceName} onChange={e => setResourceForm(f => ({ ...f, resourceName: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Icon (emoji)</Label>
+                <Input className="mt-1" value={resourceForm.resourceIcon} onChange={e => setResourceForm(f => ({ ...f, resourceIcon: e.target.value }))} maxLength={4} />
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
+              <div>
+                <p className="text-sm font-medium">Trackable</p>
+                <p className="text-xs text-muted-foreground">Track individual units</p>
+              </div>
+              <Switch checked={resourceForm.isTrackable} onCheckedChange={v => setResourceForm(f => ({ ...f, isTrackable: v }))} />
+            </div>
+            {resourceForm.isTrackable && (
+              <div>
+                <Label>Total Units</Label>
+                <Input className="mt-1" type="number" min="0" value={resourceForm.totalUnits} onChange={e => setResourceForm(f => ({ ...f, totalUnits: e.target.value }))} />
+              </div>
+            )}
+            <div>
+              <Label>Setup Time (minutes)</Label>
+              <Input className="mt-1" type="number" min="0" value={resourceForm.requiresSetupTime} onChange={e => setResourceForm(f => ({ ...f, requiresSetupTime: e.target.value }))} />
+            </div>
+            <div>
+              <Label>Notes</Label>
+              <Textarea className="mt-1" value={resourceForm.notes} onChange={e => setResourceForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
+            <Button onClick={() => { if (editingResource) updateMut.mutate({ id: editingResource.id, data: resourceForm }); }} disabled={!resourceForm.resourceName || updateMut.isPending} data-testid="button-save-resource">
+              {updateMut.isPending ? "Saving..." : "Save Changes"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Units Dialog */}
+      <Dialog open={showUnitsDialog} onOpenChange={setShowUnitsDialog}>
+        <DialogContent className="max-w-lg" data-testid="dialog-manage-units">
+          <DialogHeader>
+            <DialogTitle>Manage Units — {managingResource?.resourceName}</DialogTitle>
+            <DialogDescription>Track individual units and their current status</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {units.length === 0 ? (
+              <p className="text-sm text-center text-muted-foreground py-4">No units found</p>
+            ) : (
+              <div className="space-y-2">
+                {units.map(unit => (
+                  <div key={unit.id} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div>
+                      <p className="font-medium text-sm">{unit.unitCode}</p>
+                      {unit.lastCleanedAt && (
+                        <p className="text-xs text-muted-foreground">Cleaned: {new Date(unit.lastCleanedAt).toLocaleDateString()}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={`text-xs ${UNIT_STATUS_CONFIG[unit.status]?.color || ""}`}>
+                        {UNIT_STATUS_CONFIG[unit.status]?.label || unit.status}
+                      </Badge>
+                      <div className="flex gap-1">
+                        {unit.status !== "cleaning" && (
+                          <Button variant="outline" size="sm" className="h-6 text-xs px-1.5" onClick={() => updateUnitMut.mutate({ unitId: unit.id, status: "cleaning" })} data-testid={`button-mark-cleaning-${unit.id}`}>
+                            🧹
+                          </Button>
+                        )}
+                        {unit.status !== "available" && (
+                          <Button variant="outline" size="sm" className="h-6 text-xs px-1.5" onClick={() => updateUnitMut.mutate({ unitId: unit.id, status: "available" })} data-testid={`button-mark-available-${unit.id}`}>
+                            ✅
+                          </Button>
+                        )}
+                        {unit.status !== "damaged" && (
+                          <Button variant="outline" size="sm" className="h-6 text-xs px-1.5" onClick={() => updateUnitMut.mutate({ unitId: unit.id, status: "damaged" })} data-testid={`button-mark-damaged-${unit.id}`}>
+                            ⚠️
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex items-center justify-between">
+            <Button variant="outline" size="sm" onClick={() => addUnitMut.mutate()} disabled={addUnitMut.isPending || !managingResource?.isTrackable} data-testid="button-add-unit">
+              <Plus className="h-3 w-3 mr-1" />Add Unit
+            </Button>
+            <Button variant="outline" onClick={() => setShowUnitsDialog(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 function getBusinessTypeView(businessType: string | undefined) {
   switch (businessType) {
     case "food_truck":
@@ -1573,6 +2047,12 @@ export default function OutletsPage() {
       {outlets.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
           <PackingChargeSettings outlets={outlets} />
+        </motion.div>
+      )}
+
+      {user?.role === "owner" && outlets.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+          <SpecialResourceSettings outlets={outlets} />
         </motion.div>
       )}
     </motion.div>
