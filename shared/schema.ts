@@ -2359,3 +2359,169 @@ export const kitchenSettings = pgTable("kitchen_settings", {
 export const insertKitchenSettingsSchema = createInsertSchema(kitchenSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type KitchenSettings = typeof kitchenSettings.$inferSelect;
 export type InsertKitchenSettings = z.infer<typeof insertKitchenSettingsSchema>;
+
+// ─── Task #110: Cooking & Preparation Time Tracking ──────────────────────────
+
+export const itemTimeLogs = pgTable("item_time_logs", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  orderNumber: varchar("order_number", { length: 50 }),
+  orderItemId: varchar("order_item_id", { length: 36 }).notNull().unique(),
+  menuItemId: varchar("menu_item_id", { length: 36 }),
+  menuItemName: varchar("menu_item_name", { length: 255 }),
+  counterId: varchar("counter_id", { length: 36 }),
+  counterName: varchar("counter_name", { length: 100 }),
+  chefId: varchar("chef_id", { length: 36 }),
+  chefName: varchar("chef_name", { length: 255 }),
+  shiftDate: date("shift_date").notNull(),
+  shiftType: varchar("shift_type", { length: 20 }),
+  orderType: varchar("order_type", { length: 30 }),
+  tableNumber: varchar("table_number", { length: 20 }),
+  orderReceivedAt: timestamp("order_received_at", { withTimezone: true }),
+  kotSentAt: timestamp("kot_sent_at", { withTimezone: true }),
+  ticketAcknowledgedAt: timestamp("ticket_acknowledged_at", { withTimezone: true }),
+  cookingStartedAt: timestamp("cooking_started_at", { withTimezone: true }),
+  cookingReadyAt: timestamp("cooking_ready_at", { withTimezone: true }),
+  orderFullyReadyAt: timestamp("order_fully_ready_at", { withTimezone: true }),
+  waiterPickupAt: timestamp("waiter_pickup_at", { withTimezone: true }),
+  servedAt: timestamp("served_at", { withTimezone: true }),
+  waiterResponseTime: integer("waiter_response_time"),
+  kitchenPickupTime: integer("kitchen_pickup_time"),
+  idleWaitTime: integer("idle_wait_time"),
+  actualCookingTime: integer("actual_cooking_time"),
+  passWaitTime: integer("pass_wait_time"),
+  serviceDeliveryTime: integer("service_delivery_time"),
+  totalKitchenTime: integer("total_kitchen_time"),
+  totalCycleTime: integer("total_cycle_time"),
+  recipeEstimatedTime: integer("recipe_estimated_time"),
+  timeVariance: integer("time_variance"),
+  variancePercent: decimal("variance_percent", { precision: 5, scale: 2 }),
+  performanceFlag: varchar("performance_flag", { length: 20 }),
+  hadModifications: boolean("had_modifications").default(false),
+  hadAllergyFlag: boolean("had_allergy_flag").default(false),
+  wasRushOrder: boolean("was_rush_order").default(false),
+  wasVipOrder: boolean("was_vip_order").default(false),
+  courseNumber: integer("course_number"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_item_time_logs_tenant").on(t.tenantId),
+  index("idx_item_time_logs_order_id_drz").on(t.orderId),
+  index("idx_item_time_logs_chef_id_drz").on(t.chefId),
+  index("idx_item_time_logs_menu_item_drz").on(t.menuItemId),
+  index("idx_item_time_logs_shift_date_drz").on(t.tenantId, t.shiftDate),
+  index("idx_item_time_logs_outlet_drz").on(t.outletId, t.shiftDate),
+]);
+
+export const insertItemTimeLogSchema = createInsertSchema(itemTimeLogs).omit({ id: true, createdAt: true });
+export type ItemTimeLog = typeof itemTimeLogs.$inferSelect;
+export type InsertItemTimeLog = z.infer<typeof insertItemTimeLogSchema>;
+
+export const orderTimeSummary = pgTable("order_time_summary", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  orderId: varchar("order_id", { length: 36 }).notNull().unique(),
+  orderNumber: varchar("order_number", { length: 50 }),
+  orderType: varchar("order_type", { length: 30 }),
+  tableNumber: varchar("table_number", { length: 20 }),
+  waiterId: varchar("waiter_id", { length: 36 }),
+  waiterName: varchar("waiter_name", { length: 255 }),
+  totalItems: integer("total_items"),
+  orderReceivedAt: timestamp("order_received_at", { withTimezone: true }),
+  kotSentAt: timestamp("kot_sent_at", { withTimezone: true }),
+  firstItemReadyAt: timestamp("first_item_ready_at", { withTimezone: true }),
+  allItemsReadyAt: timestamp("all_items_ready_at", { withTimezone: true }),
+  firstItemServedAt: timestamp("first_item_served_at", { withTimezone: true }),
+  allItemsServedAt: timestamp("all_items_served_at", { withTimezone: true }),
+  totalKitchenTime: integer("total_kitchen_time"),
+  totalCycleTime: integer("total_cycle_time"),
+  targetTime: integer("target_time"),
+  metTarget: boolean("met_target"),
+  delayReason: text("delay_reason"),
+  customerRating: integer("customer_rating"),
+  shiftDate: date("shift_date"),
+  shiftType: varchar("shift_type", { length: 20 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_order_time_summary_tenant_drz").on(t.tenantId, t.shiftDate),
+]);
+
+export const insertOrderTimeSummarySchema = createInsertSchema(orderTimeSummary).omit({ id: true, createdAt: true });
+export type OrderTimeSummary = typeof orderTimeSummary.$inferSelect;
+export type InsertOrderTimeSummary = z.infer<typeof insertOrderTimeSummarySchema>;
+
+export const dailyTimePerformance = pgTable("daily_time_performance", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  performanceDate: date("performance_date").notNull(),
+  shiftType: varchar("shift_type", { length: 20 }),
+  totalOrders: integer("total_orders").default(0),
+  ordersOnTime: integer("orders_on_time").default(0),
+  ordersDelayed: integer("orders_delayed").default(0),
+  ordersVeryFast: integer("orders_very_fast").default(0),
+  avgWaiterResponse: integer("avg_waiter_response"),
+  avgKitchenPickup: integer("avg_kitchen_pickup"),
+  avgIdleWait: integer("avg_idle_wait"),
+  avgCookingTime: integer("avg_cooking_time"),
+  avgPassWait: integer("avg_pass_wait"),
+  avgTotalKitchenTime: integer("avg_total_kitchen_time"),
+  avgTotalCycleTime: integer("avg_total_cycle_time"),
+  peakHour: integer("peak_hour"),
+  peakAvgWait: integer("peak_avg_wait"),
+  byCounter: jsonb("by_counter"),
+  byChef: jsonb("by_chef"),
+  byDish: jsonb("by_dish"),
+  targetKitchenTime: integer("target_kitchen_time"),
+  targetCycleTime: integer("target_cycle_time"),
+  onTimePercentage: decimal("on_time_percentage", { precision: 5, scale: 2 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  uniqueIndex("idx_daily_time_perf_unique").on(t.tenantId, t.outletId, t.performanceDate, t.shiftType),
+]);
+
+export const insertDailyTimePerformanceSchema = createInsertSchema(dailyTimePerformance).omit({ id: true, createdAt: true });
+export type DailyTimePerformance = typeof dailyTimePerformance.$inferSelect;
+export type InsertDailyTimePerformance = z.infer<typeof insertDailyTimePerformanceSchema>;
+
+export const recipeTimeBenchmarks = pgTable("recipe_time_benchmarks", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  menuItemId: varchar("menu_item_id", { length: 36 }).notNull(),
+  counterId: varchar("counter_id", { length: 36 }),
+  estimatedPrepTime: integer("estimated_prep_time").notNull(),
+  actualAvgTime: integer("actual_avg_time"),
+  fastestTime: integer("fastest_time"),
+  slowestTime: integer("slowest_time"),
+  p75Time: integer("p75_time"),
+  sampleCount: integer("sample_count").default(0),
+  lastCalculated: timestamp("last_calculated", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  uniqueIndex("idx_recipe_benchmarks_unique").on(t.tenantId, t.menuItemId, t.counterId),
+]);
+
+export const insertRecipeTimeBenchmarkSchema = createInsertSchema(recipeTimeBenchmarks).omit({ id: true, createdAt: true });
+export type RecipeTimeBenchmark = typeof recipeTimeBenchmarks.$inferSelect;
+export type InsertRecipeTimeBenchmark = z.infer<typeof insertRecipeTimeBenchmarkSchema>;
+
+export const timePerformanceTargets = pgTable("time_performance_targets", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  orderType: varchar("order_type", { length: 30 }).default("ALL"),
+  targetName: varchar("target_name", { length: 100 }),
+  waiterResponseTarget: integer("waiter_response_target").default(120),
+  kitchenPickupTarget: integer("kitchen_pickup_target").default(60),
+  totalKitchenTarget: integer("total_kitchen_target").default(900),
+  totalCycleTarget: integer("total_cycle_target").default(1500),
+  alertAtPercent: integer("alert_at_percent").default(80),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertTimePerformanceTargetSchema = createInsertSchema(timePerformanceTargets).omit({ id: true, createdAt: true });
+export type TimePerformanceTarget = typeof timePerformanceTargets.$inferSelect;
+export type InsertTimePerformanceTarget = z.infer<typeof insertTimePerformanceTargetSchema>;

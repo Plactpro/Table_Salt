@@ -540,7 +540,11 @@ export async function runAdminMigrations(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_daily_planned_qty_tenant_date ON daily_planned_quantities (tenant_id, planned_date)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_daily_planned_qty_menu_item ON daily_planned_quantities (menu_item_id)`);
-  try { await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_planned_qty_unique ON daily_planned_quantities (tenant_id, menu_item_id, planned_date)`); } catch (_) { /* duplicate data may exist — index will be dropped below */ }
+  try {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_daily_planned_qty_unique ON daily_planned_quantities (tenant_id, menu_item_id, planned_date)`);
+  } catch (_) {
+    // May fail if duplicate rows exist; will be dropped below anyway
+  }
 
   // Task #79: Migrate daily_planned_quantities unique index to include outlet_id for proper multi-outlet scoping.
   // Drop the old constraint (no outlet_id) and replace with outlet-aware partial indexes.
@@ -1710,4 +1714,173 @@ export async function runTask108Migrations(): Promise<void> {
   `);
   // For tenants already on a previous version of this table, add the column idempotently
   await pool.query(`ALTER TABLE kitchen_settings ADD COLUMN IF NOT EXISTS manager_pin_hash TEXT`);
+
+  // ── Task #110: Cooking & Preparation Time Tracking ──────────────────────────
+
+  // Missing timestamp columns on order_items
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS kot_sent_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS ticket_acknowledged_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS waiter_pickup_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS served_at TIMESTAMPTZ`);
+
+  // Missing timestamp columns on orders
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS kot_sent_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS all_items_ready_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS all_items_served_at TIMESTAMPTZ`);
+
+  // item_time_logs table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS item_time_logs (
+      id                      VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id               VARCHAR(36) NOT NULL,
+      outlet_id               VARCHAR(36),
+      order_id                VARCHAR(36) NOT NULL,
+      order_number            VARCHAR(50),
+      order_item_id           VARCHAR(36) NOT NULL UNIQUE,
+      menu_item_id            VARCHAR(36),
+      menu_item_name          VARCHAR(255),
+      counter_id              VARCHAR(36),
+      counter_name            VARCHAR(100),
+      chef_id                 VARCHAR(36),
+      chef_name               VARCHAR(255),
+      shift_date              DATE NOT NULL,
+      shift_type              VARCHAR(20),
+      order_type              VARCHAR(30),
+      table_number            VARCHAR(20),
+      order_received_at       TIMESTAMPTZ,
+      kot_sent_at             TIMESTAMPTZ,
+      ticket_acknowledged_at  TIMESTAMPTZ,
+      cooking_started_at      TIMESTAMPTZ,
+      cooking_ready_at        TIMESTAMPTZ,
+      order_fully_ready_at    TIMESTAMPTZ,
+      waiter_pickup_at        TIMESTAMPTZ,
+      served_at               TIMESTAMPTZ,
+      waiter_response_time    INT,
+      kitchen_pickup_time     INT,
+      idle_wait_time          INT,
+      actual_cooking_time     INT,
+      pass_wait_time          INT,
+      service_delivery_time   INT,
+      total_kitchen_time      INT,
+      total_cycle_time        INT,
+      recipe_estimated_time   INT,
+      time_variance           INT,
+      variance_percent        DECIMAL(5,2),
+      performance_flag        VARCHAR(20),
+      had_modifications       BOOLEAN DEFAULT false,
+      had_allergy_flag        BOOLEAN DEFAULT false,
+      was_rush_order          BOOLEAN DEFAULT false,
+      was_vip_order           BOOLEAN DEFAULT false,
+      course_number           INT,
+      created_at              TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_time_logs_tenant ON item_time_logs(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_time_logs_order_id ON item_time_logs(order_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_time_logs_order_item_id ON item_time_logs(order_item_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_time_logs_chef_id ON item_time_logs(chef_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_time_logs_menu_item ON item_time_logs(menu_item_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_time_logs_shift_date ON item_time_logs(tenant_id, shift_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_item_time_logs_outlet ON item_time_logs(outlet_id, shift_date)`);
+
+  // order_time_summary table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS order_time_summary (
+      id                    VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id             VARCHAR(36) NOT NULL,
+      outlet_id             VARCHAR(36),
+      order_id              VARCHAR(36) NOT NULL UNIQUE,
+      order_number          VARCHAR(50),
+      order_type            VARCHAR(30),
+      table_number          VARCHAR(20),
+      waiter_id             VARCHAR(36),
+      waiter_name           VARCHAR(255),
+      total_items           INT,
+      order_received_at     TIMESTAMPTZ,
+      kot_sent_at           TIMESTAMPTZ,
+      first_item_ready_at   TIMESTAMPTZ,
+      all_items_ready_at    TIMESTAMPTZ,
+      first_item_served_at  TIMESTAMPTZ,
+      all_items_served_at   TIMESTAMPTZ,
+      total_kitchen_time    INT,
+      total_cycle_time      INT,
+      target_time           INT,
+      met_target            BOOLEAN,
+      delay_reason          TEXT,
+      customer_rating       INT,
+      shift_date            DATE,
+      shift_type            VARCHAR(20),
+      created_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_order_time_summary_tenant ON order_time_summary(tenant_id, shift_date)`);
+
+  // daily_time_performance table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS daily_time_performance (
+      id                    VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id             VARCHAR(36) NOT NULL,
+      outlet_id             VARCHAR(36),
+      performance_date      DATE NOT NULL,
+      shift_type            VARCHAR(20),
+      total_orders          INT DEFAULT 0,
+      orders_on_time        INT DEFAULT 0,
+      orders_delayed        INT DEFAULT 0,
+      orders_very_fast      INT DEFAULT 0,
+      avg_waiter_response   INT,
+      avg_kitchen_pickup    INT,
+      avg_idle_wait         INT,
+      avg_cooking_time      INT,
+      avg_pass_wait         INT,
+      avg_total_kitchen_time INT,
+      avg_total_cycle_time  INT,
+      peak_hour             INT,
+      peak_avg_wait         INT,
+      by_counter            JSONB,
+      by_chef               JSONB,
+      by_dish               JSONB,
+      target_kitchen_time   INT,
+      target_cycle_time     INT,
+      on_time_percentage    DECIMAL(5,2),
+      created_at            TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(tenant_id, outlet_id, performance_date, shift_type)
+    )
+  `);
+
+  // recipe_time_benchmarks table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS recipe_time_benchmarks (
+      id                  VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id           VARCHAR(36) NOT NULL,
+      menu_item_id        VARCHAR(36) NOT NULL,
+      counter_id          VARCHAR(36),
+      estimated_prep_time INT NOT NULL,
+      actual_avg_time     INT,
+      fastest_time        INT,
+      slowest_time        INT,
+      p75_time            INT,
+      sample_count        INT DEFAULT 0,
+      last_calculated     TIMESTAMPTZ,
+      created_at          TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(tenant_id, menu_item_id, counter_id)
+    )
+  `);
+
+  // time_performance_targets table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS time_performance_targets (
+      id                        VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id                 VARCHAR(36) NOT NULL,
+      outlet_id                 VARCHAR(36),
+      order_type                VARCHAR(30) DEFAULT 'ALL',
+      target_name               VARCHAR(100),
+      waiter_response_target    INT DEFAULT 120,
+      kitchen_pickup_target     INT DEFAULT 60,
+      total_kitchen_target      INT DEFAULT 900,
+      total_cycle_target        INT DEFAULT 1500,
+      alert_at_percent          INT DEFAULT 80,
+      is_active                 BOOLEAN DEFAULT true,
+      created_at                TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
 }
