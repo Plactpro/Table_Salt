@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/table";
 import {
   Search, Eye, ChevronUp, ChevronDown, ChevronLeft, ChevronRight, ClipboardList, Clock, CheckCircle2,
-  XCircle, CircleDot, Send, ChefHat, Bell, UtensilsCrossed, CreditCard, Ban, Receipt,
+  XCircle, CircleDot, Send, ChefHat, Bell, UtensilsCrossed, CreditCard, Ban, Receipt, Printer, RotateCcw,
 } from "lucide-react";
 import type { Order, OrderItem, Table } from "@shared/schema";
 
@@ -525,9 +525,26 @@ export default function OrdersPage() {
                     </Button>
                   )}
                   {(selectedOrderDetail.status === "paid" || selectedOrderDetail.status === "completed") && (
-                    <Button variant="outline" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-view-bill">
-                      <Receipt className="h-4 w-4 mr-1" /> View Bill / Refund
-                    </Button>
+                    <>
+                      <Button variant="outline" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-view-bill">
+                        <Receipt className="h-4 w-4 mr-1" /> View Bill / Refund
+                      </Button>
+                      <Button variant="outline" className="gap-1" onClick={async () => {
+                        try {
+                          await fetch("/api/print/reprint", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            credentials: "include",
+                            body: JSON.stringify({ orderId: selectedOrderDetail.id, type: "receipt", isReprint: true, reason: "Manual reprint from order history" }),
+                          });
+                          toast({ title: "Reprint Receipt queued", description: "Receipt sent to printer" });
+                        } catch (e: any) {
+                          toast({ title: "Reprint failed", description: e.message, variant: "destructive" });
+                        }
+                      }} data-testid={`button-reprint-receipt-${selectedOrderDetail.id}`}>
+                        <Printer className="h-4 w-4" /> Reprint Receipt
+                      </Button>
+                    </>
                   )}
                   {selectedOrderDetail.status !== "cancelled" && selectedOrderDetail.status !== "voided" && selectedOrderDetail.status !== "paid" && selectedOrderDetail.status !== "completed" && (
                     <>

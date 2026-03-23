@@ -29,7 +29,7 @@ import {
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
   Receipt, Clock, Pause, RotateCcw, Scissors, Flame, ChevronDown, Users, Phone, User,
-  MapPin, ChevronRight,
+  MapPin, ChevronRight, Printer,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
@@ -308,6 +308,8 @@ export default function POSPage() {
     tableNumber?: string | number;
   } | null>(null);
   const [showBillModal, setShowBillModal] = useState(false);
+  const [reprintManagerDialog, setReprintManagerDialog] = useState<{ open: boolean; orderId: string } | null>(null);
+  const [reprintManagerLoading, setReprintManagerLoading] = useState(false);
 
   const [tabs, setTabs] = useState<OrderTab[]>(() => {
     const stored = loadTabsFromStorage();
@@ -1333,6 +1335,30 @@ export default function POSPage() {
             <div className="flex items-center gap-2 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg px-3 py-1.5">
               <Receipt className="h-3.5 w-3.5 text-green-600 shrink-0" />
               <span className="text-xs text-green-700 dark:text-green-300 flex-1">Order placed · {fmt(lastPlacedOrder.total)}</span>
+              <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-green-700 hover:text-green-800 hover:bg-green-100 gap-1" onClick={async () => {
+                try {
+                  await fetch("/api/print/reprint", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ orderId: lastPlacedOrder.orderId, type: "kot", isReprint: true, reason: "Manual reprint from POS" }),
+                  });
+                  toast({ title: "Reprint KOT queued" });
+                } catch (e: any) {
+                  toast({ title: "Reprint failed", description: e.message, variant: "destructive" });
+                }
+              }} data-testid="button-reprint-kot">
+                <Printer className="h-3 w-3" /> KOT
+              </Button>
+              <Button size="sm" variant="ghost" className="h-6 text-xs px-2 text-green-700 hover:text-green-800 hover:bg-green-100 gap-1" onClick={() => {
+                if (user?.role === "manager" || user?.role === "owner") {
+                  setReprintManagerDialog({ open: true, orderId: lastPlacedOrder.orderId });
+                } else {
+                  toast({ title: "Manager approval required", description: "Only managers can reprint bills", variant: "destructive" });
+                }
+              }} data-testid="button-reprint-bill">
+                <Printer className="h-3 w-3" /> Bill
+              </Button>
               <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">Bill</Button>
               <button className="text-green-600 hover:text-green-800 ml-1" onClick={() => setLastPlacedOrder(null)} data-testid="button-dismiss-bill"><X className="h-3 w-3" /></button>
             </div>
@@ -1951,6 +1977,51 @@ export default function POSPage() {
           onApproved={handlePosSupervisorApproved}
         />
       )}
+
+      <Dialog open={!!reprintManagerDialog?.open} onOpenChange={(o) => !o && setReprintManagerDialog(null)}>
+        <DialogContent className="max-w-sm" data-testid="dialog-reprint-manager-approval">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Printer className="h-5 w-5 text-primary" /> Manager Approval Required
+            </DialogTitle>
+            <DialogDescription>
+              This reprint will be logged. Please confirm to proceed.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-2 text-sm text-muted-foreground">
+            Reprint Bill request for order{" "}
+            <span className="font-mono font-semibold">#{reprintManagerDialog?.orderId?.slice(-6).toUpperCase()}</span>
+            {" "}will be recorded in the audit log.
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setReprintManagerDialog(null)} data-testid="button-cancel-reprint-approval">Cancel</Button>
+            <Button
+              onClick={async () => {
+                if (!reprintManagerDialog?.orderId) return;
+                setReprintManagerLoading(true);
+                try {
+                  await fetch("/api/print/reprint", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    credentials: "include",
+                    body: JSON.stringify({ orderId: reprintManagerDialog.orderId, type: "bill", isReprint: true, reason: "Manager-approved reprint from POS" }),
+                  });
+                  toast({ title: "Reprint Bill queued", description: "Bill sent to printer and logged" });
+                  setReprintManagerDialog(null);
+                } catch (e: any) {
+                  toast({ title: "Reprint failed", description: e.message, variant: "destructive" });
+                } finally {
+                  setReprintManagerLoading(false);
+                }
+              }}
+              disabled={reprintManagerLoading}
+              data-testid="button-confirm-reprint-approval"
+            >
+              {reprintManagerLoading ? "Processing..." : "Confirm Reprint"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {lastPlacedOrder && (
         <BillPreviewModal
