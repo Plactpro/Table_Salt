@@ -2,7 +2,7 @@ import type { Express } from "express";
 import passport from "passport";
 import { TOTP, Secret } from "otpauth";
 import QRCode from "qrcode";
-import { randomBytes } from "crypto";
+import { randomBytes, createHash } from "crypto";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import { eq } from "drizzle-orm";
@@ -15,14 +15,39 @@ import { trialEndsAtDate, isStripeConfigured, getUncachableStripeClient } from "
 export function registerAuthRoutes(app: Express): void {
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { restaurantName, name, username, password } = req.body;
+      const { restaurantName, name, username, password, email, phone } = req.body;
       if (!restaurantName || !name || !username || !password) {
         return res.status(400).json({ message: "All fields are required" });
       }
+      if (!email) {
+        return res.status(400).json({ message: "Email address is required" });
+      }
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        return res.status(400).json({ message: "Invalid email address" });
+      }
+
+      const { rows: [regSetting] } = await pool.query(
+        `SELECT registration_open FROM platform_settings WHERE id = 'singleton' LIMIT 1`
+      );
+      if (regSetting?.registration_open === false) {
+        return res.status(403).json({ message: "Self-registration is currently disabled. Contact us to get started." });
+      }
+
       const existing = await storage.getUserByUsername(username);
       if (existing) {
         return res.status(400).json({ message: "Username already taken" });
       }
+
+      const emailHash = createHash("sha256").update(email.toLowerCase().trim()).digest("hex");
+      const { rows: [emailCheck] } = await pool.query(
+        `SELECT 1 FROM users WHERE email_hash = $1 LIMIT 1`,
+        [emailHash]
+      );
+      if (emailCheck) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+
       const slug = restaurantName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/-+$/, "");
       const trialEnd = trialEndsAtDate();
       const tenant = await storage.createTenant({ name: restaurantName, slug, plan: "standard", subscriptionStatus: "trialing", trialEndsAt: trialEnd });
@@ -48,7 +73,16 @@ export function registerAuthRoutes(app: Express): void {
         password: hashedPw,
         name,
         role: "owner",
+        email: email || null,
+        phone: phone || null,
       });
+      if (email) {
+        try {
+          await pool.query(`UPDATE users SET email_hash = $1 WHERE id = $2`, [emailHash, user.id]);
+        } catch (hashErr) {
+          console.warn("Could not set email_hash (non-fatal):", hashErr);
+        }
+      }
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Login failed" });
         const { password: _, ...safeUser } = user;

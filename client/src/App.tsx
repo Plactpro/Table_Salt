@@ -80,7 +80,8 @@ import AdminSupportTicketPage from "@/pages/admin/support-ticket";
 import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
 import { ActiveAlertsProvider } from "@/lib/active-alerts-context";
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -198,27 +199,86 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   );
 }
 
+function WelcomeModal({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
+  const pendingKey = `welcome_pending_${tenantId}`;
+  const [open, setOpen] = useState(() => {
+    try {
+      return localStorage.getItem(pendingKey) === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const handleClose = () => {
+    try {
+      localStorage.removeItem(pendingKey);
+    } catch {}
+    setOpen(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) handleClose(); }}>
+      <DialogContent className="max-w-md" data-testid="modal-welcome">
+        <div className="text-center space-y-4 py-2">
+          <div className="text-5xl">🎊</div>
+          <div>
+            <h2 className="text-xl font-bold font-heading">Welcome to Table Salt!</h2>
+            <p className="text-muted-foreground text-sm mt-1">{tenantName}</p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Your restaurant is set up and ready. Here's what to do next:
+          </p>
+          <div className="text-left space-y-2 bg-muted/40 rounded-lg p-4">
+            {["Add your menu items", "Set up your tables", "Add your staff", "Take your first order"].map((step, i) => (
+              <div key={i} className="flex items-center gap-2 text-sm">
+                <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-bold shrink-0">{i + 1}</span>
+                <span>{step}</span>
+              </div>
+            ))}
+          </div>
+          <Button className="w-full gap-2" onClick={handleClose} data-testid="button-lets-go">
+            Let's Go! →
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RoleDashboard() {
   const { user, tenant, isLoading } = useAuth();
+  const showWelcome = !isLoading && tenant?.onboardingCompleted && user?.role === "owner" &&
+    (() => { try { return localStorage.getItem(`welcome_pending_${user?.tenantId}`) === "true"; } catch { return false; } })();
 
   if (!isLoading && tenant && tenant.onboardingCompleted === false) {
     return <Redirect to="/onboarding" />;
   }
 
-  switch (user?.role) {
-    case "owner":
-      return <OwnerDashboard />;
-    case "manager":
-      return <ManagerDashboard />;
-    case "waiter":
-      return <WaiterDashboard />;
-    case "kitchen":
-      return <KitchenDashboard />;
-    case "accountant":
-      return <AccountantDashboard />;
-    default:
-      return <OwnerDashboard />;
-  }
+  const dashboard = (() => {
+    switch (user?.role) {
+      case "owner":
+        return <OwnerDashboard />;
+      case "manager":
+        return <ManagerDashboard />;
+      case "waiter":
+        return <WaiterDashboard />;
+      case "kitchen":
+        return <KitchenDashboard />;
+      case "accountant":
+        return <AccountantDashboard />;
+      default:
+        return <OwnerDashboard />;
+    }
+  })();
+
+  return (
+    <>
+      {showWelcome && user && tenant && (
+        <WelcomeModal tenantId={user.tenantId} tenantName={tenant.name} />
+      )}
+      {dashboard}
+    </>
+  );
 }
 
 function OnboardingRoute() {

@@ -53,6 +53,7 @@ import { registerCashMachineRoutes } from "./routers/cash-machine";
 import { registerTipManagementRoutes } from "./routers/tip-management";
 import { registerPackingChargeRoutes } from "./routers/packing-charges";
 import { registerSupportRoutes } from "./routers/support";
+import { registerOnboardingRoutes } from "./routers/onboarding";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -143,6 +144,7 @@ export async function registerRoutes(
   registerTipManagementRoutes(app);
   registerPackingChargeRoutes(app);
   registerSupportRoutes(app);
+  registerOnboardingRoutes(app);
 
   return httpServer;
 }

@@ -210,13 +210,15 @@ export default function AdminSettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium">Open Registration</p>
-                  <p className="text-xs text-slate-500">Allow new tenants to self-register on the platform</p>
+                  <p className="text-xs text-slate-500" data-testid="text-registration-status">
+                    {current.registrationOpen ? "Self-registration is enabled — new tenants can sign up freely" : "Self-registration is disabled — contact admin to get started"}
+                  </p>
                 </div>
                 <Switch
                   checked={current.registrationOpen}
                   onCheckedChange={(v) => toggle("registrationOpen", v)}
                   disabled={saveMutation.isPending}
-                  data-testid="switch-registration-open"
+                  data-testid="toggle-self-registration"
                 />
               </div>
               <Separator />

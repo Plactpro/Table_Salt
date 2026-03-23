@@ -2366,4 +2366,8 @@ export async function runTask108Migrations(): Promise<void> {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_in_app_support_replies_ticket ON in_app_support_ticket_replies(ticket_id, created_at ASC)`);
+
+  // Task #124: Add email_hash for deterministic uniqueness checking (email is encrypted with random IV)
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_hash TEXT`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uidx_users_email_hash ON users(email_hash) WHERE email_hash IS NOT NULL`);
 }

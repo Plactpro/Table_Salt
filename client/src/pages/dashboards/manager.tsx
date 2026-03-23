@@ -14,6 +14,7 @@ import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { VoidRequest } from "@/components/tickets/TicketDetailDrawer";
+import { TrialBanner } from "@/components/layout/TrialBanner";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -129,6 +130,7 @@ export default function ManagerDashboard() {
       initial="hidden"
       animate="show"
     >
+      <TrialBanner />
       {/* Persistent void-request notification for manager/owner */}
       {voidNotification && (
         <div className="fixed top-4 right-4 z-50 w-96 bg-background border-2 border-amber-300 rounded-xl shadow-xl p-4 space-y-3" data-testid="notification-void-request">

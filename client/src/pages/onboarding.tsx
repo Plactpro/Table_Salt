@@ -649,13 +649,14 @@ export default function OnboardingPage() {
     try {
       await apiRequest("POST", "/api/onboarding/complete", {});
       invalidateTenant();
+      try { if (tenant?.id) localStorage.setItem(`welcome_pending_${tenant.id}`, "true"); } catch {}
       navigate("/");
     } catch {
       navigate("/");
     } finally {
       setLoading(false);
     }
-  }, [navigate, invalidateTenant]);
+  }, [navigate, invalidateTenant, tenant]);
 
   const handleStep1Next = useCallback(async () => {
     setLoading(true);
@@ -717,6 +718,7 @@ export default function OnboardingPage() {
       });
       await apiRequest("POST", "/api/onboarding/complete", {});
       invalidateTenant();
+      try { if (tenant?.id) localStorage.setItem(`welcome_pending_${tenant.id}`, "true"); } catch {}
       toast({
         title: "Welcome to Table Salt!",
         description: "Your restaurant is ready.",

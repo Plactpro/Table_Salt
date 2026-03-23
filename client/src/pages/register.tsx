@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, Building2, UserCircle } from "lucide-react";
+import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, Building2, UserCircle, Mail, Phone } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { motion } from "framer-motion";
 
@@ -24,15 +24,29 @@ export default function RegisterPage() {
   const [restaurantName, setRestaurantName] = useState("");
   const [name, setName] = useState("");
   const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+
+  const passwordMismatch = confirmPassword.length > 0 && password !== confirmPassword;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (password !== confirmPassword) {
+      toast({
+        variant: "destructive",
+        title: "Passwords do not match",
+        description: "Please make sure both password fields match.",
+      });
+      return;
+    }
     setLoading(true);
     try {
-      await register({ restaurantName, name, username, password });
+      await register({ restaurantName, name, username, password, email, phone });
       navigate("/onboarding");
     } catch (err: any) {
       toast({
@@ -133,7 +147,7 @@ export default function RegisterPage() {
             <p className="text-muted-foreground mb-8">Set up your restaurant in minutes</p>
           </motion.div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <motion.div
               className="space-y-2"
               initial={{ opacity: 0, y: 20 }}
@@ -158,7 +172,7 @@ export default function RegisterPage() {
               className="space-y-2"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.55 }}
+              transition={{ duration: 0.5, delay: 0.52 }}
             >
               <Label htmlFor="name">Your Name</Label>
               <div className="relative">
@@ -178,7 +192,50 @@ export default function RegisterPage() {
               className="space-y-2"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.6 }}
+              transition={{ duration: 0.5, delay: 0.54 }}
+            >
+              <Label htmlFor="email">Email Address</Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  data-testid="input-email"
+                  type="email"
+                  placeholder="owner@restaurant.com"
+                  className="pl-10"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Used for account recovery and trial notifications</p>
+            </motion.div>
+            <motion.div
+              className="space-y-2"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.56 }}
+            >
+              <Label htmlFor="phone">Phone / WhatsApp <span className="text-muted-foreground font-normal">(optional)</span></Label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="phone"
+                  data-testid="input-phone"
+                  type="tel"
+                  placeholder="+91 98765 43210"
+                  className="pl-10"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground">Optional — for account recovery</p>
+            </motion.div>
+            <motion.div
+              className="space-y-2"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.58 }}
             >
               <Label htmlFor="username">Username</Label>
               <div className="relative">
@@ -198,7 +255,7 @@ export default function RegisterPage() {
               className="space-y-2"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.65 }}
+              transition={{ duration: 0.5, delay: 0.60 }}
             >
               <Label htmlFor="password">Password</Label>
               <div className="relative">
@@ -225,14 +282,49 @@ export default function RegisterPage() {
               </div>
             </motion.div>
             <motion.div
+              className="space-y-2"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: 0.7 }}
+              transition={{ duration: 0.5, delay: 0.62 }}
+            >
+              <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <div className="relative">
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="confirmPassword"
+                  data-testid="input-confirm-password"
+                  type={showConfirmPassword ? "text" : "password"}
+                  placeholder="Confirm your password"
+                  className={`pl-10 pr-10 ${passwordMismatch ? "border-destructive" : ""}`}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                />
+                <button
+                  type="button"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  data-testid="button-toggle-confirm-password"
+                  tabIndex={-1}
+                >
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+              {passwordMismatch && (
+                <p className="text-xs text-destructive" data-testid="text-password-match-error">
+                  Passwords do not match
+                </p>
+              )}
+            </motion.div>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.65 }}
             >
               <Button
                 type="submit"
                 className="w-full h-11 text-base gap-2"
-                disabled={loading}
+                disabled={loading || passwordMismatch}
                 data-testid="button-register"
               >
                 {loading ? (
