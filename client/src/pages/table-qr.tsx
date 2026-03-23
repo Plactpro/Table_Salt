@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+const ModificationDrawer = lazy(() => import("@/components/modifications/ModificationDrawer"));
 import { useSearch, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -263,6 +264,7 @@ interface LocalCartItem {
   price: number;
   quantity: number;
   note: string;
+  foodModification?: import("@/components/modifications/ModificationDrawer").FoodModification;
 }
 
 interface SubmittedRequest {
@@ -493,6 +495,7 @@ function FoodOrderFlow({
   const [cart, setCart] = useState<LocalCartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
   const [placing, setPlacing] = useState(false);
+  const [customizeItem, setCustomizeItem] = useState<{ menuItemId: string; name: string } | null>(null);
 
   useEffect(() => {
     if (!ctx.outletId) return;
@@ -520,6 +523,11 @@ function FoodOrderFlow({
     setCart(prev => prev.map(c => c.menuItemId === menuItemId ? { ...c, note } : c));
   }
 
+  function saveCartItemModification(menuItemId: string, mod: import("@/components/modifications/ModificationDrawer").FoodModification) {
+    setCart(prev => prev.map(c => c.menuItemId === menuItemId ? { ...c, foodModification: mod } : c));
+    setCustomizeItem(null);
+  }
+
   function setQty(menuItemId: string, qty: number) {
     if (qty <= 0) { setCart(prev => prev.filter(c => c.menuItemId !== menuItemId)); return; }
     setCart(prev => prev.map(c => c.menuItemId === menuItemId ? { ...c, quantity: qty } : c));
@@ -533,10 +541,17 @@ function FoodOrderFlow({
     setPlacing(true);
     try {
       for (const cartItem of cart) {
+        const fm = cartItem.foodModification;
+        const hasActiveMod = fm && (fm.spiceLevel || fm.saltLevel || fm.removedIngredients.length > 0 || fm.allergies.length > 0 || fm.allergyNote?.trim() || fm.specialInstruction?.trim());
         await fetch(`/api/guest/session/${sessionId}/cart`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ menuItemId: cartItem.menuItemId, quantity: cartItem.quantity, notes: cartItem.note || undefined }),
+          body: JSON.stringify({
+            menuItemId: cartItem.menuItemId,
+            quantity: cartItem.quantity,
+            notes: cartItem.note || undefined,
+            metadata: hasActiveMod ? { foodModification: fm } : undefined,
+          }),
         });
       }
       const orderRes = await fetch(`/api/guest/session/${sessionId}/order`, {
@@ -596,33 +611,51 @@ function FoodOrderFlow({
           <p className="text-center text-gray-400 py-12">{t.emptyCart}</p>
         ) : (
           <div className="flex flex-col gap-3">
-            {cart.map(c => (
-              <div key={c.menuItemId} data-testid={`cart-item-${c.menuItemId}`} className="bg-white rounded-xl p-3 border border-gray-100">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium text-sm">{c.name}</p>
-                    <p className="text-xs text-gray-500">{formatPrice(c.price, menuData?.currency ?? "USD")}</p>
+            {cart.map(c => {
+              const hasMod = c.foodModification && (
+                c.foodModification.spiceLevel ||
+                c.foodModification.saltLevel ||
+                c.foodModification.removedIngredients.length > 0 ||
+                c.foodModification.allergies.length > 0 ||
+                c.foodModification.specialInstruction?.trim()
+              );
+              return (
+                <div key={c.menuItemId} data-testid={`cart-item-${c.menuItemId}`} className="bg-white rounded-xl p-3 border border-gray-100">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium text-sm">{c.name}</p>
+                      <p className="text-xs text-gray-500">{formatPrice(c.price, menuData?.currency ?? "USD")}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button data-testid={`button-dec-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity - 1)} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                        <Minus className="w-3 h-3" />
+                      </button>
+                      <span className="w-6 text-center font-semibold text-sm">{c.quantity}</span>
+                      <button data-testid={`button-inc-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity + 1)} className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center">
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button data-testid={`button-dec-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity - 1)} className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
-                      <Minus className="w-3 h-3" />
-                    </button>
-                    <span className="w-6 text-center font-semibold text-sm">{c.quantity}</span>
-                    <button data-testid={`button-inc-${c.menuItemId}`} onClick={() => setQty(c.menuItemId, c.quantity + 1)} className="w-7 h-7 rounded-full bg-teal-100 text-teal-700 flex items-center justify-center">
-                      <Plus className="w-3 h-3" />
+                  <div className="flex items-center gap-2 mt-2">
+                    <input
+                      data-testid={`input-item-note-${c.menuItemId}`}
+                      type="text"
+                      value={c.note}
+                      onChange={e => updateItemNote(c.menuItemId, e.target.value)}
+                      placeholder={t.yourNote}
+                      className="flex-1 border border-gray-100 rounded-lg px-2.5 py-1.5 text-xs text-gray-600 focus:outline-none focus:border-teal-300 bg-gray-50"
+                    />
+                    <button
+                      data-testid={`button-customize-${c.menuItemId}`}
+                      onClick={() => setCustomizeItem({ menuItemId: c.menuItemId, name: c.name })}
+                      className={`shrink-0 px-2 py-1.5 rounded-lg text-xs font-medium border transition-colors ${hasMod ? "bg-teal-50 text-teal-700 border-teal-300" : "bg-gray-50 text-gray-500 border-gray-200 hover:border-teal-300"}`}
+                    >
+                      {hasMod ? "✏️ customized" : "✏️ customize"}
                     </button>
                   </div>
                 </div>
-                <input
-                  data-testid={`input-item-note-${c.menuItemId}`}
-                  type="text"
-                  value={c.note}
-                  onChange={e => updateItemNote(c.menuItemId, e.target.value)}
-                  placeholder={t.yourNote}
-                  className="mt-2 w-full border border-gray-100 rounded-lg px-2.5 py-1.5 text-xs text-gray-600 focus:outline-none focus:border-teal-300 bg-gray-50"
-                />
-              </div>
-            ))}
+              );
+            })}
             <div className="border-t pt-3 flex justify-between text-sm font-bold text-gray-700">
               <span>Total</span>
               <span>{formatPrice(cartTotal, menuData?.currency ?? "USD")}</span>
@@ -723,6 +756,17 @@ function FoodOrderFlow({
           );
         })}
       </div>
+      <Suspense fallback={null}>
+        {customizeItem && (
+          <ModificationDrawer
+            open={!!customizeItem}
+            onClose={() => setCustomizeItem(null)}
+            itemName={customizeItem.name}
+            initialModification={cart.find(c => c.menuItemId === customizeItem.menuItemId)?.foodModification}
+            onSave={(mod) => saveCartItemModification(customizeItem.menuItemId, mod)}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

@@ -38,6 +38,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { InventoryItem } from "@shared/schema";
+import KdsModificationDisplay from "@/components/modifications/KdsModificationDisplay";
 
 interface KDSOrderItem {
   id: string;
@@ -51,6 +52,7 @@ interface KDSOrderItem {
   readyAt: string | null;
   menuItemId?: string | null;
   isAddon?: boolean | null;
+  metadata?: { foodModification?: import("@/components/modifications/ModificationDrawer").FoodModification } | null;
 }
 
 interface KDSTicket {
@@ -472,6 +474,18 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
   const isNew = ticket.status === "new" || ticket.status === "sent_to_kitchen";
   const isLate = mins >= 15;
   const [confirmReady, setConfirmReady] = useState<string | null>(null);
+  const [acknowledgedAllergyItems, setAcknowledgedAllergyItems] = useState<Set<string>>(new Set());
+
+  const hasAnyAllergy = ticket.items.some(i => {
+    const mod = i.metadata?.foodModification;
+    return mod && (mod.allergies.length > 0 || mod.allergyNote?.trim());
+  });
+  const allAllergiesAcknowledged = !hasAnyAllergy || ticket.items
+    .filter(i => {
+      const mod = i.metadata?.foodModification;
+      return mod && (mod.allergies.length > 0 || mod.allergyNote?.trim());
+    })
+    .every(i => acknowledgedAllergyItems.has(i.id));
 
   const handleReprintKOT = useCallback(async () => {
     const printItems = (stationFilter
@@ -596,44 +610,67 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
                   {course}
                 </div>
               )}
-              {courseItems.map(item => (
-                <div key={item.id} className="flex items-center justify-between gap-2 text-sm">
-                  <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
-                    <span className={`font-medium ${item.status === "ready" ? "line-through text-muted-foreground" : ""}`}>
-                      {item.quantity}× {item.name}
-                    </span>
-                    {item.isAddon && (
-                      <span className="inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold bg-orange-500 text-white shrink-0" data-testid={`badge-addon-${item.id.slice(-4)}`}>
-                        ADD-ON
-                      </span>
+              {courseItems.map(item => {
+                const itemMod = item.metadata?.foodModification;
+                const itemHasAllergy = itemMod && (itemMod.allergies.length > 0 || itemMod.allergyNote?.trim());
+                const itemAllergyAck = acknowledgedAllergyItems.has(item.id);
+                return (
+                  <div key={item.id} className="space-y-0.5">
+                    <div className="flex items-center justify-between gap-2 text-sm">
+                      <div className="flex items-center gap-1.5 min-w-0 flex-1 flex-wrap">
+                        <span className={`font-medium ${item.status === "ready" ? "line-through text-muted-foreground" : ""}`}>
+                          {item.quantity}× {item.name}
+                        </span>
+                        {item.isAddon && (
+                          <span className="inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold bg-orange-500 text-white shrink-0" data-testid={`badge-addon-${item.id.slice(-4)}`}>
+                            ADD-ON
+                          </span>
+                        )}
+                        {item.notes && <span className="text-xs text-red-600 dark:text-red-400 font-medium italic truncate">⚠ {item.notes}</span>}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {(!item.status || item.status === "pending") && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 px-2 text-xs hover:bg-orange-100"
+                            disabled={!!itemHasAllergy && !itemAllergyAck}
+                            onClick={() => onItemStatus(item.id, "cooking")}
+                            data-testid={`btn-start-${item.id.slice(-4)}`}
+                          >
+                            <Flame className="h-3 w-3 text-orange-500" />
+                          </Button>
+                        )}
+                        {item.status === "cooking" && (
+                          <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-green-100" onClick={() => onItemStatus(item.id, "ready")} data-testid={`btn-ready-${item.id.slice(-4)}`}>
+                            <CheckCircle2 className="h-3 w-3 text-green-600" />
+                          </Button>
+                        )}
+                        {item.status === "ready" && (
+                          <>
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-blue-100" onClick={() => onItemStatus(item.id, "served")} data-testid={`btn-served-${item.id.slice(-4)}`}>
+                              <Utensils className="h-3 w-3 text-blue-600" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-yellow-100" onClick={() => onItemStatus(item.id, "recalled")} data-testid={`btn-recall-${item.id.slice(-4)}`}>
+                              <RotateCcw className="h-3 w-3 text-yellow-600" />
+                            </Button>
+                          </>
+                        )}
+                        <StatusDot status={item.status} />
+                      </div>
+                    </div>
+                    {itemMod && (
+                      <KdsModificationDisplay
+                        modification={itemMod}
+                        acknowledged={itemAllergyAck}
+                        onAllergyAcknowledge={itemHasAllergy ? () => {
+                          setAcknowledgedAllergyItems(prev => new Set(Array.from(prev).concat(item.id)));
+                        } : undefined}
+                      />
                     )}
-                    {item.notes && <span className="text-xs text-red-600 dark:text-red-400 font-medium italic truncate">⚠ {item.notes}</span>}
                   </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    {(!item.status || item.status === "pending") && (
-                      <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-orange-100" onClick={() => onItemStatus(item.id, "cooking")} data-testid={`btn-start-${item.id.slice(-4)}`}>
-                        <Flame className="h-3 w-3 text-orange-500" />
-                      </Button>
-                    )}
-                    {item.status === "cooking" && (
-                      <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-green-100" onClick={() => onItemStatus(item.id, "ready")} data-testid={`btn-ready-${item.id.slice(-4)}`}>
-                        <CheckCircle2 className="h-3 w-3 text-green-600" />
-                      </Button>
-                    )}
-                    {item.status === "ready" && (
-                      <>
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-blue-100" onClick={() => onItemStatus(item.id, "served")} data-testid={`btn-served-${item.id.slice(-4)}`}>
-                          <Utensils className="h-3 w-3 text-blue-600" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs hover:bg-yellow-100" onClick={() => onItemStatus(item.id, "recalled")} data-testid={`btn-recall-${item.id.slice(-4)}`}>
-                          <RotateCcw className="h-3 w-3 text-yellow-600" />
-                        </Button>
-                      </>
-                    )}
-                    <StatusDot status={item.status} />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ))}
 
@@ -803,6 +840,41 @@ export default function KitchenDashboard() {
       osc.stop(ctx.currentTime + 0.2);
     } catch (_) {}
   }, []);
+
+  const playAllergyAlert = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const playTone = (freq: number, start: number, duration: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.frequency.value = freq;
+        osc.type = "square";
+        gain.gain.setValueAtTime(0.3, ctx.currentTime + start);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + duration);
+        osc.start(ctx.currentTime + start);
+        osc.stop(ctx.currentTime + start + duration);
+      };
+      playTone(660, 0, 0.15);
+      playTone(880, 0.2, 0.15);
+      playTone(660, 0.4, 0.15);
+    } catch (_) {}
+  }, []);
+
+  useRealtimeEvent("allergy:alert", useCallback((payload: unknown) => {
+    const p = payload as { itemName?: string; allergies?: string[] } | null;
+    playAllergyAlert();
+    queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
+    toast({
+      title: "🚨 ALLERGY ALERT",
+      description: p?.itemName
+        ? `${p.itemName}${p?.allergies?.length ? ` — ${p.allergies.join(", ")}` : ""}`
+        : "An order has allergy flags. Check kitchen tickets immediately.",
+      variant: "destructive",
+      duration: 8000,
+    });
+  }, [queryClient, playAllergyAlert, toast]));
 
   useRealtimeEvent("order:new", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });

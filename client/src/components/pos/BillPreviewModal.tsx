@@ -26,8 +26,9 @@ interface CartItem {
   quantity: number;
   notes: string;
   isCombo?: boolean;
-  modifiers?: { name: string; price: number }[];
+  modifiers?: { name?: string; label?: string; price?: number; priceAdjust?: number }[];
   hsnCode?: string | null;
+  foodModification?: import("@/components/modifications/ModificationDrawer").FoodModification;
 }
 
 interface BillPreviewProps {
@@ -829,23 +830,46 @@ export default function BillPreviewModal({
                   <div className="flex gap-8"><span>QTY</span><span>AMOUNT</span></div>
                 </div>
                 <Separator />
-                {cart.map((item, i) => (
-                  <div key={i} className="flex justify-between text-sm py-0.5">
-                    <div className="flex-1">
-                      <span>{item.name}</span>
-                      {item.modifiers && item.modifiers.length > 0 && (
-                        <div className="text-xs text-muted-foreground pl-2">
-                          {item.modifiers.map(m => `+ ${m.name}`).join(", ")}
-                        </div>
-                      )}
-                      {item.notes && <div className="text-xs text-muted-foreground italic pl-2">{item.notes}</div>}
+                {cart.map((item, i) => {
+                  const fm = item.foodModification;
+                  const modChips: string[] = [];
+                  if (fm) {
+                    if (fm.spiceLevel) modChips.push(`🌶 ${fm.spiceLevel}`);
+                    if (fm.saltLevel) modChips.push(`🧂 ${fm.saltLevel} salt`);
+                    fm.removedIngredients.forEach(r => modChips.push(`no ${r}`));
+                    if (fm.specialInstruction?.trim()) modChips.push(`"${fm.specialInstruction.trim()}"`);
+                    fm.allergies.forEach(a => modChips.push(`⚠ ${a}`));
+                  }
+                  return (
+                    <div key={i} className="flex justify-between text-sm py-0.5">
+                      <div className="flex-1">
+                        <span>{item.name}</span>
+                        {item.modifiers && item.modifiers.length > 0 && (
+                          <div className="text-xs text-muted-foreground pl-2">
+                            {item.modifiers.map(m => `+ ${m.name ?? m.label ?? ""}`).join(", ")}
+                          </div>
+                        )}
+                        {item.notes && <div className="text-xs text-muted-foreground italic pl-2">{item.notes}</div>}
+                        {modChips.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-0.5 pl-2" data-testid={`mod-summary-${i}`}>
+                            {modChips.map((chip, ci) => (
+                              <span
+                                key={ci}
+                                className={`inline-flex items-center px-1.5 py-0 rounded text-[10px] font-medium ${chip.startsWith("⚠") ? "bg-red-100 text-red-700" : "bg-muted text-muted-foreground"}`}
+                              >
+                                {chip}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-8 text-right">
+                        <span className="w-8 text-center">{item.quantity}</span>
+                        <span className="w-20">{fmt(item.price * item.quantity)}</span>
+                      </div>
                     </div>
-                    <div className="flex gap-8 text-right">
-                      <span className="w-8 text-center">{item.quantity}</span>
-                      <span className="w-20">{fmt(item.price * item.quantity)}</span>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <Separator />
                 <div className="space-y-1 text-sm pt-1">
                   <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
