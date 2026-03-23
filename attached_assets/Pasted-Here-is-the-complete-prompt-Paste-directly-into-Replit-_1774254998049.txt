@@ -1,0 +1,558 @@
+Here is the complete prompt. Paste directly into Replit AI.
+
+***
+
+### Order Ticket History & Reopen System
+
+This is a continuation of the existing restaurant SaaS project in Replit. The following are already built: multi-tenant architecture, POS, KDS, order management, billing, service coordination, food modifications, and time tracking.
+
+Now build a **fully functional Order Ticket History and Reopen System** that allows authorized staff to search, view, and reopen any past order ticket — with full audit trail, controlled reopen workflows, and protection against unauthorized modifications.
+
+***
+
+#### 1. What "viewing old tickets" covers
+
+```
+WHO NEEDS TO VIEW OLD TICKETS:
+  ├── Manager     → investigate complaints, audit orders
+  ├── Cashier     → reprint receipt, check payment status
+  ├── Waiter      → check what was ordered earlier
+  ├── Chef        → reference a past preparation method
+  ├── Owner       → audit and compliance review
+  └── Finance     → billing discrepancy investigation
+
+WHAT THEY NEED TO SEE:
+  ├── Complete order details (every item, modification)
+  ├── Full timeline (every status change with timestamp)
+  ├── Who did what (staff accountability trail)
+  ├── Payment details (amount, method, split)
+  ├── KOT and receipt history (every print job)
+  ├── Time performance data (cooking, service times)
+  ├── Customer details (if linked)
+  └── Any modifications, cancellations, or voids
+```
+
+***
+
+#### 2. When reopening is needed — real scenarios
+
+```
+SCENARIO 1: Customer returns same day
+  "I was here at lunch, can I add dessert to my tab?"
+  → Reopen closed bill → add item → re-bill
+
+SCENARIO 2: Wrong item billed
+  Cashier billed Butter Chicken instead of Dal Makhani
+  → Reopen → correct item → reprint bill
+
+SCENARIO 3: Payment method change
+  Customer paid cash but wants to pay by card
+  → Reopen payment → reverse cash → process card
+
+SCENARIO 4: Missed item
+  Waiter forgot to add one item to the order
+  → Reopen order → add missed item → send to kitchen
+
+SCENARIO 5: Customer complaint investigation
+  "My food took 45 minutes" — manager needs to verify
+  → View ticket timeline → confirm actual times
+
+SCENARIO 6: Split bill after full payment
+  Table of 4 paid together, now want separate receipts
+  → View closed bill → generate split receipts
+
+SCENARIO 7: Kitchen refire (remake)
+  Food returned by customer — needs to be remade
+  → Reopen specific item on KDS → send back to kitchen
+
+SCENARIO 8: Partial refund
+  One item was wrong, partial refund needed
+  → Reopen → void specific item → adjust bill
+```
+
+***
+
+#### 3. Database schema
+
+```sql
+-- Ticket history view is built from existing tables
+-- Add these additional tracking tables:
+
+-- Reopen requests and approvals
+CREATE TABLE ticket_reopen_requests (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  order_number        VARCHAR(50),
+  reopen_type         VARCHAR(30) NOT NULL,
+    -- 'ADD_ITEM', 'REMOVE_ITEM', 'MODIFY_ITEM',
+    -- 'PAYMENT_CHANGE', 'FULL_REOPEN', 'REFIRE_ITEM',
+    -- 'RECEIPT_CORRECTION', 'PARTIAL_REFUND'
+  reason              TEXT NOT NULL,
+  requested_by        UUID NOT NULL,
+  requested_by_name   VARCHAR(255),
+  requested_by_role   VARCHAR(50),
+  status              VARCHAR(20) DEFAULT 'pending',
+    -- 'pending', 'approved', 'rejected', 'completed'
+  approved_by         UUID,
+  approved_by_name    VARCHAR(255),
+  rejected_reason     TEXT,
+  approved_at         TIMESTAMP,
+  completed_at        TIMESTAMP,
+  changes_made        JSONB,
+    -- summary of what was changed after reopen
+  original_snapshot   JSONB,
+    -- full order state before reopen
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+-- Full audit trail of every action on every order
+CREATE TABLE order_audit_trail (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  order_number        VARCHAR(50),
+  action_type         VARCHAR(50) NOT NULL,
+    -- 'ORDER_CREATED', 'ITEM_ADDED', 'ITEM_REMOVED',
+    -- 'ITEM_MODIFIED', 'STATUS_CHANGED', 'KOT_PRINTED',
+    -- 'BILL_GENERATED', 'PAYMENT_RECEIVED',
+    -- 'ORDER_CLOSED', 'ORDER_REOPENED',
+    -- 'ITEM_VOIDED', 'DISCOUNT_APPLIED',
+    -- 'REFUND_ISSUED', 'RECEIPT_REPRINTED'
+  action_description  TEXT NOT NULL,
+  previous_value      JSONB,
+  new_value           JSONB,
+  performed_by        UUID NOT NULL,
+  performed_by_name   VARCHAR(255),
+  performed_by_role   VARCHAR(50),
+  ip_address          VARCHAR(50),
+  device_info         VARCHAR(255),
+  reopen_request_id   UUID,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+-- Voided items tracking
+CREATE TABLE voided_items (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  order_id            UUID NOT NULL,
+  order_item_id       UUID NOT NULL,
+  menu_item_name      VARCHAR(255),
+  quantity            INT,
+  unit_price          DECIMAL(10,2),
+  void_reason         TEXT NOT NULL,
+  void_type           VARCHAR(20),
+    -- 'WRONG_ORDER', 'CUSTOMER_CANCELLED',
+    -- 'KITCHEN_ERROR', 'QUALITY_ISSUE', 'MANAGER_VOID'
+  voided_by           UUID NOT NULL,
+  voided_by_name      VARCHAR(255),
+  approved_by         UUID,
+  is_refunded         BOOLEAN DEFAULT false,
+  refund_amount       DECIMAL(10,2),
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+```
+
+***
+
+#### 4. Ticket history search screen
+
+Build a **"Ticket History"** screen accessible from POS, Manager dashboard, and KDS:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  🔍 ORDER TICKET HISTORY                                     │
+├──────────────────────────────────────────────────────────────┤
+│  Search: [Order# / Table / Customer / Amount      🔍]       │
+├─────────────┬────────────┬───────────┬──────────┬───────────┤
+│ Date Range  │ Status     │ Order Type│ Staff    │ Amount    │
+│ [Today ▼]   │ [All ▼]    │ [All ▼]   │ [All ▼]  │ [Any ▼]  │
+└─────────────┴────────────┴───────────┴──────────┴───────────┘
+
+RESULTS: 84 tickets found
+
+┌──────┬────────┬──────┬──────────┬────────┬────────┬────────┐
+│Order │Table   │Time  │Items     │Amount  │Status  │Actions │
+├──────┼────────┼──────┼──────────┼────────┼────────┼────────┤
+│#047  │T-5     │13:45 │4 items   │₹1,180  │✅ Paid │[View]  │
+│#046  │T-3     │13:32 │2 items   │₹680    │✅ Paid │[View]  │
+│#045  │Takeaway│13:18 │6 items   │₹2,340  │✅ Paid │[View]  │
+│#044  │T-8     │13:05 │3 items   │₹920    │🔴Void  │[View]  │
+│#043  │T-2     │12:58 │5 items   │₹1,560  │✅ Paid │[View]  │
+└──────┴────────┴──────┴──────────┴────────┴────────┴────────┘
+
+Quick filters:
+[Today] [Yesterday] [This Week] [Paid Only]
+[Voided] [Reopened] [With Complaints] [High Value]
+```
+
+***
+
+#### 5. Full ticket detail view
+
+When any ticket is tapped/clicked:
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  ORDER #047 — TABLE 5                    [🖨️ Reprint]   │
+│  23 Mar 2026 | 13:45 | Dine-In | Covers: 3             │
+│  Waiter: John Kumar | Status: ✅ PAID & CLOSED          │
+├──────────────────────────────────────────────────────────┤
+│  ITEMS ORDERED:                                          │
+│  ─────────────────────────────────────────────────      │
+│  1x Grilled Chicken            ₹380                     │
+│     🌶️ Mild | 🧂 Less Salt | ➖ No Onion               │
+│     ⏱️ Started: 13:47 | Ready: 14:01 (14 min)          │
+│                                                          │
+│  2x Margherita Pizza           ₹700                     │
+│     🔥 Extra Spicy                                       │
+│     ⏱️ Started: 13:47 | Ready: 14:03 (16 min)          │
+│                                                          │
+│  1x Caesar Salad               ₹220                     │
+│     ⏱️ Started: 13:49 | Ready: 13:54 (5 min)           │
+│                                                          │
+│  [VOIDED] 1x Coke              ₹60 ~~strikethrough~~    │
+│     Void reason: Customer changed mind                   │
+│     Voided by: John Kumar at 13:48                      │
+├──────────────────────────────────────────────────────────┤
+│  BILL SUMMARY:                                           │
+│  Subtotal:          ₹1,300                              │
+│  Discount (10%):    -₹130                               │
+│  Service (5%):      ₹58.50                              │
+│  GST:               ₹56.27                              │
+│  TOTAL:             ₹1,184.77                           │
+│  PAID:              ₹1,185 (Cash)                       │
+│  Change:            ₹0.23                               │
+├──────────────────────────────────────────────────────────┤
+│  TIME PERFORMANCE:                                       │
+│  Order placed: 13:45 | KOT sent: 13:46 (1 min)         │
+│  All ready: 14:03 | Served: 14:06                       │
+│  Total cycle: 21 min ✅ (Target: 25 min)                │
+├──────────────────────────────────────────────────────────┤
+│  AUDIT TRAIL:             [Show Full Trail ▼]           │
+│  13:45 Order created — John Kumar                        │
+│  13:46 KOT sent to kitchen — John Kumar                 │
+│  13:48 Coke voided — John Kumar (approved: Manager)     │
+│  14:03 All items ready — Ravi Kumar (Chef)              │
+│  14:06 Items served — John Kumar                        │
+│  14:18 Bill generated — John Kumar                      │
+│  14:22 Payment received (Cash) — Cashier Priya          │
+│  14:22 Order closed — System                            │
+├──────────────────────────────────────────────────────────┤
+│  PRINT HISTORY:                                          │
+│  KOT printed: 13:46 (Grill printer)                    │
+│  Bill printed: 14:18 (Cashier printer)                  │
+│  Receipt reprinted: 14:25 (customer request)            │
+└──────────────────────────────────────────────────────────┘
+
+ACTION BUTTONS (role-based visibility):
+┌────────────┬────────────┬────────────┬────────────┐
+│🖨️ Reprint  │↩️ Reopen   │💰 Refund   │📋 Audit    │
+│ Receipt    │ Order      │ Item       │ Full Log   │
+└────────────┴────────────┴────────────┴────────────┘
+```
+
+***
+
+#### 6. Reopen workflow — controlled and audited
+
+##### Step 1: Staff requests reopen
+```
+┌──────────────────────────────────────────┐
+│  ↩️ REQUEST ORDER REOPEN                 │
+│  Order #047 | Table 5 | ₹1,184          │
+├──────────────────────────────────────────┤
+│  Reopen Type:                            │
+│  ○ Add missing item                      │
+│  ○ Remove/void an item                  │
+│  ○ Correct wrong item                   │
+│  ○ Change payment method                │
+│  ○ Refire item to kitchen               │
+│  ○ Full reopen                          │
+├──────────────────────────────────────────┤
+│  Reason (required):                      │
+│  [Customer complained wrong item    ]   │
+├──────────────────────────────────────────┤
+│  ⚠️ This requires Manager approval      │
+│  Manager will be notified immediately   │
+│                                          │
+│  [SUBMIT REQUEST]                        │
+└──────────────────────────────────────────┘
+```
+
+##### Step 2: Manager receives approval request
+```
+┌──────────────────────────────────────────┐
+│  🔔 REOPEN REQUEST                       │
+│  From: John Kumar (Waiter)               │
+│  Order: #047 | Table 5 | ₹1,184        │
+│  Type: Correct wrong item               │
+│  Reason: Customer complained wrong item  │
+│  Time: 14:35 (13 min after closing)     │
+├──────────────────────────────────────────┤
+│  [VIEW ORDER DETAILS]                   │
+│                                          │
+│  [✅ APPROVE]    [❌ REJECT]             │
+│                                          │
+│  Reject reason: [              ]        │
+└──────────────────────────────────────────┘
+```
+
+##### Step 3: After approval — limited reopen mode
+```
+┌──────────────────────────────────────────┐
+│  ↩️ ORDER #047 — REOPEN MODE            │
+│  Approved by: Manager Sanjay at 14:36   │
+│  Reopen Type: Correct wrong item        │
+│  ─────────────────────────────────      │
+│  ⚠️ CHANGES ARE LOGGED AND AUDITED     │
+│  ⏰ Reopen session expires in: 10:00    │
+├──────────────────────────────────────────┤
+│  AVAILABLE ACTIONS:                     │
+│  ✅ Void existing item                  │
+│  ✅ Add replacement item                │
+│  ✅ Adjust price                        │
+│  ❌ Change table (not allowed)          │
+│  ❌ Change date (not allowed)           │
+├──────────────────────────────────────────┤
+│  [VOID: Grilled Chicken]               │
+│  [ADD ITEM]                            │
+│  [DONE — CLOSE REOPEN]                 │
+└──────────────────────────────────────────┘
+```
+
+***
+
+#### 7. Refire item to kitchen (KDS reopen)
+
+When a specific item needs to be remade:
+
+```
+┌──────────────────────────────────────────┐
+│  🔥 REFIRE ITEM TO KITCHEN              │
+│  Order #047 | Table 5                   │
+├──────────────────────────────────────────┤
+│  Item: Grilled Chicken x1               │
+│  Original chef: Ravi Kumar              │
+│  Original time: 13:47 – 14:01           │
+├──────────────────────────────────────────┤
+│  Refire Reason:                         │
+│  ○ Customer returned — quality issue    │
+│  ○ Wrong preparation                   │
+│  ○ Modification not applied            │
+│  ○ Dropped / damaged during service    │
+│  ○ Other: [                  ]         │
+├──────────────────────────────────────────┤
+│  Assign to:                             │
+│  ○ Same chef (Ravi Kumar)              │
+│  ○ Any available chef                  │
+│  ● Head Chef                           │
+├──────────────────────────────────────────┤
+│  Priority: [🔴 RUSH]                   │
+│  (customer is waiting — high priority) │
+│                                          │
+│  [🔥 SEND TO KITCHEN]                  │
+└──────────────────────────────────────────┘
+```
+
+- New KOT sent with **"REFIRE — ORDER #047"** header.
+- Original item flagged in wastage as "PLATE_RETURN".
+- Time tracking restarts for the new preparation.
+- Customer's total time updated to include refire time.
+
+***
+
+#### 8. Role-based access control for history
+
+```typescript
+const ticketHistoryPermissions = {
+
+  WAITER: {
+    viewHistory: 'own_orders_only',
+    // Can only see tickets they created
+    viewAuditTrail: false,
+    viewPaymentDetails: false,
+    canRequestReopen: true,
+    canApproveReopen: false,
+    canReprint: 'receipt_only',
+    historyDays: 1
+    // Can only look back 1 day
+  },
+
+  CASHIER: {
+    viewHistory: 'all_orders',
+    viewAuditTrail: false,
+    viewPaymentDetails: true,
+    canRequestReopen: true,
+    canApproveReopen: false,
+    canReprint: true,
+    historyDays: 7
+  },
+
+  CHEF: {
+    viewHistory: 'own_station_orders',
+    viewAuditTrail: false,
+    viewPaymentDetails: false,
+    canRequestReopen: false,
+    canApproveReopen: false,
+    canReprint: 'kot_only',
+    historyDays: 1
+  },
+
+  MANAGER: {
+    viewHistory: 'all_orders',
+    viewAuditTrail: true,
+    viewPaymentDetails: true,
+    canRequestReopen: true,
+    canApproveReopen: true,
+    canReprint: true,
+    historyDays: 90
+  },
+
+  OWNER: {
+    viewHistory: 'all_orders_all_outlets',
+    viewAuditTrail: true,
+    viewPaymentDetails: true,
+    canRequestReopen: true,
+    canApproveReopen: true,
+    canReprint: true,
+    historyDays: 365
+  }
+};
+```
+
+***
+
+#### 9. Reopen rules and safeguards
+
+```typescript
+const reopenRules = {
+
+  // Time limits for reopen
+  timeLimits: {
+    ADD_ITEM:          { maxHoursAfterClose: 2  },
+    REMOVE_ITEM:       { maxHoursAfterClose: 1  },
+    PAYMENT_CHANGE:    { maxHoursAfterClose: 24 },
+    PARTIAL_REFUND:    { maxHoursAfterClose: 72 },
+    FULL_REOPEN:       { maxHoursAfterClose: 4  },
+    REFIRE_ITEM:       { maxHoursAfterClose: 2  },
+    RECEIPT_CORRECTION:{ maxHoursAfterClose: 48 }
+  },
+
+  // Approval requirements
+  approvalRequired: {
+    ADD_ITEM:          'MANAGER',
+    REMOVE_ITEM:       'MANAGER',
+    PAYMENT_CHANGE:    'MANAGER',
+    PARTIAL_REFUND:    'OWNER',
+    FULL_REOPEN:       'MANAGER',
+    REFIRE_ITEM:       'MANAGER',
+    RECEIPT_CORRECTION:'CASHIER_OR_MANAGER'
+  },
+
+  // What cannot be changed ever
+  immutableFields: [
+    'order_date',
+    'outlet_id',
+    'original_table_number',
+    'original_order_time',
+    'original_waiter'
+  ],
+
+  // Session timeout for reopen
+  reopenSessionMinutes: 10,
+
+  // Max reopens per order
+  maxReopensPerOrder: 3
+};
+```
+
+***
+
+#### 10. Alerts and notifications on reopen
+
+```
+→ When reopen requested:
+  Manager notified immediately (push + sound)
+  "⚠️ Reopen request: Order #047 by John Kumar"
+
+→ When reopen approved:
+  Requesting staff notified
+  "✅ Reopen approved for Order #047 — 10 min window"
+
+→ When reopen session expires:
+  Order auto-closes with snapshot saved
+  Staff notified: "⏰ Reopen session expired — order closed"
+
+→ When item refired:
+  Chef notified with RUSH priority alert
+  Coordinator notified: "🔥 Refire: Table 5 Grilled Chicken"
+
+→ End of day report includes:
+  Total reopens today: 3
+  Reopen reasons summary
+  Items refired: 2
+  Value of corrections: ₹340
+```
+
+***
+
+#### 11. APIs required
+
+```
+-- Ticket history
+GET    /api/tickets/history                → list with filters
+GET    /api/tickets/:orderId               → full ticket detail
+GET    /api/tickets/:orderId/audit-trail   → complete audit log
+GET    /api/tickets/:orderId/time-log      → time performance data
+GET    /api/tickets/:orderId/print-history → all print jobs
+
+-- Reopen management
+POST   /api/tickets/:orderId/reopen-request  → request reopen
+GET    /api/tickets/reopen-requests          → pending approvals
+PUT    /api/tickets/reopen-requests/:id/approve → approve
+PUT    /api/tickets/reopen-requests/:id/reject  → reject
+POST   /api/tickets/:orderId/reopen-complete    → close session
+
+-- Actions within reopen
+POST   /api/tickets/:orderId/add-item       → add item (reopen only)
+POST   /api/tickets/:orderId/void-item      → void item
+POST   /api/tickets/:orderId/refire-item    → send item to kitchen
+POST   /api/tickets/:orderId/payment-change → change payment
+POST   /api/tickets/:orderId/partial-refund → process refund
+
+-- Reprint
+POST   /api/tickets/:orderId/reprint/receipt → reprint receipt
+POST   /api/tickets/:orderId/reprint/kot     → reprint KOT
+POST   /api/tickets/:orderId/reprint/bill    → reprint bill
+
+-- Void management
+POST   /api/tickets/:orderId/items/:id/void → void specific item
+GET    /api/tickets/voided                  → all voided items report
+```
+
+***
+
+#### 12. Seed demo data
+
+```
+- 7 days of order history (100+ orders per day)
+- Today: 84 closed orders, 3 active orders
+- 5 reopened orders with different reopen types:
+    1. Item added after close (approved)
+    2. Wrong item corrected (completed)
+    3. Payment method changed (completed)
+    4. Refire — customer complaint (completed)
+    5. Pending approval (for testing workflow)
+- 8 voided items across different orders
+- 3 rejected reopen requests with reasons
+- Full audit trail for 10 orders
+- Print history showing reprints for 5 orders
+- 2 partial refunds processed
+- Reopen request pending — shows in manager dashboard
+```
+
+***
+
+Ensure all reopen actions are wrapped in DB transactions — partial changes must never be saved. Every single change during a reopen session must write to `order_audit_trail` immediately. The `original_snapshot` must be saved to `ticket_reopen_requests` before any changes are made so the order can always be restored. Index `order_id`, `action_type`, `performed_by`, `created_at`, and `tenant_id` on `order_audit_trail` for fast history queries. Never hard-delete any order data — use soft deletes and void flags only.
