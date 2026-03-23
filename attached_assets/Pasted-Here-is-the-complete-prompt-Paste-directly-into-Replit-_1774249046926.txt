@@ -1,0 +1,914 @@
+Here is the complete prompt. Paste directly into Replit AI.
+
+***
+
+### Complete Procurement & Inventory Control System
+
+This is a continuation of the existing restaurant SaaS project in Replit. The following are already built: multi-tenant architecture, inventory management, recipe-to-inventory linking, stock deduction engine, wastage tracking, daily stock capacity report, and multi-outlet management.
+
+Now build a **fully functional Procurement and Inventory Control System** covering the complete purchasing lifecycle — from quotation to purchase order with delivery schedules, purchase returns, inter-outlet stock transfers, physical stock verification, and damaged inventory declaration.
+
+***
+
+#### 1. System overview — all modules in this prompt
+
+```
+MODULE 1: SUPPLIER & QUOTATION MANAGEMENT
+  → Manage suppliers, request quotations, compare prices
+
+MODULE 2: PURCHASE ORDER (PO) MANAGEMENT
+  → Generate PO directly or from approved quotation
+  → Delivery schedule within PO
+  → PO approval workflow
+  → Goods receipt against PO
+
+MODULE 3: PURCHASE RETURNS
+  → Return damaged/wrong/excess goods to supplier
+  → Debit note generation
+  → Stock reversal on return
+
+MODULE 4: INTER-OUTLET STOCK TRANSFER
+  → Transfer stock between outlets/stores
+  → Transfer request → approval → dispatch → receive
+
+MODULE 5: PHYSICAL STOCK VERIFICATION
+  → Scheduled and surprise stock counts
+  → Variance detection and adjustment
+
+MODULE 6: DAMAGED INVENTORY DECLARATION
+  → Declare and write off damaged stock
+  → Insurance claim support
+  → Disposal tracking
+```
+
+***
+
+#### 2. Database schema — complete
+
+```sql
+-- ─────────────────────────────────────
+-- MODULE 1: SUPPLIERS & QUOTATIONS
+-- ─────────────────────────────────────
+
+CREATE TABLE suppliers (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  supplier_code       VARCHAR(30) UNIQUE NOT NULL,
+  supplier_name       VARCHAR(255) NOT NULL,
+  contact_person      VARCHAR(255),
+  phone               VARCHAR(30),
+  email               VARCHAR(255),
+  address             TEXT,
+  city                VARCHAR(100),
+  state               VARCHAR(100),
+  country             VARCHAR(100) DEFAULT 'India',
+  gst_number          VARCHAR(50),
+  pan_number          VARCHAR(30),
+  payment_terms       VARCHAR(50),
+    -- 'IMMEDIATE', 'NET_7', 'NET_15', 'NET_30', 'NET_60'
+  credit_limit        DECIMAL(12,2),
+  currency            VARCHAR(10) DEFAULT 'INR',
+  bank_name           VARCHAR(255),
+  bank_account        VARCHAR(50),
+  bank_ifsc           VARCHAR(20),
+  rating              INT DEFAULT 3,
+    -- 1-5 star supplier rating
+  is_preferred        BOOLEAN DEFAULT false,
+  is_active           BOOLEAN DEFAULT true,
+  notes               TEXT,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE supplier_items (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  supplier_id         UUID NOT NULL,
+  ingredient_id       UUID NOT NULL,
+  supplier_sku        VARCHAR(100),
+  unit_price          DECIMAL(10,3) NOT NULL,
+  unit                VARCHAR(20),
+  minimum_order_qty   DECIMAL(10,3),
+  lead_time_days      INT DEFAULT 1,
+  is_preferred        BOOLEAN DEFAULT false,
+  last_price_date     DATE,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE quotation_requests (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  rfq_number          VARCHAR(50) UNIQUE NOT NULL,
+    -- RFQ-20260323-0001
+  status              VARCHAR(20) DEFAULT 'draft',
+    -- 'draft', 'sent', 'received', 'comparing',
+    -- 'approved', 'rejected', 'expired'
+  requested_by        UUID NOT NULL,
+  requested_by_name   VARCHAR(255),
+  required_by_date    DATE,
+  notes               TEXT,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE quotation_request_items (
+  id                  UUID PRIMARY KEY,
+  rfq_id              UUID NOT NULL,
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  required_quantity   DECIMAL(10,3) NOT NULL,
+  unit                VARCHAR(20),
+  specifications      TEXT
+);
+
+CREATE TABLE supplier_quotations (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  rfq_id              UUID,
+  supplier_id         UUID NOT NULL,
+  quotation_number    VARCHAR(50),
+  status              VARCHAR(20) DEFAULT 'received',
+    -- 'received', 'comparing', 'approved',
+    -- 'rejected', 'converted_to_po'
+  validity_date       DATE,
+  payment_terms       VARCHAR(50),
+  delivery_days       INT,
+  total_amount        DECIMAL(12,2),
+  notes               TEXT,
+  received_at         TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE supplier_quotation_items (
+  id                  UUID PRIMARY KEY,
+  quotation_id        UUID NOT NULL,
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  quoted_quantity     DECIMAL(10,3),
+  unit                VARCHAR(20),
+  unit_price          DECIMAL(10,3),
+  total_price         DECIMAL(12,2),
+  tax_percent         DECIMAL(5,2) DEFAULT 0,
+  tax_amount          DECIMAL(10,2) DEFAULT 0,
+  delivery_days       INT,
+  notes               TEXT
+);
+
+-- ─────────────────────────────────────
+-- MODULE 2: PURCHASE ORDERS
+-- ─────────────────────────────────────
+
+CREATE TABLE purchase_orders (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  po_number           VARCHAR(50) UNIQUE NOT NULL,
+    -- PO-20260323-0001
+  po_source           VARCHAR(20) DEFAULT 'DIRECT',
+    -- 'DIRECT', 'FROM_QUOTATION', 'FROM_STOCK_REPORT',
+    -- 'AUTO_REORDER'
+  quotation_id        UUID,
+  supplier_id         UUID NOT NULL,
+  supplier_name       VARCHAR(255),
+  status              VARCHAR(30) DEFAULT 'draft',
+    -- 'draft', 'pending_approval', 'approved',
+    -- 'sent_to_supplier', 'partially_received',
+    -- 'fully_received', 'cancelled', 'closed'
+  priority            VARCHAR(20) DEFAULT 'normal',
+    -- 'low', 'normal', 'high', 'urgent'
+  payment_terms       VARCHAR(50),
+  delivery_outlet_id  UUID NOT NULL,
+  delivery_address    TEXT,
+  billing_address     TEXT,
+  expected_delivery   DATE,
+  subtotal            DECIMAL(12,2) DEFAULT 0,
+  tax_amount          DECIMAL(12,2) DEFAULT 0,
+  discount_amount     DECIMAL(12,2) DEFAULT 0,
+  shipping_charge     DECIMAL(10,2) DEFAULT 0,
+  total_amount        DECIMAL(12,2) DEFAULT 0,
+  amount_paid         DECIMAL(12,2) DEFAULT 0,
+  balance_due         DECIMAL(12,2) DEFAULT 0,
+  notes               TEXT,
+  internal_notes      TEXT,
+  approved_by         UUID,
+  approved_at         TIMESTAMP,
+  sent_at             TIMESTAMP,
+  created_by          UUID NOT NULL,
+  created_by_name     VARCHAR(255),
+  created_at          TIMESTAMP DEFAULT NOW(),
+  updated_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE po_items (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  po_id               UUID NOT NULL,
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  ordered_quantity    DECIMAL(10,3) NOT NULL,
+  received_quantity   DECIMAL(10,3) DEFAULT 0,
+  pending_quantity    DECIMAL(10,3),
+  unit                VARCHAR(20),
+  unit_price          DECIMAL(10,3) NOT NULL,
+  tax_percent         DECIMAL(5,2) DEFAULT 0,
+  tax_amount          DECIMAL(10,2) DEFAULT 0,
+  total_price         DECIMAL(12,2),
+  item_status         VARCHAR(20) DEFAULT 'pending',
+    -- 'pending', 'partial', 'received', 'cancelled'
+  notes               TEXT
+);
+
+-- Delivery schedule within PO
+CREATE TABLE po_delivery_schedule (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  po_id               UUID NOT NULL,
+  delivery_number     INT NOT NULL,
+    -- 1st delivery, 2nd delivery, etc.
+  scheduled_date      DATE NOT NULL,
+  scheduled_time      TIME,
+  delivery_outlet_id  UUID NOT NULL,
+  delivery_address    TEXT,
+  status              VARCHAR(20) DEFAULT 'scheduled',
+    -- 'scheduled', 'in_transit', 'delivered',
+    -- 'delayed', 'cancelled', 'rescheduled'
+  items               JSONB NOT NULL,
+    -- [{ingredient_id, ingredient_name, expected_qty, unit}]
+  actual_delivery_date DATE,
+  delivery_note       TEXT,
+  received_by         UUID,
+  received_by_name    VARCHAR(255),
+  delay_reason        TEXT,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+-- Goods receipt note (GRN)
+CREATE TABLE goods_receipts (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  grn_number          VARCHAR(50) UNIQUE NOT NULL,
+    -- GRN-20260323-0001
+  po_id               UUID NOT NULL,
+  po_delivery_id      UUID,
+  supplier_id         UUID NOT NULL,
+  supplier_invoice_no VARCHAR(100),
+  supplier_invoice_date DATE,
+  received_by         UUID NOT NULL,
+  received_by_name    VARCHAR(255),
+  status              VARCHAR(20) DEFAULT 'draft',
+    -- 'draft', 'confirmed', 'with_variance', 'rejected'
+  total_items         INT,
+  total_value         DECIMAL(12,2),
+  variance_notes      TEXT,
+  received_at         TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE grn_items (
+  id                  UUID PRIMARY KEY,
+  grn_id              UUID NOT NULL,
+  po_item_id          UUID NOT NULL,
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  ordered_qty         DECIMAL(10,3),
+  received_qty        DECIMAL(10,3) NOT NULL,
+  accepted_qty        DECIMAL(10,3),
+  rejected_qty        DECIMAL(10,3) DEFAULT 0,
+  unit                VARCHAR(20),
+  unit_price          DECIMAL(10,3),
+  batch_number        VARCHAR(100),
+  expiry_date         DATE,
+  storage_location    VARCHAR(100),
+  quality_status      VARCHAR(20) DEFAULT 'accepted',
+    -- 'accepted', 'partial_accept', 'rejected'
+  rejection_reason    TEXT,
+  notes               TEXT
+);
+
+-- ─────────────────────────────────────
+-- MODULE 3: PURCHASE RETURNS
+-- ─────────────────────────────────────
+
+CREATE TABLE purchase_returns (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  return_number       VARCHAR(50) UNIQUE NOT NULL,
+    -- PR-20260323-0001
+  grn_id              UUID,
+  po_id               UUID,
+  supplier_id         UUID NOT NULL,
+  supplier_name       VARCHAR(255),
+  return_type         VARCHAR(30) NOT NULL,
+    -- 'QUALITY_ISSUE', 'WRONG_ITEM', 'EXCESS_QUANTITY',
+    -- 'DAMAGED_IN_TRANSIT', 'EXPIRED', 'PRICE_DISPUTE'
+  status              VARCHAR(20) DEFAULT 'draft',
+    -- 'draft', 'approved', 'dispatched',
+    -- 'acknowledged_by_supplier', 'closed'
+  total_items         INT,
+  total_value         DECIMAL(12,2),
+  debit_note_number   VARCHAR(50),
+  notes               TEXT,
+  approved_by         UUID,
+  approved_at         TIMESTAMP,
+  dispatched_at       TIMESTAMP,
+  created_by          UUID NOT NULL,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE purchase_return_items (
+  id                  UUID PRIMARY KEY,
+  return_id           UUID NOT NULL,
+  grn_item_id         UUID,
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  return_quantity     DECIMAL(10,3) NOT NULL,
+  unit                VARCHAR(20),
+  unit_price          DECIMAL(10,3),
+  total_value         DECIMAL(12,2),
+  return_reason       TEXT NOT NULL,
+  condition           VARCHAR(30),
+    -- 'damaged', 'expired', 'wrong_item', 'excess'
+  photo_url           TEXT
+);
+
+-- ─────────────────────────────────────
+-- MODULE 4: INTER-OUTLET TRANSFERS
+-- ─────────────────────────────────────
+
+CREATE TABLE stock_transfers (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  transfer_number     VARCHAR(50) UNIQUE NOT NULL,
+    -- TRF-20260323-0001
+  from_outlet_id      UUID NOT NULL,
+  from_outlet_name    VARCHAR(255),
+  to_outlet_id        UUID NOT NULL,
+  to_outlet_name      VARCHAR(255),
+  status              VARCHAR(20) DEFAULT 'requested',
+    -- 'requested', 'approved', 'picking',
+    -- 'dispatched', 'in_transit', 'partially_received',
+    -- 'received', 'cancelled'
+  priority            VARCHAR(20) DEFAULT 'normal',
+  transfer_reason     TEXT,
+  requested_by        UUID NOT NULL,
+  requested_by_name   VARCHAR(255),
+  approved_by         UUID,
+  approved_at         TIMESTAMP,
+  dispatched_by       UUID,
+  dispatched_at       TIMESTAMP,
+  received_by         UUID,
+  received_at         TIMESTAMP,
+  expected_arrival    DATE,
+  transport_mode      VARCHAR(50),
+  vehicle_number      VARCHAR(50),
+  driver_name         VARCHAR(100),
+  driver_phone        VARCHAR(30),
+  notes               TEXT,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE stock_transfer_items (
+  id                  UUID PRIMARY KEY,
+  transfer_id         UUID NOT NULL,
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  requested_qty       DECIMAL(10,3) NOT NULL,
+  approved_qty        DECIMAL(10,3),
+  dispatched_qty      DECIMAL(10,3),
+  received_qty        DECIMAL(10,3),
+  unit                VARCHAR(20),
+  unit_cost           DECIMAL(10,3),
+  total_cost          DECIMAL(12,2),
+  batch_number        VARCHAR(100),
+  expiry_date         DATE,
+  condition_at_dispatch VARCHAR(20) DEFAULT 'good',
+  condition_at_receipt  VARCHAR(20),
+  variance_qty        DECIMAL(10,3),
+  variance_reason     TEXT
+);
+
+-- ─────────────────────────────────────
+-- MODULE 5: PHYSICAL STOCK VERIFICATION
+-- ─────────────────────────────────────
+
+CREATE TABLE stock_counts (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  count_number        VARCHAR(50) UNIQUE NOT NULL,
+    -- STC-20260323-0001
+  count_type          VARCHAR(20) NOT NULL,
+    -- 'FULL', 'PARTIAL', 'SPOT_CHECK', 'SHIFT_END'
+  count_scope         VARCHAR(30) DEFAULT 'ALL',
+    -- 'ALL', 'CATEGORY', 'COUNTER', 'SPECIFIC_ITEMS'
+  scope_details       JSONB,
+  status              VARCHAR(20) DEFAULT 'planned',
+    -- 'planned', 'in_progress', 'counting_done',
+    -- 'variance_review', 'approved', 'adjusted', 'cancelled'
+  scheduled_date      DATE NOT NULL,
+  scheduled_time      TIME,
+  started_at          TIMESTAMP,
+  completed_at        TIMESTAMP,
+  total_items_counted INT DEFAULT 0,
+  items_with_variance INT DEFAULT 0,
+  total_variance_value DECIMAL(12,2) DEFAULT 0,
+  count_reason        TEXT,
+  notes               TEXT,
+  approved_by         UUID,
+  approved_at         TIMESTAMP,
+  created_by          UUID NOT NULL,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE stock_count_items (
+  id                  UUID PRIMARY KEY,
+  count_id            UUID NOT NULL,
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  unit                VARCHAR(20),
+  system_quantity     DECIMAL(10,3) NOT NULL,
+    -- what system thinks is in stock
+  physical_quantity   DECIMAL(10,3),
+    -- what was actually counted
+  variance_quantity   DECIMAL(10,3),
+    -- physical - system
+  variance_value      DECIMAL(10,2),
+  variance_percent    DECIMAL(5,2),
+  variance_type       VARCHAR(20),
+    -- 'EXCESS', 'SHORT', 'MATCH'
+  variance_reason     TEXT,
+  counted_by          UUID,
+  counted_by_name     VARCHAR(255),
+  counted_at          TIMESTAMP,
+  recount_required    BOOLEAN DEFAULT false,
+  recount_quantity    DECIMAL(10,3),
+  adjustment_approved BOOLEAN DEFAULT false,
+  adjustment_approved_by UUID,
+  storage_location    VARCHAR(100),
+  notes               TEXT
+);
+
+-- ─────────────────────────────────────
+-- MODULE 6: DAMAGED INVENTORY
+-- ─────────────────────────────────────
+
+CREATE TABLE damaged_inventory (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  outlet_id           UUID NOT NULL,
+  damage_number       VARCHAR(50) UNIQUE NOT NULL,
+    -- DMG-20260323-0001
+  ingredient_id       UUID NOT NULL,
+  ingredient_name     VARCHAR(255),
+  damaged_quantity    DECIMAL(10,3) NOT NULL,
+  unit                VARCHAR(20),
+  unit_cost           DECIMAL(10,3),
+  total_value         DECIMAL(12,2),
+  damage_type         VARCHAR(30) NOT NULL,
+    -- 'PHYSICAL_DAMAGE', 'CONTAMINATION', 'PEST_DAMAGE',
+    -- 'WATER_DAMAGE', 'FIRE_DAMAGE', 'COLD_CHAIN_BREAK',
+    -- 'EXPIRED', 'UNKNOWN'
+  damage_cause        TEXT NOT NULL,
+  damage_date         DATE NOT NULL,
+  damage_location     VARCHAR(100),
+  discovered_by       UUID,
+  discovered_by_name  VARCHAR(255),
+  status              VARCHAR(20) DEFAULT 'reported',
+    -- 'reported', 'under_review', 'approved',
+    -- 'disposed', 'insurance_claimed', 'written_off'
+  disposal_method     VARCHAR(30),
+    -- 'DISCARDED', 'RETURNED_TO_SUPPLIER', 'DONATED',
+    -- 'COMPOSTED', 'INSURANCE_CLAIM'
+  insurance_claim_no  VARCHAR(100),
+  insurance_amount    DECIMAL(12,2),
+  photo_urls          JSONB,
+    -- array of photo evidence urls
+  approved_by         UUID,
+  approved_at         TIMESTAMP,
+  disposed_at         TIMESTAMP,
+  created_at          TIMESTAMP DEFAULT NOW()
+);
+```
+
+***
+
+#### 3. Module 1 — Quotation management UI
+
+##### Request for Quotation (RFQ) creation
+```
+┌──────────────────────────────────────────────────────┐
+│  📋 NEW REQUEST FOR QUOTATION                        │
+│  RFQ-20260323-0001                                   │
+├──────────────────────────────────────────────────────┤
+│  Outlet:        [Main Branch ▼]                     │
+│  Required By:   [28 Mar 2026 📅]                    │
+│  Send To:       [☑ FreshMart] [☑ DairyFresh]       │
+│                 [☑ MeatSupply] [+ Add Supplier]     │
+├──────────────────────────────────────────────────────┤
+│  ITEMS TO QUOTE:                                     │
+│  + Add from stock report  + Add manually             │
+├────────────────┬────────────┬──────────┬────────────┤
+│ Ingredient     │ Required   │ Unit     │ Notes      │
+├────────────────┼────────────┼──────────┼────────────┤
+│ Chicken Breast │ 20         │ kg       │ Fresh only │
+│ Fresh Cream    │ 10         │ litres   │            │
+│ Baguette       │ 50         │ pcs      │ 300g each  │
+│ [+ Add Row]    │            │          │            │
+└────────────────┴────────────┴──────────┴────────────┘
+│  [SAVE DRAFT]  [SEND TO SUPPLIERS]                  │
+└──────────────────────────────────────────────────────┘
+```
+
+##### Quotation comparison view
+```
+┌──────────────────────────────────────────────────────────────┐
+│  📊 QUOTATION COMPARISON — RFQ-20260323-0001                │
+├────────────────┬───────────────┬──────────────┬─────────────┤
+│ Item           │ FreshMart     │ DairyFresh   │ MeatSupply  │
+├────────────────┼───────────────┼──────────────┼─────────────┤
+│ Chicken Breast │ ₹180/kg ⭐   │ ₹195/kg      │ ₹175/kg ✅  │
+│ Fresh Cream    │ ₹150/L        │ ₹140/L ✅   │ N/A         │
+│ Baguette       │ ₹25/pc ✅    │ N/A          │ N/A         │
+├────────────────┼───────────────┼──────────────┼─────────────┤
+│ Total          │ ₹5,250       │ ₹4,900       │ ₹3,500      │
+│ Delivery       │ 2 days        │ 1 day ✅     │ 3 days      │
+│ Payment        │ NET 30        │ NET 15       │ IMMEDIATE   │
+├────────────────┴───────────────┴──────────────┴─────────────┤
+│  Best Value: Split order — MeatSupply (chicken) +           │
+│  DairyFresh (cream) + FreshMart (baguette) = ₹4,890        │
+│  [CREATE SPLIT PO]  [CREATE SINGLE PO]                      │
+└──────────────────────────────────────────────────────────────┘
+```
+
+***
+
+#### 4. Module 2 — Purchase order with delivery schedule
+
+##### PO creation screen
+```
+┌──────────────────────────────────────────────────────┐
+│  📦 PURCHASE ORDER                                   │
+│  PO-20260323-0001     Status: Draft                  │
+├──────────────────────────────────────────────────────┤
+│  Source:   [From Quotation ▼]  QID: [SQ-001 ▼]     │
+│  Supplier: FreshMart Pvt Ltd                        │
+│  Deliver To: [Main Branch ▼]                        │
+│  Priority: [Normal ▼]                               │
+├──────────────────────────────────────────────────────┤
+│  ITEMS:                                              │
+├────────────────┬───────┬────────┬────────┬──────────┤
+│ Item           │ Qty   │ Unit   │ Price  │ Total    │
+├────────────────┼───────┼────────┼────────┼──────────┤
+│ Chicken Breast │ 20 kg │ kg     │ ₹175  │ ₹3,500  │
+│ Fresh Cream    │ 10 L  │ litre  │ ₹140  │ ₹1,400  │
+│ Baguette       │ 50 pc │ pcs    │ ₹25   │ ₹1,250  │
+│ [+ Add Item]   │       │        │        │          │
+├────────────────┴───────┴────────┼────────┼──────────┤
+│                          Subtotal│        │ ₹6,150  │
+│                    GST (18%)     │        │ ₹1,107  │
+│                    Shipping      │        │ ₹200    │
+│                    TOTAL         │        │ ₹7,457  │
+└──────────────────────────────────┴────────┴──────────┘
+```
+
+##### Delivery schedule section (within PO)
+```
+┌──────────────────────────────────────────────────────┐
+│  🚚 DELIVERY SCHEDULE                [+ Add Delivery]│
+├──────────────────────────────────────────────────────┤
+│  DELIVERY 1 — 25 March 2026 (Morning)               │
+│  ├── Chicken Breast: 10 kg                          │
+│  ├── Fresh Cream: 5 litres                          │
+│  └── Deliver to: Main Branch | 9:00 AM – 11:00 AM  │
+├──────────────────────────────────────────────────────┤
+│  DELIVERY 2 — 28 March 2026 (Morning)               │
+│  ├── Chicken Breast: 10 kg (remaining)              │
+│  ├── Fresh Cream: 5 litres (remaining)              │
+│  ├── Baguette: 50 pcs                               │
+│  └── Deliver to: Main Branch | 9:00 AM – 11:00 AM  │
+├──────────────────────────────────────────────────────┤
+│  Total scheduled: 100% of PO items covered ✅       │
+│  Unscheduled items: None                             │
+└──────────────────────────────────────────────────────┘
+```
+
+##### PO approval workflow
+```
+Draft → [Submit for Approval]
+      → Pending Approval (notifies manager/owner)
+      → [Approve / Reject with reason]
+      → Approved → [Send to Supplier]
+      → Sent → [Receive Goods (GRN)]
+      → Partially/Fully Received → Closed
+```
+
+##### Goods Receipt Note (GRN) screen
+```
+┌──────────────────────────────────────────────────────┐
+│  ✅ GOODS RECEIPT — GRN-20260325-0001               │
+│  Against PO: PO-20260323-0001 | Delivery 1          │
+│  Supplier: FreshMart | Date: 25 Mar 2026            │
+├────────────────┬────────┬────────┬────────┬─────────┤
+│ Item           │Ordered │Received│Accepted│Rejected │
+├────────────────┼────────┼────────┼────────┼─────────┤
+│ Chicken Breast │ 10 kg  │ 10 kg  │ 9.5 kg │ 0.5 kg  │
+│                │        │        │        │ Damaged │
+│ Fresh Cream    │ 5 L    │ 5 L    │ 5 L    │ 0       │
+├────────────────┴────────┴────────┴────────┴─────────┤
+│  Batch: CH-2503 | Expiry: 28 Mar 2026               │
+│  Stored in: Cold Room A                              │
+│                                                      │
+│  Variance: 0.5 kg chicken rejected                  │
+│  → Auto-create Purchase Return for 0.5 kg?  [Yes]  │
+│                                                      │
+│  [CONFIRM GRN]  → Stock updated automatically       │
+└──────────────────────────────────────────────────────┘
+```
+
+***
+
+#### 5. Module 3 — Purchase returns UI
+
+```
+┌──────────────────────────────────────────────────────┐
+│  ↩️ PURCHASE RETURN — PR-20260325-0001              │
+│  Against GRN: GRN-20260325-0001                     │
+│  Supplier: FreshMart Pvt Ltd                        │
+├──────────────────────────────────────────────────────┤
+│  Return Type: [Damaged in transit ▼]                │
+├────────────────┬──────────┬────────┬────────────────┤
+│ Item           │ Return   │ Unit   │ Reason         │
+├────────────────┼──────────┼────────┼────────────────┤
+│ Chicken Breast │ 0.5      │ kg     │ Damaged pack   │
+│ [+ Add Item]   │          │        │                │
+├────────────────┴──────────┴────────┴────────────────┤
+│  Total Return Value: ₹87.50 (0.5 kg × ₹175)        │
+│                                                      │
+│  📄 Debit Note No: [Auto-generated on approve]      │
+│  📸 Add Photos: [📷 Upload Evidence]                │
+│                                                      │
+│  Recovery Option:                                   │
+│  ○ Credit Note from supplier                        │
+│  ○ Replacement goods                                │
+│  ○ Cash refund                                      │
+│                                                      │
+│  [SUBMIT RETURN]                                    │
+└──────────────────────────────────────────────────────┘
+```
+
+- Stock deducted immediately when return is approved.
+- Debit note generated automatically with sequential number.
+- Supplier notified via email with return details.
+
+***
+
+#### 6. Module 4 — Inter-outlet stock transfer UI
+
+```
+┌──────────────────────────────────────────────────────┐
+│  🔄 STOCK TRANSFER — TRF-20260323-0001              │
+├──────────────────────────────────────────────────────┤
+│  From Outlet:  [Main Branch ▼]                      │
+│  To Outlet:    [Food Court ▼]                       │
+│  Priority:     [High ▼]                             │
+│  Reason:       [Stock shortage at Food Court   ]    │
+│  Expected By:  [Today 4:00 PM 📅]                  │
+├────────────────┬──────────┬──────────┬──────────────┤
+│ Item           │Available │ Transfer │ Unit         │
+├────────────────┼──────────┼──────────┼──────────────┤
+│ Chicken Breast │ 8.5 kg   │ [3 kg]   │ kg           │
+│ Fresh Cream    │ 4.2 L    │ [2 L  ]  │ litres       │
+│ [+ Add Item]   │          │          │              │
+├────────────────┴──────────┴──────────┴──────────────┤
+│  Transfer Value: ₹ 1,085                            │
+│  Transport: [Own Vehicle ▼]                         │
+│  Driver: [Rajan Kumar    ] Phone: [98765 43210]    │
+├──────────────────────────────────────────────────────┤
+│  TRANSFER STATUS FLOW:                              │
+│  Requested → Approved → Picking → Dispatched       │
+│  → In Transit → Received ✅                        │
+│                                                      │
+│  [REQUEST TRANSFER]                                 │
+└──────────────────────────────────────────────────────┘
+```
+
+##### Transfer tracking
+- When dispatched: sender outlet stock deducted immediately.
+- When received: receiver outlet stock credited.
+- If received qty differs from dispatched: variance logged.
+- Transit stock shown separately until received.
+
+***
+
+#### 7. Module 5 — Physical stock verification UI
+
+##### Schedule stock count
+```
+┌──────────────────────────────────────────────────────┐
+│  📋 SCHEDULE STOCK COUNT — STC-20260323-0001        │
+├──────────────────────────────────────────────────────┤
+│  Count Type:   [Full Count ▼]                       │
+│                ○ Full (all items)                   │
+│                ○ Partial (by category)              │
+│                ○ Spot Check (specific items)        │
+│                ○ Shift-end count                    │
+│  Outlet:       [Main Branch ▼]                      │
+│  Scheduled:    [23 Mar 2026 | After closing 11 PM]  │
+│  Assign To:    [Ravi + Anita ▼]                    │
+│  Reason:       [Monthly verification               ]│
+│  [SCHEDULE COUNT]                                   │
+└──────────────────────────────────────────────────────┘
+```
+
+##### Stock counting screen (mobile-optimized for counter use)
+```
+┌──────────────────────────────────────────────────────┐
+│  📦 STOCK COUNT — STC-20260323-0001                 │
+│  Progress: 18/48 items counted                      │
+│  ████████░░░░░░░░░░░░  38%                          │
+├──────────────────────────────────────────────────────┤
+│  [🔍 Search item]  [📷 Scan barcode]               │
+├──────────────────────────────────────────────────────┤
+│  Chicken Breast (Cold Room A)                       │
+│  System says: 9.5 kg                                │
+│  Physical count: [      ] kg                        │
+│  Location: [Cold Room A              ]              │
+│  [✅ SAVE]  [⏭️ SKIP]                              │
+├──────────────────────────────────────────────────────┤
+│  ✅ Counted: Fresh Cream → 4.2 L (match)            │
+│  🔴 Counted: Baguette → 12 pcs (system: 18 pcs)    │
+│              Variance: -6 pcs (–₹150)               │
+└──────────────────────────────────────────────────────┘
+```
+
+##### Variance review and approval
+```
+┌──────────────────────────────────────────────────────┐
+│  📊 STOCK COUNT VARIANCE REPORT                     │
+│  STC-20260323-0001 | 23 March 2026                  │
+├────────────────┬───────┬──────────┬────────┬────────┤
+│ Item           │System │ Physical │Variance│ Value  │
+├────────────────┼───────┼──────────┼────────┼────────┤
+│ Chicken Breast │ 9.5kg │ 9.5 kg   │ 0      │ ₹0     │
+│ Baguette       │ 18 pc │ 12 pc    │ -6 pc  │ -₹150  │
+│ Cream          │ 4.2 L │ 4.0 L    │ -0.2 L │ -₹28   │
+│ Rice           │ 15 kg │ 16.5 kg  │ +1.5 kg│ +₹75   │
+├────────────────┴───────┴──────────┴────────┴────────┤
+│  Total Variance: -₹103                              │
+│  Items matched: 44/48 (91.7%)                       │
+│                                                      │
+│  For each variance, enter reason:                   │
+│  Baguette -6: [Unrecorded wastage        ]         │
+│  Cream -0.2L: [Evaporation / usage      ]         │
+│  Rice +1.5kg: [Supplier over-delivery   ]         │
+│                                                      │
+│  [APPROVE & ADJUST STOCK]  [REQUEST RECOUNT]        │
+└──────────────────────────────────────────────────────┘
+```
+
+***
+
+#### 8. Module 6 — Damaged inventory declaration UI
+
+```
+┌──────────────────────────────────────────────────────┐
+│  ⚠️ DECLARE DAMAGED INVENTORY — DMG-20260323-0001   │
+├──────────────────────────────────────────────────────┤
+│  Item:         [Fresh Cream ▼]                      │
+│  Quantity:     [2.5    ] litres                     │
+│  Unit Cost:    ₹150/litre (auto-filled)             │
+│  Total Value:  ₹375 (auto-calculated)               │
+├──────────────────────────────────────────────────────┤
+│  Damage Type:                                       │
+│  ○ Physical Damage    ○ Contamination               │
+│  ○ Cold Chain Break   ● Expired                     │
+│  ○ Pest Damage        ○ Fire/Water Damage           │
+├──────────────────────────────────────────────────────┤
+│  Damage Cause: [Found expired during stock check ]  │
+│  Location:     [Cold Room A                      ]  │
+│  Damage Date:  [23 Mar 2026 📅]                    │
+│  📸 Photos:    [📷 Upload 1] [📷 Upload 2]         │
+├──────────────────────────────────────────────────────┤
+│  Disposal Method:                                   │
+│  ○ Discard            ○ Return to Supplier          │
+│  ○ Donate             ● Insurance Claim             │
+│  Insurance Claim No:  [INS-2026-0123         ]     │
+│  Insurance Amount:    [₹375                  ]     │
+├──────────────────────────────────────────────────────┤
+│  [SUBMIT FOR APPROVAL]                              │
+└──────────────────────────────────────────────────────┘
+```
+
+- On approval: stock deducted immediately.
+- Insurance claim tracked separately.
+- Photo evidence stored for audit.
+- Write-off posted to finance as expense.
+
+***
+
+#### 9. Dashboards and reports
+
+##### Procurement dashboard
+```
+┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐
+│ OPEN POs     │ │ PENDING GRNs │ │ OPEN RETURNS │ │ THIS MONTH   │
+│ 8 orders     │ │ 3 due today  │ │ 2 pending    │ │ ₹1,24,500    │
+│ ₹45,200      │ │ ₹12,400      │ │ ₹1,250       │ │ spend        │
+└──────────────┘ └──────────────┘ └──────────────┘ └──────────────┘
+```
+
+##### Reports available
+```
+1. Purchase Order report (by supplier/date/status)
+2. GRN report (received vs ordered variance)
+3. Supplier performance (delivery time, quality, price)
+4. Purchase return report
+5. Stock transfer report (inter-outlet movement)
+6. Stock count history and variance trends
+7. Damaged inventory write-off report
+8. Delivery schedule calendar view
+9. Pending deliveries today/this week
+10. Procurement spend by category
+```
+
+***
+
+#### 10. APIs required
+
+```
+-- Suppliers
+GET/POST       /api/suppliers
+PUT/DELETE     /api/suppliers/:id
+GET            /api/suppliers/:id/items
+
+-- Quotations
+GET/POST       /api/rfq
+POST           /api/rfq/:id/send
+GET/POST       /api/quotations
+POST           /api/quotations/compare
+
+-- Purchase Orders
+GET/POST       /api/purchase-orders
+PUT            /api/purchase-orders/:id
+POST           /api/purchase-orders/:id/submit
+POST           /api/purchase-orders/:id/approve
+POST           /api/purchase-orders/:id/send-supplier
+GET/POST       /api/purchase-orders/:id/delivery-schedule
+POST           /api/purchase-orders/:id/grn
+
+-- GRN
+GET/POST       /api/grn
+POST           /api/grn/:id/confirm
+
+-- Purchase Returns
+GET/POST       /api/purchase-returns
+POST           /api/purchase-returns/:id/approve
+POST           /api/purchase-returns/:id/dispatch
+
+-- Stock Transfers
+GET/POST       /api/stock-transfers
+POST           /api/stock-transfers/:id/approve
+POST           /api/stock-transfers/:id/dispatch
+POST           /api/stock-transfers/:id/receive
+
+-- Stock Counts
+GET/POST       /api/stock-counts
+POST           /api/stock-counts/:id/start
+PUT            /api/stock-counts/:id/items/:itemId
+POST           /api/stock-counts/:id/complete
+POST           /api/stock-counts/:id/approve
+
+-- Damaged Inventory
+GET/POST       /api/damaged-inventory
+POST           /api/damaged-inventory/:id/approve
+POST           /api/damaged-inventory/:id/dispose
+
+-- Reports
+GET            /api/procurement/dashboard
+GET            /api/procurement/reports/po
+GET            /api/procurement/reports/supplier-performance
+GET            /api/procurement/reports/transfers
+GET            /api/procurement/reports/stock-count-history
+```
+
+***
+
+#### 11. Seed demo data
+
+```
+- 3 suppliers with items and pricing
+- 2 RFQs (1 sent, 1 with comparison ready)
+- 3 purchase orders:
+    1 draft, 1 approved with delivery schedule
+    (2 deliveries), 1 partially received
+- 2 GRNs (1 confirmed clean, 1 with variance)
+- 1 purchase return (0.5 kg chicken, damaged)
+- 2 stock transfers (1 in transit, 1 completed)
+- 1 stock count (completed with 4 variances)
+- 2 damaged inventory declarations
+    (1 expired cream, 1 pest-damaged rice)
+- 30 days procurement history for reports
+```
+
+***
+
+Ensure all procurement data is scoped by `tenant_id` and `outlet_id`. Wrap all stock movements (GRN confirmation, transfer dispatch/receive, stock count adjustment, damage declaration) in DB transactions — inventory balance must never be updated partially. Index `status`, `supplier_id`, `outlet_id`, `created_at`, and `tenant_id` on all procurement tables for fast dashboard queries. Send email/in-app notifications at every approval step to the relevant role.
