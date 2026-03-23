@@ -3264,3 +3264,71 @@ export async function seedTipSettings(): Promise<void> {
 
   console.log("[TipSettings] Seeded tip settings and sample bill_tips/distributions.");
 }
+
+export async function seedPackingSettings(): Promise<void> {
+  const tenantsRes = await pool.query(`SELECT id FROM tenants WHERE slug != 'platform' LIMIT 1`);
+  if (!tenantsRes.rows[0]) return;
+  const tenantId = tenantsRes.rows[0].id;
+
+  const outletRes = await pool.query(`SELECT id FROM outlets WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (!outletRes.rows[0]) return;
+  const outletId = outletRes.rows[0].id;
+
+  const existing = await pool.query(
+    `SELECT id FROM outlet_packing_settings WHERE tenant_id = $1 AND outlet_id = $2 LIMIT 1`,
+    [tenantId, outletId]
+  );
+  if (existing.rows[0]) {
+    console.log("[PackingSettings] Seed data already exists, skipping.");
+    return;
+  }
+
+  await pool.query(`
+    INSERT INTO outlet_packing_settings (
+      tenant_id, outlet_id, takeaway_charge_enabled, delivery_charge_enabled,
+      charge_type, takeaway_charge_amount, delivery_charge_amount,
+      takeaway_per_item, delivery_per_item, max_charge_per_order,
+      packing_charge_taxable, packing_charge_tax_pct, show_on_receipt,
+      charge_label, currency_code, currency_symbol
+    ) VALUES ($1,$2,false,true,'FIXED_PER_ORDER',0,30,0,0,100,false,0,true,'Packing Charge','INR','₹')
+    ON CONFLICT (tenant_id, outlet_id) DO NOTHING
+  `, [tenantId, outletId]);
+
+  const liquidsCatRes = await pool.query(
+    `SELECT id FROM menu_categories WHERE tenant_id = $1 AND name ILIKE '%liquid%' LIMIT 1`,
+    [tenantId]
+  );
+  const dryCatRes = await pool.query(
+    `SELECT id FROM menu_categories WHERE tenant_id = $1 AND name ILIKE '%dry%' LIMIT 1`,
+    [tenantId]
+  );
+
+  const liquidsIds = liquidsCatRes.rows[0] ? [liquidsCatRes.rows[0].id] : [];
+  const dryIds = dryCatRes.rows[0] ? [dryCatRes.rows[0].id] : [];
+
+  await pool.query(`
+    INSERT INTO packing_charge_categories (tenant_id, outlet_id, category_name, takeaway_charge, delivery_charge, applies_to_categories)
+    VALUES ($1,$2,'Liquids',15,25,$3)
+    ON CONFLICT DO NOTHING
+  `, [tenantId, outletId, JSON.stringify(liquidsIds)]);
+
+  await pool.query(`
+    INSERT INTO packing_charge_categories (tenant_id, outlet_id, category_name, takeaway_charge, delivery_charge, applies_to_categories)
+    VALUES ($1,$2,'Dry Items',10,15,$3)
+    ON CONFLICT DO NOTHING
+  `, [tenantId, outletId, JSON.stringify(dryIds)]);
+
+  const waterCatRes = await pool.query(
+    `SELECT id, name FROM menu_categories WHERE tenant_id = $1 AND name ILIKE '%water%' LIMIT 1`,
+    [tenantId]
+  );
+  if (waterCatRes.rows[0]) {
+    await pool.query(`
+      INSERT INTO packing_charge_exemptions (tenant_id, outlet_id, exemption_type, reference_id, reference_name, reason)
+      VALUES ($1,$2,'CATEGORY',$3,$4,'Water bottles are exempt from packing charge')
+      ON CONFLICT DO NOTHING
+    `, [tenantId, outletId, waterCatRes.rows[0].id, waterCatRes.rows[0].name]);
+  }
+
+  console.log("[PackingSettings] Seeded packing charge settings, categories, and exemptions.");
+}

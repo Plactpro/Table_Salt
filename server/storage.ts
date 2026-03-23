@@ -165,6 +165,11 @@ import {
   type OutletTipSettings, type InsertOutletTipSettings,
   type BillTip, type InsertBillTip,
   type TipDistribution, type InsertTipDistribution,
+  outletPackingSettings, packingChargeCategories, packingChargeExemptions, billPackingCharges,
+  type OutletPackingSettings, type InsertOutletPackingSettings,
+  type PackingChargeCategory, type InsertPackingChargeCategory,
+  type PackingChargeExemption, type InsertPackingChargeExemption,
+  type BillPackingCharge, type InsertBillPackingCharge,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -753,6 +758,19 @@ export interface IStorage {
   getMyTips(tenantId: string, staffId: string): Promise<Record<string, any>>;
   getTipDistributions(tenantId: string, filters: { staffId?: string; date?: string; isPaid?: boolean }): Promise<TipDistribution[]>;
   markTipDistributionPaid(id: string, tenantId: string): Promise<TipDistribution | null>;
+
+  // Packing charge management
+  getOutletPackingSettings(outletId: string, tenantId: string): Promise<OutletPackingSettings | null>;
+  upsertOutletPackingSettings(data: Record<string, any>): Promise<OutletPackingSettings>;
+  getPackingCategories(outletId: string, tenantId: string): Promise<PackingChargeCategory[]>;
+  createPackingCategory(data: InsertPackingChargeCategory): Promise<PackingChargeCategory>;
+  updatePackingCategory(id: string, tenantId: string, data: Partial<InsertPackingChargeCategory>): Promise<PackingChargeCategory | null>;
+  deletePackingCategory(id: string, tenantId: string): Promise<void>;
+  getPackingExemptions(outletId: string, tenantId: string): Promise<PackingChargeExemption[]>;
+  createPackingExemption(data: InsertPackingChargeExemption): Promise<PackingChargeExemption>;
+  deletePackingExemption(id: string, tenantId: string): Promise<void>;
+  createBillPackingCharge(data: InsertBillPackingCharge): Promise<BillPackingCharge>;
+  getBillPackingCharge(billId: string): Promise<BillPackingCharge | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3930,6 +3948,110 @@ export class DatabaseStorage implements IStorage {
       [id, tenantId]
     );
     return rows[0] || null;
+  }
+
+  async getOutletPackingSettings(outletId: string, tenantId: string): Promise<OutletPackingSettings | null> {
+    const [row] = await db.select().from(outletPackingSettings)
+      .where(and(eq(outletPackingSettings.outletId, outletId), eq(outletPackingSettings.tenantId, tenantId)));
+    return row || null;
+  }
+
+  async upsertOutletPackingSettings(data: Record<string, any>): Promise<OutletPackingSettings> {
+    const { rows } = await pool.query(`
+      INSERT INTO outlet_packing_settings (
+        tenant_id, outlet_id, takeaway_charge_enabled, delivery_charge_enabled,
+        charge_type, takeaway_charge_amount, delivery_charge_amount,
+        takeaway_per_item, delivery_per_item, max_charge_per_order,
+        packing_charge_taxable, packing_charge_tax_pct, show_on_receipt,
+        charge_label, currency_code, currency_symbol, updated_by, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())
+      ON CONFLICT (tenant_id, outlet_id) DO UPDATE SET
+        takeaway_charge_enabled = EXCLUDED.takeaway_charge_enabled,
+        delivery_charge_enabled = EXCLUDED.delivery_charge_enabled,
+        charge_type = EXCLUDED.charge_type,
+        takeaway_charge_amount = EXCLUDED.takeaway_charge_amount,
+        delivery_charge_amount = EXCLUDED.delivery_charge_amount,
+        takeaway_per_item = EXCLUDED.takeaway_per_item,
+        delivery_per_item = EXCLUDED.delivery_per_item,
+        max_charge_per_order = EXCLUDED.max_charge_per_order,
+        packing_charge_taxable = EXCLUDED.packing_charge_taxable,
+        packing_charge_tax_pct = EXCLUDED.packing_charge_tax_pct,
+        show_on_receipt = EXCLUDED.show_on_receipt,
+        charge_label = EXCLUDED.charge_label,
+        currency_code = EXCLUDED.currency_code,
+        currency_symbol = EXCLUDED.currency_symbol,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+      RETURNING *
+    `, [
+      data.tenantId, data.outletId,
+      data.takeawayChargeEnabled ?? false,
+      data.deliveryChargeEnabled ?? false,
+      data.chargeType ?? 'FIXED_PER_ORDER',
+      data.takeawayChargeAmount ?? 0,
+      data.deliveryChargeAmount ?? 0,
+      data.takeawayPerItem ?? 0,
+      data.deliveryPerItem ?? 0,
+      data.maxChargePerOrder ?? null,
+      data.packingChargeTaxable ?? false,
+      data.packingChargeTaxPct ?? 0,
+      data.showOnReceipt ?? true,
+      data.chargeLabel ?? 'Packing Charge',
+      data.currencyCode ?? 'INR',
+      data.currencySymbol ?? '₹',
+      data.updatedBy ?? null,
+    ]);
+    return rows[0];
+  }
+
+  async getPackingCategories(outletId: string, tenantId: string): Promise<PackingChargeCategory[]> {
+    const rows = await db.select().from(packingChargeCategories)
+      .where(and(eq(packingChargeCategories.outletId, outletId), eq(packingChargeCategories.tenantId, tenantId)));
+    return rows;
+  }
+
+  async createPackingCategory(data: InsertPackingChargeCategory): Promise<PackingChargeCategory> {
+    const [row] = await db.insert(packingChargeCategories).values(data).returning();
+    return row;
+  }
+
+  async updatePackingCategory(id: string, tenantId: string, data: Partial<InsertPackingChargeCategory>): Promise<PackingChargeCategory | null> {
+    const [row] = await db.update(packingChargeCategories)
+      .set(data)
+      .where(and(eq(packingChargeCategories.id, id), eq(packingChargeCategories.tenantId, tenantId)))
+      .returning();
+    return row || null;
+  }
+
+  async deletePackingCategory(id: string, tenantId: string): Promise<void> {
+    await db.delete(packingChargeCategories)
+      .where(and(eq(packingChargeCategories.id, id), eq(packingChargeCategories.tenantId, tenantId)));
+  }
+
+  async getPackingExemptions(outletId: string, tenantId: string): Promise<PackingChargeExemption[]> {
+    const rows = await db.select().from(packingChargeExemptions)
+      .where(and(eq(packingChargeExemptions.outletId, outletId), eq(packingChargeExemptions.tenantId, tenantId)));
+    return rows;
+  }
+
+  async createPackingExemption(data: InsertPackingChargeExemption): Promise<PackingChargeExemption> {
+    const [row] = await db.insert(packingChargeExemptions).values(data).returning();
+    return row;
+  }
+
+  async deletePackingExemption(id: string, tenantId: string): Promise<void> {
+    await db.delete(packingChargeExemptions)
+      .where(and(eq(packingChargeExemptions.id, id), eq(packingChargeExemptions.tenantId, tenantId)));
+  }
+
+  async createBillPackingCharge(data: InsertBillPackingCharge): Promise<BillPackingCharge> {
+    const [row] = await db.insert(billPackingCharges).values(data).returning();
+    return row;
+  }
+
+  async getBillPackingCharge(billId: string): Promise<BillPackingCharge | null> {
+    const [row] = await db.select().from(billPackingCharges).where(eq(billPackingCharges.billId, billId));
+    return row || null;
   }
 }
 

@@ -369,6 +369,20 @@ export async function routeAndPrint(params: {
       [billRow.order_id]
     );
 
+    // Fetch packing settings to check show_on_receipt
+    let showPackingOnReceipt = true;
+    if (billRow.packing_charge && Number(billRow.packing_charge) > 0 && billRow.outlet_id) {
+      try {
+        const { rows: packingSettingsRows } = await pool.query(
+          `SELECT show_on_receipt FROM outlet_packing_settings WHERE outlet_id = $1 AND tenant_id = $2 LIMIT 1`,
+          [billRow.outlet_id, billRow.tenant_id]
+        );
+        if (packingSettingsRows[0]) {
+          showPackingOnReceipt = packingSettingsRows[0].show_on_receipt !== false;
+        }
+      } catch (_) {}
+    }
+
     const bill: BillData = {
       billNumber: billRow.bill_number,
       invoiceNumber: billRow.invoice_number,
@@ -380,6 +394,10 @@ export async function routeAndPrint(params: {
       taxAmount: billRow.tax_amount,
       taxBreakdown: billRow.tax_breakdown,
       tips: billRow.tips,
+      packingCharge: billRow.packing_charge,
+      packingChargeLabel: billRow.packing_charge_label,
+      packingChargeTax: billRow.packing_charge_tax,
+      showPackingChargeOnReceipt: showPackingOnReceipt,
       totalAmount: billRow.total_amount,
       paymentMethod: null,
       covers: billRow.covers,

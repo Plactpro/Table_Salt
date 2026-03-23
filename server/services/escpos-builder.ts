@@ -137,6 +137,10 @@ export interface BillData {
   taxAmount?: string | number | null;
   taxBreakdown?: Record<string, string> | null;
   tips?: string | number | null;
+  packingCharge?: string | number | null;
+  packingChargeLabel?: string | null;
+  packingChargeTax?: string | number | null;
+  showPackingChargeOnReceipt?: boolean;
   totalAmount: string | number;
   paymentMethod?: string | null;
   paidAt?: Date | string | null;
@@ -322,6 +326,9 @@ export function buildBill(
   if (Number(bill.tips || 0) > 0) {
     b.text(padRight("Tips", colW) + padLeft(formatMoney(bill.tips), 12)).newLine();
   }
+  if (Number(bill.packingCharge || 0) > 0 && bill.showPackingChargeOnReceipt !== false) {
+    b.text(padRight(bill.packingChargeLabel || 'Packing Charge', colW) + padLeft(formatMoney(bill.packingCharge), 12)).newLine();
+  }
   b.separator("=", cpl);
   b.bold().doubleWidth().center().text(`TOTAL: ${formatMoney(bill.totalAmount)}`).normal().newLine();
   b.left();
@@ -472,6 +479,7 @@ ${bill.waiterName ? `<div>Served by: ${escHtml(bill.waiterName)}</div>` : ""}
   ${Number(bill.serviceCharge || 0) > 0 ? `<tr><td>Service Charge</td><td class="right">${formatMoney(bill.serviceCharge)}</td></tr>` : ""}
   ${Number(bill.taxAmount || 0) > 0 ? taxBreakdownHtml : ""}
   ${Number(bill.tips || 0) > 0 ? `<tr><td>Tips</td><td class="right">${formatMoney(bill.tips)}</td></tr>` : ""}
+  ${Number(bill.packingCharge || 0) > 0 && bill.showPackingChargeOnReceipt !== false ? `<tr><td>${escHtml(bill.packingChargeLabel || 'Packing Charge')}</td><td class="right">${formatMoney(bill.packingCharge)}</td></tr>` : ""}
   <tr class="total-row"><td>TOTAL</td><td class="right">${formatMoney(bill.totalAmount)}</td></tr>
 </table>
 ${bill.paymentMethod ? `<div>Payment: ${escHtml(bill.paymentMethod.toUpperCase())}</div>` : ""}
