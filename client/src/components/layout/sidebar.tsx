@@ -95,6 +95,7 @@ const navItems: NavItem[] = [
   { id: "m-42", name: "Printer Setup", icon: Printer, path: "/settings/printers", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   { id: "m-43", name: "Wastage Control", icon: Trash2, path: "/wastage", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   { id: "m-45", name: "Ticket History", icon: History, path: "/tickets", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
+  { id: "m-46", name: "Alert Sounds 🔔", icon: Bell, path: "/settings/alerts", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
 ];
 
 function SandDecoration() {
