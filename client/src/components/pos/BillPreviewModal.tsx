@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import CourseManagementPanel from "@/components/pos/CourseManagementPanel";
 import { renderBillHtml, dispatchPrint } from "@/lib/print-utils";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -864,6 +865,9 @@ export default function BillPreviewModal({
 
           {step === "preview" && (
             <div className="space-y-4">
+              {orderId && orderType === "dine_in" && (
+                <CourseManagementPanel orderId={orderId} tableNumber={tableNumber ? Number(tableNumber) : undefined} items={cart} />
+              )}
               <div className="bg-muted/50 rounded-lg p-4 text-center border">
                 <h3 className="font-bold text-lg">{tenantName}</h3>
                 {tenantAddress && <p className="text-xs text-muted-foreground">{tenantAddress}</p>}

@@ -1,15 +1,36 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
-import { Utensils, Flame, CheckCircle2, Clock, ChefHat, User, LayoutGrid } from "lucide-react";
+import {
+  Utensils, Flame, CheckCircle2, Clock, ChefHat, User, LayoutGrid,
+  Play, Pause, Zap, AlertTriangle, Lock, Bell,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel,
+  AlertDialogContent, AlertDialogDescription, AlertDialogFooter,
+  AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface KDSWallItem {
   id: string;
   name: string;
   quantity: number | null;
   status: string | null;
+  cookingStatus: string | null;
   station: string | null;
+  course: string | null;
+  estimatedReadyAt: string | null;
+  startedAt: string | null;
+  prepTimeMinutes: number | null;
+  courseNumber: number | null;
 }
 
 interface KDSWallTicket {
@@ -25,6 +46,73 @@ interface KDSWallTicket {
   counterName?: string | null;
   counterId?: string | null;
   assignmentStatus?: string | null;
+  estimatedReadyAt?: string | null;
+  waiterName?: string | null;
+}
+
+interface KitchenSettings {
+  cooking_control_mode: "auto_start" | "selective" | "course_only";
+  show_timing_suggestions: boolean;
+  alert_overdue_minutes: number;
+  allow_rush_override: boolean;
+  rush_requires_manager_pin: boolean;
+  auto_hold_bar_items: boolean;
+}
+
+function mapItemCookingStatus(item: KDSWallItem): string {
+  if (item.cookingStatus) return item.cookingStatus;
+  const s = item.status ?? "pending";
+  if (s === "pending") return "queued";
+  if (s === "cooking") return "started";
+  if (s === "done" || s === "ready") return "ready";
+  if (s === "served") return "served";
+  return "queued";
+}
+
+function ItemStatusBadge({ itemId, status }: { itemId: string; status: string }) {
+  const cfg: Record<string, { label: string; cls: string }> = {
+    queued: { label: "Queued", cls: "bg-gray-700 text-gray-300" },
+    hold: { label: "On Hold", cls: "bg-purple-900 text-purple-200 animate-pulse" },
+    ready_to_start: { label: "START NOW", cls: "bg-amber-800 text-amber-100 animate-pulse" },
+    started: { label: "Cooking", cls: "bg-blue-900 text-blue-100" },
+    almost_ready: { label: "Almost Ready", cls: "bg-teal-900 text-teal-100" },
+    ready: { label: "Ready ✓", cls: "bg-green-900 text-green-100" },
+    held_warm: { label: "Kept Warm", cls: "bg-orange-900 text-orange-100" },
+    served: { label: "Served", cls: "bg-gray-800 text-gray-500" },
+  };
+  const c = cfg[status] ?? { label: status, cls: "bg-gray-700 text-gray-400" };
+  return (
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full font-semibold whitespace-nowrap ${c.cls}`}
+      data-testid={`status-${itemId}`}
+    >
+      {c.label}
+    </span>
+  );
+}
+
+function CountdownTimer({ estimatedReadyAt, itemId }: { estimatedReadyAt: string; itemId: string }) {
+  const [secsLeft, setSecsLeft] = useState(() =>
+    Math.max(0, Math.floor((new Date(estimatedReadyAt).getTime() - Date.now()) / 1000))
+  );
+  useEffect(() => {
+    const iv = setInterval(() => {
+      setSecsLeft(Math.max(0, Math.floor((new Date(estimatedReadyAt).getTime() - Date.now()) / 1000)));
+    }, 1000);
+    return () => clearInterval(iv);
+  }, [estimatedReadyAt]);
+
+  const mins = Math.floor(secsLeft / 60);
+  const secs = secsLeft % 60;
+  const overdue = secsLeft === 0;
+  return (
+    <span
+      className={`text-sm font-mono tabular-nums ${overdue ? "text-red-400 font-bold animate-pulse" : "text-blue-300"}`}
+      data-testid={`timer-${itemId}`}
+    >
+      {overdue ? "▶ overdue" : `⏱️ ${mins}:${secs.toString().padStart(2, "0")} left`}
+    </span>
+  );
 }
 
 function useElapsedMinutes(createdAt: string | null): number {
@@ -54,6 +142,519 @@ function formatElapsed(mins: number) {
   if (mins < 1) return "now";
   if (mins < 60) return `${mins}m`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
+declare global { interface Window { webkitAudioContext?: typeof AudioContext } }
+
+function playBeep() {
+  try {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = "square";
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  } catch (_) {}
+}
+
+function HoldDialog({
+  open, onClose, item, ticketId, siblingItems, onHeld,
+}: {
+  open: boolean;
+  onClose: () => void;
+  item: KDSWallItem | null;
+  ticketId: string;
+  siblingItems: KDSWallItem[];
+  onHeld: () => void;
+}) {
+  const [holdType, setHoldType] = useState<"manual" | "item" | "minutes">("manual");
+  const [holdItemId, setHoldItemId] = useState("");
+  const [holdMinutes, setHoldMinutes] = useState(5);
+  const [holdReason, setHoldReason] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!item) return;
+    setLoading(true);
+    try {
+      const body: { holdReason: string; holdUntilItemId?: string; holdUntilMinutes?: number } = { holdReason };
+      if (holdType === "item") body.holdUntilItemId = holdItemId;
+      if (holdType === "minutes") body.holdUntilMinutes = holdMinutes;
+      const res = await fetch(`/api/kds/items/${item.id}/hold`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      if (!res.ok) {
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "pending" }) });
+      }
+    } catch (_) {}
+    setLoading(false);
+    onHeld();
+    onClose();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={v => !v && onClose()}>
+      <DialogContent data-testid="dialog-hold">
+        <DialogHeader>
+          <DialogTitle>HOLD ITEM</DialogTitle>
+        </DialogHeader>
+        {item && (
+          <div className="space-y-4">
+            <p className="text-sm font-medium text-muted-foreground">
+              {item.name} — {ticketId.slice(-4).toUpperCase()}
+            </p>
+            <div className="space-y-2">
+              <Label>Hold until:</Label>
+              {([
+                { value: "manual" as const, label: "I manually start it" },
+                { value: "item" as const, label: "Another item from same order is ready" },
+                { value: "minutes" as const, label: `In [N] minutes` },
+              ] satisfies { value: "manual" | "item" | "minutes"; label: string }[]).map(opt => (
+                <div
+                  key={opt.value}
+                  className={`flex items-center gap-2 p-2 rounded border cursor-pointer ${holdType === opt.value ? "border-primary bg-primary/10" : "border-border"}`}
+                  onClick={() => setHoldType(opt.value)}
+                >
+                  <div className={`h-4 w-4 rounded-full border-2 flex items-center justify-center ${holdType === opt.value ? "border-primary" : "border-muted-foreground"}`}>
+                    {holdType === opt.value && <div className="h-2 w-2 rounded-full bg-primary" />}
+                  </div>
+                  <span className="text-sm">{opt.label}</span>
+                </div>
+              ))}
+            </div>
+            {holdType === "item" && (
+              <div>
+                <Label>Wait for item:</Label>
+                <Select value={holdItemId} onValueChange={setHoldItemId}>
+                  <SelectTrigger data-testid="select-hold-until-item">
+                    <SelectValue placeholder="Select item" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {siblingItems.filter(i => i.id !== item.id).map(i => (
+                      <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {holdType === "minutes" && (
+              <div>
+                <Label>Hold for (minutes):</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={60}
+                  value={holdMinutes}
+                  onChange={e => setHoldMinutes(+e.target.value)}
+                  data-testid="input-hold-minutes"
+                />
+              </div>
+            )}
+            <div>
+              <Label>Reason (optional):</Label>
+              <Input
+                value={holdReason}
+                onChange={e => setHoldReason(e.target.value)}
+                placeholder="Why is this on hold?"
+                data-testid="input-hold-reason"
+              />
+            </div>
+          </div>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} disabled={loading || (holdType === "item" && !holdItemId)}>
+            HOLD ITEM
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RushDialog({
+  open, onClose, ticket, requiresPin, onRushed,
+}: {
+  open: boolean;
+  onClose: () => void;
+  ticket: KDSWallTicket | null;
+  requiresPin: boolean;
+  onRushed: () => void;
+}) {
+  const [pin, setPin] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!ticket) return;
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/kds/orders/${ticket.id}/rush`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ managerPin: pin }),
+      });
+      if (!res.ok) {
+        for (const item of ticket.items) {
+          if (mapItemCookingStatus(item) !== "ready" && mapItemCookingStatus(item) !== "served") {
+            try {
+              await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) });
+            } catch (_) {}
+          }
+        }
+      }
+    } catch (_) {}
+    setLoading(false);
+    setPin("");
+    onRushed();
+    onClose();
+  }
+
+  return (
+    <AlertDialog open={open} onOpenChange={v => !v && onClose()}>
+      <AlertDialogContent data-testid="dialog-rush">
+        <AlertDialogHeader>
+          <AlertDialogTitle className="flex items-center gap-2">
+            <Zap className="h-5 w-5 text-destructive" />
+            ⚡ RUSH ORDER
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            This will immediately start all remaining items on{" "}
+            Table {ticket?.tableNumber ?? ticket?.id.slice(-4).toUpperCase()}.
+            All timing suggestions will be ignored.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        {requiresPin && (
+          <div className="py-2">
+            <Label>Manager PIN:</Label>
+            <Input
+              type="password"
+              value={pin}
+              onChange={e => setPin(e.target.value)}
+              placeholder="Enter PIN"
+              data-testid="input-rush-pin"
+            />
+          </div>
+        )}
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={submit}
+            disabled={loading || (requiresPin && !pin)}
+            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            data-testid="button-confirm-rush"
+          >
+            <Zap className="h-4 w-4 mr-1" />RUSH ALL ITEMS
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function ItemRow({
+  item, ticket, mode, settings, onRefresh, courseLocked,
+}: {
+  item: KDSWallItem;
+  ticket: KDSWallTicket;
+  mode: string;
+  settings: KitchenSettings;
+  onRefresh: () => void;
+  courseLocked?: boolean;
+}) {
+  const [startLoading, setStartLoading] = useState(false);
+  const [readyLoading, setReadyLoading] = useState(false);
+  const [startTooltip, setStartTooltip] = useState<string | null>(null);
+  const [showHold, setShowHold] = useState(false);
+
+  const cs = mapItemCookingStatus(item);
+  const isStartable = cs === "queued" || cs === "ready_to_start";
+  const isCooking = cs === "started";
+  const isReady = cs === "ready" || cs === "almost_ready";
+  const isTerminal = cs === "served";
+
+  const isOverdue = cs === "ready_to_start";
+
+  async function handleStart() {
+    setStartLoading(true);
+    try {
+      const res = await fetch(`/api/kds/items/${item.id}/start`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      if (!res.ok) {
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) });
+        setStartTooltip("Started");
+      } else {
+        const data = await res.json();
+        if (data.earlyMinutes > 0) setStartTooltip(`Started ${data.earlyMinutes} min early`);
+        else if (data.earlyMinutes < 0) setStartTooltip(`⚠️ Started ${Math.abs(data.earlyMinutes)} min late`);
+        else setStartTooltip("Started");
+      }
+      setTimeout(() => setStartTooltip(null), 3000);
+    } catch (_) {
+      try { await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) }); } catch (_) {}
+    }
+    setStartLoading(false);
+    onRefresh();
+  }
+
+  async function handleReady() {
+    setReadyLoading(true);
+    try {
+      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: { "Content-Type": "application/json" } });
+      if (!res.ok) {
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ready" }) });
+      }
+    } catch (_) {
+      try { await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ready" }) }); } catch (_) {}
+    }
+    setReadyLoading(false);
+    onRefresh();
+  }
+
+  return (
+    <>
+      <tr
+        className={`border-b border-gray-700/50 ${isOverdue ? "bg-amber-950/30" : ""} ${cs === "ready" ? "bg-green-950/20" : ""}`}
+        data-testid={`row-item-${item.id}`}
+      >
+        <td className="py-1.5 px-2">
+          <div className="text-sm font-medium text-white">{item.quantity !== null && item.quantity > 1 ? `${item.quantity}×` : ""} {item.name}</div>
+        </td>
+        <td className="py-1.5 px-2 text-xs text-gray-400">
+          {item.prepTimeMinutes ? `${item.prepTimeMinutes}m` : "—"}
+        </td>
+        <td className="py-1.5 px-2">
+          <ItemStatusBadge itemId={item.id} status={cs} />
+        </td>
+        <td className="py-1.5 px-2">
+          {isCooking && item.estimatedReadyAt ? (
+            <CountdownTimer estimatedReadyAt={item.estimatedReadyAt} itemId={item.id} />
+          ) : cs === "ready_to_start" ? (
+            <span className="text-amber-400 text-sm font-medium animate-pulse">▶ overdue</span>
+          ) : cs === "queued" && item.prepTimeMinutes ? (
+            <span className="text-gray-500 text-xs">suggested</span>
+          ) : (
+            <span className="text-gray-600 text-xs">—</span>
+          )}
+        </td>
+        <td className="py-1.5 px-2">
+          <div className="flex items-center gap-1.5 relative">
+            {startTooltip && (
+              <div className="absolute -top-7 left-0 bg-gray-800 text-white text-xs px-2 py-1 rounded shadow-lg whitespace-nowrap z-10">
+                {startTooltip}
+              </div>
+            )}
+            {courseLocked && (
+              <span className="flex items-center gap-1 text-yellow-500 text-xs">
+                <Lock className="h-3 w-3" /> Locked
+              </span>
+            )}
+            {!courseLocked && isStartable && !isTerminal && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-2 bg-green-950 border-green-700 text-green-300 hover:bg-green-900"
+                onClick={handleStart}
+                disabled={startLoading}
+                data-testid={`button-start-${item.id}`}
+              >
+                <Play className="h-3 w-3 mr-1" />START
+              </Button>
+            )}
+            {!courseLocked && (isStartable || cs === "queued") && !isTerminal && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-2 bg-purple-950 border-purple-700 text-purple-300 hover:bg-purple-900"
+                onClick={() => setShowHold(true)}
+                data-testid={`button-hold-${item.id}`}
+              >
+                <Pause className="h-3 w-3 mr-1" />HOLD
+              </Button>
+            )}
+            {!courseLocked && (isCooking || isReady) && !isTerminal && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-2 bg-green-950 border-green-700 text-green-300 hover:bg-green-900"
+                onClick={handleReady}
+                disabled={readyLoading}
+                data-testid={`button-ready-${item.id}`}
+              >
+                <CheckCircle2 className="h-3 w-3 mr-1" />READY
+              </Button>
+            )}
+          </div>
+        </td>
+      </tr>
+      <HoldDialog
+        open={showHold}
+        onClose={() => setShowHold(false)}
+        item={item}
+        ticketId={ticket.id}
+        siblingItems={ticket.items}
+        onHeld={onRefresh}
+      />
+    </>
+  );
+}
+
+function SelectiveTicketCard({
+  ticket, settings, onRefresh,
+}: {
+  ticket: KDSWallTicket;
+  settings: KitchenSettings;
+  onRefresh: () => void;
+}) {
+  const mins = useElapsedMinutes(ticket.createdAt);
+  const timeColor = getTimeColor(mins);
+  const [showRush, setShowRush] = useState(false);
+
+  const allItems = ticket.items.filter(i => mapItemCookingStatus(i) !== "served");
+  const readyItems = allItems.filter(i => ["ready", "almost_ready", "served"].includes(mapItemCookingStatus(i)));
+  const allReady = allItems.length > 0 && readyItems.length === allItems.length;
+
+  const label = ticket.tableNumber
+    ? `Table ${ticket.tableNumber}`
+    : ticket.orderType === "takeaway"
+    ? "Takeaway"
+    : `#${ticket.id.slice(-4).toUpperCase()}`;
+
+  const byCourse = ticket.items.reduce<Record<string | number, KDSWallItem[]>>((acc, item) => {
+    const k = item.courseNumber ?? item.course ?? 0;
+    if (!acc[k]) acc[k] = [];
+    acc[k].push(item);
+    return acc;
+  }, {});
+
+  const hasCourses = Object.keys(byCourse).length > 1 || (Object.keys(byCourse)[0] !== "0" && Object.keys(byCourse)[0] !== undefined);
+
+  return (
+    <motion.div
+      layout
+      initial={{ opacity: 0, scale: 0.95, y: 10 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9 }}
+      transition={{ duration: 0.25 }}
+      className={`rounded-2xl border-2 p-4 space-y-3 ${allReady ? "border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]" : "bg-gray-800/60 border-gray-600"}`}
+      data-testid={`wall-ticket-${ticket.id.slice(-4)}`}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <span className="text-2xl font-black text-white tracking-tight" data-testid={`wall-table-${ticket.id.slice(-4)}`}>
+            {label}
+          </span>
+          {ticket.channel && (
+            <span className="ml-2 text-xs text-gray-400 capitalize">{ticket.channel}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-1 ${timeColor}`}>
+            <Clock className="h-4 w-4" />
+            <span className="text-lg font-bold tabular-nums">{formatElapsed(mins)}</span>
+          </div>
+          {settings.allow_rush_override && (
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-7 text-xs px-2"
+              onClick={() => setShowRush(true)}
+              data-testid={`button-rush-${ticket.id}`}
+            >
+              <Zap className="h-3 w-3 mr-1" />RUSH
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {ticket.waiterName && (
+        <div className="flex items-center gap-1.5 text-xs text-gray-400">
+          <User className="h-3 w-3" />
+          <span>{ticket.waiterName}</span>
+        </div>
+      )}
+
+      {allReady && (
+        <div className="text-center py-1 text-green-400 font-bold text-sm tracking-wide animate-pulse">
+          ✅ ORDER COMPLETE
+        </div>
+      )}
+
+      <div className="overflow-x-auto">
+        {Object.entries(byCourse).sort(([a], [b]) => Number(a) - Number(b)).map(([courseKey, courseItems], courseIndex) => {
+          const cn = Number(courseKey);
+          const prevCourseKey = String(cn - 1);
+          const prevCourseItems = byCourse[prevCourseKey] || [];
+          const prevCourseFired = prevCourseItems.length === 0 || prevCourseItems.every(pi => {
+            const cs = mapItemCookingStatus(pi);
+            return cs === "ready" || cs === "almost_ready" || cs === "served" || cs === "held_warm";
+          });
+          const isLocked = cn > 1 && !prevCourseFired && settings.cooking_control_mode === "course_only";
+          return (
+            <div key={courseKey}>
+              {hasCourses && cn > 0 && (
+                <div className={`flex items-center gap-2 py-1 text-xs font-semibold uppercase tracking-wider ${isLocked ? "text-yellow-600" : "text-gray-400"}`}>
+                  {isLocked ? <Lock className="h-3 w-3 text-yellow-500" /> : <Utensils className="h-3 w-3" />}
+                  Course {cn}
+                  {isLocked && <span className="text-yellow-500 normal-case font-normal">(waiting for course {cn - 1})</span>}
+                </div>
+              )}
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-gray-500 text-xs border-b border-gray-700">
+                    <th className="text-left py-1 px-2 font-medium">Item</th>
+                    <th className="text-left py-1 px-2 font-medium">Prep</th>
+                    <th className="text-left py-1 px-2 font-medium">Status</th>
+                    <th className="text-left py-1 px-2 font-medium">Timing</th>
+                    <th className="text-left py-1 px-2 font-medium">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {courseItems.map(item => (
+                    <ItemRow
+                      key={item.id}
+                      item={item}
+                      ticket={ticket}
+                      mode={settings.cooking_control_mode}
+                      settings={settings}
+                      onRefresh={onRefresh}
+                      courseLocked={isLocked}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex items-center justify-between text-xs text-gray-400 pt-1 border-t border-gray-700">
+        {ticket.estimatedReadyAt && (
+          <span>All ready by {new Date(ticket.estimatedReadyAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+        )}
+        <div className="flex items-center gap-2 ml-auto">
+          <div className="w-24 bg-gray-700 rounded-full h-2" data-testid={`progress-order-${ticket.id}`}>
+            <div
+              className="h-2 rounded-full bg-green-500 transition-all"
+              style={{ width: allItems.length > 0 ? `${(readyItems.length / allItems.length) * 100}%` : "0%" }}
+            />
+          </div>
+          <span>{readyItems.length}/{allItems.length} ready</span>
+        </div>
+      </div>
+
+      <RushDialog
+        open={showRush}
+        onClose={() => setShowRush(false)}
+        ticket={ticket}
+        requiresPin={settings.rush_requires_manager_pin}
+        onRushed={onRefresh}
+      />
+    </motion.div>
+  );
 }
 
 function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
@@ -138,9 +739,20 @@ function buildApiUrl(qp: URLSearchParams): string {
 const REFRESH_EVENTS = new Set([
   "order:new", "order:updated", "order:completed", "order:item_updated",
   "chef-assignment:updated", "chef-assignment:rebalanced", "counter:updated",
+  "kds:item_started", "kds:item_held", "kds:item_ready", "kds:order_rushed",
+  "kds:course_fired", "kds:hold_released",
 ]);
 
-function useWallWebSocket(wsUrl: string, onEvent: () => void, onConnected: (v: boolean) => void) {
+const ALL_KDS_EVENTS = new Set([
+  "order:new", "order:updated", "order:completed", "order:item_updated",
+  "chef-assignment:updated", "chef-assignment:rebalanced", "counter:updated",
+  "kds:item_started", "kds:item_held", "kds:item_ready", "kds:order_rushed",
+  "kds:course_fired", "kds:hold_released",
+  "kds:item_overdue",
+  "kds:manager_alert",
+]);
+
+function useWallWebSocket(wsUrl: string, onEvent: (event: string, payload?: unknown) => void, onConnected: (v: boolean) => void) {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
   const onConnectedRef = useRef(onConnected);
@@ -165,8 +777,8 @@ function useWallWebSocket(wsUrl: string, onEvent: () => void, onConnected: (v: b
 
         ws.onmessage = (evt) => {
           try {
-            const { event } = JSON.parse(evt.data as string) as { event: string };
-            if (REFRESH_EVENTS.has(event)) onEventRef.current();
+            const msg = JSON.parse(evt.data as string) as { event: string; payload?: unknown };
+            if (ALL_KDS_EVENTS.has(msg.event)) onEventRef.current(msg.event, msg.payload);
           } catch (_) {}
         };
 
@@ -212,6 +824,81 @@ function groupByCounter(tickets: KDSWallTicket[]): { counterId: string | null; c
   return result;
 }
 
+interface ChefAlert {
+  id: string;
+  type: "overdue" | "upcoming" | "ok" | "hold_released";
+  message: string;
+  itemId?: string;
+  ticketId?: string;
+  expiresAt: number;
+}
+
+function ChefAlertsPanel({
+  alerts, onDismiss, allOnTrack,
+}: {
+  alerts: ChefAlert[];
+  onDismiss: (id: string) => void;
+  allOnTrack?: boolean;
+}) {
+  function scrollToTicket(ticketId?: string) {
+    if (!ticketId) return;
+    const shortId = ticketId.slice(-4);
+    const el = document.querySelector(`[data-testid="wall-ticket-${shortId}"]`) as HTMLElement | null;
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ring-2", "ring-yellow-400");
+      setTimeout(() => el.classList.remove("ring-2", "ring-yellow-400"), 2000);
+    }
+  }
+
+  if (alerts.length === 0 && !allOnTrack) return null;
+
+  if (alerts.length === 0 && allOnTrack) {
+    return (
+      <div
+        className="fixed top-4 right-4 z-50 rounded-xl p-3 shadow-lg flex items-center gap-2 text-sm font-medium bg-green-900 text-green-100 border border-green-600"
+        data-testid="chef-alert-all-on-track"
+      >
+        <CheckCircle2 className="h-4 w-4 shrink-0" />
+        All items on track
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed top-4 right-4 z-50 space-y-2 max-w-sm" data-testid="chef-alerts-panel">
+      {alerts.slice(0, 5).map(a => (
+        <motion.div
+          key={a.id}
+          initial={{ opacity: 0, x: 40 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 40 }}
+          className={`rounded-xl p-3 shadow-lg flex items-start gap-2 text-sm font-medium cursor-pointer ${
+            a.type === "overdue" ? "bg-red-900 text-red-100 border border-red-600" :
+            a.type === "upcoming" ? "bg-amber-900 text-amber-100 border border-amber-600" :
+            a.type === "hold_released" ? "bg-blue-900 text-blue-100 border border-blue-600" :
+            "bg-green-900 text-green-100 border border-green-600"
+          }`}
+          data-testid={`chef-alert-${a.id}`}
+          onClick={() => scrollToTicket(a.ticketId)}
+          title={a.ticketId ? "Click to scroll to ticket" : undefined}
+        >
+          {a.type === "overdue" && <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />}
+          {a.type === "upcoming" && <Clock className="h-4 w-4 shrink-0 mt-0.5" />}
+          {a.type === "hold_released" && <Bell className="h-4 w-4 shrink-0 mt-0.5" />}
+          {a.type === "ok" && <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />}
+          <div className="flex-1">{a.message}</div>
+          <button
+            onClick={e => { e.stopPropagation(); onDismiss(a.id); }}
+            className="opacity-60 hover:opacity-100 shrink-0"
+            data-testid={`button-dismiss-alert-${a.id}`}
+          >✕</button>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 export default function KdsWallScreen() {
   const [location] = useLocation();
   const qsRaw = location.includes("?") ? location.split("?")[1] : window.location.search.slice(1);
@@ -224,11 +911,26 @@ export default function KdsWallScreen() {
   const [tickets, setTickets] = useState<KDSWallTicket[]>([]);
   const [now, setNow] = useState(new Date());
   const [wsConnected, setWsConnected] = useState(false);
+  const [kitchenSettings, setKitchenSettings] = useState<KitchenSettings>({
+    cooking_control_mode: "auto_start",
+    show_timing_suggestions: true,
+    alert_overdue_minutes: 3,
+    allow_rush_override: true,
+    rush_requires_manager_pin: false,
+    auto_hold_bar_items: false,
+  });
+  const [alerts, setAlerts] = useState<ChefAlert[]>([]);
   const prevIdsRef = useRef<Set<string>>(new Set());
+  const hasInteractedRef = useRef(false);
+
+  const isSelectiveMode = kitchenSettings.cooking_control_mode === "selective" || kitchenSettings.cooking_control_mode === "course_only";
 
   const playChime = useCallback(() => {
+    if (!hasInteractedRef.current) return;
     try {
-      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
       [523.25, 659.25, 783.99].forEach((freq, i) => {
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -243,6 +945,29 @@ export default function KdsWallScreen() {
       });
     } catch (_) {}
   }, []);
+
+  useEffect(() => {
+    function markInteracted() { hasInteractedRef.current = true; }
+    window.addEventListener("click", markInteracted, { once: true });
+    window.addEventListener("keydown", markInteracted, { once: true });
+    return () => {
+      window.removeEventListener("click", markInteracted);
+      window.removeEventListener("keydown", markInteracted);
+    };
+  }, []);
+
+  const fetchSettings = useCallback(async () => {
+    try {
+      const token = qp.get("token");
+      const tenantId = qp.get("tenantId");
+      const params = token ? `?token=${encodeURIComponent(token)}` : tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+      const res = await fetch(`/api/kitchen-settings${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setKitchenSettings(s => ({ ...s, ...data }));
+      }
+    } catch (_) {}
+  }, [apiUrl]);
 
   const fetchTickets = useCallback(async () => {
     if (!apiUrl) return;
@@ -260,22 +985,92 @@ export default function KdsWallScreen() {
     } catch (_) {}
   }, [apiUrl, playChime]);
 
-  useWallWebSocket(wsUrl, fetchTickets, setWsConnected);
+  function handleWsEvent(event: string, rawPayload?: unknown) {
+    if (REFRESH_EVENTS.has(event)) fetchTickets();
+    if (event === "kds:item_overdue" && rawPayload) {
+      const payload = rawPayload as { itemId?: string; itemName?: string; overdueMinutes?: number; orderId?: string };
+      const alertId = `overdue-${payload.itemId ?? ""}-${Date.now()}`;
+      const msg = `Start ${payload.itemName ?? "item"} NOW — ${payload.overdueMinutes ?? 1} min overdue 🔴`;
+      setAlerts(prev => [...prev.filter(a => a.id !== alertId), {
+        id: alertId, type: "overdue", message: msg,
+        itemId: payload.itemId, ticketId: payload.orderId,
+        expiresAt: Date.now() + 10000,
+      }]);
+      if (hasInteractedRef.current) playBeep();
+    } else if (event === "kds:hold_released" && rawPayload) {
+      const payload = rawPayload as { itemId?: string; itemName?: string; holdItemName?: string };
+      const alertId = `hold-${payload.itemId ?? ""}-${Date.now()}`;
+      setAlerts(prev => [...prev, {
+        id: alertId, type: "hold_released",
+        message: `${payload.holdItemName ?? "Item"} is ready — start ${payload.itemName ?? "next item"} now`,
+        itemId: payload.itemId, expiresAt: Date.now() + 10000,
+      }]);
+    } else if (event === "kds:manager_alert" && rawPayload) {
+      const payload = rawPayload as { message?: string };
+      const alertId = `manager-${Date.now()}`;
+      setAlerts(prev => [...prev, {
+        id: alertId, type: "overdue", message: payload.message ?? "Manager alert",
+        expiresAt: Date.now() + 15000,
+      }]);
+    }
+  }
+
+  useWallWebSocket(wsUrl, handleWsEvent, setWsConnected);
 
   useEffect(() => {
     fetchTickets();
+    fetchSettings();
     const interval = setInterval(fetchTickets, 8000);
     return () => clearInterval(interval);
-  }, [fetchTickets]);
+  }, [fetchTickets, fetchSettings]);
 
   useEffect(() => {
-    const iv = setInterval(() => setNow(new Date()), 1000);
+    const iv = setInterval(() => {
+      setNow(new Date());
+      setAlerts(prev => prev.filter(a => a.expiresAt > Date.now()));
+    }, 1000);
     return () => clearInterval(iv);
   }, []);
 
   const newTickets = tickets.filter(t => t.status === "new" || t.status === "sent_to_kitchen");
   const cookingTickets = tickets.filter(t => t.status === "in_progress");
   const readyTickets = tickets.filter(t => t.status === "ready");
+
+  const allActiveItems = isSelectiveMode ? tickets.flatMap(t => t.items || []) : [];
+  const overdueItemIds = new Set(alerts.filter(a => a.type === "overdue" && a.itemId).map(a => a.itemId!));
+
+  useEffect(() => {
+    if (!isSelectiveMode || !kitchenSettings.show_timing_suggestions) return;
+    const nowMs = Date.now();
+    const upcomingMs = 120000;
+    tickets.forEach(ticket => {
+      (ticket.items || []).forEach(item => {
+        const cs = mapItemCookingStatus(item);
+        if (cs !== "queued" && cs !== "ready_to_start") return;
+        const eta = item.estimatedReadyAt ? new Date(item.estimatedReadyAt).getTime() : null;
+        if (!eta) return;
+        const timeToStartMs = eta - nowMs - (item.prepTimeMinutes || 0) * 60000;
+        if (timeToStartMs > 0 && timeToStartMs < upcomingMs) {
+          const alertId = `upcoming-${item.id}`;
+          if (!alerts.find(a => a.id === alertId)) {
+            const mins = Math.ceil(timeToStartMs / 60000);
+            setAlerts(prev => [...prev.filter(a => a.id !== alertId), {
+              id: alertId,
+              type: "upcoming",
+              message: `Start ${item.name} in ~${mins} min`,
+              itemId: item.id,
+              ticketId: ticket.id,
+              expiresAt: nowMs + upcomingMs,
+            }]);
+          }
+        }
+      });
+    });
+  }, [now, tickets, isSelectiveMode, kitchenSettings.show_timing_suggestions]);
+
+  const allOnTrack = isSelectiveMode &&
+    allActiveItems.length > 0 &&
+    alerts.filter(a => a.type === "overdue" || a.type === "upcoming").length === 0;
 
   if (!hasAccess) {
     return (
@@ -296,6 +1091,14 @@ export default function KdsWallScreen() {
 
   return (
     <div className="min-h-screen bg-gray-950 text-white flex flex-col" data-testid="kds-wall-screen">
+      <AnimatePresence>
+        <ChefAlertsPanel
+          alerts={alerts}
+          onDismiss={id => setAlerts(prev => prev.filter(a => a.id !== id))}
+          allOnTrack={allOnTrack}
+        />
+      </AnimatePresence>
+
       <div className="flex items-center justify-between px-8 py-4 border-b border-gray-800 bg-gray-900">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-xl bg-primary/20">
@@ -305,6 +1108,11 @@ export default function KdsWallScreen() {
           {showCounters && (
             <Badge className="bg-primary/20 text-primary border-primary/40 text-xs">
               <LayoutGrid className="h-3 w-3 mr-1" />Counter Mode
+            </Badge>
+          )}
+          {isSelectiveMode && (
+            <Badge className="bg-blue-900 text-blue-300 border-blue-700 text-xs">
+              Item Control Mode
             </Badge>
           )}
           <span
@@ -361,7 +1169,9 @@ export default function KdsWallScreen() {
                         No tickets
                       </motion.div>
                     ) : (
-                      grp.tickets.map(ticket => (
+                      grp.tickets.map(ticket => isSelectiveMode ? (
+                        <SelectiveTicketCard key={ticket.id} ticket={ticket} settings={kitchenSettings} onRefresh={fetchTickets} />
+                      ) : (
                         <WallTicketCard key={ticket.id} ticket={ticket} />
                       ))
                     )}
@@ -401,7 +1211,9 @@ export default function KdsWallScreen() {
                         No tickets
                       </motion.div>
                     ) : (
-                      col.tickets.map(ticket => (
+                      col.tickets.map(ticket => isSelectiveMode ? (
+                        <SelectiveTicketCard key={ticket.id} ticket={ticket} settings={kitchenSettings} onRefresh={fetchTickets} />
+                      ) : (
                         <WallTicketCard key={ticket.id} ticket={ticket} />
                       ))
                     )}
