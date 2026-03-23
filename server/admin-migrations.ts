@@ -2370,4 +2370,106 @@ export async function runTask108Migrations(): Promise<void> {
   // Task #124: Add email_hash for deterministic uniqueness checking (email is encrypted with random IV)
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_hash TEXT`);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uidx_users_email_hash ON users(email_hash) WHERE email_hash IS NOT NULL`);
+
+  // Task #132: Special Resource Management System
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS special_resources (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      resource_code VARCHAR(30) NOT NULL,
+      resource_name VARCHAR(100) NOT NULL,
+      resource_icon VARCHAR(10) DEFAULT '🪑',
+      total_units INT NOT NULL DEFAULT 0,
+      available_units INT NOT NULL DEFAULT 0,
+      in_use_units INT DEFAULT 0,
+      under_cleaning_units INT DEFAULT 0,
+      damaged_units INT DEFAULT 0,
+      is_trackable BOOLEAN DEFAULT true,
+      requires_setup_time INT DEFAULT 0,
+      notes TEXT,
+      is_active BOOLEAN DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_special_resources_outlet ON special_resources(tenant_id, outlet_id)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uidx_special_resources_code ON special_resources(outlet_id, resource_code) WHERE is_active = true`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS resource_units (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      resource_id VARCHAR(36) NOT NULL,
+      unit_code VARCHAR(30) NOT NULL,
+      unit_name VARCHAR(100),
+      status VARCHAR(20) DEFAULT 'available',
+      current_table_id VARCHAR(36),
+      current_order_id VARCHAR(36),
+      last_cleaned_at TIMESTAMPTZ,
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_units_resource ON resource_units(resource_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_units_outlet ON resource_units(outlet_id, status)`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_units_unique_code ON resource_units(resource_id, unit_code)`);
+  // Add FK constraint idempotently — catches duplicate_object error only
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE resource_units ADD CONSTRAINT fk_resource_units_resource_id
+        FOREIGN KEY (resource_id) REFERENCES special_resources(id) ON DELETE CASCADE;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS resource_assignments (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      resource_id VARCHAR(36) NOT NULL,
+      resource_name VARCHAR(100),
+      resource_unit_id VARCHAR(36),
+      unit_code VARCHAR(30),
+      table_id VARCHAR(36),
+      table_number VARCHAR(20),
+      order_id VARCHAR(36),
+      reservation_id VARCHAR(36),
+      quantity INT DEFAULT 1,
+      assigned_for VARCHAR(50),
+      status VARCHAR(20) DEFAULT 'assigned',
+      special_notes TEXT,
+      assigned_by VARCHAR(36),
+      assigned_by_name VARCHAR(255),
+      assigned_at TIMESTAMPTZ DEFAULT NOW(),
+      returned_at TIMESTAMPTZ,
+      requires_cleaning BOOLEAN DEFAULT false,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_assignments_tenant ON resource_assignments(tenant_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_assignments_table ON resource_assignments(table_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_assignments_reservation ON resource_assignments(reservation_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_assignments_resource ON resource_assignments(resource_id, status)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS resource_cleaning_log (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      resource_unit_id VARCHAR(36) NOT NULL,
+      unit_code VARCHAR(30),
+      resource_name VARCHAR(100),
+      cleaning_type VARCHAR(20) DEFAULT 'STANDARD',
+      started_at TIMESTAMPTZ DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,
+      cleaned_by VARCHAR(36),
+      cleaned_by_name VARCHAR(255),
+      notes TEXT
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_cleaning_unit ON resource_cleaning_log(resource_unit_id, started_at DESC)`);
+
+  await pool.query(`ALTER TABLE reservations ADD COLUMN IF NOT EXISTS resource_requirements JSONB DEFAULT '[]'`);
 }

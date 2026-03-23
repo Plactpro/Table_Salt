@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth } from "../auth";
 import { isStripeConfigured, getUncachableStripeClient, STRIPE_PRICE_IDS, planFromPriceId } from "../stripe";
 import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
+import { returnResourcesFromTable } from "../services/resource-service";
 
 export function registerBillingRoutes(app: Express): void {
   app.get("/api/onboarding/status", requireAuth, async (req, res) => {
@@ -191,6 +192,7 @@ export function registerBillingRoutes(app: Express): void {
                 await storage.updateOrder(orderId, { status: "paid", paymentMethod: "card" });
                 if (orderToUpdate.tableId) {
                   try { await storage.updateTable(orderToUpdate.tableId, { status: "free" }); } catch (_) {}
+                  returnResourcesFromTable(orderToUpdate.tableId, orderToUpdate.tenantId, false).catch(() => {});
                 }
                 if (orderToUpdate.channel === "kiosk") {
                   try {
@@ -214,6 +216,7 @@ export function registerBillingRoutes(app: Express): void {
                   await storage.updateOrder(order.id, { status: "paid", paymentMethod: "card" });
                 }
                 try { await storage.updateTable(guestSession.tableId, { status: "free" }); } catch (_) {}
+                returnResourcesFromTable(guestSession.tableId, guestSession.tenantId, false).catch(() => {});
                 try { await storage.updateTableSession(guestSession.id, { status: "closed", closedAt: new Date() }); } catch (_) {}
               }
             }

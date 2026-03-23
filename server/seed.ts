@@ -3171,6 +3171,7 @@ export async function seedAlertDefinitions(): Promise<void> {
     { code: 'ALERT-10', name: 'Stock Out of Stock', soundKey: 'stock_alert', urgency: 'high', targetRoles: ['manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
     { code: 'ALERT-11', name: 'Delivery at Risk', soundKey: 'urgent_tone', urgency: 'high', targetRoles: ['manager', 'owner', 'waiter'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
     { code: 'ALERT-12', name: 'Staff Not Clocked In', soundKey: 'reminder_chime', urgency: 'normal', targetRoles: ['manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'RESOURCE_DEPLETED', name: 'Special Resource Depleted', soundKey: 'stock_alert', urgency: 'high', targetRoles: ['manager', 'owner', 'supervisor'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
   ];
 
   for (const def of alertDefs) {
@@ -3183,7 +3184,7 @@ export async function seedAlertDefinitions(): Promise<void> {
       );
     }
   }
-  console.log("[AlertDefinitions] Seeded 12 system alert definitions.");
+  console.log("[AlertDefinitions] Seeded 13 system alert definitions.");
 }
 
 export async function seedTipSettings(): Promise<void> {
@@ -3331,4 +3332,57 @@ export async function seedPackingSettings(): Promise<void> {
   }
 
   console.log("[PackingSettings] Seeded packing charge settings, categories, and exemptions.");
+}
+
+export async function seedSpecialResources(): Promise<void> {
+  const tenantsRes = await pool.query(`SELECT id FROM tenants WHERE slug != 'platform' LIMIT 1`);
+  if (!tenantsRes.rows[0]) return;
+  const tenantId = tenantsRes.rows[0].id;
+
+  const outletRes = await pool.query(`SELECT id FROM outlets WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (!outletRes.rows[0]) return;
+  const outletId = outletRes.rows[0].id;
+
+  const existing = await pool.query(
+    `SELECT id FROM special_resources WHERE tenant_id = $1 AND outlet_id = $2 LIMIT 1`,
+    [tenantId, outletId]
+  );
+  if (existing.rows[0]) {
+    console.log("[SpecialResources] Seed data already exists, skipping.");
+    return;
+  }
+
+  const resourceDefs = [
+    { code: "HIGH_CHAIR", name: "High Chair", icon: "🪑", totalUnits: 3, unitPrefix: "HC", isTrackable: true },
+    { code: "BOOSTER_SEAT", name: "Booster Seat", icon: "🪑", totalUnits: 2, unitPrefix: "BS", isTrackable: true },
+    { code: "BABY_COT", name: "Baby Cot", icon: "🛏️", totalUnits: 1, unitPrefix: "BC", isTrackable: true },
+    { code: "WHEELCHAIR", name: "Wheelchair Access", icon: "♿", totalUnits: 0, unitPrefix: "WC", isTrackable: false },
+    { code: "PRAYER_MAT", name: "Prayer Mat", icon: "🕌", totalUnits: 5, unitPrefix: "PM", isTrackable: true },
+  ];
+
+  for (const def of resourceDefs) {
+    const res = await pool.query(
+      `INSERT INTO special_resources (tenant_id, outlet_id, resource_code, resource_name, resource_icon, total_units, available_units, in_use_units, under_cleaning_units, damaged_units, is_trackable, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,$6,0,0,0,$7,true)
+       ON CONFLICT DO NOTHING
+       RETURNING id`,
+      [tenantId, outletId, def.code, def.name, def.icon, def.totalUnits, def.isTrackable]
+    );
+    const resourceId = res.rows[0]?.id;
+    if (!resourceId) continue;
+
+    if (def.isTrackable && def.totalUnits > 0) {
+      for (let i = 1; i <= def.totalUnits; i++) {
+        const unitCode = `${def.unitPrefix}-${String(i).padStart(2, "0")}`;
+        await pool.query(
+          `INSERT INTO resource_units (tenant_id, outlet_id, resource_id, unit_code, unit_name, status)
+           VALUES ($1,$2,$3,$4,$5,'available')
+           ON CONFLICT DO NOTHING`,
+          [tenantId, outletId, resourceId, unitCode, `${def.name} ${i}`]
+        );
+      }
+    }
+  }
+
+  console.log("[SpecialResources] Seeded 5 special resource types for demo outlet.");
 }

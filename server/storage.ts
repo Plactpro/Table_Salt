@@ -173,6 +173,11 @@ import {
   inAppSupportTickets, inAppSupportTicketReplies,
   type InAppSupportTicket, type InsertInAppSupportTicket,
   type InAppSupportTicketReply, type InsertInAppSupportTicketReply,
+  specialResources, resourceUnits, resourceAssignments, resourceCleaningLog,
+  type SpecialResource, type InsertSpecialResource,
+  type ResourceUnit, type InsertResourceUnit,
+  type ResourceAssignment, type InsertResourceAssignment,
+  type ResourceCleaningLog, type InsertResourceCleaningLog,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -784,6 +789,22 @@ export interface IStorage {
   getInAppSupportTicketReplies(ticketId: string): Promise<InAppSupportTicketReply[]>;
   getAllInAppSupportTickets(filters: { status?: string; priority?: string; category?: string; tenantId?: string; assignedTo?: string; dateFrom?: string }): Promise<any[]>;
   getInAppSupportStats(): Promise<{ open: number; in_progress: number; replied: number; resolved: number; closed: number; awaiting_support: number; avgResponseTime: number | null; byCategory: Record<string, number> }>;
+
+  // Task #132: Special Resources
+  getSpecialResourcesByOutlet(tenantId: string, outletId: string): Promise<SpecialResource[]>;
+  createSpecialResource(data: InsertSpecialResource): Promise<SpecialResource>;
+  updateSpecialResource(id: string, tenantId: string, data: Partial<InsertSpecialResource>): Promise<SpecialResource | undefined>;
+  deleteSpecialResource(id: string, tenantId: string): Promise<void>;
+  getResourceUnitsByResource(resourceId: string, tenantId?: string): Promise<ResourceUnit[]>;
+  createResourceUnit(data: InsertResourceUnit): Promise<ResourceUnit>;
+  updateResourceUnit(id: string, data: Partial<InsertResourceUnit>, tenantId?: string): Promise<ResourceUnit | undefined>;
+  getResourceAssignmentsByTable(tableId: string, tenantId: string): Promise<ResourceAssignment[]>;
+  getResourceAssignmentsByReservation(reservationId: string, tenantId: string): Promise<ResourceAssignment[]>;
+  getActiveResourceAssignmentsByOutlet(outletId: string, tenantId: string): Promise<ResourceAssignment[]>;
+  createResourceAssignment(data: any): Promise<ResourceAssignment>;
+  updateResourceAssignment(id: string, data: Partial<any>, tenantId?: string): Promise<ResourceAssignment | undefined>;
+  getResourceCleaningLog(outletId: string, tenantId: string, limit?: number): Promise<ResourceCleaningLog[]>;
+  createResourceCleaningLog(data: InsertResourceCleaningLog): Promise<ResourceCleaningLog>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4179,6 +4200,178 @@ export class DatabaseStorage implements IStorage {
       avgResponseTime: avgRows[0]?.avg_minutes ? Number(avgRows[0].avg_minutes) : null,
       byCategory,
     };
+  }
+
+  // Task #132: Special Resources implementation
+  async getSpecialResourcesByOutlet(tenantId: string, outletId: string): Promise<SpecialResource[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM special_resources WHERE tenant_id = $1 AND outlet_id = $2 AND is_active = true ORDER BY resource_name ASC`,
+      [tenantId, outletId]
+    );
+    return rows.map((r: any) => ({
+      id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id,
+      resourceCode: r.resource_code, resourceName: r.resource_name, resourceIcon: r.resource_icon,
+      totalUnits: r.total_units, availableUnits: r.available_units, inUseUnits: r.in_use_units,
+      underCleaningUnits: r.under_cleaning_units, damagedUnits: r.damaged_units,
+      isTrackable: r.is_trackable, requiresSetupTime: r.requires_setup_time,
+      notes: r.notes, isActive: r.is_active, createdAt: r.created_at, updatedAt: r.updated_at,
+    }));
+  }
+
+  async createSpecialResource(data: InsertSpecialResource): Promise<SpecialResource> {
+    const totalUnits = data.totalUnits ?? 0;
+    const { rows } = await pool.query(
+      `INSERT INTO special_resources (tenant_id, outlet_id, resource_code, resource_name, resource_icon, total_units, available_units, in_use_units, under_cleaning_units, damaged_units, is_trackable, requires_setup_time, notes, is_active)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,0,$8,$9,$10,true) RETURNING *`,
+      [data.tenantId, data.outletId, data.resourceCode, data.resourceName, data.resourceIcon ?? "🪑",
+       totalUnits, totalUnits, data.isTrackable ?? true, data.requiresSetupTime ?? 0, data.notes ?? null]
+    );
+    const r = rows[0];
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceCode: r.resource_code, resourceName: r.resource_name, resourceIcon: r.resource_icon, totalUnits: r.total_units, availableUnits: r.available_units, inUseUnits: r.in_use_units, underCleaningUnits: r.under_cleaning_units, damagedUnits: r.damaged_units, isTrackable: r.is_trackable, requiresSetupTime: r.requires_setup_time, notes: r.notes, isActive: r.is_active, createdAt: r.created_at, updatedAt: r.updated_at };
+  }
+
+  async updateSpecialResource(id: string, tenantId: string, data: Partial<InsertSpecialResource>): Promise<SpecialResource | undefined> {
+    const fields: string[] = [];
+    const vals: any[] = [];
+    let idx = 1;
+    if (data.resourceName !== undefined) { fields.push(`resource_name = $${idx++}`); vals.push(data.resourceName); }
+    if (data.resourceIcon !== undefined) { fields.push(`resource_icon = $${idx++}`); vals.push(data.resourceIcon); }
+    if (data.totalUnits !== undefined) { fields.push(`total_units = $${idx++}`); vals.push(data.totalUnits); }
+    if (data.isTrackable !== undefined) { fields.push(`is_trackable = $${idx++}`); vals.push(data.isTrackable); }
+    if (data.requiresSetupTime !== undefined) { fields.push(`requires_setup_time = $${idx++}`); vals.push(data.requiresSetupTime); }
+    if (data.notes !== undefined) { fields.push(`notes = $${idx++}`); vals.push(data.notes); }
+    if (data.isActive !== undefined) { fields.push(`is_active = $${idx++}`); vals.push(data.isActive); }
+    if (data.availableUnits !== undefined) { fields.push(`available_units = $${idx++}`); vals.push(data.availableUnits); }
+    if (data.damagedUnits !== undefined) { fields.push(`damaged_units = $${idx++}`); vals.push(data.damagedUnits); }
+    if (fields.length === 0) return undefined;
+    fields.push(`updated_at = NOW()`);
+    vals.push(id); vals.push(tenantId);
+    const { rows } = await pool.query(
+      `UPDATE special_resources SET ${fields.join(", ")} WHERE id = $${idx++} AND tenant_id = $${idx} RETURNING *`,
+      vals
+    );
+    if (!rows[0]) return undefined;
+    const r = rows[0];
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceCode: r.resource_code, resourceName: r.resource_name, resourceIcon: r.resource_icon, totalUnits: r.total_units, availableUnits: r.available_units, inUseUnits: r.in_use_units, underCleaningUnits: r.under_cleaning_units, damagedUnits: r.damaged_units, isTrackable: r.is_trackable, requiresSetupTime: r.requires_setup_time, notes: r.notes, isActive: r.is_active, createdAt: r.created_at, updatedAt: r.updated_at };
+  }
+
+  async deleteSpecialResource(id: string, tenantId: string): Promise<void> {
+    await pool.query(`UPDATE special_resources SET is_active = false, updated_at = NOW() WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  }
+
+  async getResourceUnitsByResource(resourceId: string, tenantId?: string): Promise<ResourceUnit[]> {
+    const tenantFilter = tenantId ? " AND tenant_id = $2" : "";
+    const params = tenantId ? [resourceId, tenantId] : [resourceId];
+    const { rows } = await pool.query(`SELECT * FROM resource_units WHERE resource_id = $1${tenantFilter} ORDER BY unit_code ASC`, params);
+    return rows.map((r: any) => ({ id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, unitCode: r.unit_code, unitName: r.unit_name, status: r.status, currentTableId: r.current_table_id, currentOrderId: r.current_order_id, lastCleanedAt: r.last_cleaned_at, notes: r.notes, createdAt: r.created_at }));
+  }
+
+  async createResourceUnit(data: InsertResourceUnit): Promise<ResourceUnit> {
+    const { rows } = await pool.query(
+      `INSERT INTO resource_units (tenant_id, outlet_id, resource_id, unit_code, unit_name, status, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [data.tenantId, data.outletId, data.resourceId, data.unitCode, data.unitName ?? null, data.status ?? "available", data.notes ?? null]
+    );
+    const r = rows[0];
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, unitCode: r.unit_code, unitName: r.unit_name, status: r.status, currentTableId: r.current_table_id, currentOrderId: r.current_order_id, lastCleanedAt: r.last_cleaned_at, notes: r.notes, createdAt: r.created_at };
+  }
+
+  async updateResourceUnit(id: string, data: Partial<InsertResourceUnit>, tenantId?: string): Promise<ResourceUnit | undefined> {
+    const fields: string[] = [];
+    const vals: any[] = [];
+    let idx = 1;
+    if (data.status !== undefined) { fields.push(`status = $${idx++}`); vals.push(data.status); }
+    if (data.notes !== undefined) { fields.push(`notes = $${idx++}`); vals.push(data.notes); }
+    if (data.currentTableId !== undefined) { fields.push(`current_table_id = $${idx++}`); vals.push(data.currentTableId); }
+    if (data.lastCleanedAt !== undefined) { fields.push(`last_cleaned_at = $${idx++}`); vals.push(data.lastCleanedAt); }
+    if (fields.length === 0) return undefined;
+    vals.push(id);
+    const tenantFilter = tenantId ? ` AND tenant_id = $${idx + 1}` : "";
+    if (tenantId) vals.push(tenantId);
+    const { rows } = await pool.query(
+      `UPDATE resource_units SET ${fields.join(", ")} WHERE id = $${idx}${tenantFilter} RETURNING *`,
+      vals
+    );
+    if (!rows[0]) return undefined;
+    const r = rows[0];
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, unitCode: r.unit_code, unitName: r.unit_name, status: r.status, currentTableId: r.current_table_id, currentOrderId: r.current_order_id, lastCleanedAt: r.last_cleaned_at, notes: r.notes, createdAt: r.created_at };
+  }
+
+  async getResourceAssignmentsByTable(tableId: string, tenantId: string): Promise<ResourceAssignment[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM resource_assignments WHERE table_id = $1 AND tenant_id = $2 ORDER BY assigned_at DESC`,
+      [tableId, tenantId]
+    );
+    return rows.map((r: any) => ({ id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, resourceName: r.resource_name, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, tableId: r.table_id, tableNumber: r.table_number, orderId: r.order_id, reservationId: r.reservation_id, quantity: r.quantity, assignedFor: r.assigned_for, status: r.status, specialNotes: r.special_notes, assignedBy: r.assigned_by, assignedByName: r.assigned_by_name, assignedAt: r.assigned_at, returnedAt: r.returned_at, requiresCleaning: r.requires_cleaning, createdAt: r.created_at }));
+  }
+
+  async getResourceAssignmentsByReservation(reservationId: string, tenantId: string): Promise<ResourceAssignment[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM resource_assignments WHERE reservation_id = $1 AND tenant_id = $2 ORDER BY assigned_at DESC`,
+      [reservationId, tenantId]
+    );
+    return rows.map((r: any) => ({ id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, resourceName: r.resource_name, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, tableId: r.table_id, tableNumber: r.table_number, orderId: r.order_id, reservationId: r.reservation_id, quantity: r.quantity, assignedFor: r.assigned_for, status: r.status, specialNotes: r.special_notes, assignedBy: r.assigned_by, assignedByName: r.assigned_by_name, assignedAt: r.assigned_at, returnedAt: r.returned_at, requiresCleaning: r.requires_cleaning, createdAt: r.created_at }));
+  }
+
+  async getActiveResourceAssignmentsByOutlet(outletId: string, tenantId: string): Promise<ResourceAssignment[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM resource_assignments WHERE outlet_id = $1 AND tenant_id = $2 AND status IN ('assigned','in_use') ORDER BY assigned_at DESC`,
+      [outletId, tenantId]
+    );
+    return rows.map((r: any) => ({ id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, resourceName: r.resource_name, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, tableId: r.table_id, tableNumber: r.table_number, orderId: r.order_id, reservationId: r.reservation_id, quantity: r.quantity, assignedFor: r.assigned_for, status: r.status, specialNotes: r.special_notes, assignedBy: r.assigned_by, assignedByName: r.assigned_by_name, assignedAt: r.assigned_at, returnedAt: r.returned_at, requiresCleaning: r.requires_cleaning, createdAt: r.created_at }));
+  }
+
+  async createResourceAssignment(data: any): Promise<ResourceAssignment> {
+    const { rows } = await pool.query(
+      `INSERT INTO resource_assignments (tenant_id, outlet_id, resource_id, resource_name, resource_unit_id, unit_code, table_id, table_number, order_id, reservation_id, quantity, assigned_for, status, special_notes, assigned_by, assigned_by_name, requires_cleaning)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+      [data.tenantId, data.outletId, data.resourceId, data.resourceName ?? null, data.resourceUnitId ?? null, data.unitCode ?? null, data.tableId ?? null, data.tableNumber ?? null, data.orderId ?? null, data.reservationId ?? null, data.quantity ?? 1, data.assignedFor ?? null, data.status ?? "assigned", data.specialNotes ?? null, data.assignedBy ?? null, data.assignedByName ?? null, data.requiresCleaning ?? false]
+    );
+    const r = rows[0];
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, resourceName: r.resource_name, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, tableId: r.table_id, tableNumber: r.table_number, orderId: r.order_id, reservationId: r.reservation_id, quantity: r.quantity, assignedFor: r.assigned_for, status: r.status, specialNotes: r.special_notes, assignedBy: r.assigned_by, assignedByName: r.assigned_by_name, assignedAt: r.assigned_at, returnedAt: r.returned_at, requiresCleaning: r.requires_cleaning, createdAt: r.created_at };
+  }
+
+  async updateResourceAssignment(id: string, data: Partial<any>, tenantId?: string): Promise<ResourceAssignment | undefined> {
+    const fields: string[] = [];
+    const vals: any[] = [];
+    let idx = 1;
+    if (data.status !== undefined) { fields.push(`status = $${idx++}`); vals.push(data.status); }
+    if (data.quantity !== undefined) { fields.push(`quantity = $${idx++}`); vals.push(data.quantity); }
+    if (data.returnedAt !== undefined) { fields.push(`returned_at = $${idx++}`); vals.push(data.returnedAt); }
+    if (data.requiresCleaning !== undefined) { fields.push(`requires_cleaning = $${idx++}`); vals.push(data.requiresCleaning); }
+    if (data.specialNotes !== undefined) { fields.push(`special_notes = $${idx++}`); vals.push(data.specialNotes); }
+    if (fields.length === 0) return undefined;
+    vals.push(id);
+    const tenantFilter = tenantId ? ` AND tenant_id = $${idx + 1}` : "";
+    if (tenantId) vals.push(tenantId);
+    const { rows } = await pool.query(
+      `UPDATE resource_assignments SET ${fields.join(", ")} WHERE id = $${idx}${tenantFilter} RETURNING *`,
+      vals
+    );
+    if (!rows[0]) return undefined;
+    const r = rows[0];
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, resourceId: r.resource_id, resourceName: r.resource_name, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, tableId: r.table_id, tableNumber: r.table_number, orderId: r.order_id, reservationId: r.reservation_id, quantity: r.quantity, assignedFor: r.assigned_for, status: r.status, specialNotes: r.special_notes, assignedBy: r.assigned_by, assignedByName: r.assigned_by_name, assignedAt: r.assigned_at, returnedAt: r.returned_at, requiresCleaning: r.requires_cleaning, createdAt: r.created_at };
+  }
+
+  async getResourceCleaningLog(outletId: string, tenantId: string, limit = 50): Promise<ResourceCleaningLog[]> {
+    const { rows } = await pool.query(
+      `SELECT rcl.* FROM resource_cleaning_log rcl
+       JOIN resource_units ru ON ru.id::text = rcl.resource_unit_id::text
+       WHERE rcl.tenant_id = $1 AND ru.outlet_id = $2
+       ORDER BY rcl.started_at DESC LIMIT $3`,
+      [tenantId, outletId, limit]
+    );
+    return rows.map((r: any) => ({ id: r.id, tenantId: r.tenant_id, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, resourceName: r.resource_name, cleaningType: r.cleaning_type, startedAt: r.started_at, completedAt: r.completed_at, cleanedBy: r.cleaned_by, cleanedByName: r.cleaned_by_name, notes: r.notes }));
+  }
+
+  async createResourceCleaningLog(data: InsertResourceCleaningLog): Promise<ResourceCleaningLog> {
+    const { rows } = await pool.query(
+      `INSERT INTO resource_cleaning_log (tenant_id, resource_unit_id, unit_code, resource_name, cleaning_type, completed_at, cleaned_by, cleaned_by_name, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [data.tenantId, data.resourceUnitId, data.unitCode ?? null, data.resourceName ?? null, data.cleaningType ?? "STANDARD", data.completedAt ?? null, data.cleanedBy ?? null, data.cleanedByName ?? null, data.notes ?? null]
+    );
+    const r = rows[0];
+    return { id: r.id, tenantId: r.tenant_id, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, resourceName: r.resource_name, cleaningType: r.cleaning_type, startedAt: r.started_at, completedAt: r.completed_at, cleanedBy: r.cleaned_by, cleanedByName: r.cleaned_by_name, notes: r.notes };
   }
 }
 

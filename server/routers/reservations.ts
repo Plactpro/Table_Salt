@@ -41,7 +41,13 @@ export function registerReservationsRoutes(app: Express): void {
 
   app.patch("/api/reservations/:id", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const reservation = await storage.updateReservationByTenant(req.params.id, user.tenantId, req.body);
+    // Normalize: accept snake_case resource_requirements from clients
+    const body = { ...req.body };
+    if (body.resource_requirements !== undefined && body.resourceRequirements === undefined) {
+      body.resourceRequirements = body.resource_requirements;
+      delete body.resource_requirements;
+    }
+    const reservation = await storage.updateReservationByTenant(req.params.id, user.tenantId, body);
     if (!reservation) return res.status(404).json({ message: "Reservation not found" });
     res.json(reservation);
   });
