@@ -19,8 +19,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Receipt, CreditCard, Banknote, Smartphone, Gift, Plus, Minus, Printer,
   Share2, ArrowLeft, CheckCircle2, X, AlertTriangle, Mail, RotateCcw, FileDown,
-  Loader2, ExternalLink, QrCode, User, Cake, Heart, Star, StickyNote,
+  Loader2, ExternalLink, QrCode, User, Cake, Heart, Star, StickyNote, Package,
 } from "lucide-react";
+import { PackingBreakdownPopover, type PackingChargeResult } from "@/components/packing/PackingBreakdownPopover";
 import QRCode from "qrcode";
 
 interface CartItem {
@@ -216,6 +217,49 @@ export default function BillPreviewModal({
   const [rzpPaid, setRzpPaid] = useState(false);
   // Tracks whether at least one Razorpay link was attempted (enables manual fallback)
   const [rzpAttempted, setRzpAttempted] = useState(false);
+
+  const [packingResult, setPackingResult] = useState<PackingChargeResult | null>(null);
+  const [packingLoading, setPackingLoading] = useState(false);
+
+  const { data: outletsData = [] } = useQuery<any[]>({
+    queryKey: ["/api/outlets"],
+    enabled: open,
+    staleTime: 60000,
+  });
+  const outletId = outletsData[0]?.id || null;
+  const isTakeawayOrDelivery = orderType === "takeaway" || orderType === "delivery";
+
+  useEffect(() => {
+    if (!open || !isTakeawayOrDelivery || !outletId || cart.length === 0) {
+      setPackingResult(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setPackingLoading(true);
+      try {
+        const res = await apiRequest("POST", "/api/packing/calculate", {
+          outletId,
+          orderType,
+          items: cart.filter(i => !i.is_voided).map(i => ({
+            menuItemId: i.menuItemId,
+            name: i.name,
+            price: i.price,
+            quantity: i.quantity,
+          })),
+        });
+        if (!cancelled && res.ok) {
+          const data = await res.json();
+          setPackingResult(data);
+        }
+      } catch {
+        // silently fail
+      } finally {
+        if (!cancelled) setPackingLoading(false);
+      }
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [open, outletId, orderType, isTakeawayOrDelivery, cart]);
 
   const { data: tenantOffers = [] } = useQuery<{ id: string; name: string; type: string; value: string; maxDiscount?: string | null }[]>({
     queryKey: ["/api/offers", "active"],
@@ -971,8 +1015,29 @@ export default function BillPreviewModal({
                   {tierDiscountAmount > 0 && <div className="flex justify-between text-green-600 text-xs" data-testid="preview-tier-discount-row"><span>Loyalty Tier Discount</span><span>−{fmt(tierDiscountAmount)}</span></div>}
                   {serviceChargeAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Service Charge</span><span>{fmt(serviceChargeAmount)}</span></div>}
                   {taxAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Tax ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>}
+                  {packingLoading && isTakeawayOrDelivery && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span className="flex items-center gap-1"><Package className="h-3.5 w-3.5" /> Packing Charge</span>
+                      <span className="animate-pulse">—</span>
+                    </div>
+                  )}
+                  {packingResult?.applicable && !packingLoading && (
+                    <div className="flex justify-between items-center" data-testid="text-packing-charge">
+                      <span className="flex items-center gap-1 text-muted-foreground" data-testid="text-packing-charge-label">
+                        <Package className="h-3.5 w-3.5 text-amber-600" />
+                        {packingResult.label}
+                        {packingResult.breakdown.length > 0 && (
+                          <PackingBreakdownPopover result={packingResult} />
+                        )}
+                      </span>
+                      <span>{fmt(packingResult.total)}</span>
+                    </div>
+                  )}
                   <Separator />
-                  <div className="flex justify-between font-bold text-base"><span>TOTAL</span><span>{fmt(Math.max(0, total - tierDiscountAmount))}</span></div>
+                  <div className="flex justify-between font-bold text-base" data-testid="text-grand-total-with-packing">
+                    <span>TOTAL</span>
+                    <span>{fmt(Math.max(0, total - tierDiscountAmount + (packingResult?.applicable ? packingResult.total : 0)))}</span>
+                  </div>
                   <p className="text-xs text-muted-foreground italic">{numWords(total)}</p>
                 </div>
               </div>

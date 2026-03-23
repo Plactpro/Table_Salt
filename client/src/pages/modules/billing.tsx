@@ -402,6 +402,12 @@ export default function BillingPage() {
                   <span className="text-muted-foreground">Tax</span>
                   <span>{fmt(selectedInvoice.tax)}</span>
                 </div>
+                {(selectedInvoice.orderType === "takeaway" || selectedInvoice.orderType === "delivery") && Number(selectedInvoice.packingCharge) > 0 && (
+                  <div className="flex justify-between" data-testid="text-billing-packing-charge">
+                    <span className="text-muted-foreground">📦 Packing Charge</span>
+                    <span>{fmt(selectedInvoice.packingCharge)}</span>
+                  </div>
+                )}
                 {selectedInvoice.orderType === "dine_in" && selectedInvoice.notes && selectedInvoice.notes.includes("Service charge") && (() => {
                   const scNote = selectedInvoice.notes!.split(" | ").find((n: string) => n.includes("Service charge"));
                   const scMatch = scNote?.match(/Service charge\s*\((\d+(?:\.\d+)?)%\)/);
@@ -421,7 +427,7 @@ export default function BillingPage() {
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
                   <span>Total</span>
-                  <span>{fmt(selectedInvoice.total)}</span>
+                  <span data-testid="text-billing-total-with-packing">{fmt(selectedInvoice.total)}</span>
                 </div>
               </div>
 

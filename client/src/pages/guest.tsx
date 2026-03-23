@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useParams } from "wouter";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
@@ -149,6 +149,8 @@ export default function GuestPage() {
   const [razorpayLinkId, setRazorpayLinkId] = useState<string | null>(null);
   const [razorpayPollStatus, setRazorpayPollStatus] = useState<"pending" | "paid" | "cancelled">("pending");
   const [activeGateway, setActiveGateway] = useState<"stripe" | "razorpay" | "both">("stripe");
+  const [packingChargeGuest, setPackingChargeGuest] = useState<{ applicable: boolean; total: number; label: string } | null>(null);
+  const packingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fmt = useCallback((val: number | string) => {
     if (!tenant) return String(val);
@@ -251,6 +253,27 @@ export default function GuestPage() {
 
   const cartTotal = useMemo(() => cart.reduce((s, ci) => s + Number(ci.price) * ci.quantity, 0), [cart]);
   const cartCount = useMemo(() => cart.reduce((s, ci) => s + ci.quantity, 0), [cart]);
+
+  useEffect(() => {
+    if (!outletId || cart.length === 0) { setPackingChargeGuest(null); return; }
+    if (packingTimerRef.current) clearTimeout(packingTimerRef.current);
+    packingTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/packing/calculate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({
+            outletId,
+            orderType: "takeaway",
+            items: cart.map(ci => ({ menuItemId: ci.menuItemId, name: ci.name, price: ci.price, quantity: ci.quantity })),
+          }),
+        });
+        if (res.ok) { const data = await res.json(); setPackingChargeGuest(data); }
+      } catch { }
+    }, 300);
+    return () => { if (packingTimerRef.current) clearTimeout(packingTimerRef.current); };
+  }, [outletId, cart]);
 
   const addToCart = useCallback(async (item: MenuItemData, qty: number, notes: string) => {
     if (!session) return;
@@ -749,10 +772,16 @@ export default function GuestPage() {
                         <span className="font-medium">{fmt(cartTotal * Number(tenant.serviceCharge) / 100)}</span>
                       </div>
                     )}
+                    {packingChargeGuest?.applicable && (
+                      <div className="flex justify-between text-sm" data-testid="text-qr-packing-charge">
+                        <span className="text-gray-500">📦 {packingChargeGuest.label}</span>
+                        <span className="font-medium">{fmt(packingChargeGuest.total)}</span>
+                      </div>
+                    )}
                     <div className="border-t pt-2 flex justify-between font-bold">
                       <span>Estimated Total</span>
-                      <span className="text-teal-700" data-testid="text-cart-total">
-                        {fmt(cartTotal * (1 + Number(tenant?.taxRate || 0) / 100 + Number(tenant?.serviceCharge || 0) / 100))}
+                      <span className="text-teal-700" data-testid="text-qr-total-with-packing">
+                        {fmt(cartTotal * (1 + Number(tenant?.taxRate || 0) / 100 + Number(tenant?.serviceCharge || 0) / 100) + (packingChargeGuest?.applicable ? packingChargeGuest.total : 0))}
                       </span>
                     </div>
                   </div>
