@@ -1,11 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   ChefHat, Flame, CheckCircle2, Utensils, Clock, LogIn, LogOut, CheckCircle, AlertCircle,
   Maximize2, Minimize2, RotateCcw, Coffee, IceCream, Beef, CookingPot, Filter,
   AlertTriangle, X, Package, Trash2, CheckSquare, Monitor, Copy, RefreshCw, ExternalLink,
-  Printer, UserCheck, ArrowRightLeft, CircleDot, ChevronDown, ChevronUp,
+  Printer, UserCheck, ArrowRightLeft, CircleDot, ChevronDown, ChevronUp, FileText,
 } from "lucide-react";
 import { renderKotHtml, dispatchPrint } from "@/lib/print-utils";
 import type { LucideIcon } from "lucide-react";
@@ -757,6 +758,7 @@ export default function KitchenDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user, tenant } = useAuth();
+  const [, navigate] = useLocation();
   const [selectedStation, setSelectedStation] = useState<string | null>(() => {
     return localStorage.getItem("kds_station") || null;
   });
@@ -1294,6 +1296,15 @@ export default function KitchenDashboard() {
             data-testid="button-report-wastage"
           >
             <Trash2 className="h-3.5 w-3.5" /> Wastage
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => navigate("/wastage-log")}
+            className="h-8 gap-1 border-orange-200 text-orange-600 hover:bg-orange-50"
+            data-testid="button-full-wastage-log"
+          >
+            <FileText className="h-3.5 w-3.5" /> Full Log
           </Button>
           <Button size="sm" variant="outline" onClick={toggleFullscreen} className="h-8 gap-1" data-testid="button-fullscreen">
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}

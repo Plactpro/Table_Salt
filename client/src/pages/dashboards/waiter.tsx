@@ -6,7 +6,7 @@ import { StatCard } from "@/components/widgets/stat-card";
 import {
   Armchair, ClipboardList, DollarSign, Clock, Users, Coffee, UtensilsCrossed,
   CircleDot, Plus, LogIn, LogOut, CheckCircle, AlertCircle, Bell,
-  CheckCheck, ChefHat, Package, Star,
+  CheckCheck, ChefHat, Package, Star, Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { formatCurrency } from "@shared/currency";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -271,11 +277,180 @@ function ReadyToServeSection({ readyItems, onCollected }: {
   );
 }
 
+const PLATE_RETURN_REASONS = [
+  { value: "not_ordered", label: "Not what was ordered" },
+  { value: "quality_issue", label: "Quality issue" },
+  { value: "allergy_concern", label: "Allergy concern" },
+  { value: "taste_issue", label: "Taste issue" },
+  { value: "wrong_temp", label: "Wrong temperature" },
+  { value: "customer_changed_mind", label: "Customer changed mind" },
+  { value: "other", label: "Other" },
+];
+
+const DISH_CONDITIONS = [
+  { value: "untouched", label: "Untouched" },
+  { value: "partially_eaten", label: "Partially eaten" },
+  { value: "fully_eaten", label: "Fully eaten" },
+  { value: "damaged", label: "Damaged" },
+];
+
+function PlateReturnDialog({
+  open,
+  onClose,
+  orders,
+}: {
+  open: boolean;
+  onClose: () => void;
+  orders: any[];
+}) {
+  const { toast } = useToast();
+  const [selectedOrderId, setSelectedOrderId] = useState("");
+  const [selectedItemId, setSelectedItemId] = useState("");
+  const [returnReason, setReturnReason] = useState("");
+  const [dishCondition, setDishCondition] = useState("");
+  const [note, setNote] = useState("");
+
+  const selectedOrder = orders.find((o: any) => o.id === selectedOrderId);
+  const orderItems = selectedOrder?.items ?? [];
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const item = orderItems.find((i: any) => i.id === selectedItemId);
+      const itemName = item?.name ?? "Unknown Item";
+      const qty = item?.quantity ?? 1;
+      const reasonLabel = PLATE_RETURN_REASONS.find((r) => r.value === returnReason)?.label ?? returnReason;
+      const conditionLabel = DISH_CONDITIONS.find((c) => c.value === dishCondition)?.label ?? dishCondition;
+      const msgParts = [
+        `PLATE RETURN: ${itemName} (x${qty})`,
+        `Order #${selectedOrderId.slice(-6)}`,
+        `Reason: ${reasonLabel}`,
+        `Condition: ${conditionLabel}`,
+      ];
+      if (note) msgParts.push(`Note: ${note}`);
+      const message = msgParts.join(" | ");
+      const res = await apiRequest("POST", "/api/service-messages", {
+        orderId: selectedOrderId,
+        toRole: "kitchen",
+        message,
+        messageType: "PLATE_RETURN",
+        priority: "high",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Plate Return Notified", description: "Kitchen has been notified to log the wastage." });
+      setSelectedOrderId(""); setSelectedItemId(""); setReturnReason(""); setDishCondition(""); setNote("");
+      onClose();
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-md" data-testid="dialog-plate-return">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Trash2 className="h-4 w-4 text-destructive" /> Plate Return
+          </DialogTitle>
+          <DialogDescription>
+            Notify the kitchen of a returned plate. They will log the wastage entry.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Active Order</Label>
+            <Select value={selectedOrderId} onValueChange={(v) => { setSelectedOrderId(v); setSelectedItemId(""); }}>
+              <SelectTrigger data-testid="select-plate-order">
+                <SelectValue placeholder="Select order..." />
+              </SelectTrigger>
+              <SelectContent>
+                {orders.map((o: any) => (
+                  <SelectItem key={o.id} value={o.id}>
+                    #{o.id.slice(-4)} {o.tableId ? `· Table ${o.tableNumber ?? "?"}` : ""} — {o.status}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedOrder && (
+            <div className="space-y-1.5">
+              <Label>Returned Item</Label>
+              <Select value={selectedItemId} onValueChange={setSelectedItemId}>
+                <SelectTrigger data-testid="select-plate-item">
+                  <SelectValue placeholder="Select item..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {orderItems.map((item: any) => (
+                    <SelectItem key={item.id} value={item.id}>
+                      {item.name} (x{item.quantity})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <Label>Return Reason</Label>
+            <Select value={returnReason} onValueChange={setReturnReason}>
+              <SelectTrigger data-testid="select-return-reason">
+                <SelectValue placeholder="Select reason..." />
+              </SelectTrigger>
+              <SelectContent>
+                {PLATE_RETURN_REASONS.map((r) => (
+                  <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Dish Condition</Label>
+            <Select value={dishCondition} onValueChange={setDishCondition}>
+              <SelectTrigger data-testid="select-dish-condition">
+                <SelectValue placeholder="Select condition..." />
+              </SelectTrigger>
+              <SelectContent>
+                {DISH_CONDITIONS.map((c) => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Note (optional)</Label>
+            <Textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Any additional details..."
+              rows={2}
+              data-testid="input-plate-return-note"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 pt-2 border-t">
+          <Button
+            className="flex-1 bg-destructive hover:bg-destructive/90 gap-2"
+            disabled={!selectedOrderId || !selectedItemId || !returnReason || mutation.isPending}
+            onClick={() => mutation.mutate()}
+            data-testid="btn-submit-plate-return"
+          >
+            <Trash2 className="h-4 w-4" />
+            Notify Kitchen
+          </Button>
+          <Button variant="outline" onClick={onClose} data-testid="btn-cancel-plate-return">Cancel</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function WaiterDashboard() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [plateReturnOpen, setPlateReturnOpen] = useState(false);
 
   const { data: waiterData, isLoading: waiterLoading } = useQuery<{
     readyItems: ReadyItem[];
@@ -397,6 +572,17 @@ export default function WaiterDashboard() {
         <div className="flex items-center gap-3">
           <ShiftClock />
           <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+            <Button
+              variant="outline"
+              onClick={() => setPlateReturnOpen(true)}
+              data-testid="btn-plate-return"
+              className="gap-2 border-destructive/40 text-destructive hover:bg-destructive/10"
+            >
+              <Trash2 className="h-4 w-4" />
+              Plate Return
+            </Button>
+          </motion.div>
+          <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
             <Button onClick={() => navigate("/pos")} data-testid="btn-new-order" className="gap-2">
               <Plus className="h-4 w-4" />
               New Order
@@ -404,6 +590,12 @@ export default function WaiterDashboard() {
           </motion.div>
         </div>
       </motion.div>
+
+      <PlateReturnDialog
+        open={plateReturnOpen}
+        onClose={() => setPlateReturnOpen(false)}
+        orders={myOpenOrders}
+      />
 
       <ClockInOutCard />
 

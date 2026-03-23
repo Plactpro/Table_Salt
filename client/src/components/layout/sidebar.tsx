@@ -41,6 +41,7 @@ import {
   LayoutGrid,
   Phone,
   Workflow,
+  Trash2,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -84,6 +85,8 @@ const navItems: NavItem[] = [
   { id: "m-37", name: "Stock Capacity", icon: ClipboardList, path: "/stock-reports", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
   { id: "m-38", name: "Phone Orders", icon: Phone, path: "/phone-order", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "orders" },
   { id: "m-39", name: "Service Hub", icon: Workflow, path: "/service-hub", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "orders" },
+  { id: "m-40", name: "Wastage Control", icon: Trash2, path: "/wastage", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  { id: "m-41", name: "Log Wastage", icon: Trash2, path: "/wastage-log", roles: ["kitchen"] },
 ];
 
 function SandDecoration() {
