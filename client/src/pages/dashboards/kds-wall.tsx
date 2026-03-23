@@ -5,6 +5,7 @@ import {
   Utensils, Flame, CheckCircle2, Clock, ChefHat, User, LayoutGrid,
   Play, Pause, Zap, AlertTriangle, Lock, Bell,
 } from "lucide-react";
+import { useTimer, useOrderAgeTimer, formatMMSS, getTimingStatus } from "@/hooks/useTimer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -111,6 +112,82 @@ function CountdownTimer({ estimatedReadyAt, itemId }: { estimatedReadyAt: string
       data-testid={`timer-${itemId}`}
     >
       {overdue ? "▶ overdue" : `⏱️ ${mins}:${secs.toString().padStart(2, "0")} left`}
+    </span>
+  );
+}
+
+function ItemTimerCell({ item, itemId }: { item: KDSWallItem; itemId: string }) {
+  const cs = mapItemCookingStatus(item);
+  const elapsedSec = useTimer(item.startedAt);
+  const estimatedSec = (item.prepTimeMinutes ?? 0) * 60;
+
+  if (cs === "started" || cs === "almost_ready") {
+    const status = getTimingStatus(elapsedSec, estimatedSec);
+    const remainingSec = Math.max(0, estimatedSec - elapsedSec);
+    const chipConfig = {
+      fast: { label: "Fast", cls: "bg-green-900 text-green-300" },
+      approaching: { label: "Approaching", cls: "bg-amber-900 text-amber-300" },
+      over: { label: "Over time", cls: "bg-red-900 text-red-300" },
+      very_late: { label: "VERY LATE", cls: "bg-red-900 text-red-300 animate-pulse" },
+    };
+    const chip = chipConfig[status];
+    return (
+      <div className="space-y-0.5" data-testid={`time-cell-${itemId}`}>
+        <div className="text-sm font-mono tabular-nums text-white">
+          ⏱️ {formatMMSS(remainingSec)} left
+        </div>
+        {item.prepTimeMinutes && (
+          <div className="text-xs text-gray-500">Est: {item.prepTimeMinutes} min</div>
+        )}
+        <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${chip.cls}`}>{chip.label}</span>
+      </div>
+    );
+  }
+
+  if (cs === "queued" || cs === "ready_to_start") {
+    const isOverdue = cs === "ready_to_start";
+    return (
+      <div data-testid={`time-cell-${itemId}`}>
+        {isOverdue ? (
+          <span className="text-amber-400 text-xs font-bold animate-pulse">START NOW</span>
+        ) : (
+          <span className="text-gray-500 text-xs">
+            {item.prepTimeMinutes ? `~${item.prepTimeMinutes} min` : "queued"}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (cs === "ready") {
+    return (
+      <div className="space-y-0.5" data-testid={`time-cell-${itemId}`}>
+        <div className="text-green-400 text-sm font-mono">✅ {formatMMSS(elapsedSec)}</div>
+        {estimatedSec > 0 && (
+          <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${elapsedSec <= estimatedSec ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"}`}>
+            {elapsedSec <= estimatedSec ? "⚡ Fast" : "✓ On time"}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  return <span className="text-gray-600 text-xs" data-testid={`time-cell-${itemId}`}>—</span>;
+}
+
+function OrderAgeTimer({ createdAt, ticketId }: { createdAt: string | null; ticketId: string }) {
+  const elapsed = useOrderAgeTimer(createdAt);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+
+  const colorCls = mins < 15 ? "text-green-400" : mins < 20 ? "text-amber-400" : "text-red-400";
+
+  return (
+    <span
+      className={`text-xs font-mono tabular-nums font-semibold ${colorCls}`}
+      data-testid={`order-age-${ticketId}`}
+    >
+      Order age: {mins}:{secs.toString().padStart(2, "0")}
     </span>
   );
 }
@@ -440,6 +517,9 @@ function ItemRow({
             <span className="text-gray-600 text-xs">—</span>
           )}
         </td>
+        <td className="py-1.5 px-2 min-w-[110px]">
+          <ItemTimerCell item={item} itemId={item.id} />
+        </td>
         <td className="py-1.5 px-2">
           <div className="flex items-center gap-1.5 relative">
             {startTooltip && (
@@ -512,6 +592,9 @@ function SelectiveTicketCard({
   const mins = useElapsedMinutes(ticket.createdAt);
   const timeColor = getTimeColor(mins);
   const [showRush, setShowRush] = useState(false);
+  const ageSec = useOrderAgeTimer(ticket.createdAt);
+  const ageMins = Math.floor(ageSec / 60);
+  const cardFlash = ageMins > 25;
 
   const allItems = ticket.items.filter(i => mapItemCookingStatus(i) !== "served");
   const readyItems = allItems.filter(i => ["ready", "almost_ready", "served"].includes(mapItemCookingStatus(i)));
@@ -539,7 +622,7 @@ function SelectiveTicketCard({
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.9 }}
       transition={{ duration: 0.25 }}
-      className={`rounded-2xl border-2 p-4 space-y-3 ${allReady ? "border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]" : "bg-gray-800/60 border-gray-600"}`}
+      className={`rounded-2xl border-2 p-4 space-y-3 ${allReady ? "border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.3)]" : cardFlash ? "bg-gray-800/60 border-red-600 animate-pulse" : "bg-gray-800/60 border-gray-600"}`}
       data-testid={`wall-ticket-${ticket.id.slice(-4)}`}
     >
       <div className="flex items-center justify-between gap-2">
@@ -552,6 +635,7 @@ function SelectiveTicketCard({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <OrderAgeTimer createdAt={ticket.createdAt} ticketId={ticket.id} />
           <div className={`flex items-center gap-1 ${timeColor}`}>
             <Clock className="h-4 w-4" />
             <span className="text-lg font-bold tabular-nums">{formatElapsed(mins)}</span>
@@ -609,6 +693,7 @@ function SelectiveTicketCard({
                     <th className="text-left py-1 px-2 font-medium">Prep</th>
                     <th className="text-left py-1 px-2 font-medium">Status</th>
                     <th className="text-left py-1 px-2 font-medium">Timing</th>
+                    <th className="text-left py-1 px-2 font-medium">Time</th>
                     <th className="text-left py-1 px-2 font-medium">Actions</th>
                   </tr>
                 </thead>

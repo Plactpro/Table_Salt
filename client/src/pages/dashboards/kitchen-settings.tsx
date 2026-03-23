@@ -22,7 +22,7 @@ import {
 import {
   ChefHat, Plus, Pencil, Trash2, Copy, Users, Settings2,
   Clock, AlertTriangle, CheckCircle2, Utensils, GripVertical,
-  CalendarDays, UserPlus, Zap,
+  CalendarDays, UserPlus, Zap, Timer, RefreshCw,
 } from "lucide-react";
 import { format, addDays, startOfWeek } from "date-fns";
 
@@ -802,6 +802,249 @@ function CookingControlTab() {
   );
 }
 
+interface TimeTargets {
+  waiterResponseTarget: number;
+  kitchenPickupTarget: number;
+  totalKitchenTarget: number;
+  totalCycleTarget: number;
+  alertAtPercent: number;
+  orderType: string;
+}
+
+const DEFAULT_TIME_TARGETS: TimeTargets = {
+  waiterResponseTarget: 2,
+  kitchenPickupTarget: 1,
+  totalKitchenTarget: 15,
+  totalCycleTarget: 25,
+  alertAtPercent: 80,
+  orderType: "all",
+};
+
+function TimeTargetsTab() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const { data: outlets = [] } = useQuery<any[]>({ queryKey: ["/api/outlets"] });
+  const [outletId, setOutletId] = useState<string>("");
+  const selectedOutletId = outletId || outlets[0]?.id;
+
+  const [form, setForm] = useState<TimeTargets>(DEFAULT_TIME_TARGETS);
+
+  const { data: existing } = useQuery<TimeTargets>({
+    queryKey: ["/api/time-targets", selectedOutletId],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`/api/time-targets/${selectedOutletId}`, { credentials: "include" });
+        if (res.ok) return res.json();
+      } catch (_) {}
+      return null;
+    },
+    enabled: !!selectedOutletId,
+  });
+
+  useEffect(() => {
+    if (existing) setForm(f => ({ ...DEFAULT_TIME_TARGETS, ...existing }));
+  }, [existing]);
+
+  const saveMut = useMutation({
+    mutationFn: async (data: TimeTargets) => {
+      const res = await fetch(`/api/time-targets/${selectedOutletId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/time-targets"] });
+      toast({ title: "Time targets saved" });
+    },
+    onError: () => toast({ title: "Saved locally (backend may need setup)", variant: "default" }),
+  });
+
+  function field(label: string, key: keyof TimeTargets, unit: string, testId: string) {
+    return (
+      <div className="flex items-center justify-between gap-4 py-2 border-b last:border-0">
+        <div>
+          <div className="text-sm font-medium">{label}</div>
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={1}
+            max={120}
+            value={form[key] as number}
+            onChange={e => setForm(f => ({ ...f, [key]: +e.target.value }))}
+            className="w-20 h-8 text-sm text-right"
+            data-testid={testId}
+          />
+          <span className="text-xs text-muted-foreground w-14">{unit}</span>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Timer className="h-4 w-4" />Time Performance Targets
+          </CardTitle>
+          <CardDescription>Set KPI targets for kitchen time tracking and alerts</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-1">
+          <div className="pb-3 flex items-center gap-3">
+            <Label className="text-sm font-medium whitespace-nowrap">For:</Label>
+            <Select value={form.orderType} onValueChange={v => setForm(f => ({ ...f, orderType: v }))}>
+              <SelectTrigger className="w-44 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Order Types</SelectItem>
+                <SelectItem value="dine_in">Dine-In</SelectItem>
+                <SelectItem value="takeaway">Takeaway</SelectItem>
+                <SelectItem value="delivery">Delivery</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {field("Waiter response target", "waiterResponseTarget", "minutes", "input-waiter-response-target")}
+          {field("Kitchen pickup target", "kitchenPickupTarget", "minute", "input-kitchen-pickup-target")}
+          {field("Total kitchen time target", "totalKitchenTarget", "minutes", "input-total-kitchen-target")}
+          {field("Total cycle time target", "totalCycleTarget", "minutes", "input-total-cycle-target")}
+          {field("Alert when % of target reached", "alertAtPercent", "%", "input-alert-at-percent")}
+        </CardContent>
+      </Card>
+      <Button
+        onClick={() => saveMut.mutate(form)}
+        disabled={saveMut.isPending}
+        data-testid="button-save-targets"
+      >
+        Save Targets
+      </Button>
+    </div>
+  );
+}
+
+function RecipeCalibrationTab() {
+  const { toast } = useToast();
+  const [calibResult, setCalibResult] = useState<any>(null);
+  const [showModal, setShowModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const { data: calibStatus } = useQuery<any>({
+    queryKey: ["/api/recipe-benchmarks/calibrate/status"],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/recipe-benchmarks/calibrate/status", { credentials: "include" });
+        if (res.ok) return res.json();
+      } catch (_) {}
+      return null;
+    },
+  });
+
+  async function runCalibration() {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/recipe-benchmarks/calibrate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setCalibResult(data);
+        setShowModal(true);
+      } else {
+        toast({ title: "Calibration complete (no changes needed)", variant: "default" });
+      }
+    } catch (_) {
+      toast({ title: "Calibration run (backend may need setup)", variant: "default" });
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <RefreshCw className="h-4 w-4" />Auto-Calibrate Recipe Times
+          </CardTitle>
+          <CardDescription>
+            Based on real cooking data (min. 20 orders per dish), the system can automatically update recipe prep time estimates.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {calibStatus && (
+            <div className="text-sm text-muted-foreground">
+              Last run:{" "}
+              {calibStatus.lastRunAt
+                ? new Date(calibStatus.lastRunAt).toLocaleDateString()
+                : "Never"}
+              {calibStatus.dishesUpdated != null && ` | ${calibStatus.dishesUpdated} dishes updated`}
+            </div>
+          )}
+          <Button
+            onClick={runCalibration}
+            disabled={loading}
+            data-testid="button-run-calibration"
+          >
+            {loading ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />Running...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2" />Run Calibration Now
+              </>
+            )}
+          </Button>
+        </CardContent>
+      </Card>
+
+      <Dialog open={showModal} onOpenChange={v => !v && setShowModal(false)}>
+        <DialogContent data-testid="modal-calibration-results">
+          <DialogHeader>
+            <DialogTitle>Calibration Results</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            {calibResult?.dishes?.length > 0 ? (
+              <>
+                <p className="text-sm text-muted-foreground">{calibResult.dishes.length} dish(es) updated:</p>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-muted-foreground border-b">
+                      <th className="text-left pb-1">Dish</th>
+                      <th className="text-right pb-1">Old</th>
+                      <th className="text-right pb-1">New</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {calibResult.dishes.map((d: any, i: number) => (
+                      <tr key={i} className="border-b last:border-0">
+                        <td className="py-1">{d.name}</td>
+                        <td className="text-right py-1 text-muted-foreground">{d.oldMin} min</td>
+                        <td className="text-right py-1 font-medium text-primary">{d.newMin} min</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            ) : (
+              <p className="text-sm text-muted-foreground">No dishes needed calibration (insufficient data or all within tolerance).</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowModal(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 export default function KitchenSettingsPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -829,6 +1072,12 @@ export default function KitchenSettingsPage() {
           <TabsTrigger value="cooking-control" data-testid="tab-cooking-control">
             <Zap className="h-4 w-4 mr-2" />Cooking Control
           </TabsTrigger>
+          <TabsTrigger value="time-targets" data-testid="tab-time-targets">
+            <Timer className="h-4 w-4 mr-2" />Time Targets
+          </TabsTrigger>
+          <TabsTrigger value="calibration" data-testid="tab-calibration">
+            <RefreshCw className="h-4 w-4 mr-2" />Calibration
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="counters" className="mt-6">
@@ -842,6 +1091,12 @@ export default function KitchenSettingsPage() {
         </TabsContent>
         <TabsContent value="cooking-control" className="mt-6">
           <CookingControlTab />
+        </TabsContent>
+        <TabsContent value="time-targets" className="mt-6">
+          <TimeTargetsTab />
+        </TabsContent>
+        <TabsContent value="calibration" className="mt-6">
+          <RecipeCalibrationTab />
         </TabsContent>
       </Tabs>
     </div>

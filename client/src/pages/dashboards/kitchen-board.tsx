@@ -10,15 +10,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import {
   ChefHat, RefreshCw, Users, Clock, AlertTriangle, CheckCircle2,
   LayoutGrid, ArrowRightLeft, UserCheck, Zap, Circle, Timer,
-  TrendingUp, BarChart3, X, Play, Pause,
+  TrendingUp, BarChart3, X, Play, Pause, ChevronDown, ChevronUp, Flag,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { useTimer, formatMMSS, getTimingStatus } from "@/hooks/useTimer";
 
 interface Assignment {
   id: string;
@@ -598,6 +600,203 @@ function ChefPill({ chef }: { chef: ChefAvailability }) {
   );
 }
 
+function ActiveItemRow({ item, onRefresh }: { item: KdsItem; onRefresh: () => void }) {
+  const elapsed = useTimer(item.startedAt);
+  const estimatedSec = (item.prepTimeMinutes ?? 0) * 60;
+  const status = getTimingStatus(elapsed, estimatedSec);
+  const isOverdue = elapsed > estimatedSec && estimatedSec > 0;
+  const overdueSec = Math.max(0, elapsed - estimatedSec);
+  const remainingSec = Math.max(0, estimatedSec - elapsed);
+  const [showFlagDialog, setShowFlagDialog] = useState(false);
+  const [flagNote, setFlagNote] = useState("");
+  const [flagLoading, setFlagLoading] = useState(false);
+
+  const chipConfig = {
+    fast: "text-green-600",
+    approaching: "text-amber-600",
+    over: "text-red-600",
+    very_late: "text-red-600 animate-pulse",
+  };
+
+  async function handleFlagIssue() {
+    setFlagLoading(true);
+    try {
+      await fetch(`/api/kds/order-items/${item.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ notes: flagNote }),
+      });
+    } catch (_) {}
+    setFlagLoading(false);
+    setShowFlagDialog(false);
+    setFlagNote("");
+    onRefresh();
+  }
+
+  async function handleReady() {
+    try {
+      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: { "Content-Type": "application/json" } });
+      if (!res.ok) {
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ready" }) });
+      }
+    } catch (_) {}
+    onRefresh();
+  }
+
+  return (
+    <>
+      <div className={`rounded-lg border p-3 space-y-2 ${isOverdue ? "border-red-300 bg-red-50/50" : "border-border"}`} data-testid={`active-item-${item.id}`}>
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-sm">{item.name}</span>
+          <Badge variant="outline" className="text-xs">T-{item.courseNumber ?? "?"}</Badge>
+        </div>
+        <div className="text-xs text-muted-foreground">
+          Started: {formatMMSS(elapsed)} ago
+        </div>
+        <div className={`text-xs font-medium ${chipConfig[status]}`}>
+          Est: {item.prepTimeMinutes ?? "?"} min |{" "}
+          {isOverdue
+            ? `🔴 OVERDUE ${formatMMSS(overdueSec)}`
+            : `🟢 ${formatMMSS(remainingSec)} remaining`}
+        </div>
+        <div className="flex gap-1.5">
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 text-xs px-2 text-green-700"
+            onClick={handleReady}
+            data-testid={`button-chef-ready-${item.id}`}
+          >
+            <CheckCircle2 className="h-3 w-3 mr-0.5" />MARK READY
+          </Button>
+          {isOverdue && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-6 text-xs px-2 text-amber-700"
+              onClick={() => setShowFlagDialog(true)}
+              data-testid={`button-flag-${item.id}`}
+            >
+              <Flag className="h-3 w-3 mr-0.5" />FLAG ISSUE
+            </Button>
+          )}
+        </div>
+      </div>
+      <Dialog open={showFlagDialog} onOpenChange={v => !v && setShowFlagDialog(false)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Flag Delay Issue</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">{item.name} — reason for delay:</p>
+            <Textarea
+              value={flagNote}
+              onChange={e => setFlagNote(e.target.value)}
+              placeholder="e.g. Equipment issue, ran out of ingredient..."
+              rows={3}
+              data-testid="input-flag-note"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setShowFlagDialog(false)}>Cancel</Button>
+            <Button onClick={handleFlagIssue} disabled={flagLoading || !flagNote} data-testid="button-submit-flag">
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
+function ChefStatsPanel({
+  chefId, chefName, counterName, kdsTickets, onRefresh,
+}: {
+  chefId: string;
+  chefName?: string;
+  counterName?: string;
+  kdsTickets: KdsTicket[];
+  onRefresh: () => void;
+}) {
+  const [collapsed, setCollapsed] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+
+  const { data: chefStats } = useQuery<any>({
+    queryKey: ["/api/time-performance/by-chef", chefId, today],
+    queryFn: async () => {
+      try {
+        const res = await fetch(`/api/time-performance/by-chef?chefId=${chefId}&date=${today}`);
+        if (res.ok) return res.json();
+      } catch (_) {}
+      return null;
+    },
+    refetchInterval: 30000,
+  });
+
+  const activeItems: KdsItem[] = kdsTickets.flatMap(t =>
+    t.items.filter(i => {
+      const cs = mapItemStatus(i);
+      return cs === "started" || cs === "almost_ready";
+    })
+  );
+
+  const stats = chefStats?.summary ?? null;
+  const dishCount = stats?.totalDishes ?? 0;
+  const avgTime = stats?.avgTimeMin ? Number(stats.avgTimeMin).toFixed(1) : "—";
+  const onTimePct = stats?.onTimePct != null ? `${Math.round(stats.onTimePct)}%` : "—";
+  const bestTime = stats?.bestTimeMin ? `${stats.bestTimeMin} min` : "—";
+  const targetMin = stats?.targetMin ?? 15;
+
+  return (
+    <Card className="border-primary/30 bg-primary/5" data-testid="panel-chef-stats">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <ChefHat className="h-4 w-4 text-primary" />
+            <span>{chefName ?? chefId}{counterName ? ` — ${counterName}` : ""}</span>
+          </div>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setCollapsed(c => !c)}>
+            {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+          </Button>
+        </CardTitle>
+        {!collapsed && (
+          <div className="text-xs text-muted-foreground">
+            Today: <span data-testid="text-chef-dish-count" className="font-semibold text-foreground">{dishCount} dishes</span>
+            {" | "}Avg: <span data-testid="text-chef-avg-time" className="font-semibold text-foreground">{avgTime} min</span>
+          </div>
+        )}
+      </CardHeader>
+      {!collapsed && (
+        <CardContent className="space-y-3">
+          {activeItems.length > 0 ? (
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">My Active Items</div>
+              <div className="space-y-2">
+                {activeItems.map(item => (
+                  <ActiveItemRow key={item.id} item={item} onRefresh={onRefresh} />
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="text-xs text-muted-foreground text-center py-2">No active items</div>
+          )}
+          <div className="border-t pt-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">My Shift Stats</div>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div><span className="text-muted-foreground">Best time:</span> <span className="font-medium">{bestTime}</span></div>
+              <div><span className="text-muted-foreground">Avg today:</span> <span className="font-medium">{avgTime} min</span></div>
+              <div><span className="text-muted-foreground">Target:</span> <span className="font-medium">{targetMin} min</span></div>
+              <div>
+                <span className="text-muted-foreground">On time:</span>{" "}
+                <span className="font-medium" data-testid="text-chef-on-time-pct">{onTimePct}</span>
+                {stats?.onTimePct >= 90 && <span className="ml-1">✅</span>}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export default function KitchenBoardPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -797,6 +996,16 @@ export default function KitchenBoardPage() {
           <span className="text-xs text-muted-foreground font-medium">Chefs on shift:</span>
           {liveChefs.map(chef => <ChefPill key={chef.chefId} chef={chef} />)}
         </div>
+      )}
+
+      {view === "cooking" && user?.role === "chef" && (
+        <ChefStatsPanel
+          chefId={user.id}
+          chefName={user.name ?? user.username}
+          counterName={liveChefs.find(c => c.chefId === user.id)?.counterName}
+          kdsTickets={kdsTickets}
+          onRefresh={refetchKds}
+        />
       )}
 
       {view === "cooking" ? (
