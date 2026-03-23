@@ -57,6 +57,7 @@ import WastageDashboard from "@/pages/dashboards/wastage-dashboard";
 import WastageLogPage from "@/pages/modules/wastage-log";
 import WastageShiftPage from "@/pages/modules/wastage-shift";
 import PrinterSettingsPage from "@/pages/settings/printer-settings";
+import AlertSettingsPage from "@/pages/settings/alerts";
 import MenuPricingPage from "@/pages/menu/menu-pricing";
 import ProcurementHubPage from "@/pages/procurement/index";
 import TicketHistoryPage from "@/pages/tickets/index";
@@ -72,6 +73,8 @@ import AdminSettingsPage from "@/pages/admin/settings";
 import AnalyticsPage from "@/pages/admin/analytics";
 import SecurityConsolePage from "@/pages/admin/security";
 
+import AlertListener from "@/components/alert-listener";
+import { ActiveAlertsProvider } from "@/lib/active-alerts-context";
 import { ReactNode } from "react";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -117,6 +120,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/wastage-log": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "kitchen"] },
   "/wastage-shift": { roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   "/settings/printers": { roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  "/settings/alerts": { roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   "/menu-pricing": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "menu" },
   "/procurement": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
   "/tickets": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
@@ -179,7 +183,12 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
     return <Redirect to="/login" />;
   }
 
-  return <>{children}</>;
+  return (
+    <ActiveAlertsProvider>
+      <AlertListener />
+      {children}
+    </ActiveAlertsProvider>
+  );
 }
 
 function RoleDashboard() {
@@ -314,6 +323,7 @@ function ProtectedPages() {
         <Route path="/wastage-log">{() => <GuardedRoute path="/wastage-log" component={WastageLogPage} />}</Route>
         <Route path="/wastage-shift">{() => <GuardedRoute path="/wastage-shift" component={WastageShiftPage} />}</Route>
         <Route path="/settings/printers">{() => <GuardedRoute path="/settings/printers" component={PrinterSettingsPage} />}</Route>
+        <Route path="/settings/alerts">{() => <GuardedRoute path="/settings/alerts" component={AlertSettingsPage} />}</Route>
         <Route path="/menu-pricing">{() => <GuardedRoute path="/menu-pricing" component={MenuPricingPage} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsHub} />}</Route>
         <Route path="/stock-movements">{() => <GuardedRoute path="/inventory" component={StockMovementLog} />}</Route>

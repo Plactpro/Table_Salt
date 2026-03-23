@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
 import SyncStatusIndicator from "@/components/sync-status-indicator";
+import AlertNotificationBell from "@/components/alert-notification-bell";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -294,6 +295,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
 
         <div className="flex items-center gap-2">
           <SyncStatusIndicator />
+          <AlertNotificationBell />
           {onOpenSupport && (
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button
