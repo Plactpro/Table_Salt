@@ -6,14 +6,16 @@ import type { Outlet } from "@shared/schema";
 import { motion } from "framer-motion";
 import {
   MapPin, Plus, Search, Edit, Trash2, Building2, Truck, Cloud, Store,
-  Navigation, Globe, Clock, CheckCircle2, Banknote,
+  Navigation, Globe, Clock, CheckCircle2, Banknote, DollarSign, Save, AlertCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from "@/components/ui/dialog";
@@ -188,6 +190,254 @@ function CashCurrencySettings() {
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+interface TipSettings {
+  tipsEnabled: boolean;
+  showOnPos: boolean;
+  showOnQr: boolean;
+  showOnReceipt: boolean;
+  promptStyle: "BUTTONS" | "INPUT" | "NONE";
+  suggestedPct1: number;
+  suggestedPct2: number;
+  suggestedPct3: number;
+  allowCustom: boolean;
+  tipBasis: "SUBTOTAL" | "TOTAL";
+  distributionMethod: "INDIVIDUAL" | "POOL" | "SPLIT";
+  waiterSharePct: number;
+  kitchenSharePct: number;
+}
+
+function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const defaultSettings: TipSettings = {
+    tipsEnabled: false,
+    showOnPos: true,
+    showOnQr: true,
+    showOnReceipt: true,
+    promptStyle: "BUTTONS",
+    suggestedPct1: 5,
+    suggestedPct2: 10,
+    suggestedPct3: 15,
+    allowCustom: true,
+    tipBasis: "SUBTOTAL",
+    distributionMethod: "INDIVIDUAL",
+    waiterSharePct: 70,
+    kitchenSharePct: 30,
+  };
+
+  const { data: settings, isLoading } = useQuery<TipSettings>({
+    queryKey: ["/api/tips/settings", outlet.id],
+    queryFn: async () => {
+      const res = await fetch(`/api/tips/settings/${outlet.id}`, { credentials: "include" });
+      if (!res.ok) return defaultSettings;
+      return res.json();
+    },
+  });
+
+  const [form, setForm] = useState<TipSettings>(defaultSettings);
+  const [initialized, setInitialized] = useState(false);
+
+  if (settings && !initialized) {
+    setForm({ ...defaultSettings, ...settings });
+    setInitialized(true);
+  }
+
+  const saveMutation = useMutation({
+    mutationFn: async (data: TipSettings) => {
+      const res = await apiRequest("POST", `/api/tips/settings/${outlet.id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/tips/settings", outlet.id] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tips/config", outlet.id] });
+      toast({ title: "Tip settings saved", description: "Settings updated successfully." });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  function handleSave() {
+    const pcts = [form.suggestedPct1, form.suggestedPct2, form.suggestedPct3];
+    const uniq = new Set(pcts);
+    if (form.distributionMethod === "SPLIT") {
+      const kitchen = 100 - form.waiterSharePct;
+      setForm(f => ({ ...f, kitchenSharePct: kitchen }));
+    }
+    saveMutation.mutate({ ...form, kitchenSharePct: form.distributionMethod === "SPLIT" ? 100 - form.waiterSharePct : form.kitchenSharePct });
+  }
+
+  if (isLoading) {
+    return <div className="py-6 text-center text-muted-foreground text-sm">Loading tip settings...</div>;
+  }
+
+  return (
+    <div className="space-y-5 py-2">
+      <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+        <DollarSign className="h-5 w-5 text-amber-600 shrink-0" />
+        <div className="flex-1">
+          <p className="font-semibold text-sm">Enable Tips for {outlet.name}</p>
+          <p className="text-xs text-muted-foreground">Master switch — when off, no tip prompts will appear anywhere</p>
+        </div>
+        <Switch
+          checked={form.tipsEnabled}
+          onCheckedChange={v => setForm(f => ({ ...f, tipsEnabled: v }))}
+          data-testid="toggle-tips-enabled"
+        />
+      </div>
+
+      {form.tipsEnabled && (
+        <>
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Show Tip Option On</p>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                <Label>POS Payment Screen</Label>
+                <Switch checked={form.showOnPos} onCheckedChange={v => setForm(f => ({ ...f, showOnPos: v }))} data-testid="toggle-show-on-pos" />
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                <Label>QR Customer Payment</Label>
+                <Switch checked={form.showOnQr} onCheckedChange={v => setForm(f => ({ ...f, showOnQr: v }))} data-testid="toggle-show-on-qr" />
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                <Label>Print on Receipt</Label>
+                <Switch checked={form.showOnReceipt} onCheckedChange={v => setForm(f => ({ ...f, showOnReceipt: v }))} data-testid="toggle-show-on-receipt" />
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tip Prompt Style</p>
+            <div className="space-y-2">
+              {(["BUTTONS", "INPUT", "NONE"] as const).map(style => (
+                <label key={style} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 bg-card">
+                  <input
+                    type="radio"
+                    name="promptStyle"
+                    value={style}
+                    checked={form.promptStyle === style}
+                    onChange={() => setForm(f => ({ ...f, promptStyle: style }))}
+                    data-testid={`radio-prompt-style-${style}`}
+                  />
+                  <span className="text-sm">
+                    {style === "BUTTONS" ? "Quick % Buttons (recommended)" : style === "INPUT" ? "Amount input only" : "No prompt (manual entry)"}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {form.promptStyle === "BUTTONS" && (
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Suggested Percentages</p>
+              <div className="grid grid-cols-3 gap-3">
+                {([1, 2, 3] as const).map(n => (
+                  <div key={n} className="space-y-1">
+                    <Label className="text-xs">Button {n}</Label>
+                    <div className="flex items-center gap-1">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={form[`suggestedPct${n}` as keyof TipSettings] as number}
+                        onChange={e => setForm(f => ({ ...f, [`suggestedPct${n}`]: parseInt(e.target.value) || 0 }))}
+                        className="text-sm"
+                        data-testid={`input-suggested-pct-${n}`}
+                      />
+                      <span className="text-sm text-muted-foreground">%</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                <Label>Allow custom amount</Label>
+                <Switch checked={form.allowCustom} onCheckedChange={v => setForm(f => ({ ...f, allowCustom: v }))} data-testid="toggle-allow-custom" />
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tip Calculated On</p>
+            <div className="space-y-2">
+              {(["SUBTOTAL", "TOTAL"] as const).map(basis => (
+                <label key={basis} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 bg-card">
+                  <input
+                    type="radio"
+                    name="tipBasis"
+                    value={basis}
+                    checked={form.tipBasis === basis}
+                    onChange={() => setForm(f => ({ ...f, tipBasis: basis }))}
+                    data-testid={`radio-tip-basis-${basis}`}
+                  />
+                  <span className="text-sm">
+                    {basis === "SUBTOTAL" ? "Subtotal (before tax)" : "Final total (including tax)"}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tip Distribution</p>
+            <div className="space-y-2">
+              {(["INDIVIDUAL", "POOL", "SPLIT"] as const).map(method => (
+                <label key={method} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 bg-card">
+                  <input
+                    type="radio"
+                    name="distributionMethod"
+                    value={method}
+                    checked={form.distributionMethod === method}
+                    onChange={() => setForm(f => ({ ...f, distributionMethod: method }))}
+                    data-testid={`radio-distribution-${method}`}
+                  />
+                  <span className="text-sm">
+                    {method === "INDIVIDUAL" ? "Individual — goes to serving waiter" : method === "POOL" ? "Pool — shared equally among all staff" : "Split — % to waiter + % to kitchen"}
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            {form.distributionMethod === "SPLIT" && (
+              <div className="grid grid-cols-2 gap-3 pl-4 border-l-2 border-amber-300">
+                <div className="space-y-1">
+                  <Label className="text-xs">Waiter share (%)</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    value={form.waiterSharePct}
+                    onChange={e => {
+                      const v = parseInt(e.target.value) || 0;
+                      setForm(f => ({ ...f, waiterSharePct: v, kitchenSharePct: 100 - v }));
+                    }}
+                    data-testid="input-waiter-share-pct"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">Kitchen share (%) — auto</Label>
+                  <Input
+                    type="number"
+                    value={100 - form.waiterSharePct}
+                    readOnly
+                    className="bg-muted"
+                    data-testid="input-kitchen-share-pct"
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      <Button onClick={handleSave} disabled={saveMutation.isPending} className="w-full" data-testid="button-save-tip-settings">
+        <Save className="h-4 w-4 mr-2" />
+        {saveMutation.isPending ? "Saving..." : "Save Settings"}
+      </Button>
+    </div>
   );
 }
 
@@ -566,93 +816,136 @@ export default function OutletsPage() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingOutlet ? `Edit ${view.cardLabel}` : `Add ${view.cardLabel}`}</DialogTitle>
             <DialogDescription>
               {editingOutlet ? `Update the details of this ${view.cardLabel.toLowerCase()}.` : `Add a new ${view.cardLabel.toLowerCase()} to your business.`}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="space-y-2">
-              <Label htmlFor="outlet-name">Name *</Label>
-              <Input
-                id="outlet-name"
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder={`e.g. ${businessType === "food_truck" ? "Downtown Route" : "Main Branch"}`}
-                data-testid="input-outlet-name"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="outlet-address">
-                {businessType === "food_truck" ? "GPS Coordinates / Location" : businessType === "cloud_kitchen" ? "Delivery Zone Address" : "Address"}
-              </Label>
-              <Input
-                id="outlet-address"
-                value={formData.address}
-                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                placeholder={businessType === "food_truck" ? "e.g. 40.7128, -74.0060" : "e.g. 123 Main St"}
-                data-testid="input-outlet-address"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="outlet-hours">
-                {businessType === "food_truck" ? "Route Schedule" : "Opening Hours"}
-              </Label>
-              <Input
-                id="outlet-hours"
-                value={formData.openingHours}
-                onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })}
-                placeholder="e.g. 9:00 AM - 10:00 PM"
-                data-testid="input-outlet-hours"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Region</Label>
-              <Select value={formData.regionId || "none"} onValueChange={(v) => setFormData({ ...formData, regionId: v === "none" ? "" : v })}>
-                <SelectTrigger data-testid="select-outlet-region"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Region</SelectItem>
-                  {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />
-              <Label htmlFor="outlet-franchise">Franchise Outlet</Label>
-            </div>
-            {formData.isFranchise && (
-              <div className="space-y-3 pl-4 border-l-2 border-amber-300">
+
+          {editingOutlet && user?.role === "owner" ? (
+            <Tabs defaultValue="details">
+              <TabsList className="w-full">
+                <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
+                <TabsTrigger value="tips" className="flex-1" data-testid="tab-tip-settings">
+                  <DollarSign className="h-3.5 w-3.5 mr-1.5" /> Tips
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent value="details">
+                <div className="grid gap-4 py-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="outlet-name">Name *</Label>
+                    <Input id="outlet-name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder={`e.g. ${businessType === "food_truck" ? "Downtown Route" : "Main Branch"}`} data-testid="input-outlet-name" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="outlet-address">{businessType === "food_truck" ? "GPS Coordinates / Location" : businessType === "cloud_kitchen" ? "Delivery Zone Address" : "Address"}</Label>
+                    <Input id="outlet-address" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder={businessType === "food_truck" ? "e.g. 40.7128, -74.0060" : "e.g. 123 Main St"} data-testid="input-outlet-address" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="outlet-hours">{businessType === "food_truck" ? "Route Schedule" : "Opening Hours"}</Label>
+                    <Input id="outlet-hours" value={formData.openingHours} onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })} placeholder="e.g. 9:00 AM - 10:00 PM" data-testid="input-outlet-hours" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Region</Label>
+                    <Select value={formData.regionId || "none"} onValueChange={(v) => setFormData({ ...formData, regionId: v === "none" ? "" : v })}>
+                      <SelectTrigger data-testid="select-outlet-region"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No Region</SelectItem>
+                        {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />
+                    <Label htmlFor="outlet-franchise">Franchise Outlet</Label>
+                  </div>
+                  {formData.isFranchise && (
+                    <div className="space-y-3 pl-4 border-l-2 border-amber-300">
+                      <div className="space-y-2">
+                        <Label>Franchisee Name</Label>
+                        <Input value={formData.franchiseeName} onChange={(e) => setFormData({ ...formData, franchiseeName: e.target.value })} placeholder="e.g. Gulf Dining Group LLC" data-testid="input-franchisee-name" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-2">
+                          <Label>Royalty Rate (%)</Label>
+                          <Input type="number" step="0.1" value={formData.royaltyRate} onChange={(e) => setFormData({ ...formData, royaltyRate: e.target.value })} placeholder="e.g. 8" data-testid="input-royalty-rate" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Min Guarantee</Label>
+                          <Input type="number" step="100" value={formData.minimumGuarantee} onChange={(e) => setFormData({ ...formData, minimumGuarantee: e.target.value })} placeholder="e.g. 5000" data-testid="input-min-guarantee" />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <DialogFooter className="pt-4">
+                  <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">Cancel</Button>
+                  <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-outlet">
+                    {editingOutlet ? "Update" : `Add ${view.cardLabel}`}
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
+              <TabsContent value="tips">
+                <TipSettingsPanel outlet={editingOutlet} />
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <>
+              <div className="grid gap-4 py-2">
                 <div className="space-y-2">
-                  <Label>Franchisee Name</Label>
-                  <Input value={formData.franchiseeName} onChange={(e) => setFormData({ ...formData, franchiseeName: e.target.value })} placeholder="e.g. Gulf Dining Group LLC" data-testid="input-franchisee-name" />
+                  <Label htmlFor="outlet-name">Name *</Label>
+                  <Input id="outlet-name" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} placeholder={`e.g. ${businessType === "food_truck" ? "Downtown Route" : "Main Branch"}`} data-testid="input-outlet-name" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-2">
-                    <Label>Royalty Rate (%)</Label>
-                    <Input type="number" step="0.1" value={formData.royaltyRate} onChange={(e) => setFormData({ ...formData, royaltyRate: e.target.value })} placeholder="e.g. 8" data-testid="input-royalty-rate" />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Min Guarantee</Label>
-                    <Input type="number" step="100" value={formData.minimumGuarantee} onChange={(e) => setFormData({ ...formData, minimumGuarantee: e.target.value })} placeholder="e.g. 5000" data-testid="input-min-guarantee" />
-                  </div>
+                <div className="space-y-2">
+                  <Label htmlFor="outlet-address">{businessType === "food_truck" ? "GPS Coordinates / Location" : businessType === "cloud_kitchen" ? "Delivery Zone Address" : "Address"}</Label>
+                  <Input id="outlet-address" value={formData.address} onChange={(e) => setFormData({ ...formData, address: e.target.value })} placeholder={businessType === "food_truck" ? "e.g. 40.7128, -74.0060" : "e.g. 123 Main St"} data-testid="input-outlet-address" />
                 </div>
+                <div className="space-y-2">
+                  <Label htmlFor="outlet-hours">{businessType === "food_truck" ? "Route Schedule" : "Opening Hours"}</Label>
+                  <Input id="outlet-hours" value={formData.openingHours} onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })} placeholder="e.g. 9:00 AM - 10:00 PM" data-testid="input-outlet-hours" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Region</Label>
+                  <Select value={formData.regionId || "none"} onValueChange={(v) => setFormData({ ...formData, regionId: v === "none" ? "" : v })}>
+                    <SelectTrigger data-testid="select-outlet-region"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Region</SelectItem>
+                      {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />
+                  <Label htmlFor="outlet-franchise">Franchise Outlet</Label>
+                </div>
+                {formData.isFranchise && (
+                  <div className="space-y-3 pl-4 border-l-2 border-amber-300">
+                    <div className="space-y-2">
+                      <Label>Franchisee Name</Label>
+                      <Input value={formData.franchiseeName} onChange={(e) => setFormData({ ...formData, franchiseeName: e.target.value })} placeholder="e.g. Gulf Dining Group LLC" data-testid="input-franchisee-name" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-2">
+                        <Label>Royalty Rate (%)</Label>
+                        <Input type="number" step="0.1" value={formData.royaltyRate} onChange={(e) => setFormData({ ...formData, royaltyRate: e.target.value })} placeholder="e.g. 8" data-testid="input-royalty-rate" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Min Guarantee</Label>
+                        <Input type="number" step="100" value={formData.minimumGuarantee} onChange={(e) => setFormData({ ...formData, minimumGuarantee: e.target.value })} placeholder="e.g. 5000" data-testid="input-min-guarantee" />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={createMutation.isPending || updateMutation.isPending}
-              data-testid="button-save-outlet"
-            >
-              {editingOutlet ? "Update" : `Add ${view.cardLabel}`}
-            </Button>
-          </DialogFooter>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">Cancel</Button>
+                <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-outlet">
+                  {editingOutlet ? "Update" : `Add ${view.cardLabel}`}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

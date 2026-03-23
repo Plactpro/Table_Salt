@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { StatCard } from "@/components/widgets/stat-card";
-import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2, Banknote } from "lucide-react";
+import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2, Banknote, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -52,6 +52,22 @@ export default function ManagerDashboard() {
     refetchInterval: 30000,
   });
   const pendingVoidCount = pendingVoidData?.count || 0;
+
+  const { data: tipReportData } = useQuery<{
+    totalTips: number;
+    tipsCount: number;
+    pendingPayouts: number;
+    topWaiter?: { name: string; amount: number };
+  } | null>({
+    queryKey: ["/api/tips/report", "today"],
+    queryFn: async () => {
+      const today = new Date().toISOString().split("T")[0];
+      const res = await fetch(`/api/tips/report?dateFrom=${today}&dateTo=${today}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 60000,
+  });
 
   const approveMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PUT", `/api/tickets/void-requests/${id}/approve`, {}),
@@ -356,6 +372,48 @@ export default function ManagerDashboard() {
             </CardContent>
           </Card>
         </motion.div>
+
+        {tipReportData && tipReportData.tipsCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.4 }}
+          >
+            <Card className="border-amber-200 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-yellow-50 dark:from-amber-950/20 dark:to-yellow-950/20" data-testid="card-tip-summary">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <DollarSign className="h-4 w-4 text-amber-600" />
+                  Today's Tip Summary
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="ml-auto h-6 text-xs"
+                    onClick={() => navigate("/tips/report")}
+                    data-testid="link-tip-report"
+                  >
+                    Full Report <ChevronRight className="h-3 w-3 ml-1" />
+                  </Button>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="text-center">
+                    <p className="text-xs text-muted-foreground">Total Tips</p>
+                    <p className="text-2xl font-bold text-amber-600" data-testid="text-manager-tips-total">{fmt(tipReportData.totalTips)}</p>
+                    <p className="text-xs text-muted-foreground">{tipReportData.tipsCount} transactions</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xs text-muted-foreground">Pending Payouts</p>
+                    <p className="text-2xl font-bold" data-testid="text-manager-tips-pending">{fmt(tipReportData.pendingPayouts)}</p>
+                    {tipReportData.topWaiter && (
+                      <p className="text-xs text-muted-foreground">Top: {tipReportData.topWaiter.name}</p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
       </motion.div>
     </motion.div>
   );

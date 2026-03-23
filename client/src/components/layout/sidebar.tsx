@@ -47,6 +47,7 @@ import {
   Tag,
   History,
   Banknote,
+  DollarSign,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -98,6 +99,7 @@ const navItems: NavItem[] = [
   { id: "m-45", name: "Ticket History", icon: History, path: "/tickets", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
   { id: "m-46", name: "Alert Sounds 🔔", icon: Bell, path: "/settings/alerts", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   { id: "m-47", name: "Cash Machine 💰", icon: Banknote, path: "/cash", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
+  { id: "m-48", name: "Tip Report", icon: DollarSign, path: "/tips/report", roles: ["manager", "owner"] },
 ];
 
 function SandDecoration() {
