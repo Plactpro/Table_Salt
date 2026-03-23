@@ -2972,3 +2972,57 @@ export const billPackingCharges = pgTable("bill_packing_charges", {
 export const insertBillPackingChargeSchema = createInsertSchema(billPackingCharges).omit({ id: true, createdAt: true });
 export type BillPackingCharge = typeof billPackingCharges.$inferSelect;
 export type InsertBillPackingCharge = z.infer<typeof insertBillPackingChargeSchema>;
+
+// Task #125: In-App Support Ticket System
+export const inAppSupportTickets = pgTable("in_app_support_tickets", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  createdBy: varchar("created_by", { length: 36 }).notNull(),
+  createdByName: varchar("created_by_name", { length: 255 }),
+  subject: varchar("subject", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  category: varchar("category", { length: 50 }).notNull().default("general"),
+  priority: varchar("priority", { length: 20 }).default("normal"),
+  status: varchar("status", { length: 20 }).default("open"),
+  assignedTo: varchar("assigned_to", { length: 36 }),
+  pageContext: text("page_context"),
+  browserInfo: text("browser_info"),
+  tenantPlan: varchar("tenant_plan", { length: 50 }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  lastRepliedAt: timestamp("last_replied_at", { withTimezone: true }),
+  replyCount: integer("reply_count").default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const inAppSupportTicketReplies = pgTable("in_app_support_ticket_replies", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  ticketId: varchar("ticket_id", { length: 36 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  authorId: varchar("author_id", { length: 36 }).notNull(),
+  authorName: varchar("author_name", { length: 255 }),
+  isAdmin: boolean("is_admin").default(false),
+  message: text("message").notNull(),
+  attachments: jsonb("attachments"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertInAppSupportTicketSchema = createInsertSchema(inAppSupportTickets).omit({
+  id: true, createdAt: true, updatedAt: true, replyCount: true, resolvedAt: true, lastRepliedAt: true,
+}).extend({
+  subject: z.string().trim().min(3, "Subject must be at least 3 characters").max(255),
+  description: z.string().trim().min(10, "Description must be at least 10 characters"),
+  category: z.enum(["general", "billing", "technical", "feature", "training"]).default("general"),
+  priority: z.enum(["low", "normal", "high", "urgent"]).default("normal"),
+});
+
+export const insertInAppSupportTicketReplySchema = createInsertSchema(inAppSupportTicketReplies).omit({
+  id: true, createdAt: true,
+}).extend({
+  message: z.string().trim().min(1, "Message cannot be empty"),
+});
+
+export type InAppSupportTicket = typeof inAppSupportTickets.$inferSelect;
+export type InsertInAppSupportTicket = z.infer<typeof insertInAppSupportTicketSchema>;
+export type InAppSupportTicketReply = typeof inAppSupportTicketReplies.$inferSelect;
+export type InsertInAppSupportTicketReply = z.infer<typeof insertInAppSupportTicketReplySchema>;

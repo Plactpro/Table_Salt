@@ -3,6 +3,8 @@
 ## Overview
 Table Salt is a multi-tenant SaaS Restaurant Management System designed to streamline restaurant operations. It offers role-based dashboards and a comprehensive suite of features including Point of Sale (POS), Kitchen Display System (KDS), menu, table, and inventory management, staff scheduling, offers, discounts, a dine-in payment flow, and advanced reporting. The system's purpose is to enhance efficiency, reduce operational costs, and improve customer satisfaction for restaurants, supporting scalability and a rich feature set to "Season Your Restaurant Success."
 
+    - **In-App Support Ticket System (Task #125)**: Floating support widget (SupportWidget) visible to owner/manager roles in the bottom-right corner. Widget allows creating support tickets (subject, description, category, priority), viewing ticket history with real-time reply notifications via WebSocket (`support:new_reply`). Admin support console at `/admin/support` with ticket list, filtering, stats. Admin ticket detail at `/admin/support/:ticketId` with reply functionality, status management, tenant context, and impersonation ("View as Owner") capability. DB: `in_app_support_tickets` + `in_app_support_ticket_replies` tables.
+
 ## User Preferences
 I prefer detailed explanations and clear communication. Please prioritize iterative development, and ask before making any major architectural changes or significant code refactoring.
 

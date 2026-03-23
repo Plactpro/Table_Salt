@@ -19,6 +19,7 @@ import {
   Menu,
   BarChart2,
   Shield,
+  MessageCircle,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -34,6 +35,7 @@ const navItems: NavItem[] = [
   { id: "analytics", label: "Analytics", icon: BarChart2, path: "/admin/analytics" },
   { id: "tenants", label: "Tenants", icon: Building2, path: "/admin/tenants" },
   { id: "users", label: "Users", icon: Users, path: "/admin/users" },
+  { id: "support", label: "Support", icon: MessageCircle, path: "/admin/support" },
   { id: "audit", label: "Audit Log", icon: ScrollText, path: "/admin/audit" },
   { id: "security", label: "Security", icon: Shield, path: "/admin/security" },
   { id: "admins", label: "Admins", icon: ShieldCheck, path: "/admin/admins" },
@@ -67,7 +69,7 @@ function NavLink({ item, unreadCount, onNavigate }: { item: NavItem; unreadCount
       {unreadCount && unreadCount > 0 ? (
         <span
           className="ml-auto inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold bg-red-500 text-white"
-          data-testid="badge-admin-security-alerts"
+          data-testid={item.id === "support" ? "badge-admin-support-count" : "badge-admin-security-alerts"}
         >
           {unreadCount > 99 ? "99+" : unreadCount}
         </span>
@@ -94,6 +96,16 @@ function SidebarContent({ onNavigate, user, onLogout }: {
   });
   const unreadAlerts = alertCountData?.count ?? 0;
 
+  const { data: supportStats } = useQuery<{ open: number; awaiting_support: number }>({
+    queryKey: ["/api/admin/support/stats"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/admin/support/stats");
+      return r.json();
+    },
+    refetchInterval: 60000,
+  });
+  const openTickets = (supportStats?.open ?? 0) + (supportStats?.awaiting_support ?? 0);
+
   return (
     <div className="flex flex-col h-full bg-slate-900">
       <div className="px-4 py-5 border-b border-white/10">
@@ -111,7 +123,7 @@ function SidebarContent({ onNavigate, user, onLogout }: {
             key={item.id}
             item={item}
             onNavigate={onNavigate}
-            unreadCount={item.id === "security" ? unreadAlerts : undefined}
+            unreadCount={item.id === "security" ? unreadAlerts : item.id === "support" ? openTickets : undefined}
           />
         ))}
       </nav>

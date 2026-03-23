@@ -74,7 +74,10 @@ import AdminsPage from "@/pages/admin/admins";
 import AdminSettingsPage from "@/pages/admin/settings";
 import AnalyticsPage from "@/pages/admin/analytics";
 import SecurityConsolePage from "@/pages/admin/security";
+import AdminSupportPage from "@/pages/admin/support";
+import AdminSupportTicketPage from "@/pages/admin/support-ticket";
 
+import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
 import { ActiveAlertsProvider } from "@/lib/active-alerts-context";
 import { ReactNode } from "react";
@@ -263,6 +266,8 @@ function AdminShell() {
         <Route path="/admin/tenants/:id" component={TenantDetailPage} />
         <Route path="/admin/tenants" component={TenantsPage} />
         <Route path="/admin/users" component={UsersPage} />
+        <Route path="/admin/support/:ticketId" component={AdminSupportTicketPage} />
+        <Route path="/admin/support" component={AdminSupportPage} />
         <Route path="/admin/audit" component={AuditLogPage} />
         <Route path="/admin/security" component={SecurityConsolePage} />
         <Route path="/admin/admins" component={AdminsPage} />
@@ -291,8 +296,10 @@ function AdminRoute() {
 }
 
 function ProtectedPages() {
+  const { user } = useAuth();
   return (
     <AppLayout>
+      {(user?.role === "owner" || user?.role === "manager") && <SupportWidget />}
       <Switch>
         <Route path="/" component={RoleDashboard} />
         <Route path="/pos/bill/:orderId">{() => <GuardedRoute path="/pos" component={BillViewPage} />}</Route>
