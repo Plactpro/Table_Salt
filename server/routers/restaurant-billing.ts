@@ -9,6 +9,7 @@ import { tenants as tenantsTable, type InsertCustomer } from "@shared/schema";
 import { createPaymentLink, getPaymentLink, refundRazorpayPayment } from "../razorpay";
 import { routeAndPrint } from "../services/printer-service";
 import { recordAndDistributeTip } from "../services/tip-service";
+import { calculatePackingCharge } from "../services/packing-charge-service";
 
 function getFiscalYear(date: Date): string {
   const m = date.getMonth() + 1;
@@ -146,6 +147,58 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const existing = await storage.getBillByOrder(orderId);
       if (existing) return res.json({ ...existing, alreadyExists: true });
 
+      // Packing charge: only applies to takeaway/delivery, never dine_in
+      const orderType = referencedOrder.orderType;
+      let packingChargeAmount = 0;
+      let packingChargeLabelStr = 'Packing Charge';
+      let packingChargeTaxAmount = 0;
+      let packingChargeType = 'FIXED_PER_ORDER';
+      let packingBreakdown: Array<{ item: string; qty: number; rate: number; amount: number; category?: string }> = [];
+      let packingItemCount: number | null = null;
+
+      if (orderType === 'takeaway' || orderType === 'delivery') {
+        // Accept pre-calculated from frontend; otherwise calculate server-side
+        const frontendPackingCharge = Number(req.body.packingCharge ?? 0);
+        if (frontendPackingCharge > 0) {
+          packingChargeAmount = frontendPackingCharge;
+          packingChargeLabelStr = req.body.packingChargeLabel || 'Packing Charge';
+          packingChargeTaxAmount = Number(req.body.packingChargeTax ?? 0);
+        } else {
+          try {
+            const outletId = user.outletId || referencedOrder.outletId;
+            if (outletId) {
+              // Join order_items with menu_items to get categoryId for PER_CATEGORY and exemption logic
+              const { rows: enrichedItems } = await pool.query(`
+                SELECT oi.id, oi.menu_item_id, oi.name, oi.quantity, oi.price,
+                       mi.category_id
+                FROM order_items oi
+                LEFT JOIN menu_items mi ON mi.id = oi.menu_item_id
+                WHERE oi.order_id = $1
+              `, [orderId]);
+              const itemsForCalc: Array<{ id: string; menuItemId?: string; name: string; quantity: number; price: number; categoryId?: string }> = enrichedItems.map((i: any) => ({
+                id: i.id,
+                menuItemId: i.menu_item_id || undefined,
+                name: i.name,
+                quantity: Number(i.quantity),
+                price: Number(i.price),
+                categoryId: i.category_id || undefined,
+              }));
+              const packingResult = await calculatePackingCharge(outletId, user.tenantId, orderType, itemsForCalc);
+              if (packingResult.applicable) {
+                packingChargeAmount = packingResult.chargeAmount;
+                packingChargeLabelStr = packingResult.label;
+                packingChargeTaxAmount = packingResult.taxAmount;
+                packingChargeType = packingResult.chargeType;
+                packingBreakdown = packingResult.breakdown;
+                packingItemCount = itemsForCalc.reduce((s, i) => s + i.quantity, 0);
+              }
+            }
+          } catch (e) { /* silent — never blocks bill creation */ }
+        }
+      }
+      // Dine-in: packing charge is always zero regardless of client payload
+      // (already enforced by the orderType gate above)
+
       const tenant = await storage.getTenant(user.tenantId);
       const isGST = tenant?.currency === "INR" && tenant?.taxType === "gst";
       let invoiceNumber: string | null = null;
@@ -178,6 +231,15 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         invoiceNumber = `${prefix}/${fy}/${String(counter).padStart(5, "0")}`;
       }
 
+      // Grand total includes server-calculated packing charge + packing tax
+      // If frontend already included it, packingChargeAmount comes from req.body
+      // and totalAmount from req.body should already include it.
+      // If server calculated it, we add it to the client-provided totalAmount.
+      const frontendAlreadyIncludedPacking = Number(req.body.packingCharge ?? 0) > 0;
+      const effectiveTotalAmount = frontendAlreadyIncludedPacking
+        ? Number(totalAmount)
+        : Number(totalAmount) + packingChargeAmount + packingChargeTaxAmount;
+
       const bill = await storage.createBill({
         tenantId: user.tenantId,
         outletId: user.outletId || null,
@@ -194,7 +256,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         taxAmount: String(taxAmount ?? 0),
         taxBreakdown: resolvedTaxBreakdown,
         tips: String(tips ?? 0),
-        totalAmount: String(totalAmount),
+        totalAmount: String(effectiveTotalAmount),
         paymentStatus: "pending",
         posSessionId: posSessionId || null,
         covers: covers || 1,
@@ -202,7 +264,37 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         customerGstin: (isGST && customerGstin) ? customerGstin : null,
         cgstAmount,
         sgstAmount,
+        packingCharge: packingChargeAmount > 0 ? packingChargeAmount.toFixed(2) : "0",
+        packingChargeLabel: packingChargeLabelStr,
+        packingChargeTax: packingChargeTaxAmount > 0 ? packingChargeTaxAmount.toFixed(2) : "0",
       });
+
+      // Fire-and-forget: log packing charge audit record with full metadata
+      if (packingChargeAmount > 0) {
+        (async () => {
+          try {
+            const outletId = user.outletId || referencedOrder.outletId;
+            if (outletId) {
+              await pool.query(`
+                INSERT INTO bill_packing_charges (
+                  tenant_id, outlet_id, bill_id, order_id, order_type, charge_type,
+                  charge_amount, tax_amount, total_amount, item_count, breakdown
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                ON CONFLICT (bill_id) DO NOTHING
+              `, [
+                user.tenantId, outletId, bill.id, orderId,
+                orderType, packingChargeType,
+                packingChargeAmount.toFixed(2),
+                packingChargeTaxAmount.toFixed(2),
+                (packingChargeAmount + packingChargeTaxAmount).toFixed(2),
+                packingItemCount,
+                packingBreakdown.length > 0 ? JSON.stringify(packingBreakdown) : null,
+              ]);
+            }
+          } catch (e) { /* silent */ }
+        })();
+      }
+
       res.status(201).json({ ...bill, amountInWords: numWords(Number(bill.totalAmount)) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

@@ -1797,6 +1797,9 @@ export const bills = pgTable("bills", {
   razorpayOrderId: text("razorpay_order_id"),
   tipType: varchar("tip_type", { length: 20 }),
   tipWaiterId: varchar("tip_waiter_id", { length: 36 }),
+  packingCharge: decimal("packing_charge", { precision: 10, scale: 2 }).default("0"),
+  packingChargeLabel: varchar("packing_charge_label", { length: 100 }).default("Packing Charge"),
+  packingChargeTax: decimal("packing_charge_tax", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow(),
   paidAt: timestamp("paid_at"),
 }, (t) => [
@@ -2890,3 +2893,82 @@ export const tipDistributions = pgTable("tip_distributions", {
 export const insertTipDistributionSchema = createInsertSchema(tipDistributions).omit({ id: true, createdAt: true });
 export type TipDistribution = typeof tipDistributions.$inferSelect;
 export type InsertTipDistribution = z.infer<typeof insertTipDistributionSchema>;
+
+// Task #122: Packing Charges Management
+
+export const outletPackingSettings = pgTable("outlet_packing_settings", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  takeawayChargeEnabled: boolean("takeaway_charge_enabled").default(false),
+  deliveryChargeEnabled: boolean("delivery_charge_enabled").default(false),
+  chargeType: varchar("charge_type", { length: 20 }).default("FIXED_PER_ORDER"),
+  takeawayChargeAmount: decimal("takeaway_charge_amount", { precision: 10, scale: 2 }).default("0"),
+  deliveryChargeAmount: decimal("delivery_charge_amount", { precision: 10, scale: 2 }).default("0"),
+  takeawayPerItem: decimal("takeaway_per_item", { precision: 10, scale: 2 }).default("0"),
+  deliveryPerItem: decimal("delivery_per_item", { precision: 10, scale: 2 }).default("0"),
+  maxChargePerOrder: decimal("max_charge_per_order", { precision: 10, scale: 2 }),
+  packingChargeTaxable: boolean("packing_charge_taxable").default(false),
+  packingChargeTaxPct: decimal("packing_charge_tax_pct", { precision: 5, scale: 2 }).default("0"),
+  showOnReceipt: boolean("show_on_receipt").default(true),
+  chargeLabel: varchar("charge_label", { length: 100 }).default("Packing Charge"),
+  currencyCode: varchar("currency_code", { length: 10 }).default("INR"),
+  currencySymbol: varchar("currency_symbol", { length: 5 }).default("₹"),
+  updatedBy: varchar("updated_by", { length: 36 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertOutletPackingSettingsSchema = createInsertSchema(outletPackingSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type OutletPackingSettings = typeof outletPackingSettings.$inferSelect;
+export type InsertOutletPackingSettings = z.infer<typeof insertOutletPackingSettingsSchema>;
+
+export const packingChargeCategories = pgTable("packing_charge_categories", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  categoryName: varchar("category_name", { length: 100 }).notNull(),
+  takeawayCharge: decimal("takeaway_charge", { precision: 10, scale: 2 }).default("0"),
+  deliveryCharge: decimal("delivery_charge", { precision: 10, scale: 2 }).default("0"),
+  appliesToCategories: jsonb("applies_to_categories"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertPackingChargeCategorySchema = createInsertSchema(packingChargeCategories).omit({ id: true, createdAt: true });
+export type PackingChargeCategory = typeof packingChargeCategories.$inferSelect;
+export type InsertPackingChargeCategory = z.infer<typeof insertPackingChargeCategorySchema>;
+
+export const packingChargeExemptions = pgTable("packing_charge_exemptions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  exemptionType: varchar("exemption_type", { length: 20 }).notNull(),
+  referenceId: varchar("reference_id", { length: 36 }).notNull(),
+  referenceName: varchar("reference_name", { length: 255 }),
+  reason: text("reason"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertPackingChargeExemptionSchema = createInsertSchema(packingChargeExemptions).omit({ id: true, createdAt: true });
+export type PackingChargeExemption = typeof packingChargeExemptions.$inferSelect;
+export type InsertPackingChargeExemption = z.infer<typeof insertPackingChargeExemptionSchema>;
+
+export const billPackingCharges = pgTable("bill_packing_charges", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  billId: varchar("bill_id", { length: 36 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  orderType: varchar("order_type", { length: 20 }).notNull(),
+  chargeType: varchar("charge_type", { length: 20 }).notNull(),
+  chargeAmount: decimal("charge_amount", { precision: 10, scale: 2 }).notNull(),
+  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }).default("0"),
+  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }).notNull(),
+  itemCount: integer("item_count"),
+  breakdown: jsonb("breakdown"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertBillPackingChargeSchema = createInsertSchema(billPackingCharges).omit({ id: true, createdAt: true });
+export type BillPackingCharge = typeof billPackingCharges.$inferSelect;
+export type InsertBillPackingCharge = z.infer<typeof insertBillPackingChargeSchema>;

@@ -2246,4 +2246,83 @@ export async function runTask108Migrations(): Promise<void> {
   // Task #120: Add tip_type and tip_waiter_id to bills
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS tip_type VARCHAR(20)`);
   await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS tip_waiter_id VARCHAR(36)`);
+
+  // Task #122: Packing Charges Management
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS outlet_packing_settings (
+      id                        VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id                 VARCHAR(36) NOT NULL,
+      outlet_id                 VARCHAR(36) NOT NULL,
+      takeaway_charge_enabled   BOOLEAN DEFAULT false,
+      delivery_charge_enabled   BOOLEAN DEFAULT false,
+      charge_type               VARCHAR(20) DEFAULT 'FIXED_PER_ORDER',
+      takeaway_charge_amount    DECIMAL(10,2) DEFAULT 0,
+      delivery_charge_amount    DECIMAL(10,2) DEFAULT 0,
+      takeaway_per_item         DECIMAL(10,2) DEFAULT 0,
+      delivery_per_item         DECIMAL(10,2) DEFAULT 0,
+      max_charge_per_order      DECIMAL(10,2),
+      packing_charge_taxable    BOOLEAN DEFAULT false,
+      packing_charge_tax_pct    DECIMAL(5,2) DEFAULT 0,
+      show_on_receipt           BOOLEAN DEFAULT true,
+      charge_label              VARCHAR(100) DEFAULT 'Packing Charge',
+      currency_code             VARCHAR(10) DEFAULT 'INR',
+      currency_symbol           VARCHAR(5) DEFAULT '₹',
+      updated_by                VARCHAR(36),
+      updated_at                TIMESTAMPTZ DEFAULT NOW(),
+      created_at                TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uidx_outlet_packing ON outlet_packing_settings(tenant_id, outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS packing_charge_categories (
+      id                    VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id             VARCHAR(36) NOT NULL,
+      outlet_id             VARCHAR(36) NOT NULL,
+      category_name         VARCHAR(100) NOT NULL,
+      takeaway_charge       DECIMAL(10,2) DEFAULT 0,
+      delivery_charge       DECIMAL(10,2) DEFAULT 0,
+      applies_to_categories JSONB,
+      created_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_packing_cat_outlet ON packing_charge_categories(outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS packing_charge_exemptions (
+      id              VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id       VARCHAR(36) NOT NULL,
+      outlet_id       VARCHAR(36) NOT NULL,
+      exemption_type  VARCHAR(20) NOT NULL,
+      reference_id    VARCHAR(36) NOT NULL,
+      reference_name  VARCHAR(255),
+      reason          TEXT,
+      created_at      TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_packing_exemptions_outlet ON packing_charge_exemptions(outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bill_packing_charges (
+      id              VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id       VARCHAR(36) NOT NULL,
+      outlet_id       VARCHAR(36) NOT NULL,
+      bill_id         VARCHAR(36) NOT NULL,
+      order_id        VARCHAR(36) NOT NULL,
+      order_type      VARCHAR(20) NOT NULL,
+      charge_type     VARCHAR(20) NOT NULL,
+      charge_amount   DECIMAL(10,2) NOT NULL,
+      tax_amount      DECIMAL(10,2) DEFAULT 0,
+      total_amount    DECIMAL(10,2) NOT NULL,
+      item_count      INT,
+      breakdown       JSONB,
+      created_at      TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS uidx_bill_packing ON bill_packing_charges(bill_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_packing_outlet ON bill_packing_charges(outlet_id, created_at DESC)`);
+
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS packing_charge DECIMAL(10,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS packing_charge_label VARCHAR(100) DEFAULT 'Packing Charge'`);
+  await pool.query(`ALTER TABLE bills ADD COLUMN IF NOT EXISTS packing_charge_tax DECIMAL(10,2) DEFAULT 0`);
 }
