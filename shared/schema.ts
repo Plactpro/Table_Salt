@@ -2619,3 +2619,69 @@ export const itemRefireRequests = pgTable("item_refire_requests", {
 export const insertItemRefireRequestSchema = createInsertSchema(itemRefireRequests).omit({ id: true, createdAt: true });
 export type ItemRefireRequest = typeof itemRefireRequests.$inferSelect;
 export type InsertItemRefireRequest = z.infer<typeof insertItemRefireRequestSchema>;
+
+// ── Task #114: Alert System ────────────────────────────────────────────────
+
+export const alertDefinitions = pgTable("alert_definitions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }),
+  alertCode: varchar("alert_code", { length: 20 }).notNull(),
+  alertName: varchar("alert_name", { length: 100 }).notNull(),
+  soundKey: varchar("sound_key", { length: 50 }).notNull(),
+  urgency: varchar("urgency", { length: 20 }).notNull().default("normal"),
+  targetRoles: jsonb("target_roles").notNull().default([]),
+  requiresAcknowledge: boolean("requires_acknowledge").default(false),
+  repeatIntervalSec: integer("repeat_interval_sec").default(0),
+  canBeDisabled: boolean("can_be_disabled").default(true),
+  minVolume: integer("min_volume").default(0),
+  isActive: boolean("is_active").default(true),
+  isSystemDefault: boolean("is_system_default").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_alert_def_code").on(t.alertCode),
+  index("idx_alert_def_tenant").on(t.tenantId),
+]);
+
+export const insertAlertDefinitionSchema = createInsertSchema(alertDefinitions).omit({ id: true, createdAt: true });
+export type AlertDefinition = typeof alertDefinitions.$inferSelect;
+export type InsertAlertDefinition = z.infer<typeof insertAlertDefinitionSchema>;
+
+export const alertOutletConfigs = pgTable("alert_outlet_configs", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  alertCode: varchar("alert_code", { length: 20 }).notNull(),
+  isEnabled: boolean("is_enabled").default(true),
+  volumeLevel: integer("volume_level").default(80),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  uniqueIndex("idx_alert_outlet_config_unique").on(t.tenantId, t.outletId, t.alertCode),
+]);
+
+export const insertAlertOutletConfigSchema = createInsertSchema(alertOutletConfigs).omit({ id: true, createdAt: true, updatedAt: true });
+export type AlertOutletConfig = typeof alertOutletConfigs.$inferSelect;
+export type InsertAlertOutletConfig = z.infer<typeof insertAlertOutletConfigSchema>;
+
+export const alertEvents = pgTable("alert_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  alertCode: varchar("alert_code", { length: 20 }).notNull(),
+  urgency: varchar("urgency", { length: 20 }).notNull(),
+  referenceId: varchar("reference_id", { length: 36 }),
+  referenceNumber: varchar("reference_number", { length: 50 }),
+  message: text("message").notNull(),
+  targetRoles: jsonb("target_roles").notNull().default([]),
+  isResolved: boolean("is_resolved").default(false),
+  acknowledgedBy: varchar("acknowledged_by", { length: 36 }),
+  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_alert_events_tenant").on(t.tenantId, t.createdAt),
+  index("idx_alert_events_outlet").on(t.outletId, t.isResolved),
+]);
+
+export const insertAlertEventSchema = createInsertSchema(alertEvents).omit({ id: true, createdAt: true });
+export type AlertEvent = typeof alertEvents.$inferSelect;
+export type InsertAlertEvent = z.infer<typeof insertAlertEventSchema>;

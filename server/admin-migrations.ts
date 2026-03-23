@@ -1971,4 +1971,68 @@ export async function runTask108Migrations(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_refire_requests_tenant ON item_refire_requests(tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_refire_requests_order ON item_refire_requests(order_id)`);
+
+  // Task #114: Alert System — 3 new tables
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS alert_definitions (
+      id                    VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id             VARCHAR(36),
+      alert_code            VARCHAR(20) NOT NULL,
+      alert_name            VARCHAR(100) NOT NULL,
+      sound_key             VARCHAR(50) NOT NULL,
+      urgency               VARCHAR(20) NOT NULL DEFAULT 'normal',
+      target_roles          JSONB NOT NULL DEFAULT '[]',
+      requires_acknowledge  BOOLEAN DEFAULT false,
+      repeat_interval_sec   INT DEFAULT 0,
+      can_be_disabled       BOOLEAN DEFAULT true,
+      min_volume            INT DEFAULT 0,
+      is_active             BOOLEAN DEFAULT true,
+      is_system_default     BOOLEAN DEFAULT false,
+      created_at            TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_def_code ON alert_definitions(alert_code)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_def_tenant ON alert_definitions(tenant_id)`);
+  await pool.query(`
+    DELETE FROM alert_definitions a
+    WHERE tenant_id IS NULL
+      AND id NOT IN (
+        SELECT MIN(id) FROM alert_definitions WHERE tenant_id IS NULL GROUP BY alert_code
+      )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_def_system_default ON alert_definitions(alert_code) WHERE tenant_id IS NULL`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS alert_outlet_configs (
+      id            VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id     VARCHAR(36) NOT NULL,
+      outlet_id     VARCHAR(36) NOT NULL,
+      alert_code    VARCHAR(20) NOT NULL,
+      is_enabled    BOOLEAN DEFAULT true,
+      volume_level  INT DEFAULT 80,
+      created_at    TIMESTAMPTZ DEFAULT NOW(),
+      updated_at    TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_alert_outlet_config_unique ON alert_outlet_configs(tenant_id, outlet_id, alert_code)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS alert_events (
+      id                   VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id            VARCHAR(36) NOT NULL,
+      outlet_id            VARCHAR(36),
+      alert_code           VARCHAR(20) NOT NULL,
+      urgency              VARCHAR(20) NOT NULL,
+      reference_id         VARCHAR(36),
+      reference_number     VARCHAR(50),
+      message              TEXT NOT NULL,
+      target_roles         JSONB NOT NULL DEFAULT '[]',
+      is_resolved          BOOLEAN DEFAULT false,
+      acknowledged_by      VARCHAR(36),
+      acknowledged_at      TIMESTAMPTZ,
+      created_at           TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_events_tenant ON alert_events(tenant_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_alert_events_outlet ON alert_events(outlet_id, is_resolved)`);
 }

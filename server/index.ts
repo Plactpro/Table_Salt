@@ -179,6 +179,13 @@ app.use((req, res, next) => {
     console.error("Ticket history seed error:", e);
   }
 
+  try {
+    const { seedAlertDefinitions } = await import("./seed");
+    await seedAlertDefinitions();
+  } catch (e) {
+    console.error("Alert definitions seed error:", e);
+  }
+
   // Initialize Stripe schema (stripe-replit-sync manages the stripe.* tables)
   try {
     const { runMigrations } = await import("stripe-replit-sync");
@@ -269,6 +276,13 @@ app.use((req, res, next) => {
     startWastageSummaryScheduler();
   } catch (e) {
     console.error("Wastage summary scheduler init error:", e);
+  }
+
+  try {
+    const { startUnclockdInChecker } = await import("./services/alert-engine");
+    startUnclockdInChecker();
+  } catch (e) {
+    console.error("Alert unclock-in checker init error:", e);
   }
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -1,5 +1,6 @@
 import { pool } from "../db";
 import { emitToTenant } from "../realtime";
+import { alertEngine } from "./alert-engine";
 
 // firedAlerts deduplicates alerts within a session.
 // Keys expire after 2 hours so long-lived orders can re-alert if still stuck.
@@ -304,6 +305,7 @@ async function checkDeliveryTimeAtRiskRule(
     .replace("{{minutes}}", Math.round(minutesUntilPromised).toString());
 
   await createAlert(tenantId, order.id, rule.id, msg, rule.action, "high");
+  alertEngine.trigger('ALERT-11', { tenantId, outletId: order.outlet_id ?? undefined, referenceId: order.id, referenceNumber: order.order_number ?? undefined, message: `Delivery at risk: Order #${order.order_number || order.id.slice(-6)}` }).catch(() => {});
 }
 
 async function runRulesForTenant(tenantId: string): Promise<void> {

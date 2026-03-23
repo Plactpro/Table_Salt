@@ -5,6 +5,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole, comparePasswords } from "../auth";
 import { verifySupervisorOverride } from "./_shared";
 import { emitToTenant } from "../realtime";
+import { alertEngine } from "../services/alert-engine";
 import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts, orderItems as orderItemsTable } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { getNextKotSequence } from "./print-jobs";
@@ -814,6 +815,7 @@ export function registerKitchenRoutes(app: Express): void {
       } else if (allReadyOrServed) {
         await storage.updateOrder(order.id, { status: "ready" });
         emitToTenant(user.tenantId, "order:ready", { orderId: order.id });
+        alertEngine.trigger('ALERT-04', { tenantId: user.tenantId, outletId: order.outletId ?? undefined, referenceId: order.id, referenceNumber: (order as any).orderNumber ?? undefined, message: `Order #${(order as any).orderNumber || order.id.slice(-6)} ready — collect from pass` }).catch(() => {});
       } else {
         // Some items ready, some still cooking — keep order in_progress
         await storage.updateOrder(order.id, { status: "in_progress" });

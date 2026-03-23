@@ -1,5 +1,6 @@
 import { pool } from "../db";
 import { emitToTenant } from "../realtime";
+import { alertEngine } from "./alert-engine";
 
 export type KdsEventType =
   | "kot_sent"
@@ -180,6 +181,10 @@ async function upsertItemTimeLog(orderItemId: string, tenantId: string, timestam
       item.course_number || null,
     ]
   );
+
+  if (performanceFlag === 'VERY_SLOW') {
+    alertEngine.trigger('ALERT-05', { tenantId, outletId: item.outlet_id ?? undefined, referenceId: item.order_id, message: `Item overdue: ${item.name} — over 120% of estimate` }).catch(() => {});
+  }
 
   if (actualCookingTime != null && recipeEstimatedTime) {
     await pool.query(

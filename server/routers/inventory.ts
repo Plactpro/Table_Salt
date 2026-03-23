@@ -9,6 +9,7 @@ import { auditLogFromReq } from "../audit";
 import { emitToTenant } from "../realtime";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { inventoryItems as inventoryItemsTable } from "@shared/schema";
+import { alertEngine } from "../services/alert-engine";
 
 export function registerInventoryRoutes(app: Express): void {
   app.get("/api/inventory", requireAuth, async (req, res) => {
@@ -68,6 +69,9 @@ export function registerInventoryRoutes(app: Express): void {
     });
     auditLogFromReq(req, { action: "inventory_adjusted", entityType: "inventory_item", entityId: req.params.id, entityName: item.name, before: { currentStock: item.currentStock }, after: { currentStock: String(newStock) }, metadata: { type, quantity, reason } });
     emitToTenant(user.tenantId, "stock:updated", { itemId: req.params.id, itemName: item.name, currentStock: newStock, type, quantity });
+    if (newStock <= 0) {
+      alertEngine.trigger('ALERT-10', { tenantId: user.tenantId, outletId: (user as any).outletId ?? undefined, referenceId: req.params.id, message: `Out of stock: ${item.name}` }).catch(() => {});
+    }
     res.json({ message: "Stock adjusted" });
   });
 }

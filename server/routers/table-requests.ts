@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { pool } from "../db";
+import { alertEngine } from "../services/alert-engine";
 import QRCode from "qrcode";
 
 const REQUEST_TYPES = ["call_server", "order_food", "request_bill", "feedback", "water_refill", "cleaning", "other"] as const;
@@ -87,6 +88,10 @@ export function registerTableRequestRoutes(app: Express): void {
         request: enrichedRequest,
         tableId: qrToken.tableId,
       });
+
+      if (requestType === 'call_server') {
+        alertEngine.trigger('ALERT-06', { tenantId: qrToken.tenantId, outletId: qrToken.outletId ?? undefined, referenceId: qrToken.tableId, message: `Waiter requested at Table ${enrichedRequest.tableNumber ?? qrToken.tableId.slice(-4)}` }).catch(() => {});
+      }
 
       res.status(201).json(request);
     } catch (err: any) {

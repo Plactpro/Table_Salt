@@ -2881,3 +2881,31 @@ export async function seedTicketHistoryData(): Promise<void> {
 
   console.log("[TicketHistory] Void/refire/reprint seed data complete.");
 }
+export async function seedAlertDefinitions(): Promise<void> {
+  const alertDefs = [
+    { code: 'ALERT-01', name: 'New Order Received', soundKey: 'new_order', urgency: 'normal', targetRoles: ['kitchen', 'manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'ALERT-02', name: 'Rush/VIP Order', soundKey: 'rush_order', urgency: 'high', targetRoles: ['kitchen', 'manager', 'owner'], requiresAck: true, repeatSec: 30, canDisable: false, minVol: 60 },
+    { code: 'ALERT-03', name: 'Allergy Flagged', soundKey: 'allergy_alarm', urgency: 'critical', targetRoles: ['kitchen', 'manager', 'owner'], requiresAck: true, repeatSec: 60, canDisable: false, minVol: 80 },
+    { code: 'ALERT-04', name: 'All Items Ready', soundKey: 'order_ready', urgency: 'normal', targetRoles: ['waiter', 'manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'ALERT-05', name: 'Item Overdue', soundKey: 'overdue_warning', urgency: 'high', targetRoles: ['manager', 'owner', 'kitchen'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'ALERT-06', name: 'Waiter Called via QR', soundKey: 'waiter_call', urgency: 'normal', targetRoles: ['waiter', 'manager'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'ALERT-07', name: 'Kitchen Printer Offline', soundKey: 'printer_error', urgency: 'high', targetRoles: ['manager', 'owner'], requiresAck: true, repeatSec: 120, canDisable: true, minVol: 50 },
+    { code: 'ALERT-08', name: 'Receipt Printer Offline', soundKey: 'printer_error', urgency: 'high', targetRoles: ['manager', 'owner'], requiresAck: true, repeatSec: 120, canDisable: true, minVol: 50 },
+    { code: 'ALERT-09', name: 'Void Request Pending', soundKey: 'attention_chime', urgency: 'normal', targetRoles: ['manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'ALERT-10', name: 'Stock Out of Stock', soundKey: 'stock_alert', urgency: 'high', targetRoles: ['manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'ALERT-11', name: 'Delivery at Risk', soundKey: 'urgent_tone', urgency: 'high', targetRoles: ['manager', 'owner', 'waiter'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'ALERT-12', name: 'Staff Not Clocked In', soundKey: 'reminder_chime', urgency: 'normal', targetRoles: ['manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+  ];
+
+  for (const def of alertDefs) {
+    const exists = await pool.query(`SELECT id FROM alert_definitions WHERE alert_code = $1 AND tenant_id IS NULL`, [def.code]);
+    if (!exists.rows[0]) {
+      await pool.query(
+        `INSERT INTO alert_definitions (alert_code, alert_name, sound_key, urgency, target_roles, requires_acknowledge, repeat_interval_sec, can_be_disabled, min_volume, is_active, is_system_default)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,true)`,
+        [def.code, def.name, def.soundKey, def.urgency, JSON.stringify(def.targetRoles), def.requiresAck, def.repeatSec, def.canDisable, def.minVol]
+      );
+    }
+  }
+  console.log("[AlertDefinitions] Seeded 12 system alert definitions.");
+}

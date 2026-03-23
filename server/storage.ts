@@ -154,6 +154,9 @@ import {
   type ItemVoidRequest, type InsertItemVoidRequest,
   type VoidedItem, type InsertVoidedItem,
   type ItemRefireRequest, type InsertItemRefireRequest,
+  alertDefinitions, type AlertDefinition, type InsertAlertDefinition,
+  alertOutletConfigs, type AlertOutletConfig, type InsertAlertOutletConfig,
+  alertEvents, type AlertEvent, type InsertAlertEvent,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -707,6 +710,15 @@ export interface IStorage {
     newOrderItemId?: string | null;
     newKotNumber?: string | null;
   }): Promise<ItemRefireRequest | undefined>;
+
+  getAlertDefinitions(tenantId?: string): Promise<AlertDefinition[]>;
+  getAlertDefinition(code: string, tenantId?: string): Promise<AlertDefinition | undefined>;
+  createAlertEvent(data: InsertAlertEvent): Promise<AlertEvent>;
+  getAlertEvents(tenantId: string, outletId?: string, opts?: { hours?: number }): Promise<AlertEvent[]>;
+  resolveAlertEvent(id: string, tenantId: string, data: { acknowledgedBy: string }): Promise<AlertEvent | undefined>;
+  getUnresolvedAlertEvents(tenantId: string, outletId?: string): Promise<AlertEvent[]>;
+  getAlertOutletConfigs(tenantId: string, outletId: string): Promise<AlertOutletConfig[]>;
+  upsertAlertOutletConfig(data: { tenantId: string; outletId: string; alertCode: string; isEnabled?: boolean; volumeLevel?: number }): Promise<AlertOutletConfig>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3346,6 +3358,75 @@ export class DatabaseStorage implements IStorage {
   }): Promise<ItemRefireRequest | undefined> {
     const [row] = await db.update(itemRefireRequests).set(data).where(and(eq(itemRefireRequests.id, id), eq(itemRefireRequests.tenantId, tenantId))).returning();
     return row;
+  }
+
+  async getAlertDefinitions(tenantId?: string): Promise<AlertDefinition[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM alert_definitions WHERE tenant_id IS NULL OR tenant_id = $1 ORDER BY alert_code`,
+      [tenantId ?? null]
+    );
+    return rows as AlertDefinition[];
+  }
+
+  async getAlertDefinition(code: string, tenantId?: string): Promise<AlertDefinition | undefined> {
+    const { rows } = await pool.query(
+      `SELECT * FROM alert_definitions WHERE alert_code = $1 AND (tenant_id = $2 OR tenant_id IS NULL) ORDER BY CASE WHEN tenant_id = $2 THEN 0 ELSE 1 END LIMIT 1`,
+      [code, tenantId ?? null]
+    );
+    return rows[0] as AlertDefinition | undefined;
+  }
+
+  async createAlertEvent(data: InsertAlertEvent): Promise<AlertEvent> {
+    const [row] = await db.insert(alertEvents).values(data).returning();
+    return row;
+  }
+
+  async getAlertEvents(tenantId: string, outletId?: string, opts?: { hours?: number }): Promise<AlertEvent[]> {
+    const hours = opts?.hours ?? 4;
+    const { rows } = await pool.query(
+      outletId
+        ? `SELECT * FROM alert_events WHERE tenant_id = $1 AND outlet_id = $2 AND created_at > NOW() - INTERVAL '${hours} hours' ORDER BY created_at DESC`
+        : `SELECT * FROM alert_events WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '${hours} hours' ORDER BY created_at DESC`,
+      outletId ? [tenantId, outletId] : [tenantId]
+    );
+    return rows as AlertEvent[];
+  }
+
+  async resolveAlertEvent(id: string, tenantId: string, data: { acknowledgedBy: string }): Promise<AlertEvent | undefined> {
+    const [row] = await db.update(alertEvents).set({ isResolved: true, acknowledgedBy: data.acknowledgedBy, acknowledgedAt: new Date() }).where(and(eq(alertEvents.id, id), eq(alertEvents.tenantId, tenantId))).returning();
+    return row;
+  }
+
+  async getUnresolvedAlertEvents(tenantId: string, outletId?: string): Promise<AlertEvent[]> {
+    const { rows } = await pool.query(
+      outletId
+        ? `SELECT * FROM alert_events WHERE tenant_id = $1 AND outlet_id = $2 AND is_resolved = false ORDER BY created_at DESC`
+        : `SELECT * FROM alert_events WHERE tenant_id = $1 AND is_resolved = false ORDER BY created_at DESC`,
+      outletId ? [tenantId, outletId] : [tenantId]
+    );
+    return rows as AlertEvent[];
+  }
+
+  async getAlertOutletConfigs(tenantId: string, outletId: string): Promise<AlertOutletConfig[]> {
+    const { rows } = await pool.query(
+      `SELECT * FROM alert_outlet_configs WHERE tenant_id = $1 AND outlet_id = $2`,
+      [tenantId, outletId]
+    );
+    return rows as AlertOutletConfig[];
+  }
+
+  async upsertAlertOutletConfig(data: { tenantId: string; outletId: string; alertCode: string; isEnabled?: boolean; volumeLevel?: number }): Promise<AlertOutletConfig> {
+    const { rows } = await pool.query(
+      `INSERT INTO alert_outlet_configs (tenant_id, outlet_id, alert_code, is_enabled, volume_level, updated_at)
+       VALUES ($1,$2,$3,$4,$5,now())
+       ON CONFLICT (tenant_id, outlet_id, alert_code) DO UPDATE SET
+         is_enabled = EXCLUDED.is_enabled,
+         volume_level = EXCLUDED.volume_level,
+         updated_at = now()
+       RETURNING *`,
+      [data.tenantId, data.outletId, data.alertCode, data.isEnabled ?? true, data.volumeLevel ?? 80]
+    );
+    return rows[0] as AlertOutletConfig;
   }
 }
 
