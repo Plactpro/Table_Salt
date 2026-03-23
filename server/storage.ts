@@ -144,6 +144,12 @@ import {
   orderCourses, kitchenSettings,
   type OrderCourse, type InsertOrderCourse,
   type KitchenSettings, type InsertKitchenSettings,
+  itemTimeLogs, orderTimeSummary, dailyTimePerformance, recipeTimeBenchmarks, timePerformanceTargets,
+  type ItemTimeLog, type InsertItemTimeLog,
+  type OrderTimeSummary, type InsertOrderTimeSummary,
+  type DailyTimePerformance, type InsertDailyTimePerformance,
+  type RecipeTimeBenchmark, type InsertRecipeTimeBenchmark,
+  type TimePerformanceTarget, type InsertTimePerformanceTarget,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -648,6 +654,19 @@ export interface IStorage {
   }): Promise<void>;
   getKitchenSettings(tenantId: string): Promise<KitchenSettings | undefined>;
   upsertKitchenSettings(tenantId: string, data: Partial<InsertKitchenSettings>): Promise<KitchenSettings>;
+
+  // Task #110: Time Tracking
+  createItemTimeLog(data: InsertItemTimeLog): Promise<ItemTimeLog>;
+  getItemTimeLog(orderItemId: string): Promise<ItemTimeLog | undefined>;
+  getItemTimeLogsByTenant(tenantId: string, opts?: { date?: string; outletId?: string; limit?: number }): Promise<ItemTimeLog[]>;
+  getOrderTimeSummary(orderId: string): Promise<OrderTimeSummary | undefined>;
+  upsertOrderTimeSummary(data: InsertOrderTimeSummary): Promise<OrderTimeSummary>;
+  upsertDailyTimePerformance(data: InsertDailyTimePerformance): Promise<DailyTimePerformance>;
+  getDailyTimePerformance(tenantId: string, outletId?: string, dateRange?: number): Promise<DailyTimePerformance[]>;
+  getRecipeBenchmark(tenantId: string, menuItemId: string): Promise<RecipeTimeBenchmark | undefined>;
+  upsertRecipeBenchmark(data: InsertRecipeTimeBenchmark): Promise<RecipeTimeBenchmark>;
+  getTimeTargets(tenantId: string, outletId?: string): Promise<TimePerformanceTarget | undefined>;
+  upsertTimeTarget(data: InsertTimePerformanceTarget): Promise<TimePerformanceTarget>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2983,6 +3002,112 @@ export class DatabaseStorage implements IStorage {
         .returning();
       return created;
     }
+  }
+
+  // ── Task #110: Time Tracking storage methods ──────────────────────────────
+
+  async createItemTimeLog(data: InsertItemTimeLog): Promise<ItemTimeLog> {
+    const [row] = await db.insert(itemTimeLogs).values(data).onConflictDoUpdate({
+      target: itemTimeLogs.orderItemId,
+      set: {
+        cookingReadyAt: data.cookingReadyAt,
+        waiterPickupAt: data.waiterPickupAt,
+        servedAt: data.servedAt,
+        actualCookingTime: data.actualCookingTime,
+        totalKitchenTime: data.totalKitchenTime,
+        totalCycleTime: data.totalCycleTime,
+        performanceFlag: data.performanceFlag,
+      },
+    }).returning();
+    return row;
+  }
+
+  async getItemTimeLog(orderItemId: string): Promise<ItemTimeLog | undefined> {
+    const [row] = await db.select().from(itemTimeLogs).where(eq(itemTimeLogs.orderItemId, orderItemId));
+    return row;
+  }
+
+  async getItemTimeLogsByTenant(tenantId: string, opts: { date?: string; outletId?: string; limit?: number } = {}): Promise<ItemTimeLog[]> {
+    const conditions = [eq(itemTimeLogs.tenantId, tenantId)];
+    if (opts.date) conditions.push(eq(itemTimeLogs.shiftDate, opts.date));
+    if (opts.outletId) conditions.push(eq(itemTimeLogs.outletId, opts.outletId));
+    return db.select().from(itemTimeLogs).where(and(...conditions)).limit(opts.limit || 1000).orderBy(desc(itemTimeLogs.createdAt));
+  }
+
+  async getOrderTimeSummary(orderId: string): Promise<OrderTimeSummary | undefined> {
+    const [row] = await db.select().from(orderTimeSummary).where(eq(orderTimeSummary.orderId, orderId));
+    return row;
+  }
+
+  async upsertOrderTimeSummary(data: InsertOrderTimeSummary): Promise<OrderTimeSummary> {
+    const [row] = await db.insert(orderTimeSummary).values(data).onConflictDoUpdate({
+      target: orderTimeSummary.orderId,
+      set: {
+        allItemsServedAt: data.allItemsServedAt,
+        totalKitchenTime: data.totalKitchenTime,
+        totalCycleTime: data.totalCycleTime,
+        metTarget: data.metTarget,
+      },
+    }).returning();
+    return row;
+  }
+
+  async upsertDailyTimePerformance(data: InsertDailyTimePerformance): Promise<DailyTimePerformance> {
+    const [row] = await db.insert(dailyTimePerformance).values(data).onConflictDoUpdate({
+      target: [dailyTimePerformance.tenantId, dailyTimePerformance.outletId, dailyTimePerformance.performanceDate, dailyTimePerformance.shiftType],
+      set: {
+        totalOrders: data.totalOrders,
+        ordersOnTime: data.ordersOnTime,
+        ordersDelayed: data.ordersDelayed,
+        avgTotalKitchenTime: data.avgTotalKitchenTime,
+        avgTotalCycleTime: data.avgTotalCycleTime,
+        onTimePercentage: data.onTimePercentage,
+      },
+    }).returning();
+    return row;
+  }
+
+  async getDailyTimePerformance(tenantId: string, outletId?: string, dateRange?: number): Promise<DailyTimePerformance[]> {
+    const conditions = [eq(dailyTimePerformance.tenantId, tenantId)];
+    if (outletId) conditions.push(eq(dailyTimePerformance.outletId, outletId));
+    if (dateRange) {
+      const fromDate = new Date(Date.now() - dateRange * 86400000).toISOString().slice(0, 10);
+      conditions.push(gte(dailyTimePerformance.performanceDate, fromDate));
+    }
+    return db.select().from(dailyTimePerformance).where(and(...conditions)).orderBy(dailyTimePerformance.performanceDate);
+  }
+
+  async getRecipeBenchmark(tenantId: string, menuItemId: string): Promise<RecipeTimeBenchmark | undefined> {
+    const [row] = await db.select().from(recipeTimeBenchmarks)
+      .where(and(eq(recipeTimeBenchmarks.tenantId, tenantId), eq(recipeTimeBenchmarks.menuItemId, menuItemId)));
+    return row;
+  }
+
+  async upsertRecipeBenchmark(data: InsertRecipeTimeBenchmark): Promise<RecipeTimeBenchmark> {
+    const [row] = await db.insert(recipeTimeBenchmarks).values(data).onConflictDoUpdate({
+      target: [recipeTimeBenchmarks.tenantId, recipeTimeBenchmarks.menuItemId, recipeTimeBenchmarks.counterId],
+      set: {
+        actualAvgTime: data.actualAvgTime,
+        fastestTime: data.fastestTime,
+        slowestTime: data.slowestTime,
+        p75Time: data.p75Time,
+        sampleCount: data.sampleCount,
+        lastCalculated: data.lastCalculated,
+      },
+    }).returning();
+    return row;
+  }
+
+  async getTimeTargets(tenantId: string, outletId?: string): Promise<TimePerformanceTarget | undefined> {
+    const conditions = [eq(timePerformanceTargets.tenantId, tenantId), eq(timePerformanceTargets.isActive, true)];
+    if (outletId) conditions.push(eq(timePerformanceTargets.outletId, outletId));
+    const [row] = await db.select().from(timePerformanceTargets).where(and(...conditions)).limit(1);
+    return row;
+  }
+
+  async upsertTimeTarget(data: InsertTimePerformanceTarget): Promise<TimePerformanceTarget> {
+    const [row] = await db.insert(timePerformanceTargets).values(data).returning();
+    return row;
   }
 }
 

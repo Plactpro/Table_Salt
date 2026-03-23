@@ -11,6 +11,7 @@ import { getNextKotSequence } from "./print-jobs";
 import { triggerWastageDailySummary } from "./wastage";
 import { calculateSuggestedStartTimes } from "../services/cooking-timer";
 import { deductRecipeInventoryForItem } from "../lib/deduct-recipe-inventory";
+import { recordKdsEvent } from "../services/time-logger";
 
 export function registerKitchenRoutes(app: Express): void {
   app.get("/api/kitchen-stations", requireAuth, async (req, res) => {
@@ -101,6 +102,16 @@ export function registerKitchenRoutes(app: Express): void {
         if (terminalKds.includes(newOrderStatus)) { emitToTenant(user.tenantId, "order:completed", { orderId: item.orderId, status: newOrderStatus, tableId: order.tableId }); }
         else { emitToTenant(user.tenantId, "order:updated", { orderId: item.orderId, status: newOrderStatus, tableId: order.tableId }); }
       }
+
+      const chefDisplayName = (user as any).name || (user as any).username || "Chef";
+      if (status === "cooking") {
+        recordKdsEvent("acknowledged", { tenantId: user.tenantId, orderId: item.orderId, orderItemId: req.params.id, userId: user.id, userName: chefDisplayName, timestamp: new Date() }).catch(() => {});
+        recordKdsEvent("cooking_started", { tenantId: user.tenantId, orderId: item.orderId, orderItemId: req.params.id, userId: user.id, userName: chefDisplayName, timestamp: new Date() }).catch(() => {});
+      }
+      if (status === "ready") {
+        recordKdsEvent("item_ready", { tenantId: user.tenantId, orderId: item.orderId, orderItemId: req.params.id, userId: user.id, userName: chefDisplayName, timestamp: new Date() }).catch(() => {});
+      }
+
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -380,6 +391,15 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "in_progress", tableId: order.tableId });
+
+      recordKdsEvent("kot_sent", {
+        tenantId: user.tenantId,
+        orderId: order.id,
+        userId: user.id,
+        userName: chefName,
+        timestamp: new Date(),
+      }).catch(() => {});
+
       res.json({ success: true, deducted: shouldDeduct ? stockWrites.length : 0 });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

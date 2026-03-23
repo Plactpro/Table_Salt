@@ -2558,3 +2558,182 @@ async function seedSelectiveCookingData(
 
   console.log("[SelectiveCooking] Selective cooking seed data complete.");
 }
+
+export async function seedTimeTrackingData(): Promise<void> {
+  const existingCheck = await pool.query(`SELECT 1 FROM item_time_logs LIMIT 1`);
+  if (existingCheck.rows.length > 0) return;
+
+  const { rows: tenantRows } = await pool.query(`
+    SELECT t.id FROM tenants t
+    JOIN menu_items mi ON mi.tenant_id = t.id
+    JOIN outlets o ON o.tenant_id = t.id
+    WHERE t.slug != 'platform'
+    GROUP BY t.id
+    HAVING COUNT(DISTINCT mi.id) > 0
+    ORDER BY COUNT(DISTINCT mi.id) DESC
+    LIMIT 1
+  `);
+  if (tenantRows.length === 0) return;
+  const tenant = await storage.getTenant(tenantRows[0].id);
+  if (!tenant) return;
+
+  const outlets = await storage.getOutletsByTenant(tenant.id);
+  const outlet = outlets[0];
+  if (!outlet) return;
+
+  const menuItems = await storage.getMenuItemsByTenant(tenant.id);
+  if (menuItems.length === 0) return;
+
+  console.log("[TimeTracking] Seeding time tracking demo data...");
+
+  await pool.query(
+    `INSERT INTO time_performance_targets
+       (tenant_id, outlet_id, order_type, target_name, waiter_response_target, kitchen_pickup_target, total_kitchen_target, total_cycle_target, alert_at_percent)
+     VALUES ($1,$2,'ALL','Default Targets',120,60,900,1500,80)
+     ON CONFLICT DO NOTHING`,
+    [tenant.id, outlet.id]
+  );
+
+  const chefProfiles = [
+    { name: "Ravi Kumar", style: "fast", multiplier: 0.75 },
+    { name: "Anita Sharma", style: "consistent", multiplier: 0.95 },
+    { name: "Priya Patel", style: "slow", multiplier: 1.35 },
+    { name: "Mohammed Ali", style: "consistent", multiplier: 1.0 },
+    { name: "Sunita Das", style: "fast", multiplier: 0.85 },
+  ];
+
+  const shiftTypes = ["morning", "afternoon", "evening"];
+
+  for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
+    const shiftDate = new Date(Date.now() - dayOffset * 86400000).toISOString().slice(0, 10);
+    const ordersForDay = dayOffset === 0 ? 12 : 12;
+
+    for (let orderIdx = 0; orderIdx < ordersForDay; orderIdx++) {
+      const chef = chefProfiles[orderIdx % chefProfiles.length];
+      const menuItem = menuItems[orderIdx % menuItems.length];
+      const shiftType = shiftTypes[orderIdx % shiftTypes.length];
+      const orderHour = 10 + (orderIdx % 12);
+
+      const orderReceivedAt = new Date(`${shiftDate}T${String(orderHour).padStart(2, "0")}:${String(orderIdx * 5 % 60).padStart(2, "0")}:00Z`);
+      const kotSentAt = new Date(orderReceivedAt.getTime() + (30 + Math.random() * 60) * 1000);
+      const ticketAcknowledgedAt = new Date(kotSentAt.getTime() + (20 + Math.random() * 40) * 1000);
+
+      const basePrepSec = (menuItem.prepTimeMinutes || 15) * 60;
+      const variance = (0.7 + Math.random() * 0.8) * chef.multiplier;
+      const actualCookingSec = Math.round(basePrepSec * variance);
+
+      const cookingStartedAt = new Date(ticketAcknowledgedAt.getTime() + (10 + Math.random() * 30) * 1000);
+      const cookingReadyAt = new Date(cookingStartedAt.getTime() + actualCookingSec * 1000);
+
+      const passWaitSec = Math.round(30 + Math.random() * 120);
+      const waiterPickupAt = new Date(cookingReadyAt.getTime() + passWaitSec * 1000);
+      const serviceDeliverySec = Math.round(20 + Math.random() * 60);
+      const servedAt = new Date(waiterPickupAt.getTime() + serviceDeliverySec * 1000);
+
+      const kitchenPickupTime = Math.round((kotSentAt.getTime() - orderReceivedAt.getTime()) / 1000);
+      const idleWaitTime = Math.round((ticketAcknowledgedAt.getTime() - kotSentAt.getTime()) / 1000);
+      const totalKitchenTime = Math.round((cookingReadyAt.getTime() - kotSentAt.getTime()) / 1000);
+      const totalCycleTime = Math.round((servedAt.getTime() - orderReceivedAt.getTime()) / 1000);
+
+      const timeVariance = actualCookingSec - basePrepSec;
+      const variancePct = basePrepSec > 0 ? parseFloat(((timeVariance / basePrepSec) * 100).toFixed(2)) : null;
+
+      let performanceFlag = "ON_TIME";
+      if (variance * chef.multiplier < 0.8) performanceFlag = "FAST";
+      else if (variance * chef.multiplier > 1.2) performanceFlag = "VERY_SLOW";
+      else if (variance * chef.multiplier > 1.0) performanceFlag = "SLOW";
+
+      const fakeOrderItemId = `seed-item-${shiftDate}-${orderIdx}`;
+      const fakeOrderId = `seed-order-${shiftDate}-${orderIdx}`;
+
+      await pool.query(
+        `INSERT INTO item_time_logs (
+           tenant_id, outlet_id, order_id, order_number, order_item_id,
+           menu_item_id, menu_item_name, chef_name,
+           shift_date, shift_type, order_type, table_number,
+           order_received_at, kot_sent_at, ticket_acknowledged_at,
+           cooking_started_at, cooking_ready_at,
+           waiter_pickup_at, served_at,
+           waiter_response_time, kitchen_pickup_time, idle_wait_time,
+           actual_cooking_time, pass_wait_time, service_delivery_time,
+           total_kitchen_time, total_cycle_time,
+           recipe_estimated_time, time_variance, variance_percent,
+           performance_flag, course_number
+         ) VALUES (
+           $1,$2,$3,$4,$5,
+           $6,$7,$8,
+           $9,$10,$11,$12,
+           $13,$14,$15,
+           $16,$17,
+           $18,$19,
+           $20,$21,$22,
+           $23,$24,$25,
+           $26,$27,
+           $28,$29,$30,
+           $31,$32
+         ) ON CONFLICT (order_item_id) DO NOTHING`,
+        [
+          tenant.id, outlet.id, fakeOrderId,
+          `ORD-${shiftDate.replace(/-/g, "")}-${orderIdx + 1}`,
+          fakeOrderItemId,
+          menuItem.id, menuItem.name, chef.name,
+          shiftDate, shiftType, "dine_in", String(orderIdx + 1),
+          orderReceivedAt, kotSentAt, ticketAcknowledgedAt,
+          cookingStartedAt, cookingReadyAt,
+          waiterPickupAt, servedAt,
+          passWaitSec, kitchenPickupTime, idleWaitTime,
+          actualCookingSec, passWaitSec, serviceDeliverySec,
+          totalKitchenTime, totalCycleTime,
+          basePrepSec, timeVariance, variancePct,
+          performanceFlag, (orderIdx % 3) + 1,
+        ]
+      );
+
+      await pool.query(
+        `INSERT INTO recipe_time_benchmarks (tenant_id, menu_item_id, counter_id, estimated_prep_time, actual_avg_time, fastest_time, slowest_time, sample_count, last_calculated)
+         VALUES ($1,$2,'default',$3,$4,$4,$4,1,NOW())
+         ON CONFLICT (tenant_id, menu_item_id, counter_id) DO UPDATE SET
+           actual_avg_time = ROUND((recipe_time_benchmarks.actual_avg_time * recipe_time_benchmarks.sample_count + $4) / (recipe_time_benchmarks.sample_count + 1)),
+           fastest_time = LEAST(recipe_time_benchmarks.fastest_time, $4),
+           slowest_time = GREATEST(recipe_time_benchmarks.slowest_time, $4),
+           sample_count = recipe_time_benchmarks.sample_count + 1,
+           last_calculated = NOW()`,
+        [tenant.id, menuItem.id, basePrepSec, actualCookingSec]
+      );
+    }
+
+    const { rows: logs } = await pool.query(
+      `SELECT * FROM item_time_logs WHERE tenant_id = $1 AND shift_date = $2`,
+      [tenant.id, shiftDate]
+    );
+
+    if (logs.length > 0) {
+      const onTime = logs.filter((l: any) => ["FAST", "ON_TIME"].includes(l.performance_flag)).length;
+      const onTimePct = parseFloat(((onTime / logs.length) * 100).toFixed(2));
+      const avg = (arr: number[]) => arr.length > 0 ? Math.round(arr.reduce((a, b) => a + b, 0) / arr.length) : null;
+
+      await pool.query(
+        `INSERT INTO daily_time_performance (
+           tenant_id, outlet_id, performance_date, shift_type,
+           total_orders, orders_on_time, orders_delayed,
+           avg_cooking_time, avg_total_kitchen_time, avg_total_cycle_time,
+           target_kitchen_time, target_cycle_time, on_time_percentage
+         ) VALUES ($1,$2,$3,'ALL',$4,$5,$6,$7,$8,$9,$10,$11,$12)
+         ON CONFLICT (tenant_id, outlet_id, performance_date, shift_type) DO UPDATE SET
+           total_orders = EXCLUDED.total_orders,
+           orders_on_time = EXCLUDED.orders_on_time,
+           on_time_percentage = EXCLUDED.on_time_percentage`,
+        [
+          tenant.id, outlet.id, shiftDate,
+          logs.length, onTime, logs.length - onTime,
+          avg(logs.map((l: any) => l.actual_cooking_time).filter((v: any) => v != null)),
+          avg(logs.map((l: any) => l.total_kitchen_time).filter((v: any) => v != null)),
+          avg(logs.map((l: any) => l.total_cycle_time).filter((v: any) => v != null)),
+          900, 1500, onTimePct,
+        ]
+      );
+    }
+  }
+
+  console.log("[TimeTracking] Time tracking seed data complete.");
+}

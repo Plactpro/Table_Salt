@@ -7,6 +7,7 @@ import { db } from "../db";
 import { pool } from "../db";
 import { orders, deliveryOrders } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { recordKdsEvent } from "../services/time-logger";
 
 export function registerServiceCoordinationRoutes(app: Express): void {
 
@@ -284,6 +285,25 @@ export function registerServiceCoordinationRoutes(app: Express): void {
             waiterName: order.waiter_name || order.waiter_user_name,
           });
         }
+        recordKdsEvent("item_ready", {
+          tenantId: user.tenantId,
+          orderId: req.params.id,
+          orderItemId: req.params.itemId,
+          userId: user.id,
+          userName: (user as any).name || (user as any).username || "Staff",
+          timestamp: now,
+        }).catch(() => {});
+      }
+
+      if (status === "served") {
+        recordKdsEvent("item_served", {
+          tenantId: user.tenantId,
+          orderId: req.params.id,
+          orderItemId: req.params.itemId,
+          userId: user.id,
+          userName: (user as any).name || (user as any).username || "Staff",
+          timestamp: now,
+        }).catch(() => {});
       }
 
       res.json(rows[0]);
