@@ -498,6 +498,21 @@ export function registerOrdersRoutes(app: Express): void {
       }
 
       emitToTenant(user.tenantId, "order:new", { orderId: order.id, status: order.status, tableId: order.tableId, orderType: order.orderType });
+      const allergyItems = orderItems.filter(i => {
+        const fm = (i.metadata as any)?.foodModification;
+        return fm && (fm.allergies?.length > 0 || fm.allergyNote?.trim());
+      });
+      for (const ai of allergyItems) {
+        const fm = (ai.metadata as any).foodModification;
+        emitToTenant(user.tenantId, "allergy:alert", {
+          orderId: order.id,
+          itemId: ai.id,
+          itemName: ai.name,
+          allergies: fm.allergies ?? [],
+          allergyNote: fm.allergyNote ?? null,
+          tableId: order.tableId,
+        });
+      }
       if (order.status === "sent_to_kitchen" || order.status === "new") {
         fireAutoAssign(user.tenantId, order.outletId, order.id, `${order.orderType ?? "order"} #${order.id.slice(-6)}`);
       }

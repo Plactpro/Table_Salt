@@ -35,6 +35,7 @@ import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/s
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
 import { StartShiftModal, CloseShiftDialog } from "@/components/pos/PosSessionModal";
 import DeliveryQueuePanel, { DeliveryQueueButton } from "@/components/pos/DeliveryQueuePanel";
+import ModificationDrawer, { type FoodModification, DEFAULT_MODIFICATION, hasModification } from "@/components/modifications/ModificationDrawer";
 
 interface EngineDiscount {
   ruleId: string;
@@ -68,6 +69,7 @@ interface CartItem {
   cartKey: string;
   isAddon?: boolean;
   hsnCode?: string | null;
+  foodModification?: FoodModification;
 }
 
 interface OrderTab {
@@ -413,6 +415,7 @@ export default function POSPage() {
   const [modifierSpice, setModifierSpice] = useState("Medium");
   const [modifierExtras, setModifierExtras] = useState("");
   const [modifierNote, setModifierNote] = useState("");
+  const [customizeItem, setCustomizeItem] = useState<CartItem | null>(null);
 
   const { data: modifierGroups } = useQuery<MenuItemModifiersResponse>({
     queryKey: ["/api/menu-items", modifierItem?.menuItemId, "modifiers"],
@@ -676,6 +679,10 @@ export default function POSPage() {
     setModifierExtras("");
   };
 
+  const saveCartItemModification = useCallback((cartKey: string, modification: FoodModification) => {
+    setCart(prev => prev.map(c => c.cartKey === cartKey ? { ...c, foodModification: modification } : c));
+  }, [setCart]);
+
   const openNoteDialog = (cartKey: string) => {
     const item = cart.find((c) => c.cartKey === cartKey);
     setItemNoteText(item?.notes || "");
@@ -812,12 +819,21 @@ export default function POSPage() {
           isAddon: isAddonKot,
         });
       } else {
+        const foodMod = c.foodModification;
+        const hasActiveMod = foodMod && (
+          foodMod.spiceLevel || foodMod.saltLevel ||
+          foodMod.removedIngredients.length > 0 ||
+          foodMod.allergies.length > 0 ||
+          foodMod.allergyNote?.trim() ||
+          foodMod.specialInstruction?.trim()
+        );
         orderItems.push({
           menuItemId: c.menuItemId, name: c.name,
           quantity: c.quantity, price: c.price.toFixed(2),
           notes: c.notes || null,
           modifiers: modifiersData,
           isAddon: isAddonKot,
+          metadata: hasActiveMod ? { foodModification: foodMod } : undefined,
         });
       }
     }
@@ -1407,6 +1423,9 @@ export default function POSPage() {
                             <span className="font-medium text-sm truncate">{item.name}</span>
                             {item.isAddon && <Badge variant="outline" className="text-[9px] h-4 px-1 border-orange-400 text-orange-600 bg-orange-50 dark:bg-orange-950/30">Add-on</Badge>}
                             {isSent && !item.isAddon && <Badge variant="outline" className="text-[9px] h-4 px-1 text-muted-foreground">Sent</Badge>}
+                            {!item.isCombo && hasModification(item.foodModification) && (
+                              <Badge variant="outline" className="text-[9px] h-4 px-1 border-violet-400 text-violet-600 bg-violet-50 dark:bg-violet-950/30" data-testid={`badge-customized-${item.menuItemId}`}>✏️ customized</Badge>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="text-xs text-muted-foreground">{fmt(item.price)} each</span>
@@ -1430,9 +1449,21 @@ export default function POSPage() {
                         </div>
                         <div className="flex items-center gap-1">
                           {!item.isCombo && (
-                            <Button data-testid={`button-modifier-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => openModifierDrawer(item)} title="Modifiers & instructions">
-                              <ChevronDown className="h-3 w-3" />
-                            </Button>
+                            <>
+                              <Button
+                                data-testid={`button-customize-${item.menuItemId}`}
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 px-1.5 text-[10px] font-semibold text-violet-600 hover:bg-violet-50"
+                                onClick={() => setCustomizeItem(item)}
+                                title="Customize this item"
+                              >
+                                ✏️
+                              </Button>
+                              <Button data-testid={`button-modifier-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => openModifierDrawer(item)} title="Modifiers & instructions">
+                                <ChevronDown className="h-3 w-3" />
+                              </Button>
+                            </>
                           )}
                           <Button data-testid={`button-note-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNoteDialog(item.cartKey)}>
                             <StickyNote className="h-3 w-3" />
@@ -1965,6 +1996,19 @@ export default function POSPage() {
       </Dialog>
 
       <DeliveryQueuePanel open={showDeliveryQueue} onClose={() => setShowDeliveryQueue(false)} />
+
+      {customizeItem && (
+        <ModificationDrawer
+          open={!!customizeItem}
+          onClose={() => setCustomizeItem(null)}
+          itemName={customizeItem.name}
+          initialModification={customizeItem.foodModification}
+          onSave={(modification) => {
+            saveCartItemModification(customizeItem.cartKey, modification);
+            setCustomizeItem(null);
+          }}
+        />
+      )}
     </div>
   );
 }
