@@ -1883,4 +1883,92 @@ export async function runTask108Migrations(): Promise<void> {
       created_at                TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
+  // Task #112: Order Ticket History — new columns on order_items
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS is_voided BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS voided_reason TEXT`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS void_request_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS is_refire BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE order_items ADD COLUMN IF NOT EXISTS original_item_id VARCHAR(36)`);
+
+  // Task #112: item_void_requests table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS item_void_requests (
+      id                  VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id           VARCHAR(36) NOT NULL,
+      outlet_id           VARCHAR(36),
+      order_id            VARCHAR(36) NOT NULL,
+      order_number        VARCHAR(50),
+      order_item_id       VARCHAR(36) NOT NULL,
+      menu_item_name      VARCHAR(255),
+      quantity            INT,
+      unit_price          DECIMAL(10,2),
+      total_value         DECIMAL(10,2),
+      void_reason         TEXT NOT NULL,
+      void_type           VARCHAR(30) NOT NULL,
+      status              VARCHAR(20) DEFAULT 'pending',
+      requested_by        VARCHAR(36) NOT NULL,
+      requested_by_name   VARCHAR(255),
+      requested_by_role   VARCHAR(50),
+      approved_by         VARCHAR(36),
+      approved_by_name    VARCHAR(255),
+      rejected_reason     TEXT,
+      approved_at         TIMESTAMPTZ,
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_void_requests_tenant ON item_void_requests(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_void_requests_order ON item_void_requests(order_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_void_requests_status ON item_void_requests(tenant_id, status)`);
+
+  // Task #112: voided_items table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS voided_items (
+      id                  VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id           VARCHAR(36) NOT NULL,
+      order_id            VARCHAR(36) NOT NULL,
+      order_item_id       VARCHAR(36) NOT NULL,
+      void_request_id     VARCHAR(36) NOT NULL,
+      menu_item_name      VARCHAR(255),
+      quantity            INT,
+      unit_price          DECIMAL(10,2),
+      total_value         DECIMAL(10,2),
+      void_reason         TEXT,
+      void_type           VARCHAR(30),
+      voided_by           VARCHAR(36) NOT NULL,
+      voided_by_name      VARCHAR(255),
+      approved_by         VARCHAR(36) NOT NULL,
+      approved_by_name    VARCHAR(255),
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_voided_items_tenant ON voided_items(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_voided_items_order ON voided_items(order_id)`);
+
+  // Task #112: item_refire_requests table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS item_refire_requests (
+      id                  VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id           VARCHAR(36) NOT NULL,
+      outlet_id           VARCHAR(36),
+      order_id            VARCHAR(36) NOT NULL,
+      order_number        VARCHAR(50),
+      order_item_id       VARCHAR(36) NOT NULL,
+      new_order_item_id   VARCHAR(36),
+      menu_item_name      VARCHAR(255),
+      quantity            INT,
+      refire_reason       TEXT NOT NULL,
+      priority            VARCHAR(20) DEFAULT 'high',
+      assign_to_chef_id   VARCHAR(36),
+      assign_to_chef_name VARCHAR(255),
+      new_kot_number      VARCHAR(50),
+      status              VARCHAR(20) DEFAULT 'sent',
+      requested_by        VARCHAR(36) NOT NULL,
+      requested_by_name   VARCHAR(255),
+      created_at          TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_refire_requests_tenant ON item_refire_requests(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_refire_requests_order ON item_refire_requests(order_id)`);
 }

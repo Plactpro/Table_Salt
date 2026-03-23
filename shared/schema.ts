@@ -356,6 +356,12 @@ export const orderItems = pgTable("order_items", {
   holdUntilItemId: varchar("hold_until_item_id", { length: 36 }),
   holdUntilMinutes: integer("hold_until_minutes"),
   courseNumber: integer("course_number").default(1),
+  isVoided: boolean("is_voided").default(false),
+  voidedAt: timestamp("voided_at", { withTimezone: true }),
+  voidedReason: text("voided_reason"),
+  voidRequestId: varchar("void_request_id", { length: 36 }),
+  isRefire: boolean("is_refire").default(false),
+  originalItemId: varchar("original_item_id", { length: 36 }),
 }, (t) => [
   index("idx_order_items_order_id").on(t.orderId),
 ]);
@@ -2525,3 +2531,91 @@ export const timePerformanceTargets = pgTable("time_performance_targets", {
 export const insertTimePerformanceTargetSchema = createInsertSchema(timePerformanceTargets).omit({ id: true, createdAt: true });
 export type TimePerformanceTarget = typeof timePerformanceTargets.$inferSelect;
 export type InsertTimePerformanceTarget = z.infer<typeof insertTimePerformanceTargetSchema>;
+
+// ─── Task #112: Order Ticket History ─────────────────────────────────────────
+
+export const itemVoidRequests = pgTable("item_void_requests", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  orderNumber: varchar("order_number", { length: 50 }),
+  orderItemId: varchar("order_item_id", { length: 36 }).notNull(),
+  menuItemName: varchar("menu_item_name", { length: 255 }),
+  quantity: integer("quantity"),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
+  totalValue: decimal("total_value", { precision: 10, scale: 2 }),
+  voidReason: text("void_reason").notNull(),
+  voidType: varchar("void_type", { length: 30 }).notNull(),
+  status: varchar("status", { length: 20 }).default("pending"),
+  requestedBy: varchar("requested_by", { length: 36 }).notNull(),
+  requestedByName: varchar("requested_by_name", { length: 255 }),
+  requestedByRole: varchar("requested_by_role", { length: 50 }),
+  approvedBy: varchar("approved_by", { length: 36 }),
+  approvedByName: varchar("approved_by_name", { length: 255 }),
+  rejectedReason: text("rejected_reason"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_void_requests_tenant").on(t.tenantId),
+  index("idx_void_requests_order").on(t.orderId),
+  index("idx_void_requests_status").on(t.tenantId, t.status),
+]);
+
+export const insertItemVoidRequestSchema = createInsertSchema(itemVoidRequests).omit({ id: true, createdAt: true });
+export type ItemVoidRequest = typeof itemVoidRequests.$inferSelect;
+export type InsertItemVoidRequest = z.infer<typeof insertItemVoidRequestSchema>;
+
+export const voidedItems = pgTable("voided_items", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  orderItemId: varchar("order_item_id", { length: 36 }).notNull(),
+  voidRequestId: varchar("void_request_id", { length: 36 }).notNull(),
+  menuItemName: varchar("menu_item_name", { length: 255 }),
+  quantity: integer("quantity"),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
+  totalValue: decimal("total_value", { precision: 10, scale: 2 }),
+  voidReason: text("void_reason"),
+  voidType: varchar("void_type", { length: 30 }),
+  voidedBy: varchar("voided_by", { length: 36 }).notNull(),
+  voidedByName: varchar("voided_by_name", { length: 255 }),
+  approvedBy: varchar("approved_by", { length: 36 }).notNull(),
+  approvedByName: varchar("approved_by_name", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_voided_items_tenant").on(t.tenantId),
+  index("idx_voided_items_order").on(t.orderId),
+]);
+
+export const insertVoidedItemSchema = createInsertSchema(voidedItems).omit({ id: true, createdAt: true });
+export type VoidedItem = typeof voidedItems.$inferSelect;
+export type InsertVoidedItem = z.infer<typeof insertVoidedItemSchema>;
+
+export const itemRefireRequests = pgTable("item_refire_requests", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  orderNumber: varchar("order_number", { length: 50 }),
+  orderItemId: varchar("order_item_id", { length: 36 }).notNull(),
+  newOrderItemId: varchar("new_order_item_id", { length: 36 }),
+  menuItemName: varchar("menu_item_name", { length: 255 }),
+  quantity: integer("quantity"),
+  refireReason: text("refire_reason").notNull(),
+  priority: varchar("priority", { length: 20 }).default("high"),
+  assignToChefId: varchar("assign_to_chef_id", { length: 36 }),
+  assignToChefName: varchar("assign_to_chef_name", { length: 255 }),
+  newKotNumber: varchar("new_kot_number", { length: 50 }),
+  status: varchar("status", { length: 20 }).default("sent"),
+  requestedBy: varchar("requested_by", { length: 36 }).notNull(),
+  requestedByName: varchar("requested_by_name", { length: 255 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+}, (t) => [
+  index("idx_refire_requests_tenant").on(t.tenantId),
+  index("idx_refire_requests_order").on(t.orderId),
+]);
+
+export const insertItemRefireRequestSchema = createInsertSchema(itemRefireRequests).omit({ id: true, createdAt: true });
+export type ItemRefireRequest = typeof itemRefireRequests.$inferSelect;
+export type InsertItemRefireRequest = z.infer<typeof insertItemRefireRequestSchema>;

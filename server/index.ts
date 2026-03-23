@@ -172,6 +172,13 @@ app.use((req, res, next) => {
     console.error("Time tracking seed error:", e);
   }
 
+  try {
+    const { seedTicketHistoryData } = await import("./seed");
+    await seedTicketHistoryData();
+  } catch (e) {
+    console.error("Ticket history seed error:", e);
+  }
+
   // Initialize Stripe schema (stripe-replit-sync manages the stripe.* tables)
   try {
     const { runMigrations } = await import("stripe-replit-sync");

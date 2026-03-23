@@ -2737,3 +2737,147 @@ export async function seedTimeTrackingData(): Promise<void> {
 
   console.log("[TimeTracking] Time tracking seed data complete.");
 }
+
+export async function seedTicketHistoryData(): Promise<void> {
+  const tenantRes = await pool.query(`SELECT id FROM tenants LIMIT 1`);
+  if (!tenantRes.rows[0]) return;
+  const tenantId = tenantRes.rows[0].id;
+
+  const outletRes = await pool.query(`SELECT id FROM outlets WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (!outletRes.rows[0]) return;
+  const outletId = outletRes.rows[0].id;
+
+  const waiterRes = await pool.query(`SELECT id, name FROM users WHERE tenant_id = $1 AND role = 'waiter' LIMIT 1`, [tenantId]);
+  const managerRes = await pool.query(`SELECT id, name FROM users WHERE tenant_id = $1 AND role IN ('manager','owner') LIMIT 1`, [tenantId]);
+
+  if (!waiterRes.rows[0] || !managerRes.rows[0]) {
+    console.log("[TicketHistory] Skipping seed — no waiter/manager found.");
+    return;
+  }
+  const waiter = waiterRes.rows[0];
+  const manager = managerRes.rows[0];
+
+  // Check if we already seeded
+  const existingVoid = await pool.query(`SELECT id FROM item_void_requests WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (existingVoid.rows.length > 0) {
+    console.log("[TicketHistory] Void/refire seed data already exists, skipping.");
+    return;
+  }
+
+  // Fetch 3 paid orders with items
+  const ordersRes = await pool.query(
+    `SELECT o.id AS order_id, oi.id AS item_id, oi.name AS item_name, oi.price, oi.quantity
+     FROM orders o
+     JOIN order_items oi ON oi.order_id = o.id
+     WHERE o.tenant_id = $1 AND o.status = 'paid'
+     LIMIT 5`,
+    [tenantId]
+  );
+  if (ordersRes.rows.length < 3) {
+    console.log("[TicketHistory] Not enough paid orders to seed void/refire data.");
+    return;
+  }
+
+  const [row0, row1, row2, row3, row4] = ordersRes.rows;
+
+  // 1. Approved void request
+  await pool.query(
+    `INSERT INTO item_void_requests (
+      tenant_id, outlet_id, order_id, order_item_id, menu_item_name,
+      quantity, unit_price, total_value, void_reason, void_type,
+      status, requested_by, requested_by_name, requested_by_role,
+      approved_by, approved_by_name, approved_at
+    ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Customer allergy concern','ALLERGY',
+      'approved',$9,$10,'waiter',$11,$12,NOW() - INTERVAL '2 hours')`,
+    [
+      tenantId, outletId, row0.order_id, row0.item_id, row0.item_name,
+      row0.quantity, row0.price, (parseFloat(row0.price) * (row0.quantity || 1)).toFixed(2),
+      waiter.id, waiter.name, manager.id, manager.name,
+    ]
+  );
+  await pool.query(
+    `UPDATE order_items SET is_voided = true, voided_at = NOW() - INTERVAL '2 hours', voided_reason = 'Customer allergy concern' WHERE id = $1`,
+    [row0.item_id]
+  );
+  await pool.query(
+    `INSERT INTO voided_items (tenant_id, order_id, order_item_id, void_request_id, menu_item_name, quantity, unit_price, total_value, void_reason, void_type, voided_by, voided_by_name, approved_by, approved_by_name)
+     SELECT $1,$2,$3,id,$4,$5,$6,$7,'Customer allergy concern','ALLERGY',$8,$9,$10,$11
+     FROM item_void_requests WHERE order_item_id = $3 LIMIT 1`,
+    [tenantId, row0.order_id, row0.item_id, row0.item_name, row0.quantity, row0.price, (parseFloat(row0.price) * (row0.quantity || 1)).toFixed(2), waiter.id, waiter.name, manager.id, manager.name]
+  );
+
+  // 2. Pending void request
+  if (row1) {
+    await pool.query(
+      `INSERT INTO item_void_requests (
+        tenant_id, outlet_id, order_id, order_item_id, menu_item_name,
+        quantity, unit_price, total_value, void_reason, void_type,
+        status, requested_by, requested_by_name, requested_by_role
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Wrong item delivered','WRONG_ITEM',
+        'pending',$9,$10,'waiter')`,
+      [
+        tenantId, outletId, row1.order_id, row1.item_id, row1.item_name,
+        row1.quantity, row1.price, (parseFloat(row1.price) * (row1.quantity || 1)).toFixed(2),
+        waiter.id, waiter.name,
+      ]
+    );
+  }
+
+  // 3. Rejected void request
+  if (row2) {
+    await pool.query(
+      `INSERT INTO item_void_requests (
+        tenant_id, outlet_id, order_id, order_item_id, menu_item_name,
+        quantity, unit_price, total_value, void_reason, void_type,
+        status, requested_by, requested_by_name, requested_by_role,
+        approved_by, approved_by_name, rejected_reason
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Customer changed mind','CHANGE_OF_MIND',
+        'rejected',$9,$10,'waiter',$11,$12,'Order already prepared')`,
+      [
+        tenantId, outletId, row2.order_id, row2.item_id, row2.item_name,
+        row2.quantity, row2.price, (parseFloat(row2.price) * (row2.quantity || 1)).toFixed(2),
+        waiter.id, waiter.name, manager.id, manager.name,
+      ]
+    );
+  }
+
+  // 4. Completed refire request
+  if (row3) {
+    const kotNum1 = `REFIRE-${new Date().toISOString().slice(0,10).replace(/-/g,'')} -1001`;
+    await pool.query(
+      `INSERT INTO item_refire_requests (
+        tenant_id, outlet_id, order_id, order_item_id, menu_item_name,
+        quantity, refire_reason, priority, new_kot_number, status,
+        requested_by, requested_by_name
+      ) VALUES ($1,$2,$3,$4,$5,$6,'Item was undercooked','high',$7,'sent',$8,$9)`,
+      [tenantId, outletId, row3.order_id, row3.item_id, row3.item_name, row3.quantity, kotNum1, waiter.id, waiter.name]
+    );
+  }
+
+  // 5. Active refire request
+  if (row4) {
+    const kotNum2 = `REFIRE-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-1002`;
+    await pool.query(
+      `INSERT INTO item_refire_requests (
+        tenant_id, outlet_id, order_id, order_item_id, menu_item_name,
+        quantity, refire_reason, priority, new_kot_number, status,
+        requested_by, requested_by_name
+      ) VALUES ($1,$2,$3,$4,$5,$6,'Customer requested fresh preparation','high',$7,'sent',$8,$9)`,
+      [tenantId, outletId, row4.order_id, row4.item_id, row4.item_name, row4.quantity, kotNum2, manager.id, manager.name]
+    );
+  }
+
+  // 5 reprint audit events
+  const auditOrdersRes = await pool.query(`SELECT id FROM orders WHERE tenant_id = $1 LIMIT 5`, [tenantId]);
+  for (const [i, ord] of auditOrdersRes.rows.entries()) {
+    const action = i % 3 === 0 ? "RECEIPT_REPRINTED" : i % 3 === 1 ? "KOT_REPRINTED" : "BILL_REPRINTED";
+    await pool.query(
+      `INSERT INTO audit_events (tenant_id, user_id, user_name, action, entity_type, entity_id)
+       VALUES ($1,$2,$3,$4,'order',$5)
+       ON CONFLICT DO NOTHING`,
+      [tenantId, manager.id, manager.name, action, ord.id]
+    );
+  }
+
+  console.log("[TicketHistory] Void/refire/reprint seed data complete.");
+}
