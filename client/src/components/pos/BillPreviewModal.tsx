@@ -6,6 +6,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ interface CartItem {
   quantity: number;
   notes: string;
   isCombo?: boolean;
+  is_voided?: boolean;
   modifiers?: { name?: string; label?: string; price?: number; priceAdjust?: number }[];
   hsnCode?: string | null;
   foodModification?: import("@/components/modifications/ModificationDrawer").FoodModification;
@@ -139,6 +141,13 @@ export default function BillPreviewModal({
 
   const [step, setStep] = useState<PaymentStep>("preview");
   const [activeMethod, setActiveMethod] = useState<PaymentMethodType>("CASH");
+
+  useRealtimeEvent("bill:updated", (payload: any) => {
+    if (payload?.orderId === orderId) {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      toast({ title: "Bill updated", description: "A void was applied — bill totals have been updated." });
+    }
+  });
   const [cashTendered, setCashTendered] = useState("");
   const [cardRef, setCardRef] = useState("");
   const [cardLast4, setCardLast4] = useState("");
@@ -895,17 +904,23 @@ export default function BillPreviewModal({
                     if (fm.specialInstruction?.trim()) modChips.push(`"${fm.specialInstruction.trim()}"`);
                     fm.allergies.forEach(a => modChips.push(`⚠ ${a}`));
                   }
+                  const isVoided = !!item.is_voided;
                   return (
-                    <div key={i} className="flex justify-between text-sm py-0.5">
+                    <div key={i} className={`flex justify-between text-sm py-0.5 ${isVoided ? "opacity-50" : ""}`} data-testid={`bill-item-${i}`}>
                       <div className="flex-1">
-                        <span>{item.name}</span>
-                        {item.modifiers && item.modifiers.length > 0 && (
+                        <span className={isVoided ? "line-through text-muted-foreground" : ""}>{item.name}</span>
+                        {isVoided && (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold bg-red-100 text-red-700" data-testid={`badge-voided-${i}`}>
+                            VOIDED
+                          </span>
+                        )}
+                        {!isVoided && item.modifiers && item.modifiers.length > 0 && (
                           <div className="text-xs text-muted-foreground pl-2">
                             {item.modifiers.map(m => `+ ${m.name ?? m.label ?? ""}`).join(", ")}
                           </div>
                         )}
-                        {item.notes && <div className="text-xs text-muted-foreground italic pl-2">{item.notes}</div>}
-                        {modChips.length > 0 && (
+                        {!isVoided && item.notes && <div className="text-xs text-muted-foreground italic pl-2">{item.notes}</div>}
+                        {!isVoided && modChips.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-0.5 pl-2" data-testid={`mod-summary-${i}`}>
                             {modChips.map((chip, ci) => (
                               <span
@@ -918,7 +933,7 @@ export default function BillPreviewModal({
                           </div>
                         )}
                       </div>
-                      <div className="flex gap-8 text-right">
+                      <div className={`flex gap-8 text-right ${isVoided ? "line-through text-muted-foreground" : ""}`}>
                         <span className="w-8 text-center">{item.quantity}</span>
                         <span className="w-20">{fmt(item.price * item.quantity)}</span>
                       </div>

@@ -1,7 +1,8 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
-import { Loader2 } from "lucide-react";
+import { Loader2, History } from "lucide-react";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
+import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
 import type { Order, OrderItem, Table } from "@shared/schema";
 
@@ -66,6 +67,17 @@ export default function BillViewPage() {
 
   return (
     <div data-testid="page-bill-view" className="min-h-screen bg-muted/20">
+      <div className="flex items-center justify-end p-2 bg-background border-b">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => navigate("/tickets")}
+          data-testid="button-past-bills"
+        >
+          <History className="h-4 w-4 mr-1.5" />
+          Past Bills
+        </Button>
+      </div>
       <BillPreviewModal
         open={true}
         onClose={() => navigate("/orders")}

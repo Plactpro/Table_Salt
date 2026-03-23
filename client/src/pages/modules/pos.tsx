@@ -1359,6 +1359,9 @@ export default function POSPage() {
               </motion.div>
             )}
             <div className="ml-auto flex items-center gap-1">
+              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("/tickets")} data-testid="button-pos-history" title="Ticket History">
+                <Clock className="h-3 w-3 mr-1" /> History
+              </Button>
               <DeliveryQueueButton onClick={() => setShowDeliveryQueue(true)} />
               <Button variant="outline" size="sm" className="text-xs h-7 px-2 relative" onClick={() => setShowRecall(true)} data-testid="button-recall">
                 <RotateCcw className="h-3 w-3 mr-1" /> Recall
