@@ -3,11 +3,12 @@ import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { verifySupervisorOverride } from "./_shared";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { tenants as tenantsTable, type InsertCustomer } from "@shared/schema";
 import { createPaymentLink, getPaymentLink, refundRazorpayPayment } from "../razorpay";
 import { routeAndPrint } from "../services/printer-service";
+import { recordAndDistributeTip } from "../services/tip-service";
 
 function getFiscalYear(date: Date): string {
   const m = date.getMonth() + 1;
@@ -214,9 +215,11 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (bill.paymentStatus === "voided") return res.status(400).json({ message: "Bill is voided" });
 
-      const { payments, tips } = req.body as {
+      const { payments, tips, tipType, tipPercentage } = req.body as {
         payments: { paymentMethod: string; amount: number; referenceNo?: string }[];
         tips?: number;
+        tipType?: string;
+        tipPercentage?: number;
       };
       if (!payments || !payments.length) return res.status(400).json({ message: "payments array required" });
 
@@ -348,6 +351,37 @@ export function registerRestaurantBillingRoutes(app: Express): void {
             console.error(`[billing] Auto-print receipt failed for bill ${bill.id}:`, err);
           });
         });
+      }
+
+      // Fire-and-forget tip recording — never blocks payment
+      if (tips && Number(tips) > 0 && newStatus === "paid") {
+        (async () => {
+          try {
+            const outletId = updatedBill?.outletId || bill.outletId || user.outletId;
+            const { rows: [tipSettings] } = await pool.query(
+              `SELECT * FROM outlet_tip_settings WHERE outlet_id = $1 AND tenant_id = $2 AND tips_enabled = true LIMIT 1`,
+              [outletId, user.tenantId]
+            );
+            if (tipSettings) {
+              const activePaymentMethod = payments[0]?.paymentMethod || "CASH";
+              const subtotal = Number(bill.subtotal || 0);
+              await recordAndDistributeTip({
+                billId: bill.id,
+                orderId: bill.orderId,
+                tenantId: user.tenantId,
+                outletId,
+                tipAmount: Number(tips),
+                tipType: (tipType as 'PERCENTAGE' | 'CUSTOM') || "CUSTOM",
+                tipPercentage: tipPercentage || null,
+                tipBasisAmount: subtotal || null,
+                waiterId: bill.waiterId || user.id,
+                waiterName: bill.waiterName || user.name || user.username,
+                paymentMethod: activePaymentMethod,
+                settings: tipSettings,
+              });
+            }
+          } catch (e) { /* silent */ }
+        })();
       }
 
       res.json({ bill: updatedBill, payments: createdPayments });

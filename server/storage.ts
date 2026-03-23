@@ -161,6 +161,10 @@ import {
   cashDrawerEvents, type CashDrawerEvent, type InsertCashDrawerEvent,
   cashPayouts, type CashPayout, type InsertCashPayout,
   cashHandovers, type CashHandover, type InsertCashHandover,
+  outletTipSettings, billTips, tipDistributions,
+  type OutletTipSettings, type InsertOutletTipSettings,
+  type BillTip, type InsertBillTip,
+  type TipDistribution, type InsertTipDistribution,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -740,6 +744,15 @@ export interface IStorage {
   getCashHandovers(sessionId: string): Promise<CashHandover[]>;
   getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined>;
   updateOutletCurrencySettings(outletId: string, data: Record<string, any>): Promise<Record<string, any>>;
+
+  // Tip management
+  getOutletTipSettings(outletId: string, tenantId: string): Promise<OutletTipSettings | null>;
+  upsertOutletTipSettings(data: Record<string, any>): Promise<OutletTipSettings>;
+  getBillTip(billId: string): Promise<BillTip | null>;
+  getTipReport(tenantId: string, outletId: string | undefined, date: string): Promise<Record<string, any>>;
+  getMyTips(tenantId: string, staffId: string): Promise<Record<string, any>>;
+  getTipDistributions(tenantId: string, filters: { staffId?: string; date?: string; isPaid?: boolean }): Promise<TipDistribution[]>;
+  markTipDistributionPaid(id: string, tenantId: string): Promise<TipDistribution | null>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3765,6 +3778,158 @@ export class DatabaseStorage implements IStorage {
       values
     );
     return rows[0];
+  }
+
+  async getOutletTipSettings(outletId: string, tenantId: string): Promise<OutletTipSettings | null> {
+    const { rows } = await pool.query(
+      `SELECT * FROM outlet_tip_settings WHERE outlet_id = $1 AND tenant_id = $2 LIMIT 1`,
+      [outletId, tenantId]
+    );
+    return rows[0] || null;
+  }
+
+  async upsertOutletTipSettings(data: Record<string, any>): Promise<OutletTipSettings> {
+    const { rows } = await pool.query(`
+      INSERT INTO outlet_tip_settings (
+        tenant_id, outlet_id, tips_enabled, show_on_pos, show_on_qr, show_on_receipt,
+        prompt_style, suggested_pct_1, suggested_pct_2, suggested_pct_3, allow_custom_amount,
+        tip_basis, distribution_method, waiter_share_pct, kitchen_share_pct,
+        tip_is_taxable, currency_code, currency_symbol, updated_by, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,NOW())
+      ON CONFLICT (tenant_id, outlet_id) DO UPDATE SET
+        tips_enabled = EXCLUDED.tips_enabled,
+        show_on_pos = EXCLUDED.show_on_pos,
+        show_on_qr = EXCLUDED.show_on_qr,
+        show_on_receipt = EXCLUDED.show_on_receipt,
+        prompt_style = EXCLUDED.prompt_style,
+        suggested_pct_1 = EXCLUDED.suggested_pct_1,
+        suggested_pct_2 = EXCLUDED.suggested_pct_2,
+        suggested_pct_3 = EXCLUDED.suggested_pct_3,
+        allow_custom_amount = EXCLUDED.allow_custom_amount,
+        tip_basis = EXCLUDED.tip_basis,
+        distribution_method = EXCLUDED.distribution_method,
+        waiter_share_pct = EXCLUDED.waiter_share_pct,
+        kitchen_share_pct = EXCLUDED.kitchen_share_pct,
+        tip_is_taxable = EXCLUDED.tip_is_taxable,
+        currency_code = EXCLUDED.currency_code,
+        currency_symbol = EXCLUDED.currency_symbol,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+      RETURNING *
+    `, [
+      data.tenantId, data.outletId,
+      data.tipsEnabled ?? false, data.showOnPos ?? true, data.showOnQr ?? false, data.showOnReceipt ?? true,
+      data.promptStyle || "BUTTONS",
+      data.suggestedPct1 ?? 5, data.suggestedPct2 ?? 10, data.suggestedPct3 ?? 15,
+      data.allowCustomAmount ?? true, data.tipBasis || "SUBTOTAL",
+      data.distributionMethod || "INDIVIDUAL",
+      data.waiterSharePct ?? 70, data.kitchenSharePct ?? 30,
+      data.tipIsTaxable ?? false, data.currencyCode || "INR", data.currencySymbol || "₹",
+      data.updatedBy || null,
+    ]);
+    return rows[0];
+  }
+
+  async getBillTip(billId: string): Promise<BillTip | null> {
+    const { rows } = await pool.query(
+      `SELECT * FROM bill_tips WHERE bill_id = $1 LIMIT 1`,
+      [billId]
+    );
+    return rows[0] || null;
+  }
+
+  async getTipReport(tenantId: string, outletId: string | undefined, date: string): Promise<Record<string, any>> {
+    const outletFilter = outletId ? `AND outlet_id = '${outletId}'` : "";
+    const summaryRes = await pool.query(`
+      SELECT COALESCE(SUM(tip_amount), 0) AS total_tips, COUNT(*) AS total_transactions,
+             COALESCE(AVG(tip_amount), 0) AS avg_tip_per_bill
+      FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
+    `, [tenantId, date]);
+    const byMethodRes = await pool.query(`
+      SELECT payment_method, SUM(tip_amount) AS total
+      FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
+      GROUP BY payment_method
+    `, [tenantId, date]);
+    const byWaiterRes = await pool.query(`
+      SELECT waiter_id, waiter_name, SUM(tip_amount) AS total_tips, COUNT(*) AS count
+      FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
+      GROUP BY waiter_id, waiter_name ORDER BY total_tips DESC
+    `, [tenantId, date]);
+    const byHourRes = await pool.query(`
+      SELECT EXTRACT(HOUR FROM created_at)::int AS hour, SUM(tip_amount) AS tips
+      FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
+      GROUP BY hour ORDER BY hour
+    `, [tenantId, date]);
+    const recentRes = await pool.query(`
+      SELECT bill_id, tip_amount AS amount, waiter_name, created_at AS time
+      FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
+      ORDER BY created_at DESC LIMIT 20
+    `, [tenantId, date]);
+    const s = summaryRes.rows[0];
+    const byMethod: Record<string, number> = {};
+    for (const r of byMethodRes.rows) { byMethod[r.payment_method || "CASH"] = Number(r.total); }
+    return {
+      totalTips: Number(s.total_tips),
+      totalTransactions: Number(s.total_transactions),
+      avgTipPerBill: Number(s.avg_tip_per_bill),
+      byMethod,
+      byWaiter: byWaiterRes.rows.map(r => ({ waiterId: r.waiter_id, waiterName: r.waiter_name, totalTips: Number(r.total_tips), count: Number(r.count) })),
+      byHour: byHourRes.rows.map(r => ({ hour: r.hour, tips: Number(r.tips) })),
+      recentTips: recentRes.rows.map(r => ({ billId: r.bill_id, amount: Number(r.amount), waiterName: r.waiter_name, time: r.time })),
+    };
+  }
+
+  async getMyTips(tenantId: string, staffId: string): Promise<Record<string, any>> {
+    const todayRes = await pool.query(`
+      SELECT COALESCE(SUM(share_amount), 0) AS total, COUNT(*) AS count
+      FROM tip_distributions WHERE tenant_id = $1 AND staff_id = $2 AND distribution_date = CURRENT_DATE
+    `, [tenantId, staffId]);
+    const weekRes = await pool.query(`
+      SELECT COALESCE(SUM(share_amount), 0) AS total
+      FROM tip_distributions WHERE tenant_id = $1 AND staff_id = $2
+        AND distribution_date >= CURRENT_DATE - INTERVAL '7 days'
+    `, [tenantId, staffId]);
+    const monthRes = await pool.query(`
+      SELECT COALESCE(SUM(share_amount), 0) AS total
+      FROM tip_distributions WHERE tenant_id = $1 AND staff_id = $2
+        AND distribution_date >= DATE_TRUNC('month', CURRENT_DATE)
+    `, [tenantId, staffId]);
+    const recentRes = await pool.query(`
+      SELECT td.share_amount AS amount, bt.bill_id AS bill_ref, td.created_at AS time, td.is_paid
+      FROM tip_distributions td JOIN bill_tips bt ON bt.id = td.bill_tip_id
+      WHERE td.tenant_id = $1 AND td.staff_id = $2
+      ORDER BY td.created_at DESC LIMIT 20
+    `, [tenantId, staffId]);
+    return {
+      todayTotal: Number(todayRes.rows[0].total),
+      todayCount: Number(todayRes.rows[0].count),
+      weekTotal: Number(weekRes.rows[0].total),
+      monthTotal: Number(monthRes.rows[0].total),
+      recentTips: recentRes.rows.map(r => ({ amount: Number(r.amount), billRef: r.bill_ref, time: r.time, isPaid: r.is_paid })),
+    };
+  }
+
+  async getTipDistributions(tenantId: string, filters: { staffId?: string; date?: string; isPaid?: boolean }): Promise<TipDistribution[]> {
+    const conditions: string[] = [`td.tenant_id = $1`];
+    const values: any[] = [tenantId];
+    let i = 2;
+    if (filters.staffId) { conditions.push(`td.staff_id = $${i++}`); values.push(filters.staffId); }
+    if (filters.date) { conditions.push(`td.distribution_date = $${i++}`); values.push(filters.date); }
+    if (filters.isPaid !== undefined) { conditions.push(`td.is_paid = $${i++}`); values.push(filters.isPaid); }
+    const { rows } = await pool.query(`
+      SELECT td.* FROM tip_distributions td
+      WHERE ${conditions.join(" AND ")}
+      ORDER BY td.created_at DESC LIMIT 200
+    `, values);
+    return rows;
+  }
+
+  async markTipDistributionPaid(id: string, tenantId: string): Promise<TipDistribution | null> {
+    const { rows } = await pool.query(
+      `UPDATE tip_distributions SET is_paid = true, paid_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING *`,
+      [id, tenantId]
+    );
+    return rows[0] || null;
   }
 }
 

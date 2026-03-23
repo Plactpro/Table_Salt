@@ -3185,3 +3185,82 @@ export async function seedAlertDefinitions(): Promise<void> {
   }
   console.log("[AlertDefinitions] Seeded 12 system alert definitions.");
 }
+
+export async function seedTipSettings(): Promise<void> {
+  const tenantsRes = await pool.query(`SELECT id FROM tenants WHERE slug != 'platform' LIMIT 1`);
+  if (!tenantsRes.rows[0]) return;
+  const tenantId = tenantsRes.rows[0].id;
+
+  const outletRes = await pool.query(`SELECT id FROM outlets WHERE tenant_id = $1 LIMIT 1`, [tenantId]);
+  if (!outletRes.rows[0]) return;
+  const outletId = outletRes.rows[0].id;
+
+  const existing = await pool.query(
+    `SELECT id FROM outlet_tip_settings WHERE tenant_id = $1 AND outlet_id = $2 LIMIT 1`,
+    [tenantId, outletId]
+  );
+  if (existing.rows[0]) {
+    console.log("[TipSettings] Seed data already exists, skipping.");
+    return;
+  }
+
+  await pool.query(`
+    INSERT INTO outlet_tip_settings (
+      tenant_id, outlet_id, tips_enabled, show_on_pos, show_on_qr, show_on_receipt,
+      prompt_style, suggested_pct_1, suggested_pct_2, suggested_pct_3, allow_custom_amount,
+      tip_basis, distribution_method, waiter_share_pct, kitchen_share_pct,
+      tip_is_taxable, currency_code, currency_symbol
+    ) VALUES ($1,$2,true,true,false,true,'BUTTONS',5,10,15,true,'SUBTOTAL','INDIVIDUAL',70,30,false,'INR','₹')
+    ON CONFLICT (tenant_id, outlet_id) DO NOTHING
+  `, [tenantId, outletId]);
+
+  const waiterRes = await pool.query(
+    `SELECT id, name FROM users WHERE tenant_id = $1 AND role = 'waiter' LIMIT 1`,
+    [tenantId]
+  );
+  const waiter = waiterRes.rows[0];
+  if (!waiter) {
+    console.log("[TipSettings] No waiter found for tip seed, skipping bill_tips.");
+    return;
+  }
+
+  const billsRes = await pool.query(
+    `SELECT id, order_id FROM bills WHERE tenant_id = $1 ORDER BY created_at DESC LIMIT 5`,
+    [tenantId]
+  );
+  if (!billsRes.rows.length) {
+    console.log("[TipSettings] No bills found for tip seed, skipping bill_tips.");
+    return;
+  }
+
+  for (let i = 0; i < billsRes.rows.length; i++) {
+    const bill = billsRes.rows[i];
+    const tipType = i % 2 === 0 ? 'PERCENTAGE' : 'CUSTOM';
+    const tipAmount = tipType === 'PERCENTAGE' ? 50 + i * 30 : 100 + i * 20;
+    const tipPct = tipType === 'PERCENTAGE' ? 10 : null;
+
+    const tipRes = await pool.query(`
+      INSERT INTO bill_tips (
+        tenant_id, outlet_id, bill_id, order_id, tip_amount, tip_type,
+        tip_percentage, payment_method, waiter_id, waiter_name, distribution_method,
+        is_distributed, distributed_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,'CASH',$8,$9,'INDIVIDUAL',true,NOW())
+      ON CONFLICT (bill_id) DO NOTHING
+      RETURNING id
+    `, [tenantId, outletId, bill.id, bill.order_id, tipAmount, tipType, tipPct, waiter.id, waiter.name]);
+
+    if (tipRes.rows[0]) {
+      const tipId = tipRes.rows[0].id;
+      const today = new Date().toISOString().split('T')[0];
+      await pool.query(`
+        INSERT INTO tip_distributions (
+          tenant_id, outlet_id, bill_tip_id, staff_id, staff_name, staff_role,
+          share_percentage, share_amount, distribution_date, is_paid
+        ) VALUES ($1,$2,$3,$4,$5,'waiter',100,$6,$7,false)
+        ON CONFLICT DO NOTHING
+      `, [tenantId, outletId, tipId, waiter.id, waiter.name, tipAmount.toFixed(2), today]);
+    }
+  }
+
+  console.log("[TipSettings] Seeded tip settings and sample bill_tips/distributions.");
+}
