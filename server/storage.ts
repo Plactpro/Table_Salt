@@ -150,6 +150,10 @@ import {
   type DailyTimePerformance, type InsertDailyTimePerformance,
   type RecipeTimeBenchmark, type InsertRecipeTimeBenchmark,
   type TimePerformanceTarget, type InsertTimePerformanceTarget,
+  itemVoidRequests, voidedItems, itemRefireRequests,
+  type ItemVoidRequest, type InsertItemVoidRequest,
+  type VoidedItem, type InsertVoidedItem,
+  type ItemRefireRequest, type InsertItemRefireRequest,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -667,6 +671,42 @@ export interface IStorage {
   upsertRecipeBenchmark(data: InsertRecipeTimeBenchmark): Promise<RecipeTimeBenchmark>;
   getTimeTargets(tenantId: string, outletId?: string): Promise<TimePerformanceTarget | undefined>;
   upsertTimeTarget(data: InsertTimePerformanceTarget): Promise<TimePerformanceTarget>;
+
+  // Task #112: Order Ticket History — Query methods
+  getOrdersForHistory(tenantId: string, opts: {
+    q?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    status?: string;
+    orderType?: string;
+    staffId?: string;
+    outletId?: string;
+    roleScope?: { role: string; userId: string };
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: Record<string, unknown>[]; total: number }>;
+  getOrderTicketDetail(orderId: string, tenantId: string): Promise<Record<string, unknown> | null>;
+  getOrderTimeline(orderId: string, tenantId: string): Promise<Array<Record<string, unknown>>>;
+
+  createVoidRequest(data: InsertItemVoidRequest): Promise<ItemVoidRequest>;
+  getVoidRequest(id: string, tenantId: string): Promise<ItemVoidRequest | undefined>;
+  updateVoidRequest(id: string, tenantId: string, data: {
+    status?: string;
+    approvedBy?: string | null;
+    approvedByName?: string | null;
+    approvedAt?: Date | null;
+    rejectedReason?: string | null;
+  }): Promise<ItemVoidRequest | undefined>;
+  getPendingVoidRequests(tenantId: string): Promise<ItemVoidRequest[]>;
+  createVoidedItem(data: InsertVoidedItem): Promise<VoidedItem>;
+  getVoidedItemsByOrder(orderId: string): Promise<VoidedItem[]>;
+  createRefireRequest(data: InsertItemRefireRequest): Promise<ItemRefireRequest>;
+  getRefireRequestsByOrder(orderId: string): Promise<ItemRefireRequest[]>;
+  updateRefireRequest(id: string, tenantId: string, data: {
+    status?: string;
+    newOrderItemId?: string | null;
+    newKotNumber?: string | null;
+  }): Promise<ItemRefireRequest | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -3107,6 +3147,204 @@ export class DatabaseStorage implements IStorage {
 
   async upsertTimeTarget(data: InsertTimePerformanceTarget): Promise<TimePerformanceTarget> {
     const [row] = await db.insert(timePerformanceTargets).values(data).returning();
+    return row;
+  }
+
+  // ── Task #112: Order Ticket History ──────────────────────────────────────────
+
+  async getOrdersForHistory(tenantId: string, opts: {
+    q?: string;
+    dateFrom?: string;
+    dateTo?: string;
+    status?: string;
+    orderType?: string;
+    staffId?: string;
+    outletId?: string;
+    roleScope?: { role: string; userId: string };
+    limit?: number;
+    offset?: number;
+  }): Promise<{ orders: Record<string, unknown>[]; total: number }> {
+    const conditions: string[] = ["o.tenant_id = $1"];
+    const params: unknown[] = [tenantId];
+    let paramIdx = 2;
+
+    if (opts.roleScope?.role === "waiter") {
+      conditions.push(`o.waiter_id = $${paramIdx++}`);
+      params.push(opts.roleScope.userId);
+    }
+    if (opts.dateFrom) { conditions.push(`o.created_at >= $${paramIdx++}`); params.push(opts.dateFrom); }
+    if (opts.dateTo) { conditions.push(`o.created_at <= $${paramIdx++}`); params.push(opts.dateTo); }
+    if (opts.status) { conditions.push(`o.status = $${paramIdx++}`); params.push(opts.status); }
+    if (opts.orderType) { conditions.push(`o.order_type = $${paramIdx++}`); params.push(opts.orderType); }
+    if (opts.staffId) { conditions.push(`o.waiter_id = $${paramIdx++}`); params.push(opts.staffId); }
+    if (opts.outletId) { conditions.push(`o.outlet_id = $${paramIdx++}`); params.push(opts.outletId); }
+    if (opts.q) {
+      const sp = `%${opts.q}%`;
+      conditions.push(`(o.id ILIKE $${paramIdx} OR o.total::text ILIKE $${paramIdx} OR c.name ILIKE $${paramIdx} OR t.number::text ILIKE $${paramIdx})`);
+      params.push(sp);
+      paramIdx++;
+    }
+
+    const where = conditions.join(" AND ");
+    const limit = opts.limit ?? 50;
+    const offset = opts.offset ?? 0;
+
+    const countRes = await pool.query(
+      `SELECT COUNT(*) AS total FROM orders o LEFT JOIN tables t ON t.id = o.table_id LEFT JOIN customers c ON c.id = o.customer_id WHERE ${where}`,
+      params
+    );
+    const total = parseInt(countRes.rows[0]?.total ?? "0");
+
+    const dataRes = await pool.query(
+      `SELECT o.id, o.order_type AS channel, o.status, o.payment_method, o.total, o.created_at, o.waiter_id, o.outlet_id,
+         t.number AS table_number, u.name AS staff_name,
+         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id) AS item_count,
+         (SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id AND oi.is_voided = true) > 0 AS has_voided_items,
+         (SELECT COUNT(*) FROM item_refire_requests rr WHERE rr.order_id = o.id) > 0 AS has_refire,
+         b.payment_status, b.id AS bill_id
+       FROM orders o
+       LEFT JOIN tables t ON t.id = o.table_id
+       LEFT JOIN users u ON u.id = o.waiter_id
+       LEFT JOIN customers c ON c.id = o.customer_id
+       LEFT JOIN bills b ON b.order_id = o.id
+       WHERE ${where}
+       ORDER BY o.created_at DESC
+       LIMIT $${paramIdx++} OFFSET $${paramIdx++}`,
+      [...params, limit, offset]
+    );
+    return { orders: dataRes.rows, total };
+  }
+
+  async getOrderTicketDetail(orderId: string, tenantId: string): Promise<Record<string, unknown> | null> {
+    const orderRes = await pool.query(
+      `SELECT o.*, t.number AS table_number, u.name AS waiter_name, c.name AS customer_name
+       FROM orders o
+       LEFT JOIN tables t ON t.id = o.table_id
+       LEFT JOIN users u ON u.id = o.waiter_id
+       LEFT JOIN customers c ON c.id = o.customer_id
+       WHERE o.id = $1 AND o.tenant_id = $2`,
+      [orderId, tenantId]
+    );
+    if (!orderRes.rows[0]) return null;
+
+    const itemsRes = await pool.query(
+      `SELECT oi.*, oim.spice_level, oim.salt_level, oim.removed_ingredients, oim.has_allergy, oim.allergy_flags, oim.special_notes
+       FROM order_items oi LEFT JOIN order_item_modifications oim ON oim.order_item_id = oi.id
+       WHERE oi.order_id = $1 ORDER BY oi.course_number ASC, oi.id ASC`,
+      [orderId]
+    );
+
+    const billRes = await pool.query(
+      `SELECT b.*, array_agg(bp.payment_method) AS payment_methods FROM bills b LEFT JOIN bill_payments bp ON bp.bill_id = b.id WHERE b.order_id = $1 GROUP BY b.id ORDER BY b.created_at DESC LIMIT 1`,
+      [orderId]
+    );
+
+    const voidRes = await pool.query(`SELECT * FROM item_void_requests WHERE order_id = $1 ORDER BY created_at DESC`, [orderId]);
+    const refireRes = await pool.query(`SELECT * FROM item_refire_requests WHERE order_id = $1 ORDER BY created_at DESC`, [orderId]);
+
+    return {
+      order: orderRes.rows[0],
+      items: itemsRes.rows,
+      bill: billRes.rows[0] || null,
+      voidRequests: voidRes.rows,
+      refireRequests: refireRes.rows,
+    };
+  }
+
+  async getOrderTimeline(orderId: string, tenantId: string): Promise<Array<Record<string, unknown>>> {
+    const events: Array<Record<string, unknown>> = [];
+
+    const orderRes = await pool.query(
+      `SELECT o.*, t.number AS table_number, u.name AS staff_name FROM orders o LEFT JOIN tables t ON t.id = o.table_id LEFT JOIN users u ON u.id = o.waiter_id WHERE o.id = $1 AND o.tenant_id = $2`,
+      [orderId, tenantId]
+    );
+    if (!orderRes.rows[0]) return events;
+    const order = orderRes.rows[0];
+
+    if (order.created_at) events.push({ timestamp: order.created_at, icon: "📋", description: "Order created", performedBy: order.staff_name });
+    if (order.kitchen_sent_at) events.push({ timestamp: order.kitchen_sent_at, icon: "🍳", description: "Sent to kitchen" });
+
+    const timeLogsRes = await pool.query(`SELECT * FROM item_time_logs WHERE order_id = $1`, [orderId]);
+    for (const tl of timeLogsRes.rows) {
+      if (tl.cooking_started_at) events.push({ timestamp: tl.cooking_started_at, icon: "👨‍🍳", description: `Cooking started: ${tl.menu_item_name || "item"}`, performedBy: tl.chef_name });
+      if (tl.cooking_ready_at) events.push({ timestamp: tl.cooking_ready_at, icon: "✅", description: `Item ready: ${tl.menu_item_name || "item"}` });
+      if (tl.served_at) events.push({ timestamp: tl.served_at, icon: "🍽️", description: `Served: ${tl.menu_item_name || "item"}` });
+    }
+
+    const voidRes = await pool.query(`SELECT * FROM item_void_requests WHERE order_id = $1 ORDER BY created_at ASC`, [orderId]);
+    for (const vr of voidRes.rows) {
+      events.push({ timestamp: vr.created_at, icon: "🚫", description: `Void requested: ${vr.menu_item_name || "item"}`, performedBy: vr.requested_by_name });
+      if (vr.status === "approved" && vr.approved_at) events.push({ timestamp: vr.approved_at, icon: "✔️", description: `Void approved: ${vr.menu_item_name || "item"}`, performedBy: vr.approved_by_name });
+    }
+
+    const refireRes = await pool.query(`SELECT * FROM item_refire_requests WHERE order_id = $1 ORDER BY created_at ASC`, [orderId]);
+    for (const rr of refireRes.rows) {
+      events.push({ timestamp: rr.created_at, icon: "🔥", description: `Refire: ${rr.menu_item_name || "item"}`, performedBy: rr.requested_by_name });
+    }
+
+    const billRes = await pool.query(`SELECT * FROM bills WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`, [orderId]);
+    if (billRes.rows[0]?.paid_at) events.push({ timestamp: billRes.rows[0].paid_at, icon: "💳", description: `Bill paid — ${billRes.rows[0].payment_method || ""}` });
+
+    const auditRes = await pool.query(`SELECT * FROM audit_events WHERE entity_id = $1 AND tenant_id = $2 ORDER BY created_at ASC`, [orderId, tenantId]);
+    for (const ae of auditRes.rows) {
+      if (["RECEIPT_REPRINTED", "KOT_REPRINTED", "BILL_REPRINTED"].includes(ae.action)) {
+        events.push({ timestamp: ae.created_at, icon: "🖨️", description: `Reprinted: ${ae.action.replace("_REPRINTED", "").toLowerCase()}`, performedBy: ae.user_name });
+      }
+    }
+
+    events.sort((a, b) => new Date(a.timestamp as string).getTime() - new Date(b.timestamp as string).getTime());
+    return events;
+  }
+
+  async createVoidRequest(data: InsertItemVoidRequest): Promise<ItemVoidRequest> {
+    const [row] = await db.insert(itemVoidRequests).values(data).returning();
+    return row;
+  }
+
+  async getVoidRequest(id: string, tenantId: string): Promise<ItemVoidRequest | undefined> {
+    const [row] = await db.select().from(itemVoidRequests).where(and(eq(itemVoidRequests.id, id), eq(itemVoidRequests.tenantId, tenantId)));
+    return row;
+  }
+
+  async updateVoidRequest(id: string, tenantId: string, data: {
+    status?: string;
+    approvedBy?: string | null;
+    approvedByName?: string | null;
+    approvedAt?: Date | null;
+    rejectedReason?: string | null;
+  }): Promise<ItemVoidRequest | undefined> {
+    const [row] = await db.update(itemVoidRequests).set(data).where(and(eq(itemVoidRequests.id, id), eq(itemVoidRequests.tenantId, tenantId))).returning();
+    return row;
+  }
+
+  async getPendingVoidRequests(tenantId: string): Promise<ItemVoidRequest[]> {
+    return db.select().from(itemVoidRequests).where(and(eq(itemVoidRequests.tenantId, tenantId), eq(itemVoidRequests.status, "pending"))).orderBy(desc(itemVoidRequests.createdAt));
+  }
+
+  async createVoidedItem(data: InsertVoidedItem): Promise<VoidedItem> {
+    const [row] = await db.insert(voidedItems).values(data).returning();
+    return row;
+  }
+
+  async getVoidedItemsByOrder(orderId: string): Promise<VoidedItem[]> {
+    return db.select().from(voidedItems).where(eq(voidedItems.orderId, orderId));
+  }
+
+  async createRefireRequest(data: InsertItemRefireRequest): Promise<ItemRefireRequest> {
+    const [row] = await db.insert(itemRefireRequests).values(data).returning();
+    return row;
+  }
+
+  async getRefireRequestsByOrder(orderId: string): Promise<ItemRefireRequest[]> {
+    return db.select().from(itemRefireRequests).where(eq(itemRefireRequests.orderId, orderId)).orderBy(desc(itemRefireRequests.createdAt));
+  }
+
+  async updateRefireRequest(id: string, tenantId: string, data: {
+    status?: string;
+    newOrderItemId?: string | null;
+    newKotNumber?: string | null;
+  }): Promise<ItemRefireRequest | undefined> {
+    const [row] = await db.update(itemRefireRequests).set(data).where(and(eq(itemRefireRequests.id, id), eq(itemRefireRequests.tenantId, tenantId))).returning();
     return row;
   }
 }
