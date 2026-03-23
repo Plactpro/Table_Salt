@@ -1649,6 +1649,235 @@ export async function seedDatabase() {
 
   await seedServiceCoordination(tenant.id, outlet.id, waiter.id, manager.id, kitchen.id);
   await seedFoodModifications(tenant.id);
+  await seedWastageData(tenant.id, outlet.id, kitchen.id, manager.id);
+}
+
+async function seedWastageData(
+  tenantId: string,
+  outletId: string,
+  chefId: string,
+  managerId: string,
+): Promise<void> {
+  const existing = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM wastage_logs WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (parseInt(existing.rows[0].cnt) > 0) {
+    console.log("Wastage seed data already exists, skipping.");
+    return;
+  }
+
+  console.log("Seeding wastage tracking data...");
+
+  const { rows: invRows } = await pool.query(
+    `SELECT id, name, unit, cost_price FROM inventory_items WHERE tenant_id = $1 ORDER BY name LIMIT 20`,
+    [tenantId]
+  );
+  if (invRows.length === 0) return;
+
+  const invMap: Record<string, { id: string; unit: string; costPrice: number }> = {};
+  for (const r of invRows) {
+    invMap[r.name] = { id: r.id, unit: r.unit || "kg", costPrice: Number(r.cost_price || 0) };
+  }
+
+  const { rows: counterRows } = await pool.query(
+    `SELECT id, name FROM kitchen_counters WHERE tenant_id = $1 LIMIT 4`,
+    [tenantId]
+  );
+  const counters = counterRows.length > 0
+    ? counterRows
+    : [
+        { id: "cnt-1", name: "Hot Counter" },
+        { id: "cnt-2", name: "Cold Counter" },
+        { id: "cnt-3", name: "Grill Station" },
+        { id: "cnt-4", name: "Dessert Bar" },
+      ];
+
+  const chefs = [
+    { id: chefId, name: "Pat Garcia" },
+    { id: null, name: "Rina Patel" },
+    { id: null, name: "Mohammed Al-Farsi" },
+    { id: null, name: "Lily Chen" },
+    { id: null, name: "Dev Kumar" },
+  ];
+
+  const categories = [
+    "spoilage", "overproduction", "plate_return", "trim_waste", "cooking_error",
+    "expired", "dropped", "cross_contamination", "portion_error", "transfer_loss",
+    "quality_rejection", "storage_damage", "other",
+  ];
+
+  const ingredientList = Object.keys(invMap).length > 0
+    ? Object.entries(invMap).map(([name, meta]) => ({ name, ...meta }))
+    : [
+        { name: "Chicken Breast", id: null, unit: "kg", costPrice: 8.5 },
+        { name: "Salmon Fillet", id: null, unit: "kg", costPrice: 18 },
+        { name: "Tomatoes", id: null, unit: "kg", costPrice: 2.5 },
+        { name: "Heavy Cream", id: null, unit: "ltr", costPrice: 3.5 },
+        { name: "Mushrooms", id: null, unit: "kg", costPrice: 6 },
+      ];
+
+  function dateStr(daysAgo: number): string {
+    const d = new Date(Date.now() - daysAgo * 86400000);
+    return d.toISOString().slice(0, 10);
+  }
+
+  async function insertWastage(params: {
+    date: string; category: string; ingIndex: number; qty: number;
+    chefIndex: number; counterIndex: number; isPreventable: boolean; reason?: string; isRecovery?: boolean;
+  }): Promise<void> {
+    const ing = ingredientList[params.ingIndex % ingredientList.length];
+    const chef = chefs[params.chefIndex % chefs.length];
+    const counter = counters[params.counterIndex % counters.length];
+    const unitCost = ing.costPrice;
+    const totalCost = +(params.qty * unitCost).toFixed(2);
+
+    const { rows: cntRows } = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM wastage_logs WHERE tenant_id = $1 AND wastage_date = $2`,
+      [tenantId, params.date]
+    );
+    const seq = (parseInt(cntRows[0].cnt) + 1).toString().padStart(4, "0");
+    const wastageNumber = `WST-${params.date.replace(/-/g, "")}-${seq}`;
+
+    await pool.query(
+      `INSERT INTO wastage_logs
+         (tenant_id, outlet_id, wastage_number, wastage_date, wastage_category,
+          ingredient_id, ingredient_name, quantity, unit, unit_cost, total_cost,
+          reason, is_preventable, chef_id, chef_name, counter_id, counter_name, is_recovery)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+      [
+        tenantId, outletId, wastageNumber, params.date, params.category,
+        ing.id, ing.name, params.qty, ing.unit, unitCost, totalCost,
+        params.reason || `${params.category} — kitchen log`, params.isPreventable,
+        chef.id, chef.name, counter.id, counter.name, params.isRecovery || false,
+      ]
+    );
+  }
+
+  const today = dateStr(0);
+
+  const historyEntries = [
+    { daysAgo: 7, category: "spoilage", ingIndex: 1, qty: 0.5, chefIndex: 1, counterIndex: 0, isPreventable: true },
+    { daysAgo: 7, category: "overproduction", ingIndex: 0, qty: 0.8, chefIndex: 2, counterIndex: 2, isPreventable: true },
+    { daysAgo: 7, category: "trim_waste", ingIndex: 2, qty: 0.3, chefIndex: 0, counterIndex: 1, isPreventable: false },
+    { daysAgo: 6, category: "cooking_error", ingIndex: 0, qty: 0.4, chefIndex: 3, counterIndex: 2, isPreventable: true },
+    { daysAgo: 6, category: "expired", ingIndex: 4, qty: 1.0, chefIndex: 1, counterIndex: 0, isPreventable: true },
+    { daysAgo: 6, category: "dropped", ingIndex: 2, qty: 0.6, chefIndex: 4, counterIndex: 1, isPreventable: false },
+    { daysAgo: 5, category: "plate_return", ingIndex: 0, qty: 0.3, chefIndex: 2, counterIndex: 3, isPreventable: false },
+    { daysAgo: 5, category: "cross_contamination", ingIndex: 1, qty: 0.4, chefIndex: 0, counterIndex: 0, isPreventable: true },
+    { daysAgo: 5, category: "portion_error", ingIndex: 3, qty: 0.2, chefIndex: 1, counterIndex: 2, isPreventable: true },
+    { daysAgo: 4, category: "storage_damage", ingIndex: 4, qty: 0.8, chefIndex: 3, counterIndex: 1, isPreventable: true },
+    { daysAgo: 4, category: "quality_rejection", ingIndex: 0, qty: 0.5, chefIndex: 2, counterIndex: 3, isPreventable: false },
+    { daysAgo: 4, category: "transfer_loss", ingIndex: 2, qty: 0.3, chefIndex: 4, counterIndex: 0, isPreventable: false },
+    { daysAgo: 3, category: "spoilage", ingIndex: 1, qty: 0.6, chefIndex: 1, counterIndex: 1, isPreventable: true },
+    { daysAgo: 3, category: "overproduction", ingIndex: 0, qty: 1.0, chefIndex: 0, counterIndex: 2, isPreventable: true },
+    { daysAgo: 3, category: "cooking_error", ingIndex: 3, qty: 0.15, chefIndex: 3, counterIndex: 3, isPreventable: true },
+    { daysAgo: 2, category: "trim_waste", ingIndex: 2, qty: 0.4, chefIndex: 2, counterIndex: 0, isPreventable: false },
+    { daysAgo: 2, category: "expired", ingIndex: 4, qty: 0.7, chefIndex: 1, counterIndex: 1, isPreventable: true },
+    { daysAgo: 2, category: "dropped", ingIndex: 0, qty: 0.3, chefIndex: 4, counterIndex: 2, isPreventable: false },
+    { daysAgo: 1, category: "plate_return", ingIndex: 1, qty: 0.2, chefIndex: 0, counterIndex: 3, isPreventable: false },
+    { daysAgo: 1, category: "other", ingIndex: 3, qty: 0.1, chefIndex: 3, counterIndex: 0, isPreventable: false },
+    { daysAgo: 1, category: "spoilage", ingIndex: 2, qty: 0.5, chefIndex: 2, counterIndex: 1, isPreventable: true },
+  ];
+
+  for (const e of historyEntries) {
+    await insertWastage({ date: dateStr(e.daysAgo), category: e.category, ingIndex: e.ingIndex, qty: e.qty, chefIndex: e.chefIndex, counterIndex: e.counterIndex, isPreventable: e.isPreventable });
+  }
+
+  const todayEntries = [
+    { category: "spoilage", ingIndex: 1, qty: 0.8, chefIndex: 0, counterIndex: 0, isPreventable: true, reason: "Salmon left out — temperature breach" },
+    { category: "cooking_error", ingIndex: 0, qty: 0.5, chefIndex: 1, counterIndex: 2, isPreventable: true, reason: "Overcooked chicken — discarded" },
+    { category: "trim_waste", ingIndex: 2, qty: 0.4, chefIndex: 2, counterIndex: 1, isPreventable: false, reason: "Tomato trimming prep" },
+    { category: "overproduction", ingIndex: 0, qty: 1.2, chefIndex: 3, counterIndex: 2, isPreventable: true, reason: "Excess grilled chicken — shift close" },
+    { category: "expired", ingIndex: 4, qty: 0.6, chefIndex: 4, counterIndex: 0, isPreventable: true, reason: "Mushrooms past use-by date" },
+    { category: "dropped", ingIndex: 2, qty: 0.3, chefIndex: 0, counterIndex: 1, isPreventable: false, reason: "Dropped during plating" },
+    { category: "plate_return", ingIndex: 0, qty: 0.25, chefIndex: 1, counterIndex: 3, isPreventable: false, reason: "Customer returned — undercooked" },
+    { category: "cross_contamination", ingIndex: 1, qty: 0.5, chefIndex: 2, counterIndex: 0, isPreventable: true, reason: "Cross-contamination with allergen" },
+    { category: "quality_rejection", ingIndex: 3, qty: 0.2, chefIndex: 3, counterIndex: 2, isPreventable: false, reason: "Cream curdled — texture issue" },
+    { category: "portion_error", ingIndex: 0, qty: 0.3, chefIndex: 4, counterIndex: 2, isPreventable: true, reason: "Over-portioned at grill station" },
+    { category: "storage_damage", ingIndex: 4, qty: 0.4, chefIndex: 0, counterIndex: 1, isPreventable: true, reason: "Freezer burn — storage issue" },
+    { category: "transfer_loss", ingIndex: 2, qty: 0.2, chefIndex: 1, counterIndex: 0, isPreventable: false, reason: "Spillage during transfer" },
+    { category: "other", ingIndex: 3, qty: 0.1, chefIndex: 2, counterIndex: 3, isPreventable: false, reason: "Misc kitchen waste" },
+    { category: "spoilage", ingIndex: 1, qty: 0.5, chefIndex: 3, counterIndex: 0, isPreventable: true, reason: "Second spoilage batch — refrigerator issue" },
+    { category: "cooking_error", ingIndex: 0, qty: 0.35, chefIndex: 4, counterIndex: 2, isPreventable: true, reason: "Burned on grill — distraction" },
+  ];
+
+  for (const e of todayEntries) {
+    await insertWastage({ date: today, category: e.category, ingIndex: e.ingIndex, qty: e.qty, chefIndex: e.chefIndex, counterIndex: e.counterIndex, isPreventable: e.isPreventable, reason: e.reason });
+  }
+
+  const recoveryEntries = [
+    { category: "overproduction", ingIndex: 0, qty: 0.4, chefIndex: 0, counterIndex: 2, isPreventable: false, reason: "Excess repurposed into staff meal", isRecovery: true },
+    { category: "trim_waste", ingIndex: 2, qty: 0.2, chefIndex: 1, counterIndex: 1, isPreventable: false, reason: "Trim used for stock", isRecovery: true },
+  ];
+  for (const e of recoveryEntries) {
+    await insertWastage({ date: today, category: e.category, ingIndex: e.ingIndex, qty: e.qty, chefIndex: e.chefIndex, counterIndex: e.counterIndex, isPreventable: e.isPreventable, reason: e.reason, isRecovery: true });
+  }
+
+  await pool.query(
+    `INSERT INTO wastage_targets (tenant_id, outlet_id, period_type, target_amount, currency, effective_from, is_active, created_by)
+     VALUES ($1, $2, 'daily', 2000, 'INR', $3, true, $4)
+     ON CONFLICT DO NOTHING`,
+    [tenantId, outletId, dateStr(30), managerId]
+  );
+
+  for (let d = 7; d >= 0; d--) {
+    const summaryDate = dateStr(d);
+    const { rows: logRows } = await pool.query(
+      `SELECT total_cost, is_preventable, wastage_category, counter_id, counter_name, chef_id, chef_name
+       FROM wastage_logs WHERE tenant_id = $1 AND wastage_date = $2 AND is_voided = false`,
+      [tenantId, summaryDate]
+    );
+    if (logRows.length === 0) continue;
+
+    const totalCost = logRows.reduce((s: number, r: any) => s + Number(r.total_cost), 0);
+    const totalEntries = logRows.length;
+    const preventable = logRows.filter((r: any) => r.is_preventable);
+    const preventableCost = preventable.reduce((s: number, r: any) => s + Number(r.total_cost), 0);
+
+    const catBreak: Record<string, { cost: number; count: number }> = {};
+    const cntBreak: Record<string, { cost: number; count: number; name: string }> = {};
+    const chefBreak: Record<string, { cost: number; count: number; name: string }> = {};
+
+    for (const log of logRows) {
+      const cat = log.wastage_category || "other";
+      if (!catBreak[cat]) catBreak[cat] = { cost: 0, count: 0 };
+      catBreak[cat].cost += Number(log.total_cost);
+      catBreak[cat].count++;
+      if (log.counter_id) {
+        if (!cntBreak[log.counter_id]) cntBreak[log.counter_id] = { cost: 0, count: 0, name: log.counter_name };
+        cntBreak[log.counter_id].cost += Number(log.total_cost);
+        cntBreak[log.counter_id].count++;
+      }
+      if (log.chef_id) {
+        if (!chefBreak[log.chef_id]) chefBreak[log.chef_id] = { cost: 0, count: 0, name: log.chef_name };
+        chefBreak[log.chef_id].cost += Number(log.total_cost);
+        chefBreak[log.chef_id].count++;
+      }
+    }
+
+    await pool.query(
+      `INSERT INTO wastage_daily_summary
+         (tenant_id, outlet_id, summary_date, total_cost, total_entries, preventable_cost, preventable_entries,
+          target_amount, category_breakdown, counter_breakdown, chef_breakdown)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (tenant_id, COALESCE(outlet_id, ''), summary_date) DO UPDATE SET
+         total_cost = EXCLUDED.total_cost, total_entries = EXCLUDED.total_entries,
+         preventable_cost = EXCLUDED.preventable_cost, preventable_entries = EXCLUDED.preventable_entries,
+         target_amount = EXCLUDED.target_amount, category_breakdown = EXCLUDED.category_breakdown,
+         counter_breakdown = EXCLUDED.counter_breakdown, chef_breakdown = EXCLUDED.chef_breakdown,
+         updated_at = now()`,
+      [
+        tenantId, outletId, summaryDate,
+        totalCost.toFixed(2), totalEntries,
+        preventableCost.toFixed(2), preventable.length,
+        2000,
+        JSON.stringify(catBreak), JSON.stringify(cntBreak), JSON.stringify(chefBreak),
+      ]
+    );
+  }
+
+  console.log("Wastage tracking seed data added successfully!");
 }
 
 async function seedServiceCoordination(
