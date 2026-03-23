@@ -1,0 +1,421 @@
+Here is the complete prompt. Paste directly into Replit AI.
+
+***
+
+### Tip Management System — Owner Configurable
+
+This is a continuation of the existing restaurant SaaS project in Replit. The following are already built: multi-tenant architecture, POS, billing and payments, cash machine integration, receipt printing, staff management, and outlet settings.
+
+Now build a **fully functional Tip Management System** that is completely controlled by the restaurant owner — tips are hidden from customers unless the owner explicitly enables it, with full configuration of tip display, percentages, distribution method, and reporting.
+
+***
+
+#### 1. Core concept
+
+```
+OWNER enables tips in outlet settings
+        ↓
+Tip options appear on:
+  → POS payment screen (waiter-facing)
+  → QR payment screen (customer-facing)
+  → Receipt (if enabled)
+        ↓
+Customer adds tip (optional, never forced)
+        ↓
+Tip recorded against bill and waiter
+        ↓
+Manager sees tip report
+Waiter sees their own tip total
+        ↓
+Owner controls everything:
+  → Enable/disable per outlet
+  → Set suggested percentages
+  → Choose distribution method
+  → Choose where tip appears
+```
+
+***
+
+#### 2. Tip configuration schema
+
+```sql
+-- Tip settings per outlet (owner controls)
+CREATE TABLE outlet_tip_settings (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL UNIQUE,
+
+  -- Master switch (owner only)
+  tips_enabled          BOOLEAN DEFAULT false,
+    -- FALSE = tips hidden everywhere, no prompts
+
+  -- Display settings
+  show_on_pos           BOOLEAN DEFAULT true,
+    -- show tip option on POS payment screen
+  show_on_qr            BOOLEAN DEFAULT false,
+    -- show tip option on QR customer payment
+  show_on_receipt       BOOLEAN DEFAULT true,
+    -- print tip line on receipt if tip given
+  prompt_style          VARCHAR(20) DEFAULT 'BUTTONS',
+    -- 'BUTTONS'  → show % quick buttons
+    -- 'SLIDER'   → sliding % selector
+    -- 'INPUT'    → simple amount input only
+    -- 'NONE'     → no prompt, manual entry only
+
+  -- Suggested percentages (owner sets these)
+  suggested_pct_1       INT DEFAULT 5,
+  suggested_pct_2       INT DEFAULT 10,
+  suggested_pct_3       INT DEFAULT 15,
+  allow_custom_amount   BOOLEAN DEFAULT true,
+    -- allow entering any custom tip amount
+
+  -- Tip basis
+  tip_basis             VARCHAR(20) DEFAULT 'SUBTOTAL',
+    -- 'SUBTOTAL'   → % of food+drink before tax
+    -- 'TOTAL'      → % of final bill including tax
+
+  -- Distribution method
+  distribution_method   VARCHAR(20) DEFAULT 'INDIVIDUAL',
+    -- 'INDIVIDUAL' → tip goes to serving waiter
+    -- 'POOL'       → all tips pooled and shared
+    -- 'SPLIT'      → % to waiter + % to kitchen
+
+  -- Pool split config (if SPLIT selected)
+  waiter_share_pct      INT DEFAULT 70,
+    -- 70% to front of house
+  kitchen_share_pct     INT DEFAULT 30,
+    -- 30% to kitchen staff
+
+  -- Tax setting
+  tip_is_taxable        BOOLEAN DEFAULT false,
+    -- most countries: tips not taxed
+    -- set true if local law requires
+
+  -- Currency
+  currency_code         VARCHAR(10) DEFAULT 'INR',
+  currency_symbol       VARCHAR(5) DEFAULT '₹',
+
+  updated_by            UUID,
+  updated_at            TIMESTAMP DEFAULT NOW(),
+  created_at            TIMESTAMP DEFAULT NOW()
+);
+
+-- Tip records per bill
+CREATE TABLE bill_tips (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  bill_id               UUID NOT NULL,
+  order_id              UUID NOT NULL,
+  tip_amount            DECIMAL(10,2) NOT NULL,
+  tip_type              VARCHAR(20) NOT NULL,
+    -- 'PERCENTAGE' → selected from quick buttons
+    -- 'CUSTOM'     → manually entered amount
+  tip_percentage        DECIMAL(5,2),
+    -- NULL if custom amount
+  tip_basis_amount      DECIMAL(10,2),
+    -- the amount tip % was applied to
+  payment_method        VARCHAR(30),
+    -- 'CASH', 'CARD', 'UPI'
+    -- tip payment method may differ from bill
+  waiter_id             UUID,
+  waiter_name           VARCHAR(255),
+  distribution_method   VARCHAR(20),
+  is_distributed        BOOLEAN DEFAULT false,
+  distributed_at        TIMESTAMP,
+  created_at            TIMESTAMP DEFAULT NOW()
+);
+
+-- Tip distribution records
+CREATE TABLE tip_distributions (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  bill_tip_id           UUID NOT NULL,
+  staff_id              UUID NOT NULL,
+  staff_name            VARCHAR(255),
+  staff_role            VARCHAR(50),
+  share_percentage      DECIMAL(5,2),
+  share_amount          DECIMAL(10,2),
+  distribution_date     DATE,
+  is_paid               BOOLEAN DEFAULT false,
+  paid_at               TIMESTAMP,
+  created_at            TIMESTAMP DEFAULT NOW()
+);
+```
+
+***
+
+#### 3. Owner tip settings screen
+
+Under Settings → Outlet Settings → Tips:
+
+```
+┌──────────────────────────────────────────────────┐
+│  💰 TIP SETTINGS                                 │
+│  Main Branch | Owner: Sanjay Kumar               │
+├──────────────────────────────────────────────────┤
+│  MASTER SWITCH:                                  │
+│  Enable Tips for this outlet:                    │
+│  [🔴 OFF ●────────────○ ON]                     │
+│                                                  │
+│  ⚠️ When OFF:                                    │
+│  → No tip prompts shown anywhere                 │
+│  → Tip section hidden on POS                     │
+│  → Tip section hidden on QR ordering             │
+│  → Receipts show no tip line                     │
+├──────────────────────────────────────────────────┤
+│  (All settings below visible only when ON)       │
+├──────────────────────────────────────────────────┤
+│  SHOW TIP OPTION ON:                             │
+│  POS Payment Screen:    [✅ Yes  ○ No]           │
+│  QR Customer Payment:   [○ Yes  ✅ No]           │
+│  Print on Receipt:      [✅ Yes  ○ No]           │
+├──────────────────────────────────────────────────┤
+│  TIP PROMPT STYLE:                               │
+│  ● Quick % Buttons (recommended)                 │
+│  ○ Slider                                        │
+│  ○ Amount input only                             │
+│  ○ No prompt (manual entry only)                 │
+├──────────────────────────────────────────────────┤
+│  SUGGESTED PERCENTAGES:                          │
+│  Button 1: [5 ]%                                 │
+│  Button 2: [10]%                                 │
+│  Button 3: [15]%                                 │
+│  Allow custom amount: [✅ Yes]                   │
+├──────────────────────────────────────────────────┤
+│  TIP CALCULATED ON:                              │
+│  ● Subtotal (before tax) — recommended           │
+│  ○ Final total (including tax)                   │
+├──────────────────────────────────────────────────┤
+│  TIP DISTRIBUTION:                               │
+│  ● Individual — goes to serving waiter           │
+│  ○ Pool — shared equally among all staff         │
+│  ○ Split — % to waiter + % to kitchen            │
+│    Waiter share:  [70]%                          │
+│    Kitchen share: [30]%                          │
+├──────────────────────────────────────────────────┤
+│  [💾 SAVE SETTINGS]                             │
+└──────────────────────────────────────────────────┘
+```
+
+***
+
+#### 4. Tip display on POS payment screen
+
+Only shown when `tips_enabled = true` AND `show_on_pos = true`:
+
+```
+┌──────────────────────────────────────────────────┐
+│  💵 PAYMENT — Bill #INV-2026-0451               │
+│  Total: ₹1,185                                  │
+├──────────────────────────────────────────────────┤
+│  ADD TIP? (Optional)                             │
+│                                                  │
+│  [5%  +₹59] [10% +₹119] [15% +₹178] [Custom]  │
+│                                                  │
+│  Selected: 10% = ₹119                           │
+│  ─────────────────────────────────              │
+│  Bill total:    ₹1,185                          │
+│  Tip (10%):    +₹119                           │
+│  Grand total:   ₹1,304                          │
+│                                                  │
+│  [No Tip]  [✅ Confirm with Tip]               │
+├──────────────────────────────────────────────────┤
+│  Payment method for tip:                        │
+│  ● Same as bill (Cash)                          │
+│  ○ Separate method                              │
+└──────────────────────────────────────────────────┘
+```
+
+- If tips disabled: this section is completely hidden.
+- "No Tip" always available — never force tip.
+- Tip payment method defaults to same as bill.
+
+***
+
+#### 5. Tip display on QR payment
+
+Only shown when `tips_enabled = true` AND `show_on_qr = true`:
+
+```
+┌──────────────────────────────────────────────────┐
+│  🌟 DID YOU ENJOY YOUR MEAL?                    │
+│  Add a tip for your server (optional)           │
+│                                                  │
+│  [5%] [10%] [15%] [Custom] [No Thanks]         │
+│                                                  │
+│  Your tip goes directly to your server          │
+│  Waiter: John Kumar                             │
+└──────────────────────────────────────────────────┘
+```
+
+- Friendly, non-pressuring language.
+- Shows waiter name if individual distribution enabled.
+- If tips disabled: section completely absent from QR page.
+
+***
+
+#### 6. Receipt tip display
+
+Only shown when tip was given AND `show_on_receipt = true`:
+
+```
+Subtotal:              ₹1,000
+Discount (10%):         -₹100
+Service Charge (5%):     ₹45
+CGST (2.5%):            ₹23.63
+SGST (2.5%):            ₹23.63
+─────────────────────────────
+Bill Total:            ₹992.25
+Tip (10% - optional):  ₹99.00
+─────────────────────────────
+AMOUNT PAID:         ₹1,091.25
+─────────────────────────────
+Thank you! Your tip goes to
+your server John Kumar 🙏
+```
+
+- If no tip given: tip line not shown at all.
+- If tips disabled: tip line never shown.
+
+***
+
+#### 7. Tip service logic
+
+```typescript
+class TipService {
+
+  // Called when payment screen loads
+  async getTipConfig(outletId: string): Promise<TipConfig | null> {
+    const settings = await getOutletTipSettings(outletId);
+
+    // If tips disabled, return null
+    // → UI shows nothing tip-related
+    if (!settings.tips_enabled) return null;
+
+    return {
+      enabled: true,
+      suggestedPercentages: [
+        settings.suggested_pct_1,
+        settings.suggested_pct_2,
+        settings.suggested_pct_3
+      ].filter(Boolean),
+      allowCustom: settings.allow_custom_amount,
+      promptStyle: settings.prompt_style,
+      tipBasis: settings.tip_basis,
+      currencySymbol: settings.currency_symbol
+    };
+  }
+
+  // Called when payment is confirmed with tip
+  async recordTip(
+    billId: string,
+    tipAmount: number,
+    tipType: 'PERCENTAGE' | 'CUSTOM',
+    tipPercentage: number | null,
+    waiterId: string,
+    paymentMethod: string
+  ): Promise<void> {
+
+    const settings = await getOutletTipSettings(
+      await getOutletIdFromBill(billId)
+    );
+
+    // Save tip record
+    const tip = await db.bill_tips.create({
+      billId,
+      tipAmount,
+      tipType,
+      tipPercentage,
+      waiterId,
+      paymentMethod,
+      distributionMethod: settings.distribution_method
+    });
+
+    // Distribute immediately based on method
+    await this.distributeTip(tip, settings);
+  }
+
+  private async distributeTip(
+    tip: BillTip,
+    settings: TipSettings
+  ): Promise<void> {
+
+    if (settings.distribution_method === 'INDIVIDUAL') {
+      // 100% to serving waiter
+      await db.tip_distributions.create({
+        billTipId: tip.id,
+        staffId: tip.waiterId,
+        staffName: tip.waiterName,
+        sharePercentage: 100,
+        shareAmount: tip.tipAmount,
+        distributionDate: today()
+      });
+
+    } else if (settings.distribution_method === 'POOL') {
+      // Split equally among all clocked-in staff
+      const staff = await getClockedInStaff(tip.outletId);
+      const share = tip.tipAmount / staff.length;
+
+      for (const member of staff) {
+        await db.tip_distributions.create({
+          billTipId: tip.id,
+          staffId: member.id,
+          sharePercentage: 100 / staff.length,
+          shareAmount: share,
+          distributionDate: today()
+        });
+      }
+
+    } else if (settings.distribution_method === 'SPLIT') {
+      // % to waiter + % to kitchen
+      const waiterShare =
+        tip.tipAmount * (settings.waiter_share_pct / 100);
+      const kitchenShare =
+        tip.tipAmount * (settings.kitchen_share_pct / 100);
+
+      // Waiter share
+      await db.tip_distributions.create({
+        billTipId: tip.id,
+        staffId: tip.waiterId,
+        shareAmount: waiterShare,
+        sharePercentage: settings.waiter_share_pct
+      });
+
+      // Kitchen share — split among clocked-in chefs
+      const chefs = await getClockedInChefs(tip.outletId);
+      const chefShare = kitchenShare / chefs.length;
+
+      for (const chef of chefs) {
+        await db.tip_distributions.create({
+          billTipId: tip.id,
+          staffId: chef.id,
+          shareAmount: chefShare,
+          sharePercentage:
+            settings.kitchen_share_pct / chefs.length
+        });
+      }
+    }
+
+    await db.bill_tips.update(tip.id, {
+      is_distributed: true,
+      distributed_at: new Date()
+    });
+  }
+}
+```
+
+***
+
+#### 8. Tip reports
+
+##### Manager view — daily tip summary
+```
+┌──────────────────────────────────────────────────┐
+│  💰 TIP SUMMARY — 23 March 2026                 │
+│  Main Branch | Distribution: Individual          │
+├──────────────────────────────────────────────────┤
+│  TOTAL TIPS TODAY:    ₹ 2,840                   │
+│  Total transactions:  24                         │
+│  Avg tip per bill:    ₹ 118
