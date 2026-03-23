@@ -85,6 +85,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { GlobalErrorBoundary } from "@/components/GlobalErrorBoundary";
 
 import type { UserRole } from "@shared/permissions-config";
 
@@ -489,16 +490,18 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AuthProvider>
-          <ImpersonationProvider>
-            <Toaster />
-            <Router />
-          </ImpersonationProvider>
-        </AuthProvider>
-      </TooltipProvider>
-    </QueryClientProvider>
+    <GlobalErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <AuthProvider>
+            <ImpersonationProvider>
+              <Toaster />
+              <Router />
+            </ImpersonationProvider>
+          </AuthProvider>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </GlobalErrorBoundary>
   );
 }
 

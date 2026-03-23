@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { StatCard } from "@/components/widgets/stat-card";
 import { ChartWidget } from "@/components/widgets/chart-widget";
-import { DollarSign, Receipt, Percent, Download, TrendingUp, Wallet, PiggyBank, CalendarRange } from "lucide-react";
+import { DollarSign, Receipt, Percent, Download, TrendingUp, Wallet, PiggyBank, CalendarRange, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,6 +11,29 @@ import { Label } from "@/components/ui/label";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency } from "@shared/currency";
+
+class PageErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.label}] page error:`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <AlertCircle className="h-10 w-10 text-destructive opacity-60" />
+          <p className="text-sm">Something went wrong loading <strong>{this.props.label}</strong>.</p>
+          <button className="text-xs underline" onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -89,7 +113,7 @@ export default function AccountantDashboard() {
   };
 
   return (
-    <motion.div
+    <PageErrorBoundary label="Accountant Dashboard"><motion.div
       className="space-y-6"
       data-testid="dashboard-accountant"
       variants={stagger}
@@ -214,6 +238,6 @@ export default function AccountantDashboard() {
           testId="chart-revenue"
         />
       </motion.div>
-    </motion.div>
+    </motion.div></PageErrorBoundary>
   );
 }

@@ -1,14 +1,17 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type Handler = (payload: unknown) => void;
+type ConnectionStatusHandler = (connected: boolean) => void;
 
 class RealtimeClient {
   private ws: WebSocket | null = null;
   private listeners = new Map<string, Set<Handler>>();
+  private statusListeners = new Set<ConnectionStatusHandler>();
   private delay = 1000;
   private maxDelay = 30000;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private active = false;
+  private connected = false;
 
   start() {
     if (this.active) return;
@@ -31,6 +34,21 @@ class RealtimeClient {
     this.listeners.get(event)?.delete(handler);
   }
 
+  onStatus(handler: ConnectionStatusHandler) {
+    this.statusListeners.add(handler);
+    handler(this.connected);
+  }
+
+  offStatus(handler: ConnectionStatusHandler) {
+    this.statusListeners.delete(handler);
+  }
+
+  private _setConnected(value: boolean) {
+    if (this.connected === value) return;
+    this.connected = value;
+    this.statusListeners.forEach(h => { try { h(value); } catch (_) {} });
+  }
+
   private _connect() {
     if (!this.active) return;
     try {
@@ -39,6 +57,7 @@ class RealtimeClient {
 
       this.ws.onopen = () => {
         this.delay = 1000;
+        this._setConnected(true);
       };
 
       this.ws.onmessage = (evt: MessageEvent) => {
@@ -51,6 +70,7 @@ class RealtimeClient {
 
       this.ws.onclose = () => {
         this.ws = null;
+        this._setConnected(false);
         if (!this.active) return;
         this.timer = setTimeout(() => {
           this.delay = Math.min(this.delay * 2, this.maxDelay);
@@ -80,4 +100,19 @@ export function useRealtimeEvent(event: string, handler: Handler) {
       realtimeClient.off(event, stable);
     };
   }, [event]);
+}
+
+export function useRealtimeConnectionStatus(): boolean {
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    realtimeClient.start();
+    const handler: ConnectionStatusHandler = (status) => setConnected(status);
+    realtimeClient.onStatus(handler);
+    return () => {
+      realtimeClient.offStatus(handler);
+    };
+  }, []);
+
+  return connected;
 }

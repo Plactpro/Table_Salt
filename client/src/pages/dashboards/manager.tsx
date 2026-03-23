@@ -1,8 +1,9 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { StatCard } from "@/components/widgets/stat-card";
-import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2, Banknote, ChevronRight } from "lucide-react";
+import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2, Banknote, ChevronRight, AlertCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +16,29 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import type { VoidRequest } from "@/components/tickets/TicketDetailDrawer";
 import { TrialBanner } from "@/components/layout/TrialBanner";
+
+class PageErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.label}] page error:`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <AlertCircle className="h-10 w-10 text-destructive opacity-60" />
+          <p className="text-sm">Something went wrong loading <strong>{this.props.label}</strong>.</p>
+          <button className="text-xs underline" onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -123,7 +147,7 @@ export default function ManagerDashboard() {
   ).length;
 
   return (
-    <motion.div
+    <PageErrorBoundary label="Manager Dashboard"><motion.div
       className="space-y-6"
       data-testid="dashboard-manager"
       variants={stagger}
@@ -417,7 +441,7 @@ export default function ManagerDashboard() {
           </motion.div>
         )}
       </motion.div>
-    </motion.div>
+    </motion.div></PageErrorBoundary>
   );
 }
 

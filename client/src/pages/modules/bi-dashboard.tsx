@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { motion } from "framer-motion";
@@ -12,8 +13,31 @@ import type { LucideIcon } from "lucide-react";
 import {
   BarChart3, TrendingUp, DollarSign, Users, PieChart as PieIcon,
   Activity, Clock, ShoppingBag, Target, Star, Award, Percent,
-  ArrowUpRight, ArrowDownRight, CalendarDays, Package,
+  ArrowUpRight, ArrowDownRight, CalendarDays, Package, AlertCircle,
 } from "lucide-react";
+
+class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.label}] tab error:`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <AlertCircle className="h-10 w-10 text-destructive opacity-60" />
+          <p className="text-sm">Something went wrong loading <strong>{this.props.label}</strong>.</p>
+          <button className="text-xs underline" onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface HourlySalesItem { hour: number; revenue: number; count: number }
 interface ChannelMixItem { channel: string; revenue: number; count: number }
@@ -180,7 +204,7 @@ export default function BIDashboard() {
         </div>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <TabErrorBoundary label="BI Dashboard"><Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="operations" data-testid="tab-operations"><Activity className="w-4 h-4 mr-1.5" />Operations</TabsTrigger>
           <TabsTrigger value="finance" data-testid="tab-finance"><DollarSign className="w-4 h-4 mr-1.5" />Finance</TabsTrigger>
@@ -597,7 +621,7 @@ export default function BIDashboard() {
             </>
           )}
         </TabsContent>
-      </Tabs>
+      </Tabs></TabErrorBoundary>
     </div>
   );
 }

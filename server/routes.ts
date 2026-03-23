@@ -146,5 +146,11 @@ export async function registerRoutes(
   registerSupportRoutes(app);
   registerOnboardingRoutes(app);
 
+  app.post("/api/errors/client", (req: any, res: any) => {
+    const { message, stack, pathname, userAgent } = req.body || {};
+    console.error("[CLIENT_ERROR]", JSON.stringify({ message, stack, pathname, userAgent }));
+    res.status(204).end();
+  });
+
   return httpServer;
 }

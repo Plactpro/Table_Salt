@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -22,9 +23,32 @@ import { useKotAutoDispatch } from "@/hooks/use-kot-auto-dispatch";
 import {
   Globe, Monitor, Bike, Car, UtensilsCrossed, Search, Eye, Clock, CheckCircle2,
   XCircle, ChefHat, Send, Package, Zap, Plus, Settings, RefreshCw, ShoppingBag,
-  Truck, MapPin, Phone, User, ArrowRight, Filter, Hash, DollarSign,
+  Truck, MapPin, Phone, User, ArrowRight, Filter, Hash, DollarSign, AlertCircle,
 } from "lucide-react";
 import type { Order, OrderItem, Outlet, MenuItem } from "@shared/schema";
+
+class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.label}] tab error:`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <AlertCircle className="h-10 w-10 text-destructive opacity-60" />
+          <p className="text-sm">Something went wrong loading <strong>{this.props.label}</strong>.</p>
+          <button className="text-xs underline" onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 interface OrderChannel {
   id: string;
@@ -271,7 +295,7 @@ export default function OrdersHub() {
         })}
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <TabErrorBoundary label="Orders Hub"><Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList>
           <TabsTrigger value="live-orders" data-testid="tab-live-orders">Live Orders ({liveOrders.length})</TabsTrigger>
           <TabsTrigger value="channel-settings" data-testid="tab-channel-settings">Channel Settings</TabsTrigger>
@@ -465,7 +489,7 @@ export default function OrdersHub() {
             </CardContent>
           </Card>
         </TabsContent>
-      </Tabs>
+      </Tabs></TabErrorBoundary>
 
       <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
         <DialogContent className="max-w-lg">
