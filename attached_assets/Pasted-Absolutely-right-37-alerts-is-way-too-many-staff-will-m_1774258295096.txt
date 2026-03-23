@@ -1,0 +1,425 @@
+Absolutely right. 37 alerts is way too many — staff will mute everything within a day. Here is my honest trimmed-down version.
+
+***
+
+## Reality Check First
+
+```
+Too many alerts = staff ignores ALL of them
+Including the critical ones like ALLERGY
+
+Real restaurants need:
+  → Alerts that demand action RIGHT NOW
+  → Everything else = silent visual only
+```
+
+***
+
+## Trimmed Alert List — Only What Actually Matters
+
+### KEEP AS SOUND (12 alerts only)
+
+| # | Situation | Who Hears | Sound | Cannot Disable |
+|---|---|---|---|---|
+| 1 | New order received | Chef / KDS | Single chime | No |
+| 2 | Rush / VIP order | Chef + Manager | Triple urgent chime | No |
+| 3 | **Allergy flagged** | Chef + Manager | **Distinct alarm** | **YES — locked** |
+| 4 | All items ready — collect now | Waiter | Cheerful ready tone | No |
+| 5 | Item overdue > 120% | Chef + Coordinator | Warning beep | No |
+| 6 | Customer called waiter (QR) | Waiter | Gentle chime | No |
+| 7 | Kitchen printer offline | Manager | Error beep | No |
+| 8 | Cashier printer offline | Cashier + Manager | Error beep | No |
+| 9 | Void request pending | Manager | Attention chime | No |
+| 10 | Stock out of stock (zero) | Manager + Head Chef | Alert tone | No |
+| 11 | Delivery order at risk | Coordinator | Urgent tone | No |
+| 12 | Staff not clocked in | Manager | Reminder chime | No |
+
+### REMOVE COMPLETELY (no sound, no visual repeat)
+
+```
+❌ Item cooking over estimate (visual timer is enough)
+❌ Suggested start time (visual countdown is enough)
+❌ Single item partially ready (too frequent)
+❌ Item sitting at pass (waiter can see it)
+❌ Table occupied too long (visual floor plan enough)
+❌ Reservation in 15 min (calendar view enough)
+❌ Wastage at 80% (daily report is enough)
+❌ Payment received (cashier can see it)
+❌ Staff clocked in (manager dashboard shows it)
+❌ Bill pending 15 min (coordinator screen shows it)
+❌ Low paper warning (check visually)
+❌ Print job failed (screen shows error)
+❌ Wastage target 80% (end of day report enough)
+```
+
+***
+
+## The Rule Applied
+
+```
+Sound alert = action needed RIGHT NOW
+              by a specific person
+              who may NOT be looking at screen
+
+Everything else = visual only on screen
+```
+
+***
+
+## Replit AI Prompt
+
+Here is the clean focused prompt. Paste directly into Replit AI.
+
+***
+
+### Audible Alert System — Essential Alerts Only
+
+This is a continuation of the existing restaurant SaaS project in Replit. The following are already built: multi-tenant architecture, KDS, POS, QR ordering, order management, food modifications, printer system, and service coordination.
+
+Now build a **focused Audible Alert System** with only 12 essential sound alerts — the ones that require immediate action from staff who may not be looking at a screen. Everything else remains as silent visual indicators only.
+
+***
+
+#### 1. The 12 essential sound alerts
+
+```sql
+CREATE TABLE alert_definitions (
+  id                  UUID PRIMARY KEY,
+  tenant_id           UUID NOT NULL,
+  alert_code          VARCHAR(20) UNIQUE NOT NULL,
+  alert_name          VARCHAR(100) NOT NULL,
+  sound_file          VARCHAR(100) NOT NULL,
+  urgency             VARCHAR(20) NOT NULL,
+    -- 'normal', 'high', 'critical'
+  target_roles        JSONB NOT NULL,
+  requires_acknowledge BOOLEAN DEFAULT false,
+  repeat_interval_sec INT DEFAULT 0,
+    -- 0 = play once only
+  can_be_disabled     BOOLEAN DEFAULT true,
+  min_volume          INT DEFAULT 0,
+    -- allergy = 80 minimum, cannot go lower
+  is_active           BOOLEAN DEFAULT true
+);
+```
+
+##### Seed these 12 alerts only:
+
+```sql
+-- ALERT 1: New order received
+INSERT INTO alert_definitions VALUES (
+  'ALERT-01', 'New Order',
+  'new_order.mp3', 'normal',
+  '["CHEF"]',
+  false, 0, true, 0
+);
+
+-- ALERT 2: Rush / VIP order
+INSERT INTO alert_definitions VALUES (
+  'ALERT-02', 'Rush / VIP Order',
+  'rush_order.mp3', 'high',
+  '["CHEF", "HEAD_CHEF", "MANAGER", "COORDINATOR"]',
+  false, 30, true, 0
+  -- repeats every 30 sec until chef acknowledges
+);
+
+-- ALERT 3: ALLERGY FLAGGED (critical — cannot disable)
+INSERT INTO alert_definitions VALUES (
+  'ALERT-03', 'Allergy Alert',
+  'allergy_alarm.mp3', 'critical',
+  '["CHEF", "HEAD_CHEF", "MANAGER", "COORDINATOR"]',
+  true,   -- MUST acknowledge
+  30,     -- repeat every 30 sec until acknowledged
+  false,  -- CANNOT be disabled
+  80      -- minimum volume 80%
+);
+
+-- ALERT 4: All items ready — waiter collect now
+INSERT INTO alert_definitions VALUES (
+  'ALERT-04', 'Order Ready',
+  'order_ready.mp3', 'normal',
+  '["WAITER"]',
+  false, 120, true, 0
+  -- repeats every 2 min if not picked up
+);
+
+-- ALERT 5: Item overdue (> 120% of estimate)
+INSERT INTO alert_definitions VALUES (
+  'ALERT-05', 'Item Overdue',
+  'overdue_warning.mp3', 'high',
+  '["CHEF", "COORDINATOR"]',
+  false, 90, true, 0
+);
+
+-- ALERT 6: Customer called waiter via QR
+INSERT INTO alert_definitions VALUES (
+  'ALERT-06', 'Waiter Called',
+  'waiter_call.mp3', 'normal',
+  '["WAITER"]',
+  false, 90, true, 0
+  -- repeats every 90 sec until waiter acknowledges
+);
+
+-- ALERT 7: Kitchen printer offline
+INSERT INTO alert_definitions VALUES (
+  'ALERT-07', 'Kitchen Printer Offline',
+  'printer_error.mp3', 'high',
+  '["MANAGER", "COORDINATOR"]',
+  false, 300, true, 0
+  -- repeats every 5 min until resolved
+);
+
+-- ALERT 8: Cashier printer offline
+INSERT INTO alert_definitions VALUES (
+  'ALERT-08', 'Cashier Printer Offline',
+  'printer_error.mp3', 'high',
+  '["CASHIER", "MANAGER"]',
+  false, 300, true, 0
+);
+
+-- ALERT 9: Void request pending manager approval
+INSERT INTO alert_definitions VALUES (
+  'ALERT-09', 'Void Request Pending',
+  'attention_chime.mp3', 'normal',
+  '["MANAGER"]',
+  false, 120, true, 0
+);
+
+-- ALERT 10: Ingredient out of stock (zero)
+INSERT INTO alert_definitions VALUES (
+  'ALERT-10', 'Ingredient Out of Stock',
+  'stock_alert.mp3', 'high',
+  '["MANAGER", "HEAD_CHEF"]',
+  false, 1800, true, 0
+  -- repeat once every 30 min until resolved
+);
+
+-- ALERT 11: Delivery order at risk
+INSERT INTO alert_definitions VALUES (
+  'ALERT-11', 'Delivery At Risk',
+  'urgent_tone.mp3', 'high',
+  '["COORDINATOR", "MANAGER"]',
+  false, 60, true, 0
+);
+
+-- ALERT 12: Staff not clocked in (shift started)
+INSERT INTO alert_definitions VALUES (
+  'ALERT-12', 'Staff Not Clocked In',
+  'reminder_chime.mp3', 'normal',
+  '["MANAGER"]',
+  false, 900, true, 0
+  -- repeat every 15 min for 1 hour max
+);
+```
+
+***
+
+#### 2. Sound files — Web Audio API fallback
+
+Use actual audio files where possible. If files are not loaded, use Web Audio API tones as fallback so alerts always work:
+
+```typescript
+class SoundPlayer {
+
+  private audioContext: AudioContext;
+
+  // Fallback tones if MP3 files not available
+  private fallbackTones: Record<string, ToneConfig> = {
+    'new_order.mp3':       { freq: 880, pattern: [150, 80, 150] },
+    'rush_order.mp3':      { freq: 660, pattern: [100, 50, 100, 50, 100] },
+    'allergy_alarm.mp3':   { freq: 440, pattern: [300, 100, 300, 100, 500] },
+    'order_ready.mp3':     { freq: 1047, pattern: [200, 100, 200, 100, 400] },
+    'overdue_warning.mp3': { freq: 523, pattern: [200, 100, 200] },
+    'waiter_call.mp3':     { freq: 784, pattern: [150, 100, 150] },
+    'printer_error.mp3':   { freq: 330, pattern: [500, 200, 500] },
+    'attention_chime.mp3': { freq: 659, pattern: [200, 150, 200] },
+    'stock_alert.mp3':     { freq: 494, pattern: [300, 150, 300] },
+    'urgent_tone.mp3':     { freq: 392, pattern: [100, 50, 100, 50, 300] },
+    'reminder_chime.mp3':  { freq: 698, pattern: [200, 200, 200] }
+  };
+
+  async play(soundFile: string, volume: number): Promise<void> {
+    try {
+      // Try MP3 first
+      await this.playMP3(soundFile, volume);
+    } catch {
+      // Fallback to generated tone
+      const tone = this.fallbackTones[soundFile];
+      if (tone) await this.playTone(tone, volume);
+    }
+  }
+
+  private async playTone(
+    config: ToneConfig,
+    volume: number
+  ): Promise<void> {
+    const ctx = this.audioContext;
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = volume / 100;
+    gainNode.connect(ctx.destination);
+
+    let time = ctx.currentTime;
+    for (let i = 0; i < config.pattern.length; i++) {
+      if (i % 2 === 0) {
+        // ON: play tone
+        const osc = ctx.createOscillator();
+        osc.frequency.value = config.freq;
+        osc.connect(gainNode);
+        osc.start(time);
+        osc.stop(time + config.pattern[i] / 1000);
+      }
+      time += config.pattern[i] / 1000;
+    }
+  }
+}
+```
+
+***
+
+#### 3. Alert engine service (simplified)
+
+```typescript
+class AlertEngine {
+
+  async trigger(
+    alertCode: string,
+    context: {
+      outletId: string;
+      referenceId?: string;
+      referenceNumber?: string;
+      message: string;
+      specificUserIds?: string[];
+    }
+  ): Promise<void> {
+
+    // Get definition
+    const def = await getAlertDefinition(alertCode);
+    if (!def?.is_active) return;
+
+    // Get outlet config (volume, enabled/disabled)
+    const config = await getOutletConfig(
+      context.outletId, alertCode
+    );
+
+    // Respect disable setting (except allergy)
+    if (config && !config.is_enabled
+        && def.can_be_disabled) return;
+
+    // Resolve which users to alert
+    const users = context.specificUserIds
+      ? await getUsersByIds(context.specificUserIds)
+      : await getOnlineUsersByRoles(
+          context.outletId,
+          def.target_roles
+        );
+
+    // Volume: use outlet config or default 80%
+    const volume = Math.max(
+      config?.volume_level ?? 80,
+      def.min_volume  // allergy enforces minimum
+    );
+
+    // Save alert event
+    const event = await db.alert_events.create({
+      alertCode,
+      urgency: def.urgency,
+      referenceId: context.referenceId,
+      referenceNumber: context.referenceNumber,
+      message: context.message,
+      outletId: context.outletId,
+      targetUserIds: users.map(u => u.id)
+    });
+
+    // Deliver via WebSocket
+    for (const user of users) {
+      socket.to(`user_${user.id}`).emit('alert', {
+        eventId: event.id,
+        alertCode,
+        sound: config?.custom_sound ?? def.sound_file,
+        volume,
+        urgency: def.urgency,
+        message: context.message,
+        referenceId: context.referenceId,
+        requiresAcknowledge: def.requires_acknowledge
+      });
+    }
+
+    // Schedule repeat if needed
+    if (def.repeat_interval_sec > 0) {
+      await scheduleRepeat(event.id, def);
+    }
+  }
+
+  async acknowledge(
+    eventId: string,
+    userId: string
+  ): Promise<void> {
+    await db.alert_events.update(eventId, {
+      acknowledged_by: userId,
+      acknowledged_at: new Date(),
+      is_resolved: true
+    });
+    await cancelRepeat(eventId);
+  }
+}
+```
+
+***
+
+#### 4. Integration — where to call trigger()
+
+Add these calls to existing code only — no new modules needed:
+
+```typescript
+// In order service:
+onOrderCreated()      → AlertEngine.trigger('ALERT-01', ...)
+onVIPOrderCreated()   → AlertEngine.trigger('ALERT-02', ...)
+
+// In modification service:
+onAllergyFlagged()    → AlertEngine.trigger('ALERT-03', ...)
+
+// In KDS service:
+onAllItemsReady()     → AlertEngine.trigger('ALERT-04', ...)
+onItemSignificantlyOverdue() → AlertEngine.trigger('ALERT-05', ...)
+
+// In QR request service:
+onWaiterCalled()      → AlertEngine.trigger('ALERT-06', ...)
+
+// In printer service:
+onKitchenPrinterOffline()  → AlertEngine.trigger('ALERT-07', ...)
+onCashierPrinterOffline()  → AlertEngine.trigger('ALERT-08', ...)
+
+// In void service:
+onVoidRequestCreated() → AlertEngine.trigger('ALERT-09', ...)
+
+// In inventory service:
+onStockReachesZero()  → AlertEngine.trigger('ALERT-10', ...)
+
+// In delivery service:
+onDeliveryAtRisk()    → AlertEngine.trigger('ALERT-11', ...)
+
+// In attendance service:
+onShiftStartedNoCheckIn() → AlertEngine.trigger('ALERT-12', ...)
+```
+
+***
+
+#### 5. Frontend alert listener (one component, app root)
+
+```typescript
+const AlertListener: React.FC = () => {
+  const { user } = useAuth();
+  const soundPlayer = useRef(new SoundPlayer());
+
+  useEffect(() => {
+    socket.on(`user_${user.id}`, async (alert: Alert) => {
+
+      // Check if user muted this alert
+      const muted = getUserMutePref(alert.alertCode);
+      if (!muted) {
+        await soundPlayer.current.play(
+          alert.sound,
+          alert.volume
+        );
+      }
+
+      //
