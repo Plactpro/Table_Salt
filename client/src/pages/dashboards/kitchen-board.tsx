@@ -75,6 +75,7 @@ interface KdsItem {
   startedAt: string | null;
   courseNumber: number | null;
   prepTimeMinutes: number | null;
+  is_voided?: boolean;
 }
 
 interface KdsTicket {
@@ -410,7 +411,7 @@ function CookingControlTicket({
 }) {
   const [showRush, setShowRush] = useState(false);
   const label = ticket.tableNumber ? `Table ${ticket.tableNumber}` : ticket.orderType === "takeaway" ? "Takeaway" : `#${ticket.id.slice(-4).toUpperCase()}`;
-  const items = ticket.items.filter(i => mapItemStatus(i) !== "served");
+  const items = ticket.items.filter(i => mapItemStatus(i) !== "served" && !i.is_voided);
   const readyCount = items.filter(i => mapItemStatus(i) === "ready").length;
 
   const byCourse = items.reduce<Record<string, KdsItem[]>>((acc, item) => {
@@ -843,6 +844,7 @@ export default function KitchenBoardPage() {
   useRealtimeEvent("kds:order_rushed", invalidateKds);
   useRealtimeEvent("kds:course_fired", invalidateKds);
   useRealtimeEvent("kds:hold_released", invalidateKds);
+  useRealtimeEvent("kds:refire_ticket", invalidateKds);
 
   const { data: board, isLoading, refetch } = useQuery<BoardData>({
     queryKey: ["/api/assignments/board", selectedOutletId],

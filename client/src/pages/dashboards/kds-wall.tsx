@@ -32,6 +32,7 @@ interface KDSWallItem {
   startedAt: string | null;
   prepTimeMinutes: number | null;
   courseNumber: number | null;
+  is_voided?: boolean;
 }
 
 interface KDSWallTicket {
@@ -596,7 +597,7 @@ function SelectiveTicketCard({
   const ageMins = Math.floor(ageSec / 60);
   const cardFlash = ageMins > 25;
 
-  const allItems = ticket.items.filter(i => mapItemCookingStatus(i) !== "served");
+  const allItems = ticket.items.filter(i => mapItemCookingStatus(i) !== "served" && !i.is_voided);
   const readyItems = allItems.filter(i => ["ready", "almost_ready", "served"].includes(mapItemCookingStatus(i)));
   const allReady = allItems.length > 0 && readyItems.length === allItems.length;
 
@@ -606,7 +607,7 @@ function SelectiveTicketCard({
     ? "Takeaway"
     : `#${ticket.id.slice(-4).toUpperCase()}`;
 
-  const byCourse = ticket.items.reduce<Record<string | number, KDSWallItem[]>>((acc, item) => {
+  const byCourse = ticket.items.filter(i => !i.is_voided).reduce<Record<string | number, KDSWallItem[]>>((acc, item) => {
     const k = item.courseNumber ?? item.course ?? 0;
     if (!acc[k]) acc[k] = [];
     acc[k].push(item);
@@ -787,7 +788,7 @@ function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
       )}
 
       <div className="space-y-1.5">
-        {ticket.items.filter(i => i.status !== "served").map(item => (
+        {ticket.items.filter(i => i.status !== "served" && !i.is_voided).map(item => (
           <div key={item.id} className="flex items-center gap-2 text-gray-200">
             <span className="text-lg font-semibold text-white">{item.quantity ?? 1}×</span>
             <span className="text-lg">{item.name}</span>
@@ -994,6 +995,7 @@ export default function KdsWallScreen() {
   const showCounters = qp.get("counters") === "1";
 
   const [tickets, setTickets] = useState<KDSWallTicket[]>([]);
+  const [refireTicketIds, setRefireTicketIds] = useState<Set<string>>(new Set());
   const [now, setNow] = useState(new Date());
   const [wsConnected, setWsConnected] = useState(false);
   const [kitchenSettings, setKitchenSettings] = useState<KitchenSettings>({
@@ -1097,6 +1099,21 @@ export default function KdsWallScreen() {
         id: alertId, type: "overdue", message: payload.message ?? "Manager alert",
         expiresAt: Date.now() + 15000,
       }]);
+    } else if (event === "kds:refire_ticket" && rawPayload) {
+      const payload = rawPayload as { orderNumber?: string; itemName?: string; orderId?: string };
+      const alertId = `refire-${Date.now()}`;
+      setAlerts(prev => [...prev, {
+        id: alertId, type: "overdue",
+        message: `🔥🔥 REFIRE — ${payload.itemName ?? "Item"} (Order #${payload.orderNumber ?? ""}) — HIGH PRIORITY`,
+        expiresAt: Date.now() + 20000,
+      }]);
+      if (payload.orderId) {
+        setRefireTicketIds(prev => { const next = new Set(prev); next.add(payload.orderId!); return next; });
+        setTimeout(() => {
+          setRefireTicketIds(prev => { const next = new Set(prev); next.delete(payload.orderId!); return next; });
+        }, 5 * 60 * 1000);
+      }
+      fetchTickets();
     }
   }
 
@@ -1117,11 +1134,14 @@ export default function KdsWallScreen() {
     return () => clearInterval(iv);
   }, []);
 
-  const newTickets = tickets.filter(t => t.status === "new" || t.status === "sent_to_kitchen");
-  const cookingTickets = tickets.filter(t => t.status === "in_progress");
+  const sortWithRefireFirst = (arr: KDSWallTicket[]) =>
+    [...arr].sort((a, b) => (refireTicketIds.has(b.id) ? 1 : 0) - (refireTicketIds.has(a.id) ? 1 : 0));
+
+  const newTickets = sortWithRefireFirst(tickets.filter(t => t.status === "new" || t.status === "sent_to_kitchen"));
+  const cookingTickets = sortWithRefireFirst(tickets.filter(t => t.status === "in_progress"));
   const readyTickets = tickets.filter(t => t.status === "ready");
 
-  const allActiveItems = isSelectiveMode ? tickets.flatMap(t => t.items || []) : [];
+  const allActiveItems = isSelectiveMode ? tickets.flatMap(t => (t.items || []).filter(i => !i.is_voided)) : [];
   const overdueItemIds = new Set(alerts.filter(a => a.type === "overdue" && a.itemId).map(a => a.itemId!));
 
   useEffect(() => {
@@ -1254,10 +1274,20 @@ export default function KdsWallScreen() {
                         No tickets
                       </motion.div>
                     ) : (
-                      grp.tickets.map(ticket => isSelectiveMode ? (
-                        <SelectiveTicketCard key={ticket.id} ticket={ticket} settings={kitchenSettings} onRefresh={fetchTickets} />
-                      ) : (
-                        <WallTicketCard key={ticket.id} ticket={ticket} />
+                      grp.tickets.map(ticket => (
+                        <div key={ticket.id} className="space-y-1">
+                          {refireTicketIds.has(ticket.id) && (
+                            <div className="flex items-center gap-2 px-2 py-1 rounded-t-lg bg-orange-700 text-white font-black text-xs uppercase tracking-widest">
+                              🔥🔥 REFIRE
+                              <span className="ml-auto px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">HIGH PRIORITY</span>
+                            </div>
+                          )}
+                          {isSelectiveMode ? (
+                            <SelectiveTicketCard ticket={ticket} settings={kitchenSettings} onRefresh={fetchTickets} />
+                          ) : (
+                            <WallTicketCard ticket={ticket} />
+                          )}
+                        </div>
                       ))
                     )}
                   </AnimatePresence>
@@ -1296,10 +1326,20 @@ export default function KdsWallScreen() {
                         No tickets
                       </motion.div>
                     ) : (
-                      col.tickets.map(ticket => isSelectiveMode ? (
-                        <SelectiveTicketCard key={ticket.id} ticket={ticket} settings={kitchenSettings} onRefresh={fetchTickets} />
-                      ) : (
-                        <WallTicketCard key={ticket.id} ticket={ticket} />
+                      col.tickets.map(ticket => (
+                        <div key={ticket.id} className="space-y-1">
+                          {refireTicketIds.has(ticket.id) && (
+                            <div className="flex items-center gap-2 px-2 py-1 rounded-t-lg bg-orange-700 text-white font-black text-xs uppercase tracking-widest">
+                              🔥🔥 REFIRE
+                              <span className="ml-auto px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">HIGH PRIORITY</span>
+                            </div>
+                          )}
+                          {isSelectiveMode ? (
+                            <SelectiveTicketCard ticket={ticket} settings={kitchenSettings} onRefresh={fetchTickets} />
+                          ) : (
+                            <WallTicketCard ticket={ticket} />
+                          )}
+                        </div>
                       ))
                     )}
                   </AnimatePresence>

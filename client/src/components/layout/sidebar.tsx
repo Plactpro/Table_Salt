@@ -45,6 +45,7 @@ import {
   Trash2,
   Printer,
   Tag,
+  History,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -93,6 +94,7 @@ const navItems: NavItem[] = [
   { id: "m-41", name: "Log Wastage", icon: Trash2, path: "/wastage-log", roles: ["kitchen"] },
   { id: "m-42", name: "Printer Setup", icon: Printer, path: "/settings/printers", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   { id: "m-43", name: "Wastage Control", icon: Trash2, path: "/wastage", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  { id: "m-45", name: "Ticket History", icon: History, path: "/tickets", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
 ];
 
 function SandDecoration() {

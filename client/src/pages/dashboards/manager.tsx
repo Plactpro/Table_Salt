@@ -1,13 +1,19 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState, useCallback } from "react";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { StatCard } from "@/components/widgets/stat-card";
-import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight } from "lucide-react";
+import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency } from "@shared/currency";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import type { VoidRequest } from "@/components/tickets/TicketDetailDrawer";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -32,10 +38,49 @@ const quickActions = [
 export default function ManagerDashboard() {
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [voidNotification, setVoidNotification] = useState<VoidRequest | null>(null);
+  const [rejectReason, setRejectReason] = useState<Record<string, string>>({});
 
   const { data: stats, isLoading } = useQuery<any>({
     queryKey: ["/api/dashboard"],
   });
+
+  const { data: pendingVoidData } = useQuery<{ count: number }>({
+    queryKey: ["/api/tickets/void-requests/pending-count"],
+    refetchInterval: 30000,
+  });
+  const pendingVoidCount = pendingVoidData?.count || 0;
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("PUT", `/api/tickets/void-requests/${id}/approve`, {}),
+    onSuccess: () => {
+      toast({ title: "✅ Void approved" });
+      setVoidNotification(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/tickets/void-requests/pending-count"] });
+    },
+    onError: () => toast({ title: "Failed to approve", variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      apiRequest("PUT", `/api/tickets/void-requests/${id}/reject`, { reason }),
+    onSuccess: () => {
+      toast({ title: "❌ Void rejected" });
+      setVoidNotification(null);
+      queryClient.invalidateQueries({ queryKey: ["/api/tickets/void-requests/pending-count"] });
+    },
+    onError: () => toast({ title: "Failed to reject", variant: "destructive" }),
+  });
+
+  const handleVoidRequestNew = useCallback((payload: unknown) => {
+    const vr = payload as VoidRequest;
+    setVoidNotification(vr);
+    queryClient.invalidateQueries({ queryKey: ["/api/tickets/void-requests/pending-count"] });
+  }, [queryClient]);
+
+  useRealtimeEvent("void_request:new", handleVoidRequestNew);
 
   if (isLoading) {
     return (
@@ -67,12 +112,79 @@ export default function ManagerDashboard() {
       initial="hidden"
       animate="show"
     >
+      {/* Persistent void-request notification for manager/owner */}
+      {voidNotification && (
+        <div className="fixed top-4 right-4 z-50 w-96 bg-background border-2 border-amber-300 rounded-xl shadow-xl p-4 space-y-3" data-testid="notification-void-request">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="font-bold text-sm">🔔 VOID REQUEST</p>
+              {voidNotification.requestedByName && (
+                <p className="text-sm">From: {voidNotification.requestedByName}</p>
+              )}
+              <p className="text-sm">
+                Order #{voidNotification.orderNumber}
+                {voidNotification.tableNumber ? ` | Table ${voidNotification.tableNumber}` : ""}
+              </p>
+              {voidNotification.itemName && (
+                <p className="text-sm">
+                  Item: {voidNotification.quantity}x {voidNotification.itemName}
+                  {voidNotification.itemPrice ? ` (${fmt(voidNotification.itemPrice)})` : ""}
+                </p>
+              )}
+              {voidNotification.reason && (
+                <p className="text-sm text-muted-foreground">Reason: {voidNotification.reason}</p>
+              )}
+            </div>
+          </div>
+          <Input
+            placeholder="Reject reason (optional)"
+            value={rejectReason[voidNotification.id] || ""}
+            onChange={e => setRejectReason(prev => ({ ...prev, [voidNotification.id]: e.target.value }))}
+            data-testid={`input-reject-reason-${voidNotification.id}`}
+            className="text-sm"
+          />
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="flex-1"
+              onClick={() => navigate(`/tickets?order=${voidNotification.orderId}`)}
+            >
+              VIEW ORDER
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => approveMutation.mutate(voidNotification.id)}
+              disabled={approveMutation.isPending}
+              data-testid={`button-approve-void-${voidNotification.id}`}
+            >
+              {approveMutation.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <><CheckCircle2 className="h-4 w-4 mr-1" /> APPROVE</>}
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="flex-1"
+              onClick={() => rejectMutation.mutate({ id: voidNotification.id, reason: rejectReason[voidNotification.id] || "" })}
+              disabled={rejectMutation.isPending}
+              data-testid={`button-reject-void-${voidNotification.id}`}
+            >
+              {rejectMutation.isPending
+                ? <Loader2 className="h-4 w-4 animate-spin" />
+                : <><XCircle className="h-4 w-4 mr-1" /> REJECT</>}
+            </Button>
+          </div>
+        </div>
+      )}
+
       <motion.div variants={fadeUp}>
         <h1 className="text-2xl font-heading font-bold" data-testid="text-dashboard-title">Manager Dashboard</h1>
         <p className="text-muted-foreground">Today's operations at a glance</p>
       </motion.div>
 
-      <motion.div variants={fadeUp} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <motion.div variants={fadeUp} className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <StatCard
           title="Today's Sales"
           value={fmt(stats?.todayRevenue || 0)}
@@ -102,6 +214,24 @@ export default function ManagerDashboard() {
           testId="stat-occupancy"
           index={2}
         />
+        <motion.div
+          className={`rounded-xl p-4 ring-1 cursor-pointer transition-all ${pendingVoidCount > 0 ? "bg-amber-50 dark:bg-amber-950/30 ring-amber-300" : "bg-muted/30 ring-border"}`}
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={() => navigate("/tickets?filter=void-requests")}
+          data-testid="card-pending-void-requests"
+        >
+          <div className="flex items-start justify-between">
+            <div>
+              <p className="text-sm font-medium text-muted-foreground">Pending Void Requests</p>
+              <p className={`text-3xl font-bold mt-1 ${pendingVoidCount > 0 ? "text-amber-600" : "text-foreground"}`}>{pendingVoidCount}</p>
+              <p className="text-xs text-muted-foreground mt-1">Click to review</p>
+            </div>
+            <div className={`p-2 rounded-lg ${pendingVoidCount > 0 ? "bg-amber-100" : "bg-muted"}`}>
+              <AlertTriangle className={`h-5 w-5 ${pendingVoidCount > 0 ? "text-amber-600" : "text-muted-foreground"}`} />
+            </div>
+          </div>
+        </motion.div>
       </motion.div>
 
       <motion.div variants={fadeUp}>
