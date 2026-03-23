@@ -2250,3 +2250,156 @@ async function seedFoodModifications(tenantId: string): Promise<void> {
 
   console.log("Food modification seed data added successfully!");
 }
+
+export async function seedPricingData(): Promise<void> {
+  const { rows: tenantRows } = await pool.query(
+    `SELECT t.id FROM tenants t
+     WHERE t.slug != 'platform' AND t.active = true
+     AND EXISTS (SELECT 1 FROM menu_items mi WHERE mi.tenant_id = t.id)
+     LIMIT 1`
+  );
+  if (tenantRows.length === 0) return;
+  const tenantId = tenantRows[0].id;
+
+  const { rows: existingRules } = await pool.query(
+    `SELECT COUNT(*) AS cnt FROM outlet_menu_prices WHERE tenant_id = $1`,
+    [tenantId]
+  );
+  if (Number(existingRules[0].cnt) > 0) return;
+
+  console.log("[Pricing] Seeding multi-outlet pricing data...");
+
+  const { rows: outletRows } = await pool.query(
+    `SELECT id, name FROM outlets WHERE tenant_id = $1 AND active = true ORDER BY id LIMIT 4`,
+    [tenantId]
+  );
+  if (outletRows.length === 0) return;
+
+  const { rows: menuItemRows } = await pool.query(
+    `SELECT id, name, price FROM menu_items WHERE tenant_id = $1 ORDER BY name LIMIT 20`,
+    [tenantId]
+  );
+  if (menuItemRows.length === 0) return;
+
+  const outlets = outletRows;
+  const menuItems = menuItemRows;
+
+  const outletMultipliers: number[] = [1.0, 1.1, 1.15, 0.95];
+
+  for (let oi = 0; oi < outlets.length; oi++) {
+    const outlet = outlets[oi];
+    const multiplier = outletMultipliers[oi] ?? 1.0;
+
+    for (const mi of menuItems) {
+      const outletBasePrice = Math.round(Number(mi.price) * multiplier * 100) / 100;
+      const alreadyExists = await pool.query(
+        `SELECT 1 FROM outlet_menu_prices WHERE tenant_id=$1 AND outlet_id=$2 AND menu_item_id=$3 AND price_type='OUTLET_BASE'`,
+        [tenantId, outlet.id, mi.id]
+      );
+      if (alreadyExists.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO outlet_menu_prices
+           (tenant_id, outlet_id, menu_item_id, price_type, price, currency, priority, is_active, notes, created_by)
+           VALUES ($1,$2,$3,'OUTLET_BASE',$4,'USD',2,true,$5,'system')`,
+          [tenantId, outlet.id, mi.id, outletBasePrice.toFixed(2), `Base price for ${outlet.name}`]
+        );
+      }
+    }
+
+    const deliveryExists = await pool.query(
+      `SELECT 1 FROM outlet_menu_prices WHERE tenant_id=$1 AND outlet_id=$2 AND menu_item_id=$3 AND price_type='ORDER_TYPE' AND order_type='DELIVERY'`,
+      [tenantId, outlet.id, menuItems[0].id]
+    );
+    if (deliveryExists.rows.length === 0) {
+      const deliveryPrice = Math.round(Number(menuItems[0].price) * multiplier * 1.1 * 100) / 100;
+      await pool.query(
+        `INSERT INTO outlet_menu_prices
+         (tenant_id, outlet_id, menu_item_id, price_type, price, currency, order_type, priority, is_active, notes, created_by)
+         VALUES ($1,$2,$3,'ORDER_TYPE',$4,'USD','DELIVERY',3,true,'Delivery surcharge','system')`,
+        [tenantId, outlet.id, menuItems[0].id, deliveryPrice.toFixed(2)]
+      );
+    }
+
+    if (menuItems.length > 1) {
+      const lunchExists = await pool.query(
+        `SELECT 1 FROM outlet_menu_prices WHERE tenant_id=$1 AND outlet_id=$2 AND menu_item_id=$3 AND price_type='TIME_SLOT'`,
+        [tenantId, outlet.id, menuItems[1].id]
+      );
+      if (lunchExists.rows.length === 0) {
+        const lunchPrice = Math.round(Number(menuItems[1].price) * multiplier * 0.85 * 100) / 100;
+        await pool.query(
+          `INSERT INTO outlet_menu_prices
+           (tenant_id, outlet_id, menu_item_id, price_type, price, currency,
+            time_slot_start, time_slot_end, priority, is_active, notes, created_by)
+           VALUES ($1,$2,$3,'TIME_SLOT',$4,'USD','12:00','15:00',5,true,'Lunch Special discount','system')`,
+          [tenantId, outlet.id, menuItems[1].id, lunchPrice.toFixed(2)]
+        );
+      }
+    }
+
+    if (menuItems.length > 2) {
+      const loyaltyExists = await pool.query(
+        `SELECT 1 FROM outlet_menu_prices WHERE tenant_id=$1 AND outlet_id=$2 AND menu_item_id=$3 AND price_type='CUSTOMER_SEGMENT' AND customer_segment='LOYALTY'`,
+        [tenantId, outlet.id, menuItems[2].id]
+      );
+      if (loyaltyExists.rows.length === 0) {
+        const loyaltyPrice = Math.round(Number(menuItems[2].price) * multiplier * 0.9 * 100) / 100;
+        await pool.query(
+          `INSERT INTO outlet_menu_prices
+           (tenant_id, outlet_id, menu_item_id, price_type, price, currency,
+            customer_segment, priority, is_active, notes, created_by)
+           VALUES ($1,$2,$3,'CUSTOMER_SEGMENT',$4,'USD','LOYALTY',8,true,'Loyalty member price','system')`,
+          [tenantId, outlet.id, menuItems[2].id, loyaltyPrice.toFixed(2)]
+        );
+      }
+    }
+  }
+
+  if (outlets.length > 0 && menuItems.length > 3) {
+    const weekendItem = menuItems[3];
+    for (const outlet of outlets) {
+      const eventExists = await pool.query(
+        `SELECT 1 FROM outlet_menu_prices WHERE tenant_id=$1 AND outlet_id=$2 AND menu_item_id=$3 AND price_type='EVENT'`,
+        [tenantId, outlet.id, weekendItem.id]
+      );
+      if (eventExists.rows.length === 0) {
+        const eventPrice = Math.round(Number(weekendItem.price) * 1.15 * 100) / 100;
+        await pool.query(
+          `INSERT INTO outlet_menu_prices
+           (tenant_id, outlet_id, menu_item_id, price_type, price, currency,
+            day_of_week, priority, is_active, notes, created_by,
+            valid_from, valid_until)
+           VALUES ($1,$2,$3,'EVENT',$4,'USD','[6,7]'::jsonb,10,true,'Weekend Festival +15%','system',
+            CURRENT_DATE, CURRENT_DATE + INTERVAL '90 days')`,
+          [tenantId, outlet.id, weekendItem.id, eventPrice.toFixed(2)]
+        );
+      }
+    }
+  }
+
+  const now = new Date();
+  for (let i = 0; i < 30; i++) {
+    const mi = menuItems[i % menuItems.length];
+    const outlet = outlets[i % outlets.length];
+    const baseP = Number(mi.price);
+    const resolvedP = Math.round(baseP * (0.85 + Math.random() * 0.3) * 100) / 100;
+    const hoursAgo = Math.floor(Math.random() * 72);
+    const resolvedAt = new Date(now.getTime() - hoursAgo * 3600000);
+
+    await pool.query(
+      `INSERT INTO price_resolution_log
+       (tenant_id, outlet_id, menu_item_id, menu_item_name, base_price, resolved_price,
+        price_type_applied, resolution_reason, resolved_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [
+        tenantId, outlet.id, mi.id, mi.name,
+        baseP.toFixed(2), resolvedP.toFixed(2),
+        ["OUTLET_BASE","TIME_SLOT","CUSTOMER_SEGMENT","ORDER_TYPE","GLOBAL_BASE"][i % 5],
+        "Seed resolution entry",
+        resolvedAt,
+      ]
+    );
+  }
+
+  console.log("[Pricing] Pricing seed data complete.");
+}
