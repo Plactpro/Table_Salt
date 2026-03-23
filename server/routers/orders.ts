@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import QRCode from "qrcode";
+import { alertEngine } from "../services/alert-engine";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import { eq, sql, and, inArray } from "drizzle-orm";
@@ -560,6 +561,11 @@ export function registerOrdersRoutes(app: Express): void {
       }
       const orderItems = await storage.getOrderItemsByOrder(order.id);
       auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length, engineDiscounts: activeDiscounts.length } });
+
+      alertEngine.trigger('ALERT-01', { tenantId: user.tenantId, outletId: order.outletId ?? undefined, referenceId: order.id, referenceNumber: order.orderNumber ?? undefined, message: `New order #${order.orderNumber || order.id.slice(-6)} — ${orderItems.length} items` }).catch(() => {});
+      if ((order as any).isVip || (order as any).priority === 'rush') {
+        alertEngine.trigger('ALERT-02', { tenantId: user.tenantId, outletId: order.outletId ?? undefined, referenceId: order.id, referenceNumber: order.orderNumber ?? undefined, message: `VIP/Rush order #${order.orderNumber || order.id.slice(-6)}` }).catch(() => {});
+      }
 
       if ((order.status === "sent_to_kitchen" || order.status === "in_progress") && orderItems.length > 0) {
         const sentAt = new Date().toISOString();

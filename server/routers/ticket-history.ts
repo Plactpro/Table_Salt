@@ -7,6 +7,7 @@ import { routeAndPrint } from "../services/printer-service";
 import { recordKdsEvent } from "../services/time-logger";
 import { z } from "zod";
 import type { PoolClient } from "pg";
+import { alertEngine } from "../services/alert-engine";
 
 type AuthUser = {
   id: string;
@@ -695,6 +696,8 @@ export function registerTicketHistoryRoutes(app: Express) {
         tableNumber: order.table_number,
         _targetRoles: VOID_APPROVE_ROLES,
       });
+
+      alertEngine.trigger('ALERT-09', { tenantId: user.tenantId, outletId: order.outlet_id ?? undefined, referenceId: voidRequest.id, referenceNumber: order.order_number ?? undefined, message: `Void request: ${item.name} — ${user.name}` }).catch(() => {});
 
       return res.status(201).json(voidRequest);
     } catch (err) {

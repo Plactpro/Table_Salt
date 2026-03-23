@@ -3,6 +3,7 @@ import { requireAuth, requireRole } from "../auth";
 import { pool } from "../db";
 import { emitToTenant } from "../realtime";
 import { z } from "zod";
+import { alertEngine } from "../services/alert-engine";
 
 const VALID_SPICE_LEVELS = ["NO_SPICE", "MILD", "MEDIUM", "SPICY", "EXTRA_HOT"] as const;
 const VALID_SALT_LEVELS = ["LESS", "NORMAL", "EXTRA"] as const;
@@ -103,6 +104,7 @@ export function registerModificationsRoutes(app: Express): void {
           allergyDetails: allergyDetails ?? null,
           specialNotes: specialNotes ?? null,
         });
+        alertEngine.trigger('ALERT-03', { tenantId: user.tenantId, outletId: (user as any).outletId ?? undefined, referenceId: orderId, message: `ALLERGY: ${allergyFlags?.join(', ') || allergyDetails || 'allergy flagged'}` }).catch(() => {});
       }
 
       res.status(201).json(rows[0]);

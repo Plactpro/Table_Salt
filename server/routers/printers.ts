@@ -7,6 +7,7 @@ import {
   sendTestPrint,
   type Printer,
 } from "../services/printer-service";
+import { alertEngine } from "../services/alert-engine";
 
 function rowToPrinter(row: Record<string, unknown>): Printer {
   return {
@@ -318,12 +319,18 @@ export function registerPrinterRoutes(app: Express): void {
         [req.params.id, user.tenantId]
       );
       if (rows.length === 0) return res.status(404).json({ message: "Printer not found" });
+      const prevStatus = rows[0].status;
       const printer = rowToPrinter(rows[0]);
       const status = await pingPrinter(printer);
       await pool.query(
         `UPDATE printers SET status = $1, last_ping_at = now() WHERE id = $2`,
         [status, printer.id]
       );
+      if (status === 'offline' && prevStatus !== 'offline') {
+        const printerType = (rows[0].printer_type as string ?? '').toLowerCase();
+        const alertCode = printerType === 'kitchen' ? 'ALERT-07' : 'ALERT-08';
+        alertEngine.trigger(alertCode, { tenantId: user.tenantId, outletId: rows[0].outlet_id as string ?? undefined, referenceId: printer.id, message: `${printerType || 'receipt'} printer offline: ${printer.printerName}` }).catch(() => {});
+      }
       res.json({ id: printer.id, name: printer.printerName, status, lastPingAt: new Date() });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
