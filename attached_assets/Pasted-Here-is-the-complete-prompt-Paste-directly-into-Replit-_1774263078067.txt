@@ -1,0 +1,462 @@
+Here is the complete prompt. Paste directly into Replit AI.
+
+***
+
+### Crockery & Cutlery Tracking — Extended Inventory + Stock Count + Damaged Declaration
+
+This is a continuation of the existing restaurant SaaS project in Replit. The following are already built: multi-tenant architecture, inventory management, physical stock verification (stock count module), damaged inventory declaration, wastage tracking, pre-prep task system, and shift reconciliation.
+
+Now extend these existing modules to support **crockery, cutlery, and glassware tracking** — treating them as inventory items with their own type, par levels, count verification, breakage declaration, and loss reporting. No new module needed — extend what is already built.
+
+***
+
+#### 1. Extend inventory master — add item type
+
+```sql
+-- Extend existing ingredients/inventory_items table
+ALTER TABLE inventory_items
+  ADD COLUMN IF NOT EXISTS item_category VARCHAR(30)
+    DEFAULT 'INGREDIENT';
+    -- 'INGREDIENT'   → existing food items
+    -- 'CROCKERY'     → plates, bowls, serving dishes
+    -- 'CUTLERY'      → forks, spoons, knives, tongs
+    -- 'GLASSWARE'    → glasses, cups, mugs, jugs
+    -- 'LINEN'        → napkins, tablecloths (future)
+    -- 'EQUIPMENT'    → small kitchen tools (future)
+
+ALTER TABLE inventory_items
+  ADD COLUMN IF NOT EXISTS unit_type VARCHAR(20)
+    DEFAULT 'WEIGHT';
+    -- 'WEIGHT'   → kg, litre (food items)
+    -- 'PIECE'    → pcs (crockery, cutlery)
+
+ALTER TABLE inventory_items
+  ADD COLUMN IF NOT EXISTS par_level_per_shift INT,
+    -- minimum count required before each shift
+    -- e.g. 80 dinner plates per shift
+
+ALTER TABLE inventory_items
+  ADD COLUMN IF NOT EXISTS reorder_pieces INT,
+    -- alert when count falls below this
+    -- e.g. alert when < 60 dinner plates
+
+ALTER TABLE inventory_items
+  ADD COLUMN IF NOT EXISTS cost_per_piece DECIMAL(10,2),
+    -- cost for breakage/loss valuation
+    -- separate from unit_cost used for food
+
+ALTER TABLE inventory_items
+  ADD COLUMN IF NOT EXISTS supplier_id UUID,
+    -- crockery supplier for reorder
+
+ALTER TABLE inventory_items
+  ADD COLUMN IF NOT EXISTS is_active BOOLEAN
+    DEFAULT true;
+```
+
+***
+
+#### 2. Seed crockery and cutlery items
+
+Seed these standard items into inventory master with `item_category` set correctly:
+
+```sql
+-- CROCKERY
+('Dinner Plate',    'CROCKERY', 'PIECE', 80, 60, 350.00),
+('Side Plate',      'CROCKERY', 'PIECE', 60, 40, 180.00),
+('Soup Bowl',       'CROCKERY', 'PIECE', 40, 30, 220.00),
+('Dessert Bowl',    'CROCKERY', 'PIECE', 30, 20, 180.00),
+('Serving Dish',    'CROCKERY', 'PIECE', 20, 12, 480.00),
+('Sauce Boat',      'CROCKERY', 'PIECE', 15, 10, 320.00),
+('Bread Basket',    'CROCKERY', 'PIECE', 20, 12, 280.00),
+
+-- CUTLERY
+('Dinner Fork',     'CUTLERY',  'PIECE', 100, 80, 120.00),
+('Dessert Fork',    'CUTLERY',  'PIECE', 60,  40, 100.00),
+('Table Spoon',     'CUTLERY',  'PIECE', 100, 80, 100.00),
+('Dessert Spoon',   'CUTLERY',  'PIECE', 60,  40, 90.00),
+('Tea Spoon',       'CUTLERY',  'PIECE', 80,  60, 80.00),
+('Dinner Knife',    'CUTLERY',  'PIECE', 100, 80, 150.00),
+('Serving Spoon',   'CUTLERY',  'PIECE', 20,  12, 180.00),
+('Tongs',           'CUTLERY',  'PIECE', 10,  6,  220.00),
+('Butter Knife',    'CUTLERY',  'PIECE', 40,  30, 90.00),
+
+-- GLASSWARE
+('Water Glass',     'GLASSWARE','PIECE', 80,  60, 180.00),
+('Juice Glass',     'GLASSWARE','PIECE', 60,  40, 160.00),
+('Wine Glass',      'GLASSWARE','PIECE', 40,  30, 320.00),
+('Beer Mug',        'GLASSWARE','PIECE', 30,  20, 280.00),
+('Tea Cup + Saucer','GLASSWARE','PIECE', 40,  30, 260.00),
+('Coffee Mug',      'GLASSWARE','PIECE', 30,  20, 220.00),
+('Water Jug',       'GLASSWARE','PIECE', 10,  6,  480.00);
+```
+
+***
+
+#### 3. Extend existing stock count module
+
+The stock count module already exists. Extend it to include crockery, cutlery, and glassware in the same count process:
+
+##### 3.1 Stock count creation — add scope option
+
+```
+EXISTING:
+  Count Scope: ALL / CATEGORY / SPECIFIC ITEMS
+
+EXTEND TO INCLUDE:
+  Count Scope:
+    ○ All (food + crockery + cutlery + glassware)
+    ○ Food items only
+    ○ Crockery & Cutlery only   ← ADD THIS
+    ○ Specific category
+    ○ Specific items
+```
+
+##### 3.2 Stock count sheet — crockery section
+
+When count includes crockery/cutlery/glassware, show them in a separate clearly labeled section within the same count screen:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  📦 STOCK COUNT — STC-20260323-0001                 │
+│  23 March 2026 | Evening Shift                       │
+├──────────────────────────────────────────────────────┤
+│  ── FOOD INGREDIENTS ──────────────────────────     │
+│  [existing food count rows here]                    │
+│                                                      │
+│  ── CROCKERY ──────────────────────────────────     │
+├────────────────┬────────┬──────────┬────────────────┤
+│ Item           │ Par    │ Count    │ Location       │
+├────────────────┼────────┼──────────┼────────────────┤
+│ Dinner Plate   │ 80 pcs │ [    ]   │[Kitchen rack ] │
+│ Side Plate     │ 60 pcs │ [    ]   │[Kitchen rack ] │
+│ Soup Bowl      │ 40 pcs │ [    ]   │[Shelf B      ] │
+│ Dessert Bowl   │ 30 pcs │ [    ]   │[Shelf B      ] │
+├────────────────┴────────┴──────────┴────────────────┤
+│  ── CUTLERY ────────────────────────────────────    │
+├────────────────┬────────┬──────────┬────────────────┤
+│ Dinner Fork    │100 pcs │ [    ]   │[Cutlery tray ] │
+│ Table Spoon    │100 pcs │ [    ]   │[Cutlery tray ] │
+│ Dinner Knife   │100 pcs │ [    ]   │[Cutlery tray ] │
+│ Tea Spoon      │ 80 pcs │ [    ]   │[Cutlery tray ] │
+├────────────────┴────────┴──────────┴────────────────┤
+│  ── GLASSWARE ──────────────────────────────────    │
+├────────────────┬────────┬──────────┬────────────────┤
+│ Water Glass    │ 80 pcs │ [    ]   │[Bar shelf    ] │
+│ Wine Glass     │ 40 pcs │ [    ]   │[Bar shelf    ] │
+│ Coffee Mug     │ 30 pcs │ [    ]   │[Service area ] │
+└────────────────┴────────┴──────────┴────────────────┘
+```
+
+##### 3.3 Variance display — crockery section
+
+After count is submitted, variance section shows crockery separately:
+
+```
+┌──────────────────────────────────────────────────────┐
+│  STOCK COUNT VARIANCE — STC-20260323-0001           │
+├──────────────────────────────────────────────────────┤
+│  FOOD INGREDIENTS VARIANCE:                         │
+│  [existing food variance rows]                      │
+├──────────────────────────────────────────────────────┤
+│  CROCKERY / CUTLERY / GLASSWARE VARIANCE:           │
+├──────────────┬──────┬────────┬─────────┬────────────┤
+│ Item         │System│Physical│Variance │ Value      │
+├──────────────┼──────┼────────┼─────────┼────────────┤
+│ Dinner Plate │  80  │  78    │  -2 pcs │ -₹700     │
+│ Soup Bowl    │  40  │  37    │  -3 pcs │ -₹660     │
+│ Water Glass  │  80  │  74    │  -6 pcs │ -₹1,080   │
+│ Wine Glass   │  40  │  38    │  -2 pcs │ -₹640     │
+│ Dinner Fork  │ 100  │  98    │  -2 pcs │ -₹240     │
+│ Table Spoon  │ 100  │  95    │  -5 pcs │ -₹500     │
+├──────────────┴──────┴────────┴─────────┴────────────┤
+│  Total crockery variance: -20 pcs | -₹3,820        │
+│  Items matched: 15/21 (71%)                         │
+├──────────────────────────────────────────────────────┤
+│  For each variance, select reason:                  │
+│  Dinner Plate -2:  [Breakage during service ▼]     │
+│  Soup Bowl -3:     [Breakage during wash   ▼]      │
+│  Water Glass -6:   [Unknown / Investigate  ▼]      │
+│  Wine Glass -2:    [Breakage during service▼]      │
+│  Dinner Fork -2:   [Unknown / Investigate  ▼]      │
+│  Table Spoon -5:   [Unknown / Investigate  ▼]      │
+├──────────────────────────────────────────────────────┤
+│  Variance reasons:                                  │
+│  ○ Breakage during service                          │
+│  ○ Breakage during washing                          │
+│  ○ Breakage during storage                          │
+│  ○ Lost / missing                                   │
+│  ○ Sent for repair                                  │
+│  ○ Unknown — investigate                            │
+│                                                     │
+│  [APPROVE & ADJUST STOCK]  [REQUEST RECOUNT]        │
+└──────────────────────────────────────────────────────┘
+```
+
+***
+
+#### 4. Extend damaged inventory declaration
+
+The damaged inventory module already exists for food items. Extend it to support crockery/cutlery/glassware:
+
+##### 4.1 Add item category filter to declaration form
+
+```
+EXISTING DECLARE DAMAGED FORM:
+  Item: [search food ingredients]
+
+EXTEND TO:
+  Item Type: [Food ▼ / Crockery / Cutlery / Glassware]
+  Item:       [Dinner Plate ▼]
+  Quantity:   [2] pcs
+  Cost:       ₹350/pc (auto-filled from master)
+  Total:      ₹700 (auto-calculated)
+```
+
+##### 4.2 Damage types for crockery (extend existing enum)
+
+```sql
+-- Add to existing damage_type enum:
+'BREAKAGE_SERVICE'    -- broken during service
+'BREAKAGE_WASHING'    -- broken during dishwash
+'BREAKAGE_STORAGE'    -- broken during storage/stacking
+'CHIPPED'             -- chipped but usable → retire
+'CRACKED'             -- cracked → retire immediately
+'LOST_MISSING'        -- cannot be located
+```
+
+##### 4.3 Damaged crockery declaration screen
+
+```
+┌──────────────────────────────────────────────────────┐
+│  ⚠️ DECLARE DAMAGED ITEM — DMG-20260323-0002        │
+├──────────────────────────────────────────────────────┤
+│  Item Type:    [Glassware ▼]                        │
+│  Item:         [Wine Glass ▼]                       │
+│  Quantity:     [2] pcs                              │
+│  Cost/piece:   ₹320 (auto-filled)                   │
+│  Total value:  ₹640 (auto-calculated)               │
+├──────────────────────────────────────────────────────┤
+│  Damage Type:                                        │
+│  ● Breakage during service                          │
+│  ○ Breakage during washing                          │
+│  ○ Chipped — retire from use                        │
+│  ○ Cracked — retire immediately                     │
+│  ○ Lost / missing                                   │
+├──────────────────────────────────────────────────────┤
+│  Caused by:    [Staff name or Unknown        ]      │
+│  Location:     [Dining area / Bar / Kitchen  ]      │
+│  Date:         [23 Mar 2026]                        │
+│  📸 Photo:     [📷 Upload evidence]                 │
+├──────────────────────────────────────────────────────┤
+│  Disposal:                                           │
+│  ● Discard                                          │
+│  ○ Send to repair                                   │
+│  ○ Insurance claim                                  │
+├──────────────────────────────────────────────────────┤
+│  [SUBMIT FOR APPROVAL]                              │
+└──────────────────────────────────────────────────────┘
+```
+
+- On approval: piece count deducted from inventory immediately.
+- Cost posted to finance as "Crockery Breakage" expense category.
+- If count falls below par level: alert to manager.
+
+***
+
+#### 5. Par level alert (extend existing stock alert)
+
+The stock alert system already fires when food ingredients go below reorder level. Extend the same logic for crockery:
+
+```typescript
+// Extend existing stock check function:
+async function checkParLevels(outletId: string): Promise<void> {
+
+  // Existing food ingredient check (already built)
+  await checkFoodStockLevels(outletId);
+
+  // NEW: Check crockery/cutlery/glassware par levels
+  const crockeryItems = await db.inventory_items.findMany({
+    where: {
+      outletId,
+      item_category: { in: ['CROCKERY', 'CUTLERY', 'GLASSWARE'] },
+      is_active: true
+    }
+  });
+
+  for (const item of crockeryItems) {
+    const currentCount = await getCurrentStock(item.id, outletId);
+
+    if (currentCount < item.par_level_per_shift) {
+      // Trigger existing alert system
+      await AlertEngine.trigger('ALERT-10', {
+        outletId,
+        referenceId: item.id,
+        message: `${item.name} below par level:
+                  ${currentCount} pcs
+                  (Par: ${item.par_level_per_shift} pcs)`
+      });
+    }
+  }
+}
+```
+
+***
+
+#### 6. Extend stock movement log
+
+The existing `inventory_transactions` table already logs all stock movements. Extend it to handle crockery movements correctly:
+
+```sql
+-- Existing transaction types already cover:
+-- 'PURCHASE', 'RECIPE_CONSUMPTION', 'WASTAGE',
+-- 'STOCK_COUNT_ADJUSTMENT', 'DAMAGE'
+
+-- These work for crockery too — no schema change needed.
+-- Just ensure item_category is included in
+-- transaction display filters.
+
+-- Add filter to stock movement log screen:
+Item Type: [All ▼ / Food / Crockery / Cutlery / Glassware]
+```
+
+***
+
+#### 7. Extend reports
+
+##### 7.1 Extend existing stock count report
+
+Add crockery section to the existing stock count PDF report:
+
+```
+STOCK COUNT REPORT — 23 March 2026
+────────────────────────────────────
+FOOD INGREDIENTS:
+[existing section]
+
+CROCKERY & CUTLERY:
+Item          System  Physical  Variance  Value
+Dinner Plate    80      78        -2      -₹700
+Wine Glass      40      38        -2      -₹640
+[all items...]
+
+Total crockery variance: -₹3,820
+```
+
+##### 7.2 Add monthly breakage report
+
+Under Reports → Inventory → Crockery Breakage:
+
+```
+MONTHLY BREAKAGE REPORT — March 2026
+Main Branch
+
+Item           Breakage   Value     % of Stock
+─────────────────────────────────────────────
+Wine Glass       8 pcs    ₹2,560      20%  🔴
+Water Glass      6 pcs    ₹1,080      8%   🟡
+Dinner Plate     4 pcs    ₹1,400      5%   🟢
+Soup Bowl        3 pcs    ₹660        8%   🟡
+─────────────────────────────────────────────
+Total:          21 pcs    ₹5,700
+
+By Cause:
+  Service breakage:  12 pcs  (57%)
+  Washing breakage:   6 pcs  (29%)
+  Unknown/Lost:       3 pcs  (14%) ← investigate
+
+By Staff (where recorded):
+  Ravi:   3 incidents
+  Priya:  2 incidents
+  Unknown: 16 incidents ← enforce recording
+```
+
+##### 7.3 Extend damaged inventory report
+
+Add item_category filter to existing damaged inventory report:
+
+```
+Filter: [All ▼ / Food / Crockery / Cutlery / Glassware]
+Date:   [This Month ▼]
+```
+
+***
+
+#### 8. UI changes — inventory master screen
+
+Extend existing inventory management screen:
+
+```
+ADD TO INVENTORY ITEM FORM:
+  Item Category: [Ingredient ▼]
+                 ○ Ingredient (food)
+                 ● Crockery
+                 ○ Cutlery
+                 ○ Glassware
+
+  Unit Type:     [Piece ▼]  (auto-set for non-food)
+
+  Par Level/Shift: [80] pcs
+  Reorder Alert At:[60] pcs
+  Cost Per Piece:  [₹350]
+
+ADD TO INVENTORY LIST SCREEN:
+  Filter: [All ▼ / Food / Crockery / Cutlery / Glassware]
+  Show par level and current count for crockery items
+  Red highlight when below par
+```
+
+***
+
+#### 9. APIs — extend existing endpoints only
+
+```
+-- Extend existing inventory APIs:
+GET  /api/inventory?category=CROCKERY     → filter by type
+GET  /api/inventory?category=CUTLERY
+GET  /api/inventory?category=GLASSWARE
+GET  /api/inventory/par-check/:outletId   → par level status
+
+-- Extend existing stock count APIs:
+POST /api/stock-counts?scope=CROCKERY     → crockery only count
+GET  /api/stock-counts/:id/crockery-variance → crockery section
+
+-- Extend existing damaged inventory APIs:
+POST /api/damaged-inventory               → already works
+GET  /api/damaged-inventory?category=CROCKERY → filter
+
+-- Extend existing reports:
+GET  /api/reports/breakage-monthly        → new report
+GET  /api/reports/stock-count/:id/pdf     → extended PDF
+```
+
+***
+
+#### 10. Seed demo data
+
+```
+- 21 crockery/cutlery/glassware items in inventory master
+  with par levels and cost per piece
+
+- Current stock counts (realistic, some below par):
+    Wine Glass:   38 (par: 40) → 🟡 below par
+    Water Glass:  74 (par: 80) → 🟡 below par
+    All others:   at or above par
+
+- 1 completed stock count including crockery section
+  with 6 variance items and reasons
+
+- 3 damaged declarations:
+    2 wine glasses (breakage, service)
+    3 water glasses (breakage, washing)
+    2 dinner plates (unknown, lost)
+
+- Monthly breakage report for March 2026
+  showing 21 pieces, ₹5,700 value
+
+- Par level alert active for wine glass and water glass
+```
+
+***
+
+Ensure crockery/cutlery/glassware items are filtered out from recipe consumption calculations — these are never auto-deducted by orders, only by manual count adjustment or damage declaration. All stock count and damage flows for crockery must use `unit_type = PIECE` and display as whole numbers only — never show decimals for piece counts. Index `item_category` on `inventory_items` for fast category-filtered queries across all existing inventory screens.
