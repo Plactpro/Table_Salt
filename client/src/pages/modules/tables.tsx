@@ -92,6 +92,8 @@ interface ReservationData {
   dateTime: string;
   notes: string | null;
   status: ReservationStatus | null;
+  resource_requirements?: {resourceId: string; resourceName: string; icon?: string; quantity: number}[] | null;
+  resourceRequirements?: {resourceId: string; resourceName: string; icon?: string; quantity: number}[] | null;
 }
 
 interface AnalyticsData {
@@ -393,8 +395,6 @@ export default function TablesPage() {
     });
   }, [queryClient]));
 
-
-
   const canvasRef = useRef<HTMLDivElement>(null);
   const [calendarWeekStart, setCalendarWeekStart] = useState(() => {
     const d = new Date();
@@ -418,6 +418,11 @@ export default function TablesPage() {
     customerName: "", customerPhone: "", tableId: "", guests: "2",
     dateTime: "", notes: "", customerId: "",
   });
+  const [resResourceRequirements, setResResourceRequirements] = useState<{resourceId: string; resourceName: string; icon: string; quantity: number}[]>([]);
+  const [seatResourceRequirements, setSeatResourceRequirements] = useState<{resourceId: string; quantity: number}[]>([]);
+  const [liveAvailabilityCheck, setLiveAvailabilityCheck] = useState<{resourceId: string; resourceName: string; requested: number; available: number; sufficient: boolean}[]>([]);
+  const [availabilityCheck, setAvailabilityCheck] = useState<{resourceId: string; available: number; requested: number; resourceName: string; inUseAtTable?: string; sinceTime?: string}[]>([]);
+  const [showResourceUnavailableDialog, setShowResourceUnavailableDialog] = useState(false);
 
   const { data: tables = [], isLoading: tablesLoading } = useQuery<TableData[]>({ queryKey: ["/api/tables"] });
   const { data: zones = [] } = useQuery<ZoneData[]>({ queryKey: ["/api/table-zones"] });
@@ -426,6 +431,86 @@ export default function TablesPage() {
   const { data: analytics } = useQuery<AnalyticsData>({ queryKey: ["/api/table-analytics"] });
   const { data: customersRes } = useQuery<{ data: CustomerData[]; total: number }>({ queryKey: ["/api/customers"] });
   const customers = customersRes?.data ?? [];
+
+  const outletId = (tables.find(t => t.outletId)?.outletId) ?? null;
+
+  useRealtimeEvent("resource:updated", useCallback(() => {
+    if (outletId) {
+      queryClient.invalidateQueries({ queryKey: ["/api/resources/availability", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/resources/assignments/by-outlet", outletId] });
+    }
+  }, [queryClient, outletId]));
+
+  interface OutletResource { id: string; resourceCode: string; resourceName: string; resourceIcon: string; totalUnits: number; availableUnits: number; isTrackable: boolean; }
+  const { data: outletResources = [] } = useQuery<OutletResource[]>({
+    queryKey: ["/api/resources", outletId],
+    queryFn: async () => {
+      if (!outletId) return [];
+      const res = await fetch(`/api/resources?outletId=${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+  });
+
+  type ResourceAssignmentsMap = Record<string, {resourceId: string; resourceName: string; resourceIcon: string; resourceCode: string; quantity: number; assignedAt: string | null}[]>;
+  const resourceShortName = (code: string): string => {
+    const map: Record<string, string> = { HIGH_CHAIR: "HC", BOOSTER_SEAT: "BS", BABY_COT: "Cot", PRAYER_MAT: "PM", WHEELCHAIR: "WC" };
+    return map[code] ?? code.slice(0, 3);
+  };
+  const { data: resourcesByTable = {} } = useQuery<ResourceAssignmentsMap>({
+    queryKey: ["/api/resources/assignments/by-outlet", outletId],
+    queryFn: async () => {
+      if (!outletId) return {};
+      const res = await fetch(`/api/resources/assignments/by-outlet?outletId=${outletId}`, { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: !!outletId,
+    refetchInterval: 30000,
+  });
+
+  const { data: availabilityData = [] } = useQuery<OutletResource[]>({
+    queryKey: ["/api/resources/availability", outletId],
+    queryFn: async () => {
+      if (!outletId) return [];
+      const res = await fetch(`/api/resources/availability?outletId=${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    refetchInterval: 30000,
+  });
+
+  useEffect(() => {
+    const activeReqs = seatResourceRequirements.filter(r => r.quantity > 0);
+    if (!outletId || activeReqs.length === 0) {
+      setLiveAvailabilityCheck([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await apiRequest("POST", "/api/resources/check-availability", {
+          outletId,
+          resources: activeReqs.map(r => ({ resourceId: r.resourceId, quantity: r.quantity })),
+        });
+        const data: { available: boolean; conflicts: {resourceId: string; resourceName: string; requested: number; available: number}[] } = await res.json();
+        const checks = activeReqs.map(r => {
+          const conflict = data.conflicts.find((c) => c.resourceId === r.resourceId);
+          const resInfo = outletResources.find((o: OutletResource) => o.id === r.resourceId);
+          return {
+            resourceId: r.resourceId,
+            resourceName: resInfo?.resourceName ?? r.resourceId,
+            requested: r.quantity,
+            available: conflict ? conflict.available : (resInfo?.availableUnits ?? 0),
+            sufficient: !conflict,
+          };
+        });
+        setLiveAvailabilityCheck(checks);
+      } catch {}
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [seatResourceRequirements, outletId, outletResources]);
 
   const activeWaitlist = useMemo(() => waitlist.filter(w => w.status === "waiting"), [waitlist]);
 
@@ -483,7 +568,18 @@ export default function TablesPage() {
   });
   const clearTableMut = useMutation({
     mutationFn: async (id: string) => { const r = await apiRequest("PATCH", `/api/tables/${id}/clear`, {}); return r.json(); },
-    onSuccess: () => { invalidateAll(); setShowDetailDialog(false); toast({ title: "Table cleared" }); },
+    onSuccess: (_, tableId) => {
+      invalidateAll();
+      setShowDetailDialog(false);
+      toast({ title: "Table cleared" });
+      if (outletId) {
+        apiRequest("POST", "/api/resources/return", { tableId, outletId }).catch(() => {});
+        setTimeout(() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/resources/assignments/by-outlet", outletId] });
+          queryClient.invalidateQueries({ queryKey: ["/api/resources/availability", outletId] });
+        }, 500);
+      }
+    },
   });
   const mergeTableMut = useMutation({
     mutationFn: async ({ id, targetTableId }: { id: string; targetTableId: string }) => { const r = await apiRequest("PATCH", `/api/tables/${id}/merge`, { targetTableId }); return r.json(); },
@@ -810,6 +906,15 @@ export default function TablesPage() {
                             <Merge className="w-2.5 h-2.5" />
                           </div>
                         )}
+                        {(resourcesByTable[table.id] || []).length > 0 && (
+                          <div className="flex flex-wrap gap-0.5 mt-0.5" data-testid={`resource-icons-table-${table.id}`}>
+                            {(resourcesByTable[table.id] || []).map((r, idx) => (
+                              <span key={idx} className="text-[9px]" data-testid={`resource-icon-${r.resourceCode}-${table.id}`}>
+                                {r.resourceIcon}{resourceShortName(r.resourceCode)}×{r.quantity}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -878,6 +983,15 @@ export default function TablesPage() {
                                 </div>
                               )}
                               {isMerged && mergedTarget && <div className="text-xs text-blue-600 mt-0.5">+T{mergedTarget.number}</div>}
+                              {(resourcesByTable[table.id] || []).length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1" data-testid={`resource-icons-table-${table.id}`}>
+                                  {(resourcesByTable[table.id] || []).map((r, idx) => (
+                                    <span key={idx} className="text-[10px] bg-blue-50 text-blue-700 rounded px-1" data-testid={`resource-icon-${r.resourceCode}-${table.id}`}>
+                                      {r.resourceIcon}{resourceShortName(r.resourceCode)}×{r.quantity}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
                               <div className="flex gap-1 mt-2">
                                 {status === "free" && (
                                   <Button size="sm" variant="ghost" className="h-6 text-xs px-1.5" onClick={e => { e.stopPropagation(); openSeatDialog(table); }} data-testid={`button-seat-${table.id}`}>
@@ -1006,7 +1120,12 @@ export default function TablesPage() {
                       const rCfg = reservationStatusConfig[rStatus];
                       return (
                         <div key={r.id} className={`text-xs p-1.5 rounded cursor-pointer hover:opacity-80 ${rCfg.color}`} onClick={() => { setSelectedReservation(r); setShowReservationDetail(true); }} data-testid={`card-reservation-${r.id}`}>
-                          <div className="font-medium truncate">{r.customerName}</div>
+                          <div className="font-medium truncate flex items-center gap-1">
+                            {r.customerName}
+                            {((r.resourceRequirements && r.resourceRequirements.length > 0) || (r.resource_requirements && r.resource_requirements!.length > 0)) && (
+                              <span className="text-[10px]" title="Has pre-booked resources">🪑</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1 text-[10px] opacity-80">
                             <Clock className="w-2.5 h-2.5" />
                             {new Date(r.dateTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
@@ -1487,16 +1606,187 @@ export default function TablesPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSeatDialog} onOpenChange={setShowSeatDialog}>
+      <Dialog open={showSeatDialog} onOpenChange={open => { setShowSeatDialog(open); if (!open) { setSeatResourceRequirements([]); setLiveAvailabilityCheck([]); } }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Seat Party at Table {selectedTable?.number}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div><Label>Party Name</Label><Input value={seatFormData.partyName} onChange={e => setSeatFormData({ ...seatFormData, partyName: e.target.value })} placeholder="Guest name..." data-testid="input-seat-party-name" /></div>
             <div><Label>Party Size</Label><Input type="number" value={seatFormData.partySize} onChange={e => setSeatFormData({ ...seatFormData, partySize: e.target.value })} data-testid="input-seat-party-size" /></div>
+            {outletResources.length > 0 && (
+              <div data-testid="section-special-requirements">
+                <Label className="font-semibold text-sm">Special Requirements</Label>
+                <div className="space-y-2 mt-2">
+                  {outletResources.map(res => {
+                    const qty = seatResourceRequirements.find(r => r.resourceId === res.id)?.quantity ?? 0;
+                    const maxQty = res.isTrackable ? res.totalUnits : 1;
+                    return (
+                      <div key={res.id} className="flex items-center justify-between">
+                        <span className="text-sm flex items-center gap-1">
+                          <span>{res.resourceIcon}</span>
+                          <span>{res.resourceName} needed?</span>
+                        </span>
+                        {res.isTrackable ? (
+                          <Select value={String(qty)} onValueChange={v => {
+                            const newQty = parseInt(v);
+                            setSeatResourceRequirements(prev => {
+                              const filtered = prev.filter(r => r.resourceId !== res.id);
+                              if (newQty > 0) filtered.push({ resourceId: res.id, quantity: newQty });
+                              return filtered;
+                            });
+                          }}>
+                            <SelectTrigger className="w-16 h-7 text-xs" data-testid={`select-resource-qty-walkin-${res.id}`}>
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({ length: maxQty + 1 }, (_, i) => (
+                                <SelectItem key={i} value={String(i)}>{i}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <input type="checkbox" className="h-4 w-4 cursor-pointer" checked={qty === 1} data-testid={`select-resource-qty-walkin-${res.id}`} onChange={e => {
+                            const newQty = e.target.checked ? 1 : 0;
+                            setSeatResourceRequirements(prev => {
+                              const filtered = prev.filter(r => r.resourceId !== res.id);
+                              if (newQty > 0) filtered.push({ resourceId: res.id, quantity: newQty });
+                              return filtered;
+                            });
+                          }} />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {liveAvailabilityCheck.length > 0 && (
+                  <div className="mt-3 space-y-1">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Availability Check</p>
+                    {liveAvailabilityCheck.map(check => (
+                      <div key={check.resourceId} className="flex items-center justify-between text-xs" data-testid={`badge-availability-check-${check.resourceId}`}>
+                        <span>{check.resourceName}</span>
+                        {check.sufficient ? (
+                          <span className="text-green-600 font-medium">{check.available} available ✅</span>
+                        ) : (
+                          <span className="text-red-600 font-medium">{check.available} available ⚠️ {check.available === 0 ? "All in use" : "Not enough"}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowSeatDialog(false)}>Cancel</Button>
-            <Button onClick={() => { if (selectedTable) seatTableMut.mutate({ id: selectedTable.id, partyName: seatFormData.partyName, partySize: parseInt(seatFormData.partySize) }); }} disabled={seatTableMut.isPending} data-testid="button-confirm-seat">Seat Party</Button>
+            <Button onClick={async () => {
+              if (!selectedTable) return;
+              const reqResources = seatResourceRequirements.filter(r => r.quantity > 0);
+              if (reqResources.length > 0 && outletId) {
+                let checkResult: {available: boolean; conflicts: {resourceId: string; resourceName: string; requested: number; available: number}[]} | null = null;
+                try {
+                  const checkResp = await apiRequest("POST", "/api/resources/check-availability", {
+                    outletId,
+                    requirements: reqResources.map(r => ({ resourceId: r.resourceId, quantity: r.quantity })),
+                  });
+                  checkResult = await checkResp.json();
+                } catch {}
+                if (checkResult && !checkResult.available && checkResult.conflicts.length > 0) {
+                  setAvailabilityCheck(checkResult.conflicts.map(c => {
+                    const inUseEntry = Object.entries(resourcesByTable).find(([, assignments]) =>
+                      assignments.some(a => a.resourceId === c.resourceId)
+                    );
+                    const inUseAssignment = inUseEntry ? inUseEntry[1].find(a => a.resourceId === c.resourceId) : null;
+                    return {
+                      resourceId: c.resourceId,
+                      resourceName: c.resourceName,
+                      available: c.available,
+                      requested: c.requested,
+                      inUseAtTable: inUseEntry ? tables.find(t => t.id === inUseEntry[0])?.number?.toString() : undefined,
+                      sinceTime: inUseAssignment?.assignedAt ? new Date(inUseAssignment.assignedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : undefined,
+                    };
+                  }));
+                  setShowResourceUnavailableDialog(true);
+                  return;
+                }
+              }
+              seatTableMut.mutate({ id: selectedTable.id, partyName: seatFormData.partyName, partySize: parseInt(seatFormData.partySize) }, {
+                onSuccess: async () => {
+                  if (reqResources.length > 0 && outletId) {
+                    try {
+                      await apiRequest("POST", "/api/resources/assign", {
+                        tableId: selectedTable.id,
+                        outletId,
+                        resources: reqResources.map(r => ({ resourceId: r.resourceId, quantity: r.quantity })),
+                      });
+                      queryClient.invalidateQueries({ queryKey: ["/api/resources/assignments/by-outlet", outletId] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/resources/availability", outletId] });
+                    } catch {
+                      toast({ title: "Resource assignment pending", description: "Table seated. Please manually assign requested resources.", variant: "default" });
+                    }
+                  }
+                }
+              });
+            }} disabled={seatTableMut.isPending} data-testid={seatResourceRequirements.filter(r => r.quantity > 0).length > 0 ? "button-assign-table-resources" : "button-confirm-seat"}>
+              {seatResourceRequirements.filter(r => r.quantity > 0).length > 0 ? "Assign Table & Resources" : "Seat Party"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showResourceUnavailableDialog} onOpenChange={setShowResourceUnavailableDialog}>
+        <DialogContent data-testid="dialog-resource-unavailable">
+          <DialogHeader><DialogTitle>⚠️ Resource Unavailable</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            {availabilityCheck.map(r => (
+              <div key={r.resourceId} className="bg-orange-50 border border-orange-200 rounded p-3 text-sm">
+                <div className="font-semibold">{r.resourceName}: {r.available === 0 ? "All" : r.requested - r.available} unit{r.requested > 1 ? "s" : ""} unavailable</div>
+                {r.inUseAtTable && (
+                  <div className="text-muted-foreground text-xs mt-1">
+                    In use at: Table {r.inUseAtTable}{r.sinceTime ? ` since ${r.sinceTime}` : ""}
+                  </div>
+                )}
+              </div>
+            ))}
+            <p className="text-sm text-muted-foreground">How would you like to proceed?</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={async () => {
+              setShowResourceUnavailableDialog(false);
+              if (!selectedTable) return;
+              const conflictedIds = new Set(availabilityCheck.map(c => c.resourceId));
+              const availableResources = seatResourceRequirements.filter(r => r.quantity > 0 && !conflictedIds.has(r.resourceId));
+              seatTableMut.mutate({ id: selectedTable.id, partyName: seatFormData.partyName, partySize: parseInt(seatFormData.partySize) }, {
+                onSuccess: async () => {
+                  if (availableResources.length > 0 && outletId) {
+                    try {
+                      await apiRequest("POST", "/api/resources/assign", {
+                        tableId: selectedTable.id,
+                        outletId,
+                        resources: availableResources.map(r => ({ resourceId: r.resourceId, quantity: r.quantity })),
+                      });
+                      queryClient.invalidateQueries({ queryKey: ["/api/resources/assignments/by-outlet", outletId] });
+                      queryClient.invalidateQueries({ queryKey: ["/api/resources/availability", outletId] });
+                    } catch {}
+                  }
+                }
+              });
+            }} data-testid="button-proceed-without-resource">Proceed Without</Button>
+            <Button onClick={async () => {
+              const resourceNames = availabilityCheck.map(r => r.resourceName).join(", ");
+              try {
+                await apiRequest("POST", "/api/waitlist", {
+                  customerName: seatFormData.partyName || "Guest",
+                  partySize: parseInt(seatFormData.partySize) || 1,
+                  outletId,
+                  notes: `Waiting for resource: ${resourceNames}`,
+                  status: "waiting",
+                  priority: 1,
+                });
+                queryClient.invalidateQueries({ queryKey: ["/api/waitlist"] });
+              } catch {}
+              setShowResourceUnavailableDialog(false);
+              setShowSeatDialog(false);
+              toast({ title: "Added to waitlist", description: `${seatFormData.partyName || "Customer"} added to waitlist pending ${resourceNames}` });
+            }} data-testid="button-wait-notify-customer">Wait & Notify Customer</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1577,7 +1867,7 @@ export default function TablesPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showAddReservation} onOpenChange={setShowAddReservation}>
+      <Dialog open={showAddReservation} onOpenChange={open => { setShowAddReservation(open); if (!open) setResResourceRequirements([]); }}>
         <DialogContent>
           <DialogHeader><DialogTitle>New Reservation</DialogTitle></DialogHeader>
           <div className="space-y-4">
@@ -1596,11 +1886,59 @@ export default function TablesPage() {
                 </SelectContent>
               </Select>
             </div>
+            {outletResources.filter(r => r.isTrackable).length > 0 && (
+              <div data-testid="section-reservation-resources">
+                <Label className="font-semibold text-sm">Special Resources Needed</Label>
+                <div className="space-y-2 mt-2">
+                  {outletResources.filter(r => r.isTrackable).map(res => {
+                    const existing = resResourceRequirements.find(r => r.resourceId === res.id);
+                    const qty = existing?.quantity ?? 0;
+                    const maxQty = res.isTrackable ? res.totalUnits : 1;
+                    return (
+                      <div key={res.id} className="flex items-center justify-between">
+                        <span className="text-sm flex items-center gap-1">
+                          <span>{res.resourceIcon}</span>
+                          <span>{res.resourceName}:</span>
+                        </span>
+                        <Select value={String(qty)} onValueChange={v => {
+                          const newQty = parseInt(v);
+                          setResResourceRequirements(prev => {
+                            const filtered = prev.filter(r => r.resourceId !== res.id);
+                            if (newQty > 0) filtered.push({ resourceId: res.id, resourceName: res.resourceName, icon: res.resourceIcon, quantity: newQty });
+                            return filtered;
+                          });
+                        }}>
+                          <SelectTrigger className="w-16 h-7 text-xs" data-testid={`select-resource-qty-${res.id}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: maxQty + 1 }, (_, i) => (
+                              <SelectItem key={i} value={String(i)}>{i}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div><Label>Notes</Label><Textarea value={resFormData.notes} onChange={e => setResFormData({ ...resFormData, notes: e.target.value })} data-testid="input-res-notes" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddReservation(false)}>Cancel</Button>
-            <Button onClick={() => createResMut.mutate({ customerName: resFormData.customerName, customerPhone: resFormData.customerPhone || undefined, guests: parseInt(resFormData.guests), dateTime: resFormData.dateTime, tableId: resFormData.tableId || undefined, notes: resFormData.notes || undefined })} disabled={!resFormData.customerName || !resFormData.dateTime || createResMut.isPending} data-testid="button-submit-reservation">Create</Button>
+            <Button onClick={() => {
+              const reqResources = resResourceRequirements.filter(r => r.quantity > 0);
+              createResMut.mutate({
+                customerName: resFormData.customerName,
+                customerPhone: resFormData.customerPhone || undefined,
+                guests: parseInt(resFormData.guests),
+                dateTime: resFormData.dateTime,
+                tableId: resFormData.tableId || undefined,
+                notes: resFormData.notes || undefined,
+                resource_requirements: reqResources.length > 0 ? reqResources.map(r => ({ resourceId: r.resourceId, resourceName: r.resourceName, quantity: r.quantity })) : undefined,
+              });
+            }} disabled={!resFormData.customerName || !resFormData.dateTime || createResMut.isPending} data-testid="button-submit-reservation">Create Reservation</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1626,6 +1964,22 @@ export default function TablesPage() {
                     {selectedReservation.tableId && <div><span className="text-muted-foreground">Table:</span><div className="font-medium">T{tables.find(t => t.id === selectedReservation.tableId)?.number || "?"}</div></div>}
                   </div>
                   {selectedReservation.notes && <div><span className="text-muted-foreground">Notes:</span><div>{selectedReservation.notes}</div></div>}
+                  {(() => {
+                    const reqs = selectedReservation.resourceRequirements || selectedReservation.resource_requirements;
+                    if (!reqs || reqs.length === 0) return null;
+                    return (
+                      <div>
+                        <span className="text-muted-foreground">Pre-booked Resources:</span>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {reqs.map((r, i) => (
+                            <Badge key={i} variant="secondary" className="text-xs" data-testid={`badge-reservation-resource-${r.resourceId}`}>
+                              {r.icon || "🪑"} {r.resourceName} × {r.quantity}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   <div className="flex gap-2 pt-2">
                     {rCfg.nextStatus && (
                       <Button size="sm" onClick={() => updateResMut.mutate({ id: selectedReservation.id, status: rCfg.nextStatus })} data-testid="button-advance-reservation">

@@ -21,6 +21,7 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { ResourceAvailabilityWidget } from "@/components/resources/ResourceAvailabilityWidget";
 
 interface TableRequest {
   id: string;
@@ -207,6 +208,11 @@ export default function LiveRequestsPage() {
     enabled: isManager,
   });
 
+  const { data: outlets = [] } = useQuery<any[]>({
+    queryKey: ["/api/outlets"],
+  });
+  const firstOutletId = outlets[0]?.id as string | undefined;
+
   const ackMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PUT", `/api/table-requests/${id}/acknowledge`),
     onSuccess: () => {
@@ -332,6 +338,10 @@ export default function LiveRequestsPage() {
           </Button>
         </div>
       </div>
+
+      {firstOutletId && (
+        <ResourceAvailabilityWidget outletId={firstOutletId} compact />
+      )}
 
       {isManager && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

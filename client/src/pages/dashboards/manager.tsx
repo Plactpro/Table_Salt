@@ -4,6 +4,7 @@ import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { StatCard } from "@/components/widgets/stat-card";
 import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2, Banknote, ChevronRight, AlertCircle } from "lucide-react";
+import { ResourceAvailabilityWidget } from "@/components/resources/ResourceAvailabilityWidget";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -71,6 +72,11 @@ export default function ManagerDashboard() {
   const { data: stats, isLoading } = useQuery<any>({
     queryKey: ["/api/dashboard"],
   });
+
+  const { data: outlets = [] } = useQuery<any[]>({
+    queryKey: ["/api/outlets"],
+  });
+  const firstOutletId = outlets[0]?.id as string | undefined;
 
   const { data: pendingVoidData } = useQuery<{ count: number }>({
     queryKey: ["/api/tickets/void-requests/pending-count"],
@@ -319,6 +325,12 @@ export default function ManagerDashboard() {
       <motion.div variants={fadeUp}>
         <CashDrawerStatusCard navigate={navigate} fmt={fmt} symbol={symbol} />
       </motion.div>
+
+      {firstOutletId && (
+        <motion.div variants={fadeUp}>
+          <ResourceAvailabilityWidget outletId={firstOutletId} />
+        </motion.div>
+      )}
 
       <motion.div variants={fadeUp} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div

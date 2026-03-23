@@ -12,7 +12,13 @@ export function registerReservationsRoutes(app: Express): void {
   app.post("/api/reservations", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { tenantId: _t, id: _i, ...body } = req.body;
+      const { tenantId: _t, id: _i, ...rawBody } = req.body;
+      const body = { ...rawBody };
+      // Normalize: accept snake_case resource_requirements from clients
+      if (body.resource_requirements !== undefined && body.resourceRequirements === undefined) {
+        body.resourceRequirements = body.resource_requirements;
+        delete body.resource_requirements;
+      }
       if (!body.customerName || !body.customerName.trim()) {
         return res.status(400).json({ message: "Customer name is required" });
       }
