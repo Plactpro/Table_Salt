@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -32,7 +33,7 @@ import {
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
   Receipt, Clock, Pause, RotateCcw, Scissors, Flame, ChevronDown, Users, Phone, User,
-  MapPin, ChevronRight, Printer,
+  MapPin, ChevronRight, Printer, AlertCircle,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
@@ -270,6 +271,29 @@ function isComboActive(combo: ComboOffer, userOutletId?: string | null): boolean
     if (!combo.outlets.includes(userOutletId)) return false;
   }
   return true;
+}
+
+class PageErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
+  constructor(props: { children: ReactNode; label: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error(`[${this.props.label}] page error:`, error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-16 text-muted-foreground gap-3">
+          <AlertCircle className="h-10 w-10 text-destructive opacity-60" />
+          <p className="text-sm">Something went wrong loading <strong>{this.props.label}</strong>.</p>
+          <button className="text-xs underline" onClick={() => this.setState({ hasError: false })}>Retry</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
 }
 
 export default function POSPage() {
@@ -1149,7 +1173,7 @@ export default function POSPage() {
   }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder]);
 
   return (
-    <div className="flex h-full gap-0" data-testid="pos-page">
+    <PageErrorBoundary label="POS"><div className="flex h-full gap-0" data-testid="pos-page">
       <div className="flex-1 flex flex-col overflow-hidden border-r">
         <div className="p-4 border-b space-y-3">
           <div className="relative">
@@ -2155,6 +2179,6 @@ export default function POSPage() {
           }}
         />
       )}
-    </div>
+    </div></PageErrorBoundary>
   );
 }

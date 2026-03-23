@@ -9,6 +9,7 @@ import ContactSupportModal from "@/components/widgets/contact-support-modal";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { Button } from "@/components/ui/button";
 import TrialBanner from "@/components/billing/trial-banner";
+import { RealtimeStatusBanner } from "@/components/RealtimeStatusBanner";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -29,6 +30,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
 
   return (
     <div className="flex flex-col min-h-screen" data-testid="app-layout">
+      <RealtimeStatusBanner />
       <TrialBanner />
       {isImpersonating && (
         <div

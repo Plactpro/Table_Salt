@@ -6,9 +6,21 @@ import { createServer } from "http";
 import { incrementApiRequestCount } from "./api-counter";
 import { discoverPriceIds } from "./stripe";
 import { setupWebSocket } from "./realtime";
+import compression from "compression";
+import { pool } from "./db";
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught Exception:', err);
+  process.exit(1);
+});
 
 const app = express();
 const httpServer = createServer(app);
+
+app.use(compression());
 
 setupSecurity(app);
 
@@ -248,8 +260,6 @@ app.use((req, res, next) => {
 
   await registerRoutes(httpServer, app);
 
-  setupWebSocket(httpServer);
-
   try {
     const { startRetentionScheduler } = await import("./retention-cleanup");
     startRetentionScheduler();
@@ -351,4 +361,17 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  const wss = setupWebSocket(httpServer);
+
+  const shutdown = async (signal: string) => {
+    console.log(`[Shutdown] Received ${signal}, shutting down gracefully...`);
+    httpServer.close(() => console.log('[Shutdown] HTTP server closed'));
+    if (wss) wss.clients.forEach((client: any) => client.terminate());
+    try { await pool.end(); } catch (_) {}
+    console.log('[Shutdown] DB pool closed, exiting.');
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 })();

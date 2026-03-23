@@ -279,7 +279,30 @@ export function registerComplianceRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+  app.get("/api/health", async (_req, res) => {
+    const start = Date.now();
+    let dbStatus = "connected";
+    try {
+      const { pool } = await import("../db");
+      await pool.query("SELECT 1");
+    } catch (_) {
+      dbStatus = "disconnected";
+    }
+    if (dbStatus === "disconnected") {
+      return res.status(503).json({
+        status: "degraded",
+        timestamp: new Date().toISOString(),
+        version: "1.0.0",
+        db: "disconnected",
+        uptime: Math.floor(process.uptime()),
+      });
+    }
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+      version: "1.0.0",
+      db: "connected",
+      uptime: Math.floor(process.uptime()),
+    });
   });
 }
