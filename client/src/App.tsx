@@ -61,6 +61,7 @@ import AlertSettingsPage from "@/pages/settings/alerts";
 import MenuPricingPage from "@/pages/menu/menu-pricing";
 import ProcurementHubPage from "@/pages/procurement/index";
 import TicketHistoryPage from "@/pages/tickets/index";
+import CashDashboardPage from "@/pages/cash/index";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -124,6 +125,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/menu-pricing": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "menu" },
   "/procurement": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
   "/tickets": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
+  "/cash": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -340,6 +342,7 @@ function ProtectedPages() {
         <Route path="/suppliers">{() => <Redirect to="/procurement" />}</Route>
         <Route path="/procurement">{() => <GuardedRoute path="/procurement" component={ProcurementHubPage} />}</Route>
         <Route path="/tickets">{() => <GuardedRoute path="/tickets" component={TicketHistoryPage} />}</Route>
+        <Route path="/cash">{() => <GuardedRoute path="/cash" component={CashDashboardPage} />}</Route>
         <Route path="/workforce">{() => <Redirect to="/staff" />}</Route>
         <Route path="/performance">{() => <Redirect to="/staff" />}</Route>
         <Route path="/bi-dashboard">{() => <Redirect to="/reports" />}</Route>

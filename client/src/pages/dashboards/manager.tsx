@@ -2,14 +2,14 @@ import { useState, useCallback } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { StatCard } from "@/components/widgets/stat-card";
-import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { DollarSign, ShoppingCart, Armchair, AlertTriangle, Monitor, LayoutGrid, Package, ClipboardList, ArrowRight, CheckCircle2, XCircle, Loader2, Banknote } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { motion } from "framer-motion";
 import { useAuth } from "@/lib/auth";
-import { formatCurrency } from "@shared/currency";
+import { formatCurrency, currencyMap } from "@shared/currency";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -94,6 +94,7 @@ export default function ManagerDashboard() {
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
   const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: string | number | null) => formatCurrency(val ?? 0, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
+  const symbol = currencyMap[tenantCurrency as keyof typeof currencyMap]?.symbol || tenantCurrency;
 
   const tableStats = stats?.tableStats || [];
   const totalTables = tableStats.reduce((sum: number, t: any) => sum + Number(t.count), 0);
@@ -273,6 +274,10 @@ export default function ManagerDashboard() {
         </Card>
       </motion.div>
 
+      <motion.div variants={fadeUp}>
+        <CashDrawerStatusCard navigate={navigate} fmt={fmt} symbol={symbol} />
+      </motion.div>
+
       <motion.div variants={fadeUp} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -353,5 +358,54 @@ export default function ManagerDashboard() {
         </motion.div>
       </motion.div>
     </motion.div>
+  );
+}
+
+function CashDrawerStatusCard({ navigate, fmt, symbol }: { navigate: (path: string) => void; fmt: (v: any) => string; symbol: string }) {
+  const { data: sessions = [] } = useQuery<any[]>({
+    queryKey: ["/api/cash-sessions"],
+    queryFn: async () => {
+      const res = await fetch("/api/cash-sessions?status=open", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    retry: false,
+  });
+
+  return (
+    <Card data-testid="card-cash-status-manager">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Banknote className="h-4 w-4 text-emerald-600" />
+          Cash Drawer Status
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {sessions.length === 0 ? (
+          <div className="flex items-center justify-between py-2">
+            <p className="text-sm text-muted-foreground">No active cash sessions</p>
+            <Button variant="outline" size="sm" onClick={() => navigate("/cash")}>Manage Cash</Button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {sessions.slice(0, 5).map((session: any) => (
+              <div key={session.id} className="flex items-center justify-between p-2 rounded-lg border bg-muted/30">
+                <div>
+                  <p className="text-sm font-medium">{session.cashierName || "Cashier"}</p>
+                  <p className="text-xs text-muted-foreground">{session.sessionNumber || session.shiftName || "Active Session"}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-green-700">{fmt(session.runningBalance ?? session.openingFloat ?? 0)}</p>
+                  <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">Active</Badge>
+                </div>
+              </div>
+            ))}
+            <Button variant="ghost" size="sm" className="w-full mt-2" onClick={() => navigate("/cash")}>
+              View Cash Dashboard →
+            </Button>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

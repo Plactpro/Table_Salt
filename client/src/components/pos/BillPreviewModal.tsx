@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import CourseManagementPanel from "@/components/pos/CourseManagementPanel";
+import CashPaymentModal from "@/components/cash/CashPaymentModal";
 import { renderBillHtml, dispatchPrint } from "@/lib/print-utils";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -148,6 +149,7 @@ export default function BillPreviewModal({
       toast({ title: "Bill updated", description: "A void was applied — bill totals have been updated." });
     }
   });
+  const [showCashPaymentModal, setShowCashPaymentModal] = useState(false);
   const [cashTendered, setCashTendered] = useState("");
   const [cardRef, setCardRef] = useState("");
   const [cardLast4, setCardLast4] = useState("");
@@ -1857,6 +1859,26 @@ export default function BillPreviewModal({
           </div>
         </BillWrapper>
       </Dialog>
+
+      {showCashPaymentModal && createdBill && (
+        <CashPaymentModal
+          open={showCashPaymentModal}
+          onClose={() => setShowCashPaymentModal(false)}
+          amountDue={grandTotal}
+          billId={createdBill.id}
+          billNumber={createdBill.billNumber}
+          tableNumber={tableNumber}
+          posSessionId={posSessionId}
+          hasActiveSession={true}
+          onPaymentComplete={(tendered, change) => {
+            queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
+            setCashTendered(String(tendered));
+            setStep("receipt");
+          }}
+        />
+      )}
     </>
   );
 }
