@@ -21,18 +21,17 @@ export class SoundPlayer {
   private ctx: AudioContext | null = null;
 
   private getCtx(): AudioContext {
-    if (!this.ctx || this.ctx.state === 'closed') {
+    if (!this.ctx || this.ctx.state === "closed") {
       this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
-    if (this.ctx.state === 'suspended') this.ctx.resume();
     return this.ctx;
   }
 
   play(soundKey: string, volumePct: number): void {
-    try {
-      const tone = TONE_MAP[soundKey];
-      if (!tone) return;
-      const ctx = this.getCtx();
+    const tone = TONE_MAP[soundKey];
+    if (!tone) return;
+
+    const schedulePlayback = (ctx: AudioContext) => {
       const gain = ctx.createGain();
       gain.gain.value = Math.min(Math.max(volumePct, 0), 100) / 100;
       gain.connect(ctx.destination);
@@ -42,13 +41,26 @@ export class SoundPlayer {
         const durationMs = tone.pattern[i];
         if (i % 2 === 0) {
           const osc = ctx.createOscillator();
-          osc.type = 'sine';
+          osc.type = "sine";
           osc.frequency.value = tone.freq;
           osc.connect(gain);
           osc.start(t);
           osc.stop(t + durationMs / 1000);
         }
         t += durationMs / 1000;
+      }
+    };
+
+    try {
+      const ctx = this.getCtx();
+      if (ctx.state === "suspended") {
+        ctx.resume().then(() => {
+          if (ctx.state === "running") {
+            schedulePlayback(ctx);
+          }
+        }).catch(() => {});
+      } else if (ctx.state === "running") {
+        schedulePlayback(ctx);
       }
     } catch (_) {}
   }

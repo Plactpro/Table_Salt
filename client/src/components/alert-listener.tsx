@@ -28,8 +28,8 @@ const AlertListener: React.FC = () => {
     if (!user) return;
     const p = payload as AlertPayload;
 
-    const userRole = user.role.toUpperCase();
-    if (!p.targetRoles.includes(userRole)) return;
+    const userRole = user.role.toLowerCase();
+    if (p.targetRoles.length > 0 && !p.targetRoles.map(r => r.toLowerCase()).includes(userRole)) return;
 
     const muted = localStorage.getItem(`alert_mute_${p.alertCode}`) === "true";
     if (!muted) {

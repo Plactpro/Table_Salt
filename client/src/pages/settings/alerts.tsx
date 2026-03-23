@@ -71,20 +71,20 @@ export default function AlertSettingsPage() {
     queryFn: async () => {
       const res = await fetch(`/api/alerts/outlet-configs/${outletId}`, { credentials: "include" });
       if (!res.ok) return null;
-      return res.json() as Promise<{ alertSettings: AlertSetting[] }>;
+      return res.json() as Promise<{ alertCode: string; isEnabled: boolean; volumeLevel: number }[]>;
     },
   });
 
   useEffect(() => {
-    if (savedConfig?.alertSettings) {
+    if (Array.isArray(savedConfig) && savedConfig.length > 0) {
       const map = buildDefaults();
-      for (const s of savedConfig.alertSettings) {
+      for (const s of savedConfig) {
         if (map[s.alertCode]) {
           const def = ALERT_DEFINITIONS.find(d => d.alertCode === s.alertCode);
           map[s.alertCode] = {
-            ...s,
-            enabled: def?.locked ? (def.lockedEnabled ?? true) : s.enabled,
-            volume: def?.minVolume ? Math.max(s.volume, def.minVolume) : s.volume,
+            alertCode: s.alertCode,
+            enabled: def?.locked ? (def.lockedEnabled ?? true) : s.isEnabled,
+            volume: def?.minVolume ? Math.max(s.volumeLevel, def.minVolume) : s.volumeLevel,
           };
         }
       }
@@ -95,7 +95,11 @@ export default function AlertSettingsPage() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       await apiRequest("PUT", `/api/alerts/outlet-configs/${outletId}`, {
-        alertSettings: Object.values(settings),
+        configs: Object.values(settings).map(s => ({
+          alertCode: s.alertCode,
+          isEnabled: s.enabled,
+          volumeLevel: s.volume,
+        })),
       });
     },
     onSuccess: () => {
