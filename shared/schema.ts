@@ -387,9 +387,16 @@ export const inventoryItems = pgTable("inventory_items", {
   purchaseUnit: text("purchase_unit"),
   purchaseUnitConversion: decimal("purchase_unit_conversion", { precision: 10, scale: 4 }),
   averageCost: decimal("average_cost", { precision: 10, scale: 4 }),
+  itemCategory: varchar("item_category", { length: 30 }).default("INGREDIENT"),
+  unitType: varchar("unit_type", { length: 20 }).default("WEIGHT"),
+  parLevelPerShift: integer("par_level_per_shift"),
+  reorderPieces: integer("reorder_pieces"),
+  costPerPiece: decimal("cost_per_piece", { precision: 10, scale: 2 }),
+  supplierIdRef: varchar("supplier_id_ref", { length: 36 }),
 }, (t) => [
   index("idx_inventory_items_tenant_id").on(t.tenantId),
   index("idx_inventory_items_tenant_category").on(t.tenantId, t.category),
+  index("idx_inventory_item_category").on(t.tenantId, t.itemCategory),
 ]);
 
 export const stockMovements = pgTable("stock_movements", {
@@ -1366,6 +1373,7 @@ export const stockCountItems = pgTable("stock_count_items", {
   physicalQty: numeric("physical_qty", { precision: 10, scale: 2 }),
   counted: boolean("counted").default(false),
   notes: text("notes"),
+  varianceReason: varchar("variance_reason", { length: 50 }),
 });
 
 export const insertStockCountSessionSchema = createInsertSchema(stockCountSessions).omit({ id: true, createdAt: true, startedAt: true, completedAt: true, approvedAt: true });
@@ -1398,6 +1406,8 @@ export const damagedInventory = pgTable("damaged_inventory", {
   notes: text("notes"),
   createdBy: varchar("created_by", { length: 36 }).references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
+  photoUrl: text("photo_url"),
+  causedByName: varchar("caused_by_name", { length: 100 }),
 });
 
 export const insertDamagedInventorySchema = createInsertSchema(damagedInventory).omit({ id: true, createdAt: true, reviewedAt: true });
