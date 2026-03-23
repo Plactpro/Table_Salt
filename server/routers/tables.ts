@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
+import { returnResourcesFromTable } from "../services/resource-service";
 
 export function registerTablesRoutes(app: Express): void {
   app.get("/api/table-zones", requireAuth, async (req, res) => {
@@ -91,6 +92,7 @@ export function registerTablesRoutes(app: Express): void {
       await storage.updateTableSession(activeSession.id, { status: "closed", closedAt: new Date() });
       await storage.clearGuestCart(activeSession.id);
     }
+    returnResourcesFromTable(req.params.id, user.tenantId, false).catch(() => {});
     emitToTenant(user.tenantId, "table:updated", { tableId: req.params.id, status: "cleaning" });
     res.json(tbl);
   });

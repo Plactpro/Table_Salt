@@ -288,6 +288,7 @@ export const reservations = pgTable("reservations", {
   dateTime: timestamp("date_time").notNull(),
   notes: text("notes"),
   status: reservationStatusEnum("status").default("pending"),
+  resourceRequirements: jsonb("resource_requirements").default([]),
 }, (t) => [
   index("idx_reservations_tenant_datetime").on(t.tenantId, t.dateTime),
   index("idx_reservations_tenant_status").on(t.tenantId, t.status),
@@ -3026,3 +3027,93 @@ export type InAppSupportTicket = typeof inAppSupportTickets.$inferSelect;
 export type InsertInAppSupportTicket = z.infer<typeof insertInAppSupportTicketSchema>;
 export type InAppSupportTicketReply = typeof inAppSupportTicketReplies.$inferSelect;
 export type InsertInAppSupportTicketReply = z.infer<typeof insertInAppSupportTicketReplySchema>;
+
+// Task #132: Special Resource Management System
+export const specialResources = pgTable("special_resources", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  resourceCode: varchar("resource_code", { length: 30 }).notNull(),
+  resourceName: varchar("resource_name", { length: 100 }).notNull(),
+  resourceIcon: varchar("resource_icon", { length: 10 }).default("🪑"),
+  totalUnits: integer("total_units").notNull().default(0),
+  availableUnits: integer("available_units").notNull().default(0),
+  inUseUnits: integer("in_use_units").default(0),
+  underCleaningUnits: integer("under_cleaning_units").default(0),
+  damagedUnits: integer("damaged_units").default(0),
+  isTrackable: boolean("is_trackable").default(true),
+  requiresSetupTime: integer("requires_setup_time").default(0),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertSpecialResourceSchema = createInsertSchema(specialResources).omit({ id: true, createdAt: true, updatedAt: true });
+export type SpecialResource = typeof specialResources.$inferSelect;
+export type InsertSpecialResource = z.infer<typeof insertSpecialResourceSchema>;
+
+export const resourceUnits = pgTable("resource_units", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  resourceId: varchar("resource_id", { length: 36 }).notNull(),
+  unitCode: varchar("unit_code", { length: 30 }).notNull(),
+  unitName: varchar("unit_name", { length: 100 }),
+  status: varchar("status", { length: 20 }).default("available"),
+  currentTableId: varchar("current_table_id", { length: 36 }),
+  currentOrderId: varchar("current_order_id", { length: 36 }),
+  lastCleanedAt: timestamp("last_cleaned_at", { withTimezone: true }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertResourceUnitSchema = createInsertSchema(resourceUnits).omit({ id: true, createdAt: true });
+export type ResourceUnit = typeof resourceUnits.$inferSelect;
+export type InsertResourceUnit = z.infer<typeof insertResourceUnitSchema>;
+
+export const resourceAssignments = pgTable("resource_assignments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  resourceId: varchar("resource_id", { length: 36 }).notNull(),
+  resourceName: varchar("resource_name", { length: 100 }),
+  resourceUnitId: varchar("resource_unit_id", { length: 36 }),
+  unitCode: varchar("unit_code", { length: 30 }),
+  tableId: varchar("table_id", { length: 36 }),
+  tableNumber: varchar("table_number", { length: 20 }),
+  orderId: varchar("order_id", { length: 36 }),
+  reservationId: varchar("reservation_id", { length: 36 }),
+  quantity: integer("quantity").default(1),
+  assignedFor: varchar("assigned_for", { length: 50 }),
+  status: varchar("status", { length: 20 }).default("assigned"),
+  specialNotes: text("special_notes"),
+  assignedBy: varchar("assigned_by", { length: 36 }),
+  assignedByName: varchar("assigned_by_name", { length: 255 }),
+  assignedAt: timestamp("assigned_at", { withTimezone: true }).defaultNow(),
+  returnedAt: timestamp("returned_at", { withTimezone: true }),
+  requiresCleaning: boolean("requires_cleaning").default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+export const insertResourceAssignmentSchema = createInsertSchema(resourceAssignments).omit({ id: true, createdAt: true, assignedAt: true });
+export type ResourceAssignment = typeof resourceAssignments.$inferSelect;
+export type InsertResourceAssignment = z.infer<typeof insertResourceAssignmentSchema>;
+
+export const resourceCleaningLog = pgTable("resource_cleaning_log", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  resourceUnitId: varchar("resource_unit_id", { length: 36 }).notNull(),
+  unitCode: varchar("unit_code", { length: 30 }),
+  resourceName: varchar("resource_name", { length: 100 }),
+  cleaningType: varchar("cleaning_type", { length: 20 }).default("STANDARD"),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  cleanedBy: varchar("cleaned_by", { length: 36 }),
+  cleanedByName: varchar("cleaned_by_name", { length: 255 }),
+  notes: text("notes"),
+});
+
+export const insertResourceCleaningLogSchema = createInsertSchema(resourceCleaningLog).omit({ id: true, startedAt: true });
+export type ResourceCleaningLog = typeof resourceCleaningLog.$inferSelect;
+export type InsertResourceCleaningLog = z.infer<typeof insertResourceCleaningLogSchema>;

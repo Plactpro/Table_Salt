@@ -226,6 +226,13 @@ app.use((req, res, next) => {
     console.error("Packing settings seed error:", e);
   }
 
+  try {
+    const { seedSpecialResources } = await import("./seed");
+    await seedSpecialResources();
+  } catch (e) {
+    console.error("Special resources seed error:", e);
+  }
+
   // Initialize Stripe schema (stripe-replit-sync manages the stripe.* tables)
   try {
     const { runMigrations } = await import("stripe-replit-sync");

@@ -10,6 +10,7 @@ import { can, needsSupervisorApproval } from "../permissions";
 import { auditLogFromReq } from "../audit";
 import { emitToTenant } from "../realtime";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
+import { returnResourcesFromTable } from "../services/resource-service";
 import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
 import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
 import { convertUnits } from "@shared/units";
@@ -849,12 +850,14 @@ export function registerOrdersRoutes(app: Express): void {
     if (req.body.status === "paid" && existing.status !== "paid" && existing.tableId) {
       await storage.updateTable(existing.tableId, { status: "free" });
       emitToTenant(user.tenantId, "table:updated", { tableId: existing.tableId, status: "free" });
+      returnResourcesFromTable(existing.tableId, user.tenantId, false).catch(() => {});
     } else if (
       (req.body.status === "voided" || req.body.status === "cancelled") &&
       existing.tableId
     ) {
       await storage.updateTable(existing.tableId, { status: "free" });
       emitToTenant(user.tenantId, "table:updated", { tableId: existing.tableId, status: "free" });
+      returnResourcesFromTable(existing.tableId, user.tenantId, false).catch(() => {});
     }
 
     if (req.body.status && req.body.status !== existing.status) {

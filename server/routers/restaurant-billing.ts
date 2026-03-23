@@ -10,6 +10,7 @@ import { createPaymentLink, getPaymentLink, refundRazorpayPayment } from "../raz
 import { routeAndPrint } from "../services/printer-service";
 import { recordAndDistributeTip } from "../services/tip-service";
 import { calculatePackingCharge } from "../services/packing-charge-service";
+import { returnResourcesFromTable } from "../services/resource-service";
 
 function getFiscalYear(date: Date): string {
   const m = date.getMonth() + 1;
@@ -67,9 +68,10 @@ export async function finalizeBillCompletion(opts: {
   // 3. Complete the order
   await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: paymentMethod.toLowerCase() });
 
-  // 4. Free the table
+  // 4. Free the table and return any special resources
   if (bill.tableId) {
     try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+    returnResourcesFromTable(bill.tableId, bill.tenantId, false).catch(() => {});
   }
 
   // 5. Loyalty points accrual + CRM visit update for linked customer
@@ -406,6 +408,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
         if (bill.tableId) {
           try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+          returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
         }
         const effectiveLoyaltyCustomerId = loyaltyCustomerId || bill.customerId;
         if (effectiveLoyaltyCustomerId) {
@@ -529,6 +532,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       await storage.updateOrder(bill.orderId, { status: "voided" });
       if (bill.tableId) {
         try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+        returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
       }
       if (bill.customerId && bill.paymentStatus === "paid") {
         try {
