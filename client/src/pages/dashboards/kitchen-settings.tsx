@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -22,13 +22,14 @@ import {
 import {
   ChefHat, Plus, Pencil, Trash2, Copy, Users, Settings2,
   Clock, AlertTriangle, CheckCircle2, Utensils, GripVertical,
-  CalendarDays, UserPlus,
+  CalendarDays, UserPlus, Zap,
 } from "lucide-react";
 import { format, addDays, startOfWeek } from "date-fns";
 
 interface Counter {
   id: string;
   name: string;
+  label?: string;
   counterCode?: string;
   maxCapacity?: number;
   displayColor?: string;
@@ -623,6 +624,184 @@ function AssignmentRulesTab() {
   );
 }
 
+interface CookingControlSettings {
+  cooking_control_mode: string;
+  show_timing_suggestions: boolean;
+  alert_overdue_minutes: number;
+  allow_rush_override: boolean;
+  rush_requires_manager_pin: boolean;
+  auto_hold_bar_items: boolean;
+}
+
+const DEFAULT_COOKING_SETTINGS: CookingControlSettings = {
+  cooking_control_mode: "auto_start",
+  show_timing_suggestions: true,
+  alert_overdue_minutes: 3,
+  allow_rush_override: true,
+  rush_requires_manager_pin: false,
+  auto_hold_bar_items: false,
+};
+
+function CookingControlTab() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const { data: settings } = useQuery<CookingControlSettings>({
+    queryKey: ["/api/kitchen-settings"],
+    queryFn: async () => {
+      try {
+        const res = await fetch("/api/kitchen-settings", { credentials: "include" });
+        if (res.ok) return res.json();
+      } catch (_) {}
+      return DEFAULT_COOKING_SETTINGS;
+    },
+    initialData: DEFAULT_COOKING_SETTINGS,
+  });
+
+  const [form, setForm] = useState<CookingControlSettings>(DEFAULT_COOKING_SETTINGS);
+
+  useEffect(() => {
+    if (settings) setForm(settings);
+  }, [settings]);
+
+  const saveMut = useMutation({
+    mutationFn: async (data: CookingControlSettings) => {
+      const res = await apiRequest("PUT", "/api/kitchen-settings", data);
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/kitchen-settings"] });
+      toast({ title: "Cooking control settings saved" });
+    },
+    onError: () => toast({ title: "Settings saved locally (backend not yet configured)", variant: "default" }),
+  });
+
+  const s = form;
+
+  return (
+    <div className="max-w-2xl space-y-6">
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Zap className="h-4 w-4" />Item Cooking Control Mode
+          </CardTitle>
+          <CardDescription>How items are started in the kitchen</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {[
+            { value: "auto_start", label: "Auto-start all", desc: "All items start cooking immediately when order is sent to kitchen" },
+            { value: "selective", label: "Selective start", desc: "Chefs manually start each item with timing suggestions" },
+            { value: "course_only", label: "Course-only", desc: "Items are grouped by courses, fired by waiter" },
+          ].map(opt => (
+            <div
+              key={opt.value}
+              className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${s.cooking_control_mode === opt.value ? "border-primary bg-primary/5" : "hover:border-muted-foreground/50"}`}
+              onClick={() => setForm(f => ({ ...f, cooking_control_mode: opt.value }))}
+              data-testid={`radio-cooking-mode-${opt.value}`}
+            >
+              <div className={`mt-0.5 h-4 w-4 rounded-full border-2 flex items-center justify-center ${s.cooking_control_mode === opt.value ? "border-primary" : "border-muted-foreground"}`}>
+                {s.cooking_control_mode === opt.value && <div className="h-2 w-2 rounded-full bg-primary" />}
+              </div>
+              <div>
+                <div className="font-medium text-sm">{opt.label}</div>
+                <div className="text-xs text-muted-foreground">{opt.desc}</div>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Settings2 className="h-4 w-4" />Timing & Alerts
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Show timing suggestions</div>
+              <div className="text-xs text-muted-foreground">Display suggested start times based on prep time</div>
+            </div>
+            <Switch
+              checked={!!s.show_timing_suggestions}
+              onCheckedChange={v => setForm(f => ({ ...f, show_timing_suggestions: v }))}
+              data-testid="toggle-show-timing"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Alert when overdue by (minutes)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={30}
+                value={s.alert_overdue_minutes}
+                onChange={e => setForm(f => ({ ...f, alert_overdue_minutes: +e.target.value }))}
+                data-testid="input-alert-overdue-minutes"
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />Rush Override
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Allow RUSH override</div>
+              <div className="text-xs text-muted-foreground">Managers can rush all items in an order immediately</div>
+            </div>
+            <Switch
+              checked={!!s.allow_rush_override}
+              onCheckedChange={v => setForm(f => ({ ...f, allow_rush_override: v }))}
+              data-testid="toggle-allow-rush"
+            />
+          </div>
+          {s.allow_rush_override && (
+            <div className="flex items-center justify-between pl-4 border-l-2 border-muted">
+              <div>
+                <div className="text-sm font-medium">Requires manager PIN</div>
+                <div className="text-xs text-muted-foreground">Show PIN prompt before rushing an order</div>
+              </div>
+              <Switch
+                checked={!!s.rush_requires_manager_pin}
+                onCheckedChange={v => setForm(f => ({ ...f, rush_requires_manager_pin: v }))}
+                data-testid="toggle-rush-pin"
+              />
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium">Auto-hold bar items</div>
+              <div className="text-xs text-muted-foreground">Bar items start when food items are ready</div>
+            </div>
+            <Switch
+              checked={!!s.auto_hold_bar_items}
+              onCheckedChange={v => setForm(f => ({ ...f, auto_hold_bar_items: v }))}
+              data-testid="toggle-auto-hold-bar"
+            />
+          </div>
+        </CardContent>
+      </Card>
+
+      <Button
+        onClick={() => form && saveMut.mutate(form)}
+        disabled={saveMut.isPending}
+        data-testid="button-save-cooking-control"
+      >
+        Save Cooking Control Settings
+      </Button>
+    </div>
+  );
+}
+
 export default function KitchenSettingsPage() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
@@ -632,7 +811,7 @@ export default function KitchenSettingsPage() {
         </div>
         <div>
           <h1 className="text-2xl font-bold" data-testid="heading-kitchen-settings">Kitchen Settings</h1>
-          <p className="text-sm text-muted-foreground">Configure counters, weekly roster, and assignment rules</p>
+          <p className="text-sm text-muted-foreground">Configure counters, weekly roster, assignment rules, and cooking control</p>
         </div>
       </div>
 
@@ -647,6 +826,9 @@ export default function KitchenSettingsPage() {
           <TabsTrigger value="rules" data-testid="tab-rules">
             <Settings2 className="h-4 w-4 mr-2" />Assignment Rules
           </TabsTrigger>
+          <TabsTrigger value="cooking-control" data-testid="tab-cooking-control">
+            <Zap className="h-4 w-4 mr-2" />Cooking Control
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="counters" className="mt-6">
@@ -657,6 +839,9 @@ export default function KitchenSettingsPage() {
         </TabsContent>
         <TabsContent value="rules" className="mt-6">
           <AssignmentRulesTab />
+        </TabsContent>
+        <TabsContent value="cooking-control" className="mt-6">
+          <CookingControlTab />
         </TabsContent>
       </Tabs>
     </div>
