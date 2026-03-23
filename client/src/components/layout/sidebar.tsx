@@ -40,6 +40,7 @@ import {
   ScanQrCode,
   LayoutGrid,
   Phone,
+  Workflow,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -82,6 +83,7 @@ const navItems: NavItem[] = [
   { id: "m-36", name: "Kitchen Settings", icon: ChefHat, path: "/kitchen-settings", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
   { id: "m-37", name: "Stock Capacity", icon: ClipboardList, path: "/stock-reports", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
   { id: "m-38", name: "Phone Orders", icon: Phone, path: "/phone-order", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "orders" },
+  { id: "m-39", name: "Service Hub", icon: Workflow, path: "/service-hub", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "orders" },
 ];
 
 function SandDecoration() {

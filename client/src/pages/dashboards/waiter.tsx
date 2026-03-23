@@ -3,13 +3,18 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
 import { StatCard } from "@/components/widgets/stat-card";
-import { Armchair, ClipboardList, DollarSign, Clock, Users, Coffee, UtensilsCrossed, CircleDot, Plus, LogIn, LogOut, CheckCircle, AlertCircle } from "lucide-react";
+import {
+  Armchair, ClipboardList, DollarSign, Clock, Users, Coffee, UtensilsCrossed,
+  CircleDot, Plus, LogIn, LogOut, CheckCircle, AlertCircle, Bell,
+  CheckCheck, ChefHat, Package, Star,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { motion } from "framer-motion";
-import { useState, useEffect } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useEffect, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { formatCurrency } from "@shared/currency";
 
 const stagger = {
@@ -176,9 +181,109 @@ function ClockInOutCard() {
   );
 }
 
+interface ReadyItem {
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  orderId: string;
+  orderNumber: string;
+  tableNumber?: number;
+  readySince?: string;
+}
+
+function ReadyToServeSection({ readyItems, onCollected }: {
+  readyItems: ReadyItem[];
+  onCollected: (itemId: string, orderId: string) => void;
+}) {
+  if (readyItems.length === 0) return null;
+
+  return (
+    <motion.div
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+    >
+      <Card className="border-2 border-green-400 bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-950/20 dark:to-emerald-950/20" data-testid="card-ready-to-serve">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <motion.div
+              animate={{ scale: [1, 1.15, 1] }}
+              transition={{ duration: 1.5, repeat: Infinity }}
+            >
+              <Bell className="h-5 w-5 text-green-600" />
+            </motion.div>
+            Items Ready to Serve
+            <Badge className="bg-green-600 text-white ml-1" data-testid="ready-items-count">{readyItems.length}</Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          <AnimatePresence>
+            {readyItems.map((item) => {
+              const sinceMin = item.readySince
+                ? Math.floor((Date.now() - new Date(item.readySince).getTime()) / 60000)
+                : null;
+
+              return (
+                <motion.div
+                  key={item.itemId}
+                  layout
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 10, height: 0 }}
+                  className="flex items-center justify-between p-3 rounded-xl border-2 border-green-200 bg-white dark:bg-card gap-3"
+                  data-testid={`ready-item-${item.itemId.slice(-4)}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-semibold text-sm">{item.itemName}</span>
+                      <Badge variant="outline" className="text-xs">x{item.quantity}</Badge>
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
+                      {item.tableNumber && <span>Table {item.tableNumber}</span>}
+                      <span>·</span>
+                      <span>Order #{item.orderNumber}</span>
+                      {sinceMin !== null && (
+                        <>
+                          <span>·</span>
+                          <span className={sinceMin > 5 ? "text-amber-600 font-medium" : "text-green-600"}>
+                            Ready {sinceMin}m ago
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    className="bg-green-600 hover:bg-green-700 text-white text-xs shrink-0 gap-1"
+                    onClick={() => onCollected(item.itemId, item.orderId)}
+                    data-testid={`btn-collected-${item.itemId.slice(-4)}`}
+                  >
+                    <CheckCheck className="h-3.5 w-3.5" />
+                    COLLECTED & SERVING
+                  </Button>
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
 export default function WaiterDashboard() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: waiterData, isLoading: waiterLoading } = useQuery<{
+    readyItems: ReadyItem[];
+    activeOrders: any[];
+  }>({
+    queryKey: ["/api/coordination/waiter-ready-items"],
+    refetchInterval: 30000,
+  });
 
   const { data: ordersRes, isLoading: ordersLoading } = useQuery<{ data: any[]; total: number }>({
     queryKey: ["/api/orders"],
@@ -189,12 +294,22 @@ export default function WaiterDashboard() {
     queryKey: ["/api/tables"],
   });
 
+  const { data: tableRequestsData } = useQuery<any[]>({
+    queryKey: ["/api/table-requests/live"],
+    refetchInterval: 30000,
+  });
+  const tableRequests = Array.isArray(tableRequestsData) ? tableRequestsData : [];
+
   const myOrders = orders.filter((o: any) => o.waiterId === user?.id);
   const myOpenOrders = myOrders.filter((o: any) =>
-    ["new", "sent_to_kitchen", "in_progress", "ready", "served"].includes(o.status)
+    ["new", "sent_to_kitchen", "in_progress", "ready"].includes(o.status)
   );
   const myOpenTableIds = new Set(myOpenOrders.map((o: any) => o.tableId).filter(Boolean));
   const myOpenTables = tables.filter((t: any) => myOpenTableIds.has(t.id));
+
+  const myPendingRequests = tableRequests.filter((r: any) =>
+    r.status === "pending" && myOpenTableIds.has(r.tableId)
+  );
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -205,7 +320,60 @@ export default function WaiterDashboard() {
     .filter((o: any) => o.status === "paid")
     .reduce((sum: number, o: any) => sum + Number(o.total || 0), 0);
 
-  if (ordersLoading) {
+  const serveItemMutation = useMutation({
+    mutationFn: async ({ orderId, itemId }: { orderId: string; itemId: string }) => {
+      const res = await apiRequest("PATCH", `/api/orders/${orderId}/items/${itemId}/status`, { status: "served" });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/coordination/waiter-ready-items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      toast({ title: "Item Served", description: "Item marked as collected and serving" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const handleRequestMutation = useMutation({
+    mutationFn: async (requestId: string) => {
+      const res = await apiRequest("PUT", `/api/table-requests/${requestId}/complete`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/table-requests"] });
+      toast({ title: "Request Handled", description: "Customer request marked as handled" });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const invalidateWaiterData = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/coordination/waiter-ready-items"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+  }, [queryClient]);
+
+  useRealtimeEvent("coordination:item_ready", (payload: any) => {
+    invalidateWaiterData();
+    toast({ title: "Item Ready!", description: "An item is ready to serve" });
+  });
+  useRealtimeEvent("order:updated", invalidateWaiterData);
+  useRealtimeEvent("coordination:order_updated", invalidateWaiterData);
+
+  const readyItems = waiterData?.readyItems ?? [];
+
+  const getOrderStatusInfo = (status: string) => {
+    const map: Record<string, { label: string; color: string; icon: any }> = {
+      new: { label: "New", color: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300", icon: ClipboardList },
+      sent_to_kitchen: { label: "In Kitchen", color: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300", icon: ChefHat },
+      in_progress: { label: "Preparing", color: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300", icon: ChefHat },
+      ready: { label: "All Ready", color: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300", icon: CheckCheck },
+    };
+    return map[status] || { label: status, color: "bg-gray-100 text-gray-700", icon: CircleDot };
+  };
+
+  if (ordersLoading || waiterLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -269,6 +437,58 @@ export default function WaiterDashboard() {
         />
       </motion.div>
 
+      <ReadyToServeSection
+        readyItems={readyItems}
+        onCollected={(itemId, orderId) => serveItemMutation.mutate({ itemId, orderId })}
+      />
+
+      {myPendingRequests.length > 0 && (
+        <motion.div variants={fadeUp}>
+          <Card className="border-2 border-amber-300 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20" data-testid="card-customer-requests">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Bell className="h-4 w-4 text-amber-600" />
+                Customer Requests
+                <Badge className="bg-amber-500 text-white ml-1" data-testid="requests-count">{myPendingRequests.length}</Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              <AnimatePresence>
+                {myPendingRequests.map((req: any) => (
+                  <motion.div
+                    key={req.id}
+                    layout
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex items-center justify-between p-3 rounded-xl border bg-white dark:bg-card gap-3"
+                    data-testid={`request-${req.id.slice(-4)}`}
+                  >
+                    <div>
+                      <p className="text-sm font-medium capitalize">{(req.requestType || req.type || "Request")?.replace(/_/g, " ")}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Table {tables.find((t: any) => t.id === req.tableId)?.number ?? "?"} ·{" "}
+                        {Math.floor((Date.now() - new Date(req.createdAt).getTime()) / 60000)}m ago
+                      </p>
+                      {(req.guestNote || req.message) && <p className="text-xs text-muted-foreground mt-0.5">{req.guestNote || req.message}</p>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0 text-xs"
+                      onClick={() => handleRequestMutation.mutate(req.id)}
+                      data-testid={`btn-handle-request-${req.id.slice(-4)}`}
+                    >
+                      HANDLE
+                    </Button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
       <motion.div variants={fadeUp} className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -327,25 +547,23 @@ export default function WaiterDashboard() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.25 }}
         >
-          <Card data-testid="card-my-orders" className="h-full">
+          <Card data-testid="card-active-orders" className="h-full">
             <CardHeader>
               <CardTitle className="text-base flex items-center gap-2">
                 <ClipboardList className="h-4 w-4 text-primary" />
-                My Open Orders
+                Active Orders
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
               {myOpenOrders.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-4">No open orders</p>
+                <p className="text-sm text-muted-foreground py-4">No active orders</p>
               ) : (
                 myOpenOrders.map((order: any, i: number) => {
-                  const statusColors: Record<string, string> = {
-                    new: "bg-teal-100 text-teal-800 dark:bg-teal-950 dark:text-teal-300",
-                    sent_to_kitchen: "bg-cyan-100 text-cyan-700 dark:bg-cyan-950 dark:text-cyan-300",
-                    in_progress: "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300",
-                    ready: "bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300",
-                    served: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",
-                  };
+                  const statusInfo = getOrderStatusInfo(order.status);
+                  const StatusIcon = statusInfo.icon;
+                  const elapsedMin = Math.floor((Date.now() - new Date(order.createdAt).getTime()) / 60000);
+                  const elapsedColor = elapsedMin >= 20 ? "text-red-600" : elapsedMin >= 10 ? "text-amber-600" : "text-muted-foreground";
+
                   return (
                     <motion.div
                       key={order.id}
@@ -355,13 +573,26 @@ export default function WaiterDashboard() {
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ duration: 0.3, delay: 0.3 + i * 0.05 }}
                     >
-                      <div>
-                        <p className="font-medium text-sm">#{order.id.slice(-4)}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {order.orderType?.replace("_", " ")} · {fmt(Number(order.total || 0))}
-                        </p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm">#{order.id.slice(-4)}</p>
+                          {order.tableId && (
+                            <span className="text-xs text-muted-foreground">
+                              Table {tables.find((t: any) => t.id === order.tableId)?.number ?? "?"}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-xs text-muted-foreground">{fmt(Number(order.total || 0))}</span>
+                          <span className={`text-xs flex items-center gap-0.5 ${elapsedColor}`}>
+                            <Clock className="h-3 w-3" /> {elapsedMin}m
+                          </span>
+                        </div>
                       </div>
-                      <Badge className={statusColors[order.status] || ""}>{order.status?.replace("_", " ")}</Badge>
+                      <Badge className={`${statusInfo.color} flex items-center gap-1 text-xs`}>
+                        <StatusIcon className="h-3 w-3" />
+                        {statusInfo.label}
+                      </Badge>
                     </motion.div>
                   );
                 })

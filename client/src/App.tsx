@@ -51,6 +51,7 @@ import KitchenSettingsPage from "@/pages/dashboards/kitchen-settings";
 import KitchenBoardPage from "@/pages/dashboards/kitchen-board";
 import StockReportsPage from "@/pages/modules/stock-reports";
 import PhoneOrderPage from "@/pages/modules/phone-order";
+import ServiceHubPage from "@/pages/dashboards/service-hub";
 
 import OnboardingPage from "@/pages/onboarding";
 import AdminDashboard from "@/pages/admin/dashboard";
@@ -102,6 +103,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/kitchen-board": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
   "/stock-reports": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
   "/phone-order": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "orders" },
+  "/service-hub": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "orders" },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -290,6 +292,7 @@ function ProtectedPages() {
         <Route path="/kitchen-board">{() => <GuardedRoute path="/kitchen-board" component={KitchenBoardPage} />}</Route>
         <Route path="/stock-reports">{() => <GuardedRoute path="/stock-reports" component={StockReportsPage} />}</Route>
         <Route path="/phone-order">{() => <GuardedRoute path="/phone-order" component={PhoneOrderPage} />}</Route>
+        <Route path="/service-hub">{() => <GuardedRoute path="/service-hub" component={ServiceHubPage} />}</Route>
         <Route path="/reports">{() => <GuardedRoute path="/reports" component={ReportsHub} />}</Route>
         <Route path="/stock-movements">{() => <GuardedRoute path="/inventory" component={StockMovementLog} />}</Route>
         <Route path="/chef-report">{() => <GuardedRoute path="/reports" component={ChefReport} />}</Route>
