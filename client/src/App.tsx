@@ -51,6 +51,7 @@ const OwnerDashboard = lazy(() => import("@/pages/dashboards/owner"));
 const ManagerDashboard = lazy(() => import("@/pages/dashboards/manager"));
 const WaiterDashboard = lazy(() => import("@/pages/dashboards/waiter"));
 const AccountantDashboard = lazy(() => import("@/pages/dashboards/accountant"));
+const DeliveryAgentDashboard = lazy(() => import("@/pages/dashboards/delivery-agent"));
 const KitchenBoardPage = lazy(() => import("@/pages/dashboards/kitchen-board"));
 const KitchenSettingsPage = lazy(() => import("@/pages/dashboards/kitchen-settings"));
 const ServiceHubPage = lazy(() => import("@/pages/dashboards/service-hub"));
@@ -289,6 +290,8 @@ function RoleDashboard() {
         return <KitchenDashboard />;
       case "accountant":
         return <AccountantDashboard />;
+      case "delivery_agent":
+        return <DeliveryAgentDashboard />;
       default:
         return <OwnerDashboard />;
     }
