@@ -96,8 +96,12 @@ export default function ServiceHubPage() {
   const [kpisExpanded, setKpisExpanded] = useState(true);
   const [alertBanner, setAlertBanner] = useState<string | null>(null);
 
-  const { data, isLoading, refetch } = useQuery<DashboardData>({
+  const { data, isLoading, isError, error, refetch } = useQuery<DashboardData>({
     queryKey: ["/api/coordination/dashboard"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/coordination/dashboard");
+      return res.json();
+    },
     refetchInterval: 30000,
   });
 
@@ -237,6 +241,20 @@ export default function ServiceHubPage() {
             <div className="flex items-center justify-center h-64">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
             </div>
+          ) : isError ? (
+            <div className="flex items-center justify-center h-64" data-testid="kanban-error-state">
+              <div className="flex flex-col items-center gap-3 p-6 rounded-xl border-2 border-red-200 bg-red-50 dark:bg-red-950/20 max-w-md text-center">
+                <AlertTriangle className="h-8 w-8 text-red-600" />
+                <div>
+                  <p className="font-semibold text-red-700">Could not load orders</p>
+                  <p className="text-sm text-red-600 mt-1">{(error as Error)?.message ?? "An unexpected error occurred."}</p>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5 border-red-300 text-red-700 hover:bg-red-100" data-testid="btn-retry-kanban">
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  Retry
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="overflow-x-auto pb-2" data-testid="kanban-scroll-container">
               <div className="flex gap-4 pb-4 min-w-max" data-testid="kanban-board">
@@ -345,6 +363,20 @@ export default function ServiceHubPage() {
             {isLoading ? (
               <div className="flex items-center justify-center h-64">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+              </div>
+            ) : isError ? (
+              <div className="flex items-center justify-center h-64" data-testid="floor-error-state">
+                <div className="flex flex-col items-center gap-3 p-6 rounded-xl border-2 border-red-200 bg-red-50 dark:bg-red-950/20 max-w-md text-center">
+                  <AlertTriangle className="h-8 w-8 text-red-600" />
+                  <div>
+                    <p className="font-semibold text-red-700">Could not load floor data</p>
+                    <p className="text-sm text-red-600 mt-1">{(error as Error)?.message ?? "An unexpected error occurred."}</p>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5 border-red-300 text-red-700 hover:bg-red-100" data-testid="btn-retry-floor">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Retry
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-3" data-testid="floor-grid">
