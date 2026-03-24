@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import {
   Receipt, CreditCard, Banknote, Smartphone, Gift, Plus, Minus, Printer,
   Share2, ArrowLeft, CheckCircle2, X, AlertTriangle, Mail, RotateCcw, FileDown,
-  Loader2, ExternalLink, QrCode, User, Cake, Heart, Star, StickyNote, Package,
+  Loader2, ExternalLink, QrCode, User, Cake, Heart, Star, StickyNote, Package, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { PackingBreakdownPopover, type PackingChargeResult } from "@/components/packing/PackingBreakdownPopover";
 import QRCode from "qrcode";
@@ -221,6 +221,18 @@ export default function BillPreviewModal({
   const [packingResult, setPackingResult] = useState<PackingChargeResult | null>(null);
   const [packingLoading, setPackingLoading] = useState(false);
 
+  const [parkingCharge, setParkingCharge] = useState<{
+    duration?: string;
+    freeMinutes?: number;
+    grossCharge?: number;
+    validationDiscount?: number;
+    finalCharge: number;
+    tax?: number;
+    total: number;
+  } | null>(null);
+  const [parkingChargeLoading, setParkingChargeLoading] = useState(false);
+  const [parkingChargeExpanded, setParkingChargeExpanded] = useState(false);
+
   const { data: outletsData = [] } = useQuery<any[]>({
     queryKey: ["/api/outlets"],
     enabled: open,
@@ -228,6 +240,75 @@ export default function BillPreviewModal({
   });
   const packingOutletId = outletId || outletsData[0]?.id || null;
   const isTakeawayOrDelivery = orderType === "takeaway" || orderType === "delivery";
+
+  useEffect(() => {
+    if (!open || !orderId) {
+      setParkingCharge(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      setParkingChargeLoading(true);
+      try {
+        const ticketRes = await fetch(
+          `/api/parking/ticket-by-order/${orderId}`,
+          { credentials: "include" }
+        );
+        if (!cancelled && ticketRes.ok) {
+          const ticket = await ticketRes.json();
+          const ticketId = ticket?.id;
+          const billId = ticket?.bill_id ?? ticket?.billId;
+          if (billId) {
+            // Try persisted bill charge first
+            const chargeRes = await fetch(`/api/parking/bill-charge/${billId}`, {
+              credentials: "include",
+            });
+            if (!cancelled && chargeRes.ok) {
+              const charge = await chargeRes.json();
+              if (charge) {
+                setParkingCharge({
+                  duration: charge.durationMinutes != null ? `${Math.floor(charge.durationMinutes / 60)}h ${charge.durationMinutes % 60}m` : undefined,
+                  freeMinutes: charge.freeMinutes ?? charge.free_minutes_applied,
+                  grossCharge: charge.grossCharge ?? charge.gross_charge,
+                  validationDiscount: charge.validationDiscount ?? charge.validation_discount,
+                  finalCharge: charge.finalCharge ?? charge.final_charge ?? charge.totalCharge ?? charge.total_charge,
+                  tax: charge.taxAmount ?? charge.tax_amount,
+                  total: charge.totalCharge ?? charge.total_charge ?? 0,
+                });
+                return;
+              }
+            }
+          }
+          // Fallback: compute a live preview from the ticket directly (pre-payment)
+          if (!cancelled && ticketId) {
+            const previewRes = await fetch(`/api/parking/charge-preview/${ticketId}`, {
+              credentials: "include",
+            });
+            if (!cancelled && previewRes.ok) {
+              const preview = await previewRes.json();
+              if (preview && preview.totalCharge != null) {
+                setParkingCharge({
+                  duration: preview.durationLabel ?? (preview.durationMinutes != null
+                    ? `${Math.floor(preview.durationMinutes / 60)}h ${preview.durationMinutes % 60}m`
+                    : undefined),
+                  freeMinutes: preview.freeMinutes,
+                  grossCharge: preview.grossCharge,
+                  validationDiscount: preview.validationDiscount,
+                  finalCharge: preview.finalCharge,
+                  tax: preview.taxAmount,
+                  total: preview.totalCharge,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+      } finally {
+        if (!cancelled) setParkingChargeLoading(false);
+      }
+    }, 400);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [open, orderId]);
 
   useEffect(() => {
     if (!open || !isTakeawayOrDelivery || !packingOutletId || cart.length === 0) {
@@ -397,7 +478,9 @@ export default function BillPreviewModal({
   const tipBasis = tipConfig?.tipBasis === "TOTAL" ? total : subtotal;
   const tipAmount = customTip ? parseFloat(customTip) || 0 : tipBasis * (tipPct / 100);
   const loyaltyRedemptionValue = loyaltyPointsToRedeem * 0.01;
-  const grandTotal = Math.max(0, total - tierDiscountAmount + tipAmount - loyaltyRedemptionValue);
+  const packingTotal = packingResult?.applicable ? (packingResult.total ?? 0) : 0;
+  const parkingTotal = parkingCharge?.total ?? 0;
+  const grandTotal = Math.max(0, total - tierDiscountAmount + tipAmount - loyaltyRedemptionValue + packingTotal + parkingTotal);
 
   const splitPaidTotal = splitRows.reduce((s, r) => s + (parseFloat(r.amount) || 0), 0);
   const splitRemaining = grandTotal - splitPaidTotal;
@@ -689,6 +772,7 @@ export default function BillPreviewModal({
     setRzpInitiating(false);
     setRzpPaid(false);
     setRzpAttempted(false);
+    setParkingCharge(null);
     onClose();
   };
 
@@ -1033,12 +1117,65 @@ export default function BillPreviewModal({
                       <span>{fmt(packingResult.total)}</span>
                     </div>
                   )}
+                  {parkingChargeLoading && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span className="flex items-center gap-1">🅿️ Parking Charge</span>
+                      <span className="animate-pulse">—</span>
+                    </div>
+                  )}
+                  {parkingCharge && !parkingChargeLoading && (
+                    <div className="space-y-1" data-testid="parking-charge-section">
+                      <button
+                        className="flex items-center justify-between w-full text-sm font-medium mt-1 hover:opacity-80 transition-opacity"
+                        onClick={() => setParkingChargeExpanded(e => !e)}
+                        data-testid="button-toggle-parking-breakdown"
+                      >
+                        <span className="flex items-center gap-1">
+                          🅿️ Parking
+                          {parkingChargeExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                        </span>
+                        <span data-testid="parking-total-summary">{fmt(parkingCharge.total)}</span>
+                      </button>
+                      {parkingChargeExpanded && (
+                        <div className="space-y-0.5 pl-2 border-l-2 border-muted ml-1">
+                          {parkingCharge.duration && (
+                            <div className="flex justify-between text-xs text-muted-foreground" data-testid="parking-duration">
+                              <span>Duration</span><span>{parkingCharge.duration}</span>
+                            </div>
+                          )}
+                          {parkingCharge.freeMinutes != null && parkingCharge.freeMinutes > 0 && (
+                            <div className="flex justify-between text-xs text-green-600" data-testid="parking-free-period">
+                              <span>Free Period</span><span>−{parkingCharge.freeMinutes} min</span>
+                            </div>
+                          )}
+                          {parkingCharge.grossCharge != null && (
+                            <div className="flex justify-between text-xs text-muted-foreground" data-testid="parking-gross-charge">
+                              <span>Gross Charge</span><span>{fmt(parkingCharge.grossCharge)}</span>
+                            </div>
+                          )}
+                          {parkingCharge.validationDiscount != null && parkingCharge.validationDiscount > 0 && (
+                            <div className="flex justify-between text-xs text-green-600" data-testid="parking-validation-discount">
+                              <span>Validation Discount</span><span>−{fmt(parkingCharge.validationDiscount)}</span>
+                            </div>
+                          )}
+                          {parkingCharge.tax != null && parkingCharge.tax > 0 && (
+                            <div className="flex justify-between text-xs text-muted-foreground" data-testid="parking-tax">
+                              <span>Tax</span><span>{fmt(parkingCharge.tax)}</span>
+                            </div>
+                          )}
+                          <div className="flex justify-between text-xs font-medium" data-testid="parking-final-charge">
+                            <span>Parking Total</span><span>{fmt(parkingCharge.total)}</span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <Separator />
                   <div className="flex justify-between font-bold text-base" data-testid="text-grand-total-with-packing">
                     <span>TOTAL</span>
-                    <span>{fmt(Math.max(0, total - tierDiscountAmount + (packingResult?.applicable ? packingResult.total : 0)))}</span>
+                    <span>{fmt(grandTotal)}</span>
                   </div>
-                  <p className="text-xs text-muted-foreground italic">{numWords(total)}</p>
+                  <p className="text-xs text-muted-foreground italic">{numWords(grandTotal)}</p>
                 </div>
               </div>
 
