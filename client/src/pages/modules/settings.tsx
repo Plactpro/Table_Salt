@@ -16,8 +16,9 @@ import { useLocation } from "wouter";
 import {
   Save, Building2, Receipt, Settings, CheckCircle2, Crown, Store,
   Clock, Globe, DollarSign, Search, Eye, RotateCcw,
-  CreditCard, Printer, Zap, Phone,
+  CreditCard, Printer, Zap, Phone, Sun, Moon, Monitor,
 } from "lucide-react";
+import { useTheme, type ThemePreference } from "@/hooks/use-theme";
 import PrintQueuePanel from "@/components/pos/PrintQueuePanel";
 import {
   SubscriptionTier,
@@ -151,6 +152,55 @@ function SubscriptionPlanCard() {
                 </Button>
               )}
             </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function ThemeCard() {
+  const { user } = useAuth();
+  const { setTheme, isUpdating } = useTheme(user?.themePreference ?? "system");
+  const current = user?.themePreference ?? "system";
+
+  const options: { value: ThemePreference; label: string; Icon: React.ElementType }[] = [
+    { value: "light", label: "Light", Icon: Sun },
+    { value: "dark", label: "Dark", Icon: Moon },
+    { value: "system", label: "System", Icon: Monitor },
+  ];
+
+  return (
+    <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
+      <Card className="max-w-4xl" data-testid="card-theme-preference">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900">
+              <Monitor className="h-5 w-5 text-indigo-700 dark:text-indigo-300" />
+            </div>
+            <CardTitle>Appearance</CardTitle>
+          </div>
+          <CardDescription>Choose your preferred color theme. Your preference is saved to your account.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex gap-3" role="group" aria-label="Theme preference">
+            {options.map(({ value, label, Icon }) => (
+              <button
+                key={value}
+                data-testid={`button-theme-${value}`}
+                onClick={() => setTheme(value)}
+                disabled={isUpdating}
+                aria-pressed={current === value}
+                className={`flex flex-col items-center gap-2 px-6 py-4 rounded-xl border-2 text-sm font-medium transition-all
+                  ${current === value
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border hover:border-primary/40 text-muted-foreground hover:text-foreground"
+                  }`}
+              >
+                <Icon className="h-5 w-5" />
+                {label}
+              </button>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -432,6 +482,8 @@ export default function SettingsPage() {
       </div>
 
       <SubscriptionPlanCard />
+
+      <ThemeCard />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 max-w-4xl">
         <div className="lg:col-span-2 space-y-6">

@@ -2472,4 +2472,7 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_resource_cleaning_unit ON resource_cleaning_log(resource_unit_id, started_at DESC)`);
 
   await pool.query(`ALTER TABLE reservations ADD COLUMN IF NOT EXISTS resource_requirements JSONB DEFAULT '[]'`);
+
+  // Task #130: Dark mode persistence — store user theme preference
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_preference VARCHAR(20) DEFAULT 'system'`);
 }

@@ -809,7 +809,7 @@ export default function BillPreviewModal({
   const BillWrapper = fullPage ? DialogPageContent : DialogContent;
   const billWrapperClass = fullPage
     ? "min-h-screen flex flex-col"
-    : "max-w-lg max-h-[90vh] overflow-y-auto";
+    : "w-full max-w-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto rounded-none sm:rounded-lg";
   const stepLabel = step === "preview" ? "Bill Preview" : step === "payment" ? "Payment" : step === "void" ? "Void Bill" : step === "refund" ? "Issue Refund" : "Receipt";
   const goBack = () => {
     if (step === "payment") setStep("preview");
@@ -1372,12 +1372,13 @@ export default function BillPreviewModal({
 
               {!isSplit ? (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-4 gap-1.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                     {(["CASH", "CARD", "UPI", "LOYALTY"] as PaymentMethodType[]).map(method => {
                       const Icon = method === "CASH" ? Banknote : method === "CARD" ? CreditCard : method === "UPI" ? Smartphone : Gift;
                       return (
                         <Button key={method} variant={activeMethod === method ? "default" : "outline"}
-                          className="flex-col h-14 gap-0.5 text-xs" onClick={() => setActiveMethod(method)}>
+                          className="flex-col h-14 gap-0.5 text-xs" onClick={() => setActiveMethod(method)}
+                          data-testid={`button-payment-method-${method.toLowerCase()}`}>
                           <Icon className="h-4 w-4" />{method}
                         </Button>
                       );

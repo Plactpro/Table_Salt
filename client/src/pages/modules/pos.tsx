@@ -25,6 +25,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet";
+import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
@@ -312,6 +315,9 @@ export default function POSPage() {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showCombos, setShowCombos] = useState(false);
   const [addedItemId, setAddedItemId] = useState<string | null>(null);
+  const [showKbdHelp, setShowKbdHelp] = useState(false);
+  const [showMobileCart, setShowMobileCart] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [supervisorDialog, setSupervisorDialog] = useState<{
     open: boolean; action: string; actionLabel: string;
@@ -1150,13 +1156,18 @@ export default function POSPage() {
     const handler = (e: KeyboardEvent) => {
       const activeEl = document.activeElement;
       const inInput = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.tagName === "SELECT" || (activeEl as HTMLElement).isContentEditable);
+
       if (e.key === "Escape") {
+        if (showKbdHelp) { setShowKbdHelp(false); e.preventDefault(); return; }
+        if (showBillModal) { setShowBillModal(false); e.preventDefault(); return; }
         if (modifierItem) { setModifierItem(null); e.preventDefault(); return; }
         if (noteDialogItem) { setNoteDialogItem(null); e.preventDefault(); return; }
         if (showSplitDialog) { setShowSplitDialog(false); e.preventDefault(); return; }
         if (showRecall) { setShowRecall(false); e.preventDefault(); return; }
+        if (showMobileCart) { setShowMobileCart(false); e.preventDefault(); return; }
         return;
       }
+
       if (inInput) return;
       if (e.ctrlKey || e.metaKey) {
         if (e.key === "n" || e.key === "N") { e.preventDefault(); addTab(); }
@@ -1166,21 +1177,87 @@ export default function POSPage() {
           if (billOrderId) navigate(`/pos/bill/${billOrderId}`);
         }
         else if (e.key === "k" || e.key === "K") { e.preventDefault(); handlePlaceOrder(); }
+        return;
+      }
+
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowKbdHelp(prev => !prev);
+        return;
+      }
+
+      if (!showBillModal) {
+        if (e.key === "/" || e.key === "f") {
+          e.preventDefault();
+          searchInputRef.current?.focus();
+          return;
+        }
+        if (e.key === "n") {
+          e.preventDefault();
+          addTab();
+          return;
+        }
+        if (e.key === "b" && cart.length > 0) {
+          e.preventDefault();
+          const billOrderId = activeTab?.heldOrderId || lastPlacedOrder?.orderId;
+          if (billOrderId) {
+            navigate(`/pos/bill/${billOrderId}`);
+          } else {
+            setShowBillModal(true);
+          }
+          return;
+        }
+        const numKey = parseInt(e.key, 10);
+        if (!isNaN(numKey) && numKey >= 1 && numKey <= 9) {
+          e.preventDefault();
+          const cards = document.querySelectorAll<HTMLElement>('[data-testid^="card-menu-item-"]');
+          const target = cards[numKey - 1];
+          if (target) target.focus();
+          return;
+        }
       }
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder]);
+  }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder, showBillModal, showKbdHelp, showMobileCart, cart.length]);
 
   return (
-    <PageErrorBoundary label="POS"><div className="flex h-full gap-0" data-testid="pos-page">
+    <PageErrorBoundary label="POS"><div className="flex h-full gap-0 relative" data-testid="pos-page">
+      {showKbdHelp && (
+        <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none" aria-live="polite">
+          <div className="bg-popover border border-border rounded-xl shadow-xl p-4 w-72 pointer-events-auto" data-testid="kbd-shortcut-overlay">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-sm" data-testid="kbd-shortcut-help">Keyboard Shortcuts</h3>
+              <button onClick={() => setShowKbdHelp(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close keyboard shortcuts help"><X className="h-4 w-4" /></button>
+            </div>
+            <table className="w-full text-xs">
+              <tbody className="space-y-1">
+                {[
+                  ["/  or  f", "Focus search"],
+                  ["n", "New order tab"],
+                  ["b", "Open bill (if items in cart)"],
+                  ["1–9", "Focus menu item 1–9"],
+                  ["?", "Toggle this help"],
+                  ["Esc", "Close modal"],
+                ].map(([key, action]) => (
+                  <tr key={key} className="border-b border-border/50 last:border-0">
+                    <td className="py-1.5 pr-3"><kbd className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{key}</kbd></td>
+                    <td className="py-1.5 text-muted-foreground">{action}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="flex-1 flex flex-col overflow-hidden border-r">
         <div className="p-4 border-b space-y-3">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input data-testid="input-search-menu" placeholder="Search menu items..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" />
+            <Input ref={searchInputRef} data-testid="input-search-menu" placeholder="Search menu items... (/ to focus)" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" aria-label="Search menu items" />
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-1">
+          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             <Button data-testid="button-category-all" variant={selectedCategory === null && !showCombos ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(null); setShowCombos(false); }}>
               <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> All
             </Button>
@@ -1342,9 +1419,74 @@ export default function POSPage() {
             </div>
           )}
         </div>
+
+        {cart.length > 0 && (
+          <div className="md:hidden fixed bottom-4 right-4 z-40">
+            <Button
+              data-testid="button-mobile-view-cart"
+              size="lg"
+              className="shadow-xl rounded-full px-5 gap-2 font-semibold"
+              onClick={() => setShowMobileCart(true)}
+              aria-label={`View cart with ${cart.reduce((s, c) => s + c.quantity, 0)} items`}
+            >
+              <ShoppingCart className="h-5 w-5" />
+              View Cart ({cart.reduce((s, c) => s + c.quantity, 0)})
+            </Button>
+          </div>
+        )}
       </div>
 
-      <div className="w-[400px] flex flex-col bg-card">
+      <Sheet open={showMobileCart} onOpenChange={setShowMobileCart}>
+        <SheetContent side="bottom" className="h-[85vh] flex flex-col p-0 md:hidden">
+          <SheetHeader className="p-4 border-b shrink-0">
+            <SheetTitle className="flex items-center gap-2">
+              <ShoppingCart className="h-5 w-5 text-primary" />
+              Current Order
+              {cart.length > 0 && <Badge variant="secondary">{cart.reduce((s, c) => s + c.quantity, 0)}</Badge>}
+            </SheetTitle>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto p-4">
+            {cart.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <ShoppingCart className="h-10 w-10 mb-2 opacity-50" />
+                <p className="text-sm">Cart is empty</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {cart.map((item) => {
+                  const isSent = activeTab?.sentCartKeys.includes(item.cartKey);
+                  return (
+                    <div key={item.cartKey} className={`flex items-center gap-3 p-2 rounded-lg border bg-background ${isSent ? "opacity-75" : ""}`}>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{item.name}</p>
+                        <p className="text-xs text-muted-foreground">{fmt(item.price)}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button className="h-7 w-7 rounded border flex items-center justify-center" onClick={() => updateQuantity(item.cartKey, -1)} aria-label={`Decrease quantity of ${item.name}`}><Minus className="h-3 w-3" /></button>
+                        <span className="w-6 text-center text-sm font-semibold">{item.quantity}</span>
+                        <button className="h-7 w-7 rounded border flex items-center justify-center" onClick={() => updateQuantity(item.cartKey, 1)} aria-label={`Increase quantity of ${item.name}`}><Plus className="h-3 w-3" /></button>
+                        <button className="h-7 w-7 rounded border flex items-center justify-center text-destructive ml-1" onClick={() => removeFromCart(item.cartKey)} aria-label={`Remove ${item.name} from cart`}><Trash2 className="h-3 w-3" /></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {cart.length > 0 && (
+            <div className="p-4 border-t space-y-3 shrink-0">
+              <div className="flex justify-between text-sm font-semibold">
+                <span>Total</span><span>{fmt(total)}</span>
+              </div>
+              <Button className="w-full" onClick={() => { setShowMobileCart(false); handlePlaceOrder(); }} disabled={!hasUnsentItems || placeOrderMutation.isPending} data-testid="button-mobile-place-order">
+                {isDineIn ? "Send to Kitchen" : `Pay — ${fmt(total)}`}
+              </Button>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <div className="hidden md:flex w-[400px] flex-col bg-card">
         <div className="border-b">
           <div className="flex items-center gap-0 px-2 pt-2 overflow-x-auto" data-testid="pos-tabs-bar">
             {tabs.map((tab, idx) => (
@@ -1440,7 +1582,10 @@ export default function POSPage() {
               }} data-testid="button-reprint-bill">
                 <Printer className="h-3 w-3" /> Bill
               </Button>
-              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">Bill</Button>
+              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white gap-1" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">
+                Bill
+                <kbd className="text-[9px] opacity-75 bg-green-700 px-1 rounded">[B]</kbd>
+              </Button>
               <button className="text-green-600 hover:text-green-800 ml-1" onClick={() => setLastPlacedOrder(null)} data-testid="button-dismiss-bill"><X className="h-3 w-3" /></button>
             </div>
           )}

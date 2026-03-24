@@ -1,7 +1,8 @@
-import { createContext, useContext, ReactNode } from "react";
+import { createContext, useContext, ReactNode, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./queryClient";
 import { SubscriptionTier, BusinessType, hasFeatureAccess, getBusinessBadges, FeatureKey } from "./subscription";
+import { applyTheme, type ThemePreference } from "@/hooks/use-theme";
 
 export type { UserRole as Role } from "@shared/permissions-config";
 
@@ -47,6 +48,7 @@ export interface AuthUser {
   role: Role;
   active: boolean | null;
   tenant?: TenantInfo;
+  themePreference?: ThemePreference;
 }
 
 interface AuthContextType {
@@ -128,6 +130,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     retry: false,
     staleTime: 30000,
   });
+
+  useEffect(() => {
+    if (user?.themePreference) {
+      applyTheme(user.themePreference);
+    }
+  }, [user?.themePreference]);
 
   const loginMutation = useMutation({
     mutationFn: async ({ username, password, totpCode }: { username: string; password: string; totpCode?: string }) => {
