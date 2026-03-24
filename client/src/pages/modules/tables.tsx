@@ -591,7 +591,13 @@ export default function TablesPage() {
   });
   const quickStatusMut = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => { const r = await apiRequest("PATCH", `/api/tables/${id}`, { status }); return r.json(); },
-    onSuccess: () => { invalidateAll(); },
+    onSuccess: (_updatedTable: TableData, variables: { id: string; status: string }) => {
+      invalidateAll();
+      if (selectedTable?.id === variables.id) {
+        setSelectedTable(prev => prev ? { ...prev, status: variables.status as TableStatus } : prev);
+        setFormData(prev => ({ ...prev, status: variables.status as TableStatus }));
+      }
+    },
   });
   const positionMut = useMutation({
     mutationFn: async ({ id, posX, posY }: { id: string; posX: number; posY: number }) => {
