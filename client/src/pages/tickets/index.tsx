@@ -33,7 +33,7 @@ interface TicketRow {
 }
 
 interface TicketListResponse {
-  tickets: TicketRow[];
+  orders: TicketRow[];
   total: number;
   page: number;
   pageSize: number;
@@ -92,13 +92,13 @@ export default function TicketHistoryPage() {
 
   const buildQueryString = () => {
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (search) params.set("q", search);
     params.set("date", dateFilter);
     if (statusFilter !== "all") params.set("status", statusFilter);
-    if (typeFilter !== "all") params.set("type", typeFilter);
-    if (staffFilter !== "all") params.set("staff", staffFilter);
-    params.set("page", String(page));
-    params.set("pageSize", String(PAGE_SIZE));
+    if (typeFilter !== "all") params.set("orderType", typeFilter);
+    if (staffFilter === "me" && user?.id) params.set("staffId", user.id);
+    params.set("limit", String(PAGE_SIZE));
+    params.set("offset", String((page - 1) * PAGE_SIZE));
     return params.toString();
   };
 
@@ -156,7 +156,7 @@ export default function TicketHistoryPage() {
   useRealtimeEvent("void_request:rejected", handleVoidRequestResolved);
   useRealtimeEvent("kds:refire_ticket", handleRefireEvent);
 
-  const tickets = data?.tickets || [];
+  const tickets = data?.orders || [];
   const total = data?.total || 0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const startNum = total > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;

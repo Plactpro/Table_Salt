@@ -214,6 +214,8 @@ export function registerTicketHistoryRoutes(app: Express) {
           conditions.push(`DATE(o.created_at) BETWEEN DATE_TRUNC('week', CURRENT_DATE) AND CURRENT_DATE`);
         } else if (date === "month") {
           conditions.push(`DATE(o.created_at) BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE`);
+        } else if (date === "all") {
+          // No date restriction — show all time
         } else {
           conditions.push(`DATE(o.created_at) = $${paramIdx++}`);
           params.push(date);
