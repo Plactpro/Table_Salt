@@ -55,7 +55,7 @@ function useChecklistData() {
     enabled: !!user,
   });
 
-  const profileDone = !!(tenant?.businessType && (tenant.businessType as string) !== "other" && tenant?.phone);
+  const profileDone = !!(tenant?.businessType && (tenant.businessType as string) !== "other");
   const outletsDone = outlets.length > 0 && outlets.some((o: any) => o.active !== false);
   const menuDone = (menuItems?.total ?? menuItems?.count ?? (Array.isArray(menuItems) ? menuItems.length : 0)) > 0;
   const staffDone = (usersData?.total ?? usersData?.count ?? (Array.isArray(usersData) ? usersData.length : 0)) > 1;
@@ -64,10 +64,10 @@ function useChecklistData() {
 
   const items: ChecklistItem[] = [
     { n: 1, label: "Restaurant profile set up", actionLabel: "Set up", actionLink: "/onboarding", completed: profileDone },
-    { n: 2, label: "First outlet configured", actionLabel: "Configure", actionLink: "/settings?tab=outlets", completed: outletsDone },
+    { n: 2, label: "First outlet configured", actionLabel: "Configure", actionLink: "/outlets", completed: outletsDone },
     { n: 3, label: "Menu items added", actionLabel: "Add items", actionLink: "/menu", completed: menuDone },
     { n: 4, label: "Staff member added", actionLabel: "Add staff", actionLink: "/staff", completed: staffDone },
-    { n: 5, label: "Payment method configured", actionLabel: "Configure", actionLink: "/settings?tab=payments", completed: paymentDone },
+    { n: 5, label: "Payment method configured", actionLabel: "Configure", actionLink: "/billing", completed: paymentDone },
     { n: 6, label: "Table or delivery zone set up", actionLabel: "Set up", actionLink: "/tables", completed: tablesDone },
   ];
 
