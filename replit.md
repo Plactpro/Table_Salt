@@ -80,6 +80,16 @@ The system employs a modern web architecture with a React-based frontend and an 
 - **Test strategy**: All navigate tests use `page.waitForURL(url => !url.includes('/login'), { timeout: 15000 })` for reliable auth-timing behavior under server load.
 - **Playwright config**: `playwright.config.ts` — 1 worker, 2 retries, 30s test timeout, system chromium via `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`.
 
+## Parking Management System (Task #135)
+- **9 DB Tables**: `parking_layout_config`, `parking_zones`, `parking_slots`, `parking_rates`, `parking_rate_slabs`, `valet_staff`, `valet_tickets`, `valet_ticket_events`, `valet_retrieval_requests`, `bill_parking_charges`. All created via `server/admin-migrations.ts` using `pool.query` (never `db:push`).
+- **Drizzle Schema**: Full table definitions + `createInsertSchema` + TypeScript types in `shared/schema.ts`.
+- **Storage Layer**: ~25 parking methods in `IStorage` + `DatabaseStorage` (in `server/storage.ts`) with `_mapParkingConfig`, `_mapValetTicket`, `_recalcAvailability` helpers.
+- **Charge Service** (`server/services/parking-charge-service.ts`): `calculateParkingCharge()` supports FLAT/HOURLY/SLAB billing modes, free-minutes, validation discount, and daily max cap. `applyParkingChargeToBill()` atomically links valet ticket to bill.
+- **API Router** (`server/routers/parking.ts`): Full CRUD endpoints for config, zones, slots, rates/slabs, valet staff, tickets, ticket events, retrieval requests, and public availability endpoint. Registered via `registerParkingRoutes(app)` in `server/routes.ts`.
+- **Billing Integration**: At bill pay time (`finalizeBillCompletion` in `restaurant-billing.ts`), any linked valet ticket with `charge_added_to_bill=false` automatically triggers `applyParkingChargeToBill()`.
+- **Alert Seeds**: `PARKING_FULL` (high urgency, cashier/manager/owner) and `PARKING_RETRIEVAL_REQUESTED` (normal urgency, waiter/manager/owner) seeded in `seedAlertDefinitions()`. `alert_code` columns expanded to VARCHAR(50) to accommodate longer codes.
+- **Ticket Numbers**: Format `VT-YYYYMMDD-NNNN` (zero-padded 4 digits, tenant+outlet+date scoped).
+
 ## External Dependencies
 - **PostgreSQL**: Primary database.
 - **Drizzle ORM**: Database interaction.

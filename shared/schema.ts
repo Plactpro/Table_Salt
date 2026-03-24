@@ -3117,3 +3117,182 @@ export const resourceCleaningLog = pgTable("resource_cleaning_log", {
 export const insertResourceCleaningLogSchema = createInsertSchema(resourceCleaningLog).omit({ id: true, startedAt: true });
 export type ResourceCleaningLog = typeof resourceCleaningLog.$inferSelect;
 export type InsertResourceCleaningLog = z.infer<typeof insertResourceCleaningLogSchema>;
+
+// ─── Task #135: Parking Management System ────────────────────────────────────
+
+export const parkingLayoutConfig = pgTable("parking_layout_config", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  totalCapacity: integer("total_capacity").notNull().default(0),
+  availableSlots: integer("available_slots").notNull().default(0),
+  valetEnabled: boolean("valet_enabled").notNull().default(true),
+  freeMinutes: integer("free_minutes").notNull().default(0),
+  validationEnabled: boolean("validation_enabled").notNull().default(false),
+  validationMinSpend: numeric("validation_min_spend", { precision: 12, scale: 2 }).default("0"),
+  displayMessage: text("display_message"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
+});
+export const insertParkingLayoutConfigSchema = createInsertSchema(parkingLayoutConfig).omit({ id: true, createdAt: true, updatedAt: true });
+export type ParkingLayoutConfig = typeof parkingLayoutConfig.$inferSelect;
+export type InsertParkingLayoutConfig = z.infer<typeof insertParkingLayoutConfigSchema>;
+
+export const parkingZones = pgTable("parking_zones", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  name: text("name").notNull(),
+  level: text("level"),
+  color: text("color").default("#3B82F6"),
+  totalSlots: integer("total_slots").notNull().default(0),
+  availableSlots: integer("available_slots").notNull().default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertParkingZoneSchema = createInsertSchema(parkingZones).omit({ id: true, createdAt: true });
+export type ParkingZone = typeof parkingZones.$inferSelect;
+export type InsertParkingZone = z.infer<typeof insertParkingZoneSchema>;
+
+export const parkingSlots = pgTable("parking_slots", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  zoneId: varchar("zone_id", { length: 36 }),
+  slotCode: varchar("slot_code", { length: 30 }).notNull(),
+  slotType: varchar("slot_type", { length: 20 }).notNull().default("STANDARD"),
+  status: varchar("status", { length: 20 }).notNull().default("available"),
+  isActive: boolean("is_active").notNull().default(true),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertParkingSlotSchema = createInsertSchema(parkingSlots).omit({ id: true, createdAt: true });
+export type ParkingSlot = typeof parkingSlots.$inferSelect;
+export type InsertParkingSlot = z.infer<typeof insertParkingSlotSchema>;
+
+export const parkingRates = pgTable("parking_rates", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  vehicleType: varchar("vehicle_type", { length: 30 }).notNull().default("CAR"),
+  rateType: varchar("rate_type", { length: 20 }).notNull().default("HOURLY"),
+  rateAmount: numeric("rate_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  dailyMaxCharge: numeric("daily_max_charge", { precision: 12, scale: 2 }),
+  taxRate: numeric("tax_rate", { precision: 5, scale: 2 }).default("0"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertParkingRateSchema = createInsertSchema(parkingRates).omit({ id: true, createdAt: true });
+export type ParkingRate = typeof parkingRates.$inferSelect;
+export type InsertParkingRate = z.infer<typeof insertParkingRateSchema>;
+
+export const parkingRateSlabs = pgTable("parking_rate_slabs", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  rateId: varchar("rate_id", { length: 36 }).notNull(),
+  fromMinutes: integer("from_minutes").notNull(),
+  toMinutes: integer("to_minutes"),
+  charge: numeric("charge", { precision: 12, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertParkingRateSlabSchema = createInsertSchema(parkingRateSlabs).omit({ id: true, createdAt: true });
+export type ParkingRateSlab = typeof parkingRateSlabs.$inferSelect;
+export type InsertParkingRateSlab = z.infer<typeof insertParkingRateSlabSchema>;
+
+export const valetStaff = pgTable("valet_staff", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  userId: varchar("user_id", { length: 36 }),
+  name: text("name").notNull(),
+  phone: text("phone"),
+  badgeNumber: varchar("badge_number", { length: 30 }),
+  isOnDuty: boolean("is_on_duty").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertValetStaffSchema = createInsertSchema(valetStaff).omit({ id: true, createdAt: true });
+export type ValetStaff = typeof valetStaff.$inferSelect;
+export type InsertValetStaff = z.infer<typeof insertValetStaffSchema>;
+
+export const valetTickets = pgTable("valet_tickets", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  ticketNumber: text("ticket_number").notNull(),
+  slotId: varchar("slot_id", { length: 36 }),
+  zoneId: varchar("zone_id", { length: 36 }),
+  billId: varchar("bill_id", { length: 36 }),
+  valetStaffId: varchar("valet_staff_id", { length: 36 }),
+  vehicleNumber: text("vehicle_number"),
+  vehicleType: varchar("vehicle_type", { length: 30 }).notNull().default("CAR"),
+  vehicleMake: text("vehicle_make"),
+  vehicleColor: text("vehicle_color"),
+  customerName: text("customer_name"),
+  customerPhone: text("customer_phone"),
+  status: varchar("status", { length: 20 }).notNull().default("parked"),
+  entryTime: timestamp("entry_time", { withTimezone: true }).defaultNow(),
+  exitTime: timestamp("exit_time", { withTimezone: true }),
+  durationMinutes: integer("duration_minutes"),
+  chargeAddedToBill: boolean("charge_added_to_bill").notNull().default(false),
+  events: jsonb("events").default([]),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertValetTicketSchema = createInsertSchema(valetTickets).omit({ id: true, createdAt: true, entryTime: true });
+export type ValetTicket = typeof valetTickets.$inferSelect;
+export type InsertValetTicket = z.infer<typeof insertValetTicketSchema>;
+
+export const valetTicketEvents = pgTable("valet_ticket_events", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  ticketId: varchar("ticket_id", { length: 36 }).notNull(),
+  eventType: text("event_type").notNull(),
+  performedBy: varchar("performed_by", { length: 36 }),
+  performedByName: text("performed_by_name"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertValetTicketEventSchema = createInsertSchema(valetTicketEvents).omit({ id: true, createdAt: true });
+export type ValetTicketEvent = typeof valetTicketEvents.$inferSelect;
+export type InsertValetTicketEvent = z.infer<typeof insertValetTicketEventSchema>;
+
+export const valetRetrievalRequests = pgTable("valet_retrieval_requests", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  ticketId: varchar("ticket_id", { length: 36 }).notNull(),
+  source: varchar("source", { length: 30 }).notNull().default("MANUAL"),
+  requestedBy: varchar("requested_by", { length: 36 }),
+  requestedByName: text("requested_by_name"),
+  assignedValetId: varchar("assigned_valet_id", { length: 36 }),
+  assignedValetName: text("assigned_valet_name"),
+  status: varchar("status", { length: 20 }).notNull().default("pending"),
+  notes: text("notes"),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertValetRetrievalRequestSchema = createInsertSchema(valetRetrievalRequests).omit({ id: true, createdAt: true });
+export type ValetRetrievalRequest = typeof valetRetrievalRequests.$inferSelect;
+export type InsertValetRetrievalRequest = z.infer<typeof insertValetRetrievalRequestSchema>;
+
+export const billParkingCharges = pgTable("bill_parking_charges", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  billId: varchar("bill_id", { length: 36 }).notNull(),
+  ticketId: varchar("ticket_id", { length: 36 }).notNull(),
+  durationMinutes: integer("duration_minutes").notNull().default(0),
+  freeMinutesApplied: integer("free_minutes_applied").notNull().default(0),
+  grossCharge: numeric("gross_charge", { precision: 12, scale: 2 }).notNull().default("0"),
+  validationDiscount: numeric("validation_discount", { precision: 12, scale: 2 }).notNull().default("0"),
+  finalCharge: numeric("final_charge", { precision: 12, scale: 2 }).notNull().default("0"),
+  taxAmount: numeric("tax_amount", { precision: 12, scale: 2 }).notNull().default("0"),
+  totalCharge: numeric("total_charge", { precision: 12, scale: 2 }).notNull().default("0"),
+  vehicleType: varchar("vehicle_type", { length: 30 }),
+  rateType: varchar("rate_type", { length: 20 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertBillParkingChargeSchema = createInsertSchema(billParkingCharges).omit({ id: true, createdAt: true });
+export type BillParkingCharge = typeof billParkingCharges.$inferSelect;
+export type InsertBillParkingCharge = z.infer<typeof insertBillParkingChargeSchema>;

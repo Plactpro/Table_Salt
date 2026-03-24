@@ -2505,4 +2505,219 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`ALTER TABLE session ADD COLUMN IF NOT EXISTS user_agent TEXT`);
   await pool.query(`ALTER TABLE session ADD COLUMN IF NOT EXISTS last_active TIMESTAMPTZ DEFAULT now()`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_session_user ON session(user_id) WHERE user_id IS NOT NULL`);
+
+  // Expand alert_code columns to accommodate longer alert codes (e.g. PARKING_RETRIEVAL_REQUESTED)
+  await pool.query(`ALTER TABLE alert_definitions ALTER COLUMN alert_code TYPE VARCHAR(50)`);
+  await pool.query(`ALTER TABLE alert_outlet_configs ALTER COLUMN alert_code TYPE VARCHAR(50)`);
+  await pool.query(`ALTER TABLE alert_events ALTER COLUMN alert_code TYPE VARCHAR(50)`);
+
+  // Task #135: Parking Management System
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS parking_layout_config (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      total_capacity INTEGER NOT NULL DEFAULT 0,
+      available_slots INTEGER NOT NULL DEFAULT 0,
+      valet_enabled BOOLEAN NOT NULL DEFAULT true,
+      free_minutes INTEGER NOT NULL DEFAULT 0,
+      validation_enabled BOOLEAN NOT NULL DEFAULT false,
+      validation_min_spend NUMERIC(12,2) DEFAULT 0,
+      display_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_parking_config_outlet ON parking_layout_config(tenant_id, outlet_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_config_tenant ON parking_layout_config(tenant_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS parking_zones (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      name TEXT NOT NULL,
+      level TEXT,
+      color TEXT DEFAULT '#3B82F6',
+      total_slots INTEGER NOT NULL DEFAULT 0,
+      available_slots INTEGER NOT NULL DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_zones_tenant ON parking_zones(tenant_id, outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS parking_slots (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      zone_id VARCHAR(36),
+      slot_code VARCHAR(30) NOT NULL,
+      slot_type VARCHAR(20) NOT NULL DEFAULT 'STANDARD',
+      status VARCHAR(20) NOT NULL DEFAULT 'available',
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_slots_tenant ON parking_slots(tenant_id, outlet_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_slots_zone ON parking_slots(zone_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_slots_status ON parking_slots(tenant_id, status)`);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE parking_slots ADD CONSTRAINT fk_parking_slots_zone
+        FOREIGN KEY (zone_id) REFERENCES parking_zones(id);
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS parking_rates (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      vehicle_type VARCHAR(30) NOT NULL DEFAULT 'CAR',
+      rate_type VARCHAR(20) NOT NULL DEFAULT 'HOURLY',
+      rate_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      daily_max_charge NUMERIC(12,2),
+      tax_rate NUMERIC(5,2) DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_rates_tenant ON parking_rates(tenant_id, outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS parking_rate_slabs (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      rate_id VARCHAR(36) NOT NULL,
+      from_minutes INTEGER NOT NULL,
+      to_minutes INTEGER,
+      charge NUMERIC(12,2) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_rate_slabs_rate ON parking_rate_slabs(rate_id)`);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE parking_rate_slabs ADD CONSTRAINT fk_parking_rate_slabs_rate
+        FOREIGN KEY (rate_id) REFERENCES parking_rates(id) ON DELETE CASCADE;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS valet_staff (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      user_id VARCHAR(36),
+      name TEXT NOT NULL,
+      phone TEXT,
+      badge_number VARCHAR(30),
+      is_on_duty BOOLEAN NOT NULL DEFAULT false,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_staff_tenant ON valet_staff(tenant_id, outlet_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS valet_tickets (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      ticket_number TEXT NOT NULL,
+      slot_id VARCHAR(36),
+      zone_id VARCHAR(36),
+      bill_id VARCHAR(36),
+      valet_staff_id VARCHAR(36),
+      vehicle_number TEXT,
+      vehicle_type VARCHAR(30) NOT NULL DEFAULT 'CAR',
+      vehicle_make TEXT,
+      vehicle_color TEXT,
+      customer_name TEXT,
+      customer_phone TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'parked',
+      entry_time TIMESTAMPTZ NOT NULL DEFAULT now(),
+      exit_time TIMESTAMPTZ,
+      duration_minutes INTEGER,
+      charge_added_to_bill BOOLEAN NOT NULL DEFAULT false,
+      events JSONB NOT NULL DEFAULT '[]',
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_tickets_tenant ON valet_tickets(tenant_id, outlet_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_tickets_status ON valet_tickets(tenant_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_tickets_bill ON valet_tickets(bill_id)`);
+  // Drop old tenant-only unique index if it exists, then recreate outlet-scoped
+  await pool.query(`DROP INDEX IF EXISTS idx_valet_tickets_number`);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_valet_tickets_number ON valet_tickets(tenant_id, outlet_id, ticket_number)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS valet_ticket_events (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      ticket_id VARCHAR(36) NOT NULL,
+      event_type TEXT NOT NULL,
+      performed_by VARCHAR(36),
+      performed_by_name TEXT,
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_events_ticket ON valet_ticket_events(ticket_id)`);
+  await pool.query(`
+    DO $$ BEGIN
+      ALTER TABLE valet_ticket_events ADD CONSTRAINT fk_valet_events_ticket
+        FOREIGN KEY (ticket_id) REFERENCES valet_tickets(id) ON DELETE CASCADE;
+    EXCEPTION WHEN duplicate_object THEN NULL;
+    END $$
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS valet_retrieval_requests (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      ticket_id VARCHAR(36) NOT NULL,
+      source VARCHAR(30) NOT NULL DEFAULT 'MANUAL',
+      requested_by VARCHAR(36),
+      requested_by_name TEXT,
+      assigned_valet_id VARCHAR(36),
+      assigned_valet_name TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      notes TEXT,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_retrieval_tenant ON valet_retrieval_requests(tenant_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_retrieval_ticket ON valet_retrieval_requests(ticket_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS bill_parking_charges (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36),
+      bill_id VARCHAR(36) NOT NULL,
+      ticket_id VARCHAR(36) NOT NULL,
+      duration_minutes INTEGER NOT NULL DEFAULT 0,
+      free_minutes_applied INTEGER NOT NULL DEFAULT 0,
+      gross_charge NUMERIC(12,2) NOT NULL DEFAULT 0,
+      validation_discount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      final_charge NUMERIC(12,2) NOT NULL DEFAULT 0,
+      tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_charge NUMERIC(12,2) NOT NULL DEFAULT 0,
+      vehicle_type VARCHAR(30),
+      rate_type VARCHAR(20),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_bill_parking_charges_bill ON bill_parking_charges(bill_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_parking_charges_tenant ON bill_parking_charges(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_parking_charges_ticket ON bill_parking_charges(ticket_id)`);
 }
