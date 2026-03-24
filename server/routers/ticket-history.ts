@@ -205,14 +205,23 @@ export function registerTicketHistoryRoutes(app: Express) {
         } catch (_) { /* station filter is best-effort */ }
       }
 
-      if (dayLimit !== null && user.role !== "kitchen") {
-        conditions.push(`o.created_at >= NOW() - INTERVAL '${dayLimit} days'`);
-      }
-
       if (date) {
-        conditions.push(`DATE(o.created_at) = $${paramIdx++}`);
-        params.push(date);
+        if (date === "today") {
+          conditions.push(`DATE(o.created_at) = CURRENT_DATE`);
+        } else if (date === "yesterday") {
+          conditions.push(`DATE(o.created_at) = CURRENT_DATE - INTERVAL '1 day'`);
+        } else if (date === "week") {
+          conditions.push(`DATE(o.created_at) BETWEEN DATE_TRUNC('week', CURRENT_DATE) AND CURRENT_DATE`);
+        } else if (date === "month") {
+          conditions.push(`DATE(o.created_at) BETWEEN DATE_TRUNC('month', CURRENT_DATE) AND CURRENT_DATE`);
+        } else {
+          conditions.push(`DATE(o.created_at) = $${paramIdx++}`);
+          params.push(date);
+        }
       } else {
+        if (dayLimit !== null && user.role !== "kitchen") {
+          conditions.push(`o.created_at >= NOW() - INTERVAL '${dayLimit} days'`);
+        }
         if (dateFrom) { conditions.push(`o.created_at >= $${paramIdx++}`); params.push(dateFrom); }
         if (dateTo) { conditions.push(`o.created_at <= $${paramIdx++}`); params.push(dateTo); }
       }
@@ -295,6 +304,13 @@ export function registerTicketHistoryRoutes(app: Express) {
         entityType: "order_search",
         metadata: { q, status, orderType, dateFrom, dateTo, total },
       }).catch(() => {});
+
+      if (process.env.NODE_ENV !== "production") {
+        console.debug(
+          `[ticket-history] date=${date ?? "none"} total=${total} sample:`,
+          dataResult.rows.slice(0, 3).map((r: Record<string, unknown>) => ({ id: r.id, orderNumber: r.orderNumber, createdAt: r.createdAt }))
+        );
+      }
 
       return res.json({ orders: dataResult.rows, total, hasMore: offset + limit < total });
     } catch (err) {
