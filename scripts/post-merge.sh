@@ -2,4 +2,4 @@
 set -e
 
 npm install --legacy-peer-deps
-npm run db:push --force
+npx tsx scripts/run-migrations.ts
