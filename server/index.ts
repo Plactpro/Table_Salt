@@ -160,13 +160,24 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      const sensitiveRoutes = ["/api/gdpr/export", "/api/gdpr/delete-account", "/api/gdpr/anonymize-account", "/api/auth/login", "/api/auth/register", "/api/security"];
-      if (capturedJsonResponse && !sensitiveRoutes.some(r => path.startsWith(r))) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      if (process.env.NODE_ENV === "production") {
+        console.log(JSON.stringify({
+          level: res.statusCode >= 500 ? "ERROR" : res.statusCode >= 400 ? "WARN" : "INFO",
+          ts: new Date().toISOString(),
+          method: req.method,
+          path,
+          status: res.statusCode,
+          durationMs: duration,
+          tenantId: (req as any).user?.tenantId,
+        }));
+      } else {
+        let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+        const sensitiveRoutes = ["/api/gdpr/export", "/api/gdpr/delete-account", "/api/gdpr/anonymize-account", "/api/auth/login", "/api/auth/register", "/api/security"];
+        if (capturedJsonResponse && !sensitiveRoutes.some(r => path.startsWith(r))) {
+          logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+        }
+        log(logLine);
       }
-
-      log(logLine);
     }
   });
 
@@ -362,11 +373,24 @@ app.use((req, res, next) => {
     console.error("Trial warning scheduler init error:", e);
   }
 
-  app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
+  app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
 
-    console.error("Internal Server Error:", err);
+    if (process.env.NODE_ENV === "production") {
+      console.log(JSON.stringify({
+        level: "ERROR",
+        ts: new Date().toISOString(),
+        method: req.method,
+        path: req.path,
+        status,
+        message,
+        stack: err.stack,
+        tenantId: (req as any).user?.tenantId,
+      }));
+    } else {
+      console.error("Internal Server Error:", err);
+    }
 
     if (res.headersSent) {
       return next(err);

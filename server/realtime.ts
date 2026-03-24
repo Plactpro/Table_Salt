@@ -4,6 +4,7 @@ import type { IncomingMessage } from "http";
 import { pool } from "./db";
 import { storage } from "./storage";
 import { parse as parseCookie } from "cookie";
+import { publish, psubscribe, isRedisEnabled } from "./services/pubsub";
 
 const tenantSockets = new Map<string, Set<WebSocket>>();
 
@@ -21,7 +22,7 @@ function removeSocket(tenantId: string, ws: WebSocket) {
   tenantSockets.get(tenantId)?.delete(ws);
 }
 
-export function emitToTenant(tenantId: string, event: string, payload: unknown) {
+function fanOutToLocalSockets(tenantId: string, msg: string, event: string, payload: unknown) {
   const clients = tenantSockets.get(tenantId);
   if (!clients || clients.size === 0) return;
 
@@ -31,8 +32,6 @@ export function emitToTenant(tenantId: string, event: string, payload: unknown) 
       (payload as { tableId?: string })?.tableId
     : undefined;
 
-  const msg = JSON.stringify({ event, payload });
-
   for (const ws of clients) {
     if (ws.readyState !== WebSocket.OPEN) continue;
     const meta = guestSocketMeta.get(ws);
@@ -41,6 +40,18 @@ export function emitToTenant(tenantId: string, event: string, payload: unknown) 
       if (requestTableId && meta.tableId !== requestTableId) continue;
     }
     try { ws.send(msg); } catch (_) {}
+  }
+}
+
+export function emitToTenant(tenantId: string, event: string, payload: unknown) {
+  const msg = JSON.stringify({ event, payload });
+
+  if (isRedisEnabled()) {
+    publish(`tenant:${tenantId}`, msg).catch((err) =>
+      console.error("[realtime] Redis publish error:", err)
+    );
+  } else {
+    fanOutToLocalSockets(tenantId, msg, event, payload);
   }
 }
 
@@ -79,8 +90,29 @@ async function getTenantFromRequest(req: IncomingMessage): Promise<string | null
   }
 }
 
+let redisPsubscribed = false;
+
+async function setupRedisPubSub() {
+  if (!isRedisEnabled() || redisPsubscribed) return;
+  redisPsubscribed = true;
+
+  await psubscribe("tenant:*", (channel: string, rawMsg: string) => {
+    const tenantId = channel.replace(/^tenant:/, "");
+    try {
+      const parsed = JSON.parse(rawMsg) as { event: string; payload: unknown };
+      fanOutToLocalSockets(tenantId, rawMsg, parsed.event, parsed.payload);
+    } catch (_) {}
+  });
+
+  console.log("[WS] Redis pub/sub active — subscribed to tenant:* channels");
+}
+
 export function setupWebSocket(httpServer: HttpServer) {
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+
+  setupRedisPubSub().catch((err) =>
+    console.error("[WS] Redis pub/sub setup failed:", err)
+  );
 
   wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
     let resolvedTenantId = await getTenantFromRequest(req);

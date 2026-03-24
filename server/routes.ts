@@ -6,6 +6,7 @@ import fs from "fs";
 import { setupAuth, requireAuth } from "./auth";
 import { registerAdminRoutes } from "./admin-routes";
 import { setupCsrf, setupIpAllowlistMiddleware } from "./security";
+import { uploadFile } from "./services/file-storage";
 
 import { registerAuthRoutes } from "./routers/auth";
 import { registerUsersRoutes } from "./routers/users";
@@ -61,21 +62,24 @@ import { registerAdsRoutes } from "./routers/ads";
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-const multerStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".jpg";
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
-  },
-});
 const upload = multer({
-  storage: multerStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowedExt = /\.(jpg|jpeg|png|gif|webp)$/i;
     const allowedMime = /^image\/(jpeg|png|gif|webp)$/;
     if (allowedExt.test(path.extname(file.originalname)) && allowedMime.test(file.mimetype)) cb(null, true);
     else cb(new Error("Only image files (JPG, PNG, GIF, WEBP) are allowed"));
+  },
+});
+
+const videoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowedMime = /^video\/(mp4|webm)$/;
+    if (allowedMime.test(file.mimetype)) cb(null, true);
+    else cb(new Error("Only video files (MP4, WEBM) are allowed"));
   },
 });
 
@@ -104,13 +108,36 @@ export async function registerRoutes(
   app.use("/uploads", express.static(uploadDir));
 
   app.post("/api/upload/image", requireAuth, (req: any, res: any, next: any) => {
-    upload.single("image")(req, res, (err: any) => {
+    upload.single("image")(req, res, async (err: any) => {
       if (err) {
         const msg = err.code === "LIMIT_FILE_SIZE" ? "File too large (max 5MB)" : err.message || "Upload failed";
         return res.status(400).json({ message: msg });
       }
       if (!req.file) return res.status(400).json({ message: "No image file provided" });
-      res.json({ url: `/uploads/${req.file.filename}` });
+      try {
+        const url = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+        res.json({ url });
+      } catch (uploadErr: any) {
+        console.error("[upload] Image upload failed:", uploadErr);
+        res.status(500).json({ message: "Upload failed" });
+      }
+    });
+  });
+
+  app.post("/api/upload/video", requireAuth, (req: any, res: any, next: any) => {
+    videoUpload.single("video")(req, res, async (err: any) => {
+      if (err) {
+        const msg = err.code === "LIMIT_FILE_SIZE" ? "File too large (max 50MB)" : err.message || "Upload failed";
+        return res.status(400).json({ message: msg });
+      }
+      if (!req.file) return res.status(400).json({ message: "No video file provided" });
+      try {
+        const url = await uploadFile(req.file.buffer, req.file.originalname, req.file.mimetype);
+        res.json({ url });
+      } catch (uploadErr: any) {
+        console.error("[upload] Video upload failed:", uploadErr);
+        res.status(500).json({ message: "Upload failed" });
+      }
     });
   });
 

@@ -6,6 +6,7 @@ import { can } from "../permissions";
 import { auditLogFromReq } from "../audit";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { pool } from "../db";
+import { deleteFile } from "../services/file-storage";
 
 export function registerMenuRoutes(app: Express): void {
   app.get("/api/menu-categories", requireAuth, async (req, res) => {
@@ -105,7 +106,12 @@ export function registerMenuRoutes(app: Express): void {
     const user = req.user as any;
     const existing = await storage.getMenuItem(req.params.id, user.tenantId);
     await storage.deleteMenuItem(req.params.id, user.tenantId);
-    if (existing) auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
+    if (existing) {
+      auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
+      if (existing.image) {
+        deleteFile(existing.image).catch((e) => console.error("[menu] deleteFile error:", e));
+      }
+    }
     res.json({ message: "Deleted" });
   });
 

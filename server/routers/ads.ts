@@ -2,43 +2,42 @@ import { Router } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { execFile } from "child_process";
 import { promisify } from "util";
+import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { requireAuth } from "../auth";
 import { storage } from "../storage";
 import { pool } from "../db";
+import { uploadFile, deleteFile } from "../services/file-storage";
 
 const execFileAsync = promisify(execFile);
 
-async function getVideoDurationSeconds(filePath: string): Promise<number | null> {
+async function getVideoDurationFromBuffer(buffer: Buffer, ext: string): Promise<number | null> {
+  const tmpPath = path.join(os.tmpdir(), `ad-video-${randomUUID()}${ext}`);
   try {
+    fs.writeFileSync(tmpPath, buffer);
     const { stdout } = await execFileAsync("ffprobe", [
       "-v", "quiet",
       "-show_entries", "format=duration",
       "-of", "csv=p=0",
-      filePath,
+      tmpPath,
     ]);
     const val = parseFloat(stdout.trim());
     return isNaN(val) ? null : val;
   } catch {
     return null;
+  } finally {
+    try { fs.unlinkSync(tmpPath); } catch (_) {}
   }
 }
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
-const adUploadStorage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, uploadDir),
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".bin";
-    cb(null, `ad-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
-  },
-});
-
 const adUpload = multer({
-  storage: adUploadStorage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     const allowed = [
@@ -162,7 +161,7 @@ interface AuthRequest {
   body: Record<string, unknown>;
   headers: Record<string, string | string[] | undefined>;
   ip: string;
-  file?: { path: string; filename: string; originalname: string; mimetype: string; size: number };
+  file?: { buffer: Buffer; originalname: string; mimetype: string; size: number };
 }
 
 function mapCampaign(row: AdCampaignRow) {
@@ -428,7 +427,6 @@ export function registerAdsRoutes(app: any) {
         `SELECT id FROM ad_campaigns WHERE id=$1 AND tenant_id=$2`, [req.params.id, req.user.tenantId]
       );
       if (!camp[0]) {
-        fs.unlinkSync(req.file.path);
         return res.status(404).json({ error: "Campaign not found" });
       }
 
@@ -436,7 +434,6 @@ export function registerAdsRoutes(app: any) {
       const fileSizeBytes = req.file.size;
       const sizeError = validateFileSizeForType(mime, fileSizeBytes);
       if (sizeError) {
-        fs.unlinkSync(req.file.path);
         return res.status(400).json({ error: sizeError });
       }
 
@@ -447,32 +444,31 @@ export function registerAdsRoutes(app: any) {
 
       if (IMAGE_MIMES.includes(mime)) {
         try {
-          const meta = await sharp(req.file.path).metadata();
+          const meta = await sharp(req.file.buffer).metadata();
           const w = meta.width ?? 0;
           const h = meta.height ?? 0;
           if (w < 800 || h < 450) {
-            fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: `Image must be at least 800×450 px (got ${w}×${h})` });
           }
         } catch {
-          fs.unlinkSync(req.file.path);
           return res.status(400).json({ error: "Could not read image dimensions" });
         }
       }
 
       let durationSeconds: number | null = null;
       if (VIDEO_MIMES.includes(mime)) {
-        const dur = await getVideoDurationSeconds(req.file.path);
+        const ext = path.extname(req.file.originalname) || ".mp4";
+        const dur = await getVideoDurationFromBuffer(req.file.buffer, ext);
         if (dur !== null) {
           if (dur > 30) {
-            fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: `Video must be ≤ 30 seconds (got ${Math.round(dur)}s)` });
           }
           durationSeconds = Math.round(dur);
         }
       }
 
-      const fileUrl = `/uploads/${req.file.filename}`;
+      const fileUrl = await uploadFile(req.file.buffer, req.file.originalname, mime);
+
       const orderResult = await pool.query(
         `SELECT COALESCE(MAX(display_order), 0) + 1 AS next_order FROM ad_creatives WHERE campaign_id=$1`, [req.params.id]
       );
@@ -492,7 +488,6 @@ export function registerAdsRoutes(app: any) {
       );
       res.status(201).json(mapCreative(rows[0]));
     } catch (err) {
-      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
       console.error(err);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -530,8 +525,7 @@ export function registerAdsRoutes(app: any) {
         [req.params.creativeId, req.user.tenantId]
       );
       if (rows[0]?.file_url) {
-        const filePath = path.join(process.cwd(), rows[0].file_url);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        await deleteFile(rows[0].file_url).catch((e) => console.error("[ads] deleteFile error:", e));
       }
       res.status(204).end();
     } catch (err) {
@@ -599,8 +593,7 @@ export function registerAdsRoutes(app: any) {
         [req.params.id, req.user.tenantId]
       );
       if (rows[0]?.file_url) {
-        const filePath = path.join(process.cwd(), rows[0].file_url);
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        await deleteFile(rows[0].file_url).catch((e) => console.error("[ads] deleteFile error:", e));
       }
       res.status(204).end();
     } catch (err) {
