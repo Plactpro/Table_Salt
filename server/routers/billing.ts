@@ -94,10 +94,13 @@ export function registerBillingRoutes(app: Express): void {
 
   app.post("/api/billing/create-checkout-session", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
+      if (!["owner", "franchise_owner", "hq_admin"].includes(user.role)) {
+        return res.status(403).json({ message: "Access denied. Billing changes require Owner role." });
+      }
       if (!await isStripeConfigured()) {
         return res.status(503).json({ message: "Stripe is not configured." });
       }
-      const user = req.user as any;
       const { plan } = req.body as { plan: string };
       if (!plan || !["basic", "standard", "premium"].includes(plan)) {
         return res.status(400).json({ message: "Invalid plan. Must be basic, standard, or premium." });
@@ -129,10 +132,13 @@ export function registerBillingRoutes(app: Express): void {
 
   app.post("/api/billing/portal", requireAuth, async (req, res) => {
     try {
+      const user = req.user as any;
+      if (!["owner", "franchise_owner", "hq_admin"].includes(user.role)) {
+        return res.status(403).json({ message: "Access denied. Billing portal requires Owner role." });
+      }
       if (!await isStripeConfigured()) {
         return res.status(503).json({ message: "Stripe is not configured." });
       }
-      const user = req.user as any;
       const tenant = await storage.getTenant(user.tenantId);
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
       if (!tenant.stripeCustomerId) {

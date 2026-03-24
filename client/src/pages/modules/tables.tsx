@@ -460,8 +460,9 @@ function TablesPageContent() {
   const { data: analytics } = useQuery<AnalyticsData>({ queryKey: ["/api/table-analytics"] });
   const { data: customersRes } = useQuery<{ data: CustomerData[]; total: number }>({ queryKey: ["/api/customers"] });
   const customers = customersRes?.data ?? [];
+  const { data: outlets = [] } = useQuery<{ id: string }[]>({ queryKey: ["/api/outlets"] });
 
-  const outletId = (tables.find(t => t.outletId)?.outletId) ?? null;
+  const outletId: string | null = user?.outletId ?? outlets[0]?.id ?? null;
 
   useRealtimeEvent("resource:updated", useCallback(() => {
     if (outletId) {

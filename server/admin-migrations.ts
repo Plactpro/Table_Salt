@@ -2892,10 +2892,10 @@ export async function runTask108Migrations(): Promise<void> {
     }
   }
 
-  // Task #151: Fix Charlotte (username: cleaning) — update waiter role to cleaning_staff if exists
+  // Task #151 / BUG-11: Fix Charlotte (username: cleaning) — ensure cleaning_staff role
   await pool.query(`
     UPDATE users SET role = 'cleaning_staff'
-    WHERE username = 'cleaning' AND role = 'waiter'
+    WHERE username = 'cleaning' AND role != 'cleaning_staff'
   `);
 
   // Post-merge fix: Create quotation_requests + quotation_request_items tables that exist in

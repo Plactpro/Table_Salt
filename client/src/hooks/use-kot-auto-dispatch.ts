@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { renderKotHtml, dispatchPrint, printHtmlInPopup } from "@/lib/print-utils";
+import { renderKotHtml, dispatchPrint, printHtmlWithIframe } from "@/lib/print-utils";
 import { apiRequest } from "@/lib/queryClient";
 
 interface KitchenStation {
@@ -140,13 +140,8 @@ export function useKotAutoDispatch() {
             }
           };
 
-          const opened = printHtmlInPopup(mergedHtml, () => markAllStatus("printed"));
-          if (!opened) {
-            markAllStatus("failed");
-            failedCount += browserJobs.length;
-          } else {
-            printedCount += browserJobs.length;
-          }
+          printHtmlWithIframe(mergedHtml, () => markAllStatus("printed"));
+          printedCount += browserJobs.length;
         }
 
         if (failedCount > 0 && printedCount === 0) {
