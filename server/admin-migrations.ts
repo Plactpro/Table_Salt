@@ -2720,4 +2720,7 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_bill_parking_charges_bill ON bill_parking_charges(bill_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_parking_charges_tenant ON bill_parking_charges(tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bill_parking_charges_ticket ON bill_parking_charges(ticket_id)`);
+
+  // Task #137: Add missing prep_time_minutes column to menu_items
+  await pool.query(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS prep_time_minutes integer`);
 }
