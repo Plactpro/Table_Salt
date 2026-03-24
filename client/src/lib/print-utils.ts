@@ -357,18 +357,66 @@ export function renderBillHtml(opts: BillPrintOptions): string {
  * Dispatch print result enum.
  * - "network": print was sent to a network printer and accepted (HTTP 2xx)
  * - "popup": browser popup print dialog was used (fallback)
- * - "failed": network printer returned non-OK and popup was unavailable (popup blocked)
+ * - "iframe": in-page hidden iframe print was used (fallback, no popup permission needed)
+ * - "failed": network printer returned non-OK and all fallbacks failed
  */
-export type PrintResult = "network" | "popup" | "failed";
+export type PrintResult = "network" | "popup" | "iframe" | "failed";
+
+/**
+ * Print HTML using a hidden iframe inserted into the current document.
+ * This approach does not require popup permission because it operates within
+ * the same browsing context. Safe to call from async callbacks.
+ */
+export function printHtmlWithIframe(html: string, onAfterPrint?: () => void): void {
+  const iframe = document.createElement("iframe");
+  iframe.style.position = "fixed";
+  iframe.style.top = "-9999px";
+  iframe.style.left = "-9999px";
+  iframe.style.width = "1px";
+  iframe.style.height = "1px";
+  iframe.style.border = "none";
+  iframe.style.visibility = "hidden";
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument || iframe.contentWindow?.document;
+  if (!doc) {
+    document.body.removeChild(iframe);
+    return;
+  }
+
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const cleanup = () => {
+    setTimeout(() => {
+      if (document.body.contains(iframe)) {
+        document.body.removeChild(iframe);
+      }
+    }, 1000);
+    onAfterPrint?.();
+  };
+
+  iframe.contentWindow?.addEventListener("afterprint", cleanup, { once: true });
+
+  setTimeout(() => {
+    try {
+      iframe.contentWindow?.focus();
+      iframe.contentWindow?.print();
+    } catch (_) {}
+    setTimeout(cleanup, 2000);
+  }, 300);
+}
 
 /**
  * Attempt to dispatch a print job to the station's network printer URL.
- * Falls back to browser popup print if no URL is configured or network fails.
+ * Falls back to in-page iframe print if no URL is configured or network fails.
+ * The iframe approach avoids popup blocking since it runs within the same browsing context.
  *
  * Callbacks:
  *   onNetworkSuccess  — called only when the network printer accepts the job (HTTP 2xx)
- *   onPopupPrint      — called after the browser popup print dialog closes (fallback path)
- *   onFailure         — called if network fails AND popup cannot be opened (blocked)
+ *   onPopupPrint      — called after the iframe print completes (fallback path)
+ *   onFailure         — not used in current implementation (kept for API compatibility)
  *
  * Returns the PrintResult indicating which path was taken.
  */
@@ -381,7 +429,7 @@ export async function dispatchPrint(
     onFailure?: () => void;
   }
 ): Promise<PrintResult> {
-  const { onNetworkSuccess, onPopupPrint, onFailure } = options ?? {};
+  const { onNetworkSuccess, onPopupPrint } = options ?? {};
 
   if (printerUrl) {
     try {
@@ -399,12 +447,8 @@ export async function dispatchPrint(
     }
   }
 
-  const opened = printHtmlInPopup(html, onPopupPrint);
-  if (!opened) {
-    onFailure?.();
-    return "failed";
-  }
-  return "popup";
+  printHtmlWithIframe(html, onPopupPrint);
+  return "iframe";
 }
 
 /**

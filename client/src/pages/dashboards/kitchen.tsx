@@ -1068,11 +1068,11 @@ export default function KitchenDashboard() {
           }
           if (kotJobs.length > 0) {
             if (failedCount > 0 && printedCount === 0) {
-              toast({ title: "KOT Print Failed", description: "Popup was blocked. Open your print queue to retry.", variant: "destructive" });
+              toast({ title: "KOT Print Failed", description: "Could not print. Open your print queue to retry.", variant: "destructive" });
             } else if (failedCount > 0) {
               toast({ title: `KOT Partially Printed`, description: `${printedCount} sent, ${failedCount} failed. Check print queue.`, variant: "destructive" });
             } else {
-              toast({ title: "KOT Printed", description: `${printedCount} ticket${printedCount > 1 ? "s" : ""} sent to ${usedNetworkPrinter ? "network printer" : "print dialog"}.` });
+              toast({ title: "KOT Printed", description: `${printedCount} ticket${printedCount > 1 ? "s" : ""} sent to ${usedNetworkPrinter ? "network printer" : "browser print dialog"}.` });
             }
           }
         }
