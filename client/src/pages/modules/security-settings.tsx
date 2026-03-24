@@ -14,7 +14,7 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   Shield, Clock, Monitor, ShieldCheck, KeyRound, Users, Save, Loader2,
   Smartphone, Trash2, CheckCircle, Lock, QrCode, Copy, Eye, EyeOff,
-  AlertTriangle, Bell, Globe, Download, UserX, Database, Plus, X, Info,
+  AlertTriangle, Bell, Globe, Download, UserX, Database, Plus, X, Info, LogOut,
 } from "lucide-react";
 
 interface SecuritySettings {
@@ -381,6 +381,8 @@ export default function SecuritySettingsPage() {
           </div>
         </CardContent>
       </Card>
+
+      <ActiveSessionsCard />
 
       <Card>
         <CardHeader>
@@ -1350,6 +1352,158 @@ function PasswordChangeCard() {
           {changeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
           Change Password
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function parseUserAgent(ua: string | null): string {
+  if (!ua) return "Unknown browser";
+  if (/Chrome\//.test(ua) && !/Edg\//.test(ua) && !/OPR\//.test(ua)) return "Chrome";
+  if (/Firefox\//.test(ua)) return "Firefox";
+  if (/Safari\//.test(ua) && !/Chrome\//.test(ua)) return "Safari";
+  if (/Edg\//.test(ua)) return "Edge";
+  if (/OPR\//.test(ua)) return "Opera";
+  return "Browser";
+}
+
+function parseOS(ua: string | null): string {
+  if (!ua) return "Unknown OS";
+  if (/Windows NT/.test(ua)) return "Windows";
+  if (/Mac OS X/.test(ua)) return "macOS";
+  if (/Android/.test(ua)) return "Android";
+  if (/iPhone|iPad/.test(ua)) return "iOS";
+  if (/Linux/.test(ua)) return "Linux";
+  return "OS";
+}
+
+interface ActiveSession {
+  sessionId: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  lastActive: string | null;
+  isCurrent: boolean;
+}
+
+function ActiveSessionsCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: sessions, isLoading } = useQuery<ActiveSession[]>({
+    queryKey: ["/api/auth/sessions"],
+    queryFn: async () => {
+      const res = await fetch("/api/auth/sessions", { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load sessions");
+      return res.json();
+    },
+  });
+
+  const revokeMutation = useMutation({
+    mutationFn: async (sessionId: string) => {
+      const res = await apiRequest("DELETE", `/api/auth/sessions/${sessionId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/sessions"] });
+      toast({ title: "Session signed out" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to revoke session", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const revokeAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("DELETE", "/api/auth/sessions");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/sessions"] });
+      toast({ title: "All other sessions signed out" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to sign out sessions", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const otherSessions = (sessions || []).filter((s) => !s.isCurrent);
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Monitor className="h-5 w-5" />
+              Active Sessions
+            </CardTitle>
+            <CardDescription>Devices currently signed in to your account</CardDescription>
+          </div>
+          {otherSessions.length > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+              onClick={() => revokeAllMutation.mutate()}
+              disabled={revokeAllMutation.isPending}
+              data-testid="button-revoke-all-sessions"
+            >
+              {revokeAllMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <LogOut className="h-4 w-4 mr-1" />}
+              Sign out all other devices
+            </Button>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex justify-center py-4">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : !sessions || sessions.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">No active sessions found</p>
+        ) : (
+          <div className="space-y-3" data-testid="list-active-sessions">
+            {sessions.map((session) => (
+              <div
+                key={session.sessionId}
+                className="flex items-center justify-between p-3 border rounded-lg"
+                data-testid={`session-item-${session.sessionId}`}
+              >
+                <div className="flex items-center gap-3">
+                  <Monitor className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">
+                        {parseUserAgent(session.userAgent)} on {parseOS(session.userAgent)}
+                      </p>
+                      {session.isCurrent && (
+                        <Badge className="text-[10px] px-1.5 py-0 bg-green-100 text-green-800 border-green-200 border" data-testid="badge-current-session">
+                          This device
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {session.ipAddress || "Unknown IP"}
+                      {session.lastActive ? ` · Last active ${new Date(session.lastActive).toLocaleString()}` : ""}
+                    </p>
+                  </div>
+                </div>
+                {!session.isCurrent && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-red-500 hover:text-red-700"
+                    onClick={() => revokeMutation.mutate(session.sessionId)}
+                    disabled={revokeMutation.isPending}
+                    data-testid={`button-revoke-session-${session.sessionId}`}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -12,6 +12,7 @@ import { users } from "@shared/schema";
 import { auditLog, auditLogFromReq } from "../audit";
 import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled } from "../security-alerts";
 import { trialEndsAtDate, isStripeConfigured, getUncachableStripeClient } from "../stripe";
+import { sendPasswordResetEmail } from "../email";
 
 export function registerAuthRoutes(app: Express): void {
   app.post("/api/auth/register", async (req, res) => {
@@ -99,9 +100,11 @@ export function registerAuthRoutes(app: Express): void {
     passport.authenticate("local", async (err: any, user: any, info: any) => {
       if (err) return next(err);
       if (!user) {
+        const msg = info?.message || "Invalid credentials";
+        const isLockout = msg.includes("locked");
         auditLog({ tenantId: null, action: "login_failed", entityType: "user", entityName: req.body.username, metadata: { username: req.body.username }, req });
         checkFailedLoginAlert(req.body.username, req);
-        return res.status(401).json({ message: info?.message || "Invalid credentials" });
+        return res.status(isLockout ? 423 : 401).json({ message: msg });
       }
 
       if (user.totpEnabled && !req.body.totpCode) {
@@ -151,6 +154,11 @@ export function registerAuthRoutes(app: Express): void {
             );
           }
         } catch (_) { /* concurrent session cleanup best-effort */ }
+
+        pool.query(
+          `UPDATE session SET user_id = $1, ip_address = $2, user_agent = $3, last_active = now() WHERE sid = $4`,
+          [user.id, req.ip || null, req.headers["user-agent"] || null, req.sessionID]
+        ).catch(() => {});
 
         auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
         checkNewIpLoginAlert(user.id, user.tenantId, user.name, req);
@@ -282,5 +290,123 @@ export function registerAuthRoutes(app: Express): void {
     const tenant = await storage.getTenant(user.tenantId);
     const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
     res.json({ ...DEFAULT_PASSWORD_POLICY, ...mc.passwordPolicy });
+  });
+
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    try {
+      const { email } = req.body;
+      if (!email) return res.status(400).json({ message: "Email is required" });
+      const emailHash = createHash("sha256").update(email.toLowerCase().trim()).digest("hex");
+      const { rows } = await pool.query(
+        `SELECT id, email FROM users WHERE email_hash = $1 LIMIT 1`,
+        [emailHash]
+      );
+      if (rows.length > 0) {
+        const user = rows[0];
+        const token = randomBytes(32).toString("hex");
+        const tokenHash = createHash("sha256").update(token).digest("hex");
+        const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+        await pool.query(
+          `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
+          [user.id, tokenHash, expiresAt]
+        );
+        const appUrl = process.env.APP_URL;
+        if (!appUrl) {
+          console.warn("[Password Reset] APP_URL env var is not configured — reset email suppressed to prevent host-header poisoning.");
+        } else {
+          const userEmail = user.email || email;
+          await sendPasswordResetEmail(userEmail, token, appUrl).catch(() => {});
+        }
+      }
+      return res.json({ message: "If that email address is registered, you will receive a password reset link shortly." });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    try {
+      const { token, newPassword } = req.body;
+      if (!token || !newPassword) return res.status(400).json({ message: "Token and new password are required" });
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      const { rows } = await pool.query(
+        `SELECT id, user_id FROM password_reset_tokens WHERE token_hash = $1 AND used_at IS NULL AND expires_at > now() LIMIT 1`,
+        [tokenHash]
+      );
+      if (rows.length === 0) return res.status(400).json({ message: "Invalid or expired reset token" });
+      const tokenRow = rows[0];
+      const freshUser = await storage.getUser(tokenRow.user_id);
+      if (!freshUser) return res.status(404).json({ message: "User not found" });
+      const tenant = await storage.getTenant(freshUser.tenantId);
+      const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
+      const policy = mc.passwordPolicy || {};
+      const validation = validatePasswordPolicy(newPassword, policy);
+      if (!validation.valid) return res.status(400).json({ message: validation.errors.join(". ") });
+      const canUse = await checkPasswordHistory(newPassword, freshUser.passwordHistory, policy.preventReuseCount ?? DEFAULT_PASSWORD_POLICY.preventReuseCount);
+      if (!canUse) return res.status(400).json({ message: "Cannot reuse a recent password" });
+      const newHash = await hashPassword(newPassword);
+      const history = [...(freshUser.passwordHistory || []), freshUser.password].slice(-10);
+      await db.update(users).set({ password: newHash, passwordChangedAt: new Date(), passwordHistory: history }).where(eq(users.id, tokenRow.user_id));
+      await pool.query(`UPDATE password_reset_tokens SET used_at = now() WHERE id = $1`, [tokenRow.id]);
+      await pool.query(`DELETE FROM session WHERE sess->'passport'->>'user' = $1`, [tokenRow.user_id]);
+      return res.json({ message: "Password has been reset successfully. Please log in with your new password." });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/auth/sessions", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT sid, ip_address, user_agent, last_active FROM session WHERE user_id = $1 ORDER BY last_active DESC NULLS LAST`,
+        [user.id]
+      );
+      const sessions = rows.map((row: any) => ({
+        sessionId: row.sid,
+        ipAddress: row.ip_address,
+        userAgent: row.user_agent,
+        lastActive: row.last_active,
+        isCurrent: row.sid === req.sessionID,
+      }));
+      return res.json(sessions);
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/auth/sessions/:sessionId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { sessionId } = req.params;
+      if (sessionId === req.sessionID) return res.status(400).json({ message: "Cannot revoke current session this way. Use logout." });
+      const { rowCount } = await pool.query(
+        `DELETE FROM session WHERE sid = $1 AND user_id = $2`,
+        [sessionId, user.id]
+      );
+      if (!rowCount) return res.status(404).json({ message: "Session not found" });
+      return res.json({ message: "Session revoked" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/auth/sessions", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      await pool.query(
+        `DELETE FROM session WHERE user_id = $1 AND sid != $2`,
+        [user.id, req.sessionID]
+      );
+      return res.json({ message: "All other sessions have been signed out" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/auth/2fa/status", requireAuth, async (req, res) => {
+    const user = req.user as any;
+    const freshUser = await storage.getUser(user.id);
+    res.json({ enabled: !!(freshUser?.totpEnabled) });
   });
 }

@@ -125,6 +125,8 @@ export function setupCsrf(app: Express) {
     if (
       url === "/api/auth/login" ||
       url === "/api/auth/register" ||
+      url === "/api/auth/forgot-password" ||
+      url === "/api/auth/reset-password" ||
       url === "/api/webhooks/stripe" ||
       url.startsWith("/api/guest/") ||
       url.startsWith("/api/kiosk/") ||

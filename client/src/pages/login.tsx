@@ -52,7 +52,14 @@ export default function LoginPage() {
         navigate("/");
       }
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Invalid credentials";
+      let message = err instanceof Error ? err.message : "Invalid credentials";
+      try {
+        const jsonStart = message.indexOf("{");
+        if (jsonStart !== -1) {
+          const parsed = JSON.parse(message.slice(jsonStart));
+          if (parsed.message) message = parsed.message;
+        }
+      } catch {}
       toast({
         variant: "destructive",
         title: "Login failed",
@@ -192,7 +199,17 @@ export default function LoginPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5, delay: 0.6 }}
                 >
-                  <Label htmlFor="password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="password">Password</Label>
+                    <a
+                      href="/forgot-password"
+                      className="text-xs text-primary hover:underline"
+                      data-testid="link-forgot-password"
+                      onClick={(e) => { e.preventDefault(); navigate("/forgot-password"); }}
+                    >
+                      Forgot password?
+                    </a>
+                  </div>
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input

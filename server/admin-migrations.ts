@@ -2485,4 +2485,24 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_warning_sent_7d BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_warning_sent_3d BOOLEAN DEFAULT false`);
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_warning_sent_1d BOOLEAN DEFAULT false`);
+
+  // Task #128: Password reset tokens table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id VARCHAR NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      used_at TIMESTAMPTZ
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_prt_user ON password_reset_tokens(user_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_prt_expires ON password_reset_tokens(expires_at)`);
+
+  // Task #128: Active session management columns
+  await pool.query(`ALTER TABLE session ADD COLUMN IF NOT EXISTS user_id VARCHAR`);
+  await pool.query(`ALTER TABLE session ADD COLUMN IF NOT EXISTS ip_address TEXT`);
+  await pool.query(`ALTER TABLE session ADD COLUMN IF NOT EXISTS user_agent TEXT`);
+  await pool.query(`ALTER TABLE session ADD COLUMN IF NOT EXISTS last_active TIMESTAMPTZ DEFAULT now()`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_session_user ON session(user_id) WHERE user_id IS NOT NULL`);
 }
