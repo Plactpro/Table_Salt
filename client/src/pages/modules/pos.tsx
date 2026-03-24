@@ -1998,25 +1998,25 @@ export default function POSPage() {
                   <Input data-testid="input-tendered-amount" type="number" placeholder={`Enter amount ≥ ${fmt(total)}`} value={tenderedAmount} onChange={e => setTenderedAmount(e.target.value)} className="text-lg font-semibold" autoFocus />
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
-                  {[50, 100, 200, 500].map(amt => (
+                  {[20, 50, 100, 200].map(amt => (
                     <button key={amt} data-testid={`button-tender-${amt}`}
                       onClick={() => setTenderedAmount(String(Math.ceil(total / amt) * amt))}
                       className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors">
-                      ₹{amt}
+                      AED {amt}
                     </button>
                   ))}
-                  <button data-testid="button-tender-exact" onClick={() => setTenderedAmount(total.toFixed(2))}
+                  <button data-testid="button-tender-exact" onClick={() => setTenderedAmount(parseFloat(total.toFixed(2)).toFixed(2))}
                     className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors text-primary font-medium">
                     Exact
                   </button>
                 </div>
-                {tenderedAmount && Number(tenderedAmount) >= total && (
+                {tenderedAmount && parseFloat(Number(tenderedAmount).toFixed(2)) >= parseFloat(total.toFixed(2)) && (
                   <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-3 py-2 flex items-center justify-between text-sm" data-testid="text-change-due">
                     <span className="text-muted-foreground">Change Due</span>
-                    <span className="font-bold text-green-700 dark:text-green-400">{fmt(Number(tenderedAmount) - total)}</span>
+                    <span className="font-bold text-green-700 dark:text-green-400">{fmt(parseFloat((Number(tenderedAmount) - total).toFixed(2)))}</span>
                   </div>
                 )}
-                {tenderedAmount && Number(tenderedAmount) < total && (
+                {tenderedAmount && parseFloat(Number(tenderedAmount).toFixed(2)) < parseFloat(total.toFixed(2)) && (
                   <p className="text-xs text-red-500 text-center">Amount is less than total</p>
                 )}
               </div>
@@ -2041,7 +2041,7 @@ export default function POSPage() {
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setShowPaymentModal(false)} data-testid="button-payment-cancel">Cancel</Button>
             <Button onClick={confirmPaymentAndPlace} data-testid="button-confirm-payment"
-              disabled={paymentMethod === "cash" && (tenderedAmount === "" || Number(tenderedAmount) < total)}>
+              disabled={paymentMethod === "cash" && (tenderedAmount === "" || parseFloat(Number(tenderedAmount).toFixed(2)) < parseFloat(total.toFixed(2)))}>
               Confirm &amp; Place Order
             </Button>
           </DialogFooter>
