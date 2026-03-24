@@ -198,6 +198,17 @@
   }
 }
 
+@keyframes pulse-border {
+  0%, 100% {
+    border-left-width: 4px;
+    opacity: 1;
+  }
+  50% {
+    border-left-width: 6px;
+    opacity: 0.75;
+  }
+}
+
 @keyframes fade-slide-up {
   from {
     opacity: 0;
@@ -257,6 +268,10 @@
 
   .animate-pulse-alert {
     animation: pulse-alert 2s ease-in-out infinite;
+  }
+
+  .animate-pulse-border {
+    animation: pulse-border 2s ease-in-out infinite;
   }
 
   .animate-fade-slide-up {
