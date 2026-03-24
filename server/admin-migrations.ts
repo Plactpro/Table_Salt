@@ -2481,4 +2481,8 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_bills_outlet_created ON bills(outlet_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_status_tenant ON orders(tenant_id, status, created_at DESC)`);
 
+  // Task #129: Trial warning email sent flags (idempotent delivery)
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_warning_sent_7d BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_warning_sent_3d BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS trial_warning_sent_1d BOOLEAN DEFAULT false`);
 }

@@ -7,6 +7,7 @@ import { storage } from "../storage";
 import { db, pool } from "../db";
 import { eq } from "drizzle-orm";
 import { requireAuth, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "../auth";
+import { sendWelcomeEmail } from "../services/email-service";
 import { users } from "@shared/schema";
 import { auditLog, auditLogFromReq } from "../audit";
 import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled } from "../security-alerts";
@@ -82,6 +83,7 @@ export function registerAuthRoutes(app: Express): void {
         } catch (hashErr) {
           console.warn("Could not set email_hash (non-fatal):", hashErr);
         }
+        sendWelcomeEmail(email, name, restaurantName).catch(() => {});
       }
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Login failed" });

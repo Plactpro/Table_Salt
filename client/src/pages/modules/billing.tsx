@@ -5,14 +5,14 @@ import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion } from "framer-motion";
 import {
   CreditCard, Receipt, Search, DollarSign, TrendingUp, FileText,
-  LayoutGrid, Table2, CalendarDays, User,
+  LayoutGrid, Table2, CalendarDays, User, Mail,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -61,6 +61,12 @@ export default function BillingPage() {
   const [invoiceTypeFilter, setInvoiceTypeFilter] = useState("all");
   const [invoiceView, setInvoiceView] = useState<InvoiceView>("list");
   const [selectedInvoice, setSelectedInvoice] = useState<OrderWithItems | null>(null);
+
+  const [emailReceiptOpen, setEmailReceiptOpen] = useState(false);
+  const [emailReceiptBillId, setEmailReceiptBillId] = useState<string | null>(null);
+  const [emailReceiptAddress, setEmailReceiptAddress] = useState("");
+  const [emailReceiptSending, setEmailReceiptSending] = useState(false);
+  const [emailReceiptStatus, setEmailReceiptStatus] = useState<"idle" | "success" | "error">("idle");
 
   const tableMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -148,6 +154,44 @@ export default function BillingPage() {
       setSelectedInvoice(order);
     } catch {
       setSelectedInvoice(null);
+    }
+  };
+
+  const handleOpenEmailReceipt = async (orderId: string, prefillEmail?: string) => {
+    try {
+      const res = await fetch(`/api/restaurant-bills/by-order/${orderId}`, { credentials: "include" });
+      if (res.ok) {
+        const bill = await res.json();
+        setEmailReceiptBillId(bill.id);
+        setEmailReceiptAddress(prefillEmail || "");
+        setEmailReceiptStatus("idle");
+        setEmailReceiptOpen(true);
+      }
+    } catch {
+      // silently skip if bill not found
+    }
+  };
+
+  const handleSendReceipt = async () => {
+    if (!emailReceiptBillId || !emailReceiptAddress) return;
+    setEmailReceiptSending(true);
+    setEmailReceiptStatus("idle");
+    try {
+      const res = await fetch(`/api/bills/${emailReceiptBillId}/send-email`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customerEmail: emailReceiptAddress }),
+      });
+      if (res.ok) {
+        setEmailReceiptStatus("success");
+      } else {
+        setEmailReceiptStatus("error");
+      }
+    } catch {
+      setEmailReceiptStatus("error");
+    } finally {
+      setEmailReceiptSending(false);
     }
   };
 
@@ -435,8 +479,60 @@ export default function BillingPage() {
                 <Badge className="bg-emerald-100 text-emerald-800">Paid</Badge>
                 <span>Invoice #{selectedInvoice.id.slice(-6).toUpperCase()}</span>
               </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full mt-2"
+                data-testid="button-email-receipt"
+                onClick={() => {
+                  const customerId = selectedInvoice.customerId;
+                  const prefill = customerId ? customers.find((c) => c.id === customerId)?.email ?? "" : "";
+                  handleOpenEmailReceipt(selectedInvoice.id, prefill || undefined);
+                }}
+              >
+                <Mail className="h-4 w-4 mr-2" />
+                Email Receipt
+              </Button>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={emailReceiptOpen} onOpenChange={(open) => { setEmailReceiptOpen(open); if (!open) setEmailReceiptStatus("idle"); }}>
+        <DialogContent className="max-w-sm" data-testid="dialog-email-receipt">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Mail className="h-5 w-5 text-primary" />
+              Email Receipt
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">Enter the customer's email address to send the receipt.</p>
+            <Input
+              type="email"
+              placeholder="customer@example.com"
+              value={emailReceiptAddress}
+              onChange={(e) => setEmailReceiptAddress(e.target.value)}
+              data-testid="input-customer-email"
+            />
+            {emailReceiptStatus === "success" && (
+              <p className="text-sm text-emerald-600 font-medium" data-testid="status-receipt-sent">Receipt sent successfully!</p>
+            )}
+            {emailReceiptStatus === "error" && (
+              <p className="text-sm text-red-600 font-medium" data-testid="status-receipt-error">Failed to send receipt. Please try again.</p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailReceiptOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleSendReceipt}
+              disabled={emailReceiptSending || !emailReceiptAddress}
+              data-testid="button-send-receipt"
+            >
+              {emailReceiptSending ? "Sending..." : "Send Receipt"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </motion.div>
