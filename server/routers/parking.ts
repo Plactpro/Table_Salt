@@ -148,6 +148,26 @@ export function registerParkingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.patch("/api/parking/rates/:outletId/:rateId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { slabs, ...rateData } = req.body;
+      const rate = await storage.updateParkingRate(req.params.rateId, user.tenantId, rateData);
+      if (!rate) return res.status(404).json({ message: "Rate not found" });
+      if (Array.isArray(slabs)) {
+        await storage.deleteRateSlabsByRate(rate.id);
+        const createdSlabs = [];
+        for (const slab of slabs) {
+          const s = await storage.createParkingRateSlab({ ...slab, rateId: rate.id });
+          createdSlabs.push(s);
+        }
+        return res.json({ ...rate, slabs: createdSlabs });
+      }
+      const existingSlabs = await storage.getParkingRateSlabs(rate.id);
+      res.json({ ...rate, slabs: existingSlabs });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.delete("/api/parking/rates/:outletId/:rateId", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
@@ -537,6 +557,57 @@ export function registerParkingRoutes(app: Express): void {
       );
 
       res.status(201).json({ success: true, requestId: request.id });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Stats ──────────────────────────────────────────────────────────────────
+  app.get("/api/parking/stats/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const outletId = req.params.outletId;
+      const tenantId = user.tenantId;
+
+      // Active vehicles in
+      const { rows: activeRows } = await pool.query(
+        `SELECT COUNT(*) AS count FROM valet_tickets
+         WHERE outlet_id=$1 AND tenant_id=$2 AND status IN ('parked','requested','retrieving','ready')`,
+        [outletId, tenantId]
+      );
+      const vehiclesIn = parseInt(activeRows[0]?.count ?? "0", 10);
+
+      // Revenue today (sum of charge from completed tickets today)
+      const { rows: revenueRows } = await pool.query(
+        `SELECT COALESCE(SUM(bpc.final_charge),0) AS revenue
+         FROM valet_tickets vt
+         JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
+           AND vt.status = 'completed'
+           AND vt.exit_time >= CURRENT_DATE`,
+        [outletId, tenantId]
+      );
+      const revenueToday = parseFloat(revenueRows[0]?.revenue ?? "0");
+
+      // Avg duration today (completed tickets)
+      const { rows: durationRows } = await pool.query(
+        `SELECT COALESCE(AVG(duration_minutes),0) AS avg_dur
+         FROM valet_tickets
+         WHERE outlet_id=$1 AND tenant_id=$2
+           AND status = 'completed'
+           AND exit_time >= CURRENT_DATE`,
+        [outletId, tenantId]
+      );
+      const avgDurationMinutes = Math.round(parseFloat(durationRows[0]?.avg_dur ?? "0"));
+
+      // Slot availability from config
+      const { rows: configRows } = await pool.query(
+        `SELECT total_capacity, available_slots FROM parking_layout_config
+         WHERE outlet_id=$1 AND tenant_id=$2 LIMIT 1`,
+        [outletId, tenantId]
+      );
+      const totalSlots = configRows[0]?.total_capacity ?? 0;
+      const availableSlots = configRows[0]?.available_slots ?? 0;
+
+      res.json({ vehiclesIn, revenueToday, avgDurationMinutes, totalSlots, availableSlots });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -830,6 +830,7 @@ export interface IStorage {
   updateParkingSlot(id: string, tenantId: string, data: Partial<InsertParkingSlot>): Promise<ParkingSlot | undefined>;
   getParkingRates(outletId: string, tenantId: string): Promise<ParkingRate[]>;
   createParkingRate(data: InsertParkingRate): Promise<ParkingRate>;
+  updateParkingRate(id: string, tenantId: string, data: Partial<Pick<InsertParkingRate, "vehicleType" | "rateType" | "rateAmount" | "dailyMaxCharge" | "taxRate">>): Promise<ParkingRate | undefined>;
   deleteParkingRate(id: string, tenantId: string): Promise<void>;
   getParkingRateSlabs(rateId: string): Promise<ParkingRateSlab[]>;
   createParkingRateSlab(data: InsertParkingRateSlab): Promise<ParkingRateSlab>;
@@ -4564,6 +4565,20 @@ export class DatabaseStorage implements IStorage {
       [data.tenantId, data.outletId, data.vehicleType ?? "CAR", data.rateType ?? "HOURLY", data.rateAmount, data.dailyMaxCharge ?? null, data.taxRate ?? 0, data.isActive ?? true]
     );
     return this._mapParkingRate(rows[0]);
+  }
+  async updateParkingRate(id: string, tenantId: string, data: Partial<Pick<InsertParkingRate, "vehicleType" | "rateType" | "rateAmount" | "dailyMaxCharge" | "taxRate">>): Promise<ParkingRate | undefined> {
+    const fields: string[] = [];
+    const values: any[] = [];
+    let idx = 1;
+    if (data.vehicleType !== undefined) { fields.push(`vehicle_type=$${idx++}`); values.push(data.vehicleType); }
+    if (data.rateType !== undefined) { fields.push(`rate_type=$${idx++}`); values.push(data.rateType); }
+    if (data.rateAmount !== undefined) { fields.push(`rate_amount=$${idx++}`); values.push(data.rateAmount); }
+    if (data.dailyMaxCharge !== undefined) { fields.push(`daily_max_charge=$${idx++}`); values.push(data.dailyMaxCharge); }
+    if (data.taxRate !== undefined) { fields.push(`tax_rate=$${idx++}`); values.push(data.taxRate); }
+    if (fields.length === 0) return undefined;
+    values.push(id, tenantId);
+    const { rows } = await pool.query(`UPDATE parking_rates SET ${fields.join(",")} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING *`, values);
+    return rows[0] ? this._mapParkingRate(rows[0]) : undefined;
   }
   async deleteParkingRate(id: string, tenantId: string): Promise<void> {
     await pool.query(`UPDATE parking_rates SET is_active = false WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);

@@ -10,6 +10,8 @@ import {
   Car, Bike, Plus, RefreshCw, Clock, CheckCircle2, AlertCircle,
   Loader2, User, Phone, X, ChevronRight, MapPin, CircleDot, Square,
   Hash, Clipboard, ParkingSquare, BarChart3, Timer, DollarSign, Layers,
+  Settings, Users, Download, Trash2, Edit2, ToggleLeft, ToggleRight,
+  TrendingUp, CalendarDays, Shield, BadgeCheck,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 const VEHICLE_TYPES = [
   { value: "TWO_WHEELER", label: "Two-Wheeler", icon: "🏍" },
@@ -39,6 +44,17 @@ function formatDuration(ms: number): string {
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   if (hours > 0) return `${hours}h ${minutes}m`;
   return `${minutes}m`;
+}
+
+function formatMinutes(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+}
+
+function formatCurrency(amount: number): string {
+  return `₹${amount.toFixed(2)}`;
 }
 
 function LiveTimer({ entryTime }: { entryTime: string }) {
@@ -806,7 +822,7 @@ function SlotBoard({ outletId }: { outletId: string }) {
       <div className="text-center py-12 text-muted-foreground" data-testid="slot-board-empty">
         <ParkingSquare className="h-12 w-12 mx-auto mb-3 opacity-30" />
         <p className="text-sm">No slots configured yet</p>
-        <p className="text-xs mt-1">Add zones and slots in the Outlet Settings</p>
+        <p className="text-xs mt-1">Add zones and slots in the Settings tab</p>
       </div>
     );
   }
@@ -886,7 +902,7 @@ function StatsHeader({ outletId }: { outletId: string }) {
         <p className="text-xs text-muted-foreground mt-0.5">Vehicles In</p>
       </div>
       <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-revenue">
-        <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? `${stats.revenueToday}` : "—"}</p>
+        <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? formatCurrency(stats.revenueToday) : "—"}</p>
         <p className="text-xs text-muted-foreground mt-0.5">Revenue Today</p>
       </div>
       <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-avg-duration">
@@ -901,6 +917,1402 @@ function StatsHeader({ outletId }: { outletId: string }) {
   );
 }
 
+// ─── Dashboard Tab ───────────────────────────────────────────────────────────
+function DashboardTab({
+  outletId,
+  tickets,
+  retrievalRequests,
+  onNewCheckin,
+}: {
+  outletId: string;
+  tickets: any[];
+  retrievalRequests: any[];
+  onNewCheckin: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: stats } = useQuery<any>({
+    queryKey: ["/api/parking/stats", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/stats/${outletId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    staleTime: 30000,
+    refetchInterval: 60000,
+    enabled: !!outletId,
+  });
+
+  const { data: valetStaff = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/valet-staff", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/valet-staff/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 60000,
+  });
+
+  const onDutyStaff = valetStaff.filter((s: any) => s.isOnDuty && s.isActive !== false);
+
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [assignName, setAssignName] = useState("");
+
+  const pendingRetrievals = retrievalRequests
+    .filter(r => ["pending", "assigned", "in_progress"].includes(r.status))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  const advanceMutation = useMutation({
+    mutationFn: async ({ id, body }: { id: string; body: Record<string, any> }) => {
+      const res = await apiRequest("PATCH", `/api/parking/retrieval-requests/${id}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/retrieval-requests", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+      setAssigningId(null);
+      setAssignName("");
+    },
+    onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  function getNextStatus(status: string) {
+    switch (status) {
+      case "pending": return "assigned";
+      case "assigned": return "in_progress";
+      case "in_progress": return "ready";
+      default: return null;
+    }
+  }
+
+  return (
+    <div className="space-y-5" data-testid="dashboard-tab">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold">Overview</h2>
+        <Button onClick={onNewCheckin} size="sm" data-testid="button-dashboard-new-checkin">
+          <Plus className="h-4 w-4 mr-1" /> New Check-in
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <Card data-testid="dash-stat-vehicles-in">
+          <CardContent className="p-4 text-center">
+            <Car className="h-5 w-5 mx-auto mb-1 text-blue-500" />
+            <p className="text-2xl font-bold text-blue-600">{stats?.vehiclesIn ?? tickets.length}</p>
+            <p className="text-xs text-muted-foreground">Vehicles In</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="dash-stat-avg-duration">
+          <CardContent className="p-4 text-center">
+            <Timer className="h-5 w-5 mx-auto mb-1 text-amber-500" />
+            <p className="text-2xl font-bold text-amber-600">{stats?.avgDurationMinutes != null ? `${stats.avgDurationMinutes}m` : "—"}</p>
+            <p className="text-xs text-muted-foreground">Avg Duration</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="dash-stat-revenue">
+          <CardContent className="p-4 text-center">
+            <TrendingUp className="h-5 w-5 mx-auto mb-1 text-green-500" />
+            <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? formatCurrency(stats.revenueToday) : "—"}</p>
+            <p className="text-xs text-muted-foreground">Revenue Today</p>
+          </CardContent>
+        </Card>
+        <Card data-testid="dash-stat-free-slots">
+          <CardContent className="p-4 text-center">
+            <ParkingSquare className="h-5 w-5 mx-auto mb-1 text-purple-500" />
+            <p className="text-2xl font-bold text-purple-600">{stats?.availableSlots ?? "—"}</p>
+            <p className="text-xs text-muted-foreground">Free Slots</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {pendingRetrievals.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2 text-amber-700">
+            <AlertCircle className="h-4 w-4" />
+            Active Retrievals — by wait time
+          </h3>
+          <div className="space-y-2" data-testid="active-retrievals-table">
+            {pendingRetrievals.map((r: any) => {
+              const waitMs = Date.now() - new Date(r.createdAt).getTime();
+              const waitMin = Math.floor(waitMs / 60000);
+              const nextStatus = getNextStatus(r.status);
+              const isAssigning = assigningId === r.id;
+              return (
+                <div
+                  key={r.id}
+                  data-testid={`row-retrieval-${r.id}`}
+                  className={`flex flex-wrap items-center gap-2 p-3 rounded-lg border text-sm ${waitMin > 10 ? "bg-red-50 border-red-200" : waitMin > 5 ? "bg-amber-50 border-amber-200" : "bg-muted/30"}`}
+                >
+                  <span className="font-mono font-bold text-xs">{r.ticketNumber}</span>
+                  <span className="text-xs text-muted-foreground">{r.vehicleNumber ?? "—"}</span>
+                  <span className={`text-xs font-medium ${waitMin > 10 ? "text-red-600" : waitMin > 5 ? "text-amber-600" : "text-muted-foreground"}`} data-testid={`text-wait-${r.id}`}>
+                    {waitMin}m wait
+                  </span>
+                  <StatusBadge status={r.status} />
+                  {r.assignedValetName && (
+                    <span className="text-xs text-blue-600 flex items-center gap-1">
+                      <User className="h-3 w-3" />{r.assignedValetName}
+                    </span>
+                  )}
+                  <div className="ml-auto flex items-center gap-2 flex-wrap">
+                    {isAssigning ? (
+                      <>
+                        {onDutyStaff.length > 0 ? (
+                          <Select value={assignName || "_none"} onValueChange={v => setAssignName(v === "_none" ? "" : v)}>
+                            <SelectTrigger className="h-7 text-xs w-36" data-testid={`select-assign-staff-${r.id}`}>
+                              <SelectValue placeholder="Pick valet..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="_none">Manual entry</SelectItem>
+                              {onDutyStaff.map((s: any) => (
+                                <SelectItem key={s.id} value={s.name}>{s.name}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            className="h-7 text-xs w-36"
+                            placeholder="Valet name"
+                            value={assignName}
+                            onChange={e => setAssignName(e.target.value)}
+                            data-testid={`input-assign-name-${r.id}`}
+                          />
+                        )}
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs"
+                          disabled={advanceMutation.isPending}
+                          onClick={() => advanceMutation.mutate({ id: r.id, body: { status: "assigned", assignedValetName: assignName.trim() || undefined } })}
+                          data-testid={`button-confirm-assign-dash-${r.id}`}
+                        >
+                          Assign
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => { setAssigningId(null); setAssignName(""); }}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        {r.status === "pending" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                            onClick={() => { setAssigningId(r.id); setAssignName(""); }}
+                            data-testid={`button-assign-dash-${r.id}`}
+                          >
+                            <User className="h-3 w-3 mr-1" /> Assign Valet
+                          </Button>
+                        )}
+                        {nextStatus && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs"
+                            disabled={advanceMutation.isPending}
+                            onClick={() => advanceMutation.mutate({ id: r.id, body: { status: nextStatus } })}
+                            data-testid={`button-advance-dash-${r.id}`}
+                          >
+                            <ChevronRight className="h-3 w-3 mr-1" /> {nextStatus === "assigned" ? "Start" : nextStatus === "in_progress" ? "In Progress" : "Ready"}
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          className="h-7 text-xs bg-green-600 hover:bg-green-700"
+                          disabled={advanceMutation.isPending}
+                          onClick={() => advanceMutation.mutate({ id: r.id, body: { status: "completed" } })}
+                          data-testid={`button-complete-dash-${r.id}`}
+                        >
+                          <CheckCircle2 className="h-3 w-3 mr-1" /> Complete
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {tickets.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Car className="h-4 w-4 text-muted-foreground" />
+            Currently Parked ({tickets.filter(t => t.status === "parked").length})
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+            {tickets.filter(t => t.status === "parked").slice(0, 6).map((ticket: any) => (
+              <div key={ticket.id} className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg border text-sm" data-testid={`dash-ticket-${ticket.id}`}>
+                <span className="text-xl">{getVehicleIcon(ticket.vehicleType)}</span>
+                <div className="min-w-0">
+                  <p className="font-mono font-bold text-xs truncate">{ticket.ticketNumber}</p>
+                  <p className="text-xs text-muted-foreground truncate">{ticket.vehicleNumber}</p>
+                  {ticket.slotCode && <p className="text-xs text-muted-foreground">Slot {ticket.slotCode}</p>}
+                </div>
+                <div className="ml-auto text-xs text-muted-foreground whitespace-nowrap">
+                  <LiveTimer entryTime={ticket.entryTime} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Revenue & History Tab ───────────────────────────────────────────────────
+type DateFilter = "today" | "yesterday" | "week" | "month" | "custom";
+
+function RevenueHistoryTab({ outletId }: { outletId: string }) {
+  const [filter, setFilter] = useState<DateFilter>("today");
+  const todayStr = new Date().toISOString().split("T")[0];
+  const [customFrom, setCustomFrom] = useState(todayStr);
+  const [customTo, setCustomTo] = useState(todayStr);
+
+  function getDateRange(f: DateFilter): { from: string; to: string } {
+    if (f === "custom") return { from: customFrom, to: customTo };
+    const now = new Date();
+    if (f === "today") {
+      return { from: now.toISOString().split("T")[0], to: now.toISOString().split("T")[0] };
+    }
+    if (f === "yesterday") {
+      const y = new Date(now);
+      y.setDate(y.getDate() - 1);
+      const ys = y.toISOString().split("T")[0];
+      return { from: ys, to: ys };
+    }
+    if (f === "week") {
+      const from = new Date(now);
+      from.setDate(from.getDate() - 6);
+      return { from: from.toISOString().split("T")[0], to: now.toISOString().split("T")[0] };
+    }
+    if (f === "month") {
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { from: from.toISOString().split("T")[0], to: now.toISOString().split("T")[0] };
+    }
+    return { from: now.toISOString().split("T")[0], to: now.toISOString().split("T")[0] };
+  }
+
+  const { from, to } = getDateRange(filter);
+
+  const { data: tickets = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/parking/tickets", outletId, "completed", from, to],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/parking/tickets/${outletId}?status=completed&from=${from}&to=${to}`,
+        { credentials: "include" }
+      );
+      if (!res.ok) return [];
+      const all: any[] = await res.json();
+      return all.filter((t: any) => {
+        if (!t.exitTime) return false;
+        const exitDate = t.exitTime.split("T")[0];
+        return exitDate >= from && exitDate <= to;
+      });
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const totalRevenue = tickets.reduce((sum: number, t: any) => sum + (parseFloat(t.chargeAmount ?? "0") || 0), 0);
+  const totalDuration = tickets.reduce((sum: number, t: any) => sum + (t.durationMinutes ?? 0), 0);
+
+  function exportCsv() {
+    const headers = ["Ticket #", "Vehicle Type", "Vehicle Number", "Customer", "Entry Time", "Exit Time", "Duration (min)", "Zone", "Charge"];
+    const rows = tickets.map((t: any) => [
+      t.ticketNumber,
+      t.vehicleType,
+      t.vehicleNumber ?? "",
+      t.customerName ?? "",
+      t.entryTime ? new Date(t.entryTime).toLocaleString() : "",
+      t.exitTime ? new Date(t.exitTime).toLocaleString() : "",
+      t.durationMinutes ?? "",
+      t.zoneName ?? "",
+      t.chargeAmount ?? "0",
+    ]);
+    const csv = [headers, ...rows].map(r => r.map(String).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `parking-history-${from}-to-${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <div className="space-y-4" data-testid="revenue-history-tab">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2 flex-wrap">
+          {(["today", "yesterday", "week", "month", "custom"] as DateFilter[]).map(f => (
+            <Button
+              key={f}
+              size="sm"
+              variant={filter === f ? "default" : "outline"}
+              onClick={() => setFilter(f)}
+              data-testid={`filter-${f}`}
+            >
+              {f === "today" ? "Today" : f === "yesterday" ? "Yesterday" : f === "week" ? "This Week" : f === "month" ? "This Month" : "Custom Range"}
+            </Button>
+          ))}
+        </div>
+        <Button size="sm" variant="outline" onClick={exportCsv} disabled={tickets.length === 0} data-testid="button-export-csv">
+          <Download className="h-3.5 w-3.5 mr-1" /> Export CSV
+        </Button>
+      </div>
+
+      {filter === "custom" && (
+        <div className="flex flex-wrap gap-3 items-center p-3 bg-muted/30 rounded-lg border" data-testid="custom-date-range">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="custom-from" className="text-xs whitespace-nowrap">From</Label>
+            <Input
+              id="custom-from"
+              type="date"
+              value={customFrom}
+              max={customTo}
+              onChange={e => setCustomFrom(e.target.value)}
+              className="h-8 text-xs w-36"
+              data-testid="input-custom-from"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Label htmlFor="custom-to" className="text-xs whitespace-nowrap">To</Label>
+            <Input
+              id="custom-to"
+              type="date"
+              value={customTo}
+              min={customFrom}
+              max={todayStr}
+              onChange={e => setCustomTo(e.target.value)}
+              className="h-8 text-xs w-36"
+              data-testid="input-custom-to"
+            />
+          </div>
+        </div>
+      )}
+
+      <div className="grid grid-cols-3 gap-3">
+        <Card>
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold" data-testid="summary-total-tickets">{tickets.length}</p>
+            <p className="text-xs text-muted-foreground">Total Tickets</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold" data-testid="summary-total-duration">{formatMinutes(totalDuration)}</p>
+            <p className="text-xs text-muted-foreground">Total Duration</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 text-center">
+            <p className="text-xl font-bold text-green-600" data-testid="summary-total-revenue">{formatCurrency(totalRevenue)}</p>
+            <p className="text-xs text-muted-foreground">Total Revenue</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12 text-muted-foreground">
+          <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading history...
+        </div>
+      ) : tickets.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-history">
+          <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No completed tickets for this period</p>
+        </div>
+      ) : (
+        <div className="rounded-lg border overflow-auto" data-testid="history-table">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ticket #</TableHead>
+                <TableHead>Vehicle</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Entry</TableHead>
+                <TableHead>Exit</TableHead>
+                <TableHead>Duration</TableHead>
+                <TableHead>Zone</TableHead>
+                <TableHead>Charge</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tickets.map((t: any) => (
+                <TableRow key={t.id} data-testid={`row-history-${t.id}`}>
+                  <TableCell className="font-mono text-xs font-bold">{t.ticketNumber}</TableCell>
+                  <TableCell className="text-xs">
+                    {getVehicleIcon(t.vehicleType)} {t.vehicleNumber ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-xs">{t.customerName ?? "—"}</TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">
+                    {t.entryTime ? new Date(t.entryTime).toLocaleString() : "—"}
+                  </TableCell>
+                  <TableCell className="text-xs whitespace-nowrap">
+                    {t.exitTime ? new Date(t.exitTime).toLocaleString() : "—"}
+                  </TableCell>
+                  <TableCell className="text-xs">{t.durationMinutes != null ? `${t.durationMinutes}m` : "—"}</TableCell>
+                  <TableCell className="text-xs">{t.zoneName ?? "—"}</TableCell>
+                  <TableCell className="text-xs font-medium text-green-700">{t.chargeAmount ? formatCurrency(parseFloat(t.chargeAmount)) : "—"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Valet Staff Tab ─────────────────────────────────────────────────────────
+function ValetStaffTab({ outletId, tickets }: { outletId: string; tickets: any[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
+
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState({ name: "", phone: "", badgeNumber: "" });
+
+  const { data: staff = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/parking/valet-staff", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/valet-staff/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const ticketsHandledToday: Record<string, number> = {};
+  const todayStr = new Date().toISOString().split("T")[0];
+  for (const t of tickets) {
+    if (t.valetStaffId && t.entryTime?.startsWith(todayStr)) {
+      ticketsHandledToday[t.valetStaffId] = (ticketsHandledToday[t.valetStaffId] ?? 0) + 1;
+    }
+  }
+
+  const addMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/parking/valet-staff/${outletId}`, addForm);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/valet-staff", outletId] });
+      toast({ title: "Staff member added" });
+      setAddForm({ name: "", phone: "", badgeNumber: "" });
+      setShowAddForm(false);
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleDutyMutation = useMutation({
+    mutationFn: async ({ staffId, isOnDuty }: { staffId: string; isOnDuty: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/parking/valet-staff/${outletId}/${staffId}`, { isOnDuty });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/valet-staff", outletId] });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const removeMutation = useMutation({
+    mutationFn: async (staffId: string) => {
+      const res = await apiRequest("PATCH", `/api/parking/valet-staff/${outletId}/${staffId}`, { isActive: false });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/valet-staff", outletId] });
+      toast({ title: "Staff member removed" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const activeStaff = staff.filter((s: any) => s.isActive !== false);
+
+  return (
+    <div className="space-y-4" data-testid="valet-staff-tab">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <Users className="h-4 w-4" />
+          Valet Attendants ({activeStaff.length})
+        </h2>
+        {isOwnerOrManager && (
+          <Button size="sm" onClick={() => setShowAddForm(!showAddForm)} data-testid="button-add-staff">
+            <Plus className="h-4 w-4 mr-1" /> Add Attendant
+          </Button>
+        )}
+      </div>
+
+      {showAddForm && (
+        <Card className="border-dashed" data-testid="add-staff-form">
+          <CardContent className="p-4 space-y-3">
+            <h3 className="text-sm font-semibold">New Attendant</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label htmlFor="staff-name">Name *</Label>
+                <Input
+                  id="staff-name"
+                  placeholder="Full name"
+                  value={addForm.name}
+                  onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                  data-testid="input-staff-name"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="staff-phone">Phone</Label>
+                <Input
+                  id="staff-phone"
+                  placeholder="Phone number"
+                  value={addForm.phone}
+                  onChange={e => setAddForm(f => ({ ...f, phone: e.target.value }))}
+                  data-testid="input-staff-phone"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="staff-badge">Badge #</Label>
+                <Input
+                  id="staff-badge"
+                  placeholder="Badge number"
+                  value={addForm.badgeNumber}
+                  onChange={e => setAddForm(f => ({ ...f, badgeNumber: e.target.value }))}
+                  data-testid="input-staff-badge"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <Button size="sm" onClick={() => addMutation.mutate()} disabled={!addForm.name.trim() || addMutation.isPending} data-testid="button-confirm-add-staff">
+                {addMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Add Attendant"}
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowAddForm(false)}>Cancel</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : activeStaff.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-staff">
+          <Users className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No valet attendants registered</p>
+          <p className="text-xs mt-1">Add attendants to track who's on duty</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {activeStaff.map((s: any) => (
+            <Card key={s.id} data-testid={`card-staff-${s.id}`} className={s.isOnDuty ? "border-green-200 bg-green-50/30" : ""}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${s.isOnDuty ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                      {s.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-sm" data-testid={`text-staff-name-${s.id}`}>{s.name}</p>
+                      {s.badgeNumber && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <BadgeCheck className="h-3 w-3" /> #{s.badgeNumber}
+                        </p>
+                      )}
+                      {s.phone && (
+                        <p className="text-xs text-muted-foreground flex items-center gap-1">
+                          <Phone className="h-3 w-3" /> {s.phone}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2">
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.isOnDuty ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`} data-testid={`badge-duty-${s.id}`}>
+                      {s.isOnDuty ? "On Duty" : "Off Duty"}
+                    </span>
+                    {ticketsHandledToday[s.id] != null && (
+                      <span className="text-xs text-muted-foreground">{ticketsHandledToday[s.id]} tickets today</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs flex-1"
+                    onClick={() => toggleDutyMutation.mutate({ staffId: s.id, isOnDuty: !s.isOnDuty })}
+                    disabled={toggleDutyMutation.isPending}
+                    data-testid={`button-toggle-duty-${s.id}`}
+                  >
+                    {s.isOnDuty ? <ToggleRight className="h-3.5 w-3.5 mr-1 text-green-600" /> : <ToggleLeft className="h-3.5 w-3.5 mr-1" />}
+                    {s.isOnDuty ? "Mark Off Duty" : "Mark On Duty"}
+                  </Button>
+                  {user?.role === "owner" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-red-600 hover:text-red-700"
+                      onClick={() => removeMutation.mutate(s.id)}
+                      disabled={removeMutation.isPending}
+                      data-testid={`button-remove-staff-${s.id}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Settings Tab ────────────────────────────────────────────────────────────
+function SettingsTab({ outletId }: { outletId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data: config, isLoading: configLoading } = useQuery<any>({
+    queryKey: ["/api/parking/config", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/config/${outletId}`, { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const { data: zones = [], isLoading: zonesLoading } = useQuery<any[]>({
+    queryKey: ["/api/parking/zones", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/zones/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const { data: rates = [], isLoading: ratesLoading } = useQuery<any[]>({
+    queryKey: ["/api/parking/rates", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/rates/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const { data: slots = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/slots", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/slots/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const [configForm, setConfigForm] = useState<any>(null);
+
+  useEffect(() => {
+    if (config && configForm === null) {
+      setConfigForm({
+        totalCapacity: config.totalCapacity ?? 0,
+        freeMinutes: config.freeMinutes ?? 0,
+        valetEnabled: config.valetEnabled ?? true,
+        displayMessage: config.displayMessage ?? "",
+      });
+    }
+  }, [config]);
+
+  const saveConfigMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/parking/config/${outletId}`, { ...configForm, outletId, tenantId: config?.tenantId });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/config", outletId] });
+      toast({ title: "Config saved" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const [zoneForm, setZoneForm] = useState({ name: "", level: "", totalSlots: 0 });
+  const [showZoneForm, setShowZoneForm] = useState(false);
+  const [editingZoneId, setEditingZoneId] = useState<string | null>(null);
+  const [editZoneForm, setEditZoneForm] = useState({ name: "", level: "" });
+
+  const addZoneMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/parking/zones/${outletId}`, zoneForm);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/zones", outletId] });
+      toast({ title: "Zone added" });
+      setZoneForm({ name: "", level: "", totalSlots: 0 });
+      setShowZoneForm(false);
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const updateZoneMutation = useMutation({
+    mutationFn: async (zoneId: string) => {
+      const res = await apiRequest("PATCH", `/api/parking/zones/${outletId}/${zoneId}`, editZoneForm);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/zones", outletId] });
+      toast({ title: "Zone updated" });
+      setEditingZoneId(null);
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteZoneMutation = useMutation({
+    mutationFn: async (zoneId: string) => {
+      await apiRequest("DELETE", `/api/parking/zones/${outletId}/${zoneId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/zones", outletId] });
+      toast({ title: "Zone deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const [rateForm, setRateForm] = useState({
+    vehicleType: "CAR", rateType: "HOURLY", rateAmount: "", freeMinutes: "",
+    slabs: [] as { fromMinutes: number; toMinutes?: number; charge: string }[],
+  });
+  const [showRateForm, setShowRateForm] = useState(false);
+  const [newSlab, setNewSlab] = useState({ fromMinutes: "", toMinutes: "", charge: "" });
+  const [expandedRateId, setExpandedRateId] = useState<string | null>(null);
+  const [editingRateId, setEditingRateId] = useState<string | null>(null);
+  const [editRateForm, setEditRateForm] = useState({ vehicleType: "CAR", rateType: "HOURLY", rateAmount: "", slabs: [] as { fromMinutes: number; toMinutes?: number; charge: string }[] });
+  const [editNewSlab, setEditNewSlab] = useState({ fromMinutes: "", toMinutes: "", charge: "" });
+
+  const updateRateMutation = useMutation({
+    mutationFn: async (rateId: string) => {
+      const body: any = {
+        vehicleType: editRateForm.vehicleType,
+        rateType: editRateForm.rateType,
+        rateAmount: parseFloat(editRateForm.rateAmount) || 0,
+      };
+      if (editRateForm.rateType === "SLAB") {
+        body.slabs = editRateForm.slabs.map(s => ({
+          fromMinutes: s.fromMinutes,
+          toMinutes: s.toMinutes ?? null,
+          charge: parseFloat(s.charge) || 0,
+        }));
+      }
+      const res = await apiRequest("PATCH", `/api/parking/rates/${outletId}/${rateId}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/rates", outletId] });
+      toast({ title: "Rate updated" });
+      setEditingRateId(null);
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const addRateMutation = useMutation({
+    mutationFn: async () => {
+      const body: any = {
+        vehicleType: rateForm.vehicleType,
+        rateType: rateForm.rateType,
+        rateAmount: parseFloat(rateForm.rateAmount) || 0,
+      };
+      if (rateForm.freeMinutes) body.freeMinutes = parseInt(rateForm.freeMinutes) || 0;
+      if (rateForm.rateType === "SLAB" && rateForm.slabs.length > 0) {
+        body.slabs = rateForm.slabs.map(s => ({
+          fromMinutes: s.fromMinutes,
+          toMinutes: s.toMinutes ?? null,
+          charge: parseFloat(s.charge) || 0,
+        }));
+      }
+      const res = await apiRequest("POST", `/api/parking/rates/${outletId}`, body);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/rates", outletId] });
+      toast({ title: "Rate added" });
+      setRateForm({ vehicleType: "CAR", rateType: "HOURLY", rateAmount: "", freeMinutes: "", slabs: [] });
+      setNewSlab({ fromMinutes: "", toMinutes: "", charge: "" });
+      setShowRateForm(false);
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteRateMutation = useMutation({
+    mutationFn: async (rateId: string) => {
+      await apiRequest("DELETE", `/api/parking/rates/${outletId}/${rateId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/rates", outletId] });
+      toast({ title: "Rate deleted" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const [slotForm, setSlotForm] = useState({ slotCode: "", zoneId: "", slotType: "STANDARD" });
+  const [showSlotForm, setShowSlotForm] = useState(false);
+
+  const addSlotMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/parking/slots/${outletId}`, {
+        ...slotForm,
+        zoneId: slotForm.zoneId || undefined,
+        status: "available",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/slots", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+      toast({ title: "Slot added" });
+      setSlotForm({ slotCode: "", zoneId: "", slotType: "STANDARD" });
+      setShowSlotForm(false);
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const toggleSlotMutation = useMutation({
+    mutationFn: async ({ slotId, isActive }: { slotId: string; isActive: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/parking/slots/${outletId}/${slotId}`, { isActive });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/slots", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <div className="space-y-6" data-testid="settings-tab">
+      {/* Parking Config */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Settings className="h-4 w-4" /> Parking Configuration
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {configLoading || !configForm ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label htmlFor="total-capacity">Total Capacity</Label>
+                  <Input
+                    id="total-capacity"
+                    type="number"
+                    value={configForm.totalCapacity}
+                    onChange={e => setConfigForm((f: any) => ({ ...f, totalCapacity: parseInt(e.target.value) || 0 }))}
+                    data-testid="input-total-capacity"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="free-minutes">Free Minutes</Label>
+                  <Input
+                    id="free-minutes"
+                    type="number"
+                    value={configForm.freeMinutes}
+                    onChange={e => setConfigForm((f: any) => ({ ...f, freeMinutes: parseInt(e.target.value) || 0 }))}
+                    data-testid="input-free-minutes"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Switch
+                  checked={configForm.valetEnabled}
+                  onCheckedChange={v => setConfigForm((f: any) => ({ ...f, valetEnabled: v }))}
+                  data-testid="switch-valet-enabled"
+                />
+                <Label>Valet Parking Enabled</Label>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="display-message">Display Message</Label>
+                <Textarea
+                  id="display-message"
+                  placeholder="Message shown to guests (e.g., 'Parking available on Level 2')"
+                  value={configForm.displayMessage}
+                  onChange={e => setConfigForm((f: any) => ({ ...f, displayMessage: e.target.value }))}
+                  rows={2}
+                  data-testid="input-display-message"
+                />
+              </div>
+              <Button size="sm" onClick={() => saveConfigMutation.mutate()} disabled={saveConfigMutation.isPending} data-testid="button-save-config">
+                {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                Save Config
+              </Button>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Zones */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Layers className="h-4 w-4" /> Zones ({zones.length})
+            </CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setShowZoneForm(!showZoneForm)} data-testid="button-add-zone">
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add Zone
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {showZoneForm && (
+            <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border" data-testid="zone-form">
+              <Input
+                placeholder="Zone name *"
+                value={zoneForm.name}
+                onChange={e => setZoneForm(f => ({ ...f, name: e.target.value }))}
+                className="flex-1 min-w-32"
+                data-testid="input-zone-name"
+              />
+              <Input
+                placeholder="Level/Floor"
+                value={zoneForm.level}
+                onChange={e => setZoneForm(f => ({ ...f, level: e.target.value }))}
+                className="w-32"
+                data-testid="input-zone-level"
+              />
+              <Input
+                type="number"
+                placeholder="Capacity"
+                value={zoneForm.totalSlots || ""}
+                onChange={e => setZoneForm(f => ({ ...f, totalSlots: parseInt(e.target.value) || 0 }))}
+                className="w-24"
+                data-testid="input-zone-capacity"
+              />
+              <Button size="sm" disabled={!zoneForm.name.trim() || addZoneMutation.isPending} onClick={() => addZoneMutation.mutate()} data-testid="button-confirm-add-zone">
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowZoneForm(false)}>Cancel</Button>
+            </div>
+          )}
+          {zonesLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : zones.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4" data-testid="empty-zones">No zones configured</p>
+          ) : (
+            <div className="space-y-2">
+              {zones.map((z: any) => (
+                <div key={z.id} data-testid={`zone-item-${z.id}`}>
+                  {editingZoneId === z.id ? (
+                    <div className="flex flex-wrap gap-2 p-3 bg-blue-50 rounded-lg border border-blue-200" data-testid={`zone-edit-form-${z.id}`}>
+                      <Input
+                        value={editZoneForm.name}
+                        onChange={e => setEditZoneForm(f => ({ ...f, name: e.target.value }))}
+                        placeholder="Zone name"
+                        className="flex-1 min-w-28"
+                        data-testid={`input-zone-edit-name-${z.id}`}
+                      />
+                      <Input
+                        value={editZoneForm.level}
+                        onChange={e => setEditZoneForm(f => ({ ...f, level: e.target.value }))}
+                        placeholder="Level/Floor"
+                        className="w-28"
+                        data-testid={`input-zone-edit-level-${z.id}`}
+                      />
+                      <Button size="sm" disabled={!editZoneForm.name.trim() || updateZoneMutation.isPending} onClick={() => updateZoneMutation.mutate(z.id)} data-testid={`button-save-zone-${z.id}`}>
+                        Save
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setEditingZoneId(null)}>Cancel</Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-3 bg-muted/30 rounded-lg border">
+                      <div className="flex items-center gap-2">
+                        <div className="w-3 h-3 rounded-full" style={{ backgroundColor: z.color ?? "#6366f1" }} />
+                        <span className="text-sm font-medium">{z.name}</span>
+                        {z.level && <span className="text-xs text-muted-foreground">· {z.level}</span>}
+                        <span className="text-xs text-muted-foreground">· {z.availableSlots}/{z.totalSlots} slots</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-blue-500 hover:text-blue-600"
+                          onClick={() => { setEditingZoneId(z.id); setEditZoneForm({ name: z.name, level: z.level ?? "" }); }}
+                          data-testid={`button-edit-zone-${z.id}`}
+                        >
+                          <Edit2 className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
+                          onClick={() => deleteZoneMutation.mutate(z.id)}
+                          disabled={deleteZoneMutation.isPending}
+                          data-testid={`button-delete-zone-${z.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Rates */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <DollarSign className="h-4 w-4" /> Rates ({rates.length})
+            </CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setShowRateForm(!showRateForm)} data-testid="button-add-rate">
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add Rate
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {showRateForm && (
+            <div className="space-y-3 p-3 bg-muted/30 rounded-lg border" data-testid="rate-form">
+              <div className="flex flex-wrap gap-2">
+                <Select value={rateForm.vehicleType} onValueChange={v => setRateForm(f => ({ ...f, vehicleType: v }))}>
+                  <SelectTrigger className="w-36" data-testid="select-rate-vehicle-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {VEHICLE_TYPES.map(vt => (
+                      <SelectItem key={vt.value} value={vt.value}>{vt.icon} {vt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={rateForm.rateType} onValueChange={v => setRateForm(f => ({ ...f, rateType: v }))}>
+                  <SelectTrigger className="w-28" data-testid="select-rate-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FLAT">Flat</SelectItem>
+                    <SelectItem value="HOURLY">Hourly</SelectItem>
+                    <SelectItem value="SLAB">Slab</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  placeholder="Base rate (₹)"
+                  value={rateForm.rateAmount}
+                  onChange={e => setRateForm(f => ({ ...f, rateAmount: e.target.value }))}
+                  className="w-28"
+                  data-testid="input-rate-amount"
+                />
+                <Input
+                  type="number"
+                  placeholder="Free mins"
+                  value={rateForm.freeMinutes}
+                  onChange={e => setRateForm(f => ({ ...f, freeMinutes: e.target.value }))}
+                  className="w-24"
+                  data-testid="input-rate-free-minutes"
+                />
+              </div>
+              {rateForm.rateType === "SLAB" && (
+                <div className="space-y-2" data-testid="slab-config">
+                  <p className="text-xs font-medium text-muted-foreground">Slab Configuration</p>
+                  {rateForm.slabs.map((slab, idx) => (
+                    <div key={idx} className="flex items-center gap-2 text-xs" data-testid={`slab-row-${idx}`}>
+                      <span className="text-muted-foreground w-6">{idx + 1}.</span>
+                      <span>{slab.fromMinutes}–{slab.toMinutes ?? "∞"} min</span>
+                      <span className="font-medium">{formatCurrency(parseFloat(slab.charge) || 0)}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-5 w-5 p-0 ml-auto text-red-400"
+                        onClick={() => setRateForm(f => ({ ...f, slabs: f.slabs.filter((_, i) => i !== idx) }))}
+                        data-testid={`button-remove-slab-${idx}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                  <div className="flex flex-wrap gap-2">
+                    <Input
+                      type="number"
+                      placeholder="From (min)"
+                      value={newSlab.fromMinutes}
+                      onChange={e => setNewSlab(s => ({ ...s, fromMinutes: e.target.value }))}
+                      className="w-24 h-7 text-xs"
+                      data-testid="input-slab-from"
+                    />
+                    <Input
+                      type="number"
+                      placeholder="To (min, blank=∞)"
+                      value={newSlab.toMinutes}
+                      onChange={e => setNewSlab(s => ({ ...s, toMinutes: e.target.value }))}
+                      className="w-32 h-7 text-xs"
+                      data-testid="input-slab-to"
+                    />
+                    <Input
+                      type="number"
+                      placeholder="Charge (₹)"
+                      value={newSlab.charge}
+                      onChange={e => setNewSlab(s => ({ ...s, charge: e.target.value }))}
+                      className="w-24 h-7 text-xs"
+                      data-testid="input-slab-charge"
+                    />
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs"
+                      disabled={!newSlab.fromMinutes || !newSlab.charge}
+                      onClick={() => {
+                        setRateForm(f => ({
+                          ...f,
+                          slabs: [...f.slabs, {
+                            fromMinutes: parseInt(newSlab.fromMinutes) || 0,
+                            toMinutes: newSlab.toMinutes ? parseInt(newSlab.toMinutes) : undefined,
+                            charge: newSlab.charge,
+                          }],
+                        }));
+                        setNewSlab({ fromMinutes: "", toMinutes: "", charge: "" });
+                      }}
+                      data-testid="button-add-slab"
+                    >
+                      + Add Slab
+                    </Button>
+                  </div>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  disabled={(!rateForm.rateAmount && rateForm.rateType !== "SLAB") || addRateMutation.isPending}
+                  onClick={() => addRateMutation.mutate()}
+                  data-testid="button-confirm-add-rate"
+                >
+                  Add Rate
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setShowRateForm(false)}>Cancel</Button>
+              </div>
+            </div>
+          )}
+          {ratesLoading ? (
+            <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
+          ) : rates.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4" data-testid="empty-rates">No rates configured</p>
+          ) : (
+            <div className="space-y-2">
+              {rates.map((r: any) => (
+                <div key={r.id} className="rounded-lg border bg-muted/30" data-testid={`rate-item-${r.id}`}>
+                  {editingRateId === r.id ? (
+                    <div className="space-y-3 p-3 bg-blue-50 rounded-lg border border-blue-200" data-testid={`rate-edit-form-${r.id}`}>
+                      <div className="flex flex-wrap gap-2">
+                        <Select value={editRateForm.vehicleType} onValueChange={v => setEditRateForm(f => ({ ...f, vehicleType: v }))}>
+                          <SelectTrigger className="w-36" data-testid={`select-edit-rate-vehicle-${r.id}`}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {VEHICLE_TYPES.map(vt => <SelectItem key={vt.value} value={vt.value}>{vt.icon} {vt.label}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                        <Select value={editRateForm.rateType} onValueChange={v => setEditRateForm(f => ({ ...f, rateType: v }))}>
+                          <SelectTrigger className="w-28" data-testid={`select-edit-rate-type-${r.id}`}><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="FLAT">Flat</SelectItem>
+                            <SelectItem value="HOURLY">Hourly</SelectItem>
+                            <SelectItem value="SLAB">Slab</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          placeholder="Rate (₹)"
+                          value={editRateForm.rateAmount}
+                          onChange={e => setEditRateForm(f => ({ ...f, rateAmount: e.target.value }))}
+                          className="w-28"
+                          data-testid={`input-edit-rate-amount-${r.id}`}
+                        />
+                      </div>
+                      {editRateForm.rateType === "SLAB" && (
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium text-muted-foreground">Slabs</p>
+                          {editRateForm.slabs.map((slab, idx) => (
+                            <div key={idx} className="flex items-center gap-2 text-xs">
+                              <span>{slab.fromMinutes}–{slab.toMinutes ?? "∞"} min</span>
+                              <span className="font-medium">{formatCurrency(parseFloat(slab.charge) || 0)}</span>
+                              <Button size="sm" variant="ghost" className="h-5 w-5 p-0 ml-auto text-red-400"
+                                onClick={() => setEditRateForm(f => ({ ...f, slabs: f.slabs.filter((_, i) => i !== idx) }))}
+                                data-testid={`button-remove-edit-slab-${idx}`}
+                              ><X className="h-3 w-3" /></Button>
+                            </div>
+                          ))}
+                          <div className="flex flex-wrap gap-2">
+                            <Input type="number" placeholder="From (min)" value={editNewSlab.fromMinutes} onChange={e => setEditNewSlab(s => ({ ...s, fromMinutes: e.target.value }))} className="w-24 h-7 text-xs" data-testid={`input-edit-slab-from-${r.id}`} />
+                            <Input type="number" placeholder="To (blank=∞)" value={editNewSlab.toMinutes} onChange={e => setEditNewSlab(s => ({ ...s, toMinutes: e.target.value }))} className="w-28 h-7 text-xs" data-testid={`input-edit-slab-to-${r.id}`} />
+                            <Input type="number" placeholder="Charge (₹)" value={editNewSlab.charge} onChange={e => setEditNewSlab(s => ({ ...s, charge: e.target.value }))} className="w-24 h-7 text-xs" data-testid={`input-edit-slab-charge-${r.id}`} />
+                            <Button size="sm" variant="outline" className="h-7 text-xs"
+                              disabled={!editNewSlab.fromMinutes || !editNewSlab.charge}
+                              onClick={() => {
+                                setEditRateForm(f => ({ ...f, slabs: [...f.slabs, { fromMinutes: parseInt(editNewSlab.fromMinutes) || 0, toMinutes: editNewSlab.toMinutes ? parseInt(editNewSlab.toMinutes) : undefined, charge: editNewSlab.charge }] }));
+                                setEditNewSlab({ fromMinutes: "", toMinutes: "", charge: "" });
+                              }}
+                              data-testid={`button-add-edit-slab-${r.id}`}
+                            >+ Slab</Button>
+                          </div>
+                        </div>
+                      )}
+                      <div className="flex gap-2">
+                        <Button size="sm" disabled={!editRateForm.rateAmount || updateRateMutation.isPending} onClick={() => updateRateMutation.mutate(r.id)} data-testid={`button-save-rate-${r.id}`}>
+                          {updateRateMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null} Save
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => setEditingRateId(null)}>Cancel</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between p-3">
+                      <div className="text-sm flex items-center gap-2 flex-wrap">
+                        <span className="font-medium">{getVehicleIcon(r.vehicleType)} {r.vehicleType}</span>
+                        <Badge variant="outline" className="text-[10px]">{r.rateType}</Badge>
+                        <span className="font-medium">{formatCurrency(parseFloat(r.rateAmount ?? "0"))}</span>
+                        <span className="text-muted-foreground text-xs">
+                          {r.rateType === "HOURLY" ? "/hr" : r.rateType === "FLAT" ? "flat" : ""}
+                        </span>
+                        {r.slabs?.length > 0 && (
+                          <button
+                            className="text-xs text-blue-600 hover:underline"
+                            onClick={() => setExpandedRateId(expandedRateId === r.id ? null : r.id)}
+                            data-testid={`button-expand-slabs-${r.id}`}
+                          >
+                            {r.slabs.length} slabs {expandedRateId === r.id ? "▲" : "▼"}
+                          </button>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          size="sm" variant="ghost" className="h-7 w-7 p-0 text-blue-500 hover:text-blue-600"
+                          onClick={() => {
+                            setEditingRateId(r.id);
+                            setEditRateForm({
+                              vehicleType: r.vehicleType ?? "CAR",
+                              rateType: r.rateType ?? "HOURLY",
+                              rateAmount: r.rateAmount ?? "",
+                              slabs: (r.slabs ?? []).map((s: any) => ({ fromMinutes: s.fromMinutes, toMinutes: s.toMinutes, charge: String(s.charge) })),
+                            });
+                            setEditNewSlab({ fromMinutes: "", toMinutes: "", charge: "" });
+                          }}
+                          data-testid={`button-edit-rate-${r.id}`}
+                        ><Edit2 className="h-3.5 w-3.5" /></Button>
+                        <Button
+                          size="sm" variant="ghost" className="h-7 w-7 p-0 text-red-500 hover:text-red-600"
+                          onClick={() => deleteRateMutation.mutate(r.id)}
+                          disabled={deleteRateMutation.isPending}
+                          data-testid={`button-delete-rate-${r.id}`}
+                        ><Trash2 className="h-3.5 w-3.5" /></Button>
+                      </div>
+                    </div>
+                  )}
+                  {editingRateId !== r.id && expandedRateId === r.id && r.slabs?.length > 0 && (
+                    <div className="px-3 pb-3 space-y-1" data-testid={`slabs-expanded-${r.id}`}>
+                      <div className="text-xs text-muted-foreground font-medium mb-1">Slabs</div>
+                      {r.slabs.map((slab: any, idx: number) => (
+                        <div key={idx} className="flex gap-3 text-xs px-2 py-1 bg-white rounded border">
+                          <span className="text-muted-foreground">{slab.fromMinutes}–{slab.toMinutes ?? "∞"} min</span>
+                          <span className="font-medium ml-auto">{formatCurrency(parseFloat(slab.charge ?? "0"))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Slots */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <ParkingSquare className="h-4 w-4" /> Slots ({slots.filter((s: any) => s.isActive !== false).length} active)
+            </CardTitle>
+            <Button size="sm" variant="outline" onClick={() => setShowSlotForm(!showSlotForm)} data-testid="button-add-slot">
+              <Plus className="h-3.5 w-3.5 mr-1" /> Add Slot
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {showSlotForm && (
+            <div className="flex flex-wrap gap-2 p-3 bg-muted/30 rounded-lg border" data-testid="slot-form">
+              <Input
+                placeholder="Slot code (e.g. A1)"
+                value={slotForm.slotCode}
+                onChange={e => setSlotForm(f => ({ ...f, slotCode: e.target.value }))}
+                className="w-32"
+                data-testid="input-slot-code"
+              />
+              <Select value={slotForm.zoneId || "_none"} onValueChange={v => setSlotForm(f => ({ ...f, zoneId: v === "_none" ? "" : v }))}>
+                <SelectTrigger className="w-40" data-testid="select-slot-zone">
+                  <SelectValue placeholder="Zone (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">No Zone</SelectItem>
+                  {zones.map((z: any) => (
+                    <SelectItem key={z.id} value={z.id}>{z.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={slotForm.slotType} onValueChange={v => setSlotForm(f => ({ ...f, slotType: v }))}>
+                <SelectTrigger className="w-32" data-testid="select-slot-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="STANDARD">Standard</SelectItem>
+                  <SelectItem value="COMPACT">Compact</SelectItem>
+                  <SelectItem value="LARGE">Large</SelectItem>
+                  <SelectItem value="HANDICAP">Handicap</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button size="sm" disabled={!slotForm.slotCode.trim() || addSlotMutation.isPending} onClick={() => addSlotMutation.mutate()} data-testid="button-confirm-add-slot">
+                Add
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setShowSlotForm(false)}>Cancel</Button>
+            </div>
+          )}
+          {slots.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-4" data-testid="empty-slots">No slots configured</p>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
+              {slots.map((s: any) => (
+                <div
+                  key={s.id}
+                  className={`p-2 rounded-lg border text-xs text-center ${s.isActive !== false ? "bg-muted/30" : "bg-gray-100 opacity-50"}`}
+                  data-testid={`slot-setting-${s.slotCode ?? s.code}`}
+                >
+                  <p className="font-bold">{s.slotCode ?? s.code}</p>
+                  <p className="text-muted-foreground text-[10px]">{s.status ?? "available"}</p>
+                  <button
+                    className="text-[10px] text-blue-600 hover:underline mt-0.5"
+                    onClick={() => toggleSlotMutation.mutate({ slotId: s.id, isActive: !(s.isActive !== false) })}
+                    data-testid={`button-toggle-slot-${s.id}`}
+                  >
+                    {s.isActive !== false ? "Deactivate" : "Activate"}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Main Page ───────────────────────────────────────────────────────────────
 export default function ParkingPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -951,14 +2363,29 @@ export default function ParkingPage() {
 
   const [showNewTicket, setShowNewTicket] = useState(false);
 
+  const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
+
+  useRealtimeEvent("parking:ticket_updated", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+  }, [outletId, queryClient]));
+
   useRealtimeEvent("parking:retrieval_requested", useCallback((payload: any) => {
     refetchRetrievals();
+    queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
     playAlert("high");
     toast({
       title: "🚗 Vehicle Retrieval Requested",
       description: `Ticket ${payload?.ticketNumber ?? ""} — ${payload?.source ?? ""}`,
     });
-  }, [refetchRetrievals, playAlert, toast]));
+  }, [refetchRetrievals, playAlert, toast, outletId, queryClient]));
+
+  useRealtimeEvent("parking:retrieval_updated", useCallback(() => {
+    refetchRetrievals();
+    queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+    queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+  }, [refetchRetrievals, outletId, queryClient]));
 
   return (
     <motion.div
@@ -997,11 +2424,28 @@ export default function ParkingPage() {
 
       {outletId && <StatsHeader outletId={outletId} />}
 
-      <Tabs defaultValue="operations" className="space-y-4">
-        <TabsList data-testid="parking-tabs">
+      <Tabs defaultValue="dashboard" className="space-y-4">
+        <TabsList className="flex-wrap h-auto gap-1" data-testid="parking-tabs">
+          <TabsTrigger value="dashboard" data-testid="tab-dashboard">Dashboard</TabsTrigger>
           <TabsTrigger value="operations" data-testid="tab-operations">Operations</TabsTrigger>
           <TabsTrigger value="slot-board" data-testid="tab-slot-board">Slot Board</TabsTrigger>
+          <TabsTrigger value="revenue" data-testid="tab-revenue">Revenue & History</TabsTrigger>
+          <TabsTrigger value="staff" data-testid="tab-staff">Valet Staff</TabsTrigger>
+          {isOwnerOrManager && (
+            <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
+          )}
         </TabsList>
+
+        <TabsContent value="dashboard">
+          {outletId && (
+            <DashboardTab
+              outletId={outletId}
+              tickets={tickets}
+              retrievalRequests={retrievalRequests}
+              onNewCheckin={() => setShowNewTicket(true)}
+            />
+          )}
+        </TabsContent>
 
         <TabsContent value="operations" className="space-y-4">
           <div className="space-y-3">
@@ -1040,7 +2484,9 @@ export default function ParkingPage() {
                 <AlertCircle className="h-4 w-4 text-amber-500" />
                 Vehicle Retrieval Requests
                 {retrievalRequests.length > 0 && (
-                  <Badge variant="destructive" data-testid="badge-retrieval-count">{retrievalRequests.length}</Badge>
+                  <Badge variant="secondary" className="bg-amber-100 text-amber-700" data-testid="badge-retrieval-count">
+                    {retrievalRequests.length}
+                  </Badge>
                 )}
               </h2>
               <Button variant="ghost" size="sm" onClick={() => refetchRetrievals()} data-testid="button-refresh-retrievals">
@@ -1065,6 +2511,20 @@ export default function ParkingPage() {
         <TabsContent value="slot-board">
           {outletId && <SlotBoard outletId={outletId} />}
         </TabsContent>
+
+        <TabsContent value="revenue">
+          {outletId && <RevenueHistoryTab outletId={outletId} />}
+        </TabsContent>
+
+        <TabsContent value="staff">
+          {outletId && <ValetStaffTab outletId={outletId} tickets={tickets} />}
+        </TabsContent>
+
+        {isOwnerOrManager && (
+          <TabsContent value="settings">
+            {outletId && <SettingsTab outletId={outletId} />}
+          </TabsContent>
+        )}
       </Tabs>
 
       {outletId && (
