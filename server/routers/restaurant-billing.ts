@@ -120,7 +120,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const status = req.query.status as string | undefined;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 1000);
       const offset = parseInt(req.query.offset as string) || 0;
       const bills = await storage.getBillsByTenant(user.tenantId, { limit, offset, status });
       res.json(bills);

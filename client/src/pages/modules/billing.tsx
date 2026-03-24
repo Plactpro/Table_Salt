@@ -54,6 +54,9 @@ export default function BillingPage() {
   const { data: tables = [] } = useQuery<TableType[]>({ queryKey: ["/api/tables"] });
   const { data: customersRes } = useQuery<{ data: Customer[]; total: number }>({ queryKey: ["/api/customers"] });
   const customers = customersRes?.data ?? [];
+  const { data: billsData = [] } = useQuery<{ id: string; orderId: string; invoiceNumber: string | null }[]>({
+    queryKey: ["/api/restaurant-bills?limit=1000"],
+  });
 
   const [invoiceSearch, setInvoiceSearch] = useState("");
   const [invoiceDateFrom, setInvoiceDateFrom] = useState("");
@@ -73,6 +76,12 @@ export default function BillingPage() {
     tables.forEach((t) => { map[t.id] = `Table ${t.number}`; });
     return map;
   }, [tables]);
+
+  const invoiceNumberMap = useMemo(() => {
+    const map: Record<string, string | null> = {};
+    billsData.forEach((b) => { map[b.orderId] = b.invoiceNumber ?? null; });
+    return map;
+  }, [billsData]);
 
   const customerMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -201,6 +210,11 @@ export default function BillingPage() {
     delivery: "Delivery",
   };
 
+  const getInvoiceLabel = (orderId: string) => {
+    const invNum = invoiceNumberMap[orderId];
+    return invNum ?? `#${orderId.slice(-6).toUpperCase()}`;
+  };
+
   const renderInvoiceTable = (invoices: Order[]) => (
     <div className="overflow-x-auto">
       <Table>
@@ -219,7 +233,7 @@ export default function BillingPage() {
           {invoices.map((order) => (
             <TableRow key={order.id} className="hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
               <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
-              <TableCell className="font-mono text-xs">#{order.id.slice(-6).toUpperCase()}</TableCell>
+              <TableCell className="font-mono text-xs" data-testid={`text-invoice-number-${order.id}`}>{getInvoiceLabel(order.id)}</TableCell>
               <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
               <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>
               <TableCell className="font-medium">{fmt(order.total)}</TableCell>
@@ -275,7 +289,7 @@ export default function BillingPage() {
               <TableBody>
                 {group.orders.map((order) => (
                   <TableRow key={order.id} className="hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
-                    <TableCell className="font-mono text-xs">#{order.id.slice(-6).toUpperCase()}</TableCell>
+                    <TableCell className="font-mono text-xs" data-testid={`text-invoice-number-${order.id}`}>{getInvoiceLabel(order.id)}</TableCell>
                     <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
                     <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
                     {showTableCol && <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>}
@@ -403,7 +417,7 @@ export default function BillingPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              Invoice #{selectedInvoice?.id?.slice(-6).toUpperCase()}
+              {selectedInvoice ? getInvoiceLabel(selectedInvoice.id) : "Invoice"}
             </DialogTitle>
           </DialogHeader>
           {selectedInvoice && (

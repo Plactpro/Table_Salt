@@ -26,8 +26,8 @@ export type FeatureKey =
   | "internal_audits";
 
 export const subscriptionMatrix: Record<SubscriptionTier, FeatureKey[]> = {
-  basic: ["orders", "menu", "settings"],
-  standard: ["orders", "menu", "tables", "pos", "inventory", "staff", "outlets", "settings", "reservations", "cleaning"],
+  basic: ["orders", "menu", "settings", "billing"],
+  standard: ["orders", "menu", "tables", "pos", "inventory", "staff", "outlets", "settings", "billing", "reservations", "cleaning"],
   premium: [
     "orders", "menu", "tables", "pos", "inventory", "staff", "outlets", "settings",
     "reports", "billing", "advanced_analytics", "reservations",
@@ -130,8 +130,8 @@ export function getMinimumTierForFeature(feature: FeatureKey): SubscriptionTier 
 }
 
 export const tierPricing: Record<SubscriptionTier, { label: string; price: number; description: string }> = {
-  basic: { label: "Basic", price: 0, description: "Core features for a single outlet" },
-  standard: { label: "Standard", price: 29, description: "1-3 outlets with staff & POS" },
-  premium: { label: "Premium", price: 79, description: "Full analytics, billing & multi-location" },
-  enterprise: { label: "Enterprise", price: 199, description: "Custom solutions for restaurant chains" },
+  basic: { label: "Basic", price: 49, description: "Core features for a single outlet" },
+  standard: { label: "Standard", price: 99, description: "Full operations for growing restaurants" },
+  premium: { label: "Premium", price: 199, description: "Enterprise-grade for restaurant groups" },
+  enterprise: { label: "Enterprise", price: 399, description: "Custom solutions for restaurant chains" },
 };

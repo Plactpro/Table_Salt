@@ -67,7 +67,7 @@ export function registerBillingRoutes(app: Express): void {
     const tenant = await storage.getTenant(tenantId);
     if (!tenant) return;
     if (tenant.subscriptionStatus === "trialing" && tenant.trialEndsAt && new Date(tenant.trialEndsAt) < new Date()) {
-      await storage.updateTenant(tenantId, { subscriptionStatus: "canceled", plan: "basic" });
+      await storage.updateTenant(tenantId, { subscriptionStatus: "trial_expired" });
     }
   }
 
