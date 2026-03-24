@@ -11,71 +11,74 @@ import AdminLayout from "@/components/admin/admin-layout";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
-import MenuPage from "@/pages/modules/menu";
-import OrdersPage from "@/pages/modules/orders";
-import RecipeEditorPage from "@/pages/modules/recipe-editor";
-import TablesPage from "@/pages/modules/tables";
 import PosPage from "@/pages/modules/pos";
-import BillViewPage from "@/pages/pos/bill-view";
-import CrmPage from "@/pages/modules/crm";
-import CleaningPage from "@/pages/modules/cleaning";
-import AuditsPage from "@/pages/modules/audits";
-import BillingPage from "@/pages/modules/billing";
-import IntegrationsPage from "@/pages/modules/integrations";
 import KioskPage from "@/pages/kiosk";
 import GuestPage from "@/pages/guest";
-import KioskManagementPage from "@/pages/modules/kiosk-management";
-import OmnichannelPage from "@/pages/modules/omnichannel";
-import EventsPage from "@/pages/modules/events";
-import PromotionsHub from "@/pages/modules/promotions-hub";
-import InventoryHub from "@/pages/modules/inventory-hub";
-import StaffHub from "@/pages/modules/staff-hub";
-import ReportsHub from "@/pages/modules/reports-hub";
-import StockMovementLog from "@/pages/modules/stock-movement-log";
-import ChefReport from "@/pages/modules/chef-report";
-import ShiftsManagement from "@/pages/modules/shifts-management";
-import ShiftReconciliation from "@/pages/modules/shift-reconciliation";
-import DeliveryHub from "@/pages/modules/delivery-hub";
-import LocationsHub from "@/pages/modules/locations-hub";
-import SettingsHub from "@/pages/modules/settings-hub";
-import OwnerDashboard from "@/pages/dashboards/owner";
-import ManagerDashboard from "@/pages/dashboards/manager";
-import WaiterDashboard from "@/pages/dashboards/waiter";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
-import AccountantDashboard from "@/pages/dashboards/accountant";
 import KdsWallScreen from "@/pages/dashboards/kds-wall";
 import TableQrPage from "@/pages/table-qr";
-import LiveRequestsPage from "@/pages/modules/live-requests";
-import QrRequestSettings from "@/pages/modules/qr-request-settings";
-import KitchenSettingsPage from "@/pages/dashboards/kitchen-settings";
-import KitchenBoardPage from "@/pages/dashboards/kitchen-board";
-import CoordinatorPage from "@/pages/kds/coordinator";
-import StockReportsPage from "@/pages/modules/stock-reports";
-import PhoneOrderPage from "@/pages/modules/phone-order";
-import ServiceHubPage from "@/pages/dashboards/service-hub";
-import WastageDashboard from "@/pages/dashboards/wastage-dashboard";
-import WastageLogPage from "@/pages/modules/wastage-log";
-import WastageShiftPage from "@/pages/modules/wastage-shift";
-import PrinterSettingsPage from "@/pages/settings/printer-settings";
-import AlertSettingsPage from "@/pages/settings/alerts";
-import MenuPricingPage from "@/pages/menu/menu-pricing";
-import ProcurementHubPage from "@/pages/procurement/index";
-import TicketHistoryPage from "@/pages/tickets/index";
-import CashDashboardPage from "@/pages/cash/index";
-import TipReportPage from "@/pages/tips/report";
 
-import OnboardingPage from "@/pages/onboarding";
-import AdminDashboard from "@/pages/admin/dashboard";
-import TenantsPage from "@/pages/admin/tenants";
-import TenantDetailPage from "@/pages/admin/tenant-detail";
-import UsersPage from "@/pages/admin/users";
-import AuditLogPage from "@/pages/admin/audit-log";
-import AdminsPage from "@/pages/admin/admins";
-import AdminSettingsPage from "@/pages/admin/settings";
-import AnalyticsPage from "@/pages/admin/analytics";
-import SecurityConsolePage from "@/pages/admin/security";
-import AdminSupportPage from "@/pages/admin/support";
-import AdminSupportTicketPage from "@/pages/admin/support-ticket";
+import PageLoader from "@/components/PageLoader";
+import { lazy, Suspense } from "react";
+
+const MenuPage = lazy(() => import("@/pages/modules/menu"));
+const OrdersPage = lazy(() => import("@/pages/modules/orders"));
+const RecipeEditorPage = lazy(() => import("@/pages/modules/recipe-editor"));
+const TablesPage = lazy(() => import("@/pages/modules/tables"));
+const BillViewPage = lazy(() => import("@/pages/pos/bill-view"));
+const CrmPage = lazy(() => import("@/pages/modules/crm"));
+const CleaningPage = lazy(() => import("@/pages/modules/cleaning"));
+const AuditsPage = lazy(() => import("@/pages/modules/audits"));
+const BillingPage = lazy(() => import("@/pages/modules/billing"));
+const IntegrationsPage = lazy(() => import("@/pages/modules/integrations"));
+const KioskManagementPage = lazy(() => import("@/pages/modules/kiosk-management"));
+const OmnichannelPage = lazy(() => import("@/pages/modules/omnichannel"));
+const EventsPage = lazy(() => import("@/pages/modules/events"));
+const PromotionsHub = lazy(() => import("@/pages/modules/promotions-hub"));
+const InventoryHub = lazy(() => import("@/pages/modules/inventory-hub"));
+const StaffHub = lazy(() => import("@/pages/modules/staff-hub"));
+const ReportsHub = lazy(() => import("@/pages/modules/reports-hub"));
+const StockMovementLog = lazy(() => import("@/pages/modules/stock-movement-log"));
+const ChefReport = lazy(() => import("@/pages/modules/chef-report"));
+const ShiftsManagement = lazy(() => import("@/pages/modules/shifts-management"));
+const ShiftReconciliation = lazy(() => import("@/pages/modules/shift-reconciliation"));
+const DeliveryHub = lazy(() => import("@/pages/modules/delivery-hub"));
+const LocationsHub = lazy(() => import("@/pages/modules/locations-hub"));
+const SettingsHub = lazy(() => import("@/pages/modules/settings-hub"));
+const OwnerDashboard = lazy(() => import("@/pages/dashboards/owner"));
+const ManagerDashboard = lazy(() => import("@/pages/dashboards/manager"));
+const WaiterDashboard = lazy(() => import("@/pages/dashboards/waiter"));
+const AccountantDashboard = lazy(() => import("@/pages/dashboards/accountant"));
+const KitchenBoardPage = lazy(() => import("@/pages/dashboards/kitchen-board"));
+const KitchenSettingsPage = lazy(() => import("@/pages/dashboards/kitchen-settings"));
+const ServiceHubPage = lazy(() => import("@/pages/dashboards/service-hub"));
+const WastageDashboard = lazy(() => import("@/pages/dashboards/wastage-dashboard"));
+const LiveRequestsPage = lazy(() => import("@/pages/modules/live-requests"));
+const QrRequestSettings = lazy(() => import("@/pages/modules/qr-request-settings"));
+const CoordinatorPage = lazy(() => import("@/pages/kds/coordinator"));
+const StockReportsPage = lazy(() => import("@/pages/modules/stock-reports"));
+const PhoneOrderPage = lazy(() => import("@/pages/modules/phone-order"));
+const WastageLogPage = lazy(() => import("@/pages/modules/wastage-log"));
+const WastageShiftPage = lazy(() => import("@/pages/modules/wastage-shift"));
+const PrinterSettingsPage = lazy(() => import("@/pages/settings/printer-settings"));
+const AlertSettingsPage = lazy(() => import("@/pages/settings/alerts"));
+const MenuPricingPage = lazy(() => import("@/pages/menu/menu-pricing"));
+const ProcurementHubPage = lazy(() => import("@/pages/procurement/index"));
+const TicketHistoryPage = lazy(() => import("@/pages/tickets/index"));
+const CashDashboardPage = lazy(() => import("@/pages/cash/index"));
+const TipReportPage = lazy(() => import("@/pages/tips/report"));
+const OnboardingPage = lazy(() => import("@/pages/onboarding"));
+const AdminDashboard = lazy(() => import("@/pages/admin/dashboard"));
+const TenantsPage = lazy(() => import("@/pages/admin/tenants"));
+const TenantDetailPage = lazy(() => import("@/pages/admin/tenant-detail"));
+const UsersPage = lazy(() => import("@/pages/admin/users"));
+const AuditLogPage = lazy(() => import("@/pages/admin/audit-log"));
+const AdminsPage = lazy(() => import("@/pages/admin/admins"));
+const AdminSettingsPage = lazy(() => import("@/pages/admin/settings"));
+const AnalyticsPage = lazy(() => import("@/pages/admin/analytics"));
+const SecurityConsolePage = lazy(() => import("@/pages/admin/security"));
+const AdminSupportPage = lazy(() => import("@/pages/admin/support"));
+const AdminSupportTicketPage = lazy(() => import("@/pages/admin/support-ticket"));
 
 import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
@@ -297,7 +300,11 @@ function OnboardingRoute() {
   if ((user.role as string) === "super_admin") return <Redirect to="/admin" />;
   if (tenant?.onboardingCompleted) return <Redirect to="/" />;
 
-  return <OnboardingPage />;
+  return (
+    <Suspense fallback={<PageLoader />}>
+      <OnboardingPage />
+    </Suspense>
+  );
 }
 
 function PublicOnly({ children }: { children: ReactNode }) {
@@ -321,20 +328,22 @@ function PublicOnly({ children }: { children: ReactNode }) {
 function AdminShell() {
   return (
     <AdminLayout>
-      <Switch>
-        <Route path="/admin" component={AdminDashboard} />
-        <Route path="/admin/analytics" component={AnalyticsPage} />
-        <Route path="/admin/tenants/:id" component={TenantDetailPage} />
-        <Route path="/admin/tenants" component={TenantsPage} />
-        <Route path="/admin/users" component={UsersPage} />
-        <Route path="/admin/support/:ticketId" component={AdminSupportTicketPage} />
-        <Route path="/admin/support" component={AdminSupportPage} />
-        <Route path="/admin/audit" component={AuditLogPage} />
-        <Route path="/admin/security" component={SecurityConsolePage} />
-        <Route path="/admin/admins" component={AdminsPage} />
-        <Route path="/admin/settings" component={AdminSettingsPage} />
-        <Route component={NotFound} />
-      </Switch>
+      <Suspense fallback={<PageLoader />}>
+        <Switch>
+          <Route path="/admin" component={AdminDashboard} />
+          <Route path="/admin/analytics" component={AnalyticsPage} />
+          <Route path="/admin/tenants/:id" component={TenantDetailPage} />
+          <Route path="/admin/tenants" component={TenantsPage} />
+          <Route path="/admin/users" component={UsersPage} />
+          <Route path="/admin/support/:ticketId" component={AdminSupportTicketPage} />
+          <Route path="/admin/support" component={AdminSupportPage} />
+          <Route path="/admin/audit" component={AuditLogPage} />
+          <Route path="/admin/security" component={SecurityConsolePage} />
+          <Route path="/admin/admins" component={AdminsPage} />
+          <Route path="/admin/settings" component={AdminSettingsPage} />
+          <Route component={NotFound} />
+        </Switch>
+      </Suspense>
     </AdminLayout>
   );
 }
@@ -361,6 +370,7 @@ function ProtectedPages() {
   return (
     <AppLayout>
       {(user?.role === "owner" || user?.role === "manager") && <SupportWidget />}
+      <Suspense fallback={<PageLoader />}>
       <Switch>
         <Route path="/" component={RoleDashboard} />
         <Route path="/pos/bill/:orderId">{() => <GuardedRoute path="/pos" component={BillViewPage} />}</Route>
@@ -423,6 +433,7 @@ function ProtectedPages() {
         <Route path="/security">{() => <Redirect to="/settings" />}</Route>
         <Route component={NotFound} />
       </Switch>
+      </Suspense>
     </AppLayout>
   );
 }

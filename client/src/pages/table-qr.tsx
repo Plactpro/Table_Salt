@@ -739,7 +739,7 @@ function FoodOrderFlow({
           return (
             <div key={item.id} data-testid={`card-item-${item.id}`} className="bg-white rounded-xl p-3 border border-gray-100 flex gap-3">
               {item.image ? (
-                <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" loading="lazy" />
               ) : (
                 <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
                   <ChefHat className="w-7 h-7 text-gray-400" />

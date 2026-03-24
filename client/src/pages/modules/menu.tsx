@@ -1096,7 +1096,7 @@ export default function MenuPage() {
                   </label>
                   {itemForm.image && (
                     <div className="h-9 w-9 rounded border overflow-hidden shrink-0">
-                      <img src={itemForm.image} alt="" className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).src = ""; }} />
+                      <img src={itemForm.image} alt="" className="w-full h-full object-cover" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).src = ""; }} />
                     </div>
                   )}
                 </div>

@@ -2475,4 +2475,10 @@ export async function runTask108Migrations(): Promise<void> {
 
   // Task #130: Dark mode persistence — store user theme preference
   await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS theme_preference VARCHAR(20) DEFAULT 'system'`);
+
+  // Task #131: Performance - DB indexes for frequently queried tables
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bills_tenant_created ON bills(tenant_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_bills_outlet_created ON bills(outlet_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_status_tenant ON orders(tenant_id, status, created_at DESC)`);
+
 }
