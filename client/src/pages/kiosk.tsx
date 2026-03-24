@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, ChevronLeft,
-  ChevronRight, CreditCard, Wallet, Smartphone, Store, Leaf, CheckCircle,
+  ChevronRight, CreditCard, Wallet, Smartphone, Store, CheckCircle,
   Clock, X, Sparkles, Package, StickyNote, Info, Wifi, WifiOff, Loader2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
@@ -877,7 +877,15 @@ function ItemDetailModal({
         )}
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            {item.isVeg && <Leaf className="h-5 w-5 text-green-400" />}
+            {item.isVeg === true ? (
+              <span className="h-5 w-5 shrink-0 border-2 border-green-500 rounded-sm flex items-center justify-center">
+                <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+              </span>
+            ) : item.isVeg === false ? (
+              <span className="h-5 w-5 shrink-0 border-2 border-red-500 rounded-sm flex items-center justify-center">
+                <span className="w-0 h-0 border-l-[5px] border-r-[5px] border-b-[7px] border-l-transparent border-r-transparent border-b-red-500" />
+              </span>
+            ) : null}
             {item.name}
           </DialogTitle>
         </DialogHeader>
@@ -1125,7 +1133,15 @@ function MenuScreen({
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between mb-1">
                         <h4 className="font-semibold text-sm leading-tight line-clamp-2 text-white">{item.name}</h4>
-                        {item.isVeg && <Leaf className="h-4 w-4 text-green-400 shrink-0 ml-1" />}
+                        {item.isVeg === true ? (
+                          <span className="h-4 w-4 shrink-0 border-2 border-green-500 rounded-sm flex items-center justify-center ml-1">
+                            <span className="w-2 h-2 rounded-full bg-green-500" />
+                          </span>
+                        ) : item.isVeg === false ? (
+                          <span className="h-4 w-4 shrink-0 border-2 border-red-500 rounded-sm flex items-center justify-center ml-1">
+                            <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-500" />
+                          </span>
+                        ) : null}
                       </div>
                       {item.description && <p className="text-xs text-slate-400 line-clamp-1 mb-2">{item.description}</p>}
                       <div className="flex items-center justify-between">
@@ -1254,7 +1270,15 @@ function CartScreen({
                   <div className="flex items-center gap-4">
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
-                        {item.isVeg && <Leaf className="h-4 w-4 text-green-400" />}
+                        {item.isVeg === true ? (
+                          <span className="h-4 w-4 shrink-0 border-2 border-green-500 rounded-sm flex items-center justify-center">
+                            <span className="w-2 h-2 rounded-full bg-green-500" />
+                          </span>
+                        ) : item.isVeg === false ? (
+                          <span className="h-4 w-4 shrink-0 border-2 border-red-500 rounded-sm flex items-center justify-center">
+                            <span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-500" />
+                          </span>
+                        ) : null}
                         <h4 className="font-semibold text-white">{item.name}</h4>
                       </div>
                       <p className="text-sm text-slate-400 mt-1">{fmt(item.price)} each</p>
