@@ -11,6 +11,8 @@ import AdminLayout from "@/components/admin/admin-layout";
 import NotFound from "@/pages/not-found";
 import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
+import ForgotPasswordPage from "@/pages/forgot-password";
+import ResetPasswordPage from "@/pages/reset-password";
 import PosPage from "@/pages/modules/pos";
 import KioskPage from "@/pages/kiosk";
 import GuestPage from "@/pages/guest";
@@ -482,6 +484,18 @@ function Router() {
         <RegisterPage />
       </PublicOnly>
     );
+  }
+
+  if (location === "/forgot-password") {
+    return (
+      <PublicOnly>
+        <ForgotPasswordPage />
+      </PublicOnly>
+    );
+  }
+
+  if (location === "/reset-password") {
+    return <ResetPasswordPage />;
   }
 
   if (location === "/onboarding") {

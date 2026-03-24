@@ -8,6 +8,42 @@ import { storage } from "./storage";
 import { pool } from "./db";
 import connectPgSimple from "connect-pg-simple";
 
+interface LockoutEntry {
+  count: number;
+  firstAttemptAt: number;
+}
+const loginFailureMap = new Map<string, LockoutEntry>();
+const LOCKOUT_MAX_ATTEMPTS = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+
+export function recordFailedLogin(username: string): boolean {
+  const key = username.trim().toLowerCase();
+  const now = Date.now();
+  const entry = loginFailureMap.get(key);
+  if (!entry || now - entry.firstAttemptAt > LOCKOUT_WINDOW_MS) {
+    loginFailureMap.set(key, { count: 1, firstAttemptAt: now });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count >= LOCKOUT_MAX_ATTEMPTS;
+}
+
+export function isAccountLocked(username: string): boolean {
+  const key = username.trim().toLowerCase();
+  const now = Date.now();
+  const entry = loginFailureMap.get(key);
+  if (!entry) return false;
+  if (now - entry.firstAttemptAt > LOCKOUT_WINDOW_MS) {
+    loginFailureMap.delete(key);
+    return false;
+  }
+  return entry.count >= LOCKOUT_MAX_ATTEMPTS;
+}
+
+export function clearLoginFailures(username: string): void {
+  loginFailureMap.delete(username.trim().toLowerCase());
+}
+
 const scryptAsync = promisify(scrypt);
 
 export async function hashPassword(password: string): Promise<string> {
@@ -102,11 +138,24 @@ export function setupAuth(app: Express) {
   passport.use(
     new LocalStrategy(async (username, password, done) => {
       try {
+        if (isAccountLocked(username)) {
+          return done(null, false, { message: "Account temporarily locked due to too many failed attempts. Try again in 15 minutes." });
+        }
         const user = await storage.getUserByUsername(username);
-        if (!user) return done(null, false, { message: "Invalid credentials" });
+        if (!user) {
+          recordFailedLogin(username);
+          return done(null, false, { message: "Invalid credentials" });
+        }
         if (user.active === false) return done(null, false, { message: "Account is deactivated" });
         const valid = await comparePasswords(password, user.password);
-        if (!valid) return done(null, false, { message: "Invalid credentials" });
+        if (!valid) {
+          const locked = recordFailedLogin(username);
+          if (locked) {
+            return done(null, false, { message: "Account temporarily locked due to too many failed attempts. Try again in 15 minutes." });
+          }
+          return done(null, false, { message: "Invalid credentials" });
+        }
+        clearLoginFailures(username);
         return done(null, user);
       } catch (err) {
         return done(err);
@@ -145,6 +194,16 @@ export function requireAuth(req: any, res: any, next: any) {
   }
 
   req.session.lastActivity = now;
+
+  const userId: string | undefined = req.user?.id;
+  if (userId && req.sessionID) {
+    const ip = req.ip || req.headers["x-forwarded-for"] || null;
+    const ua = req.headers["user-agent"] || null;
+    pool.query(
+      `UPDATE session SET user_id = $1, ip_address = $2, user_agent = $3, last_active = now() WHERE sid = $4`,
+      [userId, ip, ua, req.sessionID]
+    ).catch(() => {});
+  }
 
   const tenantId: string | undefined = req.user?.tenantId;
   if (tenantId) {
