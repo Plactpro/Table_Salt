@@ -70,6 +70,10 @@ const TicketHistoryPage = lazy(() => import("@/pages/tickets/index"));
 const CashDashboardPage = lazy(() => import("@/pages/cash/index"));
 const TipReportPage = lazy(() => import("@/pages/tips/report"));
 const ParkingPage = lazy(() => import("@/pages/modules/parking"));
+const AdvertisementsModule = lazy(() => import("@/pages/modules/advertisements"));
+const AdsEnterpriseGateLazy = lazy(() =>
+  import("@/pages/modules/advertisements").then((m) => ({ default: m.AdsEnterpriseGate }))
+);
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const AdminDashboard = lazy(() => import("@/pages/admin/dashboard"));
 const TenantsPage = lazy(() => import("@/pages/admin/tenants"));
@@ -82,6 +86,7 @@ const AnalyticsPage = lazy(() => import("@/pages/admin/analytics"));
 const SecurityConsolePage = lazy(() => import("@/pages/admin/security"));
 const AdminSupportPage = lazy(() => import("@/pages/admin/support"));
 const AdminSupportTicketPage = lazy(() => import("@/pages/admin/support-ticket"));
+const AdminAdApprovalsPage = lazy(() => import("@/pages/admin/ad-approvals"));
 
 import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
@@ -98,6 +103,7 @@ import type { UserRole } from "@shared/permissions-config";
 interface RouteGuardConfig {
   roles: UserRole[];
   featureKey?: FeatureKey;
+  subscriptionFallback?: React.ElementType;
 }
 
 const routeAccessMap: Record<string, RouteGuardConfig> = {
@@ -140,6 +146,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/cash": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
   "/tips/report": { roles: ["manager", "owner"] },
   "/parking": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
+  "/advertisements": { roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "advertisement_management", subscriptionFallback: AdsEnterpriseGateLazy },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -178,6 +185,14 @@ function GuardedRoute({ path, component: Component }: { path: string; component:
   }
 
   if (config.featureKey && !hasFeatureAccess(config.featureKey)) {
+    const Fallback = config.subscriptionFallback;
+    if (Fallback) {
+      return (
+        <Suspense fallback={<div className="flex items-center justify-center min-h-[60vh]"><div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" /></div>}>
+          <Fallback />
+        </Suspense>
+      );
+    }
     return <AccessDenied reason="subscription" />;
   }
 
@@ -345,6 +360,7 @@ function AdminShell() {
           <Route path="/admin/security" component={SecurityConsolePage} />
           <Route path="/admin/admins" component={AdminsPage} />
           <Route path="/admin/settings" component={AdminSettingsPage} />
+          <Route path="/admin/ad-approvals" component={AdminAdApprovalsPage} />
           <Route component={NotFound} />
         </Switch>
       </Suspense>
@@ -429,6 +445,7 @@ function ProtectedPages() {
         <Route path="/cash">{() => <GuardedRoute path="/cash" component={CashDashboardPage} />}</Route>
         <Route path="/tips/report">{() => <GuardedRoute path="/tips/report" component={TipReportPage} />}</Route>
         <Route path="/parking">{() => <GuardedRoute path="/parking" component={ParkingPage} />}</Route>
+        <Route path="/advertisements">{() => <GuardedRoute path="/advertisements" component={AdvertisementsModule} />}</Route>
         <Route path="/workforce">{() => <Redirect to="/staff" />}</Route>
         <Route path="/performance">{() => <Redirect to="/staff" />}</Route>
         <Route path="/bi-dashboard">{() => <Redirect to="/reports" />}</Route>

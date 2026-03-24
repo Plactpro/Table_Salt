@@ -48,6 +48,7 @@ import {
   History,
   Banknote,
   DollarSign,
+  Megaphone,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, SubscriptionTier, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -101,6 +102,7 @@ const navItems: NavItem[] = [
   { id: "m-47", name: "Cash Machine 💰", icon: Banknote, path: "/cash", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
   { id: "m-48", name: "Tip Report", icon: DollarSign, path: "/tips/report", roles: ["manager", "owner"] },
   { id: "m-49", name: "🅿️ Parking", icon: BarChart3, path: "/parking", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
+  { id: "m-50", name: "Advertisements", icon: Megaphone, path: "/advertisements", roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "advertisement_management" as FeatureKey },
 ];
 
 function SandDecoration() {
