@@ -9,6 +9,10 @@ import { discoverPriceIds } from "./stripe";
 import { setupWebSocket } from "./realtime";
 import { pool } from "./db";
 
+if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
+  console.error("[CRITICAL] SESSION_SECRET env var is not set. Using insecure default — set it before deploying to AWS.");
+}
+
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
 });
@@ -117,6 +121,27 @@ export function log(message: string, source = "express") {
 
   console.log(`${formattedTime} [${source}] ${message}`);
 }
+
+// Health check — public, no auth, used by AWS ALB target group health checks
+app.get("/api/health", async (_req: Request, res: Response) => {
+  try {
+    await pool.query("SELECT 1");
+    res.json({
+      status: "ok",
+      uptime: Math.floor(process.uptime()),
+      timestamp: new Date().toISOString(),
+      version: process.env.npm_package_version || "1.0.0",
+      environment: process.env.NODE_ENV || "development",
+      database: "connected",
+    });
+  } catch {
+    res.status(503).json({
+      status: "error",
+      timestamp: new Date().toISOString(),
+      database: "disconnected",
+    });
+  }
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -249,7 +274,7 @@ app.use((req, res, next) => {
   try {
     const { getStripeSync } = await import("./stripeClient");
     const stripeSync = await getStripeSync();
-    const webhookBaseUrl = `https://${process.env.REPLIT_DOMAINS?.split(",")[0]}`;
+    const webhookBaseUrl = process.env.APP_URL || `https://${process.env.REPLIT_DOMAINS?.split(",")[0]}`;
     await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/stripe/webhook`);
     log("Stripe managed webhook configured at /api/stripe/webhook", "stripe");
 
