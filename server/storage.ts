@@ -221,10 +221,10 @@ export interface IStorage {
 
   getMenuItemsByTenant(tenantId: string): Promise<MenuItem[]>;
   getMenuItemsByCategory(categoryId: string): Promise<MenuItem[]>;
-  getMenuItem(id: string): Promise<MenuItem | undefined>;
+  getMenuItem(id: string, tenantId: string): Promise<MenuItem | undefined>;
   createMenuItem(data: InsertMenuItem): Promise<MenuItem>;
-  updateMenuItem(id: string, data: Partial<InsertMenuItem>): Promise<MenuItem | undefined>;
-  deleteMenuItem(id: string): Promise<void>;
+  updateMenuItem(id: string, tenantId: string, data: Partial<InsertMenuItem>): Promise<MenuItem | undefined>;
+  deleteMenuItem(id: string, tenantId: string): Promise<void>;
 
   getTableZonesByTenant(tenantId: string): Promise<TableZone[]>;
   createTableZone(data: InsertTableZone): Promise<TableZone>;
@@ -232,9 +232,9 @@ export interface IStorage {
   deleteTableZone(id: string, tenantId: string): Promise<void>;
 
   getTablesByTenant(tenantId: string): Promise<Table[]>;
-  getTable(id: string): Promise<Table | undefined>;
+  getTable(id: string, tenantId: string): Promise<Table | undefined>;
   createTable(data: InsertTable): Promise<Table>;
-  updateTable(id: string, data: Partial<InsertTable>): Promise<Table | undefined>;
+  updateTable(id: string, tenantId: string, data: Partial<InsertTable>): Promise<Table | undefined>;
   updateTableByTenant(id: string, tenantId: string, data: Partial<InsertTable>): Promise<Table | undefined>;
   deleteTable(id: string): Promise<void>;
   deleteTableByTenant(id: string, tenantId: string): Promise<void>;
@@ -251,7 +251,8 @@ export interface IStorage {
   deleteReservationByTenant(id: string, tenantId: string): Promise<void>;
 
   getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Order[]>;
-  getOrder(id: string): Promise<Order | undefined>;
+  getOrder(id: string, tenantId: string): Promise<Order | undefined>;
+  getOrderById(id: string): Promise<Order | undefined>;
   getOrderByClientId(tenantId: string, clientOrderId: string): Promise<Order | undefined>;
   getOrderByStripeSessionId(sessionId: string): Promise<Order | undefined>;
   createOrder(data: InsertOrder): Promise<Order>;
@@ -259,15 +260,16 @@ export interface IStorage {
   getOrderItemsByOrder(orderId: string): Promise<OrderItem[]>;
   getOrderItemsByTenant(tenantId: string): Promise<any[]>;
   createOrderItem(data: InsertOrderItem): Promise<OrderItem>;
-  updateOrderItem(id: string, data: Record<string, any>): Promise<OrderItem | undefined>;
+  updateOrderItem(id: string, data: Record<string, any>, tenantId: string): Promise<OrderItem | undefined>;
+  getOrderItem(id: string, tenantId: string): Promise<OrderItem | undefined>;
 
   getInventoryByTenant(tenantId: string, opts?: { limit?: number; offset?: number; itemCategory?: string }): Promise<InventoryItem[]>;
   getPiecewiseInventory(tenantId: string, opts?: { outletId?: string }): Promise<any[]>;
   getBreakageReport(tenantId: string, month: string): Promise<any>;
-  getInventoryItem(id: string): Promise<InventoryItem | undefined>;
+  getInventoryItem(id: string, tenantId: string): Promise<InventoryItem | undefined>;
   createInventoryItem(data: InsertInventoryItem): Promise<InventoryItem>;
-  updateInventoryItem(id: string, data: Partial<InsertInventoryItem>): Promise<InventoryItem | undefined>;
-  deleteInventoryItem(id: string): Promise<void>;
+  updateInventoryItem(id: string, data: Partial<InsertInventoryItem>, tenantId: string): Promise<InventoryItem | undefined>;
+  deleteInventoryItem(id: string, tenantId: string): Promise<void>;
   createStockMovement(data: InsertStockMovement): Promise<StockMovement>;
 
   getCustomersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Customer[]>;
@@ -404,7 +406,6 @@ export interface IStorage {
   createKitchenStation(data: InsertKitchenStation): Promise<KitchenStation>;
   updateKitchenStation(id: string, tenantId: string, data: Partial<InsertKitchenStation>): Promise<KitchenStation | undefined>;
   deleteKitchenStation(id: string, tenantId: string): Promise<void>;
-  getOrderItem(id: string): Promise<OrderItem | undefined>;
 
   getOrderChannelsByTenant(tenantId: string): Promise<OrderChannel[]>;
   getOrderChannel(id: string): Promise<OrderChannel | undefined>;
@@ -952,20 +953,22 @@ export class DatabaseStorage implements IStorage {
   async getMenuItemsByCategory(categoryId: string) {
     return db.select().from(menuItems).where(eq(menuItems.categoryId, categoryId));
   }
-  async getMenuItem(id: string) {
-    const [i] = await db.select().from(menuItems).where(eq(menuItems.id, id));
+  async getMenuItem(id: string, tenantId: string) {
+    const [i] = await db.select().from(menuItems).where(
+      and(eq(menuItems.id, id), eq(menuItems.tenantId, tenantId))
+    );
     return i;
   }
   async createMenuItem(data: InsertMenuItem) {
     const [i] = await db.insert(menuItems).values(data).returning();
     return i;
   }
-  async updateMenuItem(id: string, data: Partial<InsertMenuItem>) {
-    const [i] = await db.update(menuItems).set(data).where(eq(menuItems.id, id)).returning();
+  async updateMenuItem(id: string, tenantId: string, data: Partial<InsertMenuItem>) {
+    const [i] = await db.update(menuItems).set(data).where(and(eq(menuItems.id, id), eq(menuItems.tenantId, tenantId))).returning();
     return i;
   }
-  async deleteMenuItem(id: string) {
-    await db.delete(menuItems).where(eq(menuItems.id, id));
+  async deleteMenuItem(id: string, tenantId: string) {
+    await db.delete(menuItems).where(and(eq(menuItems.id, id), eq(menuItems.tenantId, tenantId)));
   }
 
   async getTableZonesByTenant(tenantId: string) {
@@ -986,16 +989,18 @@ export class DatabaseStorage implements IStorage {
   async getTablesByTenant(tenantId: string) {
     return db.select().from(tables).where(eq(tables.tenantId, tenantId)).orderBy(tables.number).limit(500);
   }
-  async getTable(id: string) {
-    const [t] = await db.select().from(tables).where(eq(tables.id, id));
+  async getTable(id: string, tenantId: string) {
+    const [t] = await db.select().from(tables).where(
+      and(eq(tables.id, id), eq(tables.tenantId, tenantId))
+    );
     return t;
   }
   async createTable(data: InsertTable) {
     const [t] = await db.insert(tables).values(data).returning();
     return t;
   }
-  async updateTable(id: string, data: Partial<InsertTable>) {
-    const [t] = await db.update(tables).set(data).where(eq(tables.id, id)).returning();
+  async updateTable(id: string, tenantId: string, data: Partial<InsertTable>) {
+    const [t] = await db.update(tables).set(data).where(and(eq(tables.id, id), eq(tables.tenantId, tenantId))).returning();
     return t;
   }
   async updateTableByTenant(id: string, tenantId: string, data: Partial<InsertTable>) {
@@ -1056,7 +1061,13 @@ export class DatabaseStorage implements IStorage {
     if (opts?.limit !== undefined) return q.limit(opts.limit);
     return q;
   }
-  async getOrder(id: string) {
+  async getOrder(id: string, tenantId: string) {
+    const [o] = await db.select().from(orders).where(
+      and(eq(orders.id, id), eq(orders.tenantId, tenantId))
+    );
+    return o;
+  }
+  async getOrderById(id: string) {
     const [o] = await db.select().from(orders).where(eq(orders.id, id));
     return o;
   }
@@ -1108,8 +1119,11 @@ export class DatabaseStorage implements IStorage {
     const [i] = await db.insert(orderItems).values(data).returning();
     return i;
   }
-  async updateOrderItem(id: string, data: Record<string, any>) {
-    const [i] = await db.update(orderItems).set(data).where(eq(orderItems.id, id)).returning();
+  async updateOrderItem(id: string, data: Record<string, any>, tenantId: string) {
+    const tenantOrderIds = db.select({ id: orders.id }).from(orders).where(eq(orders.tenantId, tenantId));
+    const [i] = await db.update(orderItems).set(data).where(
+      and(eq(orderItems.id, id), inArray(orderItems.orderId, tenantOrderIds))
+    ).returning();
     return i;
   }
 
@@ -1196,20 +1210,26 @@ export class DatabaseStorage implements IStorage {
       totals: { pieces: totalPieces, value: Number(totalValue.toFixed(2)) },
     };
   }
-  async getInventoryItem(id: string) {
-    const [i] = await db.select().from(inventoryItems).where(eq(inventoryItems.id, id));
+  async getInventoryItem(id: string, tenantId: string) {
+    const [i] = await db.select().from(inventoryItems).where(
+      and(eq(inventoryItems.id, id), eq(inventoryItems.tenantId, tenantId))
+    );
     return i;
   }
   async createInventoryItem(data: InsertInventoryItem) {
     const [i] = await db.insert(inventoryItems).values(data).returning();
     return i;
   }
-  async updateInventoryItem(id: string, data: Partial<InsertInventoryItem>) {
-    const [i] = await db.update(inventoryItems).set(data).where(eq(inventoryItems.id, id)).returning();
+  async updateInventoryItem(id: string, data: Partial<InsertInventoryItem>, tenantId: string) {
+    const [i] = await db.update(inventoryItems).set(data).where(
+      and(eq(inventoryItems.id, id), eq(inventoryItems.tenantId, tenantId))
+    ).returning();
     return i;
   }
-  async deleteInventoryItem(id: string) {
-    await db.delete(inventoryItems).where(eq(inventoryItems.id, id));
+  async deleteInventoryItem(id: string, tenantId: string) {
+    await db.delete(inventoryItems).where(
+      and(eq(inventoryItems.id, id), eq(inventoryItems.tenantId, tenantId))
+    );
   }
   async createStockMovement(data: InsertStockMovement) {
     const [m] = await db.insert(stockMovements).values(data).returning();
@@ -1821,8 +1841,13 @@ export class DatabaseStorage implements IStorage {
   async deleteKitchenStation(id: string, tenantId: string) {
     await db.delete(kitchenStations).where(and(eq(kitchenStations.id, id), eq(kitchenStations.tenantId, tenantId)));
   }
-  async getOrderItem(id: string) {
+  async getOrderItem(id: string, tenantId: string) {
     const [item] = await db.select().from(orderItems).where(eq(orderItems.id, id));
+    if (!item) return undefined;
+    if (item.orderId) {
+      const [parentOrder] = await db.select({ tenantId: orders.tenantId }).from(orders).where(eq(orders.id, item.orderId));
+      if (!parentOrder || parentOrder.tenantId !== tenantId) return undefined;
+    }
     return item;
   }
 

@@ -101,10 +101,10 @@ export function registerTablesRoutes(app: Express): void {
     const user = req.user as any;
     const { targetTableId } = req.body;
     if (!targetTableId) return res.status(400).json({ message: "Target table ID required" });
-    const source = await storage.getTable(req.params.id);
-    const target = await storage.getTable(targetTableId);
-    if (!source || source.tenantId !== user.tenantId) return res.status(404).json({ message: "Source table not found" });
-    if (!target || target.tenantId !== user.tenantId) return res.status(404).json({ message: "Target table not found" });
+    const source = await storage.getTable(req.params.id, user.tenantId);
+    const target = await storage.getTable(targetTableId, user.tenantId);
+    if (!source) return res.status(404).json({ message: "Source table not found" });
+    if (!target) return res.status(404).json({ message: "Target table not found" });
     if (source.mergedWith) return res.status(400).json({ message: "Source table already merged" });
     if (target.mergedWith) return res.status(400).json({ message: "Target table already merged" });
     const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
@@ -168,8 +168,8 @@ export function registerTablesRoutes(app: Express): void {
     const user = req.user as any;
     const { tableId } = req.body;
     if (!tableId) return res.status(400).json({ message: "Table ID required" });
-    const table = await storage.getTable(tableId);
-    if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
+    const table = await storage.getTable(tableId, user.tenantId);
+    if (!table) return res.status(404).json({ message: "Table not found" });
     if (table.status !== "free") return res.status(400).json({ message: "Table is not available" });
     const allWaitlist = await storage.getWaitlistByTenant(user.tenantId);
     const entry = allWaitlist.find(w => w.id === req.params.id);
@@ -258,8 +258,8 @@ export function registerTablesRoutes(app: Express): void {
   app.post("/api/tables/:id/notify", requireAuth, async (req, res) => {
     const user = req.user as any;
     const { channel, message } = req.body;
-    const table = await storage.getTable(req.params.id);
-    if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
+    const table = await storage.getTable(req.params.id, user.tenantId);
+    if (!table) return res.status(404).json({ message: "Table not found" });
     console.log(`[Notification] Channel: ${channel || "sms"}, Table: T${table.number}, Message: ${message || "Your table is ready"}`);
     res.json({ sent: true, channel: channel || "sms", message: message || "Your table is ready" });
   });

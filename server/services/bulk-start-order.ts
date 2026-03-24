@@ -58,7 +58,7 @@ export async function bulkStartOrderItems(
       if (!recipe) continue;
       const recipeIngs = await storage.getRecipeIngredients(recipe.id);
       for (const ing of recipeIngs) {
-        const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+        const invItem = await storage.getInventoryItem(ing.inventoryItemId, tenantId);
         if (!invItem) continue;
         const ingUnit = ing.unit || invItem.unit || "pcs";
         const invUnit = invItem.unit || "pcs";
@@ -131,7 +131,7 @@ export async function bulkStartOrderItems(
 
   const now = new Date();
   for (const oi of pending) {
-    await storage.updateOrderItem(oi.id, { status: "cooking", startedAt: now });
+    await storage.updateOrderItem(oi.id, { status: "cooking", startedAt: now }, tenantId);
     await storage.updateOrderItemCooking(oi.id, {
       cookingStatus: "started",
       actualStartAt: now,

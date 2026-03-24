@@ -41,7 +41,7 @@ function fireKdsArrival(tenantId: string, orderId: string, userId: string, userN
       const orderItemsList = await storage.getOrderItemsByOrder(orderId);
 
       if (mode === "auto_start") {
-        const freshOrder = await storage.getOrder(orderId);
+        const freshOrder = await storage.getOrder(orderId, tenantId);
         if (freshOrder) {
           await bulkStartOrderItems(freshOrder, orderItemsList, tenantId, userId, userName);
         }
@@ -167,8 +167,8 @@ export function registerOrdersRoutes(app: Express): void {
   app.patch("/api/orders/:id/accept-delivery", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
       const etaMinutes = Math.max(5, Math.min(120, parseInt(req.body.etaMinutes) || 30));
       const estimatedReadyAt = new Date(Date.now() + etaMinutes * 60 * 1000);
@@ -191,8 +191,8 @@ export function registerOrdersRoutes(app: Express): void {
   app.patch("/api/orders/:id/reject-delivery", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
       const rejectionReason = String(req.body.rejectionReason || "Order rejected by restaurant");
       await pool.query(
@@ -209,8 +209,8 @@ export function registerOrdersRoutes(app: Express): void {
   app.patch("/api/orders/:id/dispatch-delivery", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
       await storage.updateOrder(order.id, { status: "served" });
       emitToTenant(user.tenantId, "order:delivery_dispatched", { orderId: order.id });
@@ -223,8 +223,8 @@ export function registerOrdersRoutes(app: Express): void {
   app.patch("/api/orders/:id/accept", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
       const etaMinutes = Math.max(5, Math.min(120, parseInt(req.body.etaMinutes) || 30));
       const estimatedReadyAt = new Date(Date.now() + etaMinutes * 60 * 1000);
@@ -247,8 +247,8 @@ export function registerOrdersRoutes(app: Express): void {
   app.patch("/api/orders/:id/reject", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
       const rejectionReason = String(req.body.rejectionReason || "Order rejected by restaurant");
       await pool.query(
@@ -264,9 +264,8 @@ export function registerOrdersRoutes(app: Express): void {
 
   app.get("/api/orders/:id", requireAuth, async (req, res) => {
     const user = req.user as Express.User & { tenantId: string };
-    const order = await storage.getOrder(req.params.id);
+    const order = await storage.getOrder(req.params.id, user.tenantId);
     if (!order) return res.status(404).json({ message: "Order not found" });
-    if (order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
     const items = await storage.getOrderItemsByOrder(order.id);
     res.json({ ...order, items });
   });
@@ -559,7 +558,7 @@ export function registerOrdersRoutes(app: Express): void {
         }
       }
       if (orderData.tableId) {
-        await storage.updateTable(orderData.tableId, { status: "occupied" });
+        await storage.updateTable(orderData.tableId, user.tenantId, { status: "occupied" });
         emitToTenant(user.tenantId, "table:updated", { tableId: orderData.tableId, status: "occupied" });
       }
       const orderItems = await storage.getOrderItemsByOrder(order.id);
@@ -648,9 +647,8 @@ export function registerOrdersRoutes(app: Express): void {
 
   app.patch("/api/orders/:id", requireAuth, async (req, res) => {
     const user = req.user as Express.User & { tenantId: string; id: string; role: string; name: string };
-    const existing = await storage.getOrder(req.params.id);
+    const existing = await storage.getOrder(req.params.id, user.tenantId);
     if (!existing) return res.status(404).json({ message: "Order not found" });
-    if (existing.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
     const secSettings = await getSecuritySettings(user.tenantId);
 
@@ -728,7 +726,7 @@ export function registerOrdersRoutes(app: Express): void {
         if (!recipe) continue;
         const recipeIngs = await storage.getRecipeIngredients(recipe.id);
         for (const ing of recipeIngs) {
-          const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+          const invItem = await storage.getInventoryItem(ing.inventoryItemId, user.tenantId);
           if (!invItem) continue;
           const ingUnit = ing.unit || invItem.unit || "pcs";
           const invUnit = invItem.unit || "pcs";
@@ -858,14 +856,14 @@ export function registerOrdersRoutes(app: Express): void {
     }
 
     if (req.body.status === "paid" && existing.status !== "paid" && existing.tableId) {
-      await storage.updateTable(existing.tableId, { status: "free" });
+      await storage.updateTable(existing.tableId, user.tenantId, { status: "free" });
       emitToTenant(user.tenantId, "table:updated", { tableId: existing.tableId, status: "free" });
       returnResourcesFromTable(existing.tableId, user.tenantId, false).catch(() => {});
     } else if (
       (req.body.status === "voided" || req.body.status === "cancelled") &&
       existing.tableId
     ) {
-      await storage.updateTable(existing.tableId, { status: "free" });
+      await storage.updateTable(existing.tableId, user.tenantId, { status: "free" });
       emitToTenant(user.tenantId, "table:updated", { tableId: existing.tableId, status: "free" });
       returnResourcesFromTable(existing.tableId, user.tenantId, false).catch(() => {});
     }
@@ -910,8 +908,8 @@ export function registerOrdersRoutes(app: Express): void {
 
   app.get("/api/order-items/:orderId", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const order = await storage.getOrder(req.params.orderId);
-    if (!order || order.tenantId !== user.tenantId) {
+    const order = await storage.getOrder(req.params.orderId, user.tenantId);
+    if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
     const items = await storage.getOrderItemsByOrder(req.params.orderId);
@@ -920,12 +918,10 @@ export function registerOrdersRoutes(app: Express): void {
 
   app.patch("/api/order-items/:id", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const item = await storage.updateOrderItem(req.params.id, req.body);
+    const existingItem = await storage.getOrderItem(req.params.id, user.tenantId);
+    if (!existingItem) return res.status(404).json({ message: "Item not found" });
+    const item = await storage.updateOrderItem(req.params.id, req.body, user.tenantId);
     if (!item) return res.status(404).json({ message: "Item not found" });
-    const order = await storage.getOrder(item.orderId);
-    if (!order || order.tenantId !== user.tenantId) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
     res.json(item);
   });
 
@@ -935,8 +931,8 @@ export function registerOrdersRoutes(app: Express): void {
         return res.status(503).json({ message: "Stripe is not configured" });
       }
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) {
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) {
         return res.status(404).json({ message: "Order not found" });
       }
       const eligibleStatuses = ["new", "in_progress", "ready_to_pay", "pending_payment"] as const;

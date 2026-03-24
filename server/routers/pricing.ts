@@ -286,8 +286,8 @@ export function registerPricingRoutes(app: Express): void {
       const { menuItemId, outletId, orderType, orderTime } = req.body;
       if (!menuItemId) return res.status(400).json({ message: "menuItemId is required" });
 
-      const menuItem = await storage.getMenuItem(menuItemId);
-      if (!menuItem || menuItem.tenantId !== user.tenantId) {
+      const menuItem = await storage.getMenuItem(menuItemId, user.tenantId);
+      if (!menuItem) {
         return res.status(404).json({ message: "Menu item not found" });
       }
 
@@ -943,8 +943,8 @@ export function registerPricingRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const { menuItemId } = req.params;
-      const menuItem = await storage.getMenuItem(menuItemId);
-      if (!menuItem || menuItem.tenantId !== user.tenantId) {
+      const menuItem = await storage.getMenuItem(menuItemId, user.tenantId);
+      if (!menuItem) {
         return res.status(404).json({ message: "Menu item not found" });
       }
       const outlets = await storage.getOutletsByTenant(user.tenantId);

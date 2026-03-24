@@ -54,19 +54,22 @@ export function registerInventoryRoutes(app: Express): void {
   });
 
   app.patch("/api/inventory/:id", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
-    const item = await storage.updateInventoryItem(req.params.id, req.body);
+    const user = req.user as any;
+    const item = await storage.updateInventoryItem(req.params.id, req.body, user.tenantId);
+    if (!item) return res.status(404).json({ message: "Item not found" });
     res.json(item);
   });
 
   app.delete("/api/inventory/:id", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
-    await storage.deleteInventoryItem(req.params.id);
+    const user = req.user as any;
+    await storage.deleteInventoryItem(req.params.id, user.tenantId);
     res.json({ message: "Deleted" });
   });
 
   app.post("/api/inventory/:id/adjust", requireRole("owner", "manager"), requirePermission("adjust_stock"), async (req, res) => {
     const user = req.user as any;
     const { quantity, type, reason, supervisorOverride } = req.body;
-    const item = await storage.getInventoryItem(req.params.id);
+    const item = await storage.getInventoryItem(req.params.id, user.tenantId);
     if (!item) return res.status(404).json({ message: "Item not found" });
 
     const secSettings = await getSecuritySettings(user.tenantId);
@@ -82,7 +85,7 @@ export function registerInventoryRoutes(app: Express): void {
 
     const rawNewStock = Number(item.currentStock) + (type === "in" ? Number(quantity) : -Number(quantity));
     const newStock = item.unitType === 'PIECE' ? Math.round(rawNewStock) : rawNewStock;
-    await storage.updateInventoryItem(req.params.id, { currentStock: String(newStock) });
+    await storage.updateInventoryItem(req.params.id, { currentStock: String(newStock) }, user.tenantId);
     await storage.createStockMovement({
       tenantId: user.tenantId,
       itemId: req.params.id,

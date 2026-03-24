@@ -43,9 +43,8 @@ export function registerMenuRoutes(app: Express): void {
 
   app.get("/api/menu-items/:id/modifiers", requireAuth, async (req, res) => {
     const user = req.user as Express.User & { tenantId: string };
-    const item = await storage.getMenuItem(req.params.id);
+    const item = await storage.getMenuItem(req.params.id, user.tenantId);
     if (!item) return res.status(404).json({ message: "Menu item not found" });
-    if (item.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
     const groups = [
       {
         id: "size",
@@ -82,7 +81,7 @@ export function registerMenuRoutes(app: Express): void {
 
   app.patch("/api/menu-items/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const user = req.user as any;
-    const existing = await storage.getMenuItem(req.params.id);
+    const existing = await storage.getMenuItem(req.params.id, user.tenantId);
 
     if (existing && req.body.price && String(req.body.price) !== String(existing.price)) {
       const secSettings = await getSecuritySettings(user.tenantId);
@@ -97,14 +96,15 @@ export function registerMenuRoutes(app: Express): void {
     }
 
     const { supervisorOverride: _so, ...updateData } = req.body;
-    const item = await storage.updateMenuItem(req.params.id, updateData);
+    const item = await storage.updateMenuItem(req.params.id, user.tenantId, updateData);
     if (existing) auditLogFromReq(req, { action: "menu_item_updated", entityType: "menu_item", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, price: existing.price }, after: updateData });
     res.json(item);
   });
 
   app.delete("/api/menu-items/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
-    const existing = await storage.getMenuItem(req.params.id);
-    await storage.deleteMenuItem(req.params.id);
+    const user = req.user as any;
+    const existing = await storage.getMenuItem(req.params.id, user.tenantId);
+    await storage.deleteMenuItem(req.params.id, user.tenantId);
     if (existing) auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
     res.json({ message: "Deleted" });
   });
@@ -112,9 +112,8 @@ export function registerMenuRoutes(app: Express): void {
   app.get("/api/menu-items/:id/removable-ingredients", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const item = await storage.getMenuItem(req.params.id);
+      const item = await storage.getMenuItem(req.params.id, user.tenantId);
       if (!item) return res.status(404).json({ message: "Menu item not found" });
-      if (item.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
       const { rows } = await pool.query(
         `SELECT id, ingredient_name AS name, is_removable, sort_order

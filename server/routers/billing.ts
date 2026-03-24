@@ -187,11 +187,11 @@ export function registerBillingRoutes(app: Express): void {
           if (session.metadata?.orderPayment === "true") {
             const orderId = session.metadata?.orderId;
             if (orderId) {
-              const orderToUpdate = await storage.getOrder(orderId);
+              const orderToUpdate = await storage.getOrderById(orderId);
               if (orderToUpdate && orderToUpdate.status !== "paid") {
                 await storage.updateOrder(orderId, { status: "paid", paymentMethod: "card" });
                 if (orderToUpdate.tableId) {
-                  try { await storage.updateTable(orderToUpdate.tableId, { status: "free" }); } catch (_) {}
+                  try { await storage.updateTable(orderToUpdate.tableId, orderToUpdate.tenantId, { status: "free" }); } catch (_) {}
                   returnResourcesFromTable(orderToUpdate.tableId, orderToUpdate.tenantId, false).catch(() => {});
                 }
                 if (orderToUpdate.channel === "kiosk") {
@@ -215,7 +215,7 @@ export function registerBillingRoutes(app: Express): void {
                 for (const order of unpaidTableOrders) {
                   await storage.updateOrder(order.id, { status: "paid", paymentMethod: "card" });
                 }
-                try { await storage.updateTable(guestSession.tableId, { status: "free" }); } catch (_) {}
+                try { await storage.updateTable(guestSession.tableId, guestSession.tenantId, { status: "free" }); } catch (_) {}
                 returnResourcesFromTable(guestSession.tableId, guestSession.tenantId, false).catch(() => {});
                 try { await storage.updateTableSession(guestSession.id, { status: "closed", closedAt: new Date() }); } catch (_) {}
               }

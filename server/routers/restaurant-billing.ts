@@ -73,7 +73,7 @@ export async function finalizeBillCompletion(opts: {
 
   // 4. Free the table and return any special resources
   if (bill.tableId) {
-    try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+    try { await storage.updateTable(bill.tableId, bill.tenantId, { status: "free" }); } catch (_) {}
     returnResourcesFromTable(bill.tableId, bill.tenantId, false).catch(() => {});
   }
 
@@ -134,7 +134,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const payments = await storage.getBillPayments(bill.id);
-      const order = await storage.getOrder(bill.orderId);
+      const order = bill.orderId ? await storage.getOrder(bill.orderId, user.tenantId) : undefined;
       const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
       res.json({ ...bill, payments, order, items, amountInWords: numWords(Number(bill.totalAmount)) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -147,7 +147,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (!bill) return res.status(404).json({ message: "No bill for this order" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const payments = await storage.getBillPayments(bill.id);
-      const order = await storage.getOrder(bill.orderId);
+      const order = bill.orderId ? await storage.getOrder(bill.orderId, user.tenantId) : undefined;
       const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
       res.json({ ...bill, payments, order, items, amountInWords: numWords(Number(bill.totalAmount)) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -159,9 +159,8 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const { orderId, tableId, customerId, subtotal, discountAmount, discountReason,
         serviceCharge, taxAmount, taxBreakdown, tips, totalAmount, covers, posSessionId } = req.body;
       if (!orderId || totalAmount == null) return res.status(400).json({ message: "orderId and totalAmount are required" });
-      const referencedOrder = await storage.getOrder(orderId);
+      const referencedOrder = await storage.getOrder(orderId, user.tenantId);
       if (!referencedOrder) return res.status(404).json({ message: "Order not found" });
-      if (referencedOrder.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const existing = await storage.getBillByOrder(orderId);
       if (existing) return res.json({ ...existing, alreadyExists: true });
 
@@ -423,7 +422,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (newStatus === "paid") {
         await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
         if (bill.tableId) {
-          try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+          try { await storage.updateTable(bill.tableId, user.tenantId, { status: "free" }); } catch (_) {}
           returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
         }
         const effectiveLoyaltyCustomerId = loyaltyCustomerId || bill.customerId;
@@ -512,14 +511,14 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const existingMovements = await storage.getStockMovementsByOrder(bill.orderId);
       const consumptionMovements = existingMovements.filter(m => m.type === "RECIPE_CONSUMPTION");
       for (const mv of consumptionMovements) {
-        const item = await storage.getInventoryItem(mv.itemId);
+        const item = await storage.getInventoryItem(mv.itemId, user.tenantId);
         if (!item) continue;
         const stockBefore = Number(item.currentStock ?? 0);
         const reversalQty = Math.abs(Number(mv.quantity));
         const stockAfter = stockBefore + reversalQty;
         await storage.updateInventoryItem(mv.itemId, {
           currentStock: String(stockAfter),
-        });
+        }, user.tenantId);
         await storage.createStockMovement({
           tenantId: user.tenantId,
           itemId: mv.itemId,
@@ -547,7 +546,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       await storage.updateOrder(bill.orderId, { status: "voided" });
       if (bill.tableId) {
-        try { await storage.updateTable(bill.tableId, { status: "free" }); } catch (_) {}
+        try { await storage.updateTable(bill.tableId, user.tenantId, { status: "free" }); } catch (_) {}
         returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
       }
       if (bill.customerId && bill.paymentStatus === "paid") {
@@ -839,7 +838,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
       const payments = await storage.getBillPayments(bill.id);
-      const order = await storage.getOrder(bill.orderId);
+      const order = bill.orderId ? await storage.getOrder(bill.orderId, user.tenantId) : undefined;
       const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
       const tenant = await storage.getTenant(user.tenantId);
       const restaurantName = tenant?.name || "Restaurant";

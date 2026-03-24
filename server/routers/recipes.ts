@@ -253,7 +253,7 @@ export function registerRecipesRoutes(app: Express): void {
       const line = lines.find(l => l.id === req.params.lineId);
       if (!line) return res.status(404).json({ message: "Line not found" });
       const variance = Number(countedQty) - Number(line.expectedQty);
-      const invItem = await storage.getInventoryItem(line.inventoryItemId);
+      const invItem = await storage.getInventoryItem(line.inventoryItemId, user.tenantId);
       const varianceCost = variance * Number(invItem?.costPrice || 0);
       const updated = await storage.updateStockTakeLine(req.params.lineId, { countedQty: String(countedQty), varianceQty: String(variance), varianceCost: String(Math.round(varianceCost * 100) / 100) });
       res.json(updated);
@@ -269,7 +269,7 @@ export function registerRecipesRoutes(app: Express): void {
       let adjustmentCount = 0;
       for (const line of lines) {
         if (line.countedQty !== null && line.countedQty !== undefined) {
-          await storage.updateInventoryItem(line.inventoryItemId, { currentStock: line.countedQty });
+          await storage.updateInventoryItem(line.inventoryItemId, { currentStock: line.countedQty }, user.tenantId);
           const variance = Number(line.countedQty) - Number(line.expectedQty);
           if (variance !== 0) {
             adjustmentCount++;
