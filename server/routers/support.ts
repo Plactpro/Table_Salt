@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { emitToTenant } from "../realtime";
 import { pool } from "../db";
 import { z } from "zod";
+import { sendSupportReplyEmail } from "../services/email-service";
 
 function requireSuperAdminOrPlatform(req: Request, res: Response, next: Function) {
   const user = req.user as any;
@@ -216,6 +217,20 @@ export function registerSupportRoutes(app: Express): void {
         message: parsed.data.message.substring(0, 100),
         adminName: "Support Team",
       });
+
+      // Send email notification to ticket creator
+      try {
+        const { rows: creatorRows } = await pool.query(
+          `SELECT email FROM users WHERE id = $1 AND email IS NOT NULL AND email <> '' LIMIT 1`,
+          [ticket.created_by]
+        );
+        const creatorEmail = creatorRows[0]?.email;
+        if (creatorEmail) {
+          const appUrl = process.env.APP_URL || "https://tablesalt.app";
+          const ticketUrl = `${appUrl}/support?ticket=${ticket.id}`;
+          sendSupportReplyEmail(creatorEmail, ticket.subject, parsed.data.message, ticketUrl).catch(() => {});
+        }
+      } catch (_) {}
 
       res.status(201).json(reply);
     } catch (err: any) {

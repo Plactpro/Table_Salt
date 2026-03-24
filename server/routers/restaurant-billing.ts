@@ -11,6 +11,8 @@ import { routeAndPrint } from "../services/printer-service";
 import { recordAndDistributeTip } from "../services/tip-service";
 import { calculatePackingCharge } from "../services/packing-charge-service";
 import { returnResourcesFromTable } from "../services/resource-service";
+import { sendEmail } from "../services/email-service";
+import { emailBase } from "../templates/email-base";
 
 function getFiscalYear(date: Date): string {
   const m = date.getMonth() + 1;
@@ -807,5 +809,104 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       return res.json({ status: link.status === "cancelled" || link.status === "expired" ? "cancelled" : "pending" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Email receipt to customer
+  app.post("/api/bills/:id/send-email", requireAuth, requireRole("owner", "manager", "waiter"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { customerEmail } = req.body;
+      if (!customerEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail)) {
+        return res.status(400).json({ message: "Valid customer email is required" });
+      }
+
+      const bill = await storage.getBill(req.params.id);
+      if (!bill) return res.status(404).json({ message: "Bill not found" });
+      if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+
+      const payments = await storage.getBillPayments(bill.id);
+      const order = await storage.getOrder(bill.orderId);
+      const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
+      const tenant = await storage.getTenant(user.tenantId);
+      const restaurantName = tenant?.name || "Restaurant";
+      const currency = tenant?.currency || "USD";
+
+      function fmtAmount(val: string | number | null): string {
+        const n = Number(val ?? 0);
+        return `${currency} ${n.toFixed(2)}`;
+      }
+
+      const billDate = bill.createdAt ? new Date(bill.createdAt as any).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "";
+      const itemRows = items.map((item: any) => `
+        <tr>
+          <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;">${item.name}</td>
+          <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:center;">${item.quantity}</td>
+          <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:right;">${fmtAmount(item.price)}</td>
+          <td style="padding:8px 4px;border-bottom:1px solid #f0f0f0;text-align:right;">${fmtAmount(Number(item.price) * Number(item.quantity))}</td>
+        </tr>
+      `).join("");
+
+      const paymentMethod = payments[0]?.paymentMethod || order?.paymentMethod || "—";
+      const invoiceNumber = (bill as any).invoiceNumber || `#${bill.id.slice(-6).toUpperCase()}`;
+
+      const body = `
+        <div style="text-align:center;margin-bottom:24px;">
+          <h2 style="margin:0 0 4px;font-size:20px;">${restaurantName}</h2>
+          <p style="margin:0;color:#64748b;font-size:13px;">Invoice ${invoiceNumber}</p>
+          <p style="margin:0;color:#64748b;font-size:13px;">${billDate}</p>
+        </div>
+
+        <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:14px;">
+          <thead>
+            <tr style="background:#f8fafc;">
+              <th style="padding:8px 4px;text-align:left;color:#64748b;font-weight:600;">Item</th>
+              <th style="padding:8px 4px;text-align:center;color:#64748b;font-weight:600;">Qty</th>
+              <th style="padding:8px 4px;text-align:right;color:#64748b;font-weight:600;">Price</th>
+              <th style="padding:8px 4px;text-align:right;color:#64748b;font-weight:600;">Total</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows}</tbody>
+        </table>
+
+        <table style="width:100%;border-collapse:collapse;font-size:14px;margin-bottom:20px;">
+          <tr>
+            <td style="padding:6px 4px;color:#64748b;">Subtotal</td>
+            <td style="padding:6px 4px;text-align:right;">${fmtAmount(bill.subtotal)}</td>
+          </tr>
+          ${Number(bill.discountAmount) > 0 ? `<tr><td style="padding:6px 4px;color:#22c55e;">Discount</td><td style="padding:6px 4px;text-align:right;color:#22c55e;">-${fmtAmount(bill.discountAmount)}</td></tr>` : ""}
+          ${Number(bill.taxAmount) > 0 ? `<tr><td style="padding:6px 4px;color:#64748b;">Tax</td><td style="padding:6px 4px;text-align:right;">${fmtAmount(bill.taxAmount)}</td></tr>` : ""}
+          ${Number(bill.serviceCharge) > 0 ? `<tr><td style="padding:6px 4px;color:#64748b;">Service Charge</td><td style="padding:6px 4px;text-align:right;">${fmtAmount(bill.serviceCharge)}</td></tr>` : ""}
+          ${Number((bill as any).packingCharge) > 0 ? `<tr><td style="padding:6px 4px;color:#64748b;">Packing Charge</td><td style="padding:6px 4px;text-align:right;">${fmtAmount((bill as any).packingCharge)}</td></tr>` : ""}
+          <tr style="border-top:2px solid #1e293b;">
+            <td style="padding:10px 4px;font-weight:700;font-size:16px;">Total</td>
+            <td style="padding:10px 4px;text-align:right;font-weight:700;font-size:16px;">${fmtAmount(bill.totalAmount)}</td>
+          </tr>
+        </table>
+
+        <div style="background:#f0fdf4;border-radius:6px;padding:12px 16px;text-align:center;margin-bottom:16px;">
+          <span style="color:#16a34a;font-weight:600;">Paid</span>
+          <span style="color:#64748b;font-size:13px;margin-left:8px;">via ${paymentMethod}</span>
+        </div>
+
+        <p style="text-align:center;color:#64748b;font-size:13px;margin:0;">Thank you for dining with us!</p>
+      `;
+
+      const html = emailBase({
+        title: `Receipt from ${restaurantName}`,
+        body,
+        footerText: `Receipt issued by ${restaurantName}. Please retain for your records.`,
+      });
+
+      await sendEmail({
+        to: customerEmail,
+        subject: `Your receipt from ${restaurantName}`,
+        html,
+        text: `Receipt from ${restaurantName} — Invoice ${invoiceNumber}\nTotal: ${fmtAmount(bill.totalAmount)}\nPayment: ${paymentMethod}\nThank you for dining with us!`,
+      });
+
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 }

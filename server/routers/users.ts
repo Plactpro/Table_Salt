@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole, hashPassword } from "../auth";
 import { auditLogFromReq } from "../audit";
+import { sendStaffInviteEmail } from "../services/email-service";
 
 export function registerUsersRoutes(app: Express): void {
   app.get("/api/users", requireAuth, async (req, res) => {
@@ -26,7 +27,8 @@ export function registerUsersRoutes(app: Express): void {
       if (existingUser) {
         return res.status(409).json({ message: "Username already taken. Please choose a different username." });
       }
-      const hashedPw = await hashPassword(req.body.password || "demo123");
+      const plainPassword = req.body.password || "demo123";
+      const hashedPw = await hashPassword(plainPassword);
       const newUser = await storage.createUser({
         ...req.body,
         tenantId: user.tenantId,
@@ -34,6 +36,21 @@ export function registerUsersRoutes(app: Express): void {
       });
       const { password: _, ...safeUser } = newUser;
       auditLogFromReq(req, { action: "user_created", entityType: "user", entityId: newUser.id, entityName: newUser.name, after: { name: newUser.name, role: newUser.role } });
+
+      if (newUser.email) {
+        const tenant = await storage.getTenant(user.tenantId);
+        const appUrl = process.env.APP_URL || "https://tablesalt.app";
+        sendStaffInviteEmail(
+          newUser.email,
+          newUser.name,
+          tenant?.name || "your restaurant",
+          plainPassword,
+          appUrl,
+          newUser.role || "staff",
+          user.name
+        ).catch(() => {});
+      }
+
       res.json(safeUser);
     } catch (err: any) {
       if (err.code === "23505") {
