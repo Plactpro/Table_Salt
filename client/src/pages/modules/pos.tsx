@@ -310,6 +310,7 @@ export default function POSPage() {
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
   const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: number | string) => sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
+  const userOutletId = user && "outletId" in user ? (user as { outletId?: string }).outletId || null : null;
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -575,7 +576,6 @@ export default function POSPage() {
     return () => clearInterval(timer);
   }, [posSession?.openedAt]);
 
-  const userOutletId = user && "outletId" in user ? (user as { outletId?: string }).outletId || null : null;
   const activeCombos = useMemo(() => comboOffers.filter((c) => isComboActive(c, userOutletId)), [comboOffers, userOutletId]);
   const freeTables = useMemo(() => tables.filter((t) => t.status === "free"), [tables]);
 
@@ -1361,7 +1361,7 @@ export default function POSPage() {
                       )}
                       {item.image ? (
                         <div className="overflow-hidden bg-muted" style={{ height: "110px" }}>
-                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+                          <img src={item.image} alt={item.name} className="w-full h-full object-cover" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
                         </div>
                       ) : (
                         <div className="bg-muted/50 flex items-center justify-center" style={{ height: "110px" }} data-testid={`placeholder-${item.id}`}>

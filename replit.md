@@ -65,6 +65,21 @@ The system employs a modern web architecture with a React-based frontend and an 
 ### Navigation Architecture
 - Sidebar navigation consolidated into 25 items including Kitchen Board (LayoutGrid, m-35), Kitchen Settings (ChefHat, m-36), Stock Capacity (ClipboardList, m-37), and Phone Orders (Phone, m-38). Grouped under 7 hub pages: Promotions, Inventory, Staff & Workforce, Reports & Analytics, Delivery & Online, Locations, and Settings.
 
+## Performance Improvements (Task #131)
+- **Code Splitting**: All 40+ page components wrapped in `React.lazy()` + `<Suspense>` in `client/src/App.tsx` for faster initial load times.
+- **Response Compression**: `compression` middleware added in `server/index.ts` to gzip/deflate API and static responses.
+- **Lazy Image Loading**: All `<img>` tags now use `loading="lazy"` across the app.
+- **Database Indexes**: Added covering indexes to `bills` and `orders` tables via `server/admin-migrations.ts` (tenant, status, createdAt, updatedAt) for faster queries.
+- **TDZ Bug Fix**: `userOutletId` in `client/src/pages/modules/pos.tsx` moved from line 548 to line 285 to fix temporal dead zone crash on POS page load.
+
+## E2E Test Suite (Task #131)
+- **33 Playwright tests** across 8 spec files covering critical user flows.
+- **Test files**: `auth.spec.ts`, `billing.spec.ts`, `kitchen.spec.ts`, `menu.spec.ts`, `order-management.spec.ts`, `pos-checkout.spec.ts`, `staff.spec.ts`, `support.spec.ts`.
+- **Run command**: `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npx playwright test`
+- **Global setup**: `tests/e2e/global-setup.ts` — saves session cookies for owner/manager/kitchen roles in `.auth/` directory, caches for 24h to avoid rate limit issues.
+- **Test strategy**: All navigate tests use `page.waitForURL(url => !url.includes('/login'), { timeout: 15000 })` for reliable auth-timing behavior under server load.
+- **Playwright config**: `playwright.config.ts` — 1 worker, 2 retries, 30s test timeout, system chromium via `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`.
+
 ## External Dependencies
 - **PostgreSQL**: Primary database.
 - **Drizzle ORM**: Database interaction.

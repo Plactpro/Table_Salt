@@ -5,4 +5,6 @@ server/public
 vite.config.ts.*
 *.tar.gz
 cookies.txt
-*.cookies.txt
+*.cookies.txt.auth/
+playwright-report/
+test-results/
