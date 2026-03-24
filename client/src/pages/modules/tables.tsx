@@ -1933,7 +1933,7 @@ export default function TablesPage() {
                 customerName: resFormData.customerName,
                 customerPhone: resFormData.customerPhone || undefined,
                 guests: parseInt(resFormData.guests),
-                dateTime: resFormData.dateTime,
+                dateTime: resFormData.dateTime ? new Date(resFormData.dateTime).toISOString() : resFormData.dateTime,
                 tableId: resFormData.tableId || undefined,
                 notes: resFormData.notes || undefined,
                 resource_requirements: reqResources.length > 0 ? reqResources.map(r => ({ resourceId: r.resourceId, resourceName: r.resourceName, quantity: r.quantity })) : undefined,
