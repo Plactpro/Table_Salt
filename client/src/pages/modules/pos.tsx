@@ -1047,7 +1047,11 @@ export default function POSPage() {
       return;
     }
     if (isDineIn && !selectedTable) {
-      toast({ title: "Select a table", description: "Choose a table for dine-in orders", variant: "destructive" });
+      if (tables.length === 0) {
+        toast({ title: "No tables are set up yet", description: "Configure your floor plan in the Tables module before placing dine-in orders.", variant: "destructive" });
+      } else {
+        toast({ title: "Select a table", description: "Choose a table for dine-in orders", variant: "destructive" });
+      }
       return;
     }
     if (!isDineIn) {
@@ -1937,7 +1941,20 @@ export default function POSPage() {
                 </div>
               </div>
             ))}
-            {tables.length === 0 && <div className="text-center py-8 text-muted-foreground text-sm">No tables configured</div>}
+            {tables.length === 0 && (
+              <div className="text-center py-10 text-muted-foreground" data-testid="text-no-tables-configured">
+                <MapPin className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm font-medium">No tables found</p>
+                <p className="text-xs mt-1 mb-3">Configure your floor plan in the Tables module first.</p>
+                <button
+                  className="text-xs underline text-primary"
+                  onClick={() => { setShowTablePicker(false); navigate("/tables"); }}
+                  data-testid="link-go-to-tables"
+                >
+                  Go to Tables &rarr;
+                </button>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3 pt-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-400 inline-block" />Free</span>

@@ -1,4 +1,5 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, Component } from "react";
+import type { ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -28,6 +29,34 @@ import {
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
+
+class TablesErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; error: string }> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false, error: "" };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error: error.message };
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[TablesPage] render error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 gap-4 text-muted-foreground">
+          <MapPin className="h-10 w-10 opacity-30" />
+          <p className="font-semibold text-base">Could not load tables</p>
+          <p className="text-sm text-center max-w-sm">{this.state.error || "An unexpected error occurred. Please try refreshing the page."}</p>
+          <Button variant="outline" size="sm" onClick={() => this.setState({ hasError: false, error: "" })}>
+            Retry
+          </Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 type TableStatus = "free" | "occupied" | "reserved" | "cleaning" | "blocked";
 type ReservationStatus = "pending" | "requested" | "confirmed" | "seated" | "completed" | "no_show";
@@ -362,7 +391,7 @@ function QrCodeCanvas({ token }: { token: string }) {
   );
 }
 
-export default function TablesPage() {
+function TablesPageContent() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -929,6 +958,18 @@ export default function TablesPage() {
             </Card>
           ) : (
             <>
+              {tables.length === 0 && (
+                <Card data-testid="card-no-tables-empty-state">
+                  <CardContent className="py-16 text-center text-muted-foreground">
+                    <Armchair className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                    <p className="font-semibold text-base mb-1">No tables configured yet</p>
+                    <p className="text-sm mb-4">Add your first table to start managing your floor plan, waitlist, and reservations.</p>
+                    <Button onClick={() => { resetForm(); setShowAddDialog(true); }} data-testid="button-empty-state-add-table">
+                      <Plus className="w-4 h-4 mr-2" />Add Table
+                    </Button>
+                  </CardContent>
+                </Card>
+              )}
               {uniqueZones.filter(z => filterZone === "all" || z === filterZone).map(zoneName => {
                 const zoneTables = filteredTables.filter(t => (t.zone || "Main") === zoneName);
                 if (zoneTables.length === 0) return null;
@@ -1202,12 +1243,12 @@ export default function TablesPage() {
         <TabsContent value="analytics" className="space-y-4">
           <h2 className="text-lg font-semibold">Table Analytics</h2>
           <div className="grid md:grid-cols-2 gap-4">
-            {analytics && Object.keys(analytics.byZone).length > 0 && (
+            {analytics && Object.keys(analytics?.byZone ?? {}).length > 0 && (
               <Card>
                 <CardHeader><CardTitle className="text-sm">Zone Occupancy</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {Object.entries(analytics.byZone).map(([zone, data]) => {
+                    {Object.entries(analytics?.byZone ?? {}).map(([zone, data]) => {
                       const pct = data.total > 0 ? Math.round((data.occupied / data.total) * 100) : 0;
                       return (
                         <div key={zone} className="space-y-1">
@@ -1226,13 +1267,13 @@ export default function TablesPage() {
               </Card>
             )}
 
-            {analytics && Object.keys(analytics.waitByHour).length > 0 && (
+            {analytics && Object.keys(analytics?.waitByHour ?? {}).length > 0 && (
               <Card>
                 <CardHeader><CardTitle className="text-sm">Waitlist by Hour</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {Object.entries(analytics.waitByHour).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([hour, count]) => {
-                      const maxCount = Math.max(...Object.values(analytics.waitByHour));
+                    {Object.entries(analytics?.waitByHour ?? {}).sort(([a], [b]) => parseInt(a) - parseInt(b)).map(([hour, count]) => {
+                      const maxCount = Math.max(...Object.values(analytics?.waitByHour ?? { _: 0 }));
                       const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
                       return (
                         <div key={hour} className="flex items-center gap-3 text-sm">
@@ -1251,14 +1292,14 @@ export default function TablesPage() {
               </Card>
             )}
 
-            {analytics && analytics.waitByDay && Object.keys(analytics.waitByDay).length > 0 && (
+            {analytics && Object.keys(analytics?.waitByDay ?? {}).length > 0 && (
               <Card>
                 <CardHeader><CardTitle className="text-sm">Waitlist by Day</CardTitle></CardHeader>
                 <CardContent>
                   <div className="space-y-2">
-                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].filter(d => analytics.waitByDay[d]).map(day => {
-                      const count = analytics.waitByDay[day] || 0;
-                      const maxCount = Math.max(...Object.values(analytics.waitByDay));
+                    {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].filter(d => (analytics?.waitByDay ?? {})[d]).map(day => {
+                      const count = (analytics?.waitByDay ?? {})[day] || 0;
+                      const maxCount = Math.max(...Object.values(analytics?.waitByDay ?? { _: 0 }));
                       const pct = maxCount > 0 ? (count / maxCount) * 100 : 0;
                       return (
                         <div key={day} className="flex items-center gap-3 text-sm">
@@ -2028,5 +2069,13 @@ export default function TablesPage() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function TablesPage() {
+  return (
+    <TablesErrorBoundary>
+      <TablesPageContent />
+    </TablesErrorBoundary>
   );
 }
