@@ -131,6 +131,15 @@ export function setupWebSocket(httpServer: HttpServer) {
       ws.send(JSON.stringify({ event: "connected", payload: { ok: true } }));
     } catch (_) {}
 
+    ws.on("message", (data) => {
+      try {
+        const msg = JSON.parse(data.toString()) as { event?: string };
+        if (msg.event === "ping") {
+          ws.send(JSON.stringify({ event: "pong" }));
+        }
+      } catch (_) {}
+    });
+
     ws.on("close", () => removeSocket(tenantId, ws));
     ws.on("error", () => removeSocket(tenantId, ws));
 

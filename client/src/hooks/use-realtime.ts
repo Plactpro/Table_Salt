@@ -10,6 +10,7 @@ class RealtimeClient {
   private delay = 1000;
   private maxDelay = 30000;
   private timer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private active = false;
   private connected = false;
 
@@ -22,7 +23,21 @@ class RealtimeClient {
   stop() {
     this.active = false;
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
     if (this.ws) { this.ws.onclose = null; this.ws.close(); this.ws = null; }
+  }
+
+  private _startHeartbeat() {
+    if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        try { this.ws.send(JSON.stringify({ event: "ping" })); } catch (_) {}
+      }
+    }, 25000);
+  }
+
+  private _stopHeartbeat() {
+    if (this.heartbeatTimer) { clearInterval(this.heartbeatTimer); this.heartbeatTimer = null; }
   }
 
   on(event: string, handler: Handler) {
@@ -58,17 +73,20 @@ class RealtimeClient {
       this.ws.onopen = () => {
         this.delay = 1000;
         this._setConnected(true);
+        this._startHeartbeat();
       };
 
       this.ws.onmessage = (evt: MessageEvent) => {
         try {
           const { event, payload } = JSON.parse(evt.data as string) as { event: string; payload: unknown };
+          if (event === "pong") return;
           const handlers = this.listeners.get(event);
           if (handlers) handlers.forEach(h => { try { h(payload); } catch (_) {} });
         } catch (_) {}
       };
 
       this.ws.onclose = () => {
+        this._stopHeartbeat();
         this.ws = null;
         this._setConnected(false);
         if (!this.active) return;
