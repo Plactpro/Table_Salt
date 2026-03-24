@@ -2826,4 +2826,35 @@ export async function runTask108Migrations(): Promise<void> {
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_revenue_tenant ON ad_revenue_records (tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_revenue_campaign ON ad_revenue_records (campaign_id)`);
+
+  // BUG-01/02/03: Seed demo tables for the seed/demo tenant if it has no tables yet.
+  // Only targets the first non-platform tenant (the demo seed tenant), never real-tenant data.
+  const seedTenantRes = await pool.query(`
+    SELECT t.id AS tenant_id, o.id AS outlet_id
+    FROM tenants t
+    JOIN outlets o ON o.tenant_id = t.id
+    WHERE t.slug != 'platform'
+      AND NOT EXISTS (SELECT 1 FROM tables tb WHERE tb.tenant_id = t.id)
+    ORDER BY t.created_at ASC NULLS LAST
+    LIMIT 1
+  `);
+  if (seedTenantRes.rows.length > 0) {
+    const { tenant_id, outlet_id } = seedTenantRes.rows[0];
+    const demoTables = [
+      { number: 1, capacity: 2, zone: "Main", status: "free", shape: "square", posX: 40, posY: 40 },
+      { number: 2, capacity: 4, zone: "Main", status: "free", shape: "square", posX: 180, posY: 40 },
+      { number: 3, capacity: 4, zone: "Main", status: "free", shape: "square", posX: 320, posY: 40 },
+      { number: 4, capacity: 6, zone: "Main", status: "free", shape: "rectangle", posX: 460, posY: 40 },
+      { number: 5, capacity: 2, zone: "Outdoor", status: "free", shape: "circle", posX: 40, posY: 180 },
+      { number: 6, capacity: 4, zone: "Outdoor", status: "free", shape: "square", posX: 180, posY: 180 },
+    ];
+    for (const dt of demoTables) {
+      await pool.query(
+        `INSERT INTO tables (id, tenant_id, outlet_id, number, capacity, zone, status, shape, pos_x, pos_y)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8, $9)
+         ON CONFLICT DO NOTHING`,
+        [tenant_id, outlet_id, dt.number, dt.capacity, dt.zone, dt.status, dt.shape, dt.posX, dt.posY]
+      );
+    }
+  }
 }
