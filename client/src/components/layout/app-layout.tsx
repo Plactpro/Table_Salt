@@ -71,6 +71,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
             style={{ willChange: "opacity" }}
             className={`flex-1 overflow-auto ${isPosPage ? "" : "p-6"}`}
             data-testid="main-content"
+            id="main-content"
           >
             {children}
           </motion.main>

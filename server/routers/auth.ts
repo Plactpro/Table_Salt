@@ -174,7 +174,24 @@ export function registerAuthRoutes(app: Express): void {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = req.user as any;
     const tenant = await storage.getTenant(safeUser.tenantId);
-    res.json({ ...safeUser, tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge, onboardingCompleted: tenant.onboardingCompleted, subscriptionStatus: tenant.subscriptionStatus, trialEndsAt: tenant.trialEndsAt, stripeCustomerId: tenant.stripeCustomerId, stripeSubscriptionId: tenant.stripeSubscriptionId, gstin: tenant.gstin, cgstRate: tenant.cgstRate, sgstRate: tenant.sgstRate, invoicePrefix: tenant.invoicePrefix, razorpayEnabled: tenant.razorpayEnabled, razorpayKeyId: tenant.razorpayKeyId } : null });
+    const { rows: [userRow] } = await pool.query(`SELECT theme_preference FROM users WHERE id = $1`, [safeUser.id]);
+    res.json({ ...safeUser, themePreference: userRow?.theme_preference ?? "system", tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge, onboardingCompleted: tenant.onboardingCompleted, subscriptionStatus: tenant.subscriptionStatus, trialEndsAt: tenant.trialEndsAt, stripeCustomerId: tenant.stripeCustomerId, stripeSubscriptionId: tenant.stripeSubscriptionId, gstin: tenant.gstin, cgstRate: tenant.cgstRate, sgstRate: tenant.sgstRate, invoicePrefix: tenant.invoicePrefix, razorpayEnabled: tenant.razorpayEnabled, razorpayKeyId: tenant.razorpayKeyId } : null });
+  });
+
+  app.patch("/api/users/preferences", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { themePreference } = req.body;
+      if (themePreference && !["light", "dark", "system"].includes(themePreference)) {
+        return res.status(400).json({ message: "Invalid theme preference. Must be light, dark, or system." });
+      }
+      if (themePreference !== undefined) {
+        await pool.query(`UPDATE users SET theme_preference = $1 WHERE id = $2`, [themePreference, user.id]);
+      }
+      res.json({ message: "Preferences updated", themePreference });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.post("/api/auth/2fa/setup", requireAuth, async (req, res) => {
