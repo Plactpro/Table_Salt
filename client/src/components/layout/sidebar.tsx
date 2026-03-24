@@ -211,7 +211,7 @@ export default function Sidebar() {
     if (!item.roles.includes(role)) return false;
     if (btConfig?.excludedFeatureKeys && item.featureKey && btConfig.excludedFeatureKeys.includes(item.featureKey)) return false;
     if (btConfig?.excludedPaths && btConfig.excludedPaths.includes(item.path)) return false;
-    if (item.id === "m-49" && !parkingEnabled) return false;
+    if (item.id === "m-49" && !parkingEnabled && !["owner", "manager", "franchise_owner", "outlet_manager", "hq_admin"].includes(role)) return false;
     return true;
   });
 
