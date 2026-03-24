@@ -1,8 +1,15 @@
 import { pool } from "./db";
+import { hashPassword } from "./auth";
 
 export async function runAdminMigrations(): Promise<void> {
   try {
     await pool.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'super_admin'`);
+  } catch (_) {
+    // Enum value may already exist — safe to ignore
+  }
+
+  try {
+    await pool.query(`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'cleaning_staff'`);
   } catch (_) {
     // Enum value may already exist — safe to ignore
   }
@@ -2857,4 +2864,37 @@ export async function runTask108Migrations(): Promise<void> {
       );
     }
   }
+
+  // Task #151: Seed delivery agent accounts (idempotent — skip if usernames already exist)
+  const deliveryAgents = [
+    { username: "delivery1", name: "Carlos Mendez", email: "carlos@grandkitchen.com" },
+    { username: "delivery2", name: "Jamie Park", email: "jamie@grandkitchen.com" },
+    { username: "delivery3", name: "Priya Sharma", email: "priya@grandkitchen.com" },
+  ];
+  const tenantRow = await pool.query(
+    `SELECT id FROM tenants WHERE slug != 'platform' ORDER BY created_at ASC LIMIT 1`
+  );
+  if (tenantRow.rows.length > 0) {
+    const tenantId = tenantRow.rows[0].id;
+    const pw = await hashPassword("demo123");
+    for (const agent of deliveryAgents) {
+      const exists = await pool.query(
+        `SELECT 1 FROM users WHERE username = $1`,
+        [agent.username]
+      );
+      if (exists.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO users (id, tenant_id, username, password, name, email, role, active)
+           VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 'delivery_agent', true)`,
+          [tenantId, agent.username, pw, agent.name, agent.email]
+        );
+      }
+    }
+  }
+
+  // Task #151: Fix Charlotte (username: cleaning) — update waiter role to cleaning_staff if exists
+  await pool.query(`
+    UPDATE users SET role = 'cleaning_staff'
+    WHERE username = 'cleaning' AND role = 'waiter'
+  `);
 }

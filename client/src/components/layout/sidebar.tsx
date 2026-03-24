@@ -103,6 +103,9 @@ const navItems: NavItem[] = [
   { id: "m-48", name: "Tip Report", icon: DollarSign, path: "/tips/report", roles: ["manager", "owner"] },
   { id: "m-49", name: "🅿️ Parking", icon: BarChart3, path: "/parking", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
   { id: "m-50", name: "Advertisements", icon: Megaphone, path: "/advertisements", roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "advertisement_management" as FeatureKey },
+  { id: "m-51", name: "Dashboard", icon: LayoutDashboard, path: "/", roles: ["delivery_agent"] },
+  { id: "m-52", name: "My Deliveries", icon: Truck, path: "/", roles: ["delivery_agent"] },
+  { id: "m-53", name: "Delivery History", icon: History, path: "/", roles: ["delivery_agent"] },
 ];
 
 function SandDecoration() {

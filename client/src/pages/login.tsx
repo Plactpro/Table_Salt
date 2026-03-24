@@ -23,6 +23,7 @@ const demoAccounts = [
   { role: "Waiter", username: "waiter", password: "demo123" },
   { role: "Kitchen", username: "kitchen", password: "demo123" },
   { role: "Accountant", username: "accountant", password: "demo123" },
+  { role: "Delivery", username: "delivery1", password: "demo123" },
 ];
 
 export default function LoginPage() {

@@ -19,7 +19,7 @@ import {
   LayoutGrid, CalendarDays, ClipboardCheck, LogIn, LogOut, Timer,
 } from "lucide-react";
 
-const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant"] as const;
+const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant", "delivery_agent", "cleaning_staff"] as const;
 
 const roleBadgeColors: Record<string, string> = {
   owner: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
@@ -28,6 +28,19 @@ const roleBadgeColors: Record<string, string> = {
   kitchen: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200",
   accountant: "bg-stone-100 text-stone-800 dark:bg-stone-900 dark:text-stone-200",
   customer: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
+  delivery_agent: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200",
+  cleaning_staff: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
+};
+
+const roleLabels: Record<string, string> = {
+  owner: "Owner",
+  manager: "Manager",
+  waiter: "Waiter",
+  kitchen: "Kitchen",
+  accountant: "Accountant",
+  customer: "Customer",
+  delivery_agent: "Delivery Agent",
+  cleaning_staff: "Cleaning Staff",
 };
 
 const roleIcons: Record<string, React.ElementType> = {
@@ -37,6 +50,8 @@ const roleIcons: Record<string, React.ElementType> = {
   kitchen: ChefHat,
   accountant: Calculator,
   customer: Users,
+  delivery_agent: Users,
+  cleaning_staff: Users,
 };
 
 interface StaffMember {
@@ -371,7 +386,7 @@ export default function StaffPage() {
                         const RoleIcon = roleIcons[r] || Users;
                         return (
                           <SelectItem key={r} value={r}>
-                            <span className="flex items-center gap-2"><RoleIcon className="h-3.5 w-3.5" /> {r.charAt(0).toUpperCase() + r.slice(1)}</span>
+                            <span className="flex items-center gap-2"><RoleIcon className="h-3.5 w-3.5" /> {roleLabels[r] || r}</span>
                           </SelectItem>
                         );
                       })}
@@ -462,7 +477,7 @@ export default function StaffPage() {
                           <TableCell data-testid={`text-staff-username-${staff.id}`}>{staff.username}</TableCell>
                           <TableCell>
                             <Badge className={`${roleBadgeColors[staff.role] || ""} gap-1`} data-testid={`badge-staff-role-${staff.id}`}>
-                              <RoleIcon className="h-3 w-3" /> {staff.role}
+                              <RoleIcon className="h-3 w-3" /> {roleLabels[staff.role] || staff.role}
                             </Badge>
                           </TableCell>
                           <TableCell>{staff.email || "—"}</TableCell>
@@ -588,7 +603,7 @@ export default function StaffPage() {
                           </div>
                           <div>
                             <p className="text-sm font-medium truncate max-w-[100px]">{member.name}</p>
-                            <p className="text-xs text-muted-foreground">{member.role}</p>
+                            <p className="text-xs text-muted-foreground">{roleLabels[member.role] || member.role}</p>
                           </div>
                         </div>
                       </td>
