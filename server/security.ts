@@ -1,13 +1,14 @@
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { randomBytes } from "crypto";
+import { createHmac } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 
 const CSRF_COOKIE = "csrf-token";
 const CSRF_HEADER = "x-csrf-token";
 
-function generateCsrfToken(): string {
-  return randomBytes(32).toString("hex");
+function computeCsrfToken(sessionId: string): string {
+  const secret = process.env.SESSION_SECRET || "table-salt-secret-key-change-in-prod";
+  return createHmac("sha256", secret).update(sessionId).digest("hex");
 }
 
 export function setupSecurity(app: Express) {
@@ -104,12 +105,9 @@ export function setupSecurity(app: Express) {
 
 export function setupCsrf(app: Express) {
   app.use("/api/", (req: Request, res: Response, next: NextFunction) => {
-    const session = req.session as Record<string, unknown>;
-    if (!session.csrfToken) {
-      session.csrfToken = generateCsrfToken();
-    }
+    const token = computeCsrfToken(req.sessionID);
 
-    res.cookie(CSRF_COOKIE, session.csrfToken as string, {
+    res.cookie(CSRF_COOKIE, token, {
       httpOnly: false,
       sameSite: "strict",
       secure: process.env.NODE_ENV === "production",
@@ -137,7 +135,7 @@ export function setupCsrf(app: Express) {
     }
 
     const headerToken = req.headers[CSRF_HEADER] as string | undefined;
-    if (!headerToken || headerToken !== session.csrfToken) {
+    if (!headerToken || headerToken !== token) {
       return res.status(403).json({ message: "Invalid CSRF token" });
     }
 
