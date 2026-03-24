@@ -44,8 +44,8 @@ export function registerGuestRoutes(app: Express): void {
   app.post("/api/tables/:tableId/generate-qr-token", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const table = await storage.getTable(req.params.tableId);
-      if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
+      const table = await storage.getTable(req.params.tableId, user.tenantId);
+      if (!table) return res.status(404).json({ message: "Table not found" });
       const crypto = await import("crypto");
       const token = `tbl-${crypto.randomBytes(8).toString("hex")}`;
       const updated = await storage.updateTableByTenant(table.id, user.tenantId, { qrToken: token });
@@ -113,9 +113,8 @@ export function registerGuestRoutes(app: Express): void {
       const { menuItemId, quantity, notes, guestLabel } = req.body;
       if (!menuItemId) return res.status(400).json({ message: "menuItemId is required" });
 
-      const menuItem = await storage.getMenuItem(menuItemId);
+      const menuItem = await storage.getMenuItem(menuItemId, session.tenantId);
       if (!menuItem) return res.status(404).json({ message: "Menu item not found" });
-      if (menuItem.tenantId !== session.tenantId) return res.status(403).json({ message: "Item not available" });
       if (menuItem.available === false) return res.status(400).json({ message: "Item is not available" });
 
       const item = await storage.createGuestCartItem({
@@ -217,7 +216,7 @@ export function registerGuestRoutes(app: Express): void {
     try {
       const session = await storage.getTableSession(req.params.sessionId);
       if (!session) return res.status(404).json({ message: "Session not found" });
-      await storage.updateTable(session.tableId, { callServerFlag: true });
+      await storage.updateTable(session.tableId, session.tenantId, { callServerFlag: true });
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -226,7 +225,7 @@ export function registerGuestRoutes(app: Express): void {
     try {
       const session = await storage.getTableSession(req.params.sessionId);
       if (!session) return res.status(404).json({ message: "Session not found" });
-      await storage.updateTable(session.tableId, { requestBillFlag: true });
+      await storage.updateTable(session.tableId, session.tenantId, { requestBillFlag: true });
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

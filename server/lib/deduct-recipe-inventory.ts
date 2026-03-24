@@ -49,7 +49,7 @@ export async function deductRecipeInventoryForOrder(
     }
     const recipeIngs = await storage.getRecipeIngredients(recipe.id);
     for (const ing of recipeIngs) {
-      const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+      const invItem = await storage.getInventoryItem(ing.inventoryItemId, tenantId);
       if (!invItem) continue;
       // Guard: never auto-deduct crockery/cutlery/glassware items
       if (invItem.itemCategory === 'CROCKERY' || invItem.itemCategory === 'CUTLERY' || invItem.itemCategory === 'GLASSWARE') continue;
@@ -129,7 +129,7 @@ export async function deductRecipeInventoryForItem(
   const writes: WriteEntry[] = [];
 
   for (const ing of recipeIngs) {
-    const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+    const invItem = await storage.getInventoryItem(ing.inventoryItemId, tenantId);
     if (!invItem) continue;
     // Guard: never auto-deduct crockery/cutlery/glassware items
     if (invItem.itemCategory === 'CROCKERY' || invItem.itemCategory === 'CUTLERY' || invItem.itemCategory === 'GLASSWARE') continue;

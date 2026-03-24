@@ -842,7 +842,7 @@ export function registerProcurementRoutes(app: Express): void {
       if (varianceReason !== undefined) updateData.varianceReason = varianceReason;
       // For PIECE items, normalize physicalQty to whole integer before persisting
       if (updateData.physicalQty !== undefined) {
-        const inv = await storage.getInventoryItem(sessionItem.inventoryItemId);
+        const inv = await storage.getInventoryItem(sessionItem.inventoryItemId, user.tenantId);
         if (inv?.unitType === 'PIECE') {
           updateData.physicalQty = String(Math.round(parseFloat(String(updateData.physicalQty))));
         }
@@ -862,7 +862,7 @@ export function registerProcurementRoutes(app: Express): void {
       // Adjust inventory for counted items
       for (const item of items) {
         if (item.counted && item.physicalQty !== null) {
-          const inv = await storage.getInventoryItem(item.inventoryItemId);
+          const inv = await storage.getInventoryItem(item.inventoryItemId, user.tenantId);
           if (inv) {
             const rawVariance = parseFloat(item.physicalQty) - parseFloat(item.systemQty);
             // For PIECE unit_type items, round to whole integers
@@ -870,7 +870,7 @@ export function registerProcurementRoutes(app: Express): void {
             const variance = isPiece ? Math.round(rawVariance) : rawVariance;
             const newStock = isPiece ? String(Math.round(parseFloat(item.physicalQty))) : item.physicalQty;
             if (Math.abs(variance) > 0.001) {
-              await storage.updateInventoryItem(inv.id, { currentStock: newStock });
+              await storage.updateInventoryItem(inv.id, { currentStock: newStock }, user.tenantId);
               const movementQty = isPiece ? String(variance) : variance.toFixed(2);
               await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "adjustment", quantity: movementQty, reason: `Stock count ${session.countNumber}` });
             }
@@ -900,7 +900,7 @@ export function registerProcurementRoutes(app: Express): void {
       // Normalize damagedQty to whole integer for PIECE items before persisting
       let normalizedBody = { ...req.body };
       if (req.body.inventoryItemId && req.body.damagedQty !== undefined) {
-        const invItem = await storage.getInventoryItem(req.body.inventoryItemId);
+        const invItem = await storage.getInventoryItem(req.body.inventoryItemId, user.tenantId);
         if (invItem?.unitType === 'PIECE') {
           normalizedBody.damagedQty = String(Math.round(parseFloat(String(req.body.damagedQty))));
         }
@@ -910,12 +910,12 @@ export function registerProcurementRoutes(app: Express): void {
         insertDamagedInventorySchema.parse({ ...normalizedBody, tenantId: user.tenantId, damageNumber, totalValue, createdBy: user.id })
       );
       // Deduct from inventory
-      const inv = await storage.getInventoryItem(damage.inventoryItemId);
+      const inv = await storage.getInventoryItem(damage.inventoryItemId, user.tenantId);
       if (inv) {
         const rawNewStock = Math.max(0, parseFloat(inv.currentStock || "0") - parseFloat(damage.damagedQty));
         const newStock = inv.unitType === 'PIECE' ? Math.round(rawNewStock) : rawNewStock;
         const damagedQtyRounded = inv.unitType === 'PIECE' ? Math.round(parseFloat(damage.damagedQty)) : parseFloat(damage.damagedQty);
-        await storage.updateInventoryItem(inv.id, { currentStock: String(newStock) });
+        await storage.updateInventoryItem(inv.id, { currentStock: String(newStock) }, user.tenantId);
         await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "waste", quantity: String(-damagedQtyRounded), reason: `Damage ${damageNumber}` });
       }
       res.json(damage);

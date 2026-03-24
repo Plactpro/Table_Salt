@@ -75,18 +75,18 @@ export function registerKitchenRoutes(app: Express): void {
       const user = req.user as Express.User & { tenantId: string };
       const { status } = req.body;
       const validTransitions: Record<string, string[]> = { pending: ["cooking"], cooking: ["ready"], ready: ["recalled", "served"], recalled: ["cooking"] };
-      const item = await storage.getOrderItem(req.params.id);
+      const item = await storage.getOrderItem(req.params.id, user.tenantId);
       if (!item) return res.status(404).json({ message: "Order item not found" });
       const currentStatus = item.status || "pending";
       const allowed = validTransitions[currentStatus];
       if (!allowed || !allowed.includes(status)) return res.status(400).json({ message: `Invalid transition: ${currentStatus} -> ${status}` });
-      const order = await storage.getOrder(item.orderId);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(item.orderId, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
       const updates: Record<string, string | Date | null> = { status };
       if (status === "cooking" && !item.startedAt) updates.startedAt = new Date();
       if (status === "ready") updates.readyAt = new Date();
       if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
-      const updated = await storage.updateOrderItem(req.params.id, updates);
+      const updated = await storage.updateOrderItem(req.params.id, updates, user.tenantId);
       let newOrderStatus: string | null = null;
       if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) { await storage.updateOrder(item.orderId, { status: "in_progress" }); newOrderStatus = "in_progress"; }
       if (status === "recalled" && order.status === "ready") { await storage.updateOrder(item.orderId, { status: "in_progress" }); newOrderStatus = "in_progress"; }
@@ -122,8 +122,8 @@ export function registerKitchenRoutes(app: Express): void {
       const user = req.user as Express.User & { tenantId: string };
       const { status, station } = req.body;
       const validTransitions: Record<string, string[]> = { pending: ["cooking"], cooking: ["ready"], ready: ["recalled", "served"], recalled: ["cooking"] };
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
       const items = await storage.getOrderItemsByOrder(req.params.id);
       const filtered = station ? items.filter(i => i.station === station) : items;
       for (const item of filtered) {
@@ -134,7 +134,7 @@ export function registerKitchenRoutes(app: Express): void {
         if (status === "cooking" && !item.startedAt) updates.startedAt = new Date();
         if (status === "ready") updates.readyAt = new Date();
         if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
-        await storage.updateOrderItem(item.id, updates);
+        await storage.updateOrderItem(item.id, updates, user.tenantId);
       }
       const freshItems = await storage.getOrderItemsByOrder(req.params.id);
       const allServed = freshItems.every(i => i.status === "served");
@@ -156,8 +156,8 @@ export function registerKitchenRoutes(app: Express): void {
     try {
       const user = req.user as Express.User & { tenantId: string };
       const { station } = req.query;
-      const order = await storage.getOrder(req.params.orderId);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(req.params.orderId, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
       const items = await storage.getOrderItemsByOrder(req.params.orderId);
       const filtered = station ? items.filter(i => i.station === station) : items;
       const result: any[] = [];
@@ -180,7 +180,7 @@ export function registerKitchenRoutes(app: Express): void {
         const recipeIngs = await storage.getRecipeIngredients(recipe.id);
         const ingredients: any[] = [];
         for (const ing of recipeIngs) {
-          const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+          const invItem = await storage.getInventoryItem(ing.inventoryItemId, user.tenantId);
           if (!invItem) continue;
           const ingUnit = ing.unit || invItem.unit || "pcs";
           const invUnit = invItem.unit || "pcs";
@@ -219,8 +219,8 @@ export function registerKitchenRoutes(app: Express): void {
     try {
       const user = req.user as Express.User & { tenantId: string; id: string; name?: string; username?: string };
       const { station, force = false } = req.body;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
       const items = await storage.getOrderItemsByOrder(req.params.id);
       const filtered = station ? items.filter(i => i.station === station && (i.status === "pending" || !i.status)) : items.filter(i => i.status === "pending" || !i.status);
       const activeShift = await storage.getActiveShift(user.tenantId, order.outletId || undefined);
@@ -244,7 +244,7 @@ export function registerKitchenRoutes(app: Express): void {
           }
           const recipeIngs = await storage.getRecipeIngredients(recipe.id);
           for (const ing of recipeIngs) {
-            const invItem = await storage.getInventoryItem(ing.inventoryItemId);
+            const invItem = await storage.getInventoryItem(ing.inventoryItemId, user.tenantId);
             if (!invItem) continue;
             const ingUnit = ing.unit || invItem.unit || "pcs";
             const invUnit = invItem.unit || "pcs";
@@ -312,7 +312,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       for (const oi of filtered) {
-        await storage.updateOrderItem(oi.id, { status: "cooking", startedAt: new Date() });
+        await storage.updateOrderItem(oi.id, { status: "cooking", startedAt: new Date() }, user.tenantId);
       }
 
       if (order.status === "new" || order.status === "sent_to_kitchen") {
@@ -410,8 +410,8 @@ export function registerKitchenRoutes(app: Express): void {
       const user = req.user as Express.User & { tenantId: string; id: string; name?: string; username?: string };
       const { inventoryItemId, quantity, reason, station } = req.body;
       if (!inventoryItemId || !quantity) return res.status(400).json({ message: "inventoryItemId and quantity required" });
-      const invItem = await storage.getInventoryItem(inventoryItemId);
-      if (!invItem || invItem.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const invItem = await storage.getInventoryItem(inventoryItemId, user.tenantId);
+      if (!invItem) return res.status(403).json({ message: "Forbidden" });
       const qty = Number(quantity);
       const chefName = (user as any).name || (user as any).username || "Chef";
       const activeShift = await storage.getActiveShift(user.tenantId);
@@ -700,10 +700,10 @@ export function registerKitchenRoutes(app: Express): void {
   app.put("/api/kds/items/:id/start", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
       const user = req.user as any;
-      const item = await storage.getOrderItem(req.params.id);
+      const item = await storage.getOrderItem(req.params.id, user.tenantId);
       if (!item) return res.status(404).json({ message: "Order item not found" });
-      const order = await storage.getOrder(item.orderId);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(item.orderId, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const kitSettings = await storage.getKitchenSettings(user.tenantId);
       if (kitSettings?.cookingControlMode === "auto_start") {
@@ -724,8 +724,8 @@ export function registerKitchenRoutes(app: Express): void {
         startedByName: chefName,
       });
       // Maintain legacy status field used by existing KDS consumers
-      await storage.updateOrderItem(item.id, { status: "cooking", startedAt: now });
-      const updated = await storage.getOrderItem(item.id);
+      await storage.updateOrderItem(item.id, { status: "cooking", startedAt: now }, user.tenantId);
+      const updated = await storage.getOrderItem(item.id, user.tenantId);
 
       // Deduct inventory for this single item (non-fatal, mirrors bulk-start pattern)
       setImmediate(() => {
@@ -768,10 +768,10 @@ export function registerKitchenRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const { holdReason, holdUntilItemId, holdUntilMinutes } = req.body;
-      const item = await storage.getOrderItem(req.params.id);
+      const item = await storage.getOrderItem(req.params.id, user.tenantId);
       if (!item) return res.status(404).json({ message: "Order item not found" });
-      const order = await storage.getOrder(item.orderId);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(item.orderId, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const updated = await storage.updateOrderItemCooking(item.id, {
         cookingStatus: "hold",
@@ -790,10 +790,10 @@ export function registerKitchenRoutes(app: Express): void {
   app.put("/api/kds/items/:id/ready", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
       const user = req.user as any;
-      const item = await storage.getOrderItem(req.params.id);
+      const item = await storage.getOrderItem(req.params.id, user.tenantId);
       if (!item) return res.status(404).json({ message: "Order item not found" });
-      const order = await storage.getOrder(item.orderId);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(item.orderId, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const now = new Date();
       await storage.updateOrderItemCooking(item.id, {
@@ -801,8 +801,8 @@ export function registerKitchenRoutes(app: Express): void {
         actualReadyAt: now,
       });
       // Maintain legacy status field used by existing KDS consumers
-      await storage.updateOrderItem(item.id, { status: "ready", readyAt: now });
-      const updated = await storage.getOrderItem(item.id);
+      await storage.updateOrderItem(item.id, { status: "ready", readyAt: now }, user.tenantId);
+      const updated = await storage.getOrderItem(item.id, user.tenantId);
 
       // Check order status
       const allItems = await storage.getOrderItemsByOrder(order.id);
@@ -839,10 +839,10 @@ export function registerKitchenRoutes(app: Express): void {
   app.put("/api/kds/items/:id/rush", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const item = await storage.getOrderItem(req.params.id);
+      const item = await storage.getOrderItem(req.params.id, user.tenantId);
       if (!item) return res.status(404).json({ message: "Order item not found" });
-      const order = await storage.getOrder(item.orderId);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(item.orderId, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const kitSettings = await storage.getKitchenSettings(user.tenantId);
 
@@ -883,7 +883,7 @@ export function registerKitchenRoutes(app: Express): void {
             startedByName: chefName,
           });
           // Sync legacy status field for backward compatibility with existing KDS consumers
-          await storage.updateOrderItem(i.id, { status: "cooking", startedAt: now });
+          await storage.updateOrderItem(i.id, { status: "cooking", startedAt: now }, user.tenantId);
         }
       }
 
@@ -901,8 +901,8 @@ export function registerKitchenRoutes(app: Express): void {
   app.post("/api/kds/orders/:id/timing", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const { targetReadyTime } = req.body;
       const targetReady = targetReadyTime ? new Date(targetReadyTime) : undefined;
@@ -944,8 +944,8 @@ export function registerKitchenRoutes(app: Express): void {
   app.get("/api/kds/orders/:id/item-status", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const items = await storage.getOrderItemsByOrder(order.id);
       const kitSettings = await storage.getKitchenSettings(user.tenantId);
@@ -1036,8 +1036,8 @@ export function registerKitchenRoutes(app: Express): void {
   app.post("/api/orders/:id/courses", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const { courses } = req.body as { courses: Array<{ courseNumber: number; courseName?: string; itemIds: string[] }> };
       if (!Array.isArray(courses)) return res.status(400).json({ message: "courses array required" });
@@ -1078,8 +1078,8 @@ export function registerKitchenRoutes(app: Express): void {
   app.put("/api/orders/:id/courses/:num/fire", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
       const user = req.user as any;
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(403).json({ message: "Forbidden" });
 
       const courseNumber = parseInt(req.params.num, 10);
       const chefName = (user as any).name || (user as any).username || "Chef";

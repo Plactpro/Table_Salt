@@ -165,8 +165,8 @@ export function registerCoordinationRoutes(app: Express): void {
       const { status } = req.body;
       if (!status) return res.status(400).json({ message: "Status required" });
 
-      const order = await storage.getOrder(req.params.id);
-      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
 
       await storage.updateOrder(order.id, { status });
       emitToTenant(user.tenantId, "coordination:order_updated", { orderId: order.id, status });
@@ -213,8 +213,8 @@ export function registerCoordinationRoutes(app: Express): void {
       const { status } = req.body;
       if (!status) return res.status(400).json({ message: "Status required" });
 
-      const order = await storage.getOrder(req.params.orderId);
-      if (!order || order.tenantId !== user.tenantId) return res.status(404).json({ message: "Order not found" });
+      const order = await storage.getOrder(req.params.orderId, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
 
       await pool.query(
         `UPDATE order_items SET status = $1 WHERE id = $2 AND order_id = $3`,

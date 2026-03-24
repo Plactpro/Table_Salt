@@ -461,8 +461,8 @@ export function registerKioskRoutes(app: Express): void {
 
       const tenant = await storage.getTenant(device.tenantId!);
 
-      const order = await storage.getOrder(req.params.orderId);
-      if (!order || order.tenantId !== device.tenantId) {
+      const order = await storage.getOrder(req.params.orderId, device.tenantId!);
+      if (!order) {
         return res.status(403).json({ message: "Order not found or access denied" });
       }
 

@@ -252,8 +252,8 @@ export function registerTableRequestRoutes(app: Express): void {
   app.post("/api/qr/generate/:tableId", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const table = await storage.getTable(req.params.tableId);
-      if (!table || table.tenantId !== user.tenantId) return res.status(404).json({ message: "Table not found" });
+      const table = await storage.getTable(req.params.tableId, user.tenantId);
+      if (!table) return res.status(404).json({ message: "Table not found" });
 
       const existing = await storage.getActiveQrToken(table.id);
       if (existing) {
