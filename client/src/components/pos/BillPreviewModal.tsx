@@ -109,7 +109,7 @@ function numWords(n: number): string {
   const cents = Math.round((n % 1) * 100);
   const whole = Math.floor(n);
   let r = convert(whole);
-  if (cents > 0) r += ` & ${cents} Paise`;
+  if (cents > 0) r += ` & ${cents} Fils`;
   return r;
 }
 
