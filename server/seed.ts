@@ -3172,6 +3172,8 @@ export async function seedAlertDefinitions(): Promise<void> {
     { code: 'ALERT-11', name: 'Delivery at Risk', soundKey: 'urgent_tone', urgency: 'high', targetRoles: ['manager', 'owner', 'waiter'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
     { code: 'ALERT-12', name: 'Staff Not Clocked In', soundKey: 'reminder_chime', urgency: 'normal', targetRoles: ['manager', 'owner'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
     { code: 'RESOURCE_DEPLETED', name: 'Special Resource Depleted', soundKey: 'stock_alert', urgency: 'high', targetRoles: ['manager', 'owner', 'supervisor'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'PARKING_FULL', name: 'Parking Lot Full', soundKey: 'stock_alert', urgency: 'high', targetRoles: ['manager', 'owner', 'cashier'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
+    { code: 'PARKING_RETRIEVAL_REQUESTED', name: 'Vehicle Retrieval Requested', soundKey: 'attention_chime', urgency: 'normal', targetRoles: ['manager', 'owner', 'waiter'], requiresAck: false, repeatSec: 0, canDisable: true, minVol: 0 },
   ];
 
   for (const def of alertDefs) {
@@ -3184,7 +3186,7 @@ export async function seedAlertDefinitions(): Promise<void> {
       );
     }
   }
-  console.log("[AlertDefinitions] Seeded 13 system alert definitions.");
+  console.log("[AlertDefinitions] Seeded 15 system alert definitions.");
 }
 
 export async function seedTipSettings(): Promise<void> {

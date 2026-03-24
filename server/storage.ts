@@ -178,6 +178,17 @@ import {
   type ResourceUnit, type InsertResourceUnit,
   type ResourceAssignment, type InsertResourceAssignment,
   type ResourceCleaningLog, type InsertResourceCleaningLog,
+  parkingLayoutConfig, parkingZones, parkingSlots, parkingRates, parkingRateSlabs,
+  valetStaff, valetTickets, valetRetrievalRequests, billParkingCharges,
+  type ParkingLayoutConfig, type InsertParkingLayoutConfig,
+  type ParkingZone, type InsertParkingZone,
+  type ParkingSlot, type InsertParkingSlot,
+  type ParkingRate, type InsertParkingRate,
+  type ParkingRateSlab, type InsertParkingRateSlab,
+  type ValetStaff, type InsertValetStaff,
+  type ValetTicket, type InsertValetTicket,
+  type ValetRetrievalRequest, type InsertValetRetrievalRequest,
+  type BillParkingCharge, type InsertBillParkingCharge,
 } from "@shared/schema";
 
 export interface IStorage {
@@ -805,6 +816,38 @@ export interface IStorage {
   updateResourceAssignment(id: string, data: Partial<any>, tenantId?: string): Promise<ResourceAssignment | undefined>;
   getResourceCleaningLog(outletId: string, tenantId: string, limit?: number): Promise<ResourceCleaningLog[]>;
   createResourceCleaningLog(data: InsertResourceCleaningLog): Promise<ResourceCleaningLog>;
+
+  // Task #135: Parking Management
+  getParkingConfig(outletId: string, tenantId: string): Promise<ParkingLayoutConfig | undefined>;
+  upsertParkingConfig(outletId: string, tenantId: string, data: Partial<InsertParkingLayoutConfig>): Promise<ParkingLayoutConfig>;
+  getParkingZones(outletId: string, tenantId: string): Promise<ParkingZone[]>;
+  createParkingZone(data: InsertParkingZone): Promise<ParkingZone>;
+  updateParkingZone(id: string, tenantId: string, data: Partial<InsertParkingZone>): Promise<ParkingZone | undefined>;
+  deleteParkingZone(id: string, tenantId: string): Promise<void>;
+  getParkingSlots(outletId: string, tenantId: string): Promise<ParkingSlot[]>;
+  createParkingSlot(data: InsertParkingSlot): Promise<ParkingSlot>;
+  updateParkingSlot(id: string, tenantId: string, data: Partial<InsertParkingSlot>): Promise<ParkingSlot | undefined>;
+  getParkingRates(outletId: string, tenantId: string): Promise<ParkingRate[]>;
+  createParkingRate(data: InsertParkingRate): Promise<ParkingRate>;
+  deleteParkingRate(id: string, tenantId: string): Promise<void>;
+  getParkingRateSlabs(rateId: string): Promise<ParkingRateSlab[]>;
+  createParkingRateSlab(data: InsertParkingRateSlab): Promise<ParkingRateSlab>;
+  deleteRateSlabsByRate(rateId: string): Promise<void>;
+  getValetStaff(outletId: string, tenantId: string): Promise<ValetStaff[]>;
+  createValetStaff(data: InsertValetStaff): Promise<ValetStaff>;
+  updateValetStaff(id: string, tenantId: string, data: Partial<InsertValetStaff>): Promise<ValetStaff | undefined>;
+  createValetTicket(data: InsertValetTicket): Promise<ValetTicket>;
+  getValetTicket(id: string): Promise<ValetTicket | undefined>;
+  getValetTickets(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetTicket[]>;
+  updateValetTicket(id: string, tenantId: string, data: Partial<InsertValetTicket>): Promise<ValetTicket | undefined>;
+  appendValetTicketEvent(ticketId: string, tenantId: string, event: { eventType: string; performedBy?: string; performedByName?: string; notes?: string }): Promise<void>;
+  getValetTicketByBill(billId: string): Promise<ValetTicket | undefined>;
+  createRetrievalRequest(data: InsertValetRetrievalRequest): Promise<ValetRetrievalRequest>;
+  getRetrievalRequests(outletId: string, tenantId: string, opts?: { status?: string }): Promise<ValetRetrievalRequest[]>;
+  updateRetrievalRequest(id: string, tenantId: string, data: Partial<InsertValetRetrievalRequest>): Promise<ValetRetrievalRequest | undefined>;
+  createBillParkingCharge(data: InsertBillParkingCharge): Promise<BillParkingCharge>;
+  getBillParkingCharge(billId: string, tenantId: string): Promise<BillParkingCharge | undefined>;
+  generateValetTicketNumber(outletId: string, tenantId: string): Promise<string>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -4372,6 +4415,284 @@ export class DatabaseStorage implements IStorage {
     );
     const r = rows[0];
     return { id: r.id, tenantId: r.tenant_id, resourceUnitId: r.resource_unit_id, unitCode: r.unit_code, resourceName: r.resource_name, cleaningType: r.cleaning_type, startedAt: r.started_at, completedAt: r.completed_at, cleanedBy: r.cleaned_by, cleanedByName: r.cleaned_by_name, notes: r.notes };
+  }
+
+  // ─── Task #135: Parking Management ───────────────────────────────────────────
+
+  private _mapParkingConfig(r: any): ParkingLayoutConfig {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, totalCapacity: r.total_capacity, availableSlots: r.available_slots, valetEnabled: r.valet_enabled, freeMinutes: r.free_minutes, validationEnabled: r.validation_enabled, validationMinSpend: r.validation_min_spend, displayMessage: r.display_message, createdAt: r.created_at, updatedAt: r.updated_at };
+  }
+  private _mapParkingZone(r: any): ParkingZone {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, name: r.name, level: r.level, color: r.color, totalSlots: r.total_slots, availableSlots: r.available_slots, isActive: r.is_active, sortOrder: r.sort_order, createdAt: r.created_at };
+  }
+  private _mapParkingSlot(r: any): ParkingSlot {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, zoneId: r.zone_id, slotCode: r.slot_code, slotType: r.slot_type, status: r.status, isActive: r.is_active, notes: r.notes, createdAt: r.created_at };
+  }
+  private _mapParkingRate(r: any): ParkingRate {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, vehicleType: r.vehicle_type, rateType: r.rate_type, rateAmount: r.rate_amount, dailyMaxCharge: r.daily_max_charge, taxRate: r.tax_rate, isActive: r.is_active, createdAt: r.created_at };
+  }
+  private _mapParkingRateSlab(r: any): ParkingRateSlab {
+    return { id: r.id, rateId: r.rate_id, fromMinutes: r.from_minutes, toMinutes: r.to_minutes, charge: r.charge, createdAt: r.created_at };
+  }
+  private _mapValetStaff(r: any): ValetStaff {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, userId: r.user_id, name: r.name, phone: r.phone, badgeNumber: r.badge_number, isOnDuty: r.is_on_duty, isActive: r.is_active, createdAt: r.created_at };
+  }
+  private _mapValetTicket(r: any): ValetTicket {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketNumber: r.ticket_number, slotId: r.slot_id, zoneId: r.zone_id, billId: r.bill_id, valetStaffId: r.valet_staff_id, vehicleNumber: r.vehicle_number, vehicleType: r.vehicle_type, vehicleMake: r.vehicle_make, vehicleColor: r.vehicle_color, customerName: r.customer_name, customerPhone: r.customer_phone, status: r.status, entryTime: r.entry_time, exitTime: r.exit_time, durationMinutes: r.duration_minutes, chargeAddedToBill: r.charge_added_to_bill, events: r.events, notes: r.notes, createdAt: r.created_at };
+  }
+  private _mapRetrievalRequest(r: any): ValetRetrievalRequest {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketId: r.ticket_id, source: r.source, requestedBy: r.requested_by, requestedByName: r.requested_by_name, assignedValetId: r.assigned_valet_id, assignedValetName: r.assigned_valet_name, status: r.status, notes: r.notes, completedAt: r.completed_at, createdAt: r.created_at };
+  }
+  private _mapBillParkingCharge(r: any): BillParkingCharge {
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, billId: r.bill_id, ticketId: r.ticket_id, durationMinutes: r.duration_minutes, freeMinutesApplied: r.free_minutes_applied, grossCharge: r.gross_charge, validationDiscount: r.validation_discount, finalCharge: r.final_charge, taxAmount: r.tax_amount, totalCharge: r.total_charge, vehicleType: r.vehicle_type, rateType: r.rate_type, createdAt: r.created_at };
+  }
+
+  async getParkingConfig(outletId: string, tenantId: string): Promise<ParkingLayoutConfig | undefined> {
+    const { rows } = await pool.query(`SELECT * FROM parking_layout_config WHERE outlet_id = $1 AND tenant_id = $2 LIMIT 1`, [outletId, tenantId]);
+    return rows[0] ? this._mapParkingConfig(rows[0]) : undefined;
+  }
+  async upsertParkingConfig(outletId: string, tenantId: string, data: Partial<InsertParkingLayoutConfig>): Promise<ParkingLayoutConfig> {
+    const existing = await this.getParkingConfig(outletId, tenantId);
+    const merged = {
+      totalCapacity: data.totalCapacity ?? existing?.totalCapacity ?? 0,
+      availableSlots: data.availableSlots ?? existing?.availableSlots ?? 0,
+      valetEnabled: data.valetEnabled !== undefined ? data.valetEnabled : (existing?.valetEnabled ?? true),
+      freeMinutes: data.freeMinutes ?? existing?.freeMinutes ?? 0,
+      validationEnabled: data.validationEnabled !== undefined ? data.validationEnabled : (existing?.validationEnabled ?? false),
+      validationMinSpend: data.validationMinSpend ?? existing?.validationMinSpend ?? 0,
+      displayMessage: data.displayMessage !== undefined ? data.displayMessage : (existing?.displayMessage ?? null),
+    };
+    const { rows } = await pool.query(`
+      INSERT INTO parking_layout_config (outlet_id, tenant_id, total_capacity, available_slots, valet_enabled, free_minutes, validation_enabled, validation_min_spend, display_message)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      ON CONFLICT (tenant_id, outlet_id) DO UPDATE SET
+        total_capacity = EXCLUDED.total_capacity,
+        available_slots = EXCLUDED.available_slots,
+        valet_enabled = EXCLUDED.valet_enabled,
+        free_minutes = EXCLUDED.free_minutes,
+        validation_enabled = EXCLUDED.validation_enabled,
+        validation_min_spend = EXCLUDED.validation_min_spend,
+        display_message = EXCLUDED.display_message,
+        updated_at = now()
+      RETURNING *
+    `, [outletId, tenantId,
+      merged.totalCapacity, merged.availableSlots, merged.valetEnabled,
+      merged.freeMinutes, merged.validationEnabled, merged.validationMinSpend, merged.displayMessage
+    ]);
+    return this._mapParkingConfig(rows[0]);
+  }
+
+  async getParkingZones(outletId: string, tenantId: string): Promise<ParkingZone[]> {
+    const { rows } = await pool.query(`SELECT * FROM parking_zones WHERE outlet_id = $1 AND tenant_id = $2 ORDER BY sort_order`, [outletId, tenantId]);
+    return rows.map((r: any) => this._mapParkingZone(r));
+  }
+  async createParkingZone(data: InsertParkingZone): Promise<ParkingZone> {
+    const { rows } = await pool.query(
+      `INSERT INTO parking_zones (tenant_id, outlet_id, name, level, color, total_slots, available_slots, is_active, sort_order) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [data.tenantId, data.outletId, data.name, data.level ?? null, data.color ?? "#3B82F6", data.totalSlots ?? 0, data.availableSlots ?? 0, data.isActive ?? true, data.sortOrder ?? 0]
+    );
+    return this._mapParkingZone(rows[0]);
+  }
+  async updateParkingZone(id: string, tenantId: string, data: Partial<InsertParkingZone>): Promise<ParkingZone | undefined> {
+    const fields: Record<string, string> = { name: "name", level: "level", color: "color", totalSlots: "total_slots", availableSlots: "available_slots", isActive: "is_active", sortOrder: "sort_order" };
+    const sets: string[] = []; const vals: any[] = [id, tenantId];
+    for (const [k, col] of Object.entries(fields)) {
+      if ((data as any)[k] !== undefined) { vals.push((data as any)[k]); sets.push(`${col} = $${vals.length}`); }
+    }
+    if (!sets.length) return this.getParkingZones("", tenantId).then(r => r.find(z => z.id === id));
+    const { rows } = await pool.query(`UPDATE parking_zones SET ${sets.join(",")} WHERE id=$1 AND tenant_id=$2 RETURNING *`, vals);
+    return rows[0] ? this._mapParkingZone(rows[0]) : undefined;
+  }
+  async deleteParkingZone(id: string, tenantId: string): Promise<void> {
+    await pool.query(`DELETE FROM parking_zones WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
+  }
+
+  async getParkingSlots(outletId: string, tenantId: string): Promise<ParkingSlot[]> {
+    const { rows } = await pool.query(`SELECT * FROM parking_slots WHERE outlet_id = $1 AND tenant_id = $2 ORDER BY slot_code`, [outletId, tenantId]);
+    return rows.map((r: any) => this._mapParkingSlot(r));
+  }
+  async createParkingSlot(data: InsertParkingSlot): Promise<ParkingSlot> {
+    const { rows } = await pool.query(
+      `INSERT INTO parking_slots (tenant_id, outlet_id, zone_id, slot_code, slot_type, status, is_active, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [data.tenantId, data.outletId, data.zoneId ?? null, data.slotCode, data.slotType ?? "STANDARD", data.status ?? "available", data.isActive ?? true, data.notes ?? null]
+    );
+    return this._mapParkingSlot(rows[0]);
+  }
+  async updateParkingSlot(id: string, tenantId: string, data: Partial<InsertParkingSlot>): Promise<ParkingSlot | undefined> {
+    const fields: Record<string, string> = { zoneId: "zone_id", slotCode: "slot_code", slotType: "slot_type", status: "status", isActive: "is_active", notes: "notes" };
+    const sets: string[] = []; const vals: any[] = [id, tenantId];
+    for (const [k, col] of Object.entries(fields)) {
+      if ((data as any)[k] !== undefined) { vals.push((data as any)[k]); sets.push(`${col} = $${vals.length}`); }
+    }
+    if (!sets.length) return undefined;
+    const { rows } = await pool.query(`UPDATE parking_slots SET ${sets.join(",")} WHERE id=$1 AND tenant_id=$2 RETURNING *`, vals);
+    return rows[0] ? this._mapParkingSlot(rows[0]) : undefined;
+  }
+
+  async getParkingRates(outletId: string, tenantId: string): Promise<ParkingRate[]> {
+    const { rows } = await pool.query(`SELECT * FROM parking_rates WHERE outlet_id = $1 AND tenant_id = $2 AND is_active = true`, [outletId, tenantId]);
+    return rows.map((r: any) => this._mapParkingRate(r));
+  }
+  async createParkingRate(data: InsertParkingRate): Promise<ParkingRate> {
+    const { rows } = await pool.query(
+      `INSERT INTO parking_rates (tenant_id, outlet_id, vehicle_type, rate_type, rate_amount, daily_max_charge, tax_rate, is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [data.tenantId, data.outletId, data.vehicleType ?? "CAR", data.rateType ?? "HOURLY", data.rateAmount, data.dailyMaxCharge ?? null, data.taxRate ?? 0, data.isActive ?? true]
+    );
+    return this._mapParkingRate(rows[0]);
+  }
+  async deleteParkingRate(id: string, tenantId: string): Promise<void> {
+    await pool.query(`UPDATE parking_rates SET is_active = false WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
+  }
+
+  async getParkingRateSlabs(rateId: string): Promise<ParkingRateSlab[]> {
+    const { rows } = await pool.query(`SELECT * FROM parking_rate_slabs WHERE rate_id = $1 ORDER BY from_minutes`, [rateId]);
+    return rows.map((r: any) => this._mapParkingRateSlab(r));
+  }
+  async createParkingRateSlab(data: InsertParkingRateSlab): Promise<ParkingRateSlab> {
+    const { rows } = await pool.query(
+      `INSERT INTO parking_rate_slabs (rate_id, from_minutes, to_minutes, charge) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [data.rateId, data.fromMinutes, data.toMinutes ?? null, data.charge]
+    );
+    return this._mapParkingRateSlab(rows[0]);
+  }
+  async deleteRateSlabsByRate(rateId: string): Promise<void> {
+    await pool.query(`DELETE FROM parking_rate_slabs WHERE rate_id=$1`, [rateId]);
+  }
+
+  async getValetStaff(outletId: string, tenantId: string): Promise<ValetStaff[]> {
+    const { rows } = await pool.query(`SELECT * FROM valet_staff WHERE outlet_id=$1 AND tenant_id=$2 AND is_active=true ORDER BY name`, [outletId, tenantId]);
+    return rows.map((r: any) => this._mapValetStaff(r));
+  }
+  async createValetStaff(data: InsertValetStaff): Promise<ValetStaff> {
+    const { rows } = await pool.query(
+      `INSERT INTO valet_staff (tenant_id, outlet_id, user_id, name, phone, badge_number, is_on_duty, is_active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [data.tenantId, data.outletId, data.userId ?? null, data.name, data.phone ?? null, data.badgeNumber ?? null, data.isOnDuty ?? false, data.isActive ?? true]
+    );
+    return this._mapValetStaff(rows[0]);
+  }
+  async updateValetStaff(id: string, tenantId: string, data: Partial<InsertValetStaff>): Promise<ValetStaff | undefined> {
+    const fields: Record<string, string> = { name: "name", phone: "phone", badgeNumber: "badge_number", isOnDuty: "is_on_duty", isActive: "is_active" };
+    const sets: string[] = []; const vals: any[] = [id, tenantId];
+    for (const [k, col] of Object.entries(fields)) {
+      if ((data as any)[k] !== undefined) { vals.push((data as any)[k]); sets.push(`${col} = $${vals.length}`); }
+    }
+    if (!sets.length) return undefined;
+    const { rows } = await pool.query(`UPDATE valet_staff SET ${sets.join(",")} WHERE id=$1 AND tenant_id=$2 RETURNING *`, vals);
+    return rows[0] ? this._mapValetStaff(rows[0]) : undefined;
+  }
+
+  async createValetTicket(data: InsertValetTicket): Promise<ValetTicket> {
+    const { rows } = await pool.query(
+      `INSERT INTO valet_tickets (tenant_id, outlet_id, ticket_number, slot_id, zone_id, bill_id, valet_staff_id, vehicle_number, vehicle_type, vehicle_make, vehicle_color, customer_name, customer_phone, status, exit_time, duration_minutes, charge_added_to_bill, events, notes)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
+      [data.tenantId, data.outletId, data.ticketNumber, data.slotId ?? null, data.zoneId ?? null, data.billId ?? null, data.valetStaffId ?? null, data.vehicleNumber ?? null, data.vehicleType ?? "CAR", data.vehicleMake ?? null, data.vehicleColor ?? null, data.customerName ?? null, data.customerPhone ?? null, data.status ?? "parked", data.exitTime ?? null, data.durationMinutes ?? null, data.chargeAddedToBill ?? false, JSON.stringify(data.events ?? []), data.notes ?? null]
+    );
+    return this._mapValetTicket(rows[0]);
+  }
+  async getValetTicket(id: string): Promise<ValetTicket | undefined> {
+    const { rows } = await pool.query(`SELECT * FROM valet_tickets WHERE id=$1 LIMIT 1`, [id]);
+    return rows[0] ? this._mapValetTicket(rows[0]) : undefined;
+  }
+  async getValetTickets(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetTicket[]> {
+    let q = `SELECT * FROM valet_tickets WHERE outlet_id=$1 AND tenant_id=$2`;
+    const vals: any[] = [outletId, tenantId];
+    if (opts?.status) {
+      if (Array.isArray(opts.status)) {
+        vals.push(opts.status);
+        q += ` AND status = ANY($${vals.length})`;
+      } else {
+        vals.push(opts.status);
+        q += ` AND status=$${vals.length}`;
+      }
+    }
+    q += ` ORDER BY created_at DESC`;
+    const { rows } = await pool.query(q, vals);
+    return rows.map((r: any) => this._mapValetTicket(r));
+  }
+  async updateValetTicket(id: string, tenantId: string, data: Partial<InsertValetTicket>): Promise<ValetTicket | undefined> {
+    const fields: Record<string, string> = {
+      slotId: "slot_id", zoneId: "zone_id", billId: "bill_id", valetStaffId: "valet_staff_id",
+      vehicleNumber: "vehicle_number", vehicleType: "vehicle_type", vehicleMake: "vehicle_make", vehicleColor: "vehicle_color",
+      customerName: "customer_name", customerPhone: "customer_phone", status: "status",
+      exitTime: "exit_time", durationMinutes: "duration_minutes", chargeAddedToBill: "charge_added_to_bill", events: "events", notes: "notes"
+    };
+    const sets: string[] = []; const vals: any[] = [id, tenantId];
+    for (const [k, col] of Object.entries(fields)) {
+      if ((data as any)[k] !== undefined) {
+        vals.push(k === "events" ? JSON.stringify((data as any)[k]) : (data as any)[k]);
+        sets.push(`${col} = $${vals.length}`);
+      }
+    }
+    if (!sets.length) return undefined;
+    const { rows } = await pool.query(`UPDATE valet_tickets SET ${sets.join(",")} WHERE id=$1 AND tenant_id=$2 RETURNING *`, vals);
+    return rows[0] ? this._mapValetTicket(rows[0]) : undefined;
+  }
+  async appendValetTicketEvent(ticketId: string, tenantId: string, event: { eventType: string; performedBy?: string; performedByName?: string; notes?: string }): Promise<void> {
+    const timestamp = new Date().toISOString();
+    const eventEntry = { ...event, timestamp };
+    await pool.query(
+      `UPDATE valet_tickets SET events = COALESCE(events, '[]'::jsonb) || $1::jsonb WHERE id=$2 AND tenant_id=$3`,
+      [JSON.stringify([eventEntry]), ticketId, tenantId]
+    );
+    await pool.query(
+      `INSERT INTO valet_ticket_events (tenant_id, ticket_id, event_type, performed_by, performed_by_name, notes) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [tenantId, ticketId, event.eventType, event.performedBy ?? null, event.performedByName ?? null, event.notes ?? null]
+    );
+  }
+  async getValetTicketByBill(billId: string): Promise<ValetTicket | undefined> {
+    const { rows } = await pool.query(`SELECT * FROM valet_tickets WHERE bill_id=$1 LIMIT 1`, [billId]);
+    return rows[0] ? this._mapValetTicket(rows[0]) : undefined;
+  }
+
+  async createRetrievalRequest(data: InsertValetRetrievalRequest): Promise<ValetRetrievalRequest> {
+    const { rows } = await pool.query(
+      `INSERT INTO valet_retrieval_requests (tenant_id, outlet_id, ticket_id, source, requested_by, requested_by_name, assigned_valet_id, assigned_valet_name, status, notes, completed_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [data.tenantId, data.outletId, data.ticketId, data.source ?? "MANUAL", data.requestedBy ?? null, data.requestedByName ?? null, data.assignedValetId ?? null, data.assignedValetName ?? null, data.status ?? "pending", data.notes ?? null, data.completedAt ?? null]
+    );
+    return this._mapRetrievalRequest(rows[0]);
+  }
+  async getRetrievalRequests(outletId: string, tenantId: string, opts?: { status?: string }): Promise<ValetRetrievalRequest[]> {
+    let q = `SELECT * FROM valet_retrieval_requests WHERE outlet_id=$1 AND tenant_id=$2`;
+    const vals: any[] = [outletId, tenantId];
+    if (opts?.status) { vals.push(opts.status); q += ` AND status=$${vals.length}`; }
+    q += ` ORDER BY created_at DESC`;
+    const { rows } = await pool.query(q, vals);
+    return rows.map((r: any) => this._mapRetrievalRequest(r));
+  }
+  async updateRetrievalRequest(id: string, tenantId: string, data: Partial<InsertValetRetrievalRequest>): Promise<ValetRetrievalRequest | undefined> {
+    const fields: Record<string, string> = { status: "status", assignedValetId: "assigned_valet_id", assignedValetName: "assigned_valet_name", notes: "notes", completedAt: "completed_at" };
+    const sets: string[] = []; const vals: any[] = [id, tenantId];
+    for (const [k, col] of Object.entries(fields)) {
+      if ((data as any)[k] !== undefined) { vals.push((data as any)[k]); sets.push(`${col} = $${vals.length}`); }
+    }
+    if (!sets.length) return undefined;
+    const { rows } = await pool.query(`UPDATE valet_retrieval_requests SET ${sets.join(",")} WHERE id=$1 AND tenant_id=$2 RETURNING *`, vals);
+    return rows[0] ? this._mapRetrievalRequest(rows[0]) : undefined;
+  }
+
+  async createBillParkingCharge(data: InsertBillParkingCharge): Promise<BillParkingCharge> {
+    const { rows } = await pool.query(
+      `INSERT INTO bill_parking_charges (tenant_id, outlet_id, bill_id, ticket_id, duration_minutes, free_minutes_applied, gross_charge, validation_discount, final_charge, tax_amount, total_charge, vehicle_type, rate_type)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (bill_id) DO NOTHING RETURNING *`,
+      [data.tenantId, data.outletId ?? null, data.billId, data.ticketId, data.durationMinutes ?? 0, data.freeMinutesApplied ?? 0, data.grossCharge, data.validationDiscount ?? 0, data.finalCharge, data.taxAmount ?? 0, data.totalCharge, data.vehicleType ?? null, data.rateType ?? null]
+    );
+    return rows[0] ? this._mapBillParkingCharge(rows[0]) : this._mapBillParkingCharge({ ...data, id: "", created_at: new Date() });
+  }
+  async getBillParkingCharge(billId: string, tenantId: string): Promise<BillParkingCharge | undefined> {
+    const { rows } = await pool.query(`SELECT * FROM bill_parking_charges WHERE bill_id=$1 AND tenant_id=$2 LIMIT 1`, [billId, tenantId]);
+    return rows[0] ? this._mapBillParkingCharge(rows[0]) : undefined;
+  }
+
+  async generateValetTicketNumber(outletId: string, tenantId: string): Promise<string> {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM valet_tickets WHERE tenant_id=$1 AND outlet_id=$2 AND ticket_number LIKE $3`,
+      [tenantId, outletId, `VT-${dateStr}-%`]
+    );
+    const seq = parseInt(rows[0].cnt, 10) + 1;
+    return `VT-${dateStr}-${String(seq).padStart(4, "0")}`;
   }
 }
 

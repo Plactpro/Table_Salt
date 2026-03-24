@@ -10,6 +10,7 @@ import { createPaymentLink, getPaymentLink, refundRazorpayPayment } from "../raz
 import { routeAndPrint } from "../services/printer-service";
 import { recordAndDistributeTip } from "../services/tip-service";
 import { calculatePackingCharge } from "../services/packing-charge-service";
+import { applyParkingChargeToBill } from "../services/parking-charge-service";
 import { returnResourcesFromTable } from "../services/resource-service";
 import { sendEmail } from "../services/email-service";
 import { emailBase } from "../templates/email-base";
@@ -96,7 +97,20 @@ export async function finalizeBillCompletion(opts: {
     } catch (_) {}
   }
 
-  // 6. Realtime notification
+  // 6. Parking charge — auto-append if a valet ticket is linked and not yet charged
+  try {
+    const { rows: valetRows } = await pool.query(
+      `SELECT id FROM valet_tickets WHERE bill_id=$1 AND tenant_id=$2 AND charge_added_to_bill=false LIMIT 1`,
+      [bill.id, bill.tenantId]
+    );
+    if (valetRows[0]) {
+      applyParkingChargeToBill(bill.id, valetRows[0].id, bill.tenantId).catch(e =>
+        console.error("[billing] Parking charge auto-apply failed:", e)
+      );
+    }
+  } catch (_) {}
+
+  // 7. Realtime notification
   emitToTenant(bill.tenantId, "order:completed", { orderId: bill.orderId, status: "completed", tableId: bill.tableId });
 }
 
