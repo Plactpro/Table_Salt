@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { renderKotHtml, dispatchPrint } from "@/lib/print-utils";
+import { renderKotHtml, dispatchPrint, printHtmlInPopup } from "@/lib/print-utils";
 import { apiRequest } from "@/lib/queryClient";
 
 interface KitchenStation {
@@ -45,9 +45,14 @@ export function useKotAutoDispatch() {
           } catch (_) {}
         }
 
-        let printedCount = 0;
-        let failedCount = 0;
-        let usedNetworkPrinter = false;
+        type JobWithPrinter = {
+          job: (typeof kotJobs)[number];
+          stationPrinterUrl: string | null;
+          html: string;
+        };
+
+        const networkJobs: JobWithPrinter[] = [];
+        const browserJobs: JobWithPrinter[] = [];
 
         for (const job of kotJobs) {
           const stationPrinterUrl = job.station
@@ -67,6 +72,20 @@ export function useKotAutoDispatch() {
             items: p.items || [],
           });
 
+          const entry: JobWithPrinter = { job, stationPrinterUrl, html };
+          if (stationPrinterUrl) {
+            networkJobs.push(entry);
+          } else {
+            browserJobs.push(entry);
+          }
+        }
+
+        let printedCount = 0;
+        let failedCount = 0;
+        let usedNetworkPrinter = false;
+
+        for (const { job, stationPrinterUrl, html } of networkJobs) {
+          usedNetworkPrinter = true;
           const result = await dispatchPrint(html, stationPrinterUrl, {
             onNetworkSuccess: () => {
               apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "printed" }).catch(
@@ -85,11 +104,48 @@ export function useKotAutoDispatch() {
             },
           });
 
-          if (stationPrinterUrl) usedNetworkPrinter = true;
           if (result === "failed") {
             failedCount++;
           } else {
             printedCount++;
+          }
+        }
+
+        if (browserJobs.length === 1) {
+          const { job, html } = browserJobs[0];
+          const result = await dispatchPrint(html, null, {
+            onPopupPrint: () => {
+              apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "printed" }).catch(
+                () => {}
+              );
+            },
+            onFailure: () => {
+              apiRequest("PATCH", `/api/print-jobs/${job.id}/status`, { status: "failed" }).catch(
+                () => {}
+              );
+            },
+          });
+          if (result === "failed") {
+            failedCount++;
+          } else {
+            printedCount++;
+          }
+        } else if (browserJobs.length > 1) {
+          const mergedHtml = buildMergedKotHtml(browserJobs.map(e => e.html));
+          const jobIds = browserJobs.map(e => e.job.id);
+
+          const markAllStatus = (status: string) => {
+            for (const id of jobIds) {
+              apiRequest("PATCH", `/api/print-jobs/${id}/status`, { status }).catch(() => {});
+            }
+          };
+
+          const opened = printHtmlInPopup(mergedHtml, () => markAllStatus("printed"));
+          if (!opened) {
+            markAllStatus("failed");
+            failedCount += browserJobs.length;
+          } else {
+            printedCount += browserJobs.length;
           }
         }
 
@@ -119,4 +175,44 @@ export function useKotAutoDispatch() {
   );
 
   return { dispatchKotForOrder };
+}
+
+/**
+ * Merge multiple per-station KOT HTML documents into a single HTML document.
+ * Each station's body content is included, separated by a dashed divider.
+ * The first document provides the <head> and CSS; subsequent docs contribute
+ * only their <body> inner content with a page-break separator.
+ */
+function buildMergedKotHtml(htmlDocs: string[]): string {
+  if (htmlDocs.length === 0) return "";
+  if (htmlDocs.length === 1) return htmlDocs[0];
+
+  const bodyContents: string[] = htmlDocs.map(html => {
+    const match = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+    return match ? match[1].trim() : html;
+  });
+
+  const firstDoc = htmlDocs[0];
+  const headMatch = firstDoc.match(/<head[^>]*>([\s\S]*?)<\/head>/i);
+  const headContent = headMatch ? headMatch[1] : "";
+
+  const mergedBodyParts = bodyContents
+    .map((content, idx) => {
+      if (idx === 0) return content;
+      return `<div style="border-top:2px dashed #000;margin-top:12px;padding-top:12px;"></div>\n${content}`;
+    })
+    .join("\n");
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+${headContent}
+<style>
+  .kot-page-break { page-break-after: always; }
+</style>
+</head>
+<body>
+${mergedBodyParts}
+</body>
+</html>`;
 }
