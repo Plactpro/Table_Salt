@@ -1,19 +1,35 @@
 import { useRealtimeConnectionStatus } from "@/hooks/use-realtime";
 import { WifiOff } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+const GRACE_PERIOD_MS = 6000;
 
 export function RealtimeStatusBanner() {
   const connected = useRealtimeConnectionStatus();
   const [everConnected, setEverConnected] = useState(false);
   const [visible, setVisible] = useState(false);
+  const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (connected) {
+      if (graceTimer.current) {
+        clearTimeout(graceTimer.current);
+        graceTimer.current = null;
+      }
       setEverConnected(true);
       setVisible(false);
     } else if (everConnected) {
-      setVisible(true);
+      graceTimer.current = setTimeout(() => {
+        setVisible(true);
+      }, GRACE_PERIOD_MS);
     }
+
+    return () => {
+      if (graceTimer.current) {
+        clearTimeout(graceTimer.current);
+        graceTimer.current = null;
+      }
+    };
   }, [connected, everConnected]);
 
   if (!visible) return null;
