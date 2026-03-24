@@ -149,7 +149,7 @@ export function registerAuthRoutes(app: Express): void {
           const activeSessions = parseInt(result.rows[0]?.cnt || "0", 10);
           if (activeSessions > maxSessions) {
             await pool.query(
-              `DELETE FROM "session" WHERE sid != $1 AND sess->>'passport' LIKE $2 ORDER BY expire ASC LIMIT $3`,
+              `DELETE FROM "session" WHERE sid IN (SELECT sid FROM "session" WHERE sid != $1 AND sess->>'passport' LIKE $2 ORDER BY expire ASC LIMIT $3)`,
               [req.sessionID, `%"user":"${user.id}"%`, activeSessions - maxSessions]
             );
           }

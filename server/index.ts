@@ -7,7 +7,6 @@ import { createServer } from "http";
 import { incrementApiRequestCount } from "./api-counter";
 import { discoverPriceIds } from "./stripe";
 import { setupWebSocket } from "./realtime";
-import compression from "compression";
 import { pool } from "./db";
 
 process.on('unhandledRejection', (reason, promise) => {
@@ -24,7 +23,6 @@ const httpServer = createServer(app);
 app.use(compression());
 
 setupSecurity(app);
-app.use(compression());
 
 declare module "http" {
   interface IncomingMessage {
