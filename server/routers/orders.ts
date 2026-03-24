@@ -393,7 +393,7 @@ export function registerOrdersRoutes(app: Express): void {
       const { evaluateRules } = await import("../promotions-engine");
       const promotionRules = await storage.getPromotionRulesByTenant(user.tenantId);
       const tenant = await storage.getTenant(user.tenantId);
-      const taxRate = Number(tenant?.taxRate || 0) / 100;
+      const taxRate = tenant?.taxType === "none" ? 0 : Number(tenant?.taxRate || 0) / 100;
       const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
       const isGST = tenant?.currency === "INR" && tenant?.taxType === "gst";
 
@@ -434,7 +434,8 @@ export function registerOrdersRoutes(app: Express): void {
       const totalDiscount = Math.round((engineDiscountTotal + offerDiscount + manualDiscount) * 100) / 100;
       const afterDiscount = Math.max(0, serverSubtotal - totalDiscount + engineSurchargeTotal);
       const serverServiceCharge = Math.round(afterDiscount * serviceChargeRate * 100) / 100;
-      const serverTax = Math.round(afterDiscount * taxRate * 100) / 100;
+      const taxBase = tenant?.compoundTax ? afterDiscount + serverServiceCharge : afterDiscount;
+      const serverTax = Math.round(taxBase * taxRate * 100) / 100;
       const serverTotal = Math.round((afterDiscount + serverServiceCharge + serverTax) * 100) / 100;
 
       let gstNotes: string | undefined;
@@ -455,6 +456,7 @@ export function registerOrdersRoutes(app: Express): void {
         discount: totalDiscount.toFixed(2),
         discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,
         tax: serverTax.toFixed(2),
+        serviceCharge: serverServiceCharge.toFixed(2),
         total: serverTotal.toFixed(2),
         ...(gstNotes ? { notes: [orderData.notes, gstNotes].filter(Boolean).join(" | ") } : {}),
       };
@@ -680,10 +682,18 @@ export function registerOrdersRoutes(app: Express): void {
       const serviceChargeRate = Number(tenant?.serviceCharge || 0) / 100;
       if (serviceChargeRate > 0) {
         const subtotal = Number(existing.subtotal || 0);
-        const serviceChargeAmount = subtotal * serviceChargeRate;
+        const discount = Number(existing.discount || 0);
+        const tax = Number(existing.tax || 0);
+        const existingServiceCharge = Number(existing.serviceCharge || 0);
         const existingTotal = Number(existing.total || 0);
-        updateData.total = (existingTotal + serviceChargeAmount).toFixed(2);
-        updateData.notes = [existing.notes, `Service charge (${tenant?.serviceCharge}%): ${serviceChargeAmount.toFixed(2)}`].filter(Boolean).join(" | ");
+        const serviceChargeAmount = Math.round((subtotal - discount) * serviceChargeRate * 100) / 100;
+        const alreadyIncluded = existingServiceCharge > 0 ||
+          Math.abs(existingTotal - ((subtotal - discount) + tax)) > 0.005;
+        if (!alreadyIncluded) {
+          updateData.total = (existingTotal + serviceChargeAmount).toFixed(2);
+          updateData.serviceCharge = serviceChargeAmount.toFixed(2);
+          updateData.notes = [existing.notes, `Service charge (${tenant?.serviceCharge}%): ${serviceChargeAmount.toFixed(2)}`].filter(Boolean).join(" | ");
+        }
       }
     }
 
