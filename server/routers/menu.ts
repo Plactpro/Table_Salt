@@ -8,7 +8,7 @@ import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { pool } from "../db";
 
 export function registerMenuRoutes(app: Express): void {
-  app.get("/api/menu-categories", async (req, res) => {
+  app.get("/api/menu-categories", requireAuth, async (req, res) => {
     const user = req.user as any;
     const cats = await storage.getCategoriesByTenant(user.tenantId);
     res.json(cats);
@@ -35,7 +35,7 @@ export function registerMenuRoutes(app: Express): void {
     res.json({ message: "Deleted" });
   });
 
-  app.get("/api/menu-items", async (req, res) => {
+  app.get("/api/menu-items", requireAuth, async (req, res) => {
     const user = req.user as any;
     const items = await storage.getMenuItemsByTenant(user.tenantId);
     res.json(items);

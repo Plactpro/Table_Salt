@@ -85,15 +85,18 @@ class RealtimeClient {
         } catch (_) {}
       };
 
-      this.ws.onclose = () => {
+      this.ws.onclose = (evt: CloseEvent) => {
         this._stopHeartbeat();
         this.ws = null;
         this._setConnected(false);
         if (!this.active) return;
+        // Code 1006 = abnormal close (server restarted/crashed) — retry fast
+        // Code 4001 = auth failure — still retry, session may be restored
+        const retryDelay = evt.code === 1006 ? 1000 : this.delay;
         this.timer = setTimeout(() => {
           this.delay = Math.min(this.delay * 2, this.maxDelay);
           this._connect();
-        }, this.delay);
+        }, retryDelay);
       };
 
       this.ws.onerror = () => {
