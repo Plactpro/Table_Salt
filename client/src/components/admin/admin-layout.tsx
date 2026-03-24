@@ -20,6 +20,7 @@ import {
   BarChart2,
   Shield,
   MessageCircle,
+  Megaphone,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
   { id: "security", label: "Security", icon: Shield, path: "/admin/security" },
   { id: "admins", label: "Admins", icon: ShieldCheck, path: "/admin/admins" },
   { id: "settings", label: "Settings", icon: Settings, path: "/admin/settings" },
+  { id: "ad-approvals", label: "Ad Approvals", icon: Megaphone, path: "/admin/ad-approvals" },
 ];
 
 function NavLink({ item, unreadCount, onNavigate }: { item: NavItem; unreadCount?: number; onNavigate?: () => void }) {

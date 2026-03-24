@@ -56,6 +56,7 @@ import { registerSupportRoutes } from "./routers/support";
 import { registerOnboardingRoutes } from "./routers/onboarding";
 import { registerResourceRoutes } from "./routers/resources";
 import { registerParkingRoutes } from "./routers/parking";
+import { registerAdsRoutes } from "./routers/ads";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -87,7 +88,20 @@ export async function registerRoutes(
   setupIpAllowlistMiddleware(app);
   registerAdminRoutes(app);
 
-  app.use("/uploads", (await import("express")).default.static(uploadDir));
+  const express = (await import("express")).default;
+  app.get("/uploads/:filename", (req: any, res: any, next: any) => {
+    const filename = req.params.filename as string;
+    if (filename.match(/\.html?$/i)) {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.setHeader(
+        "Content-Security-Policy",
+        "default-src 'none'; style-src 'unsafe-inline'; img-src *; font-src *; script-src 'none'"
+      );
+    }
+    next();
+  });
+  app.use("/uploads", express.static(uploadDir));
 
   app.post("/api/upload/image", requireAuth, (req: any, res: any, next: any) => {
     upload.single("image")(req, res, (err: any) => {
@@ -149,6 +163,7 @@ export async function registerRoutes(
   registerOnboardingRoutes(app);
   registerResourceRoutes(app);
   registerParkingRoutes(app);
+  registerAdsRoutes(app);
 
   app.post("/api/errors/client", (req: any, res: any) => {
     const { message, stack, pathname, userAgent } = req.body || {};

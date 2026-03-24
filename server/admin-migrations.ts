@@ -2723,4 +2723,107 @@ export async function runTask108Migrations(): Promise<void> {
 
   // Task #137: Add missing prep_time_minutes column to menu_items
   await pool.query(`ALTER TABLE menu_items ADD COLUMN IF NOT EXISTS prep_time_minutes integer`);
+
+  // Task #144: Advertisement Display & Additional Income System (Enterprise only)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ad_campaigns (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36),
+      campaign_name VARCHAR(255) NOT NULL,
+      campaign_type VARCHAR(20) NOT NULL DEFAULT 'OWN',
+      advertiser_name VARCHAR(255),
+      advertiser_contact VARCHAR(255),
+      advertiser_phone VARCHAR(30),
+      advertiser_email VARCHAR(255),
+      status VARCHAR(20) NOT NULL DEFAULT 'draft',
+      start_date DATE NOT NULL,
+      end_date DATE NOT NULL,
+      active_hours_start TIME DEFAULT '00:00',
+      active_hours_end TIME DEFAULT '23:59',
+      active_days JSONB DEFAULT '[1,2,3,4,5,6,7]',
+      display_locations JSONB NOT NULL DEFAULT '["KIOSK"]',
+      display_duration_sec INT DEFAULT 10,
+      display_priority INT DEFAULT 5,
+      revenue_model VARCHAR(20),
+      rate_per_day DECIMAL(10,2),
+      rate_per_1000_imp DECIMAL(10,2),
+      total_contract_value DECIMAL(12,2),
+      amount_paid DECIMAL(12,2) DEFAULT 0,
+      balance_due DECIMAL(12,2) DEFAULT 0,
+      submitted_for_approval_at TIMESTAMP,
+      approved_by VARCHAR(36),
+      approved_at TIMESTAMP,
+      rejection_reason TEXT,
+      total_impressions INT DEFAULT 0,
+      total_clicks INT DEFAULT 0,
+      created_by VARCHAR(36) NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_campaigns_tenant ON ad_campaigns (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_campaigns_status ON ad_campaigns (tenant_id, status)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ad_creatives (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      campaign_id VARCHAR(36) NOT NULL,
+      creative_name VARCHAR(255),
+      file_type VARCHAR(20) NOT NULL,
+      file_url TEXT NOT NULL,
+      file_name VARCHAR(255),
+      file_size_bytes BIGINT NOT NULL,
+      file_size_display VARCHAR(20),
+      mime_type VARCHAR(50),
+      dimensions VARCHAR(30),
+      duration_seconds INT,
+      display_order INT DEFAULT 1,
+      is_active BOOLEAN DEFAULT true,
+      passed_content_check BOOLEAN DEFAULT false,
+      content_check_notes TEXT,
+      uploaded_by VARCHAR(36),
+      uploaded_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_creatives_campaign ON ad_creatives (campaign_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_creatives_tenant ON ad_creatives (tenant_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ad_impressions (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36),
+      campaign_id VARCHAR(36) NOT NULL,
+      creative_id VARCHAR(36) NOT NULL,
+      display_location VARCHAR(30),
+      displayed_at TIMESTAMP DEFAULT NOW(),
+      duration_shown_sec INT,
+      device_id VARCHAR(100),
+      session_id VARCHAR(100)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_impressions_campaign ON ad_impressions (campaign_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_impressions_tenant ON ad_impressions (tenant_id)`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS ad_revenue_records (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      tenant_id VARCHAR(36) NOT NULL,
+      campaign_id VARCHAR(36) NOT NULL,
+      advertiser_name VARCHAR(255),
+      revenue_period VARCHAR(20),
+      period_start DATE,
+      period_end DATE,
+      impressions INT DEFAULT 0,
+      amount_earned DECIMAL(10,2),
+      payment_status VARCHAR(20) DEFAULT 'pending',
+      invoice_number VARCHAR(50),
+      paid_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_revenue_tenant ON ad_revenue_records (tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_ad_revenue_campaign ON ad_revenue_records (campaign_id)`);
 }

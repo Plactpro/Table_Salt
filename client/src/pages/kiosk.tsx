@@ -98,6 +98,8 @@ export default function KioskPage() {
   const [loyaltyPhone, setLoyaltyPhone] = useState("");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("online");
   const [syncPending, setSyncPending] = useState(0);
+  const [showAdSlideshow, setShowAdSlideshow] = useState(false);
+  const [adCampaigns, setAdCampaigns] = useState<any[]>([]);
   const idleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const token = getKioskToken();
 
@@ -212,12 +214,35 @@ export default function KioskPage() {
     setShowUpsellStep(false);
   }, []);
 
+  const doResetWithAdCheck = useCallback(async () => {
+    try {
+      const dc = deviceConfig as any;
+      const outletId = dc?.outletId || "";
+      const tenantId = dc?.tenantId || "";
+      if (tenantId) {
+        const qs = new URLSearchParams({ location: "KIOSK", tenantId });
+        if (outletId) qs.set("outletId", outletId);
+        const r = await kioskFetch(`/api/ad-campaigns/active?${qs}`);
+        if (r.ok) {
+          const campaigns = await r.json();
+          const withCreatives = campaigns.filter((c: any) => c.creatives && c.creatives.length > 0);
+          if (withCreatives.length > 0) {
+            setAdCampaigns(withCreatives);
+            setShowAdSlideshow(true);
+            return;
+          }
+        }
+      }
+    } catch {}
+    resetKiosk();
+  }, [resetKiosk, deviceConfig]);
+
   const resetIdleTimer = useCallback(() => {
     if (idleTimerRef.current) clearTimeout(idleTimerRef.current);
     if (step !== "welcome" && step !== "confirmation") {
-      idleTimerRef.current = setTimeout(resetKiosk, idleTimeoutMs);
+      idleTimerRef.current = setTimeout(doResetWithAdCheck, idleTimeoutMs);
     }
-  }, [step, resetKiosk, idleTimeoutMs]);
+  }, [step, doResetWithAdCheck, idleTimeoutMs]);
 
   useEffect(() => {
     resetIdleTimer();
@@ -519,6 +544,16 @@ export default function KioskPage() {
         />
       )}
 
+      {showAdSlideshow && adCampaigns.length > 0 && (
+        <KioskAdSlideshow
+          campaigns={adCampaigns}
+          tenantName={tenantInfo?.name || "Restaurant"}
+          tenantId={(deviceConfig as any)?.tenantId || ""}
+          outletId={(deviceConfig as any)?.outletId || ""}
+          onDismiss={() => { setShowAdSlideshow(false); resetKiosk(); }}
+        />
+      )}
+
       {noteEditItem && (
         <Dialog open={true} onOpenChange={() => setNoteEditItem(null)}>
           <DialogContent className="bg-slate-800 border-white/10 text-white max-w-md">
@@ -539,6 +574,114 @@ export default function KioskPage() {
           </DialogContent>
         </Dialog>
       )}
+    </div>
+  );
+}
+
+function KioskAdSlideshow({
+  campaigns, tenantName, tenantId, outletId, onDismiss,
+}: {
+  campaigns: any[];
+  tenantName: string;
+  tenantId: string;
+  outletId: string;
+  onDismiss: () => void;
+}) {
+  const allCreatives: { creative: any; campaign: any }[] = [];
+  for (const campaign of campaigns) {
+    for (const creative of campaign.creatives || []) {
+      allCreatives.push({ creative, campaign });
+    }
+  }
+
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const logImpression = async (creative: any, campaign: any, durationSec: number) => {
+    try {
+      await fetch("/api/ad-impressions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tenantId,
+          outletId: outletId || null,
+          campaignId: campaign.id,
+          creativeId: creative.id,
+          displayLocation: "KIOSK",
+          durationShownSec: durationSec,
+          deviceId: localStorage.getItem("kiosk_device_token") || undefined,
+        }),
+      });
+    } catch {}
+  };
+
+  useEffect(() => {
+    if (allCreatives.length === 0) { onDismiss(); return; }
+    const { creative, campaign } = allCreatives[currentIndex];
+    const durationMs = (campaign.displayDurationSec || 10) * 1000;
+    timerRef.current = setTimeout(async () => {
+      await logImpression(creative, campaign, campaign.displayDurationSec || 10);
+      if (currentIndex + 1 >= allCreatives.length) {
+        onDismiss();
+      } else {
+        setCurrentIndex((i) => i + 1);
+      }
+    }, durationMs);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [currentIndex]);
+
+  if (allCreatives.length === 0) return null;
+
+  const { creative, campaign } = allCreatives[currentIndex];
+
+  return (
+    <div
+      className="fixed inset-0 z-[200] bg-black flex flex-col"
+      onClick={onDismiss}
+      data-testid="kiosk-ad-slideshow"
+    >
+      <div className="flex items-center justify-between px-6 py-3 bg-black/60 backdrop-blur-sm">
+        <div className="text-white/80 text-sm font-medium">{tenantName}</div>
+        <div className="text-white/50 text-xs">Advertisement</div>
+      </div>
+      <div className="flex-1 flex items-center justify-center overflow-hidden">
+        {creative.fileType === "IMAGE" ? (
+          <img
+            src={creative.fileUrl}
+            alt={creative.creativeName || "Ad"}
+            className="max-w-full max-h-full object-contain"
+          />
+        ) : creative.fileType === "VIDEO" ? (
+          <video
+            autoPlay
+            muted
+            playsInline
+            className="max-w-full max-h-full"
+            onEnded={() => {}}
+          >
+            <source src={creative.fileUrl} type={creative.mimeType || "video/mp4"} />
+          </video>
+        ) : (
+          <iframe
+            src={creative.fileUrl}
+            className="w-full h-full border-0"
+            title="Ad Banner"
+            sandbox="allow-scripts"
+            referrerPolicy="no-referrer"
+          />
+        )}
+      </div>
+      <div className="px-6 py-4 bg-black/60 backdrop-blur-sm text-center">
+        <p className="text-white/50 text-sm">Tap anywhere to skip</p>
+        <div className="flex gap-1.5 justify-center mt-2">
+          {allCreatives.map((_, i) => (
+            <div
+              key={i}
+              className={`h-1 rounded-full transition-all ${i === currentIndex ? "w-6 bg-white" : "w-2 bg-white/30"}`}
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

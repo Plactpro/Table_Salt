@@ -23,7 +23,8 @@ export type FeatureKey =
   | "crm"
   | "offers"
   | "cleaning"
-  | "internal_audits";
+  | "internal_audits"
+  | "advertisement_management";
 
 export const subscriptionMatrix: Record<SubscriptionTier, FeatureKey[]> = {
   basic: ["orders", "menu", "settings", "billing"],
@@ -38,6 +39,7 @@ export const subscriptionMatrix: Record<SubscriptionTier, FeatureKey[]> = {
     "reports", "billing", "integrations", "advanced_analytics", "multi_location",
     "api_access", "custom_branding", "reservations", "delivery_management",
     "loyalty_program", "crm", "offers", "cleaning", "internal_audits",
+    "advertisement_management",
   ],
 };
 
