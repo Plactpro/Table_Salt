@@ -1076,6 +1076,53 @@ export default function TableQrPage() {
   const [submittedRequest, setSubmittedRequest] = useState<SubmittedRequest | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const [parkingAvailable, setParkingAvailable] = useState(false);
+  const [vehicleRetrievalRequested, setVehicleRetrievalRequested] = useState(false);
+  const [vehicleRetrievalPending, setVehicleRetrievalPending] = useState(false);
+  const [showRetrievalConfirm, setShowRetrievalConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!token || !ctx?.outletId) return;
+    // First check if parking is enabled for this outlet
+    fetch(`/api/parking/availability/${ctx.outletId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(async (data) => {
+        if (data && data.parkingEnabled === true) {
+          // Then check if this specific table has an active linked valet ticket
+          const checkRes = await fetch(
+            `/api/parking/guest-ticket-check?token=${encodeURIComponent(token!)}&outletId=${encodeURIComponent(ctx!.outletId!)}`
+          );
+          if (checkRes.ok) {
+            const checkData = await checkRes.json();
+            if (checkData.hasActiveTicket) {
+              setParkingAvailable(true);
+            }
+          }
+        }
+      })
+      .catch(() => {});
+  }, [token, ctx?.outletId]);
+
+  const handleRequestVehicleRetrieval = async () => {
+    if (!token || !ctx?.outletId) return;
+    setVehicleRetrievalPending(true);
+    try {
+      const res = await fetch("/api/parking/guest-retrieval", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          token,
+          outletId: ctx.outletId,
+        }),
+      });
+      if (res.ok) {
+        setVehicleRetrievalRequested(true);
+      }
+    } catch {}
+    setVehicleRetrievalPending(false);
+    setShowRetrievalConfirm(false);
+  };
+
   useGuestWebSocket(token, useCallback((event, payload) => {
     if (event === "table-request:updated") {
       const p = payload as { request?: { id: string; status: string } };
@@ -1233,7 +1280,57 @@ export default function TableQrPage() {
                     label={t.specialRequest}
                     onClick={() => setFlow("special-request")}
                   />
+
+                  {parkingAvailable && (
+                    vehicleRetrievalRequested ? (
+                      <div
+                        data-testid="chip-vehicle-retrieval-requested"
+                        className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-green-50 border-2 border-green-200 text-green-700 text-sm font-semibold"
+                      >
+                        <Check className="w-5 h-5" /> Vehicle retrieval requested ✓
+                      </div>
+                    ) : (
+                      <button
+                        data-testid="button-retrieve-vehicle"
+                        onClick={() => setShowRetrievalConfirm(true)}
+                        className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-50 border-2 border-blue-200 text-blue-700 text-sm font-semibold active:scale-95 transition-transform hover:bg-blue-100"
+                        style={{ WebkitTapHighlightColor: "transparent" }}
+                      >
+                        🚗 Retrieve My Vehicle
+                      </button>
+                    )
+                  )}
                 </div>
+
+                {showRetrievalConfirm && (
+                  <div className="fixed inset-0 bg-black bg-opacity-40 flex items-end justify-center z-50 pb-8 px-4">
+                    <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-2xl flex flex-col gap-4" data-testid="modal-retrieval-confirm">
+                      <div className="text-center">
+                        <div className="text-4xl mb-2">🚗</div>
+                        <h3 className="text-lg font-bold">Retrieve My Vehicle</h3>
+                        <p className="text-sm text-gray-500 mt-1">We'll have your vehicle ready in approximately 5 minutes.</p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <button
+                          data-testid="button-confirm-retrieval"
+                          onClick={handleRequestVehicleRetrieval}
+                          disabled={vehicleRetrievalPending}
+                          className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
+                          style={{ backgroundColor: PRIMARY }}
+                        >
+                          {vehicleRetrievalPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Requesting...</> : "Confirm Request"}
+                        </button>
+                        <button
+                          data-testid="button-cancel-retrieval"
+                          onClick={() => setShowRetrievalConfirm(false)}
+                          className="w-full py-2 rounded-xl text-sm text-gray-500"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {submitting && (
                   <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">

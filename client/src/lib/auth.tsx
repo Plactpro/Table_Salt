@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "./queryClient";
 import { SubscriptionTier, BusinessType, hasFeatureAccess, getBusinessBadges, FeatureKey } from "./subscription";
 import { applyTheme, type ThemePreference } from "@/hooks/use-theme";
+import type { UserRole as Role } from "@shared/permissions-config";
 
 export type { UserRole as Role } from "@shared/permissions-config";
 
@@ -36,6 +37,7 @@ export interface TenantInfo {
   invoicePrefix?: string | null;
   razorpayEnabled?: boolean | null;
   razorpayKeyId?: string | null;
+  defaultOutletId?: string | null;
 }
 
 export interface AuthUser {
@@ -47,6 +49,7 @@ export interface AuthUser {
   phone: string | null;
   role: Role;
   active: boolean | null;
+  outletId?: string | null;
   tenant?: TenantInfo;
   themePreference?: ThemePreference;
 }

@@ -69,6 +69,7 @@ const ProcurementHubPage = lazy(() => import("@/pages/procurement/index"));
 const TicketHistoryPage = lazy(() => import("@/pages/tickets/index"));
 const CashDashboardPage = lazy(() => import("@/pages/cash/index"));
 const TipReportPage = lazy(() => import("@/pages/tips/report"));
+const ParkingPage = lazy(() => import("@/pages/modules/parking"));
 const OnboardingPage = lazy(() => import("@/pages/onboarding"));
 const AdminDashboard = lazy(() => import("@/pages/admin/dashboard"));
 const TenantsPage = lazy(() => import("@/pages/admin/tenants"));
@@ -138,6 +139,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/tickets": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
   "/cash": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
   "/tips/report": { roles: ["manager", "owner"] },
+  "/parking": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
@@ -426,6 +428,7 @@ function ProtectedPages() {
         <Route path="/tickets">{() => <GuardedRoute path="/tickets" component={TicketHistoryPage} />}</Route>
         <Route path="/cash">{() => <GuardedRoute path="/cash" component={CashDashboardPage} />}</Route>
         <Route path="/tips/report">{() => <GuardedRoute path="/tips/report" component={TipReportPage} />}</Route>
+        <Route path="/parking">{() => <GuardedRoute path="/parking" component={ParkingPage} />}</Route>
         <Route path="/workforce">{() => <Redirect to="/staff" />}</Route>
         <Route path="/performance">{() => <Redirect to="/staff" />}</Route>
         <Route path="/bi-dashboard">{() => <Redirect to="/reports" />}</Route>

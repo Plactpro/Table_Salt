@@ -8,7 +8,7 @@ import { calculateParkingCharge, applyParkingChargeToBill } from "../services/pa
 export function registerParkingRoutes(app: Express): void {
 
   // ─── Config ────────────────────────────────────────────────────────────────
-  app.get("/api/parking/config/:outletId", requireRole("owner", "manager"), async (req, res) => {
+  app.get("/api/parking/config/:outletId", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
       const config = await storage.getParkingConfig(req.params.outletId, user.tenantId);
@@ -67,7 +67,28 @@ export function registerParkingRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const slots = await storage.getParkingSlots(req.params.outletId, user.tenantId);
-      res.json(slots);
+      // Enrich occupied slots with active ticket data (vehicle number, entry time)
+      const activeTickets = await pool.query(
+        `SELECT id, slot_id, vehicle_number, vehicle_type, entry_time, ticket_number
+         FROM valet_tickets WHERE outlet_id=$1 AND tenant_id=$2 AND slot_id IS NOT NULL
+         AND status IN ('parked','requested','retrieving','ready')`,
+        [req.params.outletId, user.tenantId]
+      );
+      const ticketBySlot: Record<string, any> = {};
+      for (const t of activeTickets.rows) {
+        if (t.slot_id) ticketBySlot[t.slot_id] = t;
+      }
+      const enriched = slots.map(s => {
+        const t = ticketBySlot[s.id];
+        return t ? {
+          ...s,
+          vehicleNumber: t.vehicle_number,
+          vehicleType: t.vehicle_type,
+          entryTime: t.entry_time,
+          ticketNumber: t.ticket_number,
+        } as typeof s & { vehicleNumber?: string; vehicleType?: string; entryTime?: Date; ticketNumber?: string } : s;
+      });
+      res.json(enriched);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -173,12 +194,14 @@ export function registerParkingRoutes(app: Express): void {
       const user = req.user as any;
       const statusParam = req.query.status as string | undefined;
       const all = req.query.all === "1" || req.query.all === "true";
-      const activeStatuses = ["parked", "requested", "retrieving"];
-      const statusFilter = statusParam
-        ? { status: statusParam }
-        : all
-        ? undefined
-        : { status: activeStatuses };
+      const defaultActiveStatuses = ["parked", "requested", "retrieving"];
+      let statusFilter: { status: string | string[] } | undefined;
+      if (statusParam) {
+        const parts = statusParam.split(",").map(s => s.trim()).filter(Boolean);
+        statusFilter = { status: parts.length === 1 ? parts[0] : parts };
+      } else if (!all) {
+        statusFilter = { status: defaultActiveStatuses };
+      }
       const tickets = await storage.getValetTickets(req.params.outletId, user.tenantId, statusFilter);
       const now = Date.now();
       const enriched = tickets.map(t => ({
@@ -188,6 +211,64 @@ export function registerParkingRoutes(app: Express): void {
           : t.durationMinutes,
       }));
       res.json(enriched);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // Lookup active valet ticket for a specific order (used by BillPreviewModal)
+  // Strategy: 1) bill-linked, 2) same-table active ticket, 3) outlet-level most recent active ticket
+  app.get("/api/parking/ticket-by-order/:orderId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const orderId = req.params.orderId;
+
+      // Strategy 1: ticket linked via bill (works after payment/charge applied)
+      const { rows: byBill } = await pool.query(
+        `SELECT vt.* FROM valet_tickets vt
+         JOIN bills b ON b.id = vt.bill_id
+         WHERE b.order_id=$1 AND vt.tenant_id=$2
+           AND vt.status IN ('parked','requested','retrieving','ready','completed')
+         ORDER BY vt.created_at DESC LIMIT 1`,
+        [orderId, user.tenantId]
+      );
+      if (byBill[0]) return res.json(byBill[0]);
+
+      // Resolve order → table_id + outlet_id for table-scoped lookup
+      const { rows: orderRows } = await pool.query(
+        `SELECT o.table_id, o.outlet_id FROM orders o WHERE o.id=$1 AND o.tenant_id=$2 LIMIT 1`,
+        [orderId, user.tenantId]
+      );
+      const outletId = orderRows[0]?.outlet_id;
+      const tableId = orderRows[0]?.table_id;
+
+      // Strategy 2: active ticket linked to same table (via another bill on the same table)
+      if (tableId) {
+        const { rows: byTable } = await pool.query(
+          `SELECT vt.* FROM valet_tickets vt
+           LEFT JOIN bills b2 ON b2.id = vt.bill_id
+           LEFT JOIN orders o2 ON o2.id = b2.order_id
+           WHERE vt.tenant_id=$1 AND vt.outlet_id=$2
+             AND o2.table_id=$3
+             AND vt.status IN ('parked','requested','retrieving','ready')
+           ORDER BY vt.created_at DESC LIMIT 1`,
+          [user.tenantId, outletId, tableId]
+        );
+        if (byTable[0]) return res.json(byTable[0]);
+      }
+
+      // Strategy 3: most recent active ticket for this outlet (fallback for preview)
+      if (outletId) {
+        const { rows: byOutlet } = await pool.query(
+          `SELECT vt.* FROM valet_tickets vt
+           WHERE vt.tenant_id=$1 AND vt.outlet_id=$2
+             AND vt.status IN ('parked','requested','retrieving','ready')
+             AND vt.bill_id IS NULL
+           ORDER BY vt.created_at DESC LIMIT 1`,
+          [user.tenantId, outletId]
+        );
+        if (byOutlet[0]) return res.json(byOutlet[0]);
+      }
+
+      return res.status(404).json({ message: "No active ticket for this order" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -276,8 +357,13 @@ export function registerParkingRoutes(app: Express): void {
   app.get("/api/parking/retrieval-requests/:outletId", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const status = req.query.status as string | undefined;
-      const requests = await storage.getRetrievalRequests(req.params.outletId, user.tenantId, status ? { status } : undefined);
+      const statusParam = req.query.status as string | undefined;
+      let statusFilter: string | string[] | undefined;
+      if (statusParam) {
+        const parts = statusParam.split(",").map(s => s.trim()).filter(Boolean);
+        statusFilter = parts.length === 1 ? parts[0] : parts;
+      }
+      const requests = await storage.getRetrievalRequests(req.params.outletId, user.tenantId, statusFilter ? { status: statusFilter } : undefined);
       res.json(requests);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -333,6 +419,127 @@ export function registerParkingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // ─── Guest Ticket Check (via QR table token — no session auth) ──────────────
+  // Used by the QR page to check if this table has an active linked valet ticket
+  // before showing the "Retrieve My Vehicle" CTA
+  app.get("/api/parking/guest-ticket-check", async (req, res) => {
+    try {
+      const { token, outletId } = req.query as { token?: string; outletId?: string };
+      if (!token || !outletId) return res.json({ hasActiveTicket: false });
+
+      const { rows: tokenRows } = await pool.query(
+        `SELECT qr.table_id, qr.tenant_id FROM table_qr_tokens qr
+         WHERE qr.token = $1 AND qr.active = true LIMIT 1`,
+        [token]
+      );
+      if (!tokenRows[0]) return res.json({ hasActiveTicket: false });
+
+      const { tenant_id: tenantId, table_id: tableId } = tokenRows[0];
+
+      const { rows: outletRows } = await pool.query(
+        `SELECT id FROM outlets WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
+        [outletId, tenantId]
+      );
+      if (!outletRows[0]) return res.json({ hasActiveTicket: false });
+
+      const { rows: ticketRows } = await pool.query(
+        `SELECT vt.id FROM valet_tickets vt
+         LEFT JOIN bills b ON b.id = vt.bill_id
+         LEFT JOIN orders o ON o.id = b.order_id
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
+           AND o.table_id=$3
+           AND vt.status IN ('parked','requested','retrieving','ready')
+         LIMIT 1`,
+        [outletId, tenantId, tableId]
+      );
+
+      res.json({ hasActiveTicket: !!ticketRows[0] });
+    } catch (err: any) {
+      res.json({ hasActiveTicket: false });
+    }
+  });
+
+  // ─── Guest Retrieval Request (via QR table token) ────────────────────────────
+  // No session auth required — verified via the QR table token
+  app.post("/api/parking/guest-retrieval", async (req, res) => {
+    try {
+      const { token, outletId, notes } = req.body;
+      if (!token || !outletId) return res.status(400).json({ message: "token and outletId are required" });
+
+      // Validate token maps to an active QR table and resolve tenant
+      const { rows: tokenRows } = await pool.query(
+        `SELECT qr.table_id, qr.tenant_id FROM table_qr_tokens qr
+         WHERE qr.token = $1 AND qr.active = true LIMIT 1`,
+        [token]
+      );
+      if (!tokenRows[0]) return res.status(401).json({ message: "Invalid or expired QR token" });
+
+      const { tenant_id: tenantId, table_id: tableId } = tokenRows[0];
+
+      // Verify outletId belongs to this tenant (prevent cross-tenant calls)
+      const { rows: outletRows } = await pool.query(
+        `SELECT id FROM outlets WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
+        [outletId, tenantId]
+      );
+      if (!outletRows[0]) return res.status(403).json({ message: "Invalid outlet for this token" });
+
+      // Find the ticket strictly scoped to this table via the table's active bill/order.
+      // valet_tickets.bill_id → bills.order_id → orders.table_id
+      const { rows: tableTickets } = await pool.query(
+        `SELECT vt.id, vt.ticket_number
+         FROM valet_tickets vt
+         LEFT JOIN bills b ON b.id = vt.bill_id
+         LEFT JOIN orders o ON o.id = b.order_id
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
+           AND o.table_id=$3
+           AND vt.status IN ('parked','requested','retrieving','ready')
+         ORDER BY vt.created_at DESC LIMIT 1`,
+        [outletId, tenantId, tableId]
+      );
+      if (!tableTickets[0]) {
+        return res.status(404).json({ message: "No active parking ticket linked to your table" });
+      }
+      const ticket = tableTickets[0];
+
+      // Prevent duplicate requests: check if a pending retrieval already exists for this ticket within 10 min
+      const { rows: existingRequests } = await pool.query(
+        `SELECT id FROM valet_retrieval_requests
+         WHERE ticket_id=$1 AND tenant_id=$2 AND status IN ('pending','assigned','in_progress')
+         AND created_at > NOW() - INTERVAL '10 minutes' LIMIT 1`,
+        [ticket.id, tenantId]
+      );
+      if (existingRequests[0]) {
+        return res.status(409).json({ message: "A retrieval request is already in progress for this vehicle", requestId: existingRequests[0].id });
+      }
+
+      const request = await storage.createRetrievalRequest({
+        tenantId,
+        outletId,
+        ticketId: ticket.id,
+        source: "QR_TABLE",
+        requestedBy: undefined,
+        requestedByName: `Table guest`,
+        status: "pending",
+        notes: notes ?? null,
+      });
+
+      emitToTenant(tenantId, "parking:retrieval_requested", {
+        request,
+        ticketNumber: ticket.ticket_number,
+        source: "QR_TABLE",
+        tableId,
+      });
+
+      // Update ticket status to requested
+      await pool.query(
+        `UPDATE valet_tickets SET status='requested' WHERE id=$1 AND tenant_id=$2`,
+        [ticket.id, tenantId]
+      );
+
+      res.status(201).json({ success: true, requestId: request.id });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // ─── Availability ───────────────────────────────────────────────────────────
   // Scoped: resolve outlet → tenant to prevent cross-tenant enumeration
   app.get("/api/parking/availability/:outletId", async (req, res) => {
@@ -345,16 +552,43 @@ export function registerParkingRoutes(app: Express): void {
       const tenantId = outletRows[0].tenant_id;
 
       const { rows } = await pool.query(
-        `SELECT total_capacity, available_slots, display_message FROM parking_layout_config WHERE outlet_id = $1 AND tenant_id = $2 LIMIT 1`,
+        `SELECT total_capacity, available_slots, display_message, valet_enabled FROM parking_layout_config WHERE outlet_id = $1 AND tenant_id = $2 LIMIT 1`,
         [req.params.outletId, tenantId]
       );
-      if (!rows[0]) return res.json({ total: 0, available: 0, full: true, displayMessage: "No parking info" });
+      if (!rows[0]) return res.json({ total: 0, available: 0, full: true, parkingEnabled: false, displayMessage: "No parking info" });
       const r = rows[0];
       res.json({
         total: r.total_capacity,
         available: r.available_slots,
         full: r.available_slots <= 0,
+        parkingEnabled: r.valet_enabled ?? false,
         displayMessage: r.display_message ?? (r.available_slots > 0 ? `${r.available_slots} spots available` : "Parking full"),
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Parking Charge Preview (computes from ticket without persisting) ────────
+  app.get("/api/parking/charge-preview/:ticketId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.ticketId);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const result = await calculateParkingCharge(ticket.id, ticket.outletId, user.tenantId);
+      const totalMinutes = result.durationMinutes;
+      const hours = Math.floor(totalMinutes / 60);
+      const mins = totalMinutes % 60;
+      res.json({
+        durationMinutes: totalMinutes,
+        durationLabel: hours > 0 ? `${hours}h ${mins}m` : `${mins}m`,
+        freeMinutes: result.freeMinutesApplied,
+        grossCharge: result.grossCharge,
+        validationDiscount: result.validationDiscount,
+        finalCharge: result.finalCharge,
+        taxAmount: result.taxAmount,
+        totalCharge: result.totalCharge,
+        vehicleType: result.vehicleType,
+        rateType: result.rateType,
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

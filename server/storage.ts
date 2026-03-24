@@ -843,7 +843,7 @@ export interface IStorage {
   appendValetTicketEvent(ticketId: string, tenantId: string, event: { eventType: string; performedBy?: string; performedByName?: string; notes?: string }): Promise<void>;
   getValetTicketByBill(billId: string): Promise<ValetTicket | undefined>;
   createRetrievalRequest(data: InsertValetRetrievalRequest): Promise<ValetRetrievalRequest>;
-  getRetrievalRequests(outletId: string, tenantId: string, opts?: { status?: string }): Promise<ValetRetrievalRequest[]>;
+  getRetrievalRequests(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetRetrievalRequest[]>;
   updateRetrievalRequest(id: string, tenantId: string, data: Partial<InsertValetRetrievalRequest>): Promise<ValetRetrievalRequest | undefined>;
   createBillParkingCharge(data: InsertBillParkingCharge): Promise<BillParkingCharge>;
   getBillParkingCharge(billId: string, tenantId: string): Promise<BillParkingCharge | undefined>;
@@ -4652,10 +4652,18 @@ export class DatabaseStorage implements IStorage {
     );
     return this._mapRetrievalRequest(rows[0]);
   }
-  async getRetrievalRequests(outletId: string, tenantId: string, opts?: { status?: string }): Promise<ValetRetrievalRequest[]> {
+  async getRetrievalRequests(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetRetrievalRequest[]> {
     let q = `SELECT * FROM valet_retrieval_requests WHERE outlet_id=$1 AND tenant_id=$2`;
     const vals: any[] = [outletId, tenantId];
-    if (opts?.status) { vals.push(opts.status); q += ` AND status=$${vals.length}`; }
+    if (opts?.status) {
+      if (Array.isArray(opts.status)) {
+        vals.push(opts.status);
+        q += ` AND status = ANY($${vals.length})`;
+      } else {
+        vals.push(opts.status);
+        q += ` AND status=$${vals.length}`;
+      }
+    }
     q += ` ORDER BY created_at DESC`;
     const { rows } = await pool.query(q, vals);
     return rows.map((r: any) => this._mapRetrievalRequest(r));

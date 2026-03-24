@@ -2055,6 +2055,718 @@ export default function OutletsPage() {
           <SpecialResourceSettings outlets={outlets} />
         </motion.div>
       )}
+
+      {user?.role === "owner" && outlets.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
+          <ParkingSettings outlets={outlets} />
+        </motion.div>
+      )}
     </motion.div>
+  );
+}
+
+function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [selectedOutletId, setSelectedOutletId] = useState<string>(outlets[0]?.id || "");
+
+  const defaultConfig = {
+    parkingEnabled: false,
+    parkingType: "VALET",
+    chargeMode: "HOURLY",
+    freeMinutes: 0,
+    validationEnabled: false,
+    validationMinSpend: 0,
+    validationBenefit: "FREE_PARKING",
+    validationMaxHours: 2,
+    taxEnabled: false,
+    taxPercent: 0,
+    showToCustomers: true,
+    displayMode: "FULL",
+    showSlotNumbers: false,
+    availableMessage: "Parking available",
+    fullMessage: "Parking full",
+    operatingHours: "9:00 AM - 11:00 PM",
+    receiptLabel: "Parking Charge",
+  };
+
+  const [form, setForm] = useState({ ...defaultConfig });
+
+  const { data: configData, isLoading: configLoading } = useQuery<any>({
+    queryKey: ["/api/parking/config", selectedOutletId],
+    queryFn: async () => {
+      if (!selectedOutletId) return null;
+      const res = await fetch(`/api/parking/config/${selectedOutletId}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!selectedOutletId,
+    staleTime: 30000,
+  });
+
+  useEffect(() => {
+    if (configData) {
+      setForm({ ...defaultConfig, ...configData });
+    } else if (configData === null && !configLoading) {
+      setForm({ ...defaultConfig });
+    }
+  }, [configData, selectedOutletId]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PUT", `/api/parking/config/${selectedOutletId}`, {
+        ...form,
+        freeMinutes: Number(form.freeMinutes) || 0,
+        validationMinSpend: Number(form.validationMinSpend) || 0,
+        validationMaxHours: Number(form.validationMaxHours) || 2,
+        taxPercent: Number(form.taxPercent) || 0,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/config", selectedOutletId] });
+      toast({ title: "Parking settings saved" });
+    },
+    onError: (err: Error) => toast({ title: "Save failed", description: err.message, variant: "destructive" }),
+  });
+
+  const [zones, setZones] = useState<any[]>([]);
+  const [zonesLoading, setZonesLoading] = useState(false);
+  const [zoneDialog, setZoneDialog] = useState(false);
+  const [editingZone, setEditingZone] = useState<any>(null);
+  const [zoneForm, setZoneForm] = useState({ name: "", code: "", type: "INDOOR", color: "#6366f1", level: 0, covered: true, slotCount: 0 });
+
+  const [rates, setRates] = useState<any[]>([]);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [rateEdits, setRateEdits] = useState<Record<string, { rateType: string; baseRate: string; hourlyRate: string; freeMinutes: string }>>({});
+  const [slabEdits, setSlabEdits] = useState<Record<string, Array<{ fromMinutes: string; toMinutes: string; charge: string }>>>({});
+
+  const fetchZones = async () => {
+    if (!selectedOutletId) return;
+    setZonesLoading(true);
+    try {
+      const res = await fetch(`/api/parking/zones/${selectedOutletId}`, { credentials: "include" });
+      if (res.ok) setZones(await res.json());
+    } catch {} finally { setZonesLoading(false); }
+  };
+
+  const fetchRates = async () => {
+    if (!selectedOutletId) return;
+    setRatesLoading(true);
+    try {
+      const res = await fetch(`/api/parking/rates/${selectedOutletId}`, { credentials: "include" });
+      if (res.ok) {
+        const data = await res.json();
+        setRates(data);
+        const initialSlabs: Record<string, Array<{ fromMinutes: string; toMinutes: string; charge: string }>> = {};
+        for (const rate of data) {
+          if (rate.slabs?.length > 0) {
+            initialSlabs[rate.vehicleType] = rate.slabs.map((s: any) => ({
+              fromMinutes: String(s.fromMinutes ?? ""),
+              toMinutes: String(s.toMinutes ?? ""),
+              charge: String(s.charge ?? ""),
+            }));
+          }
+        }
+        setSlabEdits(initialSlabs);
+      }
+    } catch {} finally { setRatesLoading(false); }
+  };
+
+  useEffect(() => {
+    if (selectedOutletId && form.parkingEnabled) {
+      fetchZones();
+      fetchRates();
+    }
+  }, [selectedOutletId, form.parkingEnabled]);
+
+  const saveZoneMutation = useMutation({
+    mutationFn: async () => {
+      if (editingZone?.id) {
+        const res = await apiRequest("PATCH", `/api/parking/zones/${selectedOutletId}/${editingZone.id}`, zoneForm);
+        return res.json();
+      } else {
+        const res = await apiRequest("POST", `/api/parking/zones/${selectedOutletId}`, zoneForm);
+        return res.json();
+      }
+    },
+    onSuccess: () => {
+      fetchZones();
+      setZoneDialog(false);
+      setEditingZone(null);
+      setZoneForm({ name: "", code: "", type: "INDOOR", color: "#6366f1", level: 0, covered: true, slotCount: 0 });
+      toast({ title: editingZone?.id ? "Zone updated" : "Zone added" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const deleteZoneMutation = useMutation({
+    mutationFn: async (zoneId: string) => {
+      await apiRequest("DELETE", `/api/parking/zones/${selectedOutletId}/${zoneId}`);
+    },
+    onSuccess: () => { fetchZones(); toast({ title: "Zone deleted" }); },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  return (
+    <Card data-testid="card-parking-settings">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Settings className="h-5 w-5 text-blue-600" />
+          Parking Settings
+        </CardTitle>
+        <CardDescription>Configure valet parking for your outlet</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {outlets.length > 1 && (
+          <div>
+            <Label>Select Outlet</Label>
+            <Select value={selectedOutletId} onValueChange={v => { setSelectedOutletId(v); setZones([]); setRates([]); }}>
+              <SelectTrigger className="mt-1 w-64" data-testid="select-parking-outlet">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {outlets.map(o => <SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="flex items-center gap-3 p-4 rounded-xl bg-blue-50 border border-blue-200">
+          <div className="flex-1">
+            <p className="font-semibold text-sm">Enable Parking</p>
+            <p className="text-xs text-muted-foreground">Master switch for valet parking</p>
+          </div>
+          <Switch
+            checked={form.parkingEnabled}
+            onCheckedChange={v => setForm(f => ({ ...f, parkingEnabled: v }))}
+            data-testid="toggle-parking-enabled"
+          />
+        </div>
+
+        {form.parkingEnabled && (
+          <>
+            <Separator />
+            <div className="space-y-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Parking Configuration</p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Parking Type</Label>
+                  <RadioGroup value={form.parkingType} onValueChange={v => setForm(f => ({ ...f, parkingType: v }))}>
+                    {[{ value: "VALET", label: "Valet Only" }, { value: "SELF", label: "Self Parking" }, { value: "BOTH", label: "Both" }].map(opt => (
+                      <div key={opt.value} className="flex items-center gap-2">
+                        <RadioGroupItem value={opt.value} id={`pt-${opt.value}`} data-testid={`radio-parking-type-${opt.value}`} />
+                        <Label htmlFor={`pt-${opt.value}`}>{opt.label}</Label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Charge Mode</Label>
+                  <RadioGroup value={form.chargeMode} onValueChange={v => setForm(f => ({ ...f, chargeMode: v }))}>
+                    {[{ value: "HOURLY", label: "Hourly" }, { value: "FLAT", label: "Flat Rate" }, { value: "SLAB", label: "Slab-based" }, { value: "FREE", label: "Free" }].map(opt => (
+                      <div key={opt.value} className="flex items-center gap-2">
+                        <RadioGroupItem value={opt.value} id={`cm-${opt.value}`} data-testid={`radio-charge-mode-${opt.value}`} />
+                        <Label htmlFor={`cm-${opt.value}`}>{opt.label}</Label>
+                      </div>
+                    ))}
+                  </RadioGroup>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Free Period (minutes)</Label>
+                  <Input
+                    type="number" min="0"
+                    value={form.freeMinutes}
+                    onChange={e => setForm(f => ({ ...f, freeMinutes: Number(e.target.value) }))}
+                    data-testid="input-free-minutes"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Receipt Label</Label>
+                  <Input
+                    value={form.receiptLabel}
+                    onChange={e => setForm(f => ({ ...f, receiptLabel: e.target.value }))}
+                    placeholder="Parking Charge"
+                    data-testid="input-receipt-label"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Operating Hours</Label>
+                <Input
+                  value={form.operatingHours}
+                  onChange={e => setForm(f => ({ ...f, operatingHours: e.target.value }))}
+                  placeholder="e.g. 9:00 AM - 11:00 PM"
+                  data-testid="input-operating-hours"
+                />
+              </div>
+            </div>
+
+            <Separator />
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Validation</p>
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <Label>Validation (parking discount with min spend)</Label>
+                <Switch
+                  checked={form.validationEnabled}
+                  onCheckedChange={v => setForm(f => ({ ...f, validationEnabled: v }))}
+                  data-testid="toggle-validation-enabled"
+                />
+              </div>
+              {form.validationEnabled && (
+                <div className="grid grid-cols-2 gap-3 pl-4 border-l-2 border-blue-200">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Min Spend</Label>
+                    <Input type="number" min="0" value={form.validationMinSpend} onChange={e => setForm(f => ({ ...f, validationMinSpend: Number(e.target.value) }))} data-testid="input-validation-min-spend" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Validation Benefit</Label>
+                    <Select value={form.validationBenefit} onValueChange={v => setForm(f => ({ ...f, validationBenefit: v }))}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="select-validation-benefit">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FREE_PARKING">Free Parking</SelectItem>
+                        <SelectItem value="DISCOUNT_50">50% Discount</SelectItem>
+                        <SelectItem value="FLAT_DISCOUNT">Flat Discount</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Max Hours Free</Label>
+                    <Input type="number" min="0" value={form.validationMaxHours} onChange={e => setForm(f => ({ ...f, validationMaxHours: Number(e.target.value) }))} data-testid="input-validation-max-hours" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tax</p>
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <Label>Apply Tax to Parking Charge</Label>
+                <Switch checked={form.taxEnabled} onCheckedChange={v => setForm(f => ({ ...f, taxEnabled: v }))} data-testid="toggle-parking-tax-enabled" />
+              </div>
+              {form.taxEnabled && (
+                <div className="flex items-center gap-2">
+                  <Label className="text-xs w-16">Tax %</Label>
+                  <Input type="number" min="0" max="100" value={form.taxPercent} onChange={e => setForm(f => ({ ...f, taxPercent: Number(e.target.value) }))} className="w-24" data-testid="input-parking-tax-percent" />
+                  <span className="text-sm text-muted-foreground">%</span>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+            <div className="space-y-3">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Customer Display</p>
+              <div className="flex items-center justify-between p-3 rounded-lg border">
+                <Label>Show Parking Status to Customers (QR)</Label>
+                <Switch checked={form.showToCustomers} onCheckedChange={v => setForm(f => ({ ...f, showToCustomers: v }))} data-testid="toggle-show-to-customers" />
+              </div>
+              {form.showToCustomers && (
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Display Mode</Label>
+                    <Select value={form.displayMode} onValueChange={v => setForm(f => ({ ...f, displayMode: v }))}>
+                      <SelectTrigger className="h-8 text-xs" data-testid="select-display-mode">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="FULL">Full (count + slots)</SelectItem>
+                        <SelectItem value="SIMPLE">Simple (available/full)</SelectItem>
+                        <SelectItem value="MESSAGE_ONLY">Message Only</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-center justify-between p-3 rounded-lg border">
+                    <Label>Show Slot Numbers</Label>
+                    <Switch checked={form.showSlotNumbers} onCheckedChange={v => setForm(f => ({ ...f, showSlotNumbers: v }))} data-testid="toggle-show-slot-numbers" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Available Message</Label>
+                    <Input value={form.availableMessage} onChange={e => setForm(f => ({ ...f, availableMessage: e.target.value }))} data-testid="input-available-message" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Full Message</Label>
+                    <Input value={form.fullMessage} onChange={e => setForm(f => ({ ...f, fullMessage: e.target.value }))} data-testid="input-full-message" />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Button
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending}
+              data-testid="button-save-parking-settings"
+            >
+              {saveMutation.isPending ? "Saving..." : "Save Parking Settings"}
+            </Button>
+
+            <Separator />
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold">Parking Zones</p>
+                <Button size="sm" variant="outline" onClick={() => { setEditingZone(null); setZoneForm({ name: "", code: "", type: "INDOOR", color: "#6366f1", level: 0, covered: true, slotCount: 0 }); setZoneDialog(true); }} data-testid="button-add-zone">
+                  <Plus className="h-3.5 w-3.5 mr-1" /> Add Zone
+                </Button>
+              </div>
+
+              {zonesLoading ? (
+                <p className="text-sm text-muted-foreground">Loading zones...</p>
+              ) : zones.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-3">No zones configured yet</p>
+              ) : (
+                <div className="rounded-lg border overflow-hidden" data-testid="table-zones">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium">Code</th>
+                        <th className="text-left px-3 py-2 font-medium">Name</th>
+                        <th className="text-left px-3 py-2 font-medium">Type</th>
+                        <th className="text-left px-3 py-2 font-medium">Level</th>
+                        <th className="text-left px-3 py-2 font-medium">Covered</th>
+                        <th className="text-left px-3 py-2 font-medium">Slots</th>
+                        <th className="text-left px-3 py-2 font-medium">Active</th>
+                        <th className="px-3 py-2" />
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {zones.map((zone: any) => (
+                        <tr key={zone.id} data-testid={`row-zone-${zone.id}`}>
+                          <td className="px-3 py-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-4 h-4 rounded-full" style={{ backgroundColor: zone.color ?? "#6366f1" }} />
+                              <span className="font-mono font-semibold">{zone.code}</span>
+                            </div>
+                          </td>
+                          <td className="px-3 py-2">{zone.name}</td>
+                          <td className="px-3 py-2">
+                            <Badge variant="outline" className="text-xs">{zone.type}</Badge>
+                          </td>
+                          <td className="px-3 py-2 text-center" data-testid={`text-zone-level-${zone.id}`}>{zone.level ?? 0}</td>
+                          <td className="px-3 py-2 text-center" data-testid={`text-zone-covered-${zone.id}`}>
+                            {zone.covered !== false ? "✅" : "🌤️"}
+                          </td>
+                          <td className="px-3 py-2">{zone.slotCount ?? 0}</td>
+                          <td className="px-3 py-2">
+                            <Switch
+                              checked={zone.isActive ?? true}
+                              data-testid={`toggle-zone-active-${zone.id}`}
+                              onCheckedChange={async (v) => {
+                                try {
+                                  await apiRequest("PATCH", `/api/parking/zones/${selectedOutletId}/${zone.id}`, { isActive: v });
+                                  fetchZones();
+                                } catch {}
+                              }}
+                            />
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex gap-1 justify-end">
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingZone(zone); setZoneForm({ name: zone.name, code: zone.code, type: zone.type, color: zone.color ?? "#6366f1", level: zone.level ?? 0, covered: zone.covered ?? true, slotCount: zone.slotCount ?? 0 }); setZoneDialog(true); }} data-testid={`button-edit-zone-${zone.id}`}>
+                                <Edit className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500" onClick={() => { if (confirm("Delete zone?")) deleteZoneMutation.mutate(zone.id); }} data-testid={`button-delete-zone-${zone.id}`}>
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+            <div className="space-y-4">
+              <p className="text-sm font-semibold">Parking Rates</p>
+              <p className="text-xs text-muted-foreground">Set per-vehicle rates. Base Rate is the flat/per-hour charge.</p>
+              {ratesLoading ? (
+                <p className="text-sm text-muted-foreground">Loading rates...</p>
+              ) : (
+                <div className="space-y-3" data-testid="table-rates">
+                  {["TWO_WHEELER", "CAR", "SUV", "VAN"].map(vt => {
+                    const rate = rates.find((r: any) => r.vehicleType === vt);
+                    const edit = rateEdits[vt] ?? { rateType: rate?.rateType ?? "FLAT", baseRate: rate?.baseRate != null ? String(rate.baseRate) : "", hourlyRate: rate?.hourlyRate != null ? String(rate.hourlyRate) : "", freeMinutes: rate?.freeMinutes != null ? String(rate.freeMinutes) : "" };
+                    const setEdit = (updates: Partial<typeof edit>) => setRateEdits(r => ({ ...r, [vt]: { ...edit, ...updates } }));
+                    const label = vt === "TWO_WHEELER" ? "🏍 Two-Wheeler" : vt === "CAR" ? "🚗 Car" : vt === "SUV" ? "🚙 SUV" : "🚐 Van";
+                    return (
+                      <div key={vt} className="border rounded-lg p-3 space-y-2" data-testid={`row-rate-${vt}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">{label}</span>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-6 text-xs"
+                            data-testid={`button-save-rate-${vt}`}
+                            onClick={async () => {
+                              try {
+                                const slabs = (slabEdits[vt] ?? [])
+                                  .filter(s => s.charge !== "")
+                                  .map(s => ({
+                                    fromMinutes: parseInt(s.fromMinutes) || 0,
+                                    toMinutes: s.toMinutes !== "" ? parseInt(s.toMinutes) : null,
+                                    charge: parseFloat(s.charge) || 0,
+                                  }));
+                                await apiRequest("POST", `/api/parking/rates/${selectedOutletId}`, {
+                                  vehicleType: vt,
+                                  rateType: edit.rateType,
+                                  baseRate: parseFloat(edit.baseRate) || 0,
+                                  hourlyRate: parseFloat(edit.hourlyRate) || null,
+                                  freeMinutes: parseInt(edit.freeMinutes) || 0,
+                                  slabs: edit.rateType === "SLAB" ? slabs : [],
+                                });
+                                fetchRates();
+                                toast({ title: `Rate saved for ${label}` });
+                              } catch (err: any) {
+                                toast({ title: "Failed to save rate", variant: "destructive" });
+                              }
+                            }}
+                          >
+                            Save
+                          </Button>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div className="space-y-1">
+                            <Label className="text-xs">Rate Type</Label>
+                            <Select value={edit.rateType} onValueChange={v => setEdit({ rateType: v })}>
+                              <SelectTrigger className="h-7 text-xs" data-testid={`select-rate-type-${vt}`}>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="FLAT">Flat</SelectItem>
+                                <SelectItem value="HOURLY">Hourly</SelectItem>
+                                <SelectItem value="SLAB">Slab</SelectItem>
+                                <SelectItem value="FREE">Free</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Label className="text-xs">Base Rate</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={0.5}
+                              value={edit.baseRate}
+                              onChange={e => setEdit({ baseRate: e.target.value })}
+                              className="h-7 text-xs"
+                              placeholder="0"
+                              data-testid={`input-base-rate-${vt}`}
+                            />
+                          </div>
+                          {edit.rateType === "HOURLY" && (
+                            <div className="space-y-1">
+                              <Label className="text-xs">Hourly Rate</Label>
+                              <Input
+                                type="number"
+                                min={0}
+                                step={0.5}
+                                value={edit.hourlyRate}
+                                onChange={e => setEdit({ hourlyRate: e.target.value })}
+                                className="h-7 text-xs"
+                                placeholder="0"
+                                data-testid={`input-hourly-rate-${vt}`}
+                              />
+                            </div>
+                          )}
+                          <div className="space-y-1">
+                            <Label className="text-xs">Free Minutes</Label>
+                            <Input
+                              type="number"
+                              min={0}
+                              step={5}
+                              value={edit.freeMinutes}
+                              onChange={e => setEdit({ freeMinutes: e.target.value })}
+                              className="h-7 text-xs"
+                              placeholder="0"
+                              data-testid={`input-free-minutes-${vt}`}
+                            />
+                          </div>
+                        </div>
+                        {edit.rateType === "SLAB" && (
+                          <div className="mt-2 space-y-2" data-testid={`slab-editor-${vt}`}>
+                            <div className="flex items-center justify-between">
+                              <Label className="text-xs font-semibold text-muted-foreground">Slab Brackets</Label>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-6 text-xs"
+                                data-testid={`button-add-slab-${vt}`}
+                                onClick={() => setSlabEdits(prev => ({
+                                  ...prev,
+                                  [vt]: [...(prev[vt] ?? []), { fromMinutes: "", toMinutes: "", charge: "" }],
+                                }))}
+                              >
+                                + Add Slab
+                              </Button>
+                            </div>
+                            <div className="rounded border overflow-hidden">
+                              <table className="w-full text-xs">
+                                <thead className="bg-muted/50">
+                                  <tr>
+                                    <th className="text-left px-2 py-1">From (min)</th>
+                                    <th className="text-left px-2 py-1">To (min)</th>
+                                    <th className="text-left px-2 py-1">Charge</th>
+                                    <th className="px-2 py-1" />
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y">
+                                  {(slabEdits[vt] ?? []).map((slab, idx) => (
+                                    <tr key={idx} data-testid={`row-slab-${vt}-${idx}`}>
+                                      <td className="px-2 py-1">
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          value={slab.fromMinutes}
+                                          onChange={e => setSlabEdits(prev => {
+                                            const arr = [...(prev[vt] ?? [])];
+                                            arr[idx] = { ...arr[idx], fromMinutes: e.target.value };
+                                            return { ...prev, [vt]: arr };
+                                          })}
+                                          className="h-6 text-xs w-20"
+                                          placeholder="0"
+                                          data-testid={`input-slab-from-${vt}-${idx}`}
+                                        />
+                                      </td>
+                                      <td className="px-2 py-1">
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          value={slab.toMinutes}
+                                          onChange={e => setSlabEdits(prev => {
+                                            const arr = [...(prev[vt] ?? [])];
+                                            arr[idx] = { ...arr[idx], toMinutes: e.target.value };
+                                            return { ...prev, [vt]: arr };
+                                          })}
+                                          className="h-6 text-xs w-20"
+                                          placeholder="∞"
+                                          data-testid={`input-slab-to-${vt}-${idx}`}
+                                        />
+                                      </td>
+                                      <td className="px-2 py-1">
+                                        <Input
+                                          type="number"
+                                          min={0}
+                                          step={0.5}
+                                          value={slab.charge}
+                                          onChange={e => setSlabEdits(prev => {
+                                            const arr = [...(prev[vt] ?? [])];
+                                            arr[idx] = { ...arr[idx], charge: e.target.value };
+                                            return { ...prev, [vt]: arr };
+                                          })}
+                                          className="h-6 text-xs w-24"
+                                          placeholder="0"
+                                          data-testid={`input-slab-charge-${vt}-${idx}`}
+                                        />
+                                      </td>
+                                      <td className="px-2 py-1">
+                                        <Button
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-6 w-6 text-red-500"
+                                          data-testid={`button-remove-slab-${vt}-${idx}`}
+                                          onClick={() => setSlabEdits(prev => {
+                                            const arr = [...(prev[vt] ?? [])];
+                                            arr.splice(idx, 1);
+                                            return { ...prev, [vt]: arr };
+                                          })}
+                                        >
+                                          <X className="h-3 w-3" />
+                                        </Button>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                  {!(slabEdits[vt]?.length) && (
+                                    <tr>
+                                      <td colSpan={4} className="px-2 py-3 text-center text-muted-foreground">
+                                        No slabs defined. Add a slab bracket above.
+                                      </td>
+                                    </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </CardContent>
+
+      <Dialog open={zoneDialog} onOpenChange={setZoneDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>{editingZone ? "Edit Zone" : "Add Zone"}</DialogTitle>
+            <DialogDescription>{editingZone ? "Update zone details" : "Create a new parking zone"}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Zone Code *</Label>
+                <Input value={zoneForm.code} onChange={e => setZoneForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="e.g. A" data-testid="input-zone-code" />
+              </div>
+              <div className="space-y-1">
+                <Label>Zone Name *</Label>
+                <Input value={zoneForm.name} onChange={e => setZoneForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Ground Floor" data-testid="input-zone-name" />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Type</Label>
+                <Select value={zoneForm.type} onValueChange={v => setZoneForm(f => ({ ...f, type: v }))}>
+                  <SelectTrigger data-testid="select-zone-type"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="INDOOR">Indoor</SelectItem>
+                    <SelectItem value="OUTDOOR">Outdoor</SelectItem>
+                    <SelectItem value="ROOFTOP">Rooftop</SelectItem>
+                    <SelectItem value="BASEMENT">Basement</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Color</Label>
+                <div className="flex gap-2 items-center">
+                  <input type="color" value={zoneForm.color} onChange={e => setZoneForm(f => ({ ...f, color: e.target.value }))} className="h-9 w-12 rounded cursor-pointer" data-testid="input-zone-color" />
+                  <Input value={zoneForm.color} onChange={e => setZoneForm(f => ({ ...f, color: e.target.value }))} className="flex-1 font-mono text-xs" />
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Level</Label>
+                <Input type="number" value={zoneForm.level} onChange={e => setZoneForm(f => ({ ...f, level: Number(e.target.value) }))} placeholder="0" data-testid="input-zone-level" />
+              </div>
+              <div className="space-y-1">
+                <Label>Slot Count</Label>
+                <Input type="number" min="0" value={zoneForm.slotCount} onChange={e => setZoneForm(f => ({ ...f, slotCount: Number(e.target.value) }))} data-testid="input-zone-slot-count" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={zoneForm.covered} onCheckedChange={v => setZoneForm(f => ({ ...f, covered: v }))} data-testid="toggle-zone-covered" />
+              <Label>Covered/Enclosed</Label>
+            </div>
+          </div>
+          <div className="flex gap-2 pt-2">
+            <Button variant="outline" className="flex-1" onClick={() => setZoneDialog(false)} data-testid="button-cancel-zone">Cancel</Button>
+            <Button className="flex-1" onClick={() => saveZoneMutation.mutate()} disabled={saveZoneMutation.isPending || !zoneForm.code || !zoneForm.name} data-testid="button-save-zone">
+              {saveZoneMutation.isPending ? "Saving..." : editingZone ? "Update Zone" : "Add Zone"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
   );
 }

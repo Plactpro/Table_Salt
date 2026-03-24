@@ -100,6 +100,7 @@ const navItems: NavItem[] = [
   { id: "m-46", name: "Alert Sounds 🔔", icon: Bell, path: "/settings/alerts", roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   { id: "m-47", name: "Cash Machine 💰", icon: Banknote, path: "/cash", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
   { id: "m-48", name: "Tip Report", icon: DollarSign, path: "/tips/report", roles: ["manager", "owner"] },
+  { id: "m-49", name: "🅿️ Parking", icon: BarChart3, path: "/parking", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
 ];
 
 function SandDecoration() {
@@ -178,11 +179,34 @@ export default function Sidebar() {
   const queryClient = useQueryClient();
 
   const role = user?.role ?? "owner";
+
+  const { data: outletsForSidebar = [] } = useQuery<any[]>({
+    queryKey: ["/api/outlets"],
+    staleTime: 120000,
+    enabled: !!user && !user.outletId,
+  });
+  const outletIdForParking = user?.outletId || outletsForSidebar[0]?.id;
+  const { data: parkingConfigData } = useQuery<{ valetEnabled?: boolean; parkingEnabled?: boolean }>({
+    queryKey: ["/api/parking/config/sidebar", outletIdForParking],
+    queryFn: async () => {
+      if (!outletIdForParking) return {};
+      const res = await fetch(`/api/parking/config/${outletIdForParking}`, { credentials: "include" });
+      if (!res.ok) return {};
+      return res.json();
+    },
+    staleTime: 120000,
+    enabled: !!user && !!outletIdForParking,
+  });
+  const parkingEnabled = outletIdForParking
+    ? (parkingConfigData?.valetEnabled ?? parkingConfigData?.parkingEnabled ?? false)
+    : false;
+
   const btConfig = businessConfig[businessType];
   const filteredItems = navItems.filter((item) => {
     if (!item.roles.includes(role)) return false;
     if (btConfig?.excludedFeatureKeys && item.featureKey && btConfig.excludedFeatureKeys.includes(item.featureKey)) return false;
     if (btConfig?.excludedPaths && btConfig.excludedPaths.includes(item.path)) return false;
+    if (item.id === "m-49" && !parkingEnabled) return false;
     return true;
   });
 
