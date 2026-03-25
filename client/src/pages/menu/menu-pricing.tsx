@@ -75,14 +75,14 @@ function getPriorityBadge(priority: number) {
   return { label: `${priority}`, color: "bg-green-100 text-green-700 border-green-200" };
 }
 
-function formatAdjustment(rule: PriceRule): string {
+function formatAdjustment(rule: PriceRule, fmt: (val: number | string) => string): string {
   const v = Number(rule.adjustment_value);
   switch (rule.adjustment_type) {
-    case "fixed": return `= ₹${v}`;
+    case "fixed": return `= ${fmt(v)}`;
     case "increase_pct": return `+${v}%`;
     case "decrease_pct": return `-${v}%`;
-    case "increase_fixed": return `+₹${v}`;
-    case "decrease_fixed": return `-₹${v}`;
+    case "increase_fixed": return `+${fmt(v)}`;
+    case "decrease_fixed": return `-${fmt(v)}`;
     default: return `${v}`;
   }
 }
@@ -540,7 +540,7 @@ export default function MenuPricingPage() {
                                 </span>
                               </td>
                               <td className="px-4 py-2 text-sm text-muted-foreground">{formatCondition(rule)}</td>
-                              <td className="px-4 py-2 text-right font-semibold text-teal-700">{formatAdjustment(rule)}</td>
+                              <td className="px-4 py-2 text-right font-semibold text-teal-700">{formatAdjustment(rule, fmt)}</td>
                               <td className="px-4 py-2 text-xs text-muted-foreground capitalize">
                                 {rule.apply_to === "all" ? "All items" : rule.apply_to === "category" ? `Category` : rule.apply_to === "specific_item" ? "Specific item" : rule.apply_to}
                               </td>

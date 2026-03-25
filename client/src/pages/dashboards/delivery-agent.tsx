@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -51,10 +52,6 @@ const STATUS_COLORS: Record<string, string> = {
   cancelled: "bg-red-100 text-red-800",
 };
 
-function formatCurrency(val: string | number | undefined) {
-  if (val === undefined || val === null) return "—";
-  return `$${Number(val).toFixed(2)}`;
-}
 
 function formatDate(dateStr: string) {
   const d = new Date(dateStr);
@@ -75,6 +72,13 @@ export default function DeliveryAgentDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [updatingId, setUpdatingId] = useState<string | null>(null);
+
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const fmt = (val: string | number | undefined) => {
+    if (val === undefined || val === null) return "—";
+    return sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition });
+  };
 
   const { data: ordersData, isLoading } = useQuery<{ data: DeliveryOrder[] }>({
     queryKey: ["/api/delivery-orders"],
@@ -134,7 +138,7 @@ export default function DeliveryAgentDashboard() {
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">Today's Earnings</span>
               </div>
-              <p className="text-xl font-bold" data-testid="text-earnings-today">{formatCurrency(earningsToday)}</p>
+              <p className="text-xl font-bold" data-testid="text-earnings-today">{fmt(earningsToday)}</p>
             </CardContent>
           </Card>
           <Card>
@@ -143,7 +147,7 @@ export default function DeliveryAgentDashboard() {
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">This Week</span>
               </div>
-              <p className="text-xl font-bold" data-testid="text-earnings-week">{formatCurrency(earningsWeek)}</p>
+              <p className="text-xl font-bold" data-testid="text-earnings-week">{fmt(earningsWeek)}</p>
             </CardContent>
           </Card>
           <Card>
@@ -152,7 +156,7 @@ export default function DeliveryAgentDashboard() {
                 <DollarSign className="h-4 w-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">This Month</span>
               </div>
-              <p className="text-xl font-bold" data-testid="text-earnings-month">{formatCurrency(earningsMonth)}</p>
+              <p className="text-xl font-bold" data-testid="text-earnings-month">{fmt(earningsMonth)}</p>
             </CardContent>
           </Card>
         </div>
@@ -225,7 +229,7 @@ export default function DeliveryAgentDashboard() {
                           {order.items.map((item, i) => (
                             <div key={i} className="flex justify-between">
                               <span>{item.quantity}x {item.name}</span>
-                              <span className="text-muted-foreground">{formatCurrency(item.price)}</span>
+                              <span className="text-muted-foreground">{fmt(item.price)}</span>
                             </div>
                           ))}
                         </div>
@@ -233,9 +237,9 @@ export default function DeliveryAgentDashboard() {
                       <div className="flex items-center justify-between pt-1">
                         <div className="text-sm">
                           <span className="text-muted-foreground">Total: </span>
-                          <span className="font-semibold" data-testid={`text-total-${order.id}`}>{formatCurrency(order.total)}</span>
+                          <span className="font-semibold" data-testid={`text-total-${order.id}`}>{fmt(order.total)}</span>
                           {order.deliveryFee && (
-                            <span className="text-muted-foreground ml-2">(Fee: {formatCurrency(order.deliveryFee)})</span>
+                            <span className="text-muted-foreground ml-2">(Fee: {fmt(order.deliveryFee)})</span>
                           )}
                         </div>
                         {lifecycle && (
@@ -297,7 +301,7 @@ export default function DeliveryAgentDashboard() {
                           <Badge className={STATUS_COLORS[order.status] ?? "bg-gray-100 text-gray-800"} variant="outline">
                             {STATUS_LABELS[order.status] ?? order.status}
                           </Badge>
-                          <span className="text-sm font-semibold">{formatCurrency(order.total)}</span>
+                          <span className="text-sm font-semibold">{fmt(order.total)}</span>
                         </div>
                       </div>
                     ))}
