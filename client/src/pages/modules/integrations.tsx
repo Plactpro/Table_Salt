@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { motion } from "framer-motion";
 import {
@@ -162,6 +163,7 @@ export default function IntegrationsPage() {
       data-testid="page-integrations"
     >
       <div className="flex items-center justify-between flex-wrap gap-4">
+        <PageTitle title="Integrations" />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <Plug className="h-6 w-6 text-primary" />

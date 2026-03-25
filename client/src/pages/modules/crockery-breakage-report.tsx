@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -92,6 +93,7 @@ export default function CrockeryBreakageReport() {
 
   return (
     <div className="space-y-6" data-testid="page-breakage-report">
+      <PageTitle title="Crockery Breakage Report" />
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-xl font-bold">Monthly Breakage Report</h2>

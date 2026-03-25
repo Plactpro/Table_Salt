@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Tag, Zap } from "lucide-react";
 import OffersPage from "./offers";
@@ -9,6 +10,7 @@ export default function PromotionsHub() {
 
   return (
     <div className="space-y-6" data-testid="promotions-hub">
+      <PageTitle title="Promotions" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="promotions-tabs">
           <TabsTrigger value="offers" data-testid="tab-offers">

@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -134,6 +135,7 @@ export default function StockMovementLog({ initialIngredientId }: { initialIngre
 
   return (
     <div className="space-y-6" data-testid="stock-movement-log">
+      <PageTitle title="Stock Movements" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard title="Consumed Today" value={fmt(totalConsumedToday)} icon={ArrowDownCircle} iconColor="text-orange-600" iconBg="bg-orange-100" testId="stat-consumed-today" />
         <StatCard title="Wastage Today" value={fmt(totalWastageToday)} icon={Trash2} iconColor="text-red-600" iconBg="bg-red-100" testId="stat-wastage-today" />

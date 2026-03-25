@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -133,6 +134,7 @@ export default function ChefReport() {
 
   return (
     <div className="space-y-6" data-testid="chef-report">
+      <PageTitle title="Chef Report" />
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 rounded-lg border p-1 bg-muted/30">
           {(["today", "week", "month"] as const).map(r => (

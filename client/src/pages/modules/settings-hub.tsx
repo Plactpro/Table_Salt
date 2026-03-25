@@ -14,6 +14,7 @@ import PciCompliancePage from "./pci-compliance";
 import GdprRightsPage from "./gdpr-rights";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { PageTitle } from "@/lib/accessibility";
 
 const BASE_TABS = ["general", "shifts", "security", "subscription", "qr-settings"] as const;
 type BaseTab = typeof BASE_TABS[number];
@@ -71,6 +72,7 @@ export default function SettingsHub() {
 
   return (
     <div className="space-y-6" data-testid="settings-hub">
+      <PageTitle title="Settings" />
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList data-testid="settings-tabs">
           <TabsTrigger value="general" data-testid="tab-general-settings">

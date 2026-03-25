@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useLocation, useParams, useSearch } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -312,6 +313,7 @@ export default function RecipeEditorPage() {
     <>
     <Dialog open={showLeaveDialog} onOpenChange={cancelLeave}>
       <DialogContent data-testid="dialog-leave-confirm">
+        <PageTitle title="Recipe Editor" />
         <DialogHeader>
           <DialogTitle>Unsaved Changes</DialogTitle>
         </DialogHeader>

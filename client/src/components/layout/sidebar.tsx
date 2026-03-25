@@ -277,7 +277,7 @@ export default function Sidebar() {
         </span>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-4 px-3 relative z-10">
+      <nav className="flex-1 overflow-y-auto py-4 px-3 relative z-10" aria-label="Main navigation">
         <TooltipProvider delayDuration={300}>
           <ul className="space-y-1">
             {filteredItems.map((item, index) => {

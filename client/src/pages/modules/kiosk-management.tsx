@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -46,6 +47,7 @@ interface UpsellRule {
 export default function KioskManagementPage() {
   return (
     <div className="space-y-6 p-6" data-testid="kiosk-management-page">
+      <PageTitle title="Kiosk Management" />
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Monitor className="h-6 w-6 text-primary" /> Kiosk Management
@@ -237,11 +239,11 @@ function DevicesTab() {
                       <code className="text-xs bg-muted px-2 py-1 rounded font-mono">
                         {showTokenId === device.id ? device.deviceToken : `${device.deviceToken.slice(0, 12)}...`}
                       </code>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowTokenId(showTokenId === device.id ? null : device.id)} data-testid={`button-toggle-token-${device.id}`}>
-                        {showTokenId === device.id ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />}
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => setShowTokenId(showTokenId === device.id ? null : device.id)} data-testid={`button-toggle-token-${device.id}`} aria-label={showTokenId === device.id ? "Hide device token" : "Show device token"}>
+                        {showTokenId === device.id ? <EyeOff className="h-3 w-3" aria-hidden="true" /> : <Eye className="h-3 w-3" aria-hidden="true" />}
                       </Button>
-                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToken(device.deviceToken)} data-testid={`button-copy-token-${device.id}`}>
-                        <Copy className="h-3 w-3" />
+                      <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => copyToken(device.deviceToken)} data-testid={`button-copy-token-${device.id}`} aria-label="Copy device token">
+                        <Copy className="h-3 w-3" aria-hidden="true" />
                       </Button>
                     </div>
                     <div className="flex items-center gap-2 mt-1">
@@ -256,8 +258,8 @@ function DevicesTab() {
                       onCheckedChange={active => toggleMutation.mutate({ id: device.id, active })}
                       data-testid={`switch-device-active-${device.id}`}
                     />
-                    <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteMutation.mutate(device.id)} data-testid={`button-delete-device-${device.id}`}>
-                      <Trash2 className="h-4 w-4" />
+                    <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteMutation.mutate(device.id)} data-testid={`button-delete-device-${device.id}`} aria-label="Delete kiosk device">
+                      <Trash2 className="h-4 w-4" aria-hidden="true" />
                     </Button>
                   </div>
                 </div>
@@ -452,8 +454,8 @@ function UpsellTab() {
                     onCheckedChange={active => toggleMutation.mutate({ id: rule.id, active })}
                     data-testid={`switch-upsell-active-${rule.id}`}
                   />
-                  <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteMutation.mutate(rule.id)} data-testid={`button-delete-upsell-${rule.id}`}>
-                    <Trash2 className="h-4 w-4" />
+                  <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteMutation.mutate(rule.id)} data-testid={`button-delete-upsell-${rule.id}`} aria-label="Delete upsell rule">
+                    <Trash2 className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 </div>
               </div>

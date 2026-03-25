@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -299,6 +300,7 @@ export default function PhoneOrderPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <PageTitle title="Phone Order" />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10">
           <Phone className="h-6 w-6 text-primary" />
@@ -523,8 +525,9 @@ export default function PhoneOrderPage() {
                           className="h-7 w-7"
                           onClick={() => updateQty(item.menuItemId, item.name, -1)}
                           data-testid={`button-dec-qty-${item.menuItemId || item.name}`}
+                          aria-label={`Decrease quantity of ${item.name}`}
                         >
-                          <Minus className="w-3 h-3" />
+                          <Minus className="w-3 h-3" aria-hidden="true" />
                         </Button>
                         <span className="text-sm font-semibold w-6 text-center" data-testid={`text-qty-${item.menuItemId || item.name}`}>
                           {item.quantity}
@@ -535,8 +538,9 @@ export default function PhoneOrderPage() {
                           className="h-7 w-7"
                           onClick={() => updateQty(item.menuItemId, item.name, 1)}
                           data-testid={`button-inc-qty-${item.menuItemId || item.name}`}
+                          aria-label={`Increase quantity of ${item.name}`}
                         >
-                          <Plus className="w-3 h-3" />
+                          <Plus className="w-3 h-3" aria-hidden="true" />
                         </Button>
                         <span className="text-sm font-semibold w-16 text-right">
                           {fmt(item.price * item.quantity)}
@@ -547,8 +551,9 @@ export default function PhoneOrderPage() {
                           className="h-7 w-7 text-red-500 hover:text-red-600"
                           onClick={() => removeItem(item.menuItemId, item.name)}
                           data-testid={`button-remove-item-${item.menuItemId || item.name}`}
+                          aria-label={`Remove ${item.name} from order`}
                         >
-                          <Trash2 className="w-3 h-3" />
+                          <Trash2 className="w-3 h-3" aria-hidden="true" />
                         </Button>
                       </div>
                     </div>

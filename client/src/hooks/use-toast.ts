@@ -4,6 +4,7 @@ import type {
   ToastActionElement,
   ToastProps,
 } from "@/components/ui/toast"
+import { announceToScreenReader } from "@/lib/accessibility"
 
 const TOAST_LIMIT = 1
 const TOAST_REMOVE_DELAY = 1000000
@@ -141,6 +142,11 @@ type Toast = Omit<ToasterToast, "id">
 
 function toast({ ...props }: Toast) {
   const id = genId()
+
+  const titleText = typeof props.title === "string" ? props.title : ""
+  const descText = typeof props.description === "string" ? props.description : ""
+  const announcement = [titleText, descText].filter(Boolean).join(": ")
+  if (announcement) announceToScreenReader(announcement)
 
   const update = (props: ToasterToast) =>
     dispatch({

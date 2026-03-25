@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -163,6 +164,7 @@ export default function FoodCostReports() {
 
   return (
     <div className="space-y-6" data-testid="food-cost-reports">
+      <PageTitle title="Food Cost Reports" />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Avg Food Cost %", value: `${summary.avgFoodCostPct.toFixed(1)}%`, sub: "per recipe (unweighted)", icon: DollarSign, color: "text-amber-600" },

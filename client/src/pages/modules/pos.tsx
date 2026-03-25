@@ -43,6 +43,7 @@ import BillPreviewModal from "@/components/pos/BillPreviewModal";
 import { StartShiftModal, CloseShiftDialog } from "@/components/pos/PosSessionModal";
 import DeliveryQueuePanel, { DeliveryQueueButton } from "@/components/pos/DeliveryQueuePanel";
 import ModificationDrawer, { type FoodModification, DEFAULT_MODIFICATION, hasModification } from "@/components/modifications/ModificationDrawer";
+import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 
 interface EngineDiscount {
   ruleId: string;
@@ -495,6 +496,7 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       toast({ title: "Payment received!", description: "Order has been marked as paid." });
+      announceToScreenReader("Payment received! Order has been marked as paid.");
     }
   }, [queryClient, toast]);
 
@@ -979,9 +981,12 @@ export default function POSPage() {
     onSuccess: (data: any) => {
       if (data?.queued) {
         toast({ title: "Order queued", description: "Will sync when connection is restored" });
+        announceToScreenReader("Order queued. Will sync when connection is restored.");
       } else {
         const isAddonKot = (activeTab?.sentCartKeys.length ?? 0) > 0 && isDineIn;
-        toast({ title: isAddonKot ? "Add-on KOT sent!" : isDineIn ? "Order sent to kitchen!" : "Order placed!" });
+        const msg = isAddonKot ? "Add-on KOT sent!" : isDineIn ? "Order sent to kitchen!" : "Order placed!";
+        toast({ title: msg });
+        announceToScreenReader(msg);
         if (isDineIn && data?.id) {
           dispatchKotForOrder(data.id, user?.tenant?.name || "Kitchen");
         }
@@ -1226,7 +1231,7 @@ export default function POSPage() {
   }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder, showBillModal, showKbdHelp, showMobileCart, cart.length]);
 
   return (
-    <PageErrorBoundary label="POS"><div className="flex h-full gap-0 relative" data-testid="pos-page">
+    <PageErrorBoundary label="POS"><><PageTitle title="Point of Sale" /><div className="flex h-full gap-0 relative" data-testid="pos-page">
       {showKbdHelp && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none" aria-live="polite">
           <div className="bg-popover border border-border rounded-xl shadow-xl p-4 w-72 pointer-events-auto" data-testid="kbd-shortcut-overlay">
@@ -1713,12 +1718,12 @@ export default function POSPage() {
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
-                          <Button data-testid={`button-decrease-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.cartKey, -1)}>
-                            <Minus className="h-3 w-3" />
+                          <Button data-testid={`button-decrease-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.cartKey, -1)} aria-label={`Decrease quantity of ${item.name}`}>
+                            <Minus className="h-3 w-3" aria-hidden="true" />
                           </Button>
-                          <motion.span key={item.quantity} initial={{ scale: 1.3 }} animate={{ scale: 1 }} className="w-8 text-center text-sm font-medium" data-testid={`text-qty-${item.menuItemId}`}>{item.quantity}</motion.span>
-                          <Button data-testid={`button-increase-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.cartKey, 1)}>
-                            <Plus className="h-3 w-3" />
+                          <motion.span key={item.quantity} initial={{ scale: 1.3 }} animate={{ scale: 1 }} className="w-8 text-center text-sm font-medium" data-testid={`text-qty-${item.menuItemId}`} aria-live="polite" aria-label={`Quantity: ${item.quantity}`}>{item.quantity}</motion.span>
+                          <Button data-testid={`button-increase-${item.menuItemId}`} variant="outline" size="icon" className="h-7 w-7" onClick={() => updateQuantity(item.cartKey, 1)} aria-label={`Increase quantity of ${item.name}`}>
+                            <Plus className="h-3 w-3" aria-hidden="true" />
                           </Button>
                         </div>
                         <div className="flex items-center gap-1">
@@ -1734,16 +1739,16 @@ export default function POSPage() {
                               >
                                 ✏️
                               </Button>
-                              <Button data-testid={`button-modifier-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => openModifierDrawer(item)} title="Modifiers & instructions">
-                                <ChevronDown className="h-3 w-3" />
+                              <Button data-testid={`button-modifier-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => openModifierDrawer(item)} title="Modifiers & instructions" aria-label={`Modifiers and instructions for ${item.name}`}>
+                                <ChevronDown className="h-3 w-3" aria-hidden="true" />
                               </Button>
                             </>
                           )}
-                          <Button data-testid={`button-note-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNoteDialog(item.cartKey)}>
-                            <StickyNote className="h-3 w-3" />
+                          <Button data-testid={`button-note-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNoteDialog(item.cartKey)} aria-label={`Add note to ${item.name}`}>
+                            <StickyNote className="h-3 w-3" aria-hidden="true" />
                           </Button>
-                          <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.cartKey)}>
-                            <Trash2 className="h-3 w-3" />
+                          <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.cartKey)} aria-label={`Remove ${item.name} from cart`}>
+                            <Trash2 className="h-3 w-3" aria-hidden="true" />
                           </Button>
                         </div>
                       </div>
@@ -1879,7 +1884,7 @@ export default function POSPage() {
               </div>
             )}
             <Separator />
-            <div className="flex justify-between font-semibold text-base" data-testid="text-total">
+            <div className="flex justify-between font-semibold text-base" data-testid="text-total" aria-live="polite" aria-atomic="true">
               <span>Total</span><span>{fmt(total)}</span>
             </div>
           </div>
@@ -1984,8 +1989,9 @@ export default function POSPage() {
                 {([["cash", Banknote, "Cash"], ["card", CreditCard, "Card"], ["upi", Wallet, "UPI"]] as const).map(([method, Icon, label]) => (
                   <button key={method} data-testid={`button-pay-${method}`}
                     onClick={() => setPaymentMethod(method)}
+                    aria-pressed={paymentMethod === method}
                     className={`flex flex-col items-center gap-1 py-3 rounded-lg border-2 text-sm font-medium transition-all ${paymentMethod === method ? "border-primary bg-primary/10 text-primary" : "border-border hover:border-primary/40"}`}>
-                    <Icon className="h-5 w-5" />
+                    <Icon className="h-5 w-5" aria-hidden="true" />
                     {label}
                   </button>
                 ))}
@@ -2341,6 +2347,6 @@ export default function POSPage() {
           }}
         />
       )}
-    </div></PageErrorBoundary>
+    </div></></PageErrorBoundary>
   );
 }

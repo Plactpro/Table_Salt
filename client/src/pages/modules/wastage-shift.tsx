@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -111,9 +112,10 @@ export default function WastageShiftPage() {
       data-testid="page-wastage-shift"
     >
       <div className="flex items-center justify-between flex-wrap gap-4">
+        <PageTitle title="Wastage by Shift" />
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={() => navigate("/")} data-testid="btn-back">
-            <ArrowLeft className="h-5 w-5" />
+          <Button variant="ghost" size="icon" onClick={() => navigate("/")} data-testid="btn-back" aria-label="Go back to dashboard">
+            <ArrowLeft className="h-5 w-5" aria-hidden="true" />
           </Button>
           <div>
             <h1 className="text-xl font-heading font-bold flex items-center gap-2">

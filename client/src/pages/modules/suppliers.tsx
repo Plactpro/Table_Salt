@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -68,6 +69,7 @@ export default function SuppliersPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="suppliers-page">
+      <PageTitle title="Suppliers" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Truck className="h-7 w-7 text-primary" />

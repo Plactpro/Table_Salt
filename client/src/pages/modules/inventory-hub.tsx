@@ -1,6 +1,7 @@
 import { useState, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useLocation } from "wouter";
+import { PageTitle } from "@/lib/accessibility";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Package2, BookOpen, ShoppingCart, ChefHat, ArrowDownUp, AlertCircle, Plus, Edit, Trash2, Percent } from "lucide-react";
 import { useAuth } from "@/lib/auth";
@@ -218,6 +219,7 @@ export default function InventoryHub() {
 
   return (
     <div className="space-y-6" data-testid="inventory-hub">
+      <PageTitle title="Inventory" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="inventory-tabs">
           <TabsTrigger value="stock" data-testid="tab-stock">

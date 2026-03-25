@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -1211,8 +1212,9 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                                   className="h-7 w-7 text-red-500"
                                   onClick={() => { if (confirm("Delete this category rate?")) deleteCatMutation.mutate(cat.id); }}
                                   data-testid={`button-delete-category-${cat.id}`}
+                                  aria-label={`Delete category rate for ${cat.categoryName}`}
                                 >
-                                  <X className="h-3.5 w-3.5" />
+                                  <X className="h-3.5 w-3.5" aria-hidden="true" />
                                 </Button>
                               </td>
                             )}
@@ -2029,6 +2031,7 @@ export default function OutletsPage() {
       data-testid="page-outlets"
     >
       <div className="flex items-center justify-between">
+        <PageTitle title="Outlets" />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <ViewIcon className="h-6 w-6 text-primary" />
@@ -2804,11 +2807,11 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
                           </td>
                           <td className="px-3 py-2">
                             <div className="flex gap-1 justify-end">
-                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingZone(zone); setZoneForm({ name: zone.name, code: zone.code, type: zone.type, color: zone.color ?? "#6366f1", level: zone.level ?? 0, covered: zone.covered ?? true, slotCount: zone.slotCount ?? 0 }); setZoneDialog(true); }} data-testid={`button-edit-zone-${zone.id}`}>
-                                <Edit className="h-3.5 w-3.5" />
+                              <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => { setEditingZone(zone); setZoneForm({ name: zone.name, code: zone.code, type: zone.type, color: zone.color ?? "#6366f1", level: zone.level ?? 0, covered: zone.covered ?? true, slotCount: zone.slotCount ?? 0 }); setZoneDialog(true); }} data-testid={`button-edit-zone-${zone.id}`} aria-label={`Edit zone ${zone.name}`}>
+                                <Edit className="h-3.5 w-3.5" aria-hidden="true" />
                               </Button>
-                              <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500" onClick={() => { if (confirm("Delete zone?")) deleteZoneMutation.mutate(zone.id); }} data-testid={`button-delete-zone-${zone.id}`}>
-                                <Trash2 className="h-3.5 w-3.5" />
+                              <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500" onClick={() => { if (confirm("Delete zone?")) deleteZoneMutation.mutate(zone.id); }} data-testid={`button-delete-zone-${zone.id}`} aria-label={`Delete zone ${zone.name}`}>
+                                <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                               </Button>
                             </div>
                           </td>
@@ -3008,13 +3011,14 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
                                           variant="ghost"
                                           className="h-6 w-6 text-red-500"
                                           data-testid={`button-remove-slab-${vt}-${idx}`}
+                                          aria-label={`Remove slab row ${idx + 1}`}
                                           onClick={() => setSlabEdits(prev => {
                                             const arr = [...(prev[vt] ?? [])];
                                             arr.splice(idx, 1);
                                             return { ...prev, [vt]: arr };
                                           })}
                                         >
-                                          <X className="h-3 w-3" />
+                                          <X className="h-3 w-3" aria-hidden="true" />
                                         </Button>
                                       </td>
                                     </tr>

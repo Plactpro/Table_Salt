@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -471,6 +472,7 @@ export default function SettingsPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-settings">
+      <PageTitle title="General Settings" />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10">
           <Settings className="h-6 w-6 text-primary" />

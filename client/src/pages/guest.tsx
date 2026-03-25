@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useParams } from "wouter";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
@@ -462,6 +463,7 @@ export default function GuestPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col max-w-lg mx-auto relative" data-testid="guest-page">
+      <PageTitle title="Self-Order" />
       <header className="bg-white border-b sticky top-0 z-30 px-4 py-3 shadow-sm">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

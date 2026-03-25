@@ -276,8 +276,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
               size="icon"
               className="text-slate-400 hover:text-white hover:bg-white/10 h-9 w-9"
               data-testid="button-admin-mobile-menu"
+              aria-label="Open navigation menu"
             >
-              <Menu className="h-5 w-5" />
+              <Menu className="h-5 w-5" aria-hidden="true" />
             </Button>
           </SheetTrigger>
           <SheetContent side="left" className="p-0 w-56 bg-slate-900 border-slate-700">

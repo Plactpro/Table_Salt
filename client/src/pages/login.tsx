@@ -8,6 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, ShieldCheck, ArrowLeft } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { motion } from "framer-motion";
+import { PageTitle } from "@/lib/accessibility";
 
 const floatingIcons = [
   { Icon: ChefHat, x: "15%", y: "20%", size: 32, delay: 0, duration: 6 },
@@ -85,6 +86,8 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
+      <PageTitle title="Sign In" />
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg">Skip to main content</a>
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-primary via-primary/90 to-primary/70 items-center justify-center">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.1)_0%,transparent_60%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.08)_0%,transparent_40%)]" />
@@ -145,7 +148,7 @@ export default function LoginPage() {
         <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-primary/50 to-transparent" />
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 bg-background">
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 bg-background" id="main-content">
         <motion.div
           className="w-full max-w-md"
           initial={{ opacity: 0, x: 30 }}
@@ -167,11 +170,11 @@ export default function LoginPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
           >
-            <h2 className="text-2xl font-heading font-bold mb-1" data-testid="text-login-title">Welcome back</h2>
+            <h1 id="login-heading" className="text-2xl font-heading font-bold mb-1" data-testid="text-login-title">Welcome back</h1>
             <p className="text-muted-foreground mb-8">Sign in to your account to continue</p>
           </motion.div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-5" role="form" aria-labelledby="login-heading" id="login-form">
             {!needs2FA ? (
               <>
                 <motion.div
@@ -182,7 +185,7 @@ export default function LoginPage() {
                 >
                   <Label htmlFor="username">Username</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     <Input
                       id="username"
                       data-testid="input-username"
@@ -212,7 +215,7 @@ export default function LoginPage() {
                     </a>
                   </div>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     <Input
                       id="password"
                       data-testid="input-password"
@@ -228,9 +231,10 @@ export default function LoginPage() {
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                       onClick={() => setShowPassword(!showPassword)}
                       data-testid="button-toggle-password"
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                       tabIndex={-1}
                     >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                     </button>
                   </div>
                 </motion.div>
@@ -252,7 +256,7 @@ export default function LoginPage() {
                 <div className="space-y-2">
                   <Label htmlFor="totpCode">Verification Code</Label>
                   <div className="relative">
-                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                     <Input
                       id="totpCode"
                       data-testid="input-totp-code"
@@ -287,6 +291,7 @@ export default function LoginPage() {
                 type="submit"
                 className="w-full h-11 text-base gap-2"
                 disabled={loading}
+                aria-busy={loading}
                 data-testid="button-login"
               >
                 {loading ? (
@@ -294,16 +299,17 @@ export default function LoginPage() {
                     className="h-5 w-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
                     animate={{ rotate: 360 }}
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    aria-hidden="true"
                   />
                 ) : needs2FA ? (
                   <>
                     Verify &amp; Sign In
-                    <ShieldCheck className="h-4 w-4" />
+                    <ShieldCheck className="h-4 w-4" aria-hidden="true" />
                   </>
                 ) : (
                   <>
                     Sign In
-                    <ArrowRight className="h-4 w-4" />
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
                   </>
                 )}
               </Button>

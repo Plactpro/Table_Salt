@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -270,6 +271,7 @@ export default function GdprRightsPage() {
 
   return (
     <div className="space-y-6" data-testid="gdpr-rights-page">
+      <PageTitle title="Privacy & GDPR" />
       <div className="flex items-center gap-3">
         <Shield className="h-6 w-6 text-primary" />
         <div>

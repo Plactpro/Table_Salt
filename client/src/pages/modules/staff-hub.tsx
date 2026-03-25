@@ -1,4 +1,5 @@
 import { useState, Component } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Users, HardHat, TrendingUp, AlertCircle } from "lucide-react";
@@ -34,6 +35,7 @@ export default function StaffHub() {
 
   return (
     <div className="space-y-6" data-testid="staff-hub">
+      <PageTitle title="Staff" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="staff-tabs">
           <TabsTrigger value="schedule" data-testid="tab-schedule">

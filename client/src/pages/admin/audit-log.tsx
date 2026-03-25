@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery } from "@tanstack/react-query";
 import { useSearch } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -77,40 +78,44 @@ function EventRow({ event }: { event: AuditEvent }) {
   const hasDetails = event.before || event.after || event.metadata;
 
   return (
-    <div data-testid={`row-audit-${event.id}`}>
+    <div role="row" data-testid={`row-audit-${event.id}`}>
       <button
         className="w-full grid grid-cols-[auto_1.5fr_1fr_1.5fr_1.5fr_1fr_1fr] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors text-left"
         onClick={() => hasDetails && setExpanded((p) => !p)}
+        aria-label={`${event.action} by ${event.userName} on ${new Date(event.createdAt).toLocaleString()}${hasDetails ? " — click to expand" : ""}`}
+        aria-expanded={hasDetails ? expanded : undefined}
         data-testid={`button-expand-audit-${event.id}`}
         disabled={!hasDetails}
       >
-        <div className="w-4">
+        <span role="cell" className="w-4">
           {hasDetails ? (
             expanded
-              ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" />
-              : <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+              ? <ChevronDown className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
+              : <ChevronRight className="h-3.5 w-3.5 text-slate-400" aria-hidden="true" />
           ) : (
             <span className="w-4" />
           )}
-        </div>
-        <span className="text-xs text-slate-500 truncate">
+        </span>
+        <span role="cell" className="text-xs text-slate-500 truncate">
           {new Date(event.createdAt).toLocaleString()}
         </span>
-        <span className="text-xs text-slate-600 truncate">
+        <span role="cell" className="text-xs text-slate-600 truncate">
           {event.tenantName ?? <span className="text-slate-400">Platform</span>}
         </span>
-        <span className="text-xs text-slate-700 truncate">
+        <span role="cell" className="text-xs text-slate-700 truncate">
           {event.userName}
           {event.userEmail && <span className="text-slate-400 ml-1">({event.userEmail})</span>}
         </span>
+        <span role="cell">
         <Badge variant="outline" className="text-xs font-mono w-fit">
           {event.action}
         </Badge>
-        <span className="text-xs text-slate-500 truncate" data-testid={`audit-entity-${event.id}`}>
+        </span>
+        <span role="cell" className="text-xs text-slate-500 truncate" data-testid={`audit-entity-${event.id}`}>
           <span className="font-medium text-slate-600">{event.entityType}</span>
           {event.entityName && <span className="text-slate-400"> / {event.entityName}</span>}
         </span>
-        <span className="text-xs text-slate-400 truncate">
+        <span role="cell" className="text-xs text-slate-400 truncate">
           {event.ipAddress ?? "—"}
         </span>
       </button>
@@ -223,6 +228,7 @@ export default function AuditLogPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="admin-audit-log-page">
+      <PageTitle title="Admin — Audit Log" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900" data-testid="page-title-audit-log">
@@ -366,17 +372,19 @@ export default function AuditLogPage() {
               <p className="text-sm text-slate-400">No audit events found</p>
             </div>
           ) : (
-            <>
-              <div className="grid grid-cols-[auto_1.5fr_1fr_1.5fr_1.5fr_1fr_1fr] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
-                <span className="w-4" />
-                <span>Timestamp</span>
-                <span>Tenant</span>
-                <span>User</span>
-                <span>Action</span>
-                <span>Entity</span>
-                <span>IP</span>
+            <div role="table" aria-label="Audit Log">
+              <div role="rowgroup">
+              <div role="row" className="grid grid-cols-[auto_1.5fr_1fr_1.5fr_1.5fr_1fr_1fr] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+                <span role="columnheader" className="w-4" />
+                <span role="columnheader">Timestamp</span>
+                <span role="columnheader">Tenant</span>
+                <span role="columnheader">User</span>
+                <span role="columnheader">Action</span>
+                <span role="columnheader">Entity</span>
+                <span role="columnheader">IP</span>
               </div>
-              <div className="divide-y divide-slate-100">
+              </div>
+              <div role="rowgroup" className="divide-y divide-slate-100">
                 {events.map((e) => (
                   <EventRow key={e.id} event={e} />
                 ))}
@@ -393,7 +401,7 @@ export default function AuditLogPage() {
                   </Button>
                 </div>
               )}
-            </>
+            </div>
           )}
         </CardContent>
       </Card>

@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Truck, ShoppingBag } from "lucide-react";
@@ -9,6 +10,7 @@ export default function DeliveryHub() {
 
   return (
     <div className="space-y-6" data-testid="delivery-hub">
+      <PageTitle title="Deliveries" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="delivery-tabs">
           <TabsTrigger value="delivery" data-testid="tab-delivery">

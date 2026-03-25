@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -173,6 +174,7 @@ export default function SecuritySettingsPage() {
 
   return (
     <div className="space-y-6" data-testid="security-settings-page">
+      <PageTitle title="Security Settings" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-security-title">

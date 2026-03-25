@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Plus, Eye, RefreshCw, Clock, Search, TrendingUp, X } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { getJurisdictionByCurrency } from "@shared/jurisdictions";
+import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 
 interface BreachIncident {
   id: string;
@@ -110,11 +111,12 @@ function DismissAlertDialog({
       return r.json();
     },
     onSuccess: () => {
+      announceToScreenReader("Alert dismissed successfully.");
       toast({ title: "Alert dismissed", description: "The detection alert has been dismissed." });
       onDismissed();
       onClose();
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+    onError: (e: any) => { announceToScreenReader("Error: " + e.message); toast({ variant: "destructive", title: "Error", description: e.message }); },
   });
 
   const canSubmit = reasonType && (reasonType !== "other" || otherReason.trim().length > 0);
@@ -427,10 +429,11 @@ function LogIncidentDialog({ onClose, tenants, prefill }: { onClose: () => void;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/breach-incidents"] });
+      announceToScreenReader("Breach incident logged successfully.");
       toast({ title: "Incident logged", description: "The breach incident has been recorded." });
       onClose();
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+    onError: (e: any) => { announceToScreenReader("Error: " + e.message); toast({ variant: "destructive", title: "Error", description: e.message }); },
   });
 
   const toggleType = (type: string) => {
@@ -641,10 +644,11 @@ function UpdateStatusDialog({ incident, onClose }: { incident: BreachIncident; o
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/breach-incidents"] });
+      announceToScreenReader("Incident updated successfully.");
       toast({ title: "Incident updated" });
       onClose();
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+    onError: (e: any) => { announceToScreenReader("Error: " + e.message); toast({ variant: "destructive", title: "Error", description: e.message }); },
   });
 
   return (
@@ -832,6 +836,7 @@ export default function BreachIncidentsPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="breach-incidents-page">
+      <PageTitle title="Breach Incidents" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <AlertTriangle className="h-6 w-6 text-red-600" />

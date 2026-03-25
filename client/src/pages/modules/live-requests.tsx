@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -587,6 +588,7 @@ export default function LiveRequestsPage() {
   return (
     <TooltipProvider delayDuration={400}>
       <div className="space-y-6 p-1" data-testid="live-requests-page">
+        <PageTitle title="Live Requests" />
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">

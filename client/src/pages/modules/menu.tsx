@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { PageTitle } from "@/lib/accessibility";
 import { useAuth } from "@/lib/auth";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
@@ -734,6 +735,7 @@ export default function MenuPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col h-full" data-testid="menu-page">
+      <PageTitle title="Menu" />
       <div className="flex items-center gap-2 px-6 pt-4 pb-2 border-b">
         <Button
           variant={activeTab === "items" ? "default" : "outline"}

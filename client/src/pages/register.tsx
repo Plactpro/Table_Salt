@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, Building2, UserCircle, Mail, Phone } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { motion } from "framer-motion";
+import { PageTitle } from "@/lib/accessibility";
 
 const floatingIcons = [
   { Icon: ChefHat, x: "15%", y: "20%", size: 32, delay: 0, duration: 6 },
@@ -63,6 +64,8 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row">
+      <PageTitle title="Create Account" />
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg">Skip to main content</a>
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden bg-gradient-to-br from-primary via-primary/90 to-primary/70 items-center justify-center">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_50%,rgba(255,255,255,0.1)_0%,transparent_60%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.08)_0%,transparent_40%)]" />
@@ -123,7 +126,7 @@ export default function RegisterPage() {
         <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-primary/50 to-transparent" />
       </div>
 
-      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 bg-background">
+      <div className="flex-1 flex items-center justify-center p-6 lg:p-12 bg-background" id="main-content">
         <motion.div
           className="w-full max-w-md"
           initial={{ opacity: 0, x: 30 }}
@@ -145,11 +148,11 @@ export default function RegisterPage() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.4 }}
           >
-            <h2 className="text-2xl font-heading font-bold mb-1" data-testid="text-register-title">Create your account</h2>
+            <h1 className="text-2xl font-heading font-bold mb-1" data-testid="text-register-title">Create your account</h1>
             <p className="text-muted-foreground mb-8">Set up your restaurant in minutes</p>
           </motion.div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="space-y-4" role="form" aria-label="Registration form">
             <motion.div
               className="space-y-2"
               initial={{ opacity: 0, y: 20 }}
@@ -158,7 +161,7 @@ export default function RegisterPage() {
             >
               <Label htmlFor="restaurantName">Restaurant Name</Label>
               <div className="relative">
-                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="restaurantName"
                   data-testid="input-restaurant-name"
@@ -178,7 +181,7 @@ export default function RegisterPage() {
             >
               <Label htmlFor="name">Your Name</Label>
               <div className="relative">
-                <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <UserCircle className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="name"
                   data-testid="input-name"
@@ -198,7 +201,7 @@ export default function RegisterPage() {
             >
               <Label htmlFor="email">Email Address</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="email"
                   data-testid="input-email"
@@ -220,7 +223,7 @@ export default function RegisterPage() {
             >
               <Label htmlFor="phone">Phone / WhatsApp <span className="text-muted-foreground font-normal">(optional)</span></Label>
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="phone"
                   data-testid="input-phone"
@@ -241,7 +244,7 @@ export default function RegisterPage() {
             >
               <Label htmlFor="username">Username</Label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="username"
                   data-testid="input-username"
@@ -261,7 +264,7 @@ export default function RegisterPage() {
             >
               <Label htmlFor="password">Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="password"
                   data-testid="input-password"
@@ -277,9 +280,10 @@ export default function RegisterPage() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   onClick={() => setShowPassword(!showPassword)}
                   data-testid="button-toggle-password"
+                  aria-label={showPassword ? "Hide password" : "Show password"}
                   tabIndex={-1}
                 >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                 </button>
               </div>
             </motion.div>
@@ -291,7 +295,7 @@ export default function RegisterPage() {
             >
               <Label htmlFor="confirmPassword">Confirm Password</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                 <Input
                   id="confirmPassword"
                   data-testid="input-confirm-password"
@@ -301,19 +305,22 @@ export default function RegisterPage() {
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  aria-invalid={passwordMismatch ? "true" : undefined}
+                  aria-describedby={passwordMismatch ? "confirm-password-error" : undefined}
                 />
                 <button
                   type="button"
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
                   onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                   data-testid="button-toggle-confirm-password"
+                  aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                   tabIndex={-1}
                 >
-                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showConfirmPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                 </button>
               </div>
               {passwordMismatch && (
-                <p className="text-xs text-destructive" data-testid="text-password-match-error">
+                <p id="confirm-password-error" role="alert" className="text-xs text-destructive" data-testid="text-password-match-error">
                   Passwords do not match
                 </p>
               )}

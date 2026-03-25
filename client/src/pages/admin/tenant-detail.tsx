@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useRoute, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -258,6 +259,7 @@ export default function TenantDetailPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-4" data-testid="tenant-detail-page">
+      <PageTitle title="Admin — Tenant Details" />
       <div className="flex items-center gap-3">
         <Button
           variant="ghost"

@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -328,6 +329,7 @@ export default function ComplianceReport() {
 
   return (
     <div className="space-y-6" data-testid="compliance-report">
+      <PageTitle title="Compliance Report" />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">

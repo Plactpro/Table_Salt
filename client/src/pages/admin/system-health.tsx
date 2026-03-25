@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageTitle } from "@/lib/accessibility";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity, Database, Cpu, RefreshCw } from "lucide-react";
@@ -104,6 +105,7 @@ export default function SystemHealthPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="system-health-page">
+      <PageTitle title="Admin — System Health" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Activity className="h-6 w-6 text-green-600" />
@@ -122,8 +124,9 @@ export default function SystemHealthPage() {
             onClick={() => refetch()}
             className="p-2 rounded-md hover:bg-muted transition-colors"
             data-testid="button-refresh-health"
+            aria-label="Refresh system health data"
           >
-            <RefreshCw className="h-4 w-4" />
+            <RefreshCw className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
       </div>

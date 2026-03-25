@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -154,6 +155,7 @@ export default function ProcurementPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="procurement-page">
+      <PageTitle title="Procurement" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ShoppingCart className="h-7 w-7 text-primary" />

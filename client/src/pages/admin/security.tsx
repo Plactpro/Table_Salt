@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -142,6 +143,7 @@ export default function SecurityConsolePage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="admin-security-console-page">
+      <PageTitle title="Admin — Security" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2" data-testid="page-title-security">

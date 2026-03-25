@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -58,6 +59,7 @@ export default function AdminAdApprovalsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-4xl" data-testid="admin-ad-approvals-page">
+      <PageTitle title="Admin — Ad Approvals" />
       <div className="flex items-center gap-3">
         <Megaphone className="w-6 h-6 text-primary" />
         <div>

@@ -336,8 +336,8 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
                   </Badge>
                 )}
               </SheetTitle>
-              <Button variant="ghost" size="icon" onClick={() => refetch()} className="h-8 w-8" data-testid="button-refresh-queue">
-                <RefreshCw className="h-4 w-4" />
+              <Button variant="ghost" size="icon" onClick={() => refetch()} className="h-8 w-8" data-testid="button-refresh-queue" aria-label="Refresh delivery queue">
+                <RefreshCw className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
           </SheetHeader>

@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -164,6 +165,7 @@ export default function CustomerRequestsAnalytics() {
 
   return (
     <div className="space-y-6" data-testid="customer-requests-analytics">
+      <PageTitle title="Customer Analytics" />
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">

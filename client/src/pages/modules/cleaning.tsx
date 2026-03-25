@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -374,8 +375,9 @@ export default function CleaningPage() {
                   className="h-7 w-7 text-muted-foreground hover:text-red-600"
                   onClick={() => deleteTemplateMutation.mutate(template.id)}
                   data-testid={`button-delete-template-${template.id}`}
+                  aria-label={`Delete cleaning template`}
                 >
-                  <Trash2 className="w-4 h-4" />
+                  <Trash2 className="w-4 h-4" aria-hidden="true" />
                 </Button>
               )}
             </div>
@@ -621,6 +623,7 @@ export default function CleaningPage() {
 
   return (
     <div className="space-y-6" data-testid="cleaning-page">
+      <PageTitle title="Cleaning" />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -66,6 +67,7 @@ export default function PriceAnalysis() {
 
   return (
     <div className="space-y-6" data-testid="price-analysis-page">
+      <PageTitle title="Price Analysis" />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">

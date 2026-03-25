@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useRoute } from "wouter";
 import { ArrowLeft, Send, Eye, ExternalLink } from "lucide-react";
@@ -162,6 +163,7 @@ export default function AdminSupportTicketPage() {
 
   return (
     <div className="p-6" data-testid="page-admin-ticket-detail">
+      <PageTitle title="Admin — Support Ticket" />
       <div className="flex items-center gap-3 mb-4">
         <Button variant="ghost" size="sm" onClick={() => navigate("/admin/support")} className="text-slate-600">
           <ArrowLeft className="h-4 w-4 mr-1" /> Back

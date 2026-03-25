@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -260,6 +261,7 @@ export default function AccessLogPage() {
 
   return (
     <div className="space-y-6" data-testid="access-log-page">
+      <PageTitle title="Access Log" />
       {/* Header */}
       <Card data-testid="card-access-log-header">
         <CardContent className="p-5">
