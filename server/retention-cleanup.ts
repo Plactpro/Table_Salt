@@ -1,10 +1,11 @@
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
-export async function runRetentionCleanup(): Promise<{ auditRowsDeleted: number; alertsDeleted: number; customersDeleted: number }> {
+export async function runRetentionCleanup(): Promise<{ auditRowsDeleted: number; alertsDeleted: number; customersDeleted: number; healthLogsDeleted: number }> {
   let auditRowsDeleted = 0;
   let alertsDeleted = 0;
   let customersDeleted = 0;
+  let healthLogsDeleted = 0;
 
   try {
     const allTenants = await db.execute(sql`SELECT id, module_config FROM tenants`);
@@ -47,11 +48,17 @@ export async function runRetentionCleanup(): Promise<{ auditRowsDeleted: number;
       );
       alertsDeleted += Number(alertResult.rowCount || 0);
     }
+    const healthLogCutoff = new Date();
+    healthLogCutoff.setDate(healthLogCutoff.getDate() - 90);
+    const healthResult = await db.execute(
+      sql`DELETE FROM system_health_log WHERE checked_at < ${healthLogCutoff}`
+    );
+    healthLogsDeleted += Number(healthResult.rowCount || 0);
   } catch (err) {
     console.error("Retention cleanup error:", err);
   }
 
-  return { auditRowsDeleted, alertsDeleted, customersDeleted };
+  return { auditRowsDeleted, alertsDeleted, customersDeleted, healthLogsDeleted };
 }
 
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
@@ -62,8 +69,8 @@ export function startRetentionScheduler() {
   setTimeout(async () => {
     try {
       const result = await runRetentionCleanup();
-      if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0) {
-        console.log(`[retention-cleanup] Startup run: deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers`);
+      if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0 || result.healthLogsDeleted > 0) {
+        console.log(`[retention-cleanup] Startup run: deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers, ${result.healthLogsDeleted} health log entries`);
       }
     } catch (err) {
       console.error("[retention-cleanup] Startup run error:", err);
@@ -73,8 +80,8 @@ export function startRetentionScheduler() {
   cleanupInterval = setInterval(async () => {
     try {
       const result = await runRetentionCleanup();
-      if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0) {
-        console.log(`[retention-cleanup] Deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers`);
+      if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0 || result.healthLogsDeleted > 0) {
+        console.log(`[retention-cleanup] Deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers, ${result.healthLogsDeleted} health log entries`);
       }
     } catch (err) {
       console.error("[retention-cleanup] Scheduler error:", err);

@@ -3012,4 +3012,65 @@ export async function runTask108Migrations(): Promise<void> {
       updated_at           TIMESTAMP DEFAULT NOW()
     )
   `);
+
+  // Task #169: Compliance Foundations
+  // 1. Breach incidents (GDPR Article 33 — 72hr notification requirement)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS breach_incidents (
+      id              VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id       VARCHAR(36),
+      title           TEXT NOT NULL,
+      description     TEXT NOT NULL,
+      severity        VARCHAR(20) NOT NULL DEFAULT 'medium',
+      status          VARCHAR(30) NOT NULL DEFAULT 'detected',
+      detected_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+      contained_at    TIMESTAMP,
+      notified_at     TIMESTAMP,
+      resolved_at     TIMESTAMP,
+      affected_records INTEGER DEFAULT 0,
+      affected_data_types TEXT[],
+      root_cause      TEXT,
+      remediation     TEXT,
+      reported_by_id  VARCHAR(36),
+      reported_by_name TEXT,
+      notification_deadline TIMESTAMP,
+      tenant_notified BOOLEAN DEFAULT false,
+      authority_notified BOOLEAN DEFAULT false,
+      created_at      TIMESTAMP DEFAULT NOW(),
+      updated_at      TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  // 2. Consent log (GDPR Article 7)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS consent_log (
+      id              VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id         VARCHAR(36) NOT NULL,
+      tenant_id       VARCHAR(36) NOT NULL,
+      document_type   VARCHAR(30) NOT NULL,
+      document_version VARCHAR(20) NOT NULL,
+      accepted_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+      ip_address      VARCHAR(50),
+      user_agent      VARCHAR(500)
+    )
+  `);
+
+  // 3. System health log (SOC 2 Availability)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS system_health_log (
+      id              SERIAL PRIMARY KEY,
+      checked_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+      status          VARCHAR(20) NOT NULL,
+      db_response_ms  INTEGER,
+      process_uptime_seconds INTEGER,
+      memory_used_mb  INTEGER,
+      active_sessions INTEGER DEFAULT 0
+    )
+  `);
+
+  // 4. Platform settings additions (ToS and Privacy Policy versioning)
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS tos_version VARCHAR(20) DEFAULT '2026-01'`);
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS privacy_version VARCHAR(20) DEFAULT '2026-01'`);
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS tos_url TEXT DEFAULT '/legal/terms'`);
+  await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS privacy_url TEXT DEFAULT '/legal/privacy'`);
 }
