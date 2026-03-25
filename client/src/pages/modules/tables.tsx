@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect, Component } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, Component, startTransition } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -40,6 +40,7 @@ class TablesErrorBoundary extends Component<{ children: ReactNode }, { hasError:
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[TablesPage] render error:", error, info);
+    setTimeout(() => this.setState({ hasError: false, error: "" }), 2000);
   }
   render() {
     if (this.state.hasError) {
@@ -477,8 +478,10 @@ function TablesPageContent() {
 
   useRealtimeEvent("resource:updated", useCallback(() => {
     if (outletId) {
-      queryClient.invalidateQueries({ queryKey: ["/api/resources/availability", outletId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/resources/assignments/by-outlet", outletId] });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ["/api/resources/availability", outletId] });
+        queryClient.invalidateQueries({ queryKey: ["/api/resources/assignments/by-outlet", outletId] });
+      }, 0);
     }
   }, [queryClient, outletId]));
 
@@ -492,6 +495,7 @@ function TablesPageContent() {
       return res.json();
     },
     enabled: !!outletId,
+    staleTime: 30_000,
   });
 
   type ResourceAssignmentsMap = Record<string, {resourceId: string; resourceName: string; resourceIcon: string; resourceCode: string; quantity: number; assignedAt: string | null}[]>;
@@ -651,14 +655,17 @@ function TablesPageContent() {
   const createZoneMut = useMutation({
     mutationFn: async (data: Record<string, unknown>) => { const r = await apiRequest("POST", "/api/table-zones", data); return r.json(); },
     onSuccess: () => { invalidateAll(); setZoneForm({ name: "", color: "#6366f1" }); toast({ title: "Zone created" }); },
+    onError: (e: Error) => toast({ title: "Failed to create zone", description: e.message, variant: "destructive" }),
   });
   const updateZoneMut = useMutation({
     mutationFn: async ({ id, ...data }: Record<string, unknown>) => { const r = await apiRequest("PATCH", `/api/table-zones/${id}`, data); return r.json(); },
     onSuccess: () => { invalidateAll(); setEditingZone(null); toast({ title: "Zone updated" }); },
+    onError: (e: Error) => toast({ title: "Failed to update zone", description: e.message, variant: "destructive" }),
   });
   const deleteZoneMut = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/table-zones/${id}`); },
     onSuccess: () => { invalidateAll(); toast({ title: "Zone deleted" }); },
+    onError: (e: Error) => toast({ title: "Failed to delete zone", description: e.message, variant: "destructive" }),
   });
 
   const createWaitlistMut = useMutation({
@@ -864,7 +871,7 @@ function TablesPageContent() {
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
+      <Tabs value={activeTab} onValueChange={(v) => startTransition(() => setActiveTab(v))}>
         <TabsList>
           <TabsTrigger value="floor" data-testid="tab-floor"><LayoutGrid className="w-4 h-4 mr-1.5" />Floor Plan</TabsTrigger>
           <TabsTrigger value="waitlist" data-testid="tab-waitlist"><ListOrdered className="w-4 h-4 mr-1.5" />Waitlist ({activeWaitlist.length})</TabsTrigger>
