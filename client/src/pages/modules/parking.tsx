@@ -11,7 +11,7 @@ import {
   Loader2, User, Phone, X, ChevronRight, MapPin, CircleDot, Square,
   Hash, Clipboard, ParkingSquare, BarChart3, Timer, DollarSign, Layers,
   Settings, Users, Download, Trash2, Edit2, ToggleLeft, ToggleRight,
-  TrendingUp, CalendarDays, Shield, BadgeCheck,
+  TrendingUp, CalendarDays, Shield, BadgeCheck, Search, Zap, List, LayoutGrid,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -128,6 +128,7 @@ function NewTicketDialog({
     keyTagNumber: "",
     selectedSlotId: "",
     selectedSlotCode: "",
+    customerId: "",
   });
 
   const { data: slots = [] } = useQuery<any[]>({
@@ -154,6 +155,42 @@ function NewTicketDialog({
   const activeTables = allTables.filter((t: any) => !t.outletId || t.outletId === outletId);
 
   const availableSlots = slots.filter((s: any) => s.status === "available");
+
+  const { data: customerByPhone } = useQuery<any>({
+    queryKey: ["/api/customers/by-phone", form.customerPhone],
+    queryFn: async () => {
+      if (!form.customerPhone || form.customerPhone.length < 7) return null;
+      const res = await fetch(`/api/customers?phone=${encodeURIComponent(form.customerPhone)}`, { credentials: "include" });
+      if (!res.ok) return null;
+      const data = await res.json();
+      if (Array.isArray(data)) return data[0] ?? null;
+      if (Array.isArray(data?.data)) return data.data[0] ?? null;
+      return null;
+    },
+    enabled: step === 2 && !!form.customerPhone && form.customerPhone.length >= 7,
+    staleTime: 60000,
+  });
+
+  const resolvedCustomerId = form.customerId || customerByPhone?.id || "";
+
+  const [autoAssignResult, setAutoAssignResult] = useState<{ reason: string } | null>(null);
+  const autoAssignMutation = useMutation({
+    mutationFn: async () => {
+      const custParam = resolvedCustomerId ? `&customerId=${encodeURIComponent(resolvedCustomerId)}` : "";
+      const res = await fetch(`/api/parking/auto-assign?outletId=${outletId}&vehicleType=${form.vehicleType}${custParam}`, { credentials: "include" });
+      if (!res.ok) throw new Error("Auto-assign failed");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      if (data.slot) {
+        setForm(f => ({ ...f, selectedSlotId: data.slot.id, selectedSlotCode: data.slot.code }));
+        setAutoAssignResult({ reason: data.reason });
+      } else {
+        setAutoAssignResult({ reason: data.reason });
+      }
+    },
+    onError: () => toast({ title: "Auto-assign failed", variant: "destructive" }),
+  });
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -232,6 +269,7 @@ function NewTicketDialog({
   const handleClose = () => {
     setStep(1);
     setCreatedTicket(null);
+    setAutoAssignResult(null);
     setForm({
       vehicleType: "CAR", vehicleNumber: "", vehicleMake: "", vehicleColor: "",
       customerName: "", customerPhone: "", tableAssignment: "", keyTagNumber: "",
@@ -411,7 +449,37 @@ function NewTicketDialog({
             {step === 2 && (
               <div className="space-y-4">
                 <div>
-                  <p className="text-sm font-medium mb-3">Select Available Slot (Optional)</p>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium">Select Available Slot (Optional)</p>
+                      {customerByPhone && (
+                        <Badge
+                          variant="outline"
+                          className={`text-[10px] px-1.5 py-0 ${["gold","platinum"].includes(customerByPhone.loyaltyTier ?? "") ? "border-amber-400 text-amber-700 bg-amber-50" : "border-muted text-muted-foreground"}`}
+                          data-testid="badge-customer-tier"
+                        >
+                          {customerByPhone.loyaltyTier ?? "bronze"}
+                        </Badge>
+                      )}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7 text-xs border-blue-300 text-blue-700 hover:bg-blue-50"
+                      onClick={() => autoAssignMutation.mutate()}
+                      disabled={autoAssignMutation.isPending || availableSlots.length === 0}
+                      data-testid="button-auto-assign"
+                    >
+                      {autoAssignMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Zap className="h-3 w-3 mr-1" />}
+                      Auto-Assign{resolvedCustomerId ? " (VIP check)" : ""}
+                    </Button>
+                  </div>
+                  {autoAssignResult && (
+                    <div className={`text-xs rounded-lg px-3 py-2 mb-3 ${form.selectedSlotId ? "bg-blue-50 text-blue-700 border border-blue-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`} data-testid="text-auto-assign-result">
+                      <Zap className="h-3 w-3 inline mr-1" />
+                      {autoAssignResult.reason}
+                    </div>
+                  )}
                   {availableSlots.length === 0 ? (
                     <p className="text-sm text-muted-foreground text-center py-4">No available slots configured</p>
                   ) : (
@@ -776,8 +844,86 @@ function SlotDetailDialog({ slot, outletId, onClose }: { slot: any; outletId: st
   );
 }
 
+const SLOT_W = 72;
+const SLOT_H = 56;
+
+function FloorPlanSlot({
+  slot,
+  onDragStart,
+  onClick,
+  isDragging,
+}: {
+  slot: any;
+  onDragStart: (e: React.MouseEvent, slot: any) => void;
+  onClick: (slot: any) => void;
+  isDragging: boolean;
+}) {
+  const statusColors: Record<string, string> = {
+    available: "#22c55e",
+    occupied: "#ef4444",
+    reserved: "#f59e0b",
+    blocked: "#9ca3af",
+    inactive: "#9ca3af",
+    maintenance: "#f97316",
+  };
+  const color = statusColors[slot.status] ?? "#9ca3af";
+  const isOccupied = slot.status === "occupied";
+  const isHandicap = (slot.slotType ?? "").toUpperCase() === "HANDICAP";
+  const isLarge = (slot.slotType ?? "").toUpperCase() === "LARGE";
+  const w = isLarge ? SLOT_W * 1.4 : SLOT_W;
+  const h = isLarge ? SLOT_H * 1.2 : SLOT_H;
+  const title = isOccupied ? `${slot.ticketNumber ?? ""} · ${slot.vehicleNumber ?? ""} · ${slot.entryTime ? new Date(slot.entryTime).toLocaleTimeString() : ""}` : slot.status;
+
+  return (
+    <div
+      id={`fp-slot-${slot.id}`}
+      data-testid={`fp-slot-${slot.code}`}
+      title={title}
+      onMouseDown={e => onDragStart(e, slot)}
+      onClick={() => isOccupied && onClick(slot)}
+      style={{
+        position: "absolute",
+        left: slot.posX ?? 20,
+        top: slot.posY ?? 20,
+        width: w,
+        height: h,
+        backgroundColor: color + "22",
+        border: `2px solid ${color}`,
+        borderRadius: 8,
+        cursor: isOccupied ? "pointer" : "grab",
+        opacity: isDragging ? 0.5 : 1,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        userSelect: "none",
+        zIndex: isDragging ? 50 : 1,
+        transition: isDragging ? "none" : "box-shadow 0.15s",
+      }}
+      className="hover:shadow-md"
+    >
+      <div className="text-xs font-bold" style={{ color }}>{slot.code}</div>
+      {isHandicap && <div className="text-xs">♿</div>}
+      {isOccupied && slot.vehicleNumber && (
+        <div className="text-[9px] text-center px-1 truncate" style={{ color, maxWidth: w - 8 }}>{slot.vehicleNumber}</div>
+      )}
+      {isOccupied && slot.entryTime && (
+        <div className="text-[9px] opacity-70">
+          <LiveTimer entryTime={slot.entryTime} />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SlotBoard({ outletId }: { outletId: string }) {
   const [popoverTicket, setPopoverTicket] = useState<any>(null);
+  const [viewMode, setViewMode] = useState<"list" | "floor">("list");
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const [draggingSlotId, setDraggingSlotId] = useState<string | null>(null);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: slotsData = [], refetch } = useQuery<any[]>({
     queryKey: ["/api/parking/slots", outletId],
@@ -789,6 +935,52 @@ function SlotBoard({ outletId }: { outletId: string }) {
     refetchInterval: 30000,
     staleTime: 15000,
   });
+
+  useEffect(() => {
+    if (slotsData.length >= 10 && viewMode === "list") {
+      setViewMode("floor");
+    }
+  }, [slotsData.length]);
+
+  const positionMutation = useMutation({
+    mutationFn: async ({ id, posX, posY }: { id: string; posX: number; posY: number }) => {
+      const res = await apiRequest("PATCH", `/api/parking/slots/${outletId}/${id}`, { posX, posY });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/slots", outletId] });
+    },
+    onError: () => toast({ title: "Failed to save position", variant: "destructive" }),
+  });
+
+  const handleDragStart = useCallback((e: React.MouseEvent, slot: any) => {
+    if (!canvasRef.current) return;
+    e.preventDefault();
+    const rect = canvasRef.current.getBoundingClientRect();
+    dragOffset.current = {
+      x: e.clientX - rect.left - (slot.posX ?? 20),
+      y: e.clientY - rect.top - (slot.posY ?? 20),
+    };
+    setDraggingSlotId(slot.id);
+  }, []);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!draggingSlotId || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const newX = Math.max(0, e.clientX - rect.left - dragOffset.current.x);
+    const newY = Math.max(0, e.clientY - rect.top - dragOffset.current.y);
+    const el = document.getElementById(`fp-slot-${draggingSlotId}`);
+    if (el) { el.style.left = `${newX}px`; el.style.top = `${newY}px`; }
+  }, [draggingSlotId]);
+
+  const handleMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!draggingSlotId || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const newX = Math.max(0, Math.round(e.clientX - rect.left - dragOffset.current.x));
+    const newY = Math.max(0, Math.round(e.clientY - rect.top - dragOffset.current.y));
+    positionMutation.mutate({ id: draggingSlotId, posX: newX, posY: newY });
+    setDraggingSlotId(null);
+  }, [draggingSlotId, positionMutation]);
 
   const zones: Record<string, any[]> = {};
   for (const slot of slotsData) {
@@ -828,52 +1020,141 @@ function SlotBoard({ outletId }: { outletId: string }) {
   }
 
   return (
-    <div className="space-y-6" data-testid="slot-board">
-      <div className="flex justify-end">
+    <div className="space-y-4" data-testid="slot-board">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <div className="flex rounded-lg border overflow-hidden">
+            <button
+              className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${viewMode === "list" ? "bg-primary text-white" : "hover:bg-muted/50"}`}
+              onClick={() => setViewMode("list")}
+              data-testid="button-view-list"
+            >
+              <List className="h-3.5 w-3.5" /> List
+            </button>
+            <button
+              className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${viewMode === "floor" ? "bg-primary text-white" : "hover:bg-muted/50"}`}
+              onClick={() => setViewMode("floor")}
+              data-testid="button-view-floor"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" /> Floor Plan
+            </button>
+          </div>
+          <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" /> Available</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500 inline-block" /> Reserved</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" /> Occupied</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-gray-400 inline-block" /> Inactive</span>
+          </div>
+        </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-slots">
           <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
         </Button>
       </div>
 
-      {Object.entries(zones).map(([zoneName, zoneSlots]) => {
-        const zoneColor = zoneSlots[0]?.zoneColor ?? "#6366f1";
-        return (
-          <div key={zoneName} data-testid={`zone-${zoneName}`}>
-            <div
-              className="flex items-center gap-2 px-3 py-2 rounded-t-lg text-white text-sm font-semibold"
-              style={{ backgroundColor: zoneColor }}
-            >
-              <Layers className="h-4 w-4" />
-              {zoneName}
-              <span className="ml-auto text-xs opacity-80">
-                {zoneSlots.filter(s => s.status === "available").length}/{zoneSlots.length} available
-              </span>
-            </div>
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 p-3 bg-muted/30 rounded-b-lg border border-t-0">
-              {zoneSlots.map((slot: any) => (
-                <button
-                  key={slot.id}
-                  data-testid={`card-slot-${slot.code}`}
-                  className={`p-2 rounded-lg border text-center text-xs font-medium transition-all ${getSlotClass(slot.status)}`}
-                  onClick={() => slot.status === "occupied" && setPopoverTicket(slot)}
-                  title={slot.status === "occupied" ? `${slot.vehicleNumber ?? ""} (${slot.status})` : slot.status}
+      {viewMode === "list" && (
+        <div className="space-y-6">
+          {Object.entries(zones).map(([zoneName, zoneSlots]) => {
+            const zoneColor = zoneSlots[0]?.zoneColor ?? "#6366f1";
+            return (
+              <div key={zoneName} data-testid={`zone-${zoneName}`}>
+                <div
+                  className="flex items-center gap-2 px-3 py-2 rounded-t-lg text-white text-sm font-semibold"
+                  style={{ backgroundColor: zoneColor }}
                 >
-                  <div className="text-sm mb-0.5">{getSlotIcon(slot.status)}</div>
-                  <div className="font-bold">{slot.code}</div>
-                  {slot.status === "occupied" && slot.vehicleNumber && (
-                    <div className="text-[9px] truncate opacity-80">{slot.vehicleNumber}</div>
-                  )}
-                  {slot.status === "occupied" && slot.entryTime && (
-                    <div className="text-[9px] opacity-70 mt-0.5" data-testid={`text-slot-duration-${slot.code}`}>
-                      <LiveTimer entryTime={slot.entryTime} />
-                    </div>
-                  )}
-                </button>
-              ))}
-            </div>
+                  <Layers className="h-4 w-4" />
+                  {zoneName}
+                  <span className="ml-auto text-xs opacity-80">
+                    {zoneSlots.filter(s => s.status === "available").length}/{zoneSlots.length} available
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2 p-3 bg-muted/30 rounded-b-lg border border-t-0">
+                  {zoneSlots.map((slot: any) => (
+                    <button
+                      key={slot.id}
+                      data-testid={`card-slot-${slot.code}`}
+                      className={`p-2 rounded-lg border text-center text-xs font-medium transition-all ${getSlotClass(slot.status)}`}
+                      onClick={() => slot.status === "occupied" && setPopoverTicket(slot)}
+                      title={slot.status === "occupied" ? `${slot.vehicleNumber ?? ""} (${slot.status})` : slot.status}
+                    >
+                      <div className="text-sm mb-0.5">{getSlotIcon(slot.status)}</div>
+                      <div className="font-bold">{slot.code}</div>
+                      {slot.status === "occupied" && slot.vehicleNumber && (
+                        <div className="text-[9px] truncate opacity-80">{slot.vehicleNumber}</div>
+                      )}
+                      {slot.status === "occupied" && slot.entryTime && (
+                        <div className="text-[9px] opacity-70 mt-0.5" data-testid={`text-slot-duration-${slot.code}`}>
+                          <LiveTimer entryTime={slot.entryTime} />
+                        </div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {viewMode === "floor" && (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground flex items-center gap-1">
+            <LayoutGrid className="h-3 w-3" /> Drag slots to rearrange. Click an occupied slot for details.
+          </p>
+          <div
+            ref={canvasRef}
+            data-testid="floor-plan-canvas"
+            className="relative bg-muted/20 border-2 border-dashed border-muted rounded-xl overflow-auto"
+            style={{ minHeight: 500, minWidth: "100%" }}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => { if (draggingSlotId) setDraggingSlotId(null); }}
+          >
+            {Object.entries(zones).map(([zoneName, zoneSlots]) => {
+              const zoneColor = zoneSlots[0]?.zoneColor ?? "#6366f1";
+              const withPos = zoneSlots.filter(s => s.posX != null && s.posY != null);
+              if (withPos.length === 0) return null;
+              const minX = Math.min(...withPos.map((s: any) => s.posX));
+              const minY = Math.min(...withPos.map((s: any) => s.posY));
+              const maxX = Math.max(...withPos.map((s: any) => s.posX + SLOT_W));
+              const maxY = Math.max(...withPos.map((s: any) => s.posY + SLOT_H));
+              const pad = 16;
+              return (
+                <div
+                  key={zoneName}
+                  style={{
+                    position: "absolute",
+                    left: minX - pad,
+                    top: minY - pad,
+                    width: maxX - minX + pad * 2,
+                    height: maxY - minY + pad * 2,
+                    backgroundColor: zoneColor + "15",
+                    border: `1.5px dashed ${zoneColor}66`,
+                    borderRadius: 12,
+                    pointerEvents: "none",
+                  }}
+                >
+                  <span style={{ position: "absolute", top: 4, left: 8, fontSize: 10, color: zoneColor, fontWeight: 600 }}>{zoneName}</span>
+                </div>
+              );
+            })}
+            {slotsData.map((slot: any) => (
+              <FloorPlanSlot
+                key={slot.id}
+                slot={slot}
+                onDragStart={handleDragStart}
+                onClick={(s) => setPopoverTicket(s)}
+                isDragging={draggingSlotId === slot.id}
+              />
+            ))}
+            {slotsData.every((s: any) => s.posX == null) && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground pointer-events-none">
+                <LayoutGrid className="h-10 w-10 mb-2 opacity-20" />
+                <p className="text-sm">Drag slots to position them on the floor plan</p>
+              </div>
+            )}
           </div>
-        );
-      })}
+        </div>
+      )}
 
       {popoverTicket && (
         <SlotDetailDialog slot={popoverTicket} onClose={() => setPopoverTicket(null)} outletId={outletId} />
@@ -1160,6 +1441,67 @@ function DashboardTab({
           </div>
         </div>
       )}
+
+      <ZoneHeatmap outletId={outletId} />
+    </div>
+  );
+}
+
+function ZoneHeatmap({ outletId }: { outletId: string }) {
+  const { data: slots = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/slots", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/slots/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 30000,
+    staleTime: 15000,
+  });
+
+  const zoneMap: Record<string, { total: number; occupied: number; available: number; color: string }> = {};
+  for (const slot of slots) {
+    if (slot.isActive === false) continue;
+    const zoneKey = slot.zoneName ?? "General";
+    if (!zoneMap[zoneKey]) zoneMap[zoneKey] = { total: 0, occupied: 0, available: 0, color: slot.zoneColor ?? "#6366f1" };
+    zoneMap[zoneKey].total++;
+    if (slot.status === "occupied") zoneMap[zoneKey].occupied++;
+    if (slot.status === "available") zoneMap[zoneKey].available++;
+  }
+
+  const entries = Object.entries(zoneMap);
+  if (entries.length === 0) return null;
+
+  return (
+    <div className="space-y-3" data-testid="zone-heatmap">
+      <h3 className="text-sm font-semibold flex items-center gap-2">
+        <BarChart3 className="h-4 w-4 text-muted-foreground" />
+        Zone Utilization
+      </h3>
+      <div className="space-y-2">
+        {entries.map(([zoneName, z]) => {
+          const pct = z.total > 0 ? Math.round((z.occupied / z.total) * 100) : 0;
+          const isFull = pct >= 100;
+          const barColor = isFull || pct >= 90 ? "#ef4444" : pct >= 70 ? "#f59e0b" : "#22c55e";
+          return (
+            <div key={zoneName} data-testid={`zone-heatmap-${zoneName}`} className="space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-medium">{zoneName}</span>
+                <span className={`font-semibold ${isFull ? "text-red-600" : pct >= 70 ? "text-amber-600" : "text-green-600"}`}>
+                  {z.occupied}/{z.total} ({pct}%){isFull ? " — FULL" : ` — ${z.available} available`}
+                </span>
+              </div>
+              <div className="h-3 bg-muted rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-500"
+                  style={{ width: `${pct}%`, backgroundColor: barColor }}
+                  data-testid={`zone-bar-${zoneName}`}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -1169,6 +1511,7 @@ type DateFilter = "today" | "yesterday" | "week" | "month" | "custom";
 
 function RevenueHistoryTab({ outletId }: { outletId: string }) {
   const [filter, setFilter] = useState<DateFilter>("today");
+  const [analyticsView, setAnalyticsView] = useState<"overview" | "history">("overview");
   const todayStr = new Date().toISOString().split("T")[0];
   const [customFrom, setCustomFrom] = useState(todayStr);
   const [customTo, setCustomTo] = useState(todayStr);
@@ -1218,8 +1561,33 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
     staleTime: 30000,
   });
 
+  const { data: analytics } = useQuery<any>({
+    queryKey: ["/api/parking/analytics", outletId, from, to],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/analytics/${outletId}?from=${from}&to=${to}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
   const totalRevenue = tickets.reduce((sum: number, t: any) => sum + (parseFloat(t.chargeAmount ?? "0") || 0), 0);
   const totalDuration = tickets.reduce((sum: number, t: any) => sum + (t.durationMinutes ?? 0), 0);
+
+  const peakHour = analytics?.peakHours?.length > 0
+    ? analytics.peakHours.reduce((best: any, h: any) => h.count > best.count ? h : best, analytics.peakHours[0])
+    : null;
+  const maxPeakCount = analytics?.peakHours?.length > 0
+    ? Math.max(...analytics.peakHours.map((h: any) => h.count))
+    : 1;
+  const maxZoneRev = analytics?.byZone?.length > 0
+    ? Math.max(...analytics.byZone.map((z: any) => z.revenue))
+    : 1;
+  const maxVehicleRev = analytics?.byVehicleType?.length > 0
+    ? Math.max(...analytics.byVehicleType.map((v: any) => v.revenue))
+    : 1;
+  const totalVehicleRev = analytics?.byVehicleType?.reduce((sum: number, v: any) => sum + v.revenue, 0) ?? 0;
 
   function exportCsv() {
     const headers = ["Ticket #", "Vehicle Type", "Vehicle Number", "Customer", "Entry Time", "Exit Time", "Duration (min)", "Zone", "Charge"];
@@ -1316,52 +1684,197 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
         </Card>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-12 text-muted-foreground">
-          <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading history...
+      {peakHour != null && (
+        <div className="flex flex-wrap gap-4 p-3 bg-muted/30 rounded-lg border text-xs" data-testid="summary-cards">
+          <span>⏰ <strong>Peak hour:</strong> {peakHour.hour}:00–{peakHour.hour + 1}:00</span>
+          {analytics?.byZone?.length > 0 && (
+            <span>📍 <strong>Busiest zone:</strong> {[...analytics.byZone].sort((a: any, b: any) => b.count - a.count)[0]?.zoneName}</span>
+          )}
+          {tickets.length > 0 && (
+            <span>⏱ <strong>Avg stay:</strong> {formatMinutes(Math.round(totalDuration / tickets.length))}</span>
+          )}
         </div>
-      ) : tickets.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-history">
-          <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
-          <p className="text-sm">No completed tickets for this period</p>
+      )}
+
+      <div className="flex border-b gap-1 mb-2">
+        <button
+          className={`px-3 py-1.5 text-sm font-medium border-b-2 transition-colors ${analyticsView === "overview" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setAnalyticsView("overview")}
+          data-testid="tab-analytics-overview"
+        >
+          Analytics
+        </button>
+        <button
+          className={`px-3 py-1.5 text-sm font-medium border-b-2 transition-colors ${analyticsView === "history" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setAnalyticsView("history")}
+          data-testid="tab-analytics-history"
+        >
+          History ({tickets.length})
+        </button>
+      </div>
+
+      {analyticsView === "overview" && (
+        <div className="space-y-5" data-testid="analytics-overview">
+          {analytics?.peakHours?.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Peak Hour Chart</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end gap-1 h-28" data-testid="peak-hour-chart">
+                  {Array.from({ length: 24 }, (_, h) => {
+                    const entry = analytics.peakHours.find((p: any) => p.hour === h);
+                    const count = entry?.count ?? 0;
+                    const heightPct = maxPeakCount > 0 ? Math.round((count / maxPeakCount) * 100) : 0;
+                    const isPeak = peakHour?.hour === h;
+                    return (
+                      <div key={h} className="flex-1 flex flex-col items-center gap-0.5" title={`${h}:00 — ${count} entries`}>
+                        <div
+                          className={`w-full rounded-t transition-all ${isPeak ? "bg-blue-600" : "bg-blue-300"}`}
+                          style={{ height: `${heightPct}%`, minHeight: count > 0 ? 2 : 0 }}
+                        />
+                        {h % 4 === 0 && <span className="text-[8px] text-muted-foreground">{h}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Hour of day (0–23) · Dark blue = peak hour</p>
+              </CardContent>
+            </Card>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {analytics?.byVehicleType?.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Revenue by Vehicle Type</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2" data-testid="chart-vehicle-type">
+                  {analytics.byVehicleType.map((v: any) => {
+                    const pct = totalVehicleRev > 0 ? Math.round((v.revenue / totalVehicleRev) * 100) : 0;
+                    return (
+                      <div key={v.vehicleType} className="space-y-0.5">
+                        <div className="flex justify-between text-xs">
+                          <span>{getVehicleIcon(v.vehicleType)} {v.vehicleType}</span>
+                          <span className="font-medium">{formatCurrency(v.revenue)} ({pct}%)</span>
+                        </div>
+                        <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
+
+            {analytics?.byZone?.length > 0 && (
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm">Revenue by Zone</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2" data-testid="chart-zone-revenue">
+                  {[...analytics.byZone].sort((a: any, b: any) => b.revenue - a.revenue).map((z: any) => {
+                    const pct = maxZoneRev > 0 ? Math.round((z.revenue / maxZoneRev) * 100) : 0;
+                    return (
+                      <div key={z.zoneName} className="space-y-0.5">
+                        <div className="flex justify-between text-xs">
+                          <span>{z.zoneName}</span>
+                          <span className="font-medium">{formatCurrency(z.revenue)} ({z.count} tickets)</span>
+                        </div>
+                        <div className="h-2.5 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-green-500 rounded-full" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </CardContent>
+              </Card>
+            )}
+          </div>
+
+          {analytics?.durationTrend?.length > 1 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Avg Duration Trend</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end gap-1 h-20" data-testid="duration-trend-chart">
+                  {(() => {
+                    const maxDur = Math.max(...analytics.durationTrend.map((d: any) => d.avgDuration));
+                    return analytics.durationTrend.map((d: any, i: number) => {
+                      const heightPct = maxDur > 0 ? Math.round((d.avgDuration / maxDur) * 100) : 0;
+                      return (
+                        <div key={i} className="flex-1 flex flex-col items-center gap-0.5" title={`${d.day}: avg ${Math.round(d.avgDuration)}m`}>
+                          <div className="w-full rounded-t bg-amber-400" style={{ height: `${heightPct}%`, minHeight: 2 }} />
+                          <span className="text-[7px] text-muted-foreground truncate">{d.day?.slice(5)}</span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">Average parking duration per day</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {(!analytics || (analytics.peakHours?.length === 0 && analytics.byVehicleType?.length === 0)) && (
+            <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-analytics">
+              <BarChart3 className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p className="text-sm">No analytics data for this period</p>
+            </div>
+          )}
         </div>
-      ) : (
-        <div className="rounded-lg border overflow-auto" data-testid="history-table">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Ticket #</TableHead>
-                <TableHead>Vehicle</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Entry</TableHead>
-                <TableHead>Exit</TableHead>
-                <TableHead>Duration</TableHead>
-                <TableHead>Zone</TableHead>
-                <TableHead>Charge</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {tickets.map((t: any) => (
-                <TableRow key={t.id} data-testid={`row-history-${t.id}`}>
-                  <TableCell className="font-mono text-xs font-bold">{t.ticketNumber}</TableCell>
-                  <TableCell className="text-xs">
-                    {getVehicleIcon(t.vehicleType)} {t.vehicleNumber ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-xs">{t.customerName ?? "—"}</TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">
-                    {t.entryTime ? new Date(t.entryTime).toLocaleString() : "—"}
-                  </TableCell>
-                  <TableCell className="text-xs whitespace-nowrap">
-                    {t.exitTime ? new Date(t.exitTime).toLocaleString() : "—"}
-                  </TableCell>
-                  <TableCell className="text-xs">{t.durationMinutes != null ? `${t.durationMinutes}m` : "—"}</TableCell>
-                  <TableCell className="text-xs">{t.zoneName ?? "—"}</TableCell>
-                  <TableCell className="text-xs font-medium text-green-700">{t.chargeAmount ? formatCurrency(parseFloat(t.chargeAmount)) : "—"}</TableCell>
+      )}
+
+      {analyticsView === "history" && (
+        isLoading ? (
+          <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin mr-2" /> Loading history...
+          </div>
+        ) : tickets.length === 0 ? (
+          <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-history">
+            <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p className="text-sm">No completed tickets for this period</p>
+          </div>
+        ) : (
+          <div className="rounded-lg border overflow-auto" data-testid="history-table">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Ticket #</TableHead>
+                  <TableHead>Vehicle</TableHead>
+                  <TableHead>Customer</TableHead>
+                  <TableHead>Entry</TableHead>
+                  <TableHead>Exit</TableHead>
+                  <TableHead>Duration</TableHead>
+                  <TableHead>Zone</TableHead>
+                  <TableHead>Charge</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {tickets.map((t: any) => (
+                  <TableRow key={t.id} data-testid={`row-history-${t.id}`}>
+                    <TableCell className="font-mono text-xs font-bold">{t.ticketNumber}</TableCell>
+                    <TableCell className="text-xs">
+                      {getVehicleIcon(t.vehicleType)} {t.vehicleNumber ?? "—"}
+                    </TableCell>
+                    <TableCell className="text-xs">{t.customerName ?? "—"}</TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">
+                      {t.entryTime ? new Date(t.entryTime).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs whitespace-nowrap">
+                      {t.exitTime ? new Date(t.exitTime).toLocaleString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-xs">{t.durationMinutes != null ? `${t.durationMinutes}m` : "—"}</TableCell>
+                    <TableCell className="text-xs">{t.zoneName ?? "—"}</TableCell>
+                    <TableCell className="text-xs font-medium text-green-700">{t.chargeAmount ? formatCurrency(parseFloat(t.chargeAmount)) : "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
       )}
     </div>
   );
@@ -2362,6 +2875,19 @@ export default function ParkingPage() {
   });
 
   const [showNewTicket, setShowNewTicket] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [plateLookupTrigger, setPlateLookupTrigger] = useState("");
+
+  const { data: plateLookupResults = [], isFetching: plateLookupFetching } = useQuery<any[]>({
+    queryKey: ["/api/parking/plate-lookup", outletId, plateLookupTrigger],
+    queryFn: async () => {
+      if (!plateLookupTrigger || plateLookupTrigger.length < 3) return [];
+      const res = await apiRequest("GET", `/api/parking/plate-lookup?outletId=${outletId}&plate=${encodeURIComponent(plateLookupTrigger)}`);
+      return res.json();
+    },
+    enabled: !!plateLookupTrigger && plateLookupTrigger.length >= 3,
+    staleTime: 30000,
+  });
 
   const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
 
@@ -2448,33 +2974,122 @@ export default function ParkingPage() {
         </TabsContent>
 
         <TabsContent value="operations" className="space-y-4">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold flex items-center gap-2">
-                <Car className="h-4 w-4 text-muted-foreground" />
-                Active Tickets
-                {tickets.length > 0 && (
-                  <Badge variant="secondary" data-testid="badge-active-count">{tickets.length}</Badge>
-                )}
-              </h2>
-              <Button variant="ghost" size="sm" onClick={() => refetchTickets()} data-testid="button-refresh-tickets">
-                <RefreshCw className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-
-            {tickets.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-tickets">
-                <Car className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm">No active tickets</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {tickets.map((ticket: any) => (
-                  <ActiveTicketCard key={ticket.id} ticket={ticket} outletId={outletId} />
-                ))}
-              </div>
+          <div className="relative" data-testid="operations-search-bar">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by ticket #, plate, customer name, table..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="pl-9"
+              data-testid="input-operations-search"
+            />
+            {searchQuery && (
+              <button
+                className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchQuery("")}
+                data-testid="button-clear-search"
+              >
+                <X className="h-4 w-4" />
+              </button>
             )}
           </div>
+
+          {(() => {
+            const q = searchQuery.trim().toLowerCase();
+            const filtered = q
+              ? tickets.filter((t: any) =>
+                  (t.ticketNumber ?? "").toLowerCase().includes(q) ||
+                  (t.vehicleNumber ?? "").toLowerCase().includes(q) ||
+                  (t.customerName ?? "").toLowerCase().includes(q) ||
+                  (t.tableAssignment ?? "").toLowerCase().includes(q)
+                )
+              : tickets;
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-base font-semibold flex items-center gap-2">
+                    <Car className="h-4 w-4 text-muted-foreground" />
+                    {q ? `Active Results (${filtered.length})` : `Active Tickets`}
+                    {!q && tickets.length > 0 && (
+                      <Badge variant="secondary" data-testid="badge-active-count">{tickets.length}</Badge>
+                    )}
+                  </h2>
+                  <div className="flex items-center gap-2">
+                    {q && q.length >= 3 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setPlateLookupTrigger(searchQuery.trim())}
+                        data-testid="button-find-by-plate"
+                        className="text-xs gap-1"
+                      >
+                        <Search className="h-3 w-3" />
+                        Find by Plate (7d history)
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" onClick={() => refetchTickets()} data-testid="button-refresh-tickets">
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+
+                {filtered.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-tickets">
+                    <Car className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">{q ? `No active tickets matching "${q}"` : "No active tickets"}</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {filtered.map((ticket: any) => (
+                      <ActiveTicketCard key={ticket.id} ticket={ticket} outletId={outletId} />
+                    ))}
+                  </div>
+                )}
+
+                {plateLookupTrigger && (
+                  <div className="mt-4 space-y-2" data-testid="plate-lookup-results">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-1">
+                        <Clock className="h-3.5 w-3.5" />
+                        Completed Tickets (Last 7 Days) — "{plateLookupTrigger}"
+                        {plateLookupFetching && <span className="ml-1 animate-spin">⟳</span>}
+                      </h3>
+                      <button
+                        className="text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setPlateLookupTrigger("")}
+                        data-testid="button-clear-plate-lookup"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {plateLookupResults.length === 0 && !plateLookupFetching ? (
+                      <p className="text-xs text-muted-foreground py-2">No completed tickets found for this plate in the last 7 days.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {plateLookupResults.map((t: any) => (
+                          <div key={t.id} className="rounded-lg border p-3 text-xs space-y-1 bg-muted/30" data-testid={`plate-lookup-ticket-${t.id}`}>
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold">{t.ticket_number}</span>
+                              <Badge variant="outline" className="text-[10px]">Completed</Badge>
+                            </div>
+                            <div className="text-muted-foreground">{t.vehicle_number} · {t.vehicle_type}</div>
+                            {t.customer_name && <div>Customer: {t.customer_name}</div>}
+                            {t.staff_name && <div>Staff: {t.staff_name}</div>}
+                            {t.slot_code && <div>Slot: {t.slot_code} {t.zone_name ? `(${t.zone_name})` : ""}</div>}
+                            <div className="text-muted-foreground">
+                              Exit: {t.exit_time ? new Date(t.exit_time).toLocaleString() : "—"}
+                              {t.duration_minutes ? ` · ${t.duration_minutes}m` : ""}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
 
           <Separator />
 

@@ -58,6 +58,11 @@ The system employs a modern web architecture with a React-based frontend and an 
 - **Integration**: API router for CRUD operations, automatic billing integration with valet tickets.
 - **Alerts**: `PARKING_FULL` and `PARKING_RETRIEVAL_REQUESTED` alerts.
 - **Ticket Numbers**: Formatted `VT-YYYYMMDD-NNNN`.
+- **Visual Floor Plan**: Slot Board supports two modes — List (grid) and Floor Plan (drag-and-drop canvas). Positions saved via PATCH to slot endpoint (posX/posY). Auto-defaults to Floor Plan for ≥10 slots.
+- **Zone Utilization Heatmap**: Dashboard shows horizontal bar chart per zone with color coding (green <70%, amber 70–90%, red ≥90%/full).
+- **Smart Auto-Assign**: `GET /api/parking/auto-assign?outletId=X&vehicleType=Y` returns best available slot based on vehicle suitability and position proximity. Surfaced as "Auto-Assign" button in check-in dialog Step 2.
+- **Enhanced Analytics**: `GET /api/parking/analytics/:outletId?from=&to=` returns peak hours, revenue by vehicle type, revenue by zone, avg duration trend. Revenue tab shows bar charts, donut-style breakdowns and Analytics/History sub-tabs.
+- **Operations Search**: Real-time client-side filter in Operations tab by ticket #, plate, customer name, table assignment.
 
 ## External Dependencies
 - **PostgreSQL**: Primary database.

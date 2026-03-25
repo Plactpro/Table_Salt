@@ -560,6 +560,187 @@ export function registerParkingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // ─── Plate Lookup (completed tickets last 7 days) ────────────────────────────
+  app.get("/api/parking/plate-lookup", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId, plate } = req.query as { outletId?: string; plate?: string };
+      if (!outletId || !plate) return res.status(400).json({ message: "outletId and plate are required" });
+      const { rows } = await pool.query(
+        `SELECT vt.*, ps.slot_code, pz.name AS zone_name,
+                vs.name AS staff_name
+         FROM valet_tickets vt
+         LEFT JOIN parking_slots ps ON ps.id = vt.slot_id
+         LEFT JOIN parking_zones pz ON pz.id = vt.zone_id
+         LEFT JOIN valet_staff vs ON vs.id = vt.valet_staff_id
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
+           AND vt.status='completed'
+           AND LOWER(vt.vehicle_number) LIKE LOWER($3)
+           AND vt.exit_time >= NOW() - INTERVAL '7 days'
+         ORDER BY vt.exit_time DESC
+         LIMIT 20`,
+        [outletId, user.tenantId, `%${plate}%`]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Smart Auto-Assign ──────────────────────────────────────────────────────
+  app.get("/api/parking/auto-assign", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId, vehicleType, customerId } = req.query as { outletId?: string; vehicleType?: string; customerId?: string };
+      if (!outletId) return res.status(400).json({ message: "outletId is required" });
+
+      // Resolve customer loyalty tier (gold/platinum = VIP eligible)
+      let isVip = false;
+      if (customerId) {
+        const { rows: custRows } = await pool.query(
+          `SELECT loyalty_tier FROM customers WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
+          [customerId, user.tenantId]
+        );
+        const tier = (custRows[0]?.loyalty_tier ?? "bronze").toLowerCase();
+        isVip = tier === "gold" || tier === "platinum";
+      }
+
+      const { rows: slots } = await pool.query(
+        `SELECT ps.*, pz.name AS zone_name, pz.color AS zone_color,
+                LOWER(pz.name) AS zone_name_lower
+         FROM parking_slots ps
+         LEFT JOIN parking_zones pz ON pz.id = ps.zone_id
+         WHERE ps.outlet_id=$1 AND ps.tenant_id=$2 AND ps.status='available' AND ps.is_active=true
+         ORDER BY (COALESCE(ps.pos_x,9999) + COALESCE(ps.pos_y,9999)) ASC`,
+        [outletId, user.tenantId]
+      );
+
+      if (slots.length === 0) {
+        return res.json({ slot: null, reason: "No suitable available slots — proceed without slot assignment" });
+      }
+
+      const vType = (vehicleType ?? "CAR").toUpperCase();
+      function slotSuitable(slotType: string, vt: string): boolean {
+        const t = (slotType ?? "STANDARD").toUpperCase();
+        if (vt === "TWO_WHEELER") return t === "COMPACT" || t === "STANDARD";
+        if (vt === "SUV" || vt === "VAN") return t === "LARGE" || t === "STANDARD";
+        if (vt === "CAR") return t === "STANDARD";
+        return t === "STANDARD";
+      }
+      function isVipZone(zoneName: string | null): boolean {
+        if (!zoneName) return false;
+        const n = zoneName.toLowerCase();
+        return n.includes("vip") || n.includes("premium") || n.includes("reserved");
+      }
+
+      const suitable = slots.filter(s => slotSuitable(s.slot_type, vType));
+      if (suitable.length === 0) {
+        return res.json({ slot: null, reason: "No suitable available slots — proceed without slot assignment" });
+      }
+
+      // VIP zone priority: gold/platinum customers get VIP zone slots first;
+      // non-VIP customers are routed away from VIP zones when non-VIP slots are available.
+      let candidates = suitable;
+      if (isVip) {
+        const vipSlots = suitable.filter(s => isVipZone(s.zone_name));
+        if (vipSlots.length > 0) candidates = vipSlots;
+      } else {
+        const nonVipSlots = suitable.filter(s => !isVipZone(s.zone_name));
+        if (nonVipSlots.length > 0) candidates = nonVipSlots;
+      }
+
+      const hasPositions = candidates.some(s => s.pos_x != null && s.pos_y != null);
+      let best = candidates[0];
+      if (hasPositions) {
+        const withPos = candidates.filter(s => s.pos_x != null && s.pos_y != null);
+        if (withPos.length > 0) best = withPos[0];
+      }
+
+      const slotCode = best.slot_code ?? best.code ?? best.id;
+      const zonePart = best.zone_name ? ` in ${best.zone_name}` : "";
+      const posPart = (best.pos_x != null && best.pos_y != null) ? " (near entrance)" : "";
+      const vipPart = isVip && isVipZone(best.zone_name) ? " · VIP zone" : "";
+      const reason = `Best match: ${slotCode} — ${best.slot_type ?? "Standard"} slot${zonePart}${posPart}${vipPart}`;
+
+      res.json({
+        slot: {
+          id: best.id,
+          code: slotCode,
+          slotType: best.slot_type,
+          zoneName: best.zone_name,
+          posX: best.pos_x,
+          posY: best.pos_y,
+        },
+        reason,
+        isVip,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Enhanced Revenue Analytics ─────────────────────────────────────────────
+  app.get("/api/parking/analytics/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.params;
+      const { from, to } = req.query as { from?: string; to?: string };
+      const tenantId = user.tenantId;
+
+      const fromStr = from ?? new Date().toISOString().split("T")[0];
+      const toStr = to ?? new Date().toISOString().split("T")[0];
+
+      // Revenue by vehicle type
+      const { rows: byVehicle } = await pool.query(
+        `SELECT vt.vehicle_type, COALESCE(SUM(bpc.final_charge),0) AS revenue, COUNT(vt.id) AS count
+         FROM valet_tickets vt
+         LEFT JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
+           AND DATE(vt.exit_time) >= $3 AND DATE(vt.exit_time) <= $4
+         GROUP BY vt.vehicle_type`,
+        [outletId, tenantId, fromStr, toStr]
+      );
+
+      // Revenue by zone
+      const { rows: byZone } = await pool.query(
+        `SELECT pz.name AS zone_name, COALESCE(SUM(bpc.final_charge),0) AS revenue, COUNT(vt.id) AS count
+         FROM valet_tickets vt
+         LEFT JOIN parking_slots ps ON ps.id = vt.slot_id
+         LEFT JOIN parking_zones pz ON pz.id = ps.zone_id
+         LEFT JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
+           AND DATE(vt.exit_time) >= $3 AND DATE(vt.exit_time) <= $4
+         GROUP BY pz.name`,
+        [outletId, tenantId, fromStr, toStr]
+      );
+
+      // Peak hour (entry time, hour of day) — completed tickets only for accuracy
+      const { rows: peakHours } = await pool.query(
+        `SELECT EXTRACT(HOUR FROM vt.entry_time) AS hour, COUNT(*) AS count
+         FROM valet_tickets vt
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
+           AND DATE(vt.entry_time) >= $3 AND DATE(vt.entry_time) <= $4
+         GROUP BY EXTRACT(HOUR FROM vt.entry_time)
+         ORDER BY hour ASC`,
+        [outletId, tenantId, fromStr, toStr]
+      );
+
+      // Avg duration per day over the range
+      const { rows: durationTrend } = await pool.query(
+        `SELECT DATE(vt.exit_time) AS day, AVG(vt.duration_minutes) AS avg_duration
+         FROM valet_tickets vt
+         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
+           AND DATE(vt.exit_time) >= $3 AND DATE(vt.exit_time) <= $4
+         GROUP BY DATE(vt.exit_time)
+         ORDER BY day ASC`,
+        [outletId, tenantId, fromStr, toStr]
+      );
+
+      res.json({
+        byVehicleType: byVehicle.map(r => ({ vehicleType: r.vehicle_type, revenue: parseFloat(r.revenue), count: parseInt(r.count) })),
+        byZone: byZone.map(r => ({ zoneName: r.zone_name ?? "No Zone", revenue: parseFloat(r.revenue), count: parseInt(r.count) })),
+        peakHours: peakHours.map(r => ({ hour: parseInt(r.hour), count: parseInt(r.count) })),
+        durationTrend: durationTrend.map(r => ({ day: r.day, avgDuration: parseFloat(r.avg_duration ?? "0") })),
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // ─── Stats ──────────────────────────────────────────────────────────────────
   app.get("/api/parking/stats/:outletId", requireAuth, async (req, res) => {
     try {
