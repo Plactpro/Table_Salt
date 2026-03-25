@@ -163,24 +163,101 @@ export function registerComplianceRoutes(app: Express): void {
       const allFeedback = await storage.getFeedbackByTenant(entry.tenantId);
       const myFeedback = matchingCustomer ? allFeedback.filter(f => f.customerId === matchingCustomer.id) : [];
 
+      const tenant = await storage.getTenant(entry.tenantId);
+      const { rows: consentRows } = await pool.query(
+        `SELECT document_type, document_version, accepted_at FROM consent_log WHERE user_id = $1 ORDER BY accepted_at DESC`,
+        [entry.userId]
+      );
+      const { rows: auditRows } = await pool.query(
+        `SELECT action, entity_type, entity_name, created_at FROM audit_events WHERE user_id = $1 AND tenant_id = $2 AND created_at > NOW() - INTERVAL '90 days' ORDER BY created_at DESC LIMIT 500`,
+        [entry.userId, entry.tenantId]
+      );
+
+      const decryptedEmail = fullUser.email ? (isEncrypted(fullUser.email) ? decryptField(fullUser.email) : fullUser.email) : null;
+      const decryptedPhone = fullUser.phone ? (isEncrypted(fullUser.phone) ? decryptField(fullUser.phone) : fullUser.phone) : null;
+
+      const format = req.query.format as string || "json";
+      const ordersData = myOrders.map(o => ({ id: o.id, type: o.orderType, status: o.status, total: o.total, createdAt: o.createdAt }));
+
+      if (format === "csv") {
+        const rows: string[][] = [["Section", "Field", "Value"]];
+        rows.push(["Personal Information", "Name", fullUser.name || ""]);
+        rows.push(["Personal Information", "Username", fullUser.username || ""]);
+        rows.push(["Personal Information", "Email", decryptedEmail || ""]);
+        rows.push(["Personal Information", "Phone", decryptedPhone || ""]);
+        rows.push(["Personal Information", "Role", fullUser.role || ""]);
+        for (const o of ordersData) {
+          rows.push(["Order History", "Order ID", o.id]);
+          rows.push(["Order History", "Status", o.status || ""]);
+          rows.push(["Order History", "Total", String(o.total || "")]);
+          rows.push(["Order History", "Date", o.createdAt ? String(o.createdAt) : ""]);
+        }
+        for (const c of consentRows) {
+          rows.push(["Consent Records", `${c.document_type} v${c.document_version}`, `Accepted at ${c.accepted_at}`]);
+        }
+        for (const a of auditRows) {
+          rows.push(["Activity Log", a.action, `${a.entity_type}: ${a.entity_name || ""} at ${a.created_at}`]);
+        }
+        const csv = rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+        res.setHeader("Content-Type", "text/csv");
+        res.setHeader("Content-Disposition", `attachment; filename="data-export-${entry.userId}.csv"`);
+        return res.send(csv);
+      }
+
       const exportData = {
+        title: `Your Personal Data Export — Table Salt`,
         exportDate: new Date().toISOString(),
-        user: {
-          name: fullUser.name, username: fullUser.username,
-          email: fullUser.email ? (isEncrypted(fullUser.email) ? decryptField(fullUser.email) : fullUser.email) : null,
-          phone: fullUser.phone ? (isEncrypted(fullUser.phone) ? decryptField(fullUser.phone) : fullUser.phone) : null,
-          role: fullUser.role, active: fullUser.active,
+        exportedFor: `${fullUser.name} (${decryptedEmail || fullUser.username})`,
+        tenantName: tenant?.name || "Your Restaurant",
+        sections: {
+          personalInformation: {
+            label: "Your Personal Information",
+            description: "Basic profile information we hold about you",
+            data: {
+              name: fullUser.name,
+              username: fullUser.username,
+              email: decryptedEmail,
+              phone: decryptedPhone,
+              role: fullUser.role,
+              active: fullUser.active,
+            },
+          },
+          customerProfile: matchingCustomer ? {
+            label: "Your Customer Profile",
+            description: "Customer loyalty and spending profile",
+            data: {
+              name: matchingCustomer.name,
+              loyaltyPoints: matchingCustomer.loyaltyPoints,
+              loyaltyTier: matchingCustomer.loyaltyTier,
+              totalSpent: matchingCustomer.totalSpent,
+              averageSpend: matchingCustomer.averageSpend,
+              tags: matchingCustomer.tags,
+            },
+          } : undefined,
+          orderHistory: {
+            label: "Your Order History",
+            description: "Orders you have placed or managed",
+            recordCount: ordersData.length,
+            data: ordersData,
+          },
+          reservations: {
+            label: "Your Reservations",
+            description: "Table reservations linked to your profile",
+            recordCount: myReservations.length,
+            data: myReservations.map(r => ({ id: r.id, dateTime: r.dateTime, guests: r.guests, status: r.status, notes: r.notes })),
+          },
+          auditActivity: {
+            label: "Your Activity Log",
+            description: "Actions recorded under your account (last 90 days)",
+            recordCount: auditRows.length,
+            data: auditRows.map(a => ({ action: a.action, entityType: a.entity_type, entityName: a.entity_name, at: a.created_at })),
+          },
+          consentRecords: {
+            label: "Your Consent Records",
+            description: "When and what you agreed to",
+            data: consentRows.map(c => ({ documentType: c.document_type, version: c.document_version, acceptedAt: c.accepted_at })),
+          },
         },
-        customerProfile: matchingCustomer ? {
-          name: matchingCustomer.name, loyaltyPoints: matchingCustomer.loyaltyPoints,
-          loyaltyTier: matchingCustomer.loyaltyTier, totalSpent: matchingCustomer.totalSpent,
-          averageSpend: matchingCustomer.averageSpend, tags: matchingCustomer.tags,
-          privacyConsents: matchingCustomer.privacyConsents,
-        } : null,
-        orders: myOrders.map(o => ({ id: o.id, type: o.orderType, status: o.status, total: o.total, createdAt: o.createdAt })),
-        reservations: myReservations.map(r => ({ id: r.id, dateTime: r.dateTime, guests: r.guests, status: r.status, notes: r.notes })),
-        schedules: mySchedules.filter(s => s.userId === entry.userId).map(s => ({ date: s.date, startTime: s.startTime, endTime: s.endTime })),
-        feedback: myFeedback.map(f => ({ rating: f.rating, comment: f.comment, createdAt: f.createdAt })),
       };
 
       res.setHeader("Content-Type", "application/json");
@@ -312,19 +389,25 @@ export function registerComplianceRoutes(app: Express): void {
   app.post("/api/admin/breach-incidents", requireSuperAdmin, async (req, res) => {
     try {
       const user = req.user as any;
-      const { title, description, severity, tenantId, affectedRecords, affectedDataTypes, rootCause } = req.body;
+      const { title, description, severity, tenantId, affectedRecords, affectedDataTypes, rootCause, requiresDpaNotification, notificationRationale } = req.body;
       if (!title || !description || !severity) {
         return res.status(400).json({ message: "title, description, and severity are required" });
+      }
+      if (requiresDpaNotification === false && !notificationRationale) {
+        return res.status(400).json({ message: "notificationRationale is required when requiresDpaNotification is false" });
       }
       const detectedAt = new Date();
       const notificationDeadline = new Date(detectedAt.getTime() + 72 * 60 * 60 * 1000);
       const { rows: [incident] } = await pool.query(
         `INSERT INTO breach_incidents (tenant_id, title, description, severity, status, detected_at, notification_deadline,
-          affected_records, affected_data_types, root_cause, reported_by_id, reported_by_name)
-         VALUES ($1, $2, $3, $4, 'detected', $5, $6, $7, $8, $9, $10, $11)
+          affected_records, affected_data_types, root_cause, reported_by_id, reported_by_name,
+          requires_dpa_notification, notification_rationale)
+         VALUES ($1, $2, $3, $4, 'detected', $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING *`,
         [tenantId || null, title, description, severity, detectedAt, notificationDeadline,
-          affectedRecords || 0, affectedDataTypes || [], rootCause || null, user.id, user.name]
+          affectedRecords || 0, affectedDataTypes || [], rootCause || null, user.id, user.name,
+          requiresDpaNotification !== undefined ? requiresDpaNotification : true,
+          notificationRationale || null]
       );
       auditLogFromReq(req, { action: "breach_incident_created", entityType: "breach_incident", entityId: incident.id, entityName: title });
       res.status(201).json(incident);
@@ -378,7 +461,15 @@ export function registerComplianceRoutes(app: Express): void {
     try {
       const { rows: [existing] } = await pool.query(`SELECT * FROM breach_incidents WHERE id = $1`, [req.params.id]);
       if (!existing) return res.status(404).json({ message: "Incident not found" });
-      const { status, containedAt, notifiedAt, resolvedAt, rootCause, remediation, tenantNotified, authorityNotified } = req.body;
+      const {
+        status, containedAt, notifiedAt, resolvedAt, rootCause, remediation, tenantNotified, authorityNotified,
+        certinNotified, certinNotifiedAt, certinReferenceNo, requiresDpaNotification, notificationRationale,
+      } = req.body;
+      const effectiveRequiresDpa = requiresDpaNotification !== undefined ? requiresDpaNotification : existing.requires_dpa_notification;
+      const effectiveRationale = notificationRationale !== undefined ? notificationRationale : existing.notification_rationale;
+      if (effectiveRequiresDpa === false && !effectiveRationale) {
+        return res.status(400).json({ message: "notificationRationale is required when requiresDpaNotification is false" });
+      }
       const updates: string[] = ["updated_at = NOW()"];
       const params: any[] = [req.params.id];
       if (status !== undefined) { params.push(status); updates.push(`status = $${params.length}`); }
@@ -389,6 +480,11 @@ export function registerComplianceRoutes(app: Express): void {
       if (remediation !== undefined) { params.push(remediation); updates.push(`remediation = $${params.length}`); }
       if (tenantNotified !== undefined) { params.push(tenantNotified); updates.push(`tenant_notified = $${params.length}`); }
       if (authorityNotified !== undefined) { params.push(authorityNotified); updates.push(`authority_notified = $${params.length}`); }
+      if (certinNotified !== undefined) { params.push(certinNotified); updates.push(`certin_notified = $${params.length}`); }
+      if (certinNotifiedAt !== undefined) { params.push(certinNotifiedAt); updates.push(`certin_notified_at = $${params.length}`); }
+      if (certinReferenceNo !== undefined) { params.push(certinReferenceNo); updates.push(`certin_reference_no = $${params.length}`); }
+      if (requiresDpaNotification !== undefined) { params.push(requiresDpaNotification); updates.push(`requires_dpa_notification = $${params.length}`); }
+      if (notificationRationale !== undefined) { params.push(notificationRationale); updates.push(`notification_rationale = $${params.length}`); }
       if (status === "notified" && !existing.notified_at) { updates.push("notified_at = NOW()"); }
       if (status === "resolved" && !existing.resolved_at) { updates.push("resolved_at = NOW()"); }
       const { rows: [updated] } = await pool.query(
@@ -645,14 +741,22 @@ export function registerComplianceRoutes(app: Express): void {
         [user.tenantId, ninetyDaysAgo]
       );
 
-      // Breach incidents
+      // Breach incidents + CERT-In tracking
       const { rows: [breachStats] } = await pool.query(
         `SELECT
           COUNT(*) as total,
           SUM(CASE WHEN status NOT IN ('resolved') THEN 1 ELSE 0 END) as open,
-          MAX(detected_at) as last_incident
+          MAX(detected_at) as last_incident,
+          SUM(CASE WHEN certin_notified = TRUE THEN 1 ELSE 0 END) as certin_notified_count,
+          SUM(CASE WHEN certin_notified = FALSE AND status NOT IN ('resolved') THEN 1 ELSE 0 END) as certin_pending_count,
+          SUM(CASE WHEN certin_notified = FALSE AND detected_at < NOW() - INTERVAL '6 hours' AND status NOT IN ('resolved') THEN 1 ELSE 0 END) as certin_overdue_count
          FROM breach_incidents WHERE tenant_id = $1`,
         [user.tenantId]
+      );
+
+      // PCI DSS - last SAQ
+      const { rows: [lastSaq] } = await pool.query(
+        `SELECT completion_date, valid_until, saq_type FROM pci_saq_log ORDER BY completion_date DESC LIMIT 1`
       );
 
       const ipAllowlistEnabled = !!(mc.ipAllowlistEnabled);
@@ -711,6 +815,19 @@ export function registerComplianceRoutes(app: Express): void {
           total: parseInt(breachStats?.total || "0"),
           open: parseInt(breachStats?.open || "0"),
           lastIncidentDate: breachStats?.last_incident || null,
+          certIn: {
+            notifiedCount: parseInt(breachStats?.certin_notified_count || "0"),
+            pendingCount: parseInt(breachStats?.certin_pending_count || "0"),
+            overdueCount: parseInt(breachStats?.certin_overdue_count || "0"),
+          },
+        },
+        pciDss: {
+          saqType: "SAQ-A",
+          cardDataStored: false,
+          lastSaqCompletionDate: lastSaq?.completion_date || null,
+          lastSaqValidUntil: lastSaq?.valid_until || null,
+          activeGateways: ["stripe", "razorpay"],
+          allGatewaysPciCertified: true,
         },
       };
 
@@ -747,6 +864,9 @@ export function registerComplianceRoutes(app: Express): void {
           ["Breach Incidents Total", String(report.breachIncidents.total)],
           ["Open Breach Incidents", String(report.breachIncidents.open)],
           ["Last Incident Date", String(report.breachIncidents.lastIncidentDate || "None")],
+          ["CERT-In Notified Incidents", String(report.breachIncidents.certIn.notifiedCount)],
+          ["CERT-In Pending Notification", String(report.breachIncidents.certIn.pendingCount)],
+          ["CERT-In Overdue (>6h, not notified)", String(report.breachIncidents.certIn.overdueCount)],
         ];
         const csv = csvRows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
         res.setHeader("Content-Type", "text/csv");
@@ -755,6 +875,114 @@ export function registerComplianceRoutes(app: Express): void {
       }
 
       res.json(report);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── PCI DSS Status ─────────────────────────────────────────────────────────
+
+  app.get("/api/compliance/pci-status", requireAuth, requireRole("owner", "hq_admin"), async (req, res) => {
+    try {
+      const { rows: [lastSaq] } = await pool.query(
+        `SELECT * FROM pci_saq_log ORDER BY completion_date DESC LIMIT 1`
+      );
+      const { rows: [platform] } = await pool.query(
+        `SELECT * FROM platform_settings WHERE id = 'singleton' LIMIT 1`
+      );
+      const mc = platform || {};
+      const stripeEnabled = !!(mc.stripe_enabled ?? true);
+      const razorpayEnabled = !!(mc.razorpay_enabled ?? true);
+
+      res.json({
+        saqType: "SAQ-A",
+        eligibilityReason: "All card processing is handled by certified third parties",
+        providers: [
+          {
+            name: "Stripe",
+            level: "PCI DSS Level 1",
+            certUrl: "https://stripe.com/docs/security",
+            storageModel: "hosted_checkout",
+            cardDataStored: false,
+          },
+          {
+            name: "Razorpay",
+            level: "PCI DSS Level 1",
+            certUrl: "https://razorpay.com/privacy/",
+            storageModel: "hosted_payment_link",
+            cardDataStored: false,
+          },
+        ],
+        cardDataStoredInOurDB: false,
+        tlsEnforced: true,
+        auditTrailEnabled: true,
+        lastSaqCompletion: lastSaq ? {
+          date: lastSaq.completion_date,
+          validUntil: lastSaq.valid_until,
+          saqType: lastSaq.saq_type,
+          completedBy: lastSaq.completed_by_name,
+        } : null,
+        nextSaqDueDate: lastSaq ? lastSaq.valid_until : null,
+        paymentGatewayEnabled: { stripe: stripeEnabled, razorpay: razorpayEnabled },
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/admin/pci/saq-log", requireSuperAdmin, async (req, res) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string) || 10, 50);
+      const { rows } = await pool.query(
+        `SELECT * FROM pci_saq_log ORDER BY completion_date DESC LIMIT $1`,
+        [limit]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/admin/pci/saq-log", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { saqType, completionDate, validUntil, scopeDescription, qsaName, paymentGateways, notes, documentReference } = req.body;
+      if (!completionDate || !validUntil) return res.status(400).json({ message: "completionDate and validUntil are required" });
+      const { rows: [row] } = await pool.query(
+        `INSERT INTO pci_saq_log (completed_by_id, completed_by_name, saq_type, completion_date, valid_until,
+          scope_description, qsa_name, payment_gateways, notes, document_reference)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        [user.id, user.name, saqType || "SAQ-A", completionDate, validUntil,
+          scopeDescription || null, qsaName || null, paymentGateways || ["stripe", "razorpay"],
+          notes || null, documentReference || null]
+      );
+      auditLogFromReq(req, { action: "pci_saq_completed", entityType: "pci_saq_log", entityId: row.id, entityName: `${saqType || "SAQ-A"} ${completionDate}` });
+      res.status(201).json(row);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Cookie Consent ──────────────────────────────────────────────────────────
+
+  app.post("/api/consent/cookies", async (req, res) => {
+    try {
+      const { analytics, marketing, sessionId } = req.body;
+      const user = (req as any).user;
+      const ip = (req.headers["x-forwarded-for"] as string || req.ip || "").split(",")[0].trim();
+      const userAgent = (req.headers["user-agent"] || "").slice(0, 500);
+      const { rows: [row] } = await pool.query(
+        `INSERT INTO cookie_consent_log (user_id, tenant_id, session_id, analytics, marketing, necessary, ip_address, user_agent)
+         VALUES ($1, $2, $3, $4, $5, true, $6, $7) RETURNING id`,
+        [user?.id || null, user?.tenantId || null, sessionId || null,
+          analytics === true, marketing === true, ip, userAgent]
+      );
+      res.json({ accepted: true, preferences: { necessary: true, analytics: analytics === true, marketing: marketing === true } });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/consent/cookies/status", async (req, res) => {
+    try {
+      const sessionId = req.query.sessionId as string;
+      if (!sessionId) return res.json({ found: false });
+      const { rows: [row] } = await pool.query(
+        `SELECT analytics, marketing, necessary FROM cookie_consent_log WHERE session_id = $1 ORDER BY accepted_at DESC LIMIT 1`,
+        [sessionId]
+      );
+      if (!row) return res.json({ found: false });
+      res.json({ found: true, preferences: { necessary: row.necessary, analytics: row.analytics, marketing: row.marketing } });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

@@ -89,8 +89,11 @@ const AdminSupportPage = lazy(() => import("@/pages/admin/support"));
 const AdminSupportTicketPage = lazy(() => import("@/pages/admin/support-ticket"));
 const AdminAdApprovalsPage = lazy(() => import("@/pages/admin/ad-approvals"));
 const BreachIncidentsPage = lazy(() => import("@/pages/admin/breach-incidents"));
+const VendorRisksPage = lazy(() => import("@/pages/admin/vendor-risks"));
+const IncidentPlaybookPage = lazy(() => import("@/pages/admin/incident-playbook"));
 const SystemHealthPage = lazy(() => import("@/pages/admin/system-health"));
 
+import CookieConsentBanner from "@/components/CookieConsentBanner";
 import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
 import { ActiveAlertsProvider } from "@/lib/active-alerts-context";
@@ -364,6 +367,8 @@ function AdminShell() {
           <Route path="/admin/audit" component={AuditLogPage} />
           <Route path="/admin/security" component={SecurityConsolePage} />
           <Route path="/admin/breach-incidents" component={BreachIncidentsPage} />
+          <Route path="/admin/vendor-risks" component={VendorRisksPage} />
+          <Route path="/admin/incident-playbook" component={IncidentPlaybookPage} />
           <Route path="/admin/system-health" component={SystemHealthPage} />
           <Route path="/admin/admins" component={AdminsPage} />
           <Route path="/admin/settings" component={AdminSettingsPage} />
@@ -549,6 +554,7 @@ function App() {
           <AuthProvider>
             <ImpersonationProvider>
               <Toaster />
+              <CookieConsentBanner />
               <Router />
             </ImpersonationProvider>
           </AuthProvider>

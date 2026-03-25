@@ -1991,4 +1991,141 @@ export function registerAdminRoutes(app: Express) {
       warning: "All PII fields have been re-encrypted with the new key. You MUST now update the ENCRYPTION_KEY secret and restart the server for decryption to work correctly with the new key.",
     });
   });
+
+  // ─── Vendor Risk Assessments ─────────────────────────────────────────────────
+
+  app.get("/api/admin/vendor-risks", requireSuperAdmin, async (req, res) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const riskLevel = req.query.riskLevel as string | undefined;
+      let where = "WHERE is_active = true";
+      const params: any[] = [];
+      if (category) { params.push(category); where += ` AND vendor_category = $${params.length}`; }
+      if (riskLevel) { params.push(riskLevel); where += ` AND risk_level = $${params.length}`; }
+      const { rows } = await pool.query(
+        `SELECT * FROM vendor_risk_assessments ${where}
+         ORDER BY CASE risk_level WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'medium' THEN 3 ELSE 4 END, vendor_name`,
+        params
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/admin/vendor-risks", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { vendorName, vendorCategory, website, serviceDescription, dataProcessed, riskLevel,
+        complianceCerts, dpaInPlace, dpaSignedDate, lastReviewedAt, nextReviewDue, notes } = req.body;
+      if (!vendorName || !vendorCategory) return res.status(400).json({ message: "vendorName and vendorCategory are required" });
+      const { rows: [row] } = await pool.query(
+        `INSERT INTO vendor_risk_assessments (vendor_name, vendor_category, website, service_description,
+          data_processed, risk_level, compliance_certs, dpa_in_place, dpa_signed_date, last_reviewed_at,
+          next_review_due, notes, created_by_id, created_by_name)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14) RETURNING *`,
+        [vendorName, vendorCategory, website || null, serviceDescription || null,
+          dataProcessed || [], riskLevel || "medium", complianceCerts || [],
+          dpaInPlace || false, dpaSignedDate || null, lastReviewedAt || null,
+          nextReviewDue || null, notes || null, user.id, user.name]
+      );
+      await auditLog({ tenantId: null, userId: user.id, userName: user.name, action: "vendor_risk_created", entityType: "vendor_risk", entityId: row.id, entityName: vendorName, req });
+      res.status(201).json(row);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/admin/vendor-risks/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows: [existing] } = await pool.query(`SELECT * FROM vendor_risk_assessments WHERE id = $1`, [req.params.id]);
+      if (!existing) return res.status(404).json({ message: "Vendor not found" });
+      const { vendorName, vendorCategory, website, serviceDescription, dataProcessed, riskLevel,
+        complianceCerts, dpaInPlace, dpaSignedDate, lastReviewedAt, nextReviewDue, notes, isActive } = req.body;
+      const updates: string[] = ["updated_at = NOW()"];
+      const params: any[] = [req.params.id];
+      if (vendorName !== undefined) { params.push(vendorName); updates.push(`vendor_name = $${params.length}`); }
+      if (vendorCategory !== undefined) { params.push(vendorCategory); updates.push(`vendor_category = $${params.length}`); }
+      if (website !== undefined) { params.push(website); updates.push(`website = $${params.length}`); }
+      if (serviceDescription !== undefined) { params.push(serviceDescription); updates.push(`service_description = $${params.length}`); }
+      if (dataProcessed !== undefined) { params.push(dataProcessed); updates.push(`data_processed = $${params.length}`); }
+      if (riskLevel !== undefined) { params.push(riskLevel); updates.push(`risk_level = $${params.length}`); }
+      if (complianceCerts !== undefined) { params.push(complianceCerts); updates.push(`compliance_certs = $${params.length}`); }
+      if (dpaInPlace !== undefined) { params.push(dpaInPlace); updates.push(`dpa_in_place = $${params.length}`); }
+      if (dpaSignedDate !== undefined) { params.push(dpaSignedDate); updates.push(`dpa_signed_date = $${params.length}`); }
+      if (lastReviewedAt !== undefined) { params.push(lastReviewedAt); updates.push(`last_reviewed_at = $${params.length}`); }
+      if (nextReviewDue !== undefined) { params.push(nextReviewDue); updates.push(`next_review_due = $${params.length}`); }
+      if (notes !== undefined) { params.push(notes); updates.push(`notes = $${params.length}`); }
+      if (isActive !== undefined) { params.push(isActive); updates.push(`is_active = $${params.length}`); }
+      const { rows: [updated] } = await pool.query(
+        `UPDATE vendor_risk_assessments SET ${updates.join(", ")} WHERE id = $1 RETURNING *`, params
+      );
+      await auditLog({ tenantId: null, userId: user.id, userName: user.name, action: "vendor_risk_updated", entityType: "vendor_risk", entityId: req.params.id, entityName: existing.vendor_name, req });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/admin/vendor-risks/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows: [existing] } = await pool.query(`SELECT * FROM vendor_risk_assessments WHERE id = $1`, [req.params.id]);
+      if (!existing) return res.status(404).json({ message: "Vendor not found" });
+      await pool.query(`UPDATE vendor_risk_assessments SET is_active = false, updated_at = NOW() WHERE id = $1`, [req.params.id]);
+      await auditLog({ tenantId: null, userId: user.id, userName: user.name, action: "vendor_risk_deleted", entityType: "vendor_risk", entityId: req.params.id, entityName: existing.vendor_name, req });
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Incident Response Playbook ──────────────────────────────────────────────
+
+  app.get("/api/admin/incident-playbook", requireSuperAdmin, async (req, res) => {
+    try {
+      const { rows } = await pool.query(
+        `SELECT * FROM incident_response_playbook ORDER BY step_number ASC`
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/admin/incident-playbook/steps", requireSuperAdmin, async (req, res) => {
+    try {
+      const { stepNumber, stepTitle, stepDescription, responsibleRole, timeTarget, checklist, notes } = req.body;
+      if (!stepTitle || !stepDescription) return res.status(400).json({ message: "stepTitle and stepDescription are required" });
+      const { rows: [row] } = await pool.query(
+        `INSERT INTO incident_response_playbook (step_number, step_title, step_description, responsible_role, time_target, checklist, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+        [stepNumber || 1, stepTitle, stepDescription, responsibleRole || null, timeTarget || null,
+          checklist ? JSON.stringify(checklist) : '[]', notes || null]
+      );
+      res.status(201).json(row);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/admin/incident-playbook/steps/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const { rows: [existing] } = await pool.query(`SELECT * FROM incident_response_playbook WHERE id = $1`, [req.params.id]);
+      if (!existing) return res.status(404).json({ message: "Step not found" });
+      const { stepNumber, stepTitle, stepDescription, responsibleRole, timeTarget, checklist, notes, lastTestedAt } = req.body;
+      const updates: string[] = ["updated_at = NOW()"];
+      const params: any[] = [req.params.id];
+      if (stepNumber !== undefined) { params.push(stepNumber); updates.push(`step_number = $${params.length}`); }
+      if (stepTitle !== undefined) { params.push(stepTitle); updates.push(`step_title = $${params.length}`); }
+      if (stepDescription !== undefined) { params.push(stepDescription); updates.push(`step_description = $${params.length}`); }
+      if (responsibleRole !== undefined) { params.push(responsibleRole); updates.push(`responsible_role = $${params.length}`); }
+      if (timeTarget !== undefined) { params.push(timeTarget); updates.push(`time_target = $${params.length}`); }
+      if (checklist !== undefined) { params.push(JSON.stringify(checklist)); updates.push(`checklist = $${params.length}`); }
+      if (notes !== undefined) { params.push(notes); updates.push(`notes = $${params.length}`); }
+      if (lastTestedAt !== undefined) { params.push(lastTestedAt); updates.push(`last_tested_at = $${params.length}`); }
+      const { rows: [updated] } = await pool.query(
+        `UPDATE incident_response_playbook SET ${updates.join(", ")} WHERE id = $1 RETURNING *`, params
+      );
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.delete("/api/admin/incident-playbook/steps/:id", requireSuperAdmin, async (req, res) => {
+    try {
+      const { rows: [existing] } = await pool.query(`SELECT * FROM incident_response_playbook WHERE id = $1`, [req.params.id]);
+      if (!existing) return res.status(404).json({ message: "Step not found" });
+      await pool.query(`DELETE FROM incident_response_playbook WHERE id = $1`, [req.params.id]);
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
 }

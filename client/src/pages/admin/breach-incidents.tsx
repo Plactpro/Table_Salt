@@ -34,6 +34,11 @@ interface BreachIncident {
   notification_deadline: string;
   tenant_notified: boolean;
   authority_notified: boolean;
+  certin_notified: boolean;
+  certin_notified_at: string | null;
+  certin_reference_no: string | null;
+  requires_dpa_notification: boolean;
+  notification_rationale: string | null;
   hours_remaining: number | null;
 }
 
@@ -60,6 +65,42 @@ const STATUS_COLORS: Record<string, string> = {
 const DATA_TYPES = ["name", "email", "phone", "financial", "payment", "health", "other"];
 const STATUSES = ["detected", "investigating", "contained", "notified", "resolved"];
 
+function CountdownTimer({ detectedAt, hours, label, colorClass }: {
+  detectedAt: string;
+  hours: number;
+  label: string;
+  colorClass: string;
+}) {
+  const totalHours = hours;
+  const detectedMs = new Date(detectedAt).getTime();
+  const deadlineMs = detectedMs + totalHours * 60 * 60 * 1000;
+  const remainingMs = deadlineMs - Date.now();
+  const remainingHours = remainingMs / (1000 * 60 * 60);
+  const pctRemaining = Math.max(0, (remainingMs / (totalHours * 60 * 60 * 1000)) * 100);
+
+  let color = "text-green-600";
+  if (pctRemaining < 25) color = "text-red-600";
+  else if (pctRemaining < 50) color = "text-yellow-600";
+
+  if (remainingMs <= 0) {
+    return (
+      <span className={`flex items-center gap-1 text-xs font-semibold text-red-600`} data-testid={`countdown-${label.toLowerCase().replace(/\s/g, "-")}`}>
+        <Clock className="h-3 w-3" />
+        {label}: OVERDUE
+      </span>
+    );
+  }
+
+  const h = Math.floor(remainingHours);
+  const m = Math.floor((remainingHours - h) * 60);
+  return (
+    <span className={`flex items-center gap-1 text-xs font-semibold ${color}`} data-testid={`countdown-${label.toLowerCase().replace(/\s/g, "-")}`}>
+      <Clock className="h-3 w-3" />
+      {h}h {m}m until {label} deadline
+    </span>
+  );
+}
+
 function HoursCountdown({ hours }: { hours: number | null }) {
   if (hours === null || hours < 0) return null;
   const isUrgent = hours < 24;
@@ -84,6 +125,8 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
   const [affectedRecords, setAffectedRecords] = useState("0");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [rootCause, setRootCause] = useState("");
+  const [requiresDpa, setRequiresDpa] = useState(false);
+  const [rationale, setRationale] = useState("");
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -93,6 +136,8 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
         affectedRecords: parseInt(affectedRecords) || 0,
         affectedDataTypes: selectedTypes,
         rootCause: rootCause || null,
+        requiresDpaNotification: requiresDpa,
+        notificationRationale: rationale || null,
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       return r.json();
@@ -177,11 +222,43 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
             <Label>Root Cause (optional)</Label>
             <Textarea value={rootCause} onChange={e => setRootCause(e.target.value)} rows={2} placeholder="Known root cause..." />
           </div>
+          <div className="p-3 border rounded-lg space-y-2 bg-orange-50">
+            <p className="text-sm font-medium text-orange-900">DPA Notification Required?</p>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={requiresDpa}
+                  onChange={() => setRequiresDpa(true)}
+                  data-testid="radio-dpa-yes"
+                />
+                Yes — likely to risk rights and freedoms
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={!requiresDpa}
+                  onChange={() => setRequiresDpa(false)}
+                  data-testid="radio-dpa-no"
+                />
+                No — low risk (document rationale below)
+              </label>
+            </div>
+            {!requiresDpa && (
+              <Textarea
+                value={rationale}
+                onChange={e => setRationale(e.target.value)}
+                rows={2}
+                placeholder="Document why DPA notification is not required..."
+                data-testid="input-rationale"
+              />
+            )}
+          </div>
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
             <Button
               onClick={() => mutation.mutate()}
-              disabled={mutation.isPending || !title || !description}
+              disabled={mutation.isPending || !title || !description || (!requiresDpa && !rationale)}
               data-testid="button-submit-incident"
             >
               {mutation.isPending ? "Saving..." : "Log Incident"}
@@ -201,12 +278,30 @@ function UpdateStatusDialog({ incident, onClose }: { incident: BreachIncident; o
   const [remediation, setRemediation] = useState(incident.remediation || "");
   const [tenantNotified, setTenantNotified] = useState(incident.tenant_notified);
   const [authorityNotified, setAuthorityNotified] = useState(incident.authority_notified);
+  const [certinNotified, setCertinNotified] = useState(incident.certin_notified || false);
+  const [certinNotifiedAt, setCertinNotifiedAt] = useState(
+    incident.certin_notified_at ? new Date(incident.certin_notified_at).toISOString().slice(0, 16) : ""
+  );
+  const [certinRefNo, setCertinRefNo] = useState(incident.certin_reference_no || "");
+  const [requiresDpa, setRequiresDpa] = useState(incident.requires_dpa_notification || false);
+  const [rationale, setRationale] = useState(incident.notification_rationale || "");
+
+  const certinDeadlineHours = 6;
+  const detectedAt = new Date(incident.detected_at);
+  const certinDeadline = new Date(detectedAt.getTime() + certinDeadlineHours * 60 * 60 * 1000);
+  const certinRemaining = certinDeadline.getTime() - Date.now();
+  const certinRemainingH = Math.max(0, certinRemaining / (1000 * 60 * 60));
+  const certinRemainingM = Math.floor((certinRemainingH - Math.floor(certinRemainingH)) * 60);
 
   const mutation = useMutation({
     mutationFn: async () => {
       const r = await apiRequest("PATCH", `/api/admin/breach-incidents/${incident.id}`, {
         status, rootCause: rootCause || null, remediation: remediation || null,
         tenantNotified, authorityNotified,
+        certinNotified, certinNotifiedAt: certinNotifiedAt ? new Date(certinNotifiedAt).toISOString() : null,
+        certinReferenceNo: certinRefNo || null,
+        requiresDpaNotification: requiresDpa,
+        notificationRationale: rationale || null,
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       return r.json();
@@ -221,7 +316,7 @@ function UpdateStatusDialog({ incident, onClose }: { incident: BreachIncident; o
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Update Incident Status</DialogTitle>
         </DialogHeader>
@@ -268,9 +363,87 @@ function UpdateStatusDialog({ incident, onClose }: { incident: BreachIncident; o
               </label>
             </div>
           )}
+
+          <div className="p-3 border rounded-lg bg-orange-50 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold text-orange-900">CERT-In Notification (India)</p>
+              <span className="text-xs text-orange-700">Deadline: 6 hours from detection</span>
+            </div>
+            {certinRemaining > 0 && !incident.certin_notified && (
+              <div className="flex items-center gap-1 text-xs font-semibold text-orange-700" data-testid="certin-countdown">
+                <Clock className="h-3 w-3" />
+                {Math.floor(certinRemainingH)}h {certinRemainingM}m remaining until CERT-In deadline
+              </div>
+            )}
+            {certinRemaining <= 0 && !incident.certin_notified && (
+              <p className="text-xs font-semibold text-red-600">⚠️ CERT-In 6-hour deadline has passed</p>
+            )}
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={certinNotified}
+                onCheckedChange={c => setCertinNotified(c === true)}
+                data-testid="checkbox-certin-notified"
+              />
+              CERT-In has been notified
+            </label>
+            {certinNotified && (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-xs">Notified at</Label>
+                  <Input
+                    type="datetime-local"
+                    value={certinNotifiedAt}
+                    onChange={e => setCertinNotifiedAt(e.target.value)}
+                    data-testid="input-certin-notified-at"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs">CERT-In Reference Number</Label>
+                  <Input
+                    value={certinRefNo}
+                    onChange={e => setCertinRefNo(e.target.value)}
+                    placeholder="CERT-IN-2026-XXXXX"
+                    data-testid="input-certin-ref"
+                  />
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="p-3 border rounded-lg space-y-2">
+            <p className="text-sm font-medium">DPA Notification Required?</p>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={requiresDpa}
+                  onChange={() => setRequiresDpa(true)}
+                  data-testid="radio-requires-dpa-yes"
+                />
+                Yes — likely to risk rights and freedoms
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input
+                  type="radio"
+                  checked={!requiresDpa}
+                  onChange={() => setRequiresDpa(false)}
+                  data-testid="radio-requires-dpa-no"
+                />
+                No — low risk (document rationale below)
+              </label>
+            </div>
+            <Textarea
+              value={rationale}
+              onChange={e => setRationale(e.target.value)}
+              rows={2}
+              placeholder="e.g. Exposed data was hashed/encrypted"
+              data-testid="input-notification-rationale"
+            />
+          </div>
+
           <div className="flex gap-2 justify-end">
             <Button variant="outline" onClick={onClose}>Cancel</Button>
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending} data-testid="button-submit-status">
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || (!requiresDpa && !rationale)} data-testid="button-submit-status">
               {mutation.isPending ? "Saving..." : "Update Status"}
             </Button>
           </div>
@@ -309,6 +482,8 @@ export default function BreachIncidentsPage() {
 
   const tenants = (tenantsData as any)?.tenants || (tenantsData as any)?.data || [];
   const incidents = data?.data || [];
+
+  const isOpen = (incident: BreachIncident) => !["resolved"].includes(incident.status);
 
   return (
     <div className="p-6 space-y-6" data-testid="breach-incidents-page">
@@ -375,6 +550,9 @@ export default function BreachIncidentsPage() {
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium capitalize ${STATUS_COLORS[incident.status] || "bg-gray-100 text-gray-700"}`}>
                         {incident.status}
                       </span>
+                      {incident.certin_notified && (
+                        <span className="text-xs text-green-600">✅ CERT-In notified</span>
+                      )}
                     </div>
                     <p className="font-semibold text-sm mb-1">{incident.title}</p>
                     <p className="text-xs text-muted-foreground mb-1">
@@ -383,8 +561,23 @@ export default function BreachIncidentsPage() {
                       Detected: {format(new Date(incident.detected_at), "d MMM yyyy HH:mm")}
                       {incident.affected_records > 0 && ` · Records: ${incident.affected_records.toLocaleString()}`}
                     </p>
-                    {(incident.status === "detected" || incident.status === "investigating") && incident.hours_remaining !== null && (
-                      <HoursCountdown hours={incident.hours_remaining} />
+                    {isOpen(incident) && (
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        <CountdownTimer
+                          detectedAt={incident.detected_at}
+                          hours={72}
+                          label="GDPR 72h"
+                          colorClass="text-amber-600"
+                        />
+                        {!incident.certin_notified && (
+                          <CountdownTimer
+                            detectedAt={incident.detected_at}
+                            hours={6}
+                            label="CERT-In 6h"
+                            colorClass="text-orange-600"
+                          />
+                        )}
+                      </div>
                     )}
                     {incident.resolved_at && (
                       <p className="text-xs text-green-600">Resolved: {format(new Date(incident.resolved_at), "d MMM yyyy")}</p>
@@ -431,7 +624,7 @@ export default function BreachIncidentsPage() {
       )}
       {viewIncident && (
         <Dialog open onOpenChange={() => setViewIncident(null)}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{viewIncident.title}</DialogTitle>
             </DialogHeader>
@@ -439,11 +632,12 @@ export default function BreachIncidentsPage() {
               <div className="flex gap-2 flex-wrap">
                 <Badge className={SEVERITY_COLORS[viewIncident.severity]}>{viewIncident.severity}</Badge>
                 <Badge className={STATUS_COLORS[viewIncident.status]}>{viewIncident.status}</Badge>
+                {viewIncident.certin_notified && <Badge className="bg-green-100 text-green-800">CERT-In Notified</Badge>}
               </div>
               <p className="text-muted-foreground">{viewIncident.description}</p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div><span className="text-muted-foreground">Detected:</span> {format(new Date(viewIncident.detected_at), "d MMM yyyy HH:mm")}</div>
-                <div><span className="text-muted-foreground">Deadline:</span> {format(new Date(viewIncident.notification_deadline), "d MMM yyyy HH:mm")}</div>
+                <div><span className="text-muted-foreground">GDPR Deadline:</span> {format(new Date(viewIncident.notification_deadline), "d MMM yyyy HH:mm")}</div>
                 <div><span className="text-muted-foreground">Tenant:</span> {viewIncident.tenant_name || "Platform-wide"}</div>
                 <div><span className="text-muted-foreground">Records:</span> {viewIncident.affected_records.toLocaleString()}</div>
                 {viewIncident.contained_at && <div><span className="text-muted-foreground">Contained:</span> {format(new Date(viewIncident.contained_at), "d MMM yyyy")}</div>}
@@ -458,14 +652,21 @@ export default function BreachIncidentsPage() {
               )}
               {viewIncident.root_cause && <div><span className="text-muted-foreground text-xs">Root cause: </span><span className="text-xs">{viewIncident.root_cause}</span></div>}
               {viewIncident.remediation && <div><span className="text-muted-foreground text-xs">Remediation: </span><span className="text-xs">{viewIncident.remediation}</span></div>}
-              <div className="flex gap-4 text-xs">
+              <div className="flex gap-4 text-xs flex-wrap">
                 <span className={viewIncident.tenant_notified ? "text-green-600" : "text-muted-foreground"}>
                   {viewIncident.tenant_notified ? "✓" : "○"} Tenant notified
                 </span>
                 <span className={viewIncident.authority_notified ? "text-green-600" : "text-muted-foreground"}>
                   {viewIncident.authority_notified ? "✓" : "○"} Authority notified
                 </span>
+                <span className={viewIncident.certin_notified ? "text-green-600" : "text-muted-foreground"}>
+                  {viewIncident.certin_notified ? "✓" : "○"} CERT-In notified
+                  {viewIncident.certin_reference_no && ` (${viewIncident.certin_reference_no})`}
+                </span>
               </div>
+              {viewIncident.notification_rationale && (
+                <div><span className="text-muted-foreground text-xs">DPA rationale: </span><span className="text-xs">{viewIncident.notification_rationale}</span></div>
+              )}
               {viewIncident.reported_by_name && (
                 <p className="text-xs text-muted-foreground">Reported by: {viewIncident.reported_by_name}</p>
               )}
