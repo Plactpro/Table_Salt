@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { requireAuth, requireRole } from "../auth";
 import { routeAndPrint } from "../services/printer-service";
+import { getJurisdictionByCurrency } from "../../shared/jurisdictions";
 
 const VALID_PRINT_JOB_STATUSES = ["queued", "printing", "printed", "completed", "failed", "cancelled"] as const;
 type PrintJobStatus = typeof VALID_PRINT_JOB_STATUSES[number];
@@ -221,10 +222,39 @@ export function registerPrintJobRoutes(app: Express): void {
       );
       if (billRows.length === 0) return res.status(404).json({ message: "Bill not found" });
 
+      const billOutletId = billRows[0].outlet_id ?? user.outletId ?? null;
+
+      let jurisdictionLabels: Record<string, any> | null = null;
+      if (billOutletId) {
+        try {
+          const { rows: outletRows } = await pool.query(
+            `SELECT currency_code, tax_registration_number, trade_license_number, trade_license_authority,
+                    regulatory_footer_text FROM outlets WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+            [billOutletId, user.tenantId]
+          );
+          if (outletRows[0]) {
+            const jConfig = getJurisdictionByCurrency(outletRows[0].currency_code || "USD");
+            jurisdictionLabels = {
+              taxInvoiceLabel: jConfig.taxInvoiceLabel,
+              taxLabel: jConfig.taxLabel,
+              taxRegLabel: jConfig.taxRegLabel,
+              taxRegNumber: outletRows[0].tax_registration_number || null,
+              splitTaxLabels: jConfig.splitTaxLabels || null,
+              country: jConfig.country,
+              breachAuthority: jConfig.breachAuthority,
+              tradeLicenseNumber: outletRows[0].trade_license_number || null,
+              tradeLicenseAuthority: outletRows[0].trade_license_authority || null,
+              regulatoryFooter: outletRows[0].regulatory_footer_text || null,
+              ccpaApplicable: jConfig.ccpaApplicable,
+            };
+          }
+        } catch (_) {}
+      }
+
       const result = await routeAndPrint({
         jobType: "receipt",
         referenceId: req.params.billId,
-        outletId: billRows[0].outlet_id ?? user.outletId ?? null,
+        outletId: billOutletId,
         tenantId: user.tenantId,
         triggeredByName: user.name || user.username,
       });
@@ -232,6 +262,7 @@ export function registerPrintJobRoutes(app: Express): void {
       res.json({
         success: true,
         jobIds: result.jobIds,
+        ...(jurisdictionLabels ? { jurisdictionLabels } : {}),
         ...(result.htmlFallback ? { htmlFallback: result.htmlFallback } : {}),
       });
     } catch (err: any) {

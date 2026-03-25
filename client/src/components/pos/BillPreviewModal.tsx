@@ -6,6 +6,7 @@ import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
+import { getJurisdictionByCurrency, applyJurisdictionRounding } from "@shared/jurisdictions";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { Button } from "@/components/ui/button";
@@ -126,7 +127,6 @@ export default function BillPreviewModal({
   const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
   const currencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: number | string) => sharedFormatCurrency(val, currency, { position: currencyPosition, decimals: currencyDecimals });
-  const isGSTTenant = currency === "INR" && user?.tenant?.taxType === "gst";
 
   const { data: gatewayConfig } = useQuery({
     queryKey: ["/api/platform/gateway-config"],
@@ -139,6 +139,26 @@ export default function BillPreviewModal({
   });
 
   const outletId = user?.outletId || user?.tenant?.defaultOutletId || null;
+
+  const { data: outletJurisdiction } = useQuery<{
+    jurisdiction: ReturnType<typeof getJurisdictionByCurrency>;
+    savedFields: Record<string, any>;
+  }>({
+    queryKey: ["/api/outlets", outletId, "jurisdiction"],
+    queryFn: async () => {
+      if (!outletId) return null;
+      const res = await fetch(`/api/outlets/${outletId}/jurisdiction`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: open && !!outletId,
+    staleTime: 300_000,
+  });
+
+  const jurisdiction = outletJurisdiction?.jurisdiction ?? getJurisdictionByCurrency(currency);
+  const isGSTTenant = !!jurisdiction.splitTaxLabels;
+  const outletTaxRegNumber = outletJurisdiction?.savedFields?.taxRegistrationNumber || user?.tenant?.gstin || null;
+
   const { data: tipConfig } = useQuery<{
     tipsEnabled: boolean;
     showOnPos: boolean;
@@ -661,7 +681,7 @@ export default function BillPreviewModal({
     const html = renderBillHtml({
       restaurantName: tenantName,
       restaurantAddress: tenantAddress || undefined,
-      restaurantGstin: user?.tenant?.gstin || undefined,
+      restaurantGstin: outletTaxRegNumber || undefined,
       restaurantLogo: user?.tenant?.logo || undefined,
       billNumber: billPayload.billNumber,
       invoiceNumber: billPayload.invoiceNumber,
@@ -919,10 +939,17 @@ export default function BillPreviewModal({
       <div className="bill-print-root" ref={printRef}>
         <div style={{ width: "80mm", fontFamily: "monospace", fontSize: "11px", padding: "8px" }}>
           <div style={{ textAlign: "center", marginBottom: 8 }}>
-            <div style={{ fontWeight: "bold", fontSize: 14 }}>{tenantName}</div>
+            <div style={{ fontWeight: "bold", fontSize: 14 }}>{jurisdiction.taxInvoiceLabel}</div>
+            <div style={{ fontWeight: "bold", fontSize: 13, marginTop: 2 }}>{tenantName}</div>
             {tenantAddress && <div style={{ fontSize: 10 }}>{tenantAddress}</div>}
-            {isGSTTenant && user?.tenant?.gstin && (
-              <div style={{ fontSize: 10 }}>GSTIN: {user.tenant.gstin}</div>
+            {jurisdiction.requireTaxRegOnInvoice && outletTaxRegNumber && (
+              <div style={{ fontSize: 10 }}>{jurisdiction.taxRegLabel}: {outletTaxRegNumber}</div>
+            )}
+            {outletJurisdiction?.savedFields?.tradeLicenseNumber && (
+              <div style={{ fontSize: 9 }}>
+                Trade Lic: {outletJurisdiction.savedFields.tradeLicenseNumber}
+                {outletJurisdiction.savedFields.tradeLicenseAuthority ? ` (${outletJurisdiction.savedFields.tradeLicenseAuthority})` : ""}
+              </div>
             )}
             <div style={{ fontSize: 10, marginTop: 4 }}>
               {isGSTTenant && createdBill?.invoiceNumber
@@ -933,7 +960,7 @@ export default function BillPreviewModal({
             {tableNumber && <div>Table: {tableNumber}</div>}
             <div>Waiter: {user?.name || user?.username}</div>
             {isGSTTenant && createdBill?.customerGstin && (
-              <div style={{ fontSize: 10 }}>Cust. GSTIN: {createdBill.customerGstin}</div>
+              <div style={{ fontSize: 10 }}>Cust. {jurisdiction.taxRegLabel}: {createdBill.customerGstin}</div>
             )}
           </div>
           <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
@@ -966,30 +993,37 @@ export default function BillPreviewModal({
           <div style={{ display: "flex", justifyContent: "space-between" }}><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
           {discountAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Discount</span><span>-{fmt(discountAmount)}</span></div>}
           {serviceChargeAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Service Charge</span><span>{fmt(serviceChargeAmount)}</span></div>}
-          {taxAmount > 0 && isGSTTenant && createdBill ? (
-            <>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>CGST ({Number(user?.tenant?.cgstRate ?? 9)}%)</span>
-                <span>{fmt(Number(createdBill.cgstAmount ?? taxAmount / 2))}</span>
-              </div>
-              <div style={{ display: "flex", justifyContent: "space-between" }}>
-                <span>SGST ({Number(user?.tenant?.sgstRate ?? 9)}%)</span>
-                <span>{fmt(Number(createdBill.sgstAmount ?? taxAmount / 2))}</span>
-              </div>
-            </>
-          ) : (
-            taxAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tax ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>
+          {taxAmount > 0 && (
+            jurisdiction.splitTaxLabels ? (
+              <>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{jurisdiction.splitTaxLabels.part1} ({Number(user?.tenant?.cgstRate ?? taxRate / 2)}%)</span>
+                  <span>{fmt(Number(createdBill?.cgstAmount ?? taxAmount / 2))}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span>{jurisdiction.splitTaxLabels.part2} ({Number(user?.tenant?.sgstRate ?? taxRate / 2)}%)</span>
+                  <span>{fmt(Number(createdBill?.sgstAmount ?? taxAmount / 2))}</span>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: "flex", justifyContent: "space-between" }}><span>{jurisdiction.taxLabel} ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>
+            )
           )}
           {tipAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tips</span><span>{fmt(tipAmount)}</span></div>}
           <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: 13 }}>
-            <span>TOTAL</span><span>{fmt(grandTotal)}</span>
+            <span>TOTAL</span><span>{fmt(applyJurisdictionRounding(grandTotal, jurisdiction.roundingRule))}</span>
           </div>
-          <div style={{ fontSize: 9, marginTop: 4, fontStyle: "italic" }}>{numWords(grandTotal)}</div>
+          <div style={{ fontSize: 9, marginTop: 4, fontStyle: "italic" }}>{numWords(applyJurisdictionRounding(grandTotal, jurisdiction.roundingRule))}</div>
           <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }} />
           <div style={{ textAlign: "center", fontSize: 10 }}>Thank you for dining with us!</div>
-          {isGSTTenant && (
-            <div style={{ textAlign: "center", fontSize: 9, marginTop: 4 }}>This is a computer-generated tax invoice.</div>
+          {jurisdiction.requireTaxRegOnInvoice && (
+            <div style={{ textAlign: "center", fontSize: 9, marginTop: 4 }}>This is a computer-generated {jurisdiction.taxInvoiceLabel.toLowerCase()}.</div>
+          )}
+          {jurisdiction.ccpaApplicable && (
+            <div style={{ fontSize: 8, textAlign: "center", color: "#666", marginTop: 4 }}>
+              Do Not Sell My Personal Information: see privacy policy
+            </div>
           )}
         </div>
       </div>
@@ -1902,9 +1936,9 @@ export default function BillPreviewModal({
               {isGSTTenant && createdBill && taxAmount > 0 && (
                 <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/20 p-3 text-sm space-y-1">
                   <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide mb-2">Tax Summary</p>
-                  {user?.tenant?.gstin && (
+                  {outletTaxRegNumber && (
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Restaurant GSTIN</span><span className="font-mono">{user.tenant.gstin}</span>
+                      <span>Restaurant {jurisdiction.taxRegLabel}</span><span className="font-mono">{outletTaxRegNumber}</span>
                     </div>
                   )}
                   {createdBill.customerGstin && (

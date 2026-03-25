@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { AlertTriangle, Plus, Eye, RefreshCw, Clock } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { getJurisdictionByCurrency } from "@shared/jurisdictions";
 
 interface BreachIncident {
   id: string;
@@ -45,6 +46,7 @@ interface BreachIncident {
 interface Tenant {
   id: string;
   name: string;
+  currency?: string | null;
 }
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -115,6 +117,12 @@ function HoursCountdown({ hours }: { hours: number | null }) {
   );
 }
 
+interface TenantOutlet {
+  id: string;
+  name: string;
+  currency_code?: string | null;
+}
+
 function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants: Tenant[] }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -122,11 +130,36 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
   const [description, setDescription] = useState("");
   const [severity, setSeverity] = useState("medium");
   const [tenantId, setTenantId] = useState("platform-wide");
+  const [selectedOutletId, setSelectedOutletId] = useState<string>("");
   const [affectedRecords, setAffectedRecords] = useState("0");
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [rootCause, setRootCause] = useState("");
   const [requiresDpa, setRequiresDpa] = useState(false);
   const [rationale, setRationale] = useState("");
+
+  const { data: tenantDetail } = useQuery<{ outlets?: TenantOutlet[] }>({
+    queryKey: ["/api/admin/tenants", tenantId],
+    queryFn: async () => {
+      if (tenantId === "platform-wide") return { outlets: [] };
+      const r = await apiRequest("GET", `/api/admin/tenants/${tenantId}`);
+      return r.json();
+    },
+    enabled: tenantId !== "platform-wide",
+    staleTime: 60_000,
+  });
+
+  const tenantOutlets: TenantOutlet[] = tenantDetail?.outlets || [];
+  const hasMultipleOutletCurrencies = new Set(tenantOutlets.map(o => o.currency_code?.toUpperCase() || "").filter(Boolean)).size > 1;
+
+  const selectedOutlet = tenantOutlets.find(o => o.id === selectedOutletId);
+  const selectedTenant = tenants.find(t => t.id === tenantId);
+
+  const jurisdictionCurrency = (
+    selectedOutlet?.currency_code?.toUpperCase() ||
+    selectedTenant?.currency?.toUpperCase() ||
+    "USD"
+  );
+  const incidentJurisdiction = getJurisdictionByCurrency(jurisdictionCurrency);
 
   const mutation = useMutation({
     mutationFn: async () => {
@@ -161,14 +194,6 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
           <DialogTitle>Log New Breach Incident</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label>Title</Label>
-            <Input data-testid="input-incident-title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief incident title" />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Description</Label>
-            <Textarea data-testid="input-incident-description" value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="What happened?" />
-          </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Severity</Label>
@@ -186,7 +211,7 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
             </div>
             <div className="space-y-1.5">
               <Label>Affected Tenant</Label>
-              <Select value={tenantId} onValueChange={setTenantId}>
+              <Select value={tenantId} onValueChange={v => { setTenantId(v); setSelectedOutletId(""); }} data-testid="select-tenant-wrapper">
                 <SelectTrigger data-testid="select-tenant">
                   <SelectValue />
                 </SelectTrigger>
@@ -198,6 +223,47 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
                 </SelectContent>
               </Select>
             </div>
+          </div>
+          {hasMultipleOutletCurrencies && (
+            <div className="space-y-1.5">
+              <Label>Affected Outlet (currencies differ — select for correct jurisdiction)</Label>
+              <Select value={selectedOutletId} onValueChange={setSelectedOutletId}>
+                <SelectTrigger data-testid="select-breach-outlet">
+                  <SelectValue placeholder="All outlets (tenant currency)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All outlets</SelectItem>
+                  {tenantOutlets.map(o => (
+                    <SelectItem key={o.id} value={o.id}>{o.name} ({o.currency_code || "?"})</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30 space-y-2">
+            <p className="text-sm font-semibold text-blue-800 dark:text-blue-300">Jurisdiction (auto-detected{hasMultipleOutletCurrencies && selectedOutlet ? " from outlet" : " from tenant"} currency)</p>
+            <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="text-jurisdiction-authority">
+              <span className="px-2 py-0.5 rounded bg-blue-100 text-blue-800 font-mono text-xs">{jurisdictionCurrency}</span>
+              <span className="text-green-700 font-medium">
+                {(selectedTenant || selectedOutlet) ? `${incidentJurisdiction.country} — ` : "Platform-wide — "}
+                Notify: <strong>{incidentJurisdiction.breachAuthority}</strong>
+              </span>
+            </div>
+            <p className="text-xs" data-testid="text-jurisdiction-deadline">
+              Deadline: {incidentJurisdiction.breachDeadlineHours === 6 ? (
+                <span className="text-amber-700 font-semibold">⚠️ {incidentJurisdiction.breachDeadlineHours} hours ({incidentJurisdiction.breachAuthority} requirement)</span>
+              ) : (
+                <span>{incidentJurisdiction.breachDeadlineHours} hours</span>
+              )}
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Title</Label>
+            <Input data-testid="input-incident-title" value={title} onChange={e => setTitle(e.target.value)} placeholder="Brief incident title" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Description</Label>
+            <Textarea data-testid="input-incident-description" value={description} onChange={e => setDescription(e.target.value)} rows={3} placeholder="What happened?" />
           </div>
           <div className="space-y-1.5">
             <Label>Affected Records</Label>

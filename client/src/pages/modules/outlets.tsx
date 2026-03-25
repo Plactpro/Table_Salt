@@ -26,6 +26,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
 import { currencyMap } from "@shared/currency";
+import { getJurisdictionByCurrency } from "@shared/jurisdictions";
 
 const ROUNDING_OPTIONS = [
   { value: "none", label: "None" },
@@ -451,6 +452,320 @@ const CHARGE_TYPES = [
   { value: "PERCENTAGE", label: "Percentage of subtotal" },
   { value: "PER_CATEGORY", label: "Per food category" },
 ];
+
+function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
+  const { user } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [selectedOutletId, setSelectedOutletId] = useState<string>(outlets[0]?.id || "");
+  const outletId = selectedOutletId || outlets[0]?.id;
+
+  const { data: jurisdictionData, isLoading } = useQuery<{
+    jurisdiction: ReturnType<typeof getJurisdictionByCurrency>;
+    savedFields: Record<string, any>;
+  }>({
+    queryKey: ["/api/outlets", outletId, "jurisdiction"],
+    queryFn: async () => {
+      const res = await fetch(`/api/outlets/${outletId}/jurisdiction`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to load jurisdiction");
+      return res.json();
+    },
+    enabled: !!outletId,
+  });
+
+  const [form, setForm] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    if (!jurisdictionData) return;
+    setForm({
+      taxRegistrationNumber: jurisdictionData.savedFields.taxRegistrationNumber || "",
+      vatRegistered: jurisdictionData.savedFields.vatRegistered || false,
+      outletTaxRate: jurisdictionData.savedFields.outletTaxRate != null ? String(jurisdictionData.savedFields.outletTaxRate) : String(jurisdictionData.jurisdiction.defaultTaxRate),
+      tradeLicenseNumber: jurisdictionData.savedFields.tradeLicenseNumber || "",
+      tradeLicenseAuthority: jurisdictionData.savedFields.tradeLicenseAuthority || "",
+      tradeLicenseExpiry: jurisdictionData.savedFields.tradeLicenseExpiry ? String(jurisdictionData.savedFields.tradeLicenseExpiry).slice(0, 10) : "",
+      companyRegistrationNo: jurisdictionData.savedFields.companyRegistrationNo || "",
+      grievanceOfficerName: jurisdictionData.savedFields.grievanceOfficerName || "",
+      grievanceOfficerEmail: jurisdictionData.savedFields.grievanceOfficerEmail || "",
+      regulatoryFooterText: jurisdictionData.savedFields.regulatoryFooterText || "",
+      invoiceAdditionalInfo: jurisdictionData.savedFields.invoiceAdditionalInfo || "",
+    });
+  }, [jurisdictionData]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/outlets/${outletId}/jurisdiction`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...form,
+          vatRegistered: form.vatRegistered,
+          outletTaxRate: form.outletTaxRate !== "" ? parseFloat(form.outletTaxRate) : null,
+          tradeLicenseExpiry: form.tradeLicenseExpiry || null,
+        }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outlets", outletId, "jurisdiction"] });
+      toast({ title: "Legal & Tax details saved" });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (!outletId) return null;
+  if (isLoading) return (
+    <Card data-testid="card-jurisdiction-legal-settings">
+      <CardContent className="py-8 text-center text-muted-foreground text-sm">Loading legal & tax settings...</CardContent>
+    </Card>
+  );
+
+  const jur = jurisdictionData?.jurisdiction;
+  if (!jur) return null;
+
+  const flagMap: Record<string, string> = {
+    UAE: "🇦🇪", India: "🇮🇳", "United States": "🇺🇸", "United Kingdom": "🇬🇧",
+    "European Union": "🇪🇺", Singapore: "🇸🇬",
+  };
+  const flag = flagMap[jur.country] || "🌍";
+
+  const selectedOutlet = outlets.find(o => o.id === outletId) || outlets[0];
+
+  return (
+    <Card data-testid="card-jurisdiction-legal-settings">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Shield className="h-5 w-5 text-blue-600" />
+          Legal & Tax Details
+        </CardTitle>
+        {outlets.length > 1 && (
+          <div className="mt-2">
+            <Label className="text-xs text-muted-foreground mb-1">Configure for outlet:</Label>
+            <select
+              className="w-full border rounded px-2 py-1 text-sm bg-background"
+              value={outletId}
+              onChange={e => setSelectedOutletId(e.target.value)}
+              data-testid="select-jurisdiction-outlet"
+            >
+              {outlets.map(o => (
+                <option key={o.id} value={o.id}>{o.name} ({o.currencyCode || "?"})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        <div className="flex items-center gap-2 mt-1">
+          <Badge variant="outline" className="text-xs" data-testid="badge-jurisdiction-currency">{jur.currency}</Badge>
+          <Badge variant="outline" className="text-xs" data-testid="badge-jurisdiction-country">{flag} {jur.country}</Badge>
+          <Badge variant="outline" className="text-xs" data-testid="badge-jurisdiction-tax">{jur.taxLabel} {jur.defaultTaxRate}%</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">Auto-detected from currency: {jur.currency} ({selectedOutlet?.currencyName || jur.country})</p>
+      </CardHeader>
+      <CardContent className="space-y-6">
+
+        <div className="space-y-4">
+          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{jur.taxLabel} Registration</p>
+          <div className="flex items-center gap-3">
+            <Switch
+              checked={form.vatRegistered || false}
+              onCheckedChange={v => setForm(f => ({ ...f, vatRegistered: v }))}
+              data-testid="toggle-vat-registered"
+            />
+            <Label>{jur.taxLabel} Registered</Label>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label>{jur.taxRegLabel}</Label>
+              <Input
+                value={form.taxRegistrationNumber || ""}
+                onChange={e => setForm(f => ({ ...f, taxRegistrationNumber: e.target.value }))}
+                placeholder={jur.taxRegPlaceholder}
+                data-testid="input-tax-registration-number"
+              />
+              <p className="text-xs text-muted-foreground">Format: {jur.taxRegFormat}</p>
+            </div>
+            <div className="space-y-1">
+              <Label>{jur.taxLabel} Rate (%)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                value={form.outletTaxRate || ""}
+                onChange={e => setForm(f => ({ ...f, outletTaxRate: e.target.value }))}
+                placeholder={String(jur.defaultTaxRate)}
+                data-testid="input-outlet-tax-rate"
+              />
+              {jur.splitTaxLabels && (
+                <p className="text-xs text-muted-foreground">Bills show {jur.splitTaxLabels.part1} + {jur.splitTaxLabels.part2} breakdown</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {jur.tradeLicenseRequired && (
+          <div className="space-y-4">
+            <Separator />
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Trade License</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label>{jur.tradeLicenseLabel || "License No."}</Label>
+                <Input
+                  value={form.tradeLicenseNumber || ""}
+                  onChange={e => setForm(f => ({ ...f, tradeLicenseNumber: e.target.value }))}
+                  placeholder="e.g. DED-123456-2024"
+                  data-testid="input-trade-license-number"
+                />
+              </div>
+              {jur.tradeLicenseAuthorities && (
+                <div className="space-y-1">
+                  <Label>Issuing Authority</Label>
+                  <Select value={form.tradeLicenseAuthority || ""} onValueChange={v => setForm(f => ({ ...f, tradeLicenseAuthority: v }))}>
+                    <SelectTrigger data-testid="select-trade-license-authority">
+                      <SelectValue placeholder="Select authority" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {jur.tradeLicenseAuthorities.map(a => (
+                        <SelectItem key={a} value={a}>{a}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="space-y-1">
+                <Label>Expiry Date</Label>
+                <Input
+                  type="date"
+                  value={form.tradeLicenseExpiry || ""}
+                  onChange={e => setForm(f => ({ ...f, tradeLicenseExpiry: e.target.value }))}
+                  data-testid="input-trade-license-expiry"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {(jur.companyRegLabel || jur.tradeLicenseLabel) && !jur.tradeLicenseRequired && (
+          <div className="space-y-4">
+            <Separator />
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Company Details</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {jur.companyRegLabel && (
+                <div className="space-y-1">
+                  <Label>{jur.companyRegLabel}</Label>
+                  <Input
+                    value={form.companyRegistrationNo || ""}
+                    onChange={e => setForm(f => ({ ...f, companyRegistrationNo: e.target.value }))}
+                    placeholder="e.g. U72900TN2024PTC001234"
+                    data-testid="input-company-registration-no"
+                  />
+                </div>
+              )}
+              {jur.tradeLicenseLabel && (
+                <div className="space-y-1">
+                  <Label>{jur.tradeLicenseLabel} (optional)</Label>
+                  <Input
+                    value={form.tradeLicenseNumber || ""}
+                    onChange={e => setForm(f => ({ ...f, tradeLicenseNumber: e.target.value }))}
+                    placeholder="Optional"
+                    data-testid="input-trade-license-number"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {jur.grievanceOfficerRequired && (
+          <div className="space-y-4">
+            <Separator />
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Grievance Officer</p>
+              <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">Required under IT Act 2000</Badge>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <Label>Name</Label>
+                <Input
+                  value={form.grievanceOfficerName || ""}
+                  onChange={e => setForm(f => ({ ...f, grievanceOfficerName: e.target.value }))}
+                  placeholder="Full name"
+                  data-testid="input-grievance-officer-name"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Email</Label>
+                <Input
+                  type="email"
+                  value={form.grievanceOfficerEmail || ""}
+                  onChange={e => setForm(f => ({ ...f, grievanceOfficerEmail: e.target.value }))}
+                  placeholder="grievance@example.com"
+                  data-testid="input-grievance-officer-email"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {jur.ccpaApplicable && (
+          <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30">
+            <p className="text-sm font-medium text-blue-800 dark:text-blue-300">CCPA Compliance</p>
+            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">Auto-enabled for USD outlets. "Do Not Sell My Info" link added to receipts.</p>
+          </div>
+        )}
+
+        <div className="space-y-4">
+          <Separator />
+          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Invoice Footer Text</p>
+          <Textarea
+            value={form.regulatoryFooterText || ""}
+            onChange={e => setForm(f => ({ ...f, regulatoryFooterText: e.target.value }))}
+            placeholder={jur.country === "UAE" ? "Licensed by Dubai Economy & Tourism" : jur.country === "India" ? "FSSAI Lic. No.: xxxx | PAN: AAABBB1234C" : "Optional footer text"}
+            rows={2}
+            data-testid="input-regulatory-footer-text"
+          />
+        </div>
+
+        <div className="p-3 rounded-lg border bg-muted/50 space-y-2">
+          <p className="text-sm font-semibold flex items-center gap-2">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            Breach Notification Authority (auto-configured)
+          </p>
+          <p className="text-sm" data-testid="text-breach-authority">{jur.breachAuthority}</p>
+          <a href={jur.breachAuthorityUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline" data-testid="link-breach-authority-url">
+            {jur.breachAuthorityUrl.replace("https://", "")}
+          </a>
+          <p className="text-xs text-muted-foreground">
+            Deadline: {jur.breachDeadlineHours === 6 ? (
+              <span className="text-amber-600 font-semibold">⚠️ {jur.breachDeadlineHours} hours (strict — {jur.breachAuthority} requirement)</span>
+            ) : (
+              <span>{jur.breachDeadlineHours} hours</span>
+            )}
+          </p>
+        </div>
+
+        <div className="p-3 rounded-lg border bg-muted/50 space-y-2">
+          <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Applicable Regulations</p>
+          <div className="flex flex-wrap gap-1.5" data-testid="text-applicable-regulations">
+            {jur.applicableRegulations.map(reg => (
+              <Badge key={reg} variant="secondary" className="text-xs">{reg.replace(/_/g, " ")}</Badge>
+            ))}
+          </div>
+        </div>
+
+        <Button
+          onClick={() => saveMutation.mutate()}
+          disabled={saveMutation.isPending}
+          data-testid="button-save-legal-tax"
+        >
+          {saveMutation.isPending ? "Saving..." : "Save Legal & Tax Details"}
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
 
 function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
   const { user } = useAuth();
@@ -1859,6 +2174,20 @@ export default function OutletsPage() {
                         {outlet.address && (
                           <CardDescription className="text-xs mt-0.5">{outlet.address}</CardDescription>
                         )}
+                        {outlet.currencyCode && (() => {
+                          const jur = getJurisdictionByCurrency(outlet.currencyCode);
+                          const flagMap: Record<string, string> = {
+                            UAE: "🇦🇪", India: "🇮🇳", "United States": "🇺🇸", "United Kingdom": "🇬🇧",
+                            "European Union": "🇪🇺", Singapore: "🇸🇬",
+                          };
+                          return (
+                            <div className="flex flex-wrap gap-1 mt-1" data-testid={`badges-jurisdiction-${outlet.id}`}>
+                              <Badge variant="outline" className="text-xs py-0">{outlet.currencyCode}</Badge>
+                              <Badge variant="outline" className="text-xs py-0">{flagMap[jur.country] || "🌍"} {jur.country}</Badge>
+                              <Badge variant="outline" className="text-xs py-0">{jur.taxLabel} {jur.defaultTaxRate}%</Badge>
+                            </div>
+                          );
+                        })()}
                       </div>
                     </div>
                     <Badge
@@ -2043,6 +2372,12 @@ export default function OutletsPage() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
         <CashCurrencySettings />
       </motion.div>
+
+      {outlets.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+          <JurisdictionLegalSettings outlets={outlets} />
+        </motion.div>
+      )}
 
       {outlets.length > 0 && (
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>

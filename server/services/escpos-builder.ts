@@ -126,6 +126,19 @@ export interface BillItem {
   notes?: string | null;
 }
 
+export interface JurisdictionMeta {
+  taxInvoiceLabel: string;
+  taxLabel: string;
+  taxRegLabel: string;
+  taxRegNumber?: string | null;
+  splitTaxLabels?: { part1: string; part2: string } | null;
+  requireTaxRegOnInvoice: boolean;
+  tradeLicenseNumber?: string | null;
+  tradeLicenseAuthority?: string | null;
+  ccpaApplicable?: boolean;
+  footerText?: string | null;
+}
+
 export interface BillData {
   billNumber?: string | null;
   invoiceNumber?: string | null;
@@ -145,6 +158,7 @@ export interface BillData {
   paymentMethod?: string | null;
   paidAt?: Date | string | null;
   covers?: number;
+  jurisdictionMeta?: JurisdictionMeta | null;
 }
 
 export interface RefundPaymentData {
@@ -437,9 +451,21 @@ export function buildBillHtml(
     </tr>`;
   }).join("");
 
-  const taxBreakdownHtml = (template?.showTaxBreakdown && bill.taxBreakdown)
-    ? Object.entries(bill.taxBreakdown).map(([k, v]) => `<tr><td>${escHtml(k)}</td><td class="right">${v}</td></tr>`).join("")
-    : `<tr><td>Tax</td><td class="right">${formatMoney(bill.taxAmount)}</td></tr>`;
+  const jMeta = bill.jurisdictionMeta;
+  const invoiceTitle = jMeta?.taxInvoiceLabel || "Invoice";
+  const taxLabel = jMeta?.taxLabel || "Tax";
+  const taxRegLabel = jMeta?.taxRegLabel || "Tax Reg";
+
+  let taxBreakdownHtml: string;
+  if (template?.showTaxBreakdown && bill.taxBreakdown) {
+    taxBreakdownHtml = Object.entries(bill.taxBreakdown).map(([k, v]) => `<tr><td>${escHtml(k)}</td><td class="right">${v}</td></tr>`).join("");
+  } else if (jMeta?.splitTaxLabels && Number(bill.taxAmount || 0) > 0) {
+    const half = (Number(bill.taxAmount) / 2).toFixed(2);
+    taxBreakdownHtml = `<tr><td>${escHtml(jMeta.splitTaxLabels.part1)}</td><td class="right">${half}</td></tr>
+    <tr><td>${escHtml(jMeta.splitTaxLabels.part2)}</td><td class="right">${half}</td></tr>`;
+  } else {
+    taxBreakdownHtml = `<tr><td>${escHtml(taxLabel)}</td><td class="right">${formatMoney(bill.taxAmount)}</td></tr>`;
+  }
 
   return `<!DOCTYPE html>
 <html>
@@ -462,9 +488,14 @@ export function buildBillHtml(
 </style>
 </head>
 <body>
-<div class="center">${headerHtml}</div>
+<div class="center">
+  ${jMeta ? `<div style="font-size:10px;">${escHtml(invoiceTitle)}</div>` : ""}
+  ${headerHtml}
+  ${jMeta?.requireTaxRegOnInvoice && jMeta.taxRegNumber ? `<div style="font-size:10px;">${escHtml(taxRegLabel)}: ${escHtml(jMeta.taxRegNumber)}</div>` : ""}
+  ${jMeta?.tradeLicenseNumber ? `<div style="font-size:10px;">Trade Lic: ${escHtml(jMeta.tradeLicenseNumber)}${jMeta.tradeLicenseAuthority ? ` (${escHtml(jMeta.tradeLicenseAuthority)})` : ""}</div>` : ""}
+</div>
 <div class="sep"></div>
-<div>Invoice: ${escHtml(billRef)}</div>
+<div>Ref: ${escHtml(billRef)}</div>
 ${order.tableNumber ? `<div>Table: ${order.tableNumber}</div>` : ""}
 ${bill.waiterName ? `<div>Served by: ${escHtml(bill.waiterName)}</div>` : ""}
 <div>${escHtml(now)}</div>

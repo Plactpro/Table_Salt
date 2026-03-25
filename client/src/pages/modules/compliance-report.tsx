@@ -3,13 +3,15 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
-import { FileCheck, RefreshCw, Download, Shield, Lock, FileText, BarChart2, Eye, AlertTriangle, CheckCircle, XCircle, CreditCard, Database } from "lucide-react";
+import { FileCheck, RefreshCw, Download, Shield, Lock, FileText, BarChart2, Eye, AlertTriangle, CheckCircle, XCircle, CreditCard, Database, Globe } from "lucide-react";
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
+import { getJurisdictionByCurrency } from "@shared/jurisdictions";
 
 interface ComplianceReport {
   generatedAt: string;
@@ -130,6 +132,144 @@ function RetentionPolicyPanel({ data }: { data: ComplianceReport }) {
   );
 }
 
+interface OutletBasic {
+  id: string;
+  name: string;
+  currency_code?: string | null;
+}
+
+function JurisdictionSummaryCard() {
+  const { user } = useAuth();
+  const fallbackCurrency = user?.tenant?.currency?.toUpperCase() || "USD";
+  const [selectedOutletId, setSelectedOutletId] = useState<string>("");
+
+  const { data: outlets } = useQuery<OutletBasic[]>({
+    queryKey: ["/api/outlets"],
+    queryFn: async () => {
+      const res = await fetch("/api/outlets", { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return Array.isArray(data) ? data : (data?.outlets || []);
+    },
+    staleTime: 60000,
+  });
+
+  const allOutlets: OutletBasic[] = outlets || [];
+  const activeOutletId = selectedOutletId || allOutlets[0]?.id || "";
+  const activeOutlet = allOutlets.find(o => o.id === activeOutletId) || allOutlets[0];
+
+  const { data: jurisdictionData } = useQuery<{ jurisdiction: any; savedFields: Record<string, any> }>({
+    queryKey: ["/api/outlets", activeOutletId, "jurisdiction"],
+    queryFn: async () => {
+      if (!activeOutletId) return null;
+      const res = await fetch(`/api/outlets/${activeOutletId}/jurisdiction`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!activeOutletId,
+    staleTime: 60000,
+  });
+
+  const outletCurrency = (activeOutlet?.currency_code?.toUpperCase()) || fallbackCurrency;
+  const jur = getJurisdictionByCurrency(outletCurrency);
+
+  const flagMap: Record<string, string> = {
+    UAE: "🇦🇪", India: "🇮🇳", "United States": "🇺🇸", "United Kingdom": "🇬🇧",
+    "European Union": "🇪🇺", Singapore: "🇸🇬",
+  };
+  const flag = flagMap[jur.country] || "🌍";
+
+  const savedFields = jurisdictionData?.savedFields || {};
+  const hasGstin = !!(savedFields.taxRegistrationNumber);
+  const hasCin = !!(savedFields.companyRegistrationNo);
+  const hasGrievanceOfficer = !!(savedFields.grievanceOfficerName && savedFields.grievanceOfficerEmail);
+  const needsGrievanceOfficer = jur.grievanceOfficerRequired && !hasGrievanceOfficer;
+
+  const taxFramework = jur.splitTaxLabels
+    ? `${jur.taxLabel} (${jur.splitTaxLabels.part1} + ${jur.splitTaxLabels.part2})`
+    : jur.taxLabel;
+
+  const configuredDetails = [
+    hasGstin ? jur.taxRegLabel : null,
+    hasCin && jur.companyRegLabel ? jur.companyRegLabel : null,
+  ].filter(Boolean);
+
+  const hasMultipleOutlets = allOutlets.length > 1;
+
+  return (
+    <Card data-testid="card-jurisdiction-summary">
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Globe className="h-4 w-4 text-primary" />
+          Jurisdiction Configuration
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="divide-y">
+        {hasMultipleOutlets && (
+          <div className="py-2">
+            <label className="text-xs text-muted-foreground block mb-1">Outlet</label>
+            <select
+              className="text-sm border rounded px-2 py-1 w-full"
+              value={activeOutletId}
+              onChange={e => setSelectedOutletId(e.target.value)}
+              data-testid="select-jurisdiction-outlet"
+            >
+              {allOutlets.map(o => (
+                <option key={o.id} value={o.id}>{o.name} ({o.currency_code || "?"})</option>
+              ))}
+            </select>
+          </div>
+        )}
+        {activeOutlet && hasMultipleOutlets && (
+          <StatRow label="Outlet" value={<span className="font-medium">{activeOutlet.name}</span>} testId="text-jurisdiction-outlet-name" />
+        )}
+        <StatRow label="Currency" value={<Badge variant="outline">{outletCurrency}</Badge>} testId="text-jurisdiction-currency" />
+        <StatRow label="Jurisdiction" value={`${flag} ${jur.country}`} testId="text-jurisdiction-country" />
+        <StatRow label="Tax Framework" value={taxFramework} testId="text-jurisdiction-tax-framework" />
+        <StatRow
+          label="Breach Authority"
+          value={
+            <span className={jur.breachDeadlineHours === 6 ? "text-amber-600 font-semibold" : ""} data-testid="text-jurisdiction-breach-authority">
+              {jur.breachAuthority} ({jur.breachDeadlineHours}h)
+            </span>
+          }
+        />
+        <StatRow
+          label="Applicable Laws"
+          value={
+            <span className="text-xs">{jur.applicableRegulations.map(r => r.replace(/_/g, " ")).join(", ")}</span>
+          }
+          testId="text-jurisdiction-regulations"
+        />
+        {configuredDetails.length > 0 && (
+          <StatRow
+            label="Legal Details Configured"
+            value={<span className="text-green-600">✅ {configuredDetails.join(", ")}</span>}
+          />
+        )}
+        {needsGrievanceOfficer && (
+          <StatRow
+            label="Grievance Officer"
+            value={<span className="text-amber-600">⚠️ Not configured (IT Act required)</span>}
+            testId="text-grievance-officer-warning"
+          />
+        )}
+        {!needsGrievanceOfficer && jur.grievanceOfficerRequired && (
+          <StatRow
+            label="Grievance Officer"
+            value={<span className="text-green-600">✅ {savedFields.grievanceOfficerName}</span>}
+          />
+        )}
+        <div className="py-1">
+          <a href="/modules/outlets" className="text-xs text-blue-600 hover:underline" data-testid="link-configure-legal">
+            Configure Legal Details →
+          </a>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ComplianceReport() {
   const { user } = useAuth();
   const allowedRoles = ["owner", "hq_admin", "franchise_owner"];
@@ -220,6 +360,8 @@ export default function ComplianceReport() {
       </div>
 
       {isOwnerOrAdmin && <RetentionPolicyPanel data={data} />}
+
+      <JurisdictionSummaryCard />
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
