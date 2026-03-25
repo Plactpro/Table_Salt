@@ -150,7 +150,7 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
       const r = raw as Record<string, unknown>;
       if (!r || typeof r !== "object") return raw as TicketDetail;
       // If the response is already flat (has 'status' at top level), return as-is
-      if (typeof (r as Record<string, unknown>).status === "string") return raw as TicketDetail;
+      if (typeof (raw as Record<string, unknown>).status === "string") return raw as TicketDetail;
       // Otherwise map { order, items, bill, ... } → TicketDetail
       const order = (r.order || {}) as Record<string, unknown>;
       const items = (r.items as unknown[]) || [];

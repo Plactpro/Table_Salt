@@ -456,6 +456,7 @@ function ProtectedPages() {
         <Route path="/orders-hub">{() => <Redirect to="/delivery" />}</Route>
         <Route path="/hq-console">{() => <Redirect to="/outlets" />}</Route>
         <Route path="/security">{() => <Redirect to="/settings" />}</Route>
+        <Route path="/dashboard">{() => <Redirect to="/" />}</Route>
         <Route component={NotFound} />
       </Switch>
       </Suspense>

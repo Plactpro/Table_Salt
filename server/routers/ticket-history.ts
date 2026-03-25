@@ -279,7 +279,7 @@ export function registerTicketHistoryRoutes(app: Express) {
            o.order_type AS channel,
            o.status,
            o.payment_method AS "paymentMethod",
-           o.total,
+           o.total AS "totalAmount",
            o.created_at AS "createdAt",
            o.waiter_id AS "waiterId",
            o.outlet_id AS "outletId",
