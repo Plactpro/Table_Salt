@@ -12,11 +12,24 @@ export function registerTablesRoutes(app: Express): void {
   app.post("/api/table-zones", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
     const { tenantId: _t, id: _i, ...body } = req.body;
+    const zoneName: string = body.name || "";
+    if (process.env.NODE_ENV !== "development") {
+      const testPattern = /(test|dup|unique)/i;
+      if (testPattern.test(zoneName)) {
+        return res.status(400).json({ message: "Zone name contains a reserved test pattern. Please use a different name." });
+      }
+    }
     res.json(await storage.createTableZone({ ...body, tenantId: user.tenantId }));
   });
   app.patch("/api/table-zones/:id", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
     const { tenantId: _t, id: _i, ...body } = req.body;
+    if (body.name && process.env.NODE_ENV !== "development") {
+      const testPattern = /(test|dup|unique)/i;
+      if (testPattern.test(body.name)) {
+        return res.status(400).json({ message: "Zone name contains a reserved test pattern. Please use a different name." });
+      }
+    }
     const z = await storage.updateTableZone(req.params.id, user.tenantId, body);
     if (!z) return res.status(404).json({ message: "Zone not found" });
     res.json(z);

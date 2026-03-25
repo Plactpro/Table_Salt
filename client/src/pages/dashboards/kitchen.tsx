@@ -774,6 +774,8 @@ interface PrinterDevice {
 
 function PrinterStatusMiniBar() {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const [reconnecting, setReconnecting] = useState<Record<string, boolean>>({});
   const { data: printers = [] } = useQuery<PrinterDevice[]>({
     queryKey: ["/api/printers"],
     queryFn: () => fetch("/api/printers", { credentials: "include" }).then(r => r.json()),
@@ -802,17 +804,55 @@ function PrinterStatusMiniBar() {
   const onlineCount = printers.filter(p => p.status === "online").length;
   const errorCount = printers.filter(p => p.status === "error").length;
 
+  const handleReconnect = async (p: PrinterDevice) => {
+    setReconnecting(prev => ({ ...prev, [p.id]: true }));
+    try {
+      const printerUrl = p.ipAddress ? `http://${p.ipAddress}:${p.port || 9100}` : null;
+      if (printerUrl) {
+        await fetch(printerUrl, { method: "GET", signal: AbortSignal.timeout(3000) }).catch(() => {});
+      }
+      await apiRequest("PATCH", `/api/printers/${p.id}/reconnect`, {}).catch(() => {});
+      queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+      toast({ title: "Reconnecting", description: `Attempting to reconnect ${p.name}...` });
+    } catch (_) {
+      toast({ title: "Reconnect failed", description: `Could not reach ${p.name}. Check network.`, variant: "destructive" });
+    } finally {
+      setReconnecting(prev => ({ ...prev, [p.id]: false }));
+    }
+  };
+
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border text-xs overflow-x-auto" data-testid="printer-status-minibar">
       <Printer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
       <span className="text-muted-foreground shrink-0">Printers:</span>
-      {printers.map(p => (
-        <div key={p.id} className="flex items-center gap-1 shrink-0" data-testid={`printer-status-${p.id}`}>
-          <span className={`inline-block w-2 h-2 rounded-full ${statusColor[p.status] || "bg-gray-400"}`} />
-          <span className="font-medium">{p.name}</span>
-          <span className="text-muted-foreground">({statusLabel[p.status] || p.status})</span>
-        </div>
-      ))}
+      {printers.map(p => {
+        const isError = p.status === "error" || p.status === "offline";
+        const printerUrl = p.ipAddress ? `http://${p.ipAddress}:${p.port || 9100}` : null;
+        const tooltipText = isError && printerUrl
+          ? `Cannot reach printer at ${printerUrl}. Check network connection or update printer settings.`
+          : isError
+          ? `Printer is ${p.status}. Check network connection or update printer settings.`
+          : undefined;
+        return (
+          <div key={p.id} className="flex items-center gap-1 shrink-0" data-testid={`printer-status-${p.id}`}>
+            <span className={`inline-block w-2 h-2 rounded-full ${statusColor[p.status] || "bg-gray-400"}`} />
+            <span className="font-medium" title={tooltipText}>{p.name}</span>
+            <span className="text-muted-foreground">({statusLabel[p.status] || p.status})</span>
+            {isError && (
+              <button
+                className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 hover:bg-red-200 border border-red-300 flex items-center gap-0.5 disabled:opacity-50"
+                onClick={() => handleReconnect(p)}
+                disabled={reconnecting[p.id]}
+                title={tooltipText}
+                data-testid={`button-reconnect-printer-${p.id}`}
+              >
+                <RefreshCw className={`h-2.5 w-2.5 ${reconnecting[p.id] ? "animate-spin" : ""}`} />
+                {reconnecting[p.id] ? "..." : "Reconnect"}
+              </button>
+            )}
+          </div>
+        );
+      })}
       {errorCount > 0 && (
         <span className="ml-auto shrink-0 text-red-600 font-medium">{errorCount} error{errorCount > 1 ? "s" : ""}</span>
       )}
