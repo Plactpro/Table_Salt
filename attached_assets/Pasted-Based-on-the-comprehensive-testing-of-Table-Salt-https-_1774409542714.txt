@@ -1,0 +1,296 @@
+Based on the comprehensive testing of **Table Salt** (https://inifinit.com), here is the detailed bug report ready to send to Replit AI:
+
+***
+
+# 🐛 BUG REPORT — Table Salt Restaurant Management System
+**Project:** Table Salt (inifinit.com)
+**Testing Date:** March 25, 2026
+**Environment:** Production (https://inifinit.com)
+**Browser:** Chrome (Latest)
+**Reported By:** QA Testing — Full Functional Coverage
+
+***
+
+## BUG #001 — CRITICAL
+**Title:** Ticket History — "View" button throws "Something went wrong" error
+
+**Module:** Ticket History (`/tickets`)
+**Severity:** 🔴 Critical
+**Priority:** P1
+
+**Steps to Reproduce:**
+1. Log in as Owner or Manager
+2. Navigate to `/tickets` (via POS → History tab or sidebar)
+3. Click the **View** button (→ arrow) on any ticket in the list
+
+**Expected Result:** Ticket detail modal or page opens with full order information
+
+**Actual Result:** A full-page "Something went wrong" error is displayed. The app crashes and the user must manually navigate back.
+
+**Impact:** Staff cannot review historical orders from the Ticket History screen. Affects Owner, Manager, and Waiter roles.
+
+**Suggested Fix:** Check the API call triggered by the View button — likely a missing or malformed parameter (e.g., ticket ID not being passed correctly to the backend endpoint). Add error boundary and fallback UI.
+
+***
+
+## BUG #002 — CRITICAL
+**Title:** Online Orders list — Advancing order status fails with "Invalid CSRF token"
+
+**Module:** Online Orders (`/orders`)
+**Severity:** 🔴 Critical
+**Priority:** P1
+
+**Steps to Reproduce:**
+1. Log in as Owner or Manager
+2. Navigate to `/orders`
+3. Click the **→ (advance status)** arrow button on any In Progress order
+
+**Expected Result:** Order status advances to the next stage (e.g., In Progress → Ready)
+
+**Actual Result:** Error toast: `"Failed to update — Invalid CSRF token"`
+
+**Impact:** Orders cannot be progressed from the Orders management screen. Kitchen and service flow is blocked.
+
+**Suggested Fix:** Ensure the CSRF token is correctly included in the PATCH/PUT request header when updating order status from the orders list page. Check if the token is being read from the session/cookie on this specific route. The same action works correctly from the KDS (Kitchen Display System), so the token handling differs between pages.
+
+***
+
+## BUG #003 — HIGH
+**Title:** Delivery — "Mark Delivered" throws Error 500: `e.toISOString is not a function`
+
+**Module:** Delivery & Online (`/delivery`)
+**Severity:** 🟠 High
+**Priority:** P1
+
+**Steps to Reproduce:**
+1. Log in as Owner or Manager
+2. Navigate to `/delivery`
+3. Find any order in the **"Out for Delivery"** kanban column
+4. Click the **"Mark Delivered"** button
+
+**Expected Result:** Order status updates to "Delivered", moves to the "Delivered Today" column
+
+**Actual Result:** Error 500 displayed: `"e.toISOString is not a function"`
+
+**Impact:** Delivery agents and managers cannot mark orders as delivered from the delivery board. Delivery status tracking is broken. Confirmed broken for delivery agent role as well.
+
+**Suggested Fix:** A variable expected to be a `Date` object is a `string` or `null` when `.toISOString()` is called on it. Likely in the delivery status update handler — ensure `deliveredAt` or similar timestamp field is properly instantiated as `new Date()` before calling `.toISOString()`. Example fix:
+```javascript
+// Before (broken):
+const delivered = someField.toISOString();
+
+// After (fixed):
+const delivered = new Date(someField).toISOString();
+// or
+const delivered = new Date().toISOString(); // if it's "now"
+```
+
+***
+
+## BUG #004 — HIGH
+**Title:** Procurement — Create Purchase Order fails with Error 400 when "Expected Delivery" date is empty; no frontend validation shown
+
+**Module:** Procurement (`/procurement`) → Purchase Orders → New PO
+**Severity:** 🟠 High
+**Priority:** P2
+
+**Steps to Reproduce:**
+1. Log in as Owner or Manager
+2. Navigate to `/procurement` → Purchase Orders tab
+3. Click **+ New PO**
+4. Select a supplier (e.g., Farm Direct Produce)
+5. Add a line item with quantity and unit price
+6. Leave **Expected Delivery** date empty
+7. Click **Create PO**
+
+**Expected Result:** Frontend should show a validation error: "Expected Delivery date is required"
+
+**Actual Result:**
+- API call is made to the backend
+- Error 400 returned: `{"message": "[{\"code\": \"invalid_type\", \"expected\": \"date\", \"received\": \"string\", \"path\": [\"expectedDelivery\"], \"message\": \"Expected date, received string\"}]"}`
+- Raw JSON error toast shown to user — not user-friendly
+- No form-level validation preventing submission
+
+**Impact:** Users see a raw technical JSON error instead of a helpful message. The form allows submission without a required field.
+
+**Suggested Fix:**
+1. Add frontend required field validation on the `expectedDelivery` date input before form submission
+2. If the API returns a 400 for this field, map it to a human-readable message: "Please select an expected delivery date"
+3. Mark the date field with a red asterisk (*) as required in the UI
+
+***
+
+## BUG #005 — HIGH
+**Title:** Inventory — Add Item throws Error 500: "Invalid input syntax for type integer"
+
+**Module:** Inventory (`/inventory`) → Stock & Items → Add Item
+**Severity:** 🟠 High
+**Priority:** P2
+
+**Steps to Reproduce:**
+1. Log in as Owner or Manager
+2. Navigate to `/inventory`
+3. Click **+ Add Item**
+4. Fill in: Name = "Black Truffle Shavings", SKU = "BTS-001", Category/Tag = "Specialty", Current Stock = 2, Cost Price = 450, Reorder Level = 1, Supplier = "Gourmet Direct" (free-text)
+5. Click **Save / Create**
+
+**Expected Result:** New inventory item created successfully
+
+**Actual Result:** Error 500: `"Invalid input syntax for type integer"`
+
+**Impact:** New inventory items cannot be added. Stock management is partially broken.
+
+**Suspected Cause:** The `supplier` field in the Add Item form is a free-text input, but the database schema expects a supplier `ID` (integer foreign key). The string "Gourmet Direct" is being sent directly to an integer column. Similarly, the SKU field "BTS-001" may be conflicting with an integer column.
+
+**Suggested Fix:**
+1. Replace the free-text supplier field in the Add Item modal with a dropdown linked to the existing suppliers table (same as in the Create PO form)
+2. Validate SKU as alphanumeric string (not integer) in the schema
+3. Add proper error handling to return a user-friendly message instead of raw DB error
+
+***
+
+## BUG #006 — MEDIUM
+**Title:** Table Reservation — Date/Time field does not validate or accept input; reservation can be created without a date
+
+**Module:** Tables (`/tables`) → Reservations → New Reservation
+**Severity:** 🟡 Medium
+**Priority:** P2
+
+**Steps to Reproduce:**
+1. Log in as Owner or Manager
+2. Navigate to `/tables` → Reservations tab
+3. Click **New Reservation**
+4. Fill in Guest Name, Phone, Number of Guests
+5. Leave **Date & Time** field empty
+6. Click **Create Reservation**
+
+**Expected Result:** Form should reject submission and highlight the Date & Time field as required
+
+**Actual Result:** The form submits (or silently fails) without any error message or validation feedback. The Date & Time field does not respond to keyboard input — typing `2026-03-28T19:00` has no effect.
+
+**Impact:** Reservations may be created without a date/time, leading to invalid records. Staff cannot rely on the calendar for accurate bookings.
+
+**Suggested Fix:**
+1. Mark Date & Time as a required field with visible asterisk (*)
+2. Ensure the datetime input accepts keyboard entry or use a proper date picker component
+3. Add frontend validation: block form submission if date is empty and show "Reservation date and time is required"
+
+***
+
+## BUG #007 — MEDIUM
+**Title:** Inventory module — Top navigation tabs (Movements, Recipes, Suppliers, Procurement) do not visibly change the page content
+
+**Module:** Inventory (`/inventory`)
+**Severity:** 🟡 Medium
+**Priority:** P3
+
+**Steps to Reproduce:**
+1. Log in as Owner or Manager
+2. Navigate to `/inventory`
+3. Click any of the top tab bar items: **Movements**, **Recipes**, **Suppliers**, **Procurement**
+
+**Expected Result:** The main content area should switch to show the selected section (e.g., stock movements log, supplier list, etc.)
+
+**Actual Result:** The page content does not visibly change when clicking these tabs. The inner sub-tabs (Inventory, Recipes, Stock Takes, Food Cost) within the content area respond correctly but the top navigation tabs appear non-functional or redundant.
+
+**Impact:** Navigation confusion — users may not know how to access Movements or Suppliers data. The duplicate tab labeling (top bar "Recipes" vs inner "Recipes") is confusing.
+
+**Suggested Fix:**
+1. Either remove the duplicate top navigation bar or clearly differentiate what each tier controls
+2. If the top tabs are meant to switch views, ensure the click handlers are wired to the correct state/route
+3. Consider consolidating into a single tab system
+
+***
+
+## BUG #008 — LOW
+**Title:** Printer Status — "Cashier Printer" shows Error state in Kitchen Display System
+
+**Module:** KDS / Kitchen Display System (Kitchen role)
+**Severity:** 🟢 Low
+**Priority:** P3
+
+**Steps to Reproduce:**
+1. Log in as Kitchen role (Pat Garcia / `kitchen` / `demo123`)
+2. KDS loads automatically
+3. Observe the printer status bar at the top
+
+**Expected Result:** All configured printers show "Online" status
+
+**Actual Result:** Printer status bar shows:
+- Cashier Printer: 🔴 **Error**
+- Grill KOT: 🟢 Online
+- Label Printer: 🟢 Online
+- Bar Printer: 🟢 Online
+- Manager Printer: ⚫ Offline
+- Badge: **"1 error"**
+
+**Impact:** KOT printing for the cashier station may fail silently. Receipts/bills may not print. Staff may be unaware.
+
+**Suggested Fix:**
+1. Investigate the Cashier Printer connection — check if it's a configuration or network issue in the demo environment
+2. Add an alert/notification to Manager and Owner dashboards when a printer goes into error state
+3. Ensure "Offline" printers are also distinguished from "Error" state clearly in the UI
+
+***
+
+## BUG #009 — LOW / UX ISSUE
+**Title:** POS — "Forgot Password" link on login form captures keyboard Tab from username field, causing navigation to wrong page
+
+**Module:** Login (`/login`)
+**Severity:** 🟢 Low (UX)
+**Priority:** P3
+
+**Steps to Reproduce:**
+1. Navigate to `/login`
+2. Click the **Username** field
+3. Type a username (e.g., "manager")
+4. Press **Tab** to move to the Password field
+5. Press **Enter** without entering a password
+
+**Expected Result:** Login form validation triggers; error shown "Password is required"
+
+**Actual Result:** The user is unexpectedly navigated to `/forgot-password` page
+
+**Impact:** Users accidentally land on the Forgot Password page when trying to log in quickly via keyboard.
+
+**Suggested Fix:**
+1. Ensure the Tab order follows: Username → Password → Sign In button (not Forgot Password link)
+2. Set `tabindex="-1"` on the Forgot Password link or reorder it in DOM after the Sign In button
+
+***
+
+## SUMMARY TABLE
+
+| # | Module | Bug Title | Severity | Priority |
+|---|--------|-----------|----------|----------|
+| 001 | Ticket History | View button crashes with "Something went wrong" | 🔴 Critical | P1 |
+| 002 | Online Orders | Advance status fails — Invalid CSRF Token | 🔴 Critical | P1 |
+| 003 | Delivery & Online | Mark Delivered — `e.toISOString is not a function` (500) | 🟠 High | P1 |
+| 004 | Procurement | Create PO without date — raw JSON 400 error shown | 🟠 High | P2 |
+| 005 | Inventory | Add Item — "Invalid input syntax for type integer" (500) | 🟠 High | P2 |
+| 006 | Tables | Reservation date field non-functional; no validation | 🟡 Medium | P2 |
+| 007 | Inventory | Top nav tabs (Movements, Suppliers) appear non-functional | 🟡 Medium | P3 |
+| 008 | KDS | Cashier Printer in Error state on KDS | 🟢 Low | P3 |
+| 009 | Login | Tab key from username navigates to Forgot Password page | 🟢 Low | P3 |
+
+**Total Bugs Found: 9**
+- 🔴 Critical: 2
+- 🟠 High: 3
+- 🟡 Medium: 2
+- 🟢 Low: 2
+
+***
+
+## TESTING NOTES FOR REPLIT AI
+
+1. **CSRF Token (#002):** The CSRF token issue on `/orders` status update suggests the token is not being refreshed or passed correctly on that specific API call. Compare the working KDS status update implementation with the Orders page one — the fix is likely a one-line addition of the token to the request header.
+
+2. **Date/ISO String Bug (#003):** The `toISOString` crash is a classic JS type error. Search the codebase for `.toISOString()` calls in delivery-related functions and add a `new Date()` wrapper.
+
+3. **Inventory Supplier FK (#005):** The Add Item modal should reuse the same supplier dropdown component used in the Create PO form. The backend schema clearly expects a foreign key integer for supplier, not a free-text string.
+
+4. **All raw API errors (#004, #005):** Consider adding a global error handler that intercepts 400/500 responses and displays a user-friendly toast instead of raw JSON. This will improve UX across the entire application.
+
+***
+
+*Report generated from full QA coverage testing — all 6 roles (Owner, Manager, Waiter, Kitchen, Accountant, Delivery) and all 14 modules tested on March 25, 2026.*
