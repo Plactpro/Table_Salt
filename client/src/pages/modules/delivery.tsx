@@ -105,9 +105,22 @@ interface TenantConfig {
   };
 }
 
+const DELIVERY_STALE_HOURS = 24;
+
 function getElapsedMinutes(createdAt: string | null) {
   if (!createdAt) return 0;
   return Math.floor((Date.now() - new Date(createdAt).getTime()) / 60000);
+}
+
+function isDeliveryStale(createdAt: string | null): boolean {
+  if (!createdAt) return false;
+  return (Date.now() - new Date(createdAt).getTime()) > DELIVERY_STALE_HOURS * 60 * 60 * 1000;
+}
+
+function formatDeliveryElapsed(createdAt: string | null): string {
+  if (!createdAt) return "0min";
+  if (isDeliveryStale(createdAt)) return "stale";
+  return `${getElapsedMinutes(createdAt)}min`;
 }
 
 function platformIcon(partner: string | null) {
@@ -410,7 +423,6 @@ export default function DeliveryPage() {
                   colDeliveries.map((delivery) => {
                     const status = (delivery.status || "pending") as DeliveryStatus;
                     const customer = delivery.customerId ? customerMap.get(delivery.customerId) : null;
-                    const elapsed = getElapsedMinutes(delivery.createdAt);
                     const platform = platformIcon(delivery.deliveryPartner);
                     const isReady = col.key === "ready";
                     const isOut = col.key === "out";
@@ -461,9 +473,9 @@ export default function DeliveryPage() {
                           </div>
 
                           <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span className="flex items-center gap-1">
+                            <span className={`flex items-center gap-1 ${isDeliveryStale(delivery.createdAt) ? "text-gray-400 italic" : ""}`}>
                               <Timer className="w-3 h-3" />
-                              {elapsed}min elapsed
+                              {formatDeliveryElapsed(delivery.createdAt)} elapsed
                             </span>
                             {delivery.deliveryFee && (
                               <span className="font-medium">{fmt(Number(delivery.deliveryFee))}</span>
@@ -578,8 +590,6 @@ export default function DeliveryPage() {
                 const StatusIcon = cfg.icon;
                 const customer = delivery.customerId ? customerMap.get(delivery.customerId) : null;
                 const canAdvance = statusFlow.indexOf(status) >= 0 && statusFlow.indexOf(status) < statusFlow.length - 1;
-                const elapsed = getElapsedMinutes(delivery.createdAt);
-
                 return (
                   <motion.div
                     key={delivery.id}
@@ -612,8 +622,8 @@ export default function DeliveryPage() {
                                   ? delivery.customerAddress.substring(0, 40) + "..."
                                   : delivery.customerAddress}
                               </span>
-                              <span className="flex items-center gap-1">
-                                <Timer className="w-3 h-3" /> {elapsed}min
+                              <span className={`flex items-center gap-1 ${isDeliveryStale(delivery.createdAt) ? "text-gray-400 italic" : ""}`}>
+                                <Timer className="w-3 h-3" /> {formatDeliveryElapsed(delivery.createdAt)}
                               </span>
                               {delivery.driverName && (
                                 <span className="flex items-center gap-1">

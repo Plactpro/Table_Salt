@@ -459,6 +459,8 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
   );
 }
 
+const KDS_STALE_THRESHOLD_HOURS = 8;
+
 function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck, restaurantName, stationPrinterUrl }: {
   ticket: KDSTicket;
   stationFilter: string | null;
@@ -469,11 +471,12 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
   stationPrinterUrl?: string | null;
 }) {
   const mins = useElapsedMinutes(ticket.createdAt);
-  const timeColor = getTimeColor(mins);
-  const timeBorder = getTimeBorder(mins);
-  const timeBg = getTimeBg(mins);
+  const isStale = mins >= KDS_STALE_THRESHOLD_HOURS * 60;
+  const timeColor = isStale ? "text-muted-foreground" : getTimeColor(mins);
+  const timeBorder = isStale ? "border-l-gray-400" : getTimeBorder(mins);
+  const timeBg = isStale ? "bg-gray-50 dark:bg-gray-900/20" : getTimeBg(mins);
   const isNew = ticket.status === "new" || ticket.status === "sent_to_kitchen";
-  const isLate = mins >= 15;
+  const isLate = !isStale && mins >= 15;
   const [confirmReady, setConfirmReady] = useState<string | null>(null);
   const [acknowledgedAllergyItems, setAcknowledgedAllergyItems] = useState<Set<string>>(new Set());
 
@@ -585,11 +588,11 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
       layout
     >
       <Card
-        className={`overflow-hidden border-l-4 ${timeBorder} ${timeBg} transition-all duration-200 ${isLate && !allReady ? "animate-pulse ring-2 ring-red-400/50" : ""} ${isNew ? "animate-[kds-flash_1.5s_ease-in-out_3] ring-2 ring-primary/40" : ""}`}
+        className={`overflow-hidden border-l-4 ${timeBorder} ${timeBg} transition-all duration-200 ${isStale ? "opacity-60" : ""} ${isLate && !allReady ? "animate-pulse ring-2 ring-red-400/50" : ""} ${isNew && !isStale ? "animate-[kds-flash_1.5s_ease-in-out_3] ring-2 ring-primary/40" : ""}`}
         data-testid={`kds-ticket-${ticket.id.slice(-4)}`}
       >
         <CardHeader className="p-3 pb-1.5 flex flex-row items-center justify-between space-y-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="secondary" className="text-xs font-mono gap-1">
               #{ticket.id.slice(-4)}
             </Badge>
@@ -606,10 +609,15 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
             {ticket.channel === "kiosk" && (
               <Badge className="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300">KIOSK</Badge>
             )}
+            {isStale && (
+              <Badge className="text-xs bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 border border-gray-300 dark:border-gray-600" data-testid={`badge-stale-${ticket.id.slice(-4)}`}>
+                Stale — check status
+              </Badge>
+            )}
           </div>
           <div className={`flex items-center gap-1 text-xs font-mono tabular-nums font-semibold ${timeColor}`}>
             <Clock className="h-3 w-3" />
-            {formatElapsed(mins)}
+            {isStale ? "Stale" : formatElapsed(mins)}
           </div>
         </CardHeader>
         <CardContent className="p-3 pt-1 space-y-2">

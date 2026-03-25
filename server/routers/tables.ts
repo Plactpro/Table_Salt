@@ -221,9 +221,18 @@ export function registerTablesRoutes(app: Express): void {
     const waitlistAll = await storage.getWaitlistByTenant(user.tenantId);
     const waitingEntries = waitlistAll.filter(w => w.status === "waiting");
     const waitingCount = waitingEntries.length;
-    const seatedEntries = waitlistAll.filter(w => w.status === "seated" && w.createdAt && w.seatedAt);
+    const STALE_CUTOFF_MS = 24 * 60 * 60 * 1000;
+    const MAX_WAIT_MINUTES = 300;
+    const now = Date.now();
+    const seatedEntries = waitlistAll.filter(w =>
+      w.status === "seated" && w.createdAt && w.seatedAt &&
+      (now - new Date(w.createdAt).getTime()) < STALE_CUTOFF_MS
+    );
     const avgWaitMinutes = seatedEntries.length > 0
-      ? Math.round(seatedEntries.reduce((s, w) => s + (new Date(w.seatedAt!).getTime() - new Date(w.createdAt!).getTime()) / 60000, 0) / seatedEntries.length)
+      ? Math.round(seatedEntries.reduce((s, w) => {
+          const raw = (new Date(w.seatedAt!).getTime() - new Date(w.createdAt!).getTime()) / 60000;
+          return s + Math.min(raw, MAX_WAIT_MINUTES);
+        }, 0) / seatedEntries.length)
       : 0;
     const zones = new Map<string, { total: number; occupied: number }>();
     for (const t of allTables) {
@@ -233,9 +242,15 @@ export function registerTablesRoutes(app: Express): void {
       if (t.status === "occupied") cur.occupied++;
       zones.set(z, cur);
     }
-    const occupiedWithTime = allTables.filter(t => t.status === "occupied" && t.seatedAt);
+    const occupiedWithTime = allTables.filter(t =>
+      t.status === "occupied" && t.seatedAt &&
+      (now - new Date(t.seatedAt).getTime()) < STALE_CUTOFF_MS
+    );
     const avgDiningMinutes = occupiedWithTime.length > 0
-      ? Math.round(occupiedWithTime.reduce((s, t) => s + (Date.now() - new Date(t.seatedAt!).getTime()) / 60000, 0) / occupiedWithTime.length)
+      ? Math.round(occupiedWithTime.reduce((s, t) => {
+          const raw = (now - new Date(t.seatedAt!).getTime()) / 60000;
+          return s + Math.min(raw, MAX_WAIT_MINUTES);
+        }, 0) / occupiedWithTime.length)
       : 0;
     const reservationsList = await storage.getReservationsByTenant(user.tenantId);
     const completedToday = reservationsList.filter(r => {
