@@ -1,0 +1,319 @@
+# 🐛 Table Salt — Detailed Bug Report for Replit
+**Application**: Table Salt — Restaurant Management SaaS
+**URL**: https://inifinit.com
+**Test Date**: Wednesday, March 25, 2026
+**Tested By**: QA (AI-Assisted Deep-Dive Retest)
+**Testing Scope**: All 17 modules × 6 roles (Owner, Manager, Waiter, Kitchen, Accountant, Delivery Agent)
+
+***
+
+## 🔴 CRITICAL BUGS (Must Fix Before Go-Live)
+
+***
+
+### BUG-001 — Dashboard Route Returns 404
+**Severity**: 🔴 Critical
+**Module**: Dashboard / Routing
+**Role Affected**: All roles
+**Environment**: Browser, all roles
+
+**Steps to Reproduce**:
+1. Log in as any role
+2. Navigate to `https://inifinit.com/dashboard` directly
+
+**Expected Result**: Dashboard loads normally
+
+**Actual Result**: Blank page with error:
+> "404 Page Not Found — Did you forget to add the page to the router?"
+
+**Root Cause**: The Dashboard is actually served at `/` (root path), not `/dashboard`. The route `/dashboard` is undefined in the router.
+
+**Fix Required**:
+```
+Add route alias: /dashboard → / (root)
+OR add a redirect: /dashboard → /
+```
+
+**Impact**: If any external link, bookmark, or integration points to `/dashboard`, users get a broken page. Also, browser history and direct URL access fails.
+
+***
+
+### BUG-002 — Ticket History: All Order Amounts Show AED 0.00
+**Severity**: 🔴 Critical
+**Module**: Ticket History (`/tickets`)
+**Role Affected**: Owner, Manager, Waiter
+**Steps to Reproduce**:
+1. Log in as Owner
+2. Click "History" icon (clock icon near POS top-right)
+3. Review the ticket list
+
+**Expected Result**: Each ticket shows the correct order total (e.g., AED42.52, AED96.42)
+
+**Actual Result**: Every ticket in the list shows **AED 0.00** regardless of actual order value. The same orders display correct amounts in Online Orders (`/orders`) page.
+
+**Fix Required**: The Ticket History query must join and sum `order_items` amounts + applied taxes/discounts, the same way the `/orders` endpoint does. Data is not null — it exists correctly in `/orders`.
+
+**Impact**: Management cannot reconcile POS orders from Ticket History. Financial reporting from this view is completely broken.
+
+***
+
+### BUG-003 — Ticket History: "Something went wrong" When Viewing a Ticket
+**Severity**: 🔴 Critical
+**Module**: Ticket History (`/tickets`)
+**Role Affected**: Owner, Manager, Waiter
+**Steps to Reproduce**:
+1. Log in as Owner
+2. Navigate to `/tickets`
+3. Click the "View" button (eye icon) on any ticket
+
+**Expected Result**: A detailed ticket view/modal opens showing full order breakdown
+
+**Actual Result**: Full-page error:
+> "Something went wrong"
+> React Minified Error (likely toISOString / null date error based on console pattern observed)
+
+**Fix Required**: Add null-check on date fields before calling `.toISOString()` or similar date methods. The ticket detail component likely tries to format a null/undefined timestamp. Add error boundary and data validation before rendering.
+
+**Impact**: Staff cannot view any historical ticket detail. Bill disputes and reconciliation are impossible from this screen.
+
+***
+
+## 🟠 HIGH BUGS (Fix in Next Sprint)
+
+***
+
+### BUG-004 — Tables Page Fails to Load on First Visit (React Error #185)
+**Severity**: 🟠 High
+**Module**: Tables (`/tables`)
+**Role Affected**: Owner, Manager, Waiter
+**Steps to Reproduce**:
+1. Log in as Owner
+2. Click "Tables" in the left sidebar (first load after login)
+
+**Expected Result**: Floor plan loads immediately
+
+**Actual Result**: Error screen:
+> "Could not load tables"
+> React Minified Error #185 (invariant violation — component not mounted correctly)
+
+**Workaround**: Clicking "Retry" loads the page successfully on the second attempt.
+
+**Fix Required**: The Tables component likely has a race condition — it tries to render before data is loaded. Add a loading state/skeleton and ensure async data is awaited before rendering floor plan elements.
+
+**Impact**: Every session, the first navigation to Tables results in an error. Waitstaff experience degraded. Automated testing would flag this as a failure.
+
+***
+
+### BUG-005 — KDS Timer Shows Stale/Unrealistic Elapsed Time (100+ Hours)
+**Severity**: 🟠 High
+**Module**: KDS (`/` for Kitchen role), also visible in Tables, Delivery
+**Role Affected**: Kitchen, Owner, Manager
+**Steps to Reproduce**:
+1. Log in as Kitchen
+2. View the KDS board
+
+**Actual Result**:
+- Tickets show elapsed times of **142h 14m**, **189h 16m**, **189h 20m** (7–8 days old!)
+- Tables module shows T4 dining time as **203h 42m** (8+ days)
+- Delivery module shows active delivery at **16,873 minutes** (~11.7 days)
+- Waitlist shows parties waiting **2,539 minutes** (42+ hours)
+
+**Expected Result**: Elapsed timers should either:
+(a) Reset when a new session/day begins, OR
+(b) Flag orders older than X hours as "stale" and archive them
+
+**Fix Required**:
+1. Add an automatic order archival/cleanup job for orders older than 24 hours
+2. Add a "stale order" warning threshold (e.g., > 2h = red, > 8h = alert)
+3. Clear test data from production demo environment
+4. KDS should auto-archive completed/cancelled orders
+
+**Impact**: Kitchen staff cannot distinguish genuinely urgent orders from hours-old stale ones. The urgency coloring system is rendered meaningless. Dashboard KPIs (Avg Wait, Avg Dining Time) show nonsensical values (2,539 min average wait).
+
+***
+
+### BUG-006 — Currency Inconsistency: "₹" (INR) Shown in Menu Pricing Rules
+**Severity**: 🟠 High
+**Module**: Menu Pricing → Rules View → Add Price Rule
+**Role Affected**: Owner, Manager
+**Steps to Reproduce**:
+1. Log in as Owner
+2. Navigate to Menu Pricing (`/menu-pricing`)
+3. Click "Rules View"
+4. Select an outlet → Click "+ Add Price Rule"
+5. Observe the "Price Adjustment" field
+
+**Expected Result**: Currency symbol should be **AED** (UAE Dirham)
+
+**Actual Result**: Shows **₹ (Indian Rupee)** symbol in the price adjustment field
+
+**Fix Required**: The Menu Pricing rule form is using a hard-coded INR currency symbol instead of pulling from the restaurant's configured currency (AED). Update to use `restaurant.currency` or `outlet.currency` from the global config.
+
+**Impact**: Operators entering price rules see the wrong currency, creating confusion and potential pricing errors. This is especially problematic for a UAE-market restaurant SaaS.
+
+***
+
+### BUG-007 — Currency Inconsistency: "$" Shown in Promotions Forms and Delivery Agent Earnings
+**Severity**: 🟠 High
+**Module**: Promotions → Create Offer form; Delivery Agent Dashboard
+**Role Affected**: Owner (Promotions), Delivery Agents
+**Steps to Reproduce**:
+1. For Promotions: Navigate to `/promotions` → Click "+ Create Offer" → Observe Min Order and Max Discount fields
+2. For Delivery: Log in as `delivery1` → Observe earnings cards
+
+**Expected Result**: All monetary values should display in **AED**
+
+**Actual Result**:
+- Promotions form shows **"$"** for Min Order and Max Discount fields
+- Delivery Agent earnings show **"$0.00"** instead of **"AED 0.00"**
+
+**Fix Required**: Replace all hardcoded `$` currency symbols with the system currency variable. Implement a global `formatCurrency(amount, currency)` utility used consistently across all components.
+
+**Impact**: Incorrect currency display erodes trust, especially in client demos and for UAE-based operators.
+
+***
+
+## 🟡 MEDIUM BUGS (Fix in Upcoming Sprint)
+
+***
+
+### BUG-008 — Reservation Form: Date & Time Field Not Accessible / Not Fillable via Keyboard
+**Severity**: 🟡 Medium
+**Module**: Tables → Reservations → "+ Reservation"
+**Role Affected**: Owner, Manager, Waiter
+**Steps to Reproduce**:
+1. Navigate to Tables → Reservations tab
+2. Click "+ Reservation"
+3. Try to type a date in the "Date & Time" field
+
+**Expected Result**: Standard datetime input accepts typed values
+
+**Actual Result**:
+- The field does not appear in the DOM accessibility tree
+- Typing into the field does not register correctly
+- The "Create Reservation" button remains **disabled** because date/time is missing
+- The field cannot be filled via keyboard (no `datetime-local` input type detected)
+
+**Fix Required**: Replace the custom date/time UI element with a standard `<input type="datetime-local">` or ensure the custom component correctly exposes an accessible ref and updates form state on change.
+
+**Impact**: Creating new reservations requires mouse interaction with a poorly behaving custom picker. Keyboard-only users cannot create reservations at all.
+
+***
+
+### BUG-009 — Cashier Printer Shows "Error" Status in KDS
+**Severity**: 🟡 Medium
+**Module**: KDS (`/` for Kitchen role)
+**Role Affected**: Kitchen, Manager
+**Steps to Reproduce**:
+1. Log in as Kitchen
+2. View the printer status bar at the top of KDS
+
+**Actual Result**:
+- Cashier Printer: **Error** (red dot)
+- Manager Printer: **Offline** (grey dot)
+- Shows "1 error" badge
+
+**Expected Result**: All configured printers should be Online, or the system should guide the user to resolve the connection issue
+
+**Fix Required**:
+1. Check if printer IP/port config is correct in settings
+2. Add "Printer Setup" wizard or "Reconnect" button in the error state
+3. Investigate if this is a config issue or a genuine connectivity bug
+4. Consider surfacing printer errors as a notification to Manager/Owner, not just in KDS
+
+**Impact**: If the Cashier Printer is truly in error, receipts cannot be printed. If it's a false positive, it creates unnecessary alarm for kitchen staff.
+
+***
+
+### BUG-010 — Tables Analytics: Avg Wait / Avg Dining / Turn Time Show Unrealistic KPIs
+**Severity**: 🟡 Medium
+**Module**: Tables Dashboard KPIs (top of `/tables`)
+**Role Affected**: Owner, Manager
+**Actual Values Observed**:
+- Avg Wait: **2,539 minutes** (42+ hours)
+- Avg Dining: **6,852 minutes** (114 hours / 4.7 days)
+- Turn Time: **5,482 minutes** (91 hours / 3.8 days)
+
+**Root Cause**: Open orders that were never closed (from test data) are being included in the average calculation, artificially inflating all time-based KPIs.
+
+**Fix Required**:
+1. Exclude orders older than a configurable threshold (e.g., 24 hours) from live KPI calculations
+2. Add a "data integrity" check — orders open for > 8 hours should be flagged for review
+3. Provide a "Clear stale orders" admin utility
+4. Apply a cap or percentile filter for KPI calculation (e.g., exclude top 5% outliers)
+
+**Impact**: Management dashboards show completely wrong operational metrics. Business decisions based on these numbers would be incorrect.
+
+***
+
+## 🔵 LOW / COSMETIC BUGS (Fix When Time Allows)
+
+***
+
+### BUG-011 — "Combo Meal Deal" Offer Shows Wrong Label in Promotions
+**Severity**: 🔵 Low
+**Module**: Promotions (`/promotions`)
+**Role Affected**: Owner, Manager
+**Observation**: The "Combo Meal Deal" promotion has a note:
+> "Not applicable at POS — manual application only"
+
+However, during POS testing, the Combo Meal Discount **was automatically applied** to orders at checkout (showing as "-AED7.49" automatically). This is contradictory.
+
+**Fix Required**: Clarify and correct the description/label — either:
+(a) Update the label to "Auto-applied at POS" if it is indeed auto-applied, OR
+(b) Fix the POS logic so it does NOT auto-apply this offer if it's marked as "manual only"
+
+**Impact**: Staff are confused about which discounts are automatic vs. manual. Incorrect discounting may occur.
+
+***
+
+### BUG-012 — Table "Position" Coordinates Exposed in UI Panel
+**Severity**: 🔵 Low
+**Module**: Tables → Table Detail Panel
+**Role Affected**: Owner, Manager
+**Observation**: The table detail sidebar shows raw internal data:
+> Position: (160, 120)
+
+**Fix Required**: Remove raw coordinate data from the user-facing panel. This is internal layout data and has no business value for restaurant staff.
+
+***
+
+### BUG-013 — Duplicate Zone Names in Tables Module
+**Severity**: 🔵 Low
+**Module**: Tables → Zone Management
+**Observation**: Zones include "DupTestZone", "UniqueTestZone" — clearly leftover test/development entries visible in the production demo.
+
+**Fix Required**: Clean up test zones before client demos. Add validation to prevent duplicate or test-named zones from being created.
+
+***
+
+### BUG-014 — "Charlotte" Listed as Username "Cleaning" but Role is "Waiter"
+**Severity**: 🔵 Low
+**Module**: Staff Management (`/staff`)
+**Role Affected**: Owner, Manager
+**Observation**: Staff member "Charlotte" has:
+- Username: `Cleaning`
+- Role badge: **Waiter**
+
+This is inconsistent — the username suggests a "Cleaning" role but she is assigned Waiter permissions.
+
+**Fix Required**: Either create a proper "Cleaning" role with appropriate access restrictions, or rename the username to match the actual role.
+
+***
+
+## ✅ ROLE-BASED ACCESS CONTROL (RBAC) VERIFICATION
+
+| Module | Owner | Manager | Waiter | Kitchen | Accountant | Delivery |
+|--------|-------|---------|--------|---------|------------|---------|
+| Dashboard | ✅ Full | ✅ Manager view | ✅ My Shift only | ✅ KDS only | ✅ Financial only | ✅ My Deliveries |
+| POS | ✅ | ✅ | ✅ | ❌ No access | ❌ No access | ❌ No access |
+| Tables | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| Menu | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Menu Pricing | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Promotions | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Inventory | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Procurement | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| CRM | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| Reports | ✅ | ✅ | ❌ | ❌ | ✅ Financial | ❌ |
+| Staff Mgmt | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| KDS | ✅ | ✅ | ❌ | ✅
