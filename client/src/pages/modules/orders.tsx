@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion } from "framer-motion";
@@ -162,12 +163,7 @@ export default function OrdersPage() {
       const body: Record<string, unknown> = { status };
       if (pm) body.paymentMethod = pm;
       if (supervisorOverride) body.supervisorOverride = supervisorOverride;
-      const res = await fetch(`/api/orders/${id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(body),
-      });
+      const res = await apiRequest("PATCH", `/api/orders/${id}`, body);
       if (!res.ok) {
         const data = await res.json().catch(() => ({ message: "Request failed" }));
         if (res.status === 403 && data.requiresSupervisor) {

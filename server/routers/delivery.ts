@@ -39,7 +39,13 @@ export function registerDeliveryRoutes(app: Express): void {
 
   app.patch("/api/delivery-orders/:id", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const delivery = await storage.updateDeliveryOrderByTenant(req.params.id, user.tenantId, req.body);
+    const body = { ...req.body };
+    for (const field of ["deliveredAt", "scheduledAt", "createdAt"] as const) {
+      if (body[field] != null && typeof body[field] === "string") {
+        body[field] = new Date(body[field]);
+      }
+    }
+    const delivery = await storage.updateDeliveryOrderByTenant(req.params.id, user.tenantId, body);
     if (!delivery) return res.status(404).json({ message: "Delivery order not found" });
     res.json(delivery);
   });
