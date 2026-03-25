@@ -146,6 +146,55 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
   const { data: ticket, isLoading: ticketLoading } = useQuery<TicketDetail>({
     queryKey: [`/api/tickets/${orderId}`],
     enabled: !!orderId && open,
+    select: (raw: unknown) => {
+      const r = raw as Record<string, unknown>;
+      if (!r || typeof r !== "object") return raw as TicketDetail;
+      // If the response is already flat (has 'status' at top level), return as-is
+      if (typeof (r as Record<string, unknown>).status === "string") return raw as TicketDetail;
+      // Otherwise map { order, items, bill, ... } → TicketDetail
+      const order = (r.order || {}) as Record<string, unknown>;
+      const items = (r.items as unknown[]) || [];
+      const bill = (r.bill || {}) as Record<string, unknown>;
+      return {
+        id: order.id as string,
+        orderNumber: (order.order_number || order.orderNumber) as string | undefined,
+        tableNumber: (order.table_number || order.tableNumber) as string | number | undefined,
+        createdAt: (order.created_at || order.createdAt) as string | null | undefined,
+        channel: (order.channel) as string | null | undefined,
+        covers: (order.covers) as number | null | undefined,
+        waiterName: (order.waiter_name || order.waiterName) as string | null | undefined,
+        status: (order.status || "unknown") as string,
+        orderType: (order.order_type || order.orderType) as string | null | undefined,
+        items: items.map((it: unknown) => {
+          const i = it as Record<string, unknown>;
+          return {
+            id: i.id as string,
+            name: i.name as string,
+            quantity: i.quantity as number,
+            price: i.price as string | number,
+            total: i.total as string | number | undefined,
+            notes: (i.notes || i.special_notes) as string | null | undefined,
+            is_voided: i.is_voided as boolean | undefined,
+            voided_reason: i.voided_reason as string | null | undefined,
+            voided_at: i.voided_at as string | null | undefined,
+            is_refire: i.is_refire as boolean | undefined,
+            original_item_id: i.original_item_id as string | null | undefined,
+            modifications: i.modifications as string[] | undefined,
+            assignedChefName: (i.tl_chef_name || i.assignedChefName) as string | null | undefined,
+            prepTimeMinutes: (i.tl_actual_cooking_time || i.prepTimeMinutes) as number | null | undefined,
+          };
+        }),
+        subtotal: (order.subtotal) as string | number | undefined,
+        discountAmount: (order.discount_amount || order.discountAmount) as string | number | undefined,
+        serviceChargeAmount: (order.service_charge_amount || order.serviceChargeAmount) as string | number | undefined,
+        taxAmount: (order.tax_amount || order.taxAmount) as string | number | undefined,
+        totalAmount: (bill.total || order.total || order.total_amount || order.totalAmount) as string | number | undefined,
+        paymentMethod: ((Array.isArray(bill.payment_methods) ? bill.payment_methods[0] : undefined) || bill.payment_method || order.payment_method || order.paymentMethod) as string | null | undefined,
+        paidAt: (bill.created_at || bill.paidAt) as string | null | undefined,
+        isPaid: order.status === "paid" || !!bill.id,
+        hasVoidedItems: items.some((it: unknown) => (it as Record<string, unknown>).is_voided),
+      } as TicketDetail;
+    },
   });
 
   const { data: timeline, isLoading: timelineLoading } = useQuery<TimelineEvent[]>({
