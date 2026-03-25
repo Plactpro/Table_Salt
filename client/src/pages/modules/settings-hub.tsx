@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Settings, Shield, CreditCard, Clock, QrCode, FileCheck } from "lucide-react";
+import { Settings, Shield, CreditCard, Clock, QrCode, FileCheck, Lock, ShieldCheck } from "lucide-react";
 import SettingsPage from "./settings";
 import SecuritySettingsPage from "./security-settings";
 import SubscriptionSettings from "./subscription-settings";
@@ -10,18 +10,21 @@ import ShiftsManagement from "./shifts-management";
 import QrRequestSettings from "./qr-request-settings";
 import AccessLogPage from "./access-log";
 import ComplianceReport from "./compliance-report";
+import PciCompliancePage from "./pci-compliance";
+import GdprRightsPage from "./gdpr-rights";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 
 const BASE_TABS = ["general", "shifts", "security", "subscription", "qr-settings"] as const;
 type BaseTab = typeof BASE_TABS[number];
-type ValidTab = BaseTab | "access-log" | "compliance";
+type ValidTab = BaseTab | "access-log" | "compliance" | "pci-dss" | "privacy";
 
 function getInitialTab(): ValidTab {
   try {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab") as ValidTab | null;
-    if (tab && ([...BASE_TABS, "access-log", "compliance"] as string[]).includes(tab)) return tab;
+    const allValid: string[] = [...BASE_TABS, "access-log", "compliance", "pci-dss", "privacy"];
+    if (tab && allValid.includes(tab)) return tab;
   } catch {}
   return "general";
 }
@@ -42,6 +45,7 @@ export default function SettingsHub() {
 
   const showAccessLog = prefs?.showAccessLog !== false;
   const showCompliance = !!(user && ["owner", "hq_admin", "franchise_owner"].includes(user.role));
+  const showPciDss = !!(user && ["owner", "hq_admin"].includes(user.role));
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -50,11 +54,13 @@ export default function SettingsHub() {
       ...BASE_TABS,
       ...(showAccessLog ? ["access-log"] : []),
       ...(showCompliance ? ["compliance"] : []),
+      ...(showPciDss ? ["pci-dss"] : []),
+      "privacy",
     ];
     if (urlTab && allTabs.includes(urlTab) && urlTab !== tab) {
       setTab(urlTab);
     }
-  }, [showAccessLog, showCompliance]);
+  }, [showAccessLog, showCompliance, showPciDss]);
 
   const handleTabChange = (value: string) => {
     setTab(value as ValidTab);
@@ -92,6 +98,14 @@ export default function SettingsHub() {
               <FileCheck className="h-4 w-4 mr-1.5" />Compliance
             </TabsTrigger>
           )}
+          {showPciDss && (
+            <TabsTrigger value="pci-dss" data-testid="tab-pci-dss">
+              <Lock className="h-4 w-4 mr-1.5" />PCI DSS
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="privacy" data-testid="tab-privacy">
+            <ShieldCheck className="h-4 w-4 mr-1.5" />Privacy & Data
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="general" className="mt-4">
           <SettingsPage />
@@ -118,6 +132,14 @@ export default function SettingsHub() {
             <ComplianceReport />
           </TabsContent>
         )}
+        {showPciDss && (
+          <TabsContent value="pci-dss" className="mt-4">
+            <PciCompliancePage />
+          </TabsContent>
+        )}
+        <TabsContent value="privacy" className="mt-4">
+          <GdprRightsPage />
+        </TabsContent>
       </Tabs>
     </div>
   );

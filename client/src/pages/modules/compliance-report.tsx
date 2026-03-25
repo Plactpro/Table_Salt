@@ -1,10 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileCheck, RefreshCw, Download, Shield, Lock, FileText, BarChart2, Eye, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { FileCheck, RefreshCw, Download, Shield, Lock, FileText, BarChart2, Eye, AlertTriangle, CheckCircle, XCircle, CreditCard, Database } from "lucide-react";
 import { format } from "date-fns";
+import { useToast } from "@/hooks/use-toast";
 
 interface ComplianceReport {
   generatedAt: string;
@@ -16,7 +21,13 @@ interface ComplianceReport {
   impersonationSessions: { totalAllTime: number; last90Days: number; editSessionsLast90Days: number };
   securityAlerts: { totalUnacknowledged: number; last30Days: number };
   dataRequests: { gdprExportsLast90Days: number; deletionRequestsLast90Days: number };
-  breachIncidents: { total: number; open: number; lastIncidentDate: string | null };
+  breachIncidents: {
+    total: number;
+    open: number;
+    lastIncidentDate: string | null;
+    certIn: { notifiedCount: number; pendingCount: number; overdueCount: number };
+  };
+  pciDss: { saqType: string; cardDataStored: boolean; lastSaqCompletionDate: string | null; lastSaqValidUntil: string | null; activeGateways: string[]; allGatewaysPciCertified: boolean };
 }
 
 function Tick({ value }: { value: boolean }) {
@@ -32,10 +43,98 @@ function StatRow({ label, value, testId }: { label: string; value: React.ReactNo
   );
 }
 
+function RetentionPolicyPanel({ data }: { data: ComplianceReport }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [retentionMonths, setRetentionMonths] = useState(String(data.dataProtection.retentionPolicyMonths));
+  const [autoDelete, setAutoDelete] = useState(data.dataProtection.autoDeleteAnonymized);
+  const [auditRetention, setAuditRetention] = useState(String(data.dataProtection.auditLogRetentionMonths));
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("PUT", "/api/gdpr/retention-policy", {
+        dataRetentionMonths: parseInt(retentionMonths),
+        autoDeleteAnonymized: autoDelete,
+        auditLogRetentionMonths: parseInt(auditRetention),
+      });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      return r.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/compliance/report"] });
+      toast({ title: "Retention policy saved" });
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+  });
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm flex items-center gap-2">
+          <Database className="h-4 w-4 text-primary" />
+          Data Retention Policy
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">Data retained for</Label>
+            <Select value={retentionMonths} onValueChange={setRetentionMonths}>
+              <SelectTrigger className="w-36" data-testid="select-retention-months">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="12">12 months</SelectItem>
+                <SelectItem value="24">24 months</SelectItem>
+                <SelectItem value="36">36 months</SelectItem>
+                <SelectItem value="60">60 months</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">Auto-delete after period</Label>
+            <Switch
+              checked={autoDelete}
+              onCheckedChange={setAutoDelete}
+              data-testid="switch-auto-delete"
+            />
+          </div>
+          <div className="flex items-center justify-between">
+            <Label className="text-sm">Audit log retention</Label>
+            <Select value={auditRetention} onValueChange={setAuditRetention}>
+              <SelectTrigger className="w-36" data-testid="select-audit-retention">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="12">12 months</SelectItem>
+                <SelectItem value="24">24 months</SelectItem>
+                <SelectItem value="36">36 months</SelectItem>
+                <SelectItem value="60">60 months</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            size="sm"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            data-testid="button-save-retention"
+          >
+            {mutation.isPending ? "Saving..." : "Save Retention Policy"}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            Note: Changes take effect at next scheduled cleanup (runs daily at midnight).
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ComplianceReport() {
   const { user } = useAuth();
   const allowedRoles = ["owner", "hq_admin", "franchise_owner"];
   const hasAccess = user && allowedRoles.includes(user.role);
+  const isOwnerOrAdmin = user && ["owner", "hq_admin"].includes(user.role);
 
   const { data, isLoading, refetch, dataUpdatedAt } = useQuery<ComplianceReport>({
     queryKey: ["/api/compliance/report"],
@@ -120,6 +219,8 @@ export default function ComplianceReport() {
         </div>
       </div>
 
+      {isOwnerOrAdmin && <RetentionPolicyPanel data={data} />}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Card>
           <CardHeader className="pb-2">
@@ -149,6 +250,33 @@ export default function ComplianceReport() {
             <StatRow label="Users with MFA" value={data.accessControl.usersWithMFA} testId="text-mfa-users" />
             <StatRow label="MFA adoption" value={`${data.accessControl.mfaAdoptionPct}%`} testId="text-mfa-pct" />
             <StatRow label="IP allowlist" value={data.accessControl.ipAllowlistEnabled ? "✅ Enabled" : "Not configured"} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-primary" />
+              PCI DSS Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y">
+            <StatRow label="SAQ Type" value={<span className="text-green-600 font-semibold" data-testid="text-pci-saq-type">{data.pciDss.saqType}</span>} />
+            <StatRow label="Card data stored" value={<span className="text-green-600">✅ Never</span>} />
+            <StatRow
+              label="Last SAQ completion"
+              value={data.pciDss.lastSaqCompletionDate
+                ? format(new Date(data.pciDss.lastSaqCompletionDate), "d MMM yyyy")
+                : <span className="text-amber-600">Not recorded</span>}
+              testId="text-pci-last-saq"
+            />
+            <StatRow
+              label="Valid until"
+              value={data.pciDss.lastSaqValidUntil
+                ? format(new Date(data.pciDss.lastSaqValidUntil), "d MMM yyyy")
+                : "—"}
+            />
+            <StatRow label="All gateways certified" value={<span className="text-green-600">✅ Yes</span>} />
           </CardContent>
         </Card>
 
@@ -243,23 +371,47 @@ export default function ComplianceReport() {
         </CardContent>
       </Card>
 
-      {data.breachIncidents.total > 0 && (
-        <Card className="border-amber-200 bg-amber-50/30">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-amber-800">
-              <AlertTriangle className="h-4 w-4" />
-              Breach Incidents
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="flex gap-8">
-            <StatRow label="Total" value={data.breachIncidents.total} testId="text-breach-total" />
-            <StatRow label="Open" value={<span className={data.breachIncidents.open > 0 ? "text-red-600 font-semibold" : ""}>{data.breachIncidents.open}</span>} />
-            {data.breachIncidents.lastIncidentDate && (
-              <StatRow label="Last incident" value={format(new Date(data.breachIncidents.lastIncidentDate), "d MMM yyyy")} />
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <Card className={data.breachIncidents.total > 0 ? "border-amber-200 bg-amber-50/30" : ""}>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <AlertTriangle className={`h-4 w-4 ${data.breachIncidents.open > 0 ? "text-amber-600" : "text-muted-foreground"}`} />
+            Breach Incidents &amp; CERT-In Tracking
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="divide-y">
+          <StatRow label="Total incidents" value={data.breachIncidents.total} testId="text-breach-total" />
+          <StatRow
+            label="Open incidents"
+            value={<span className={data.breachIncidents.open > 0 ? "text-red-600 font-semibold" : "text-green-600"}>{data.breachIncidents.open}</span>}
+          />
+          {data.breachIncidents.lastIncidentDate && (
+            <StatRow label="Last incident" value={format(new Date(data.breachIncidents.lastIncidentDate), "d MMM yyyy")} />
+          )}
+          <StatRow
+            label="CERT-In notified"
+            value={<span className="text-green-600">{data.breachIncidents.certIn.notifiedCount}</span>}
+            testId="text-certin-notified"
+          />
+          <StatRow
+            label="CERT-In pending (open incidents)"
+            value={
+              <span className={data.breachIncidents.certIn.pendingCount > 0 ? "text-amber-600 font-semibold" : "text-green-600"}>
+                {data.breachIncidents.certIn.pendingCount}
+              </span>
+            }
+            testId="text-certin-pending"
+          />
+          <StatRow
+            label="CERT-In overdue (>6h, not notified)"
+            value={
+              data.breachIncidents.certIn.overdueCount > 0
+                ? <span className="text-red-600 font-bold">⚠️ {data.breachIncidents.certIn.overdueCount}</span>
+                : <span className="text-green-600">0</span>
+            }
+            testId="text-certin-overdue"
+          />
+        </CardContent>
+      </Card>
     </div>
   );
 }

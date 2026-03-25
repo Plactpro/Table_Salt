@@ -3073,4 +3073,182 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS privacy_version VARCHAR(20) DEFAULT '2026-01'`);
   await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS tos_url TEXT DEFAULT '/legal/terms'`);
   await pool.query(`ALTER TABLE platform_settings ADD COLUMN IF NOT EXISTS privacy_url TEXT DEFAULT '/legal/privacy'`);
+
+  // Task #170: Compliance Phase 2
+
+  // 1.1 CERT-In columns on breach_incidents
+  await pool.query(`ALTER TABLE breach_incidents ADD COLUMN IF NOT EXISTS certin_notified BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE breach_incidents ADD COLUMN IF NOT EXISTS certin_notified_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE breach_incidents ADD COLUMN IF NOT EXISTS certin_reference_no VARCHAR(100)`);
+  await pool.query(`ALTER TABLE breach_incidents ADD COLUMN IF NOT EXISTS requires_dpa_notification BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE breach_incidents ADD COLUMN IF NOT EXISTS notification_rationale TEXT`);
+
+  // 1.2 Performance indexes
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_breach_tenant_status ON breach_incidents(tenant_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_consent_log_user_doc ON consent_log(user_id, document_type)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_health_log_checked_at ON system_health_log(checked_at DESC)`);
+
+  // 1.3 PCI DSS SAQ completion log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS pci_saq_log (
+      id                  VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      completed_by_id     VARCHAR(36) NOT NULL,
+      completed_by_name   TEXT NOT NULL,
+      saq_type            VARCHAR(20) NOT NULL DEFAULT 'SAQ-A',
+      completion_date     DATE NOT NULL,
+      valid_until         DATE NOT NULL,
+      scope_description   TEXT,
+      qsa_name            TEXT,
+      payment_gateways    TEXT[],
+      notes               TEXT,
+      document_reference  TEXT,
+      created_at          TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  // 1.4 Vendor risk assessment
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS vendor_risk_assessments (
+      id                  VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      vendor_name         TEXT NOT NULL UNIQUE,
+      vendor_category     VARCHAR(50) NOT NULL,
+      website             TEXT,
+      service_description TEXT,
+      data_processed      TEXT[],
+      risk_level          VARCHAR(20) NOT NULL DEFAULT 'medium',
+      compliance_certs    TEXT[],
+      dpa_in_place        BOOLEAN DEFAULT false,
+      dpa_signed_date     DATE,
+      last_reviewed_at    DATE,
+      next_review_due     DATE,
+      notes               TEXT,
+      is_active           BOOLEAN DEFAULT true,
+      created_by_id       VARCHAR(36),
+      created_by_name     TEXT,
+      created_at          TIMESTAMP DEFAULT NOW(),
+      updated_at          TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  // Add unique constraint to existing table if not present (idempotent)
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'vendor_risk_assessments_vendor_name_key' AND conrelid = 'vendor_risk_assessments'::regclass
+      ) THEN
+        ALTER TABLE vendor_risk_assessments ADD CONSTRAINT vendor_risk_assessments_vendor_name_key UNIQUE (vendor_name);
+      END IF;
+    END $$;
+  `).catch(() => {});
+
+  // Seed vendor risk assessments (idempotent — ON CONFLICT (vendor_name) DO NOTHING)
+  await pool.query(`
+    INSERT INTO vendor_risk_assessments (vendor_name, vendor_category, website, service_description,
+      data_processed, risk_level, compliance_certs, dpa_in_place, is_active, created_by_name)
+    VALUES
+      ('Stripe', 'payment_processor', 'stripe.com',
+       'Subscription billing and payment processing for platform tenants',
+       ARRAY['tenant billing email', 'subscription amounts'],
+       'high', ARRAY['PCI DSS Level 1', 'SOC 2 Type 2', 'ISO 27001'], true, true, 'System'),
+
+      ('Razorpay', 'payment_processor', 'razorpay.com',
+       'Restaurant customer payment processing (hosted payment links)',
+       ARRAY['customer payment amounts', 'order references'],
+       'high', ARRAY['PCI DSS Level 1', 'RBI Licensed PA'], true, true, 'System'),
+
+      ('Replit / AWS', 'hosting', 'replit.com',
+       'Application hosting and managed PostgreSQL database',
+       ARRAY['all tenant data', 'all customer data'],
+       'critical', ARRAY['SOC 2 Type 2'], false, true, 'System')
+
+    ON CONFLICT (vendor_name) DO NOTHING
+  `);
+
+  // 1.5 Incident response playbook
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS incident_response_playbook (
+      id                  VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      step_number         INTEGER NOT NULL UNIQUE,
+      step_title          TEXT NOT NULL,
+      step_description    TEXT NOT NULL,
+      responsible_role    TEXT,
+      time_target         TEXT,
+      checklist           JSONB DEFAULT '[]',
+      notes               TEXT,
+      last_tested_at      DATE,
+      created_at          TIMESTAMP DEFAULT NOW(),
+      updated_at          TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  // Add unique constraint on step_number to existing table if not present (idempotent)
+  await pool.query(`
+    DO $$ BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'incident_response_playbook_step_number_key' AND conrelid = 'incident_response_playbook'::regclass
+      ) THEN
+        ALTER TABLE incident_response_playbook ADD CONSTRAINT incident_response_playbook_step_number_key UNIQUE (step_number);
+      END IF;
+    END $$;
+  `).catch(() => {});
+
+  // Seed playbook steps (idempotent — ON CONFLICT (step_number) DO NOTHING)
+  await pool.query(`
+    INSERT INTO incident_response_playbook
+      (step_number, step_title, step_description, responsible_role, time_target, checklist)
+    VALUES
+      (1, 'Detection & Initial Assessment',
+       'Identify that a potential incident has occurred. Classify severity.',
+       'On-call Engineer / Support Lead',
+       'Immediately (T+0)',
+       '["Confirm incident is real (not false alarm)", "Classify severity: low/medium/high/critical", "Open a breach_incident record in the platform", "Notify CTO/Security Lead immediately"]'::jsonb),
+
+      (2, 'Containment',
+       'Stop the breach from spreading. Preserve evidence.',
+       'CTO / Lead Engineer',
+       'Within 1 hour',
+       '["Isolate affected systems or accounts", "Revoke compromised credentials", "Preserve logs — do NOT delete anything", "Update incident status to investigating"]'::jsonb),
+
+      (3, 'CERT-In Notification (India)',
+       'Notify India CERT-In within 6 hours of detection.',
+       'CTO / Legal',
+       'Within 6 hours (CERT-In legal requirement)',
+       '["File report at https://www.cert-in.org.in", "Include: incident type, affected systems, timeline", "Record CERT-In reference number in breach record", "Mark certin_notified = true in platform"]'::jsonb),
+
+      (4, 'Tenant Notification (GDPR)',
+       'Notify affected tenants within 72 hours of detection.',
+       'Support Lead / CTO',
+       'Within 72 hours (GDPR Article 33)',
+       '["Draft notification email to affected tenant owners", "Include: what happened, what data, what we are doing", "Send via registered email + in-app security alert", "Mark tenant_notified = true in breach record", "Update incident status to notified"]'::jsonb),
+
+      (5, 'Eradication & Recovery',
+       'Remove the cause of the breach and restore normal operations.',
+       'Lead Engineer',
+       'Within 24 hours of containment',
+       '["Remove malicious code or unauthorized access", "Apply security patches", "Reset all potentially compromised credentials", "Restore from backup if needed", "Update incident status to contained"]'::jsonb),
+
+      (6, 'Post-Incident Review',
+       'Learn from the incident to prevent recurrence.',
+       'CTO + Full team',
+       'Within 7 days of resolution',
+       '["Root cause analysis (5 whys)", "Document remediation steps taken", "Update security policies if needed", "Add learnings to this playbook", "Update incident status to resolved"]'::jsonb)
+
+    ON CONFLICT (step_number) DO NOTHING
+  `);
+
+  // 1.6 Cookie consent records
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS cookie_consent_log (
+      id              VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id         VARCHAR(36),
+      tenant_id       VARCHAR(36),
+      session_id      VARCHAR(255),
+      analytics       BOOLEAN DEFAULT false,
+      marketing       BOOLEAN DEFAULT false,
+      necessary       BOOLEAN DEFAULT true,
+      accepted_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+      ip_address      VARCHAR(50),
+      user_agent      VARCHAR(500)
+    )
+  `);
 }
