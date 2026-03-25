@@ -3242,6 +3242,7 @@ export const valetTickets = pgTable("valet_tickets", {
   chargeAddedToBill: boolean("charge_added_to_bill").notNull().default(false),
   events: jsonb("events").default([]),
   notes: text("notes"),
+  conditionReport: jsonb("condition_report"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 export const insertValetTicketSchema = createInsertSchema(valetTickets).omit({ id: true, createdAt: true, entryTime: true });

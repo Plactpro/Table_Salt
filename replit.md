@@ -63,6 +63,12 @@ The system employs a modern web architecture with a React-based frontend and an 
 - **Smart Auto-Assign**: `GET /api/parking/auto-assign?outletId=X&vehicleType=Y` returns best available slot based on vehicle suitability and position proximity. Surfaced as "Auto-Assign" button in check-in dialog Step 2.
 - **Enhanced Analytics**: `GET /api/parking/analytics/:outletId?from=&to=` returns peak hours, revenue by vehicle type, revenue by zone, avg duration trend. Revenue tab shows bar charts, donut-style breakdowns and Analytics/History sub-tabs.
 - **Operations Search**: Real-time client-side filter in Operations tab by ticket #, plate, customer name, table assignment.
+- **Condition Report (Step 3)**: Check-in dialog now has 3 steps — Step 3 captures vehicle condition at check-in (body, interior, fuel level, A/C, spare tyre, notes). Data stored as `condition_report JSONB` on `valet_tickets`.
+- **Attendant Tab**: Mobile-optimized tab visible to owners, managers, and `valet_staff` role. Shows real-time stats (parked, requests, on-duty count), pending retrieval request cards with urgency indicators, quick check-in button, and plate lookup.
+- **Valet Performance Leaderboard**: Staff tab now shows a leaderboard table with per-attendant check-ins, retrievals, and avg retrieval time (color-coded). Powered by `GET /api/parking/valet-staff-performance/:outletId`.
+- **Scheduled Retrieval**: QR table page lets guests schedule retrieval in 5/10/15/20 min intervals. Uses `scheduled_for TIMESTAMP` on `valet_retrieval_requests`. Scheduled requests mature on 30s poll.
+- **QR Parking Status Card**: QR page shows a vehicle status card (masked plate, vehicle type, ticket number, status) when a valet ticket is linked to the table.
+- **valet_staff Role**: Added `valet_staff` to `UserRole` type with attendant-specific access.
 
 ## External Dependencies
 - **PostgreSQL**: Primary database.

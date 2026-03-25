@@ -8,11 +8,11 @@ import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { useRequestSounds } from "@/hooks/use-request-sounds";
 import { motion } from "framer-motion";
 import {
-  Car, Bike, Plus, RefreshCw, Clock, CheckCircle2, AlertCircle,
+  Car, Bike, Plus, RefreshCw, Clock, CheckCircle2, CheckCircle, AlertCircle,
   Loader2, User, Phone, X, ChevronRight, MapPin, CircleDot, Square,
   Hash, Clipboard, ParkingSquare, BarChart3, Timer, DollarSign, Layers,
   Settings, Users, Download, Trash2, Edit2, ToggleLeft, ToggleRight,
-  TrendingUp, CalendarDays, Shield, BadgeCheck, Search, Zap, List, LayoutGrid,
+  TrendingUp, CalendarDays, Shield, BadgeCheck, Search, Zap, List, LayoutGrid, Bell,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -134,6 +134,14 @@ function NewTicketDialog({
     selectedSlotCode: "",
     customerId: "",
   });
+  const [conditionReport, setConditionReport] = useState({
+    body: "clean",
+    interior: "clean",
+    fuelLevel: "full",
+    acWorking: "yes",
+    spareTyre: "yes",
+    notes: "",
+  });
 
   // Debounced plate lookup key (triggers after 4+ chars)
   const [plateLookupKey, setPlateLookupKey] = useState("");
@@ -215,7 +223,16 @@ function NewTicketDialog({
   });
 
   const createMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async ({ skipCondition }: { skipCondition: boolean }) => {
+      const conditionData = skipCondition ? null : {
+        body: conditionReport.body,
+        interior: conditionReport.interior,
+        fuelLevel: conditionReport.fuelLevel,
+        acWorking: conditionReport.acWorking,
+        spareTyre: conditionReport.spareTyre,
+        notes: conditionReport.notes || null,
+        capturedAt: new Date().toISOString(),
+      };
       const res = await apiRequest("POST", "/api/parking/tickets", {
         outletId,
         vehicleType: form.vehicleType,
@@ -228,6 +245,7 @@ function NewTicketDialog({
         tableAssignment: form.tableAssignment || null,
         keyTagNumber: form.keyTagNumber || null,
         slotId: form.selectedSlotId || null,
+        conditionReport: conditionData,
       });
       return res.json();
     },
@@ -273,6 +291,18 @@ function NewTicketDialog({
             ${createdTicket.customerName ? `<tr><td>Customer</td><td>${createdTicket.customerName}</td></tr>` : ""}
             <tr><td>Entry</td><td>${new Date(createdTicket.entryTime).toLocaleString()}</td></tr>
           </table>
+          ${createdTicket.conditionReport ? `
+          <div class="sep"></div>
+          <p style="font-size:10px;font-weight:bold;margin:4px 0 2px;">Entry Condition:</p>
+          <table style="font-size:10px">
+            <tr><td>Body</td><td>${createdTicket.conditionReport.body ?? "—"}</td></tr>
+            <tr><td>Interior</td><td>${createdTicket.conditionReport.interior ?? "—"}</td></tr>
+            <tr><td>Fuel</td><td>${createdTicket.conditionReport.fuelLevel ?? "—"}</td></tr>
+            <tr><td>A/C</td><td>${createdTicket.conditionReport.acWorking ?? "—"}</td></tr>
+            <tr><td>Spare</td><td>${createdTicket.conditionReport.spareTyre ?? "—"}</td></tr>
+            ${createdTicket.conditionReport.notes ? `<tr><td colspan="2" style="font-style:italic">${createdTicket.conditionReport.notes}</td></tr>` : ""}
+          </table>
+          ` : ""}
           <div class="sep"></div>
           <p style="text-align:center;font-size:10px">Please keep this ticket for vehicle retrieval</p>
         </div>
@@ -301,6 +331,7 @@ function NewTicketDialog({
       customerName: "", customerPhone: "", tableAssignment: "", keyTagNumber: "",
       selectedSlotId: "", selectedSlotCode: "", customerId: "",
     });
+    setConditionReport({ body: "clean", interior: "clean", fuelLevel: "full", acWorking: "yes", spareTyre: "yes", notes: "" });
     onClose();
   };
 
@@ -335,12 +366,15 @@ function NewTicketDialog({
           </div>
         ) : (
           <div className="mt-6 space-y-5">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="flex items-center gap-1 text-sm text-muted-foreground flex-wrap">
               <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${step === 1 ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>1</span>
-              Vehicle Details
-              <ChevronRight className="h-4 w-4" />
+              <span className="text-xs">Vehicle</span>
+              <ChevronRight className="h-3 w-3" />
               <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${step === 2 ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>2</span>
-              Slot Selection
+              <span className="text-xs">Slot</span>
+              <ChevronRight className="h-3 w-3" />
+              <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${step === 3 ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>3</span>
+              <span className="text-xs">Condition</span>
             </div>
 
             {step === 1 && (
@@ -628,8 +662,145 @@ function NewTicketDialog({
                   </Button>
                   <Button
                     className="flex-1"
+                    onClick={() => setStep(3)}
+                    data-testid="button-next-condition"
+                  >
+                    Next: Condition
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="space-y-4" data-testid="condition-report-step">
+                <p className="text-sm text-muted-foreground">Document vehicle condition at check-in (optional)</p>
+
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs font-semibold mb-1.5 block">Body Condition</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { value: "clean", label: "Clean ✓" },
+                        { value: "minor_scratches", label: "Minor Scratches" },
+                        { value: "dents", label: "Dents" },
+                        { value: "major_damage", label: "Major Damage" },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          data-testid={`condition-body-${opt.value}`}
+                          onClick={() => setConditionReport(c => ({ ...c, body: opt.value }))}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${conditionReport.body === opt.value ? "bg-primary/10 border-primary text-primary" : "border-muted hover:bg-muted/50"}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-semibold mb-1.5 block">Interior</Label>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { value: "clean", label: "Clean ✓" },
+                        { value: "dirty", label: "Dirty" },
+                        { value: "damage", label: "Damage" },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          data-testid={`condition-interior-${opt.value}`}
+                          onClick={() => setConditionReport(c => ({ ...c, interior: opt.value }))}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors ${conditionReport.interior === opt.value ? "bg-primary/10 border-primary text-primary" : "border-muted hover:bg-muted/50"}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-semibold mb-1.5 block">Fuel Level</Label>
+                    <div className="flex gap-1.5">
+                      {[
+                        { value: "quarter", label: "¼" },
+                        { value: "half", label: "½" },
+                        { value: "three_quarter", label: "¾" },
+                        { value: "full", label: "Full" },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          data-testid={`condition-fuel-${opt.value}`}
+                          onClick={() => setConditionReport(c => ({ ...c, fuelLevel: opt.value }))}
+                          className={`flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${conditionReport.fuelLevel === opt.value ? "bg-amber-100 border-amber-400 text-amber-700" : "border-muted hover:bg-muted/50"}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <Label className="text-xs font-semibold mb-1.5 block">A/C Working</Label>
+                      <div className="flex gap-1.5">
+                        {[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }].map(opt => (
+                          <button
+                            key={opt.value}
+                            data-testid={`condition-ac-${opt.value}`}
+                            onClick={() => setConditionReport(c => ({ ...c, acWorking: opt.value }))}
+                            className={`flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${conditionReport.acWorking === opt.value ? "bg-primary/10 border-primary text-primary" : "border-muted hover:bg-muted/50"}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs font-semibold mb-1.5 block">Spare Tyre</Label>
+                      <div className="flex gap-1.5">
+                        {[{ value: "yes", label: "Yes" }, { value: "no", label: "No" }].map(opt => (
+                          <button
+                            key={opt.value}
+                            data-testid={`condition-spare-${opt.value}`}
+                            onClick={() => setConditionReport(c => ({ ...c, spareTyre: opt.value }))}
+                            className={`flex-1 py-1.5 rounded-lg border text-xs font-medium transition-colors ${conditionReport.spareTyre === opt.value ? "bg-primary/10 border-primary text-primary" : "border-muted hover:bg-muted/50"}`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label className="text-xs font-semibold mb-1.5 block">Notes (optional)</Label>
+                    <Textarea
+                      placeholder="Any other condition notes..."
+                      value={conditionReport.notes}
+                      onChange={e => setConditionReport(c => ({ ...c, notes: e.target.value }))}
+                      rows={2}
+                      className="text-sm"
+                      data-testid="input-condition-notes"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button variant="outline" className="flex-1" onClick={() => setStep(2)} data-testid="button-back-slot-selection">
+                    Back
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    className="flex-1 text-muted-foreground"
                     disabled={createMutation.isPending}
-                    onClick={() => createMutation.mutate()}
+                    onClick={() => createMutation.mutate({ skipCondition: true })}
+                    data-testid="button-skip-condition"
+                  >
+                    Skip
+                  </Button>
+                  <Button
+                    className="flex-1"
+                    disabled={createMutation.isPending}
+                    onClick={() => createMutation.mutate({ skipCondition: false })}
                     data-testid="button-create-ticket"
                   >
                     {createMutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Creating...</> : "Create Ticket"}
@@ -647,6 +818,8 @@ function NewTicketDialog({
 function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [showExitCondition, setShowExitCondition] = useState(false);
+  const [exitCondition, setExitCondition] = useState({ body: "clean", interior: "clean", fuelLevel: "full", acWorking: "yes", spareTyre: "yes", notes: "" });
 
   const updateMutation = useMutation({
     mutationFn: async (status: string) => {
@@ -660,6 +833,27 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
     },
     onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
   });
+
+  const completeWithConditionMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("PATCH", `/api/parking/tickets/${ticket.id}/condition`, {
+        conditionReport: exitCondition,
+        isExitCheck: true,
+      });
+      const res = await apiRequest("PATCH", `/api/parking/tickets/${ticket.id}/status`, { status: "completed" });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+      toast({ title: "Ticket completed with exit condition recorded" });
+      setShowExitCondition(false);
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const entryCondition = ticket.conditionReport;
+  const hasEntryCondition = !!entryCondition;
 
   return (
     <Card data-testid={`card-ticket-${ticket.ticketNumber}`} className="hover:shadow-sm transition-shadow">
@@ -700,6 +894,13 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
           </div>
         </div>
 
+        {/* Entry condition summary (if recorded) */}
+        {entryCondition && (
+          <div className="mb-2 text-xs text-muted-foreground bg-muted/40 rounded-md px-2 py-1" data-testid={`condition-summary-${ticket.id}`}>
+            Entry: Body {entryCondition.body} · Interior {entryCondition.interior} · Fuel {entryCondition.fuelLevel}
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-1.5">
           {ticket.status === "parked" && (
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateMutation.mutate("requested")} data-testid={`button-mark-requested-${ticket.id}`}>
@@ -717,7 +918,23 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
             </Button>
           )}
           {(ticket.status === "ready" || ticket.status === "retrieving") && (
-            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700" onClick={() => updateMutation.mutate("completed")} data-testid={`button-complete-${ticket.id}`}>
+            <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700"
+              onClick={() => {
+                // Prefill exit condition with entry condition so only actual changes are highlighted
+                if (entryCondition) {
+                  setExitCondition({
+                    body: entryCondition.body ?? "clean",
+                    interior: entryCondition.interior ?? "clean",
+                    fuelLevel: entryCondition.fuelLevel ?? "full",
+                    acWorking: entryCondition.acWorking ?? "yes",
+                    spareTyre: entryCondition.spareTyre ?? "yes",
+                    notes: "",
+                  });
+                }
+                setShowExitCondition(true);
+              }}
+              data-testid={`button-complete-${ticket.id}`}
+            >
               Complete
             </Button>
           )}
@@ -727,6 +944,133 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
             </Button>
           )}
         </div>
+
+        {/* Exit Condition Dialog */}
+        {showExitCondition && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="exit-condition-dialog">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+              <h3 className="font-bold text-base">Exit Condition Check</h3>
+              {/* Diff vs entry condition */}
+              {entryCondition && (() => {
+                const fuelLabel = (v: string) => ({ quarter: "¼", half: "½", three_quarter: "¾", full: "Full" }[v] || v);
+                const diffFields = [
+                  { key: "body", label: "Body", entry: entryCondition.body, exit: exitCondition.body, fmt: (v: string) => v?.replace(/_/g, " ") },
+                  { key: "interior", label: "Interior", entry: entryCondition.interior, exit: exitCondition.interior, fmt: (v: string) => v },
+                  { key: "fuelLevel", label: "Fuel", entry: entryCondition.fuelLevel, exit: exitCondition.fuelLevel, fmt: fuelLabel },
+                  { key: "acWorking", label: "A/C", entry: entryCondition.acWorking, exit: exitCondition.acWorking, fmt: (v: string) => v === "yes" ? "Working" : "Faulty" },
+                  { key: "spareTyre", label: "Spare", entry: entryCondition.spareTyre, exit: exitCondition.spareTyre, fmt: (v: string) => v === "yes" ? "Present" : "Missing" },
+                ];
+                return (
+                  <div className="rounded-lg border p-3 text-xs space-y-1" data-testid="condition-diff-entry">
+                    <p className="font-semibold text-muted-foreground mb-1">Entry → Exit comparison:</p>
+                    <div className="space-y-1">
+                      {diffFields.map(f => {
+                        const changed = f.entry !== f.exit && f.exit !== undefined;
+                        return (
+                          <div key={f.key} className={`flex items-center gap-1 ${changed ? "text-red-600 font-semibold" : "text-muted-foreground"}`}>
+                            <span className="w-10 shrink-0">{f.label}:</span>
+                            <span>{f.fmt(f.entry || "")}</span>
+                            {changed && <><span>→</span><span className="text-red-600">{f.fmt(f.exit || "")}</span></>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                <div>
+                  <label className="text-xs font-semibold block mb-1">Body Condition</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {["clean", "minor_scratches", "dents", "major_damage"].map(v => (
+                      <button key={v}
+                        data-testid={`exit-body-${v}`}
+                        onClick={() => setExitCondition(c => ({ ...c, body: v }))}
+                        className={`px-2.5 py-1 rounded-lg border text-xs font-medium ${exitCondition.body === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                      >{v.replace(/_/g, " ")}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1">Interior</label>
+                  <div className="flex gap-1.5">
+                    {["clean", "dirty", "damage"].map(v => (
+                      <button key={v}
+                        data-testid={`exit-interior-${v}`}
+                        onClick={() => setExitCondition(c => ({ ...c, interior: v }))}
+                        className={`flex-1 py-1 rounded-lg border text-xs font-medium ${exitCondition.interior === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                      >{v}</button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1">Fuel Level</label>
+                  <div className="flex gap-1.5">
+                    {[
+                      { value: "quarter", label: "¼" },
+                      { value: "half", label: "½" },
+                      { value: "three_quarter", label: "¾" },
+                      { value: "full", label: "Full" },
+                    ].map(opt => (
+                      <button key={opt.value}
+                        data-testid={`exit-fuel-${opt.value}`}
+                        onClick={() => setExitCondition(c => ({ ...c, fuelLevel: opt.value }))}
+                        className={`flex-1 py-1 rounded-lg border text-xs font-medium ${exitCondition.fuelLevel === opt.value ? "bg-amber-100 border-amber-400 text-amber-700" : "border-muted"}`}
+                      >{opt.label}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-semibold block mb-1">A/C</label>
+                    <div className="flex gap-1.5">
+                      {["yes", "no"].map(v => (
+                        <button key={v}
+                          data-testid={`exit-ac-${v}`}
+                          onClick={() => setExitCondition(c => ({ ...c, acWorking: v }))}
+                          className={`flex-1 py-1 rounded-lg border text-xs font-medium ${exitCondition.acWorking === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                        >{v === "yes" ? "Working" : "Faulty"}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold block mb-1">Spare Tyre</label>
+                    <div className="flex gap-1.5">
+                      {["yes", "no"].map(v => (
+                        <button key={v}
+                          data-testid={`exit-spare-${v}`}
+                          onClick={() => setExitCondition(c => ({ ...c, spareTyre: v }))}
+                          className={`flex-1 py-1 rounded-lg border text-xs font-medium ${exitCondition.spareTyre === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                        >{v === "yes" ? "Present" : "Missing"}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1">Notes</label>
+                  <Textarea
+                    rows={2}
+                    placeholder="Any exit notes..."
+                    value={exitCondition.notes}
+                    onChange={e => setExitCondition(c => ({ ...c, notes: e.target.value }))}
+                    className="text-xs"
+                    data-testid="exit-condition-notes"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setShowExitCondition(false)}>Cancel</Button>
+                <Button className="flex-1 bg-green-600 hover:bg-green-700"
+                  onClick={() => completeWithConditionMutation.mutate()}
+                  disabled={completeWithConditionMutation.isPending}
+                  data-testid="button-confirm-exit-condition"
+                >
+                  {completeWithConditionMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Complete"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -1357,7 +1701,8 @@ function DashboardTab({
   const [assignName, setAssignName] = useState("");
 
   const pendingRetrievals = retrievalRequests
-    .filter(r => ["pending", "assigned", "in_progress"].includes(r.status))
+    .filter(r => ["pending", "assigned", "in_progress"].includes(r.status) &&
+      !(r.scheduledFor && new Date(r.scheduledFor) > new Date()))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   const advanceMutation = useMutation({
@@ -2018,8 +2363,28 @@ function ValetStaffTab({ outletId, tickets }: { outletId: string; tickets: any[]
     staleTime: 30000,
   });
 
-  const ticketsHandledToday: Record<string, number> = {};
   const todayStr = new Date().toISOString().split("T")[0];
+
+  const { data: perfData } = useQuery<any>({
+    queryKey: ["/api/parking/valet-staff-performance", outletId, todayStr],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/valet-staff-performance/${outletId}?date=${todayStr}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 60000,
+    refetchInterval: 120000,
+  });
+
+  const perfMap: Record<string, any> = {};
+  if (perfData?.performance) {
+    for (const p of perfData.performance) {
+      perfMap[p.staffId] = p;
+    }
+  }
+
+  const ticketsHandledToday: Record<string, number> = {};
   for (const t of tickets) {
     if (t.valetStaffId && t.entryTime?.startsWith(todayStr)) {
       ticketsHandledToday[t.valetStaffId] = (ticketsHandledToday[t.valetStaffId] ?? 0) + 1;
@@ -2134,66 +2499,774 @@ function ValetStaffTab({ outletId, tickets }: { outletId: string; tickets: any[]
           <p className="text-xs mt-1">Add attendants to track who's on duty</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {activeStaff.map((s: any) => (
-            <Card key={s.id} data-testid={`card-staff-${s.id}`} className={s.isOnDuty ? "border-green-200 bg-green-50/30" : ""}>
-              <CardContent className="p-4">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${s.isOnDuty ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
-                      {s.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm" data-testid={`text-staff-name-${s.id}`}>{s.name}</p>
-                      {s.badgeNumber && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <BadgeCheck className="h-3 w-3" /> #{s.badgeNumber}
-                        </p>
-                      )}
-                      {s.phone && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Phone className="h-3 w-3" /> {s.phone}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.isOnDuty ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`} data-testid={`badge-duty-${s.id}`}>
-                      {s.isOnDuty ? "On Duty" : "Off Duty"}
-                    </span>
-                    {ticketsHandledToday[s.id] != null && (
-                      <span className="text-xs text-muted-foreground">{ticketsHandledToday[s.id]} tickets today</span>
-                    )}
-                  </div>
-                </div>
-                <div className="flex gap-2 mt-3">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-xs flex-1"
-                    onClick={() => toggleDutyMutation.mutate({ staffId: s.id, isOnDuty: !s.isOnDuty })}
-                    disabled={toggleDutyMutation.isPending}
-                    data-testid={`button-toggle-duty-${s.id}`}
-                  >
-                    {s.isOnDuty ? <ToggleRight className="h-3.5 w-3.5 mr-1 text-green-600" /> : <ToggleLeft className="h-3.5 w-3.5 mr-1" />}
-                    {s.isOnDuty ? "Mark Off Duty" : "Mark On Duty"}
-                  </Button>
-                  {user?.role === "owner" && (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-xs text-red-600 hover:text-red-700"
-                      onClick={() => removeMutation.mutate(s.id)}
-                      disabled={removeMutation.isPending}
-                      data-testid={`button-remove-staff-${s.id}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
+        <>
+          {/* Leaderboard */}
+          {perfData?.performance?.length > 0 && (
+            <Card data-testid="staff-leaderboard">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-amber-500" /> Today's Leaderboard
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-xs py-2 pl-4">Attendant</TableHead>
+                      <TableHead className="text-xs py-2 text-right">Today</TableHead>
+                      <TableHead className="text-xs py-2 text-right">Shift</TableHead>
+                      <TableHead className="text-xs py-2 text-right">Retrievals</TableHead>
+                      <TableHead className="text-xs py-2 text-right pr-4">Avg Time</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {perfData.performance.map((p: any, idx: number) => {
+                      const avgMin = p.avgRetrievalMinutes;
+                      const perfColor = avgMin === 0 ? "text-muted-foreground" :
+                        avgMin < 5 ? "text-green-600" :
+                        avgMin < 10 ? "text-amber-600" : "text-red-600";
+                      return (
+                        <TableRow key={p.staffId} data-testid={`leaderboard-row-${p.staffId}`}>
+                          <TableCell className="py-2 pl-4">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-muted-foreground w-4">{idx + 1}</span>
+                              <span className="text-xs font-medium" data-testid={`leaderboard-name-${p.staffId}`}>{p.name}</span>
+                              {p.isOnDuty && <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" />}
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-xs py-2 text-right font-medium" data-testid={`leaderboard-checkins-${p.staffId}`}>{p.checkInsToday}</TableCell>
+                          <TableCell className="text-xs py-2 text-right font-medium text-blue-600" data-testid={`leaderboard-shift-${p.staffId}`}>
+                            {p.checkInsShift != null ? p.checkInsShift : "—"}
+                          </TableCell>
+                          <TableCell className="text-xs py-2 text-right font-medium" data-testid={`leaderboard-retrievals-${p.staffId}`}>{p.retrievalsCompleted}</TableCell>
+                          <TableCell className={`text-xs py-2 text-right pr-4 font-semibold ${perfColor}`} data-testid={`leaderboard-avg-${p.staffId}`}>
+                            {avgMin > 0 ? `${avgMin}m` : "—"}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </CardContent>
             </Card>
-          ))}
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {activeStaff.map((s: any) => {
+              const perf = perfMap[s.id];
+              const avgMin = perf?.avgRetrievalMinutes ?? 0;
+              const perfColor = avgMin === 0 ? "" : avgMin < 5 ? "text-green-600" : avgMin < 10 ? "text-amber-600" : "text-red-600";
+              return (
+                <Card key={s.id} data-testid={`card-staff-${s.id}`} className={s.isOnDuty ? "border-green-200 bg-green-50/30" : ""}>
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold ${s.isOnDuty ? "bg-green-100 text-green-700" : "bg-muted text-muted-foreground"}`}>
+                          {s.name.charAt(0).toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm" data-testid={`text-staff-name-${s.id}`}>{s.name}</p>
+                          {s.badgeNumber && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <BadgeCheck className="h-3 w-3" /> #{s.badgeNumber}
+                            </p>
+                          )}
+                          {s.phone && (
+                            <p className="text-xs text-muted-foreground flex items-center gap-1">
+                              <Phone className="h-3 w-3" /> {s.phone}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${s.isOnDuty ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`} data-testid={`badge-duty-${s.id}`}>
+                          {s.isOnDuty ? "On Duty" : "Off Duty"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {perf && (
+                      <div className="mt-2 flex flex-wrap gap-3 text-xs" data-testid={`perf-stats-${s.id}`}>
+                        <span className="text-muted-foreground">{perf.checkInsToday} check-ins</span>
+                        <span className="text-muted-foreground">{perf.retrievalsCompleted} retrievals</span>
+                        {avgMin > 0 && (
+                          <span className={`font-semibold ${perfColor}`}>{avgMin}m avg</span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 mt-3">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs flex-1"
+                        onClick={() => toggleDutyMutation.mutate({ staffId: s.id, isOnDuty: !s.isOnDuty })}
+                        disabled={toggleDutyMutation.isPending}
+                        data-testid={`button-toggle-duty-${s.id}`}
+                      >
+                        {s.isOnDuty ? <ToggleRight className="h-3.5 w-3.5 mr-1 text-green-600" /> : <ToggleLeft className="h-3.5 w-3.5 mr-1" />}
+                        {s.isOnDuty ? "Mark Off Duty" : "Mark On Duty"}
+                      </Button>
+                      {user?.role === "owner" && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs text-red-600 hover:text-red-700"
+                          onClick={() => removeMutation.mutate(s.id)}
+                          disabled={removeMutation.isPending}
+                          data-testid={`button-remove-staff-${s.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Attendant Quick Check-In Dialog ────────────────────────────────────────
+function AttendantQuickCheckinDialog({ open, onClose, outletId }: { open: boolean; onClose: () => void; outletId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [plate, setPlate] = useState("");
+  const [vehicleType, setVehicleType] = useState("CAR");
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/parking/tickets", {
+        outletId,
+        vehicleType,
+        vehicleNumber: plate.toUpperCase().trim(),
+        status: "parked",
+      });
+      return res.json();
+    },
+    onSuccess: (t) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      toast({ title: `Ticket ${t.ticketNumber} created` });
+      setPlate(""); setVehicleType("CAR");
+      onClose();
+    },
+    onError: () => toast({ title: "Check-in failed", variant: "destructive" }),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-xs">
+        <DialogHeader>
+          <DialogTitle>Quick Check-In</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div>
+            <Label className="text-xs font-semibold">Plate Number *</Label>
+            <Input
+              placeholder="ABC 1234"
+              value={plate}
+              onChange={e => setPlate(e.target.value.toUpperCase())}
+              className="font-mono mt-1"
+              data-testid="input-quick-checkin-plate"
+              onKeyDown={e => e.key === "Enter" && plate.trim() && mutation.mutate()}
+            />
+          </div>
+          <div>
+            <Label className="text-xs font-semibold">Vehicle Type</Label>
+            <div className="flex gap-1.5 flex-wrap mt-1">
+              {VEHICLE_TYPES.map(vt => (
+                <button
+                  key={vt.value}
+                  data-testid={`qc-vehicle-${vt.value}`}
+                  onClick={() => setVehicleType(vt.value)}
+                  className={`flex-1 py-2 rounded-lg border text-xs font-medium transition-colors ${vehicleType === vt.value ? "bg-primary/10 border-primary text-primary" : "border-muted hover:bg-muted/50"}`}
+                >
+                  {vt.icon} {vt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <Button
+            className="w-full"
+            disabled={!plate.trim() || mutation.isPending}
+            onClick={() => mutation.mutate()}
+            data-testid="button-quick-checkin-confirm"
+          >
+            {mutation.isPending ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" /> Checking in...</> : "Check In Vehicle"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Attendant Tab ────────────────────────────────────────────────────────────
+function AttendantTab({ outletId, outletName, onOpenNewTicket }: { outletId: string; outletName?: string; onOpenNewTicket: () => void }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [lookupPlate, setLookupPlate] = useState("");
+  const [foundTicket, setFoundTicket] = useState<any>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [showQuickCheckin, setShowQuickCheckin] = useState(false);
+  const [now, setNow] = useState(Date.now());
+  // Exit condition for attendant complete action
+  const [pendingComplete, setPendingComplete] = useState<{ requestId: string; ticketId?: string; entryCondition: any } | null>(null);
+  const [attendantExitCondition, setAttendantExitCondition] = useState({ body: "clean", interior: "clean", fuelLevel: "full", acWorking: "yes", spareTyre: "yes", notes: "" });
+
+  // Tick every 30s to refresh relative times
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const { data: retrievalRequests = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/retrieval-requests", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/retrieval-requests/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 0,
+    refetchInterval: 30000,
+  });
+
+  const { data: activeTickets = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/tickets", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/tickets/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 15000,
+    refetchInterval: 30000,
+  });
+
+  const { data: staff = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/valet-staff", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/valet-staff/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const myStaff = staff.find((s: any) => s.userId === user?.id);
+
+  const toggleDutyMutation = useMutation({
+    mutationFn: async (isOnDuty: boolean) => {
+      if (!myStaff) return;
+      await apiRequest("PATCH", `/api/parking/valet-staff/${myStaff.id}/duty`, { isOnDuty });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/valet-staff", outletId] });
+      toast({ title: myStaff?.isOnDuty ? "Marked Off Duty" : "Marked On Duty" });
+    },
+  });
+
+  const updateRetrievalMutation = useMutation({
+    mutationFn: async ({ requestId, ticketId, action }: { requestId: string; ticketId?: string; action: "accept" | "start" | "mark_ready" | "complete" }) => {
+      const statusMap = { accept: "accepted", start: "in_progress", mark_ready: "in_progress", complete: "completed" };
+      await apiRequest("PATCH", `/api/parking/retrieval-requests/${requestId}`, {
+        status: statusMap[action],
+        // Set assigned valet from the logged-in attendant profile when accepting
+        ...(action === "accept" && myStaff ? {
+          assignedValetId: myStaff.id,
+          assignedValetName: myStaff.name,
+        } : {}),
+        ...(action === "complete" ? { completedAt: new Date().toISOString() } : {}),
+      });
+      // Also update the linked ticket status
+      if (ticketId) {
+        const ticketStatusMap: Record<string, string> = {
+          accept: "requested",
+          start: "retrieving",
+          mark_ready: "ready",
+          complete: "completed",
+        };
+        const newTicketStatus = ticketStatusMap[action];
+        if (newTicketStatus) {
+          await apiRequest("PATCH", `/api/parking/tickets/${ticketId}/status`, { status: newTicketStatus });
+        }
+      }
+    },
+    onSuccess: (_, { action }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/retrieval-requests", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      const labels = { accept: "Accepted", start: "Retrieving", mark_ready: "Vehicle ready", complete: "Vehicle delivered" };
+      toast({ title: labels[action] });
+    },
+    onError: () => toast({ title: "Action failed", variant: "destructive" }),
+  });
+
+  const attendantCompleteWithConditionMutation = useMutation({
+    mutationFn: async ({ skipCondition }: { skipCondition: boolean }) => {
+      if (!pendingComplete) return;
+      const { requestId, ticketId } = pendingComplete;
+      if (ticketId && !skipCondition) {
+        await apiRequest("PATCH", `/api/parking/tickets/${ticketId}/condition`, {
+          conditionReport: {
+            body: attendantExitCondition.body,
+            interior: attendantExitCondition.interior,
+            fuelLevel: attendantExitCondition.fuelLevel,
+            acWorking: attendantExitCondition.acWorking,
+            spareTyre: attendantExitCondition.spareTyre,
+            notes: attendantExitCondition.notes || null,
+            capturedAt: new Date().toISOString(),
+          },
+          isExitCheck: true,
+        });
+      }
+      await apiRequest("PATCH", `/api/parking/retrieval-requests/${requestId}`, { status: "completed" });
+      if (ticketId) {
+        await apiRequest("PATCH", `/api/parking/tickets/${ticketId}/status`, { status: "completed" });
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/retrieval-requests", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      toast({ title: "Vehicle delivered" });
+      setPendingComplete(null);
+    },
+    onError: () => toast({ title: "Failed to complete delivery", variant: "destructive" }),
+  });
+
+  const handleLookup = async () => {
+    if (!lookupPlate.trim()) return;
+    setLookupLoading(true);
+    try {
+      const res = await fetch(`/api/parking/tickets/${outletId}`, { credentials: "include" });
+      const all = await res.json();
+      const q = lookupPlate.trim().toLowerCase();
+      const found = all.find((t: any) =>
+        (
+          t.vehicleNumber?.toLowerCase().includes(q) ||
+          t.ticketNumber?.toLowerCase().includes(q)
+        ) &&
+        (t.status === "parked" || t.status === "requested" || t.status === "retrieving" || t.status === "ready")
+      );
+      setFoundTicket(found || null);
+      if (!found) toast({ title: "No active ticket found", variant: "destructive" });
+    } catch {
+      toast({ title: "Lookup failed", variant: "destructive" });
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
+  // Split requests: active (scheduled_for is null or in past) vs upcoming (scheduled_for in future)
+  const allPending = retrievalRequests.filter((r: any) => r.status === "pending" || r.status === "accepted" || r.status === "in_progress");
+  const upcomingScheduled = retrievalRequests.filter((r: any) =>
+    r.status === "pending" && r.scheduledFor && new Date(r.scheduledFor) > new Date()
+  );
+  const upcomingIds = new Set(upcomingScheduled.map((r: any) => r.id));
+  const activeQueue = allPending
+    .filter((r: any) => !upcomingIds.has(r.id))
+    .sort((a: any, b: any) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime()); // oldest first = highest priority
+
+  const parkedCount = activeTickets.filter((t: any) => t.status === "parked").length;
+
+  const openCompleteDialog = (req: any, ticket: any) => {
+    const entryCondition = ticket?.conditionReport ?? null;
+    setPendingComplete({ requestId: req.id, ticketId: ticket?.id, entryCondition });
+    setAttendantExitCondition({
+      body: entryCondition?.body ?? "clean",
+      interior: entryCondition?.interior ?? "clean",
+      fuelLevel: entryCondition?.fuelLevel ?? "full",
+      acWorking: entryCondition?.acWorking ?? "yes",
+      spareTyre: entryCondition?.spareTyre ?? "yes",
+      notes: "",
+    });
+  };
+
+  function getActionButtons(req: any, ticket: any) {
+    const ticketId = ticket?.id;
+    const ticketStatus = ticket?.status;
+    if (req.status === "pending") return (
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="outline" className="flex-1 h-8 text-xs"
+          onClick={() => updateRetrievalMutation.mutate({ requestId: req.id, ticketId, action: "accept" })}
+          disabled={updateRetrievalMutation.isPending}
+          data-testid={`button-accept-retrieval-${req.id}`}
+        >Accept &amp; Start</Button>
+        <Button size="sm" className="flex-1 h-8 text-xs"
+          onClick={() => updateRetrievalMutation.mutate({ requestId: req.id, ticketId, action: "start" })}
+          disabled={updateRetrievalMutation.isPending}
+          data-testid={`button-start-retrieval-${req.id}`}
+        >Start</Button>
+      </div>
+    );
+    if (req.status === "accepted" || (req.status === "in_progress" && ticketStatus !== "ready")) return (
+      <div className="flex gap-1.5">
+        <Button size="sm" variant="outline" className="flex-1 h-8 text-xs"
+          onClick={() => updateRetrievalMutation.mutate({ requestId: req.id, ticketId, action: "mark_ready" })}
+          disabled={updateRetrievalMutation.isPending}
+          data-testid={`button-ready-retrieval-${req.id}`}
+        >Mark Ready</Button>
+        <Button size="sm" className="flex-1 h-8 text-xs bg-green-600 hover:bg-green-700"
+          onClick={() => openCompleteDialog(req, ticket)}
+          disabled={updateRetrievalMutation.isPending}
+          data-testid={`button-delivered-retrieval-${req.id}`}
+        >Delivered</Button>
+      </div>
+    );
+    if (req.status === "in_progress" && ticketStatus === "ready") return (
+      <Button size="sm" className="w-full h-8 text-xs bg-green-600 hover:bg-green-700"
+        onClick={() => openCompleteDialog(req, ticket)}
+        disabled={updateRetrievalMutation.isPending}
+        data-testid={`button-delivered-retrieval-${req.id}`}
+      >✓ Mark Delivered</Button>
+    );
+    return null;
+  }
+
+  return (
+    <div className="space-y-4 pb-6">
+      {/* Header: Outlet + Attendant + Shift Info */}
+      {outletName && (
+        <div className="text-center pb-1">
+          <p className="text-base font-bold" data-testid="attendant-outlet-name">{outletName}</p>
+          <p className="text-xs text-muted-foreground">Valet Attendant View</p>
+        </div>
+      )}
+
+      {/* Duty Status Banner */}
+      {myStaff && (
+        <div className={`rounded-xl p-3 flex items-center justify-between ${myStaff.isOnDuty ? "bg-green-50 border border-green-200" : "bg-muted border"}`} data-testid="attendant-duty-banner">
+          <div>
+            <p className="font-semibold text-sm" data-testid="attendant-name">{myStaff.name}</p>
+            <p className={`text-xs ${myStaff.isOnDuty ? "text-green-600" : "text-muted-foreground"}`}>
+              {myStaff.isOnDuty ? "● On Duty" : "○ Off Duty"}
+              {myStaff.badgeNumber && ` · #${myStaff.badgeNumber}`}
+            </p>
+            {myStaff.isOnDuty && myStaff.dutyStartedAt && (
+              <p className="text-xs text-green-500 mt-0.5" data-testid="attendant-shift-start">
+                Shift started {new Date(myStaff.dutyStartedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </p>
+            )}
+          </div>
+          <Button
+            size="sm"
+            variant={myStaff.isOnDuty ? "outline" : "default"}
+            onClick={() => toggleDutyMutation.mutate(!myStaff.isOnDuty)}
+            disabled={toggleDutyMutation.isPending}
+            data-testid="button-attendant-toggle-duty"
+          >
+            {myStaff.isOnDuty ? "Go Off Duty" : "Go On Duty"}
+          </Button>
+        </div>
+      )}
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="rounded-xl border bg-card p-3 text-center" data-testid="stat-parked">
+          <p className="text-2xl font-bold" data-testid="stat-parked-count">{parkedCount}</p>
+          <p className="text-xs text-muted-foreground">Parked</p>
+        </div>
+        <div className="rounded-xl border bg-card p-3 text-center" data-testid="stat-requests">
+          <p className={`text-2xl font-bold ${activeQueue.length > 0 ? "text-red-600" : ""}`} data-testid="stat-requests-count">{activeQueue.length}</p>
+          <p className="text-xs text-muted-foreground">Active</p>
+        </div>
+        <div className="rounded-xl border bg-card p-3 text-center" data-testid="stat-on-duty">
+          <p className="text-2xl font-bold" data-testid="stat-on-duty-count">{staff.filter((s: any) => s.isOnDuty).length}</p>
+          <p className="text-xs text-muted-foreground">On Duty</p>
+        </div>
+      </div>
+
+      {/* Quick Check-In */}
+      <Button className="w-full h-14 text-base font-semibold rounded-xl" onClick={() => setShowQuickCheckin(true)} data-testid="button-attendant-quick-checkin">
+        <Car className="h-5 w-5 mr-2" /> Quick Check-In
+      </Button>
+
+      {/* Active Retrieval Queue — sorted by wait time (oldest = highest priority) */}
+      {activeQueue.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-2 flex items-center gap-2" data-testid="heading-pending-retrievals">
+            <Bell className="h-4 w-4 text-red-500" />
+            Active Requests
+            <span className="bg-red-500 text-white text-xs rounded-full px-1.5">{activeQueue.length}</span>
+          </h3>
+          <div className="space-y-2">
+            {activeQueue.map((req: any) => {
+              const ticket = activeTickets.find((t: any) => t.id === req.ticketId);
+              const reqTime = new Date(req.requestedAt);
+              const minutesAgo = Math.floor((now - reqTime.getTime()) / 60000);
+              const isCritical = minutesAgo >= 10;
+              const isUrgent = minutesAgo >= 5 && !isCritical;
+              const waitClass = isCritical ? "text-red-600 font-bold" : isUrgent ? "text-amber-600 font-semibold" : "text-muted-foreground";
+              const statusColors: Record<string, string> = {
+                pending: isCritical ? "border-red-400 bg-red-50/60" : isUrgent ? "border-red-300 bg-red-50/40" : "border-amber-200 bg-amber-50/30",
+                accepted: "border-blue-200 bg-blue-50/30",
+                in_progress: ticket?.status === "ready" ? "border-green-300 bg-green-50/60" : "border-green-200 bg-green-50/30",
+              };
+              const statusLabel: Record<string, string> = {
+                pending: isCritical ? "CRITICAL" : isUrgent ? "URGENT" : "NEW",
+                accepted: "ACCEPTED",
+                in_progress: ticket?.status === "ready" ? "READY" : "RETRIEVING",
+              };
+              const statusBadgeColor: Record<string, string> = {
+                pending: isCritical ? "bg-red-200 text-red-800" : isUrgent ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700",
+                accepted: "bg-blue-100 text-blue-700",
+                in_progress: ticket?.status === "ready" ? "bg-green-200 text-green-800" : "bg-green-100 text-green-700",
+              };
+              return (
+                <Card key={req.id} data-testid={`card-retrieval-${req.id}`} className={statusColors[req.status] ?? ""}>
+                  <CardContent className="p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xl">{getVehicleIcon(ticket?.vehicleType)}</span>
+                          <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${statusBadgeColor[req.status]}`}>
+                            {statusLabel[req.status] ?? req.status}
+                          </span>
+                        </div>
+                        <p className="font-bold text-base mt-0.5" data-testid={`retrieval-plate-${req.id}`}>
+                          {ticket?.vehicleNumber ?? req.vehicleNumber ?? "—"}
+                        </p>
+                        {ticket?.ticketNumber && (
+                          <p className="text-xs font-mono text-muted-foreground" data-testid={`retrieval-ticket-num-${req.id}`}>#{ticket.ticketNumber}</p>
+                        )}
+                        <div className="flex items-center gap-2 text-xs mt-0.5">
+                          {ticket?.slotCode && <span className="text-muted-foreground">Slot {ticket.slotCode}</span>}
+                          {ticket?.vehicleColor && <span className="text-muted-foreground">{ticket.vehicleColor}</span>}
+                          <span className={waitClass}>{minutesAgo}m wait{isCritical ? " ⚠️" : ""}</span>
+                        </div>
+                        {req.notes && <p className="text-xs text-muted-foreground italic">"{req.notes}"</p>}
+                      </div>
+                    </div>
+                    {getActionButtons(req, ticket)}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {activeQueue.length === 0 && (
+        <div className="text-center py-6 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="no-pending-retrievals">
+          <CheckCircle className="h-7 w-7 mx-auto mb-1 opacity-30" />
+          <p className="text-sm">No active retrieval requests</p>
+        </div>
+      )}
+
+      {/* Upcoming Scheduled Retrievals */}
+      {upcomingScheduled.length > 0 && (
+        <div data-testid="upcoming-scheduled-section">
+          <h3 className="text-sm font-semibold mb-2 flex items-center gap-2 text-blue-700">
+            <Clock className="h-4 w-4" />
+            Upcoming Scheduled ({upcomingScheduled.length})
+          </h3>
+          <div className="space-y-2">
+            {upcomingScheduled.map((req: any) => {
+              const ticket = activeTickets.find((t: any) => t.id === req.ticketId);
+              const scheduledAt = new Date(req.scheduledFor);
+              const minsUntil = Math.max(0, Math.ceil((scheduledAt.getTime() - now) / 60000));
+              return (
+                <Card key={req.id} data-testid={`card-upcoming-${req.id}`} className="border-blue-100 bg-blue-50/20">
+                  <CardContent className="p-3 flex items-center justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-sm" data-testid={`upcoming-plate-${req.id}`}>
+                        {ticket?.vehicleNumber ?? "—"}
+                      </p>
+                      <p className="text-xs text-blue-600" data-testid={`upcoming-countdown-${req.id}`}>
+                        Ready in {minsUntil}m · {scheduledAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                      {ticket?.slotCode && <p className="text-xs text-muted-foreground">Slot {ticket.slotCode}</p>}
+                    </div>
+                    <div className="text-blue-500 text-2xl font-mono font-bold">{minsUntil}m</div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* My Active Tickets (tickets I've recently checked in, parked status) */}
+      {myStaff && activeTickets.filter((t: any) => t.valetStaffId === myStaff.id && t.status === "parked").length > 0 && (
+        <div data-testid="my-active-tickets">
+          <h3 className="text-sm font-semibold mb-2">My Parked Vehicles</h3>
+          <div className="space-y-1.5">
+            {activeTickets
+              .filter((t: any) => t.valetStaffId === myStaff.id && t.status === "parked")
+              .map((ticket: any) => (
+                <div key={ticket.id} className="rounded-lg border bg-muted/30 p-2.5 flex items-center justify-between text-xs" data-testid={`my-ticket-${ticket.id}`}>
+                  <div>
+                    <span className="font-mono font-bold">{ticket.vehicleNumber}</span>
+                    {ticket.slotCode && <span className="text-muted-foreground ml-2">Slot {ticket.slotCode}</span>}
+                  </div>
+                  <span className="text-muted-foreground">{ticket.vehicleColor} {ticket.vehicleMake}</span>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* Plate Lookup */}
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold">Quick Plate Lookup</h3>
+        <div className="flex gap-2">
+          <Input
+            placeholder="Enter plate number..."
+            value={lookupPlate}
+            onChange={e => setLookupPlate(e.target.value.toUpperCase())}
+            onKeyDown={e => e.key === "Enter" && handleLookup()}
+            className="font-mono"
+            data-testid="input-attendant-plate-lookup"
+          />
+          <Button onClick={handleLookup} disabled={lookupLoading || !lookupPlate.trim()} data-testid="button-attendant-lookup">
+            {lookupLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Find"}
+          </Button>
+        </div>
+
+        {foundTicket && (
+          <Card data-testid="card-lookup-result">
+            <CardContent className="p-3 space-y-1">
+              <div className="flex justify-between items-center">
+                <p className="font-bold text-sm" data-testid="lookup-plate">{foundTicket.vehicleNumber}</p>
+                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                  foundTicket.status === "parked" ? "bg-green-100 text-green-700" :
+                  foundTicket.status === "ready" ? "bg-emerald-100 text-emerald-700" :
+                  foundTicket.status === "requested" || foundTicket.status === "retrieving" ? "bg-amber-100 text-amber-700" :
+                  "bg-gray-100 text-gray-600"
+                }`} data-testid="lookup-status">{foundTicket.status?.replace(/_/g, " ")}</span>
+              </div>
+              {foundTicket.slotCode && <p className="text-xs text-muted-foreground">Slot: {foundTicket.slotCode}</p>}
+              {foundTicket.vehicleColor && <p className="text-xs text-muted-foreground">{foundTicket.vehicleColor} {foundTicket.vehicleMake}</p>}
+              {foundTicket.keyTagNumber && <p className="text-xs text-muted-foreground">Key tag: #{foundTicket.keyTagNumber}</p>}
+              {foundTicket.conditionReport && (
+                <p className="text-xs text-muted-foreground">Body: {foundTicket.conditionReport.body} · Fuel: {foundTicket.conditionReport.fuelLevel}</p>
+              )}
+            </CardContent>
+          </Card>
+        )}
+      </div>
+
+      <AttendantQuickCheckinDialog open={showQuickCheckin} onClose={() => setShowQuickCheckin(false)} outletId={outletId} />
+
+      {/* Exit Condition Dialog for attendant completion */}
+      {pendingComplete && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="attendant-exit-condition-dialog">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-y-auto max-h-[90vh] p-4 space-y-3">
+            <h3 className="font-semibold text-base">Exit Condition Check</h3>
+            <p className="text-xs text-muted-foreground">Record the vehicle condition at handover.</p>
+
+            {/* Body */}
+            <div>
+              <label className="text-xs font-medium mb-1 block">Body Condition</label>
+              <div className="flex flex-wrap gap-1.5">
+                {["clean", "minor_scratches", "dents", "major_damage"].map(v => (
+                  <button key={v} type="button"
+                    className={`px-2.5 py-1 rounded-lg border text-xs font-medium ${attendantExitCondition.body === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                    onClick={() => setAttendantExitCondition(s => ({ ...s, body: v }))}
+                    data-testid={`attendant-exit-body-${v}`}
+                  >{v.replace(/_/g, " ")}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Interior */}
+            <div>
+              <label className="text-xs font-medium mb-1 block">Interior</label>
+              <div className="flex gap-1.5">
+                {["clean", "dirty"].map(v => (
+                  <button key={v} type="button"
+                    className={`flex-1 py-1 rounded-lg border text-xs font-medium ${attendantExitCondition.interior === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                    onClick={() => setAttendantExitCondition(s => ({ ...s, interior: v }))}
+                  >{v}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* Fuel */}
+            <div>
+              <label className="text-xs font-medium mb-1 block">Fuel Level</label>
+              <div className="flex gap-1.5">
+                {[{ label: "¼", value: "quarter" }, { label: "½", value: "half" }, { label: "¾", value: "three_quarter" }, { label: "Full", value: "full" }].map(opt => (
+                  <button key={opt.value} type="button"
+                    className={`flex-1 py-1 rounded-lg border text-xs font-medium ${attendantExitCondition.fuelLevel === opt.value ? "bg-amber-100 border-amber-400 text-amber-700" : "border-muted"}`}
+                    onClick={() => setAttendantExitCondition(s => ({ ...s, fuelLevel: opt.value }))}
+                  >{opt.label}</button>
+                ))}
+              </div>
+            </div>
+
+            {/* A/C + Spare */}
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-xs font-medium mb-1 block">A/C</label>
+                <div className="flex gap-1.5">
+                  {["yes", "no"].map(v => (
+                    <button key={v} type="button"
+                      className={`flex-1 py-1 rounded-lg border text-xs font-medium ${attendantExitCondition.acWorking === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                      onClick={() => setAttendantExitCondition(s => ({ ...s, acWorking: v }))}
+                    >{v === "yes" ? "Working" : "Faulty"}</button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs font-medium mb-1 block">Spare Tyre</label>
+                <div className="flex gap-1.5">
+                  {["yes", "no"].map(v => (
+                    <button key={v} type="button"
+                      className={`flex-1 py-1 rounded-lg border text-xs font-medium ${attendantExitCondition.spareTyre === v ? "bg-primary/10 border-primary text-primary" : "border-muted"}`}
+                      onClick={() => setAttendantExitCondition(s => ({ ...s, spareTyre: v }))}
+                    >{v === "yes" ? "Present" : "Missing"}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Entry vs Exit diff */}
+            {pendingComplete?.entryCondition && (() => {
+              const fuelLabel = (v: string) => ({ quarter: "¼", half: "½", three_quarter: "¾", full: "Full" }[v] || v);
+              const diff = [
+                { key: "body", label: "Body", entry: pendingComplete.entryCondition.body, exit: attendantExitCondition.body, fmt: (v: string) => v?.replace(/_/g, " ") },
+                { key: "interior", label: "Interior", entry: pendingComplete.entryCondition.interior, exit: attendantExitCondition.interior, fmt: (v: string) => v },
+                { key: "fuelLevel", label: "Fuel", entry: pendingComplete.entryCondition.fuelLevel, exit: attendantExitCondition.fuelLevel, fmt: fuelLabel },
+                { key: "acWorking", label: "A/C", entry: pendingComplete.entryCondition.acWorking, exit: attendantExitCondition.acWorking, fmt: (v: string) => v === "yes" ? "Working" : "Faulty" },
+                { key: "spareTyre", label: "Spare", entry: pendingComplete.entryCondition.spareTyre, exit: attendantExitCondition.spareTyre, fmt: (v: string) => v === "yes" ? "Present" : "Missing" },
+              ].filter(d => d.entry && d.exit && d.entry !== d.exit);
+              if (!diff.length) return null;
+              return (
+                <div className="rounded-md bg-red-50 border border-red-200 p-2 space-y-1" data-testid="attendant-exit-diff">
+                  <p className="text-xs font-semibold text-red-700">Changed from entry:</p>
+                  {diff.map(d => (
+                    <div key={d.key} className="flex justify-between text-xs text-red-600">
+                      <span>{d.label}</span>
+                      <span>{d.fmt(d.entry)} → {d.fmt(d.exit)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            <div className="flex gap-2 pt-1">
+              <Button variant="ghost" className="flex-1 text-muted-foreground" size="sm"
+                onClick={() => setPendingComplete(null)}
+                data-testid="button-attendant-exit-cancel"
+              >Cancel</Button>
+              <Button variant="outline" className="flex-1" size="sm"
+                onClick={() => attendantCompleteWithConditionMutation.mutate({ skipCondition: true })}
+                disabled={attendantCompleteWithConditionMutation.isPending}
+                data-testid="button-attendant-exit-skip"
+              >Skip & Complete</Button>
+              <Button className="flex-1 bg-green-600 hover:bg-green-700" size="sm"
+                onClick={() => attendantCompleteWithConditionMutation.mutate({ skipCondition: false })}
+                disabled={attendantCompleteWithConditionMutation.isPending}
+                data-testid="button-attendant-exit-save"
+              >{attendantCompleteWithConditionMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save & Complete"}</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>
@@ -2993,6 +4066,14 @@ export default function ParkingPage() {
     refetchInterval: 15000,
   });
 
+  // Exclude future-scheduled requests from the urgency queue (they belong in Upcoming section)
+  const activeRetrievalRequests = retrievalRequests.filter(
+    (r: any) => !(r.scheduledFor && new Date(r.scheduledFor) > new Date())
+  );
+  const upcomingRetrievalRequests = retrievalRequests.filter(
+    (r: any) => r.scheduledFor && new Date(r.scheduledFor) > new Date()
+  );
+
   const [showNewTicket, setShowNewTicket] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [plateLookupTrigger, setPlateLookupTrigger] = useState("");
@@ -3009,6 +4090,8 @@ export default function ParkingPage() {
   });
 
   const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
+  const isValetStaff = user?.role === "valet_staff";
+  const showAttendantTab = isOwnerOrManager || isValetStaff;
 
   useRealtimeEvent("parking:ticket_updated", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
@@ -3076,6 +4159,9 @@ export default function ParkingPage() {
           <TabsTrigger value="slot-board" data-testid="tab-slot-board">Slot Board</TabsTrigger>
           <TabsTrigger value="revenue" data-testid="tab-revenue">Revenue & History</TabsTrigger>
           <TabsTrigger value="staff" data-testid="tab-staff">Valet Staff</TabsTrigger>
+          {showAttendantTab && (
+            <TabsTrigger value="attendant" data-testid="tab-attendant">Attendant</TabsTrigger>
+          )}
           {isOwnerOrManager && (
             <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
           )}
@@ -3217,9 +4303,9 @@ export default function ParkingPage() {
               <h2 className="text-base font-semibold flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-amber-500" />
                 Vehicle Retrieval Requests
-                {retrievalRequests.length > 0 && (
+                {activeRetrievalRequests.length > 0 && (
                   <Badge variant="secondary" className="bg-amber-100 text-amber-700" data-testid="badge-retrieval-count">
-                    {retrievalRequests.length}
+                    {activeRetrievalRequests.length}
                   </Badge>
                 )}
               </h2>
@@ -3228,15 +4314,30 @@ export default function ParkingPage() {
               </Button>
             </div>
 
-            {retrievalRequests.length === 0 ? (
+            {activeRetrievalRequests.length === 0 ? (
               <div className="text-center py-6 text-muted-foreground" data-testid="empty-retrievals">
                 <p className="text-sm">No pending retrieval requests</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {retrievalRequests.map((req: any) => (
+                {activeRetrievalRequests.map((req: any) => (
                   <RetrievalRequestCard key={req.id} request={req} outletId={outletId} />
                 ))}
+              </div>
+            )}
+
+            {/* Upcoming Scheduled Retrievals */}
+            {upcomingRetrievalRequests.length > 0 && (
+              <div className="mt-3 space-y-2">
+                <h3 className="text-sm font-medium text-muted-foreground flex items-center gap-1.5">
+                  <Timer className="h-3.5 w-3.5" />
+                  Upcoming Scheduled ({upcomingRetrievalRequests.length})
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {upcomingRetrievalRequests.map((req: any) => (
+                    <RetrievalRequestCard key={req.id} request={req} outletId={outletId} />
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -3253,6 +4354,12 @@ export default function ParkingPage() {
         <TabsContent value="staff">
           {outletId && <ValetStaffTab outletId={outletId} tickets={tickets} />}
         </TabsContent>
+
+        {showAttendantTab && (
+          <TabsContent value="attendant">
+            {outletId && <AttendantTab outletId={outletId} outletName={outlets.find((o: any) => o.id === outletId)?.name ?? ""} onOpenNewTicket={() => setShowNewTicket(true)} />}
+          </TabsContent>
+        )}
 
         {isOwnerOrManager && (
           <TabsContent value="settings">

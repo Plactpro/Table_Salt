@@ -1080,6 +1080,10 @@ export default function TableQrPage() {
   const [vehicleRetrievalRequested, setVehicleRetrievalRequested] = useState(false);
   const [vehicleRetrievalPending, setVehicleRetrievalPending] = useState(false);
   const [showRetrievalConfirm, setShowRetrievalConfirm] = useState(false);
+  const [scheduledDelayMinutes, setScheduledDelayMinutes] = useState<number>(0);
+  const [ticketInfo, setTicketInfo] = useState<{ maskedPlate?: string; vehicleType?: string; status?: string; ticketNumber?: string } | null>(null);
+  const [retrievalConfirmedAt, setRetrievalConfirmedAt] = useState<Date | null>(null);
+  const [avgRetrievalMinutes, setAvgRetrievalMinutes] = useState<number | null>(null);
 
   useEffect(() => {
     if (!token || !ctx?.outletId) return;
@@ -1096,6 +1100,29 @@ export default function TableQrPage() {
             const checkData = await checkRes.json();
             if (checkData.hasActiveTicket) {
               setParkingAvailable(true);
+              setTicketInfo({
+                maskedPlate: checkData.maskedPlate,
+                vehicleType: checkData.vehicleType,
+                status: checkData.status,
+                ticketNumber: checkData.ticketNumber,
+              });
+              // Fetch avg retrieval time from performance endpoint for estimated ready time
+              try {
+                const perfRes = await fetch(`/api/parking/valet-staff-performance/${ctx.outletId}`, { credentials: "include" });
+                if (perfRes.ok) {
+                  const perfData = await perfRes.json();
+                  const avgMins = (perfData.performance as any[] ?? [])
+                    .filter((p: any) => p.avgRetrievalMinutes > 0)
+                    .map((p: any) => p.avgRetrievalMinutes);
+                  if (avgMins.length > 0) {
+                    setAvgRetrievalMinutes(avgMins.reduce((a: number, b: number) => a + b, 0) / avgMins.length);
+                  } else {
+                    setAvgRetrievalMinutes(8); // fallback: 8 min default
+                  }
+                }
+              } catch {
+                setAvgRetrievalMinutes(8);
+              }
             }
           }
         }
@@ -1113,10 +1140,12 @@ export default function TableQrPage() {
         body: JSON.stringify({
           token,
           outletId: ctx.outletId,
+          scheduledDelayMinutes: scheduledDelayMinutes > 0 ? scheduledDelayMinutes : undefined,
         }),
       });
       if (res.ok) {
         setVehicleRetrievalRequested(true);
+        setRetrievalConfirmedAt(new Date());
       }
     } catch {}
     setVehicleRetrievalPending(false);
@@ -1282,23 +1311,86 @@ export default function TableQrPage() {
                   />
 
                   {parkingAvailable && (
-                    vehicleRetrievalRequested ? (
-                      <div
-                        data-testid="chip-vehicle-retrieval-requested"
-                        className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-green-50 border-2 border-green-200 text-green-700 text-sm font-semibold"
-                      >
-                        <Check className="w-5 h-5" /> Vehicle retrieval requested ✓
-                      </div>
-                    ) : (
-                      <button
-                        data-testid="button-retrieve-vehicle"
-                        onClick={() => setShowRetrievalConfirm(true)}
-                        className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-50 border-2 border-blue-200 text-blue-700 text-sm font-semibold active:scale-95 transition-transform hover:bg-blue-100"
-                        style={{ WebkitTapHighlightColor: "transparent" }}
-                      >
-                        🚗 Retrieve My Vehicle
-                      </button>
-                    )
+                    <>
+                      {/* Parking status card */}
+                      {ticketInfo && (() => {
+                        const isReady = ticketInfo.status === "ready";
+                        const isRetrieving = ticketInfo.status === "retrieving";
+                        // Estimated ready time:
+                        // - If scheduled: retrievalConfirmedAt + scheduledDelayMinutes
+                        // - If "now": retrievalConfirmedAt + avgRetrievalMinutes (from perf endpoint)
+                        const estimatedReadyAt = vehicleRetrievalRequested && retrievalConfirmedAt
+                          ? new Date(retrievalConfirmedAt.getTime() + (
+                              scheduledDelayMinutes > 0
+                                ? scheduledDelayMinutes * 60000
+                                : (avgRetrievalMinutes ?? 8) * 60000
+                            ))
+                          : null;
+                        return (
+                          <div
+                            data-testid="parking-status-card"
+                            className={`rounded-2xl border p-3 flex items-center gap-3 text-left transition-all ${
+                              isReady ? "border-green-200 bg-green-50/80 animate-pulse" :
+                              isRetrieving ? "border-amber-200 bg-amber-50/60" :
+                              "border-blue-100 bg-blue-50/60"
+                            }`}
+                          >
+                            <span className="text-2xl">{ticketInfo.vehicleType === "TWO_WHEELER" ? "🏍" : ticketInfo.vehicleType === "SUV" ? "🚙" : "🚗"}</span>
+                            <div className="flex-1 min-w-0">
+                              {ticketInfo.maskedPlate && (
+                                <p className={`text-xs font-mono font-bold ${isReady ? "text-green-800" : "text-blue-800"}`} data-testid="parking-masked-plate">{ticketInfo.maskedPlate}</p>
+                              )}
+                              <p className={`text-xs capitalize ${isReady ? "text-green-700 font-semibold" : isRetrieving ? "text-amber-700" : "text-blue-600"}`} data-testid="parking-status-text">
+                                {isReady ? "Your vehicle is ready! 🎉" : isRetrieving ? "Being retrieved..." : (ticketInfo.status?.replace(/_/g, " ") ?? "Parked")}
+                              </p>
+                              {ticketInfo.ticketNumber && (
+                                <p className={`text-xs ${isReady ? "text-green-400" : "text-blue-400"}`}>#{ticketInfo.ticketNumber}</p>
+                              )}
+                              {estimatedReadyAt && !isReady && (
+                                <p className="text-xs text-amber-600 mt-0.5" data-testid="parking-estimated-ready">
+                                  Ready ~{estimatedReadyAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </p>
+                              )}
+                            </div>
+                            <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                              isReady ? "bg-green-100 text-green-700" :
+                              isRetrieving ? "bg-amber-100 text-amber-700" :
+                              "bg-blue-100 text-blue-700"
+                            }`}>
+                              {isReady ? "✅ Ready" : isRetrieving ? "🔄 Retrieving" : "🅿️ Parked"}
+                            </span>
+                          </div>
+                        );
+                      })()}
+
+                      {vehicleRetrievalRequested ? (
+                        <div
+                          data-testid="chip-vehicle-retrieval-requested"
+                          className="flex flex-col items-center justify-center gap-1 py-4 rounded-2xl bg-green-50 border-2 border-green-200 text-green-700 text-sm font-semibold"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Check className="w-5 h-5" /> Vehicle retrieval requested ✓
+                          </div>
+                          {scheduledDelayMinutes > 0 && retrievalConfirmedAt && (
+                            <p className="text-xs font-normal text-green-600" data-testid="scheduled-retrieval-note">
+                              Your car will be ready in ~{scheduledDelayMinutes} minutes
+                            </p>
+                          )}
+                          {scheduledDelayMinutes === 0 && (
+                            <p className="text-xs font-normal text-green-600">Vehicle will be brought out shortly</p>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          data-testid="button-retrieve-vehicle"
+                          onClick={() => setShowRetrievalConfirm(true)}
+                          className="flex items-center justify-center gap-2 py-3 rounded-2xl bg-blue-50 border-2 border-blue-200 text-blue-700 text-sm font-semibold active:scale-95 transition-transform hover:bg-blue-100"
+                          style={{ WebkitTapHighlightColor: "transparent" }}
+                        >
+                          🚗 Retrieve My Vehicle
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
 
@@ -1308,8 +1400,33 @@ export default function TableQrPage() {
                       <div className="text-center">
                         <div className="text-4xl mb-2">🚗</div>
                         <h3 className="text-lg font-bold">Retrieve My Vehicle</h3>
-                        <p className="text-sm text-gray-500 mt-1">We'll have your vehicle ready in approximately 5 minutes.</p>
+                        <p className="text-sm text-gray-500 mt-1">When do you need your vehicle?</p>
                       </div>
+
+                      {/* Schedule options */}
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Ready time</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {[
+                            { label: "Now", value: 0, desc: "~5 min" },
+                            { label: "In 5 min", value: 5, desc: "Scheduled" },
+                            { label: "In 10 min", value: 10, desc: "Scheduled" },
+                            { label: "In 15 min", value: 15, desc: "Scheduled" },
+                            { label: "In 20 min", value: 20, desc: "Scheduled" },
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              data-testid={`schedule-option-${opt.value}`}
+                              onClick={() => setScheduledDelayMinutes(opt.value)}
+                              className={`py-2.5 px-3 rounded-xl border text-sm font-medium transition-colors flex flex-col items-center ${scheduledDelayMinutes === opt.value ? "border-blue-500 bg-blue-50 text-blue-700" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}
+                            >
+                              <span>{opt.label}</span>
+                              <span className="text-xs text-gray-400">{opt.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
                       <div className="flex flex-col gap-2">
                         <button
                           data-testid="button-confirm-retrieval"
@@ -1318,7 +1435,8 @@ export default function TableQrPage() {
                           className="w-full py-3 rounded-xl font-bold text-white text-sm flex items-center justify-center gap-2 disabled:opacity-60"
                           style={{ backgroundColor: PRIMARY }}
                         >
-                          {vehicleRetrievalPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Requesting...</> : "Confirm Request"}
+                          {vehicleRetrievalPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Requesting...</> :
+                            scheduledDelayMinutes > 0 ? `Schedule for ${scheduledDelayMinutes} min` : "Bring it now"}
                         </button>
                         <button
                           data-testid="button-cancel-retrieval"

@@ -2931,6 +2931,10 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS parking_visit_count INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS parking_total_spent DECIMAL(10,2) DEFAULT 0`);
 
+  // Task #165: Condition report on valet_tickets + scheduled retrieval on valet_retrieval_requests
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS condition_report JSONB`);
+  await pool.query(`ALTER TABLE valet_retrieval_requests ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMP`);
+
   // Post-merge fix: Create quotation_requests + quotation_request_items tables that exist in
   // schema.ts but were never created in the DB (causing Drizzle rename warnings on every db:push)
   await pool.query(`
