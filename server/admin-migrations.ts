@@ -3255,6 +3255,18 @@ export async function runTask108Migrations(): Promise<void> {
     WHERE jurisdiction_code IS NULL AND currency_code IS NOT NULL
   `);
 
+  // 1.6b GDPR Art. 18 — Right to Restriction of Processing columns on users
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS processing_restricted BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS restriction_requested_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS restriction_reason TEXT`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS restriction_lifted_at TIMESTAMP`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS restriction_lifted_by_id VARCHAR(36)`);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_users_processing_restricted
+      ON users(tenant_id, processing_restricted)
+      WHERE processing_restricted = true
+  `);
+
   // 1.6 Cookie consent records
   await pool.query(`
     CREATE TABLE IF NOT EXISTS cookie_consent_log (

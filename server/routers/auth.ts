@@ -246,8 +246,29 @@ export function registerAuthRoutes(app: Express): void {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Not authenticated" });
     const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = req.user as any;
     const tenant = await storage.getTenant(safeUser.tenantId);
-    const { rows: [userRow] } = await pool.query(`SELECT theme_preference FROM users WHERE id = $1`, [safeUser.id]);
-    res.json({ ...safeUser, themePreference: userRow?.theme_preference ?? "system", tenant: tenant ? { id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType, currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat, currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals, taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax, serviceCharge: tenant.serviceCharge, onboardingCompleted: tenant.onboardingCompleted, subscriptionStatus: tenant.subscriptionStatus, trialEndsAt: tenant.trialEndsAt, stripeCustomerId: tenant.stripeCustomerId, stripeSubscriptionId: tenant.stripeSubscriptionId, gstin: tenant.gstin, cgstRate: tenant.cgstRate, sgstRate: tenant.sgstRate, invoicePrefix: tenant.invoicePrefix, razorpayEnabled: tenant.razorpayEnabled, razorpayKeyId: tenant.razorpayKeyId } : null });
+    const { rows: [userRow] } = await pool.query(
+      `SELECT theme_preference, processing_restricted, restriction_requested_at, restriction_reason FROM users WHERE id = $1`,
+      [safeUser.id]
+    );
+    res.json({
+      ...safeUser,
+      themePreference: userRow?.theme_preference ?? "system",
+      processingRestricted: userRow?.processing_restricted ?? false,
+      restrictionRequestedAt: userRow?.restriction_requested_at ?? null,
+      restrictionReason: userRow?.restriction_reason ?? null,
+      tenant: tenant ? {
+        id: tenant.id, name: tenant.name, plan: tenant.plan, businessType: tenant.businessType,
+        currency: tenant.currency, timezone: tenant.timezone, timeFormat: tenant.timeFormat,
+        currencyPosition: tenant.currencyPosition, currencyDecimals: tenant.currencyDecimals,
+        taxRate: tenant.taxRate, taxType: tenant.taxType, compoundTax: tenant.compoundTax,
+        serviceCharge: tenant.serviceCharge, onboardingCompleted: tenant.onboardingCompleted,
+        subscriptionStatus: tenant.subscriptionStatus, trialEndsAt: tenant.trialEndsAt,
+        stripeCustomerId: tenant.stripeCustomerId, stripeSubscriptionId: tenant.stripeSubscriptionId,
+        gstin: tenant.gstin, cgstRate: tenant.cgstRate, sgstRate: tenant.sgstRate,
+        invoicePrefix: tenant.invoicePrefix, razorpayEnabled: tenant.razorpayEnabled,
+        razorpayKeyId: tenant.razorpayKeyId,
+      } : null,
+    });
   });
 
   app.patch("/api/users/preferences", requireAuth, async (req, res) => {

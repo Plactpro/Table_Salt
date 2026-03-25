@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import Sidebar from "./sidebar";
 import Header from "./header";
-import { Headset, Lock, Pencil, X, ShieldAlert, FileText, ExternalLink } from "lucide-react";
+import { Headset, Lock, Pencil, X, ShieldAlert, FileText, ExternalLink, AlertTriangle } from "lucide-react";
 import ContactSupportModal from "@/components/widgets/contact-support-modal";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { Button } from "@/components/ui/button";
@@ -180,6 +180,33 @@ function ImpersonationBanner() {
   );
 }
 
+function RestrictionBanner() {
+  const { user } = useAuth();
+  if (!user?.processingRestricted) return null;
+
+  return (
+    <div
+      className="w-full bg-amber-100 border-b border-amber-300 text-amber-900 px-4 py-2 z-50 shrink-0"
+      data-testid="restriction-banner"
+    >
+      <div className="max-w-7xl mx-auto flex items-center gap-2 text-sm">
+        <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
+        <span className="font-semibold">DATA PROCESSING RESTRICTION ACTIVE</span>
+        <span className="opacity-70">·</span>
+        <span>
+          Your account has a data processing restriction in place
+          {user.restrictionRequestedAt && (
+            <> since {new Date(user.restrictionRequestedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</>
+          )}
+          . Some actions are paused.
+        </span>
+        <span className="opacity-70">·</span>
+        <span>Contact your manager or administrator to lift this.</span>
+      </div>
+    </div>
+  );
+}
+
 interface ConsentStatus {
   tos: { version: string; acceptedAt: string } | null;
   privacy_policy: { version: string; acceptedAt: string } | null;
@@ -333,6 +360,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <RealtimeStatusBanner />
       <TrialBanner />
       <ImpersonationBanner />
+      <RestrictionBanner />
       <ConsentUpdateModal />
 
       <div className="flex flex-1 min-h-0">

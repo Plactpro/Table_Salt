@@ -3,12 +3,31 @@ import { storage } from "../storage";
 import { requireAuth, requireRole, hashPassword } from "../auth";
 import { auditLogFromReq } from "../audit";
 import { sendStaffInviteEmail } from "../services/email-service";
+import { pool } from "../db";
 
 export function registerUsersRoutes(app: Express): void {
   app.get("/api/users", requireAuth, async (req, res) => {
     const user = req.user as any;
     const users = await storage.getUsersByTenant(user.tenantId);
-    res.json(users.map(({ password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...u }) => u));
+    const ids = users.map(u => u.id);
+    let restrictionMap: Record<string, { processingRestricted: boolean; restrictionReason: string | null; restrictionRequestedAt: string | null }> = {};
+    if (ids.length > 0) {
+      const { rows } = await pool.query(
+        `SELECT id, processing_restricted, restriction_reason, restriction_requested_at FROM users WHERE id = ANY($1)`,
+        [ids]
+      );
+      for (const row of rows) {
+        restrictionMap[row.id] = {
+          processingRestricted: row.processing_restricted === true,
+          restrictionReason: row.restriction_reason ?? null,
+          restrictionRequestedAt: row.restriction_requested_at ? row.restriction_requested_at.toISOString() : null,
+        };
+      }
+    }
+    res.json(users.map(({ password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...u }) => ({
+      ...u,
+      ...(restrictionMap[u.id] ?? { processingRestricted: false, restrictionReason: null, restrictionRequestedAt: null }),
+    })));
   });
 
   app.post("/api/users", requireRole("owner", "manager"), async (req, res) => {
