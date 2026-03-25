@@ -6,8 +6,9 @@ import {
   buildKOTHtml, buildBillHtml,
   buildRefundReceipt, buildRefundReceiptHtml,
   type KOTOrder, type KOTItem, type BillData, type BillItem, type PrintTemplate,
-  type RefundPaymentData, type RefundReceiptData,
+  type RefundPaymentData, type RefundReceiptData, type JurisdictionMeta,
 } from "./escpos-builder";
+import { getJurisdictionByCurrency } from "../../shared/jurisdictions";
 
 export type PrinterType = "KITCHEN" | "CASHIER" | "BAR" | "EXPEDITOR" | "LABEL" | "MANAGER";
 export type ConnectionType = "NETWORK_IP" | "USB" | "BLUETOOTH" | "CLOUD" | "BROWSER";
@@ -383,6 +384,36 @@ export async function routeAndPrint(params: {
       } catch (_) {}
     }
 
+    let jurisdictionMeta: JurisdictionMeta | null = null;
+    const billOutletId = billRow.outlet_id ?? outletId;
+    if (billOutletId) {
+      try {
+        const { rows: outletRows } = await pool.query(
+          `SELECT currency_code, tax_registration_number, vat_registered,
+                  trade_license_number, trade_license_authority,
+                  regulatory_footer_text
+           FROM outlets WHERE id = $1 LIMIT 1`,
+          [billOutletId]
+        );
+        if (outletRows[0]) {
+          const outletRow = outletRows[0];
+          const jConfig = getJurisdictionByCurrency(outletRow.currency_code || "USD");
+          jurisdictionMeta = {
+            taxInvoiceLabel: jConfig.taxInvoiceLabel,
+            taxLabel: jConfig.taxLabel,
+            taxRegLabel: jConfig.taxRegLabel,
+            taxRegNumber: outletRow.tax_registration_number || null,
+            splitTaxLabels: jConfig.splitTaxLabels || null,
+            requireTaxRegOnInvoice: jConfig.requireTaxRegOnInvoice,
+            tradeLicenseNumber: outletRow.trade_license_number || null,
+            tradeLicenseAuthority: outletRow.trade_license_authority || null,
+            ccpaApplicable: jConfig.ccpaApplicable,
+            footerText: outletRow.regulatory_footer_text || null,
+          };
+        }
+      } catch (_) {}
+    }
+
     const bill: BillData = {
       billNumber: billRow.bill_number,
       invoiceNumber: billRow.invoice_number,
@@ -401,6 +432,7 @@ export async function routeAndPrint(params: {
       totalAmount: billRow.total_amount,
       paymentMethod: null,
       covers: billRow.covers,
+      jurisdictionMeta,
     };
 
     const order: KOTOrder = {

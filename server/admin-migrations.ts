@@ -3236,6 +3236,25 @@ export async function runTask108Migrations(): Promise<void> {
     ON CONFLICT (step_number) DO NOTHING
   `);
 
+  // 1.5b Jurisdiction & legal fields on outlets
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS jurisdiction_code VARCHAR(10)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS tax_registration_number VARCHAR(100)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS vat_registered BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS outlet_tax_rate DECIMAL(5,2)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS trade_license_number VARCHAR(100)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS trade_license_authority VARCHAR(100)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS trade_license_expiry DATE`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS company_registration_no VARCHAR(100)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS grievance_officer_name VARCHAR(200)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS grievance_officer_email VARCHAR(200)`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS regulatory_footer_text TEXT`);
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS invoice_additional_info TEXT`);
+  await pool.query(`
+    UPDATE outlets
+    SET jurisdiction_code = currency_code
+    WHERE jurisdiction_code IS NULL AND currency_code IS NOT NULL
+  `);
+
   // 1.6 Cookie consent records
   await pool.query(`
     CREATE TABLE IF NOT EXISTS cookie_consent_log (

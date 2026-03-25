@@ -4,6 +4,7 @@ import { storage } from "../storage";
 import { pool } from "../db";
 import { emitToTenant } from "../realtime";
 import { calculateChange, generateQuickTender, buildChangeBreakdown, currencyDenominations } from "../services/cash-calculator";
+import { getJurisdictionByCurrency } from "@shared/jurisdictions";
 
 function pad(n: number, w = 4): string {
   return String(n).padStart(w, "0");
@@ -532,6 +533,15 @@ export function registerCashMachineRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const { currencyCode, currencySymbol, currencyName, currencyPosition, decimalPlaces, denominationConfig, cashRounding } = req.body;
+
+      const jurisdiction = currencyCode ? getJurisdictionByCurrency(currencyCode) : null;
+
+      const outletResult = await pool.query(
+        `SELECT outlet_tax_rate FROM outlets WHERE id = $1`,
+        [req.params.id]
+      );
+      const currentTaxRate = outletResult.rows[0]?.outlet_tax_rate;
+
       const updated = await storage.updateOutletCurrencySettings(req.params.id, {
         currencyCode,
         currencySymbol,
@@ -541,7 +551,112 @@ export function registerCashMachineRoutes(app: Express): void {
         denominationConfig,
         cashRounding,
       });
+
+      if (currencyCode && jurisdiction) {
+        await pool.query(
+          `UPDATE outlets SET
+            jurisdiction_code = $1,
+            outlet_tax_rate = CASE WHEN outlet_tax_rate IS NULL THEN $2 ELSE outlet_tax_rate END
+          WHERE id = $3`,
+          [currencyCode, jurisdiction.defaultTaxRate, req.params.id]
+        );
+      }
+
       res.json(updated);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // ── Outlet jurisdiction settings ────────────────────────────────────────
+  app.get("/api/outlets/:id/jurisdiction", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT currency_code, tax_registration_number, vat_registered, outlet_tax_rate,
+                trade_license_number, trade_license_authority, trade_license_expiry,
+                company_registration_no, grievance_officer_name, grievance_officer_email,
+                regulatory_footer_text, invoice_additional_info
+         FROM outlets WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, user.tenantId]
+      );
+      if (!rows[0]) return res.status(404).json({ message: "Outlet not found" });
+      const outlet = rows[0];
+      const jurisdiction = getJurisdictionByCurrency(outlet.currency_code);
+      res.json({
+        jurisdiction,
+        savedFields: {
+          taxRegistrationNumber: outlet.tax_registration_number,
+          vatRegistered: outlet.vat_registered,
+          outletTaxRate: outlet.outlet_tax_rate,
+          tradeLicenseNumber: outlet.trade_license_number,
+          tradeLicenseAuthority: outlet.trade_license_authority,
+          tradeLicenseExpiry: outlet.trade_license_expiry,
+          companyRegistrationNo: outlet.company_registration_no,
+          grievanceOfficerName: outlet.grievance_officer_name,
+          grievanceOfficerEmail: outlet.grievance_officer_email,
+          regulatoryFooterText: outlet.regulatory_footer_text,
+          invoiceAdditionalInfo: outlet.invoice_additional_info,
+        },
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/outlets/:id/jurisdiction", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const {
+        taxRegistrationNumber, vatRegistered, outletTaxRate,
+        tradeLicenseNumber, tradeLicenseAuthority, tradeLicenseExpiry,
+        companyRegistrationNo, grievanceOfficerName, grievanceOfficerEmail,
+        regulatoryFooterText, invoiceAdditionalInfo,
+      } = req.body;
+
+      const { rows } = await pool.query(
+        `UPDATE outlets SET
+          tax_registration_number = $1,
+          vat_registered = $2,
+          outlet_tax_rate = $3,
+          trade_license_number = $4,
+          trade_license_authority = $5,
+          trade_license_expiry = $6,
+          company_registration_no = $7,
+          grievance_officer_name = $8,
+          grievance_officer_email = $9,
+          regulatory_footer_text = $10,
+          invoice_additional_info = $11,
+          jurisdiction_code = currency_code
+        WHERE id = $12 AND tenant_id = $13
+        RETURNING *`,
+        [
+          taxRegistrationNumber || null,
+          vatRegistered ?? false,
+          outletTaxRate != null ? Number(outletTaxRate) : null,
+          tradeLicenseNumber || null,
+          tradeLicenseAuthority || null,
+          tradeLicenseExpiry || null,
+          companyRegistrationNo || null,
+          grievanceOfficerName || null,
+          grievanceOfficerEmail || null,
+          regulatoryFooterText || null,
+          invoiceAdditionalInfo || null,
+          req.params.id,
+          user.tenantId,
+        ]
+      );
+
+      if (!rows[0]) return res.status(404).json({ message: "Outlet not found" });
+
+      await pool.query(
+        `INSERT INTO audit_log (tenant_id, user_id, action, resource_type, resource_id, details)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [user.tenantId, user.id, 'outlet_jurisdiction_updated', 'outlet', req.params.id,
+         JSON.stringify({ outletId: req.params.id })]
+      ).catch(() => {});
+
+      res.json(rows[0]);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
