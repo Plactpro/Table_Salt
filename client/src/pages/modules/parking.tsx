@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { formatCurrency as sharedFormatCurrency, type FormatCurrencyOptions } from "@shared/currency";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { useRequestSounds } from "@/hooks/use-request-sounds";
 import { motion } from "framer-motion";
@@ -53,8 +54,8 @@ function formatMinutes(minutes: number): string {
   return `${m}m`;
 }
 
-function formatCurrency(amount: number): string {
-  return `₹${amount.toFixed(2)}`;
+function formatCurrency(amount: number, currency?: string, opts?: FormatCurrencyOptions): string {
+  return sharedFormatCurrency(amount, currency ?? "USD", opts);
 }
 
 function LiveTimer({ entryTime }: { entryTime: string }) {
@@ -115,8 +116,11 @@ function NewTicketDialog({
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const fmt = (v: number) => sharedFormatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
   const [step, setStep] = useState(1);
   const [createdTicket, setCreatedTicket] = useState<any>(null);
+  const [linkedCrmCustomer, setLinkedCrmCustomer] = useState<any>(null);
   const [form, setForm] = useState({
     vehicleType: "CAR",
     vehicleNumber: "",
@@ -130,6 +134,39 @@ function NewTicketDialog({
     selectedSlotCode: "",
     customerId: "",
   });
+
+  // Debounced plate lookup key (triggers after 4+ chars)
+  const [plateLookupKey, setPlateLookupKey] = useState("");
+  const [phoneLookupKey, setPhoneLookupKey] = useState("");
+  const plateDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const phoneDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { data: crmByPlate, isFetching: plateLookupFetching } = useQuery<any>({
+    queryKey: ["/api/parking/customer-lookup", "plate", plateLookupKey],
+    queryFn: async () => {
+      if (!plateLookupKey || plateLookupKey.length < 4) return null;
+      const res = await fetch(`/api/parking/customer-lookup?plate=${encodeURIComponent(plateLookupKey)}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: open && !!plateLookupKey && plateLookupKey.length >= 4 && !form.customerId,
+    staleTime: 30000,
+  });
+
+  const { data: crmByPhone, isFetching: phoneLookupFetching } = useQuery<any>({
+    queryKey: ["/api/parking/customer-lookup", "phone", phoneLookupKey],
+    queryFn: async () => {
+      if (!phoneLookupKey || phoneLookupKey.length < 6) return null;
+      const res = await fetch(`/api/parking/customer-lookup?phone=${encodeURIComponent(phoneLookupKey)}`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: open && !!phoneLookupKey && phoneLookupKey.length >= 6 && !form.customerId,
+    staleTime: 30000,
+  });
+
+  // Resolved CRM suggestion: plate lookup takes priority
+  const crmSuggestion = linkedCrmCustomer ? null : (crmByPlate || crmByPhone || null);
 
   const { data: slots = [] } = useQuery<any[]>({
     queryKey: ["/api/parking/slots", outletId],
@@ -156,22 +193,7 @@ function NewTicketDialog({
 
   const availableSlots = slots.filter((s: any) => s.status === "available");
 
-  const { data: customerByPhone } = useQuery<any>({
-    queryKey: ["/api/customers/by-phone", form.customerPhone],
-    queryFn: async () => {
-      if (!form.customerPhone || form.customerPhone.length < 7) return null;
-      const res = await fetch(`/api/customers?phone=${encodeURIComponent(form.customerPhone)}`, { credentials: "include" });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (Array.isArray(data)) return data[0] ?? null;
-      if (Array.isArray(data?.data)) return data.data[0] ?? null;
-      return null;
-    },
-    enabled: step === 2 && !!form.customerPhone && form.customerPhone.length >= 7,
-    staleTime: 60000,
-  });
-
-  const resolvedCustomerId = form.customerId || customerByPhone?.id || "";
+  const resolvedCustomerId = form.customerId || "";
 
   const [autoAssignResult, setAutoAssignResult] = useState<{ reason: string } | null>(null);
   const autoAssignMutation = useMutation({
@@ -202,6 +224,7 @@ function NewTicketDialog({
         vehicleColor: form.vehicleColor || null,
         customerName: form.customerName || null,
         customerPhone: form.customerPhone || null,
+        customerId: form.customerId || null,
         tableAssignment: form.tableAssignment || null,
         keyTagNumber: form.keyTagNumber || null,
         slotId: form.selectedSlotId || null,
@@ -270,10 +293,13 @@ function NewTicketDialog({
     setStep(1);
     setCreatedTicket(null);
     setAutoAssignResult(null);
+    setLinkedCrmCustomer(null);
+    setPlateLookupKey("");
+    setPhoneLookupKey("");
     setForm({
       vehicleType: "CAR", vehicleNumber: "", vehicleMake: "", vehicleColor: "",
       customerName: "", customerPhone: "", tableAssignment: "", keyTagNumber: "",
-      selectedSlotId: "", selectedSlotCode: "",
+      selectedSlotId: "", selectedSlotCode: "", customerId: "",
     });
     onClose();
   };
@@ -342,7 +368,16 @@ function NewTicketDialog({
                     id="vehicle-number"
                     placeholder="e.g. MH 01 AB 1234"
                     value={form.vehicleNumber}
-                    onChange={e => setForm(f => ({ ...f, vehicleNumber: e.target.value }))}
+                    onChange={e => {
+                      const val = e.target.value;
+                      setForm(f => ({ ...f, vehicleNumber: val }));
+                      if (plateDebounceRef.current) clearTimeout(plateDebounceRef.current);
+                      if (!form.customerId) {
+                        plateDebounceRef.current = setTimeout(() => {
+                          setPlateLookupKey(val.trim().length >= 4 ? val.trim() : "");
+                        }, 600);
+                      }
+                    }}
                     data-testid="input-vehicle-number"
                   />
                 </div>
@@ -387,7 +422,16 @@ function NewTicketDialog({
                       id="customer-phone"
                       placeholder="Optional"
                       value={form.customerPhone}
-                      onChange={e => setForm(f => ({ ...f, customerPhone: e.target.value }))}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setForm(f => ({ ...f, customerPhone: val }));
+                        if (phoneDebounceRef.current) clearTimeout(phoneDebounceRef.current);
+                        if (!form.customerId) {
+                          phoneDebounceRef.current = setTimeout(() => {
+                            setPhoneLookupKey(val.trim().length >= 6 ? val.trim() : "");
+                          }, 600);
+                        }
+                      }}
                       data-testid="input-customer-phone"
                     />
                   </div>
@@ -435,6 +479,73 @@ function NewTicketDialog({
                   </div>
                 </div>
 
+                {/* CRM Lookup Result Card */}
+                {(plateLookupFetching || phoneLookupFetching) && !form.customerId && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground py-1" data-testid="crm-lookup-loading">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Looking up customer...
+                  </div>
+                )}
+
+                {!form.customerId && crmSuggestion && (
+                  <div className="border border-blue-200 bg-blue-50 rounded-lg p-3 space-y-2" data-testid="crm-found-customer-card">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <BadgeCheck className="h-4 w-4 text-blue-600" />
+                        <span className="text-sm font-semibold text-blue-800">Returning Customer Found</span>
+                      </div>
+                      <Badge className={`text-[10px] px-1.5 py-0 ${["gold","platinum"].includes(crmSuggestion.loyaltyTier ?? "") ? "border-amber-400 text-amber-700 bg-amber-50" : "border-blue-300 text-blue-700 bg-blue-50"}`} data-testid="badge-crm-tier">
+                        {crmSuggestion.loyaltyTier ?? "bronze"}
+                      </Badge>
+                    </div>
+                    <div className="text-sm">
+                      <p className="font-medium" data-testid="text-crm-name">{crmSuggestion.name}</p>
+                      {crmSuggestion.phone && <p className="text-xs text-muted-foreground">{crmSuggestion.phone}</p>}
+                    </div>
+                    <p className="text-xs text-blue-700" data-testid="text-crm-parking-stats">
+                      {crmSuggestion.parkingVisitCount ?? 0} parking visits · {fmt(parseFloat(crmSuggestion.parkingTotalSpent ?? "0"))} total
+                      {crmSuggestion.lastSessions?.[0]?.exitTime && (
+                        <> · Last: {new Date(crmSuggestion.lastSessions[0].exitTime).toLocaleDateString()}</>
+                      )}
+                    </p>
+                    <Button
+                      size="sm"
+                      className="w-full h-7 text-xs"
+                      onClick={() => {
+                        setLinkedCrmCustomer(crmSuggestion);
+                        setForm(f => ({
+                          ...f,
+                          customerId: crmSuggestion.id,
+                          customerName: f.customerName || crmSuggestion.name,
+                          customerPhone: f.customerPhone || crmSuggestion.phone || "",
+                        }));
+                      }}
+                      data-testid="button-use-crm-customer"
+                    >
+                      Use this customer
+                    </Button>
+                  </div>
+                )}
+
+                {!form.customerId && !crmSuggestion && (form.customerPhone?.length >= 6 || form.vehicleNumber?.trim().length >= 4) && !plateLookupFetching && !phoneLookupFetching && (
+                  <p className="text-xs text-muted-foreground" data-testid="text-new-customer-hint">
+                    New customer — will be saved to CRM on checkout
+                  </p>
+                )}
+
+                {form.customerId && linkedCrmCustomer && (
+                  <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2" data-testid="crm-linked-customer">
+                    <CheckCircle2 className="h-4 w-4 text-green-600 shrink-0" />
+                    <span className="text-xs text-green-800 font-medium">Linked to CRM: {linkedCrmCustomer.name}</span>
+                    <button
+                      className="ml-auto text-muted-foreground hover:text-foreground"
+                      onClick={() => { setLinkedCrmCustomer(null); setForm(f => ({ ...f, customerId: "" })); }}
+                      data-testid="button-unlink-crm"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                )}
+
                 <Button
                   className="w-full"
                   disabled={!form.vehicleNumber}
@@ -452,13 +563,13 @@ function NewTicketDialog({
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-medium">Select Available Slot (Optional)</p>
-                      {customerByPhone && (
+                      {linkedCrmCustomer && (
                         <Badge
                           variant="outline"
-                          className={`text-[10px] px-1.5 py-0 ${["gold","platinum"].includes(customerByPhone.loyaltyTier ?? "") ? "border-amber-400 text-amber-700 bg-amber-50" : "border-muted text-muted-foreground"}`}
+                          className={`text-[10px] px-1.5 py-0 ${["gold","platinum"].includes(linkedCrmCustomer.loyaltyTier ?? "") ? "border-amber-400 text-amber-700 bg-amber-50" : "border-muted text-muted-foreground"}`}
                           data-testid="badge-customer-tier"
                         >
-                          {customerByPhone.loyaltyTier ?? "bronze"}
+                          {linkedCrmCustomer.loyaltyTier ?? "bronze"}
                         </Badge>
                       )}
                     </div>
@@ -1164,6 +1275,8 @@ function SlotBoard({ outletId }: { outletId: string }) {
 }
 
 function StatsHeader({ outletId }: { outletId: string }) {
+  const { user } = useAuth();
+  const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
   const { data: stats } = useQuery<any>({
     queryKey: ["/api/parking/stats", outletId],
     queryFn: async () => {
@@ -1183,7 +1296,7 @@ function StatsHeader({ outletId }: { outletId: string }) {
         <p className="text-xs text-muted-foreground mt-0.5">Vehicles In</p>
       </div>
       <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-revenue">
-        <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? formatCurrency(stats.revenueToday) : "—"}</p>
+        <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? fmt(stats.revenueToday) : "—"}</p>
         <p className="text-xs text-muted-foreground mt-0.5">Revenue Today</p>
       </div>
       <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-avg-duration">
@@ -1212,6 +1325,8 @@ function DashboardTab({
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
 
   const { data: stats } = useQuery<any>({
     queryKey: ["/api/parking/stats", outletId],
@@ -1295,7 +1410,7 @@ function DashboardTab({
         <Card data-testid="dash-stat-revenue">
           <CardContent className="p-4 text-center">
             <TrendingUp className="h-5 w-5 mx-auto mb-1 text-green-500" />
-            <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? formatCurrency(stats.revenueToday) : "—"}</p>
+            <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? fmt(stats.revenueToday) : "—"}</p>
             <p className="text-xs text-muted-foreground">Revenue Today</p>
           </CardContent>
         </Card>
@@ -1510,6 +1625,8 @@ function ZoneHeatmap({ outletId }: { outletId: string }) {
 type DateFilter = "today" | "yesterday" | "week" | "month" | "custom";
 
 function RevenueHistoryTab({ outletId }: { outletId: string }) {
+  const { user } = useAuth();
+  const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
   const [filter, setFilter] = useState<DateFilter>("today");
   const [analyticsView, setAnalyticsView] = useState<"overview" | "history">("overview");
   const todayStr = new Date().toISOString().split("T")[0];
@@ -1678,7 +1795,7 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
         </Card>
         <Card>
           <CardContent className="p-3 text-center">
-            <p className="text-xl font-bold text-green-600" data-testid="summary-total-revenue">{formatCurrency(totalRevenue)}</p>
+            <p className="text-xl font-bold text-green-600" data-testid="summary-total-revenue">{fmt(totalRevenue)}</p>
             <p className="text-xs text-muted-foreground">Total Revenue</p>
           </CardContent>
         </Card>
@@ -1756,7 +1873,7 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
                       <div key={v.vehicleType} className="space-y-0.5">
                         <div className="flex justify-between text-xs">
                           <span>{getVehicleIcon(v.vehicleType)} {v.vehicleType}</span>
-                          <span className="font-medium">{formatCurrency(v.revenue)} ({pct}%)</span>
+                          <span className="font-medium">{fmt(v.revenue)} ({pct}%)</span>
                         </div>
                         <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
@@ -1780,7 +1897,7 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
                       <div key={z.zoneName} className="space-y-0.5">
                         <div className="flex justify-between text-xs">
                           <span>{z.zoneName}</span>
-                          <span className="font-medium">{formatCurrency(z.revenue)} ({z.count} tickets)</span>
+                          <span className="font-medium">{fmt(z.revenue)} ({z.count} tickets)</span>
                         </div>
                         <div className="h-2.5 bg-muted rounded-full overflow-hidden">
                           <div className="h-full bg-green-500 rounded-full" style={{ width: `${pct}%` }} />
@@ -1868,7 +1985,7 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
                     </TableCell>
                     <TableCell className="text-xs">{t.durationMinutes != null ? `${t.durationMinutes}m` : "—"}</TableCell>
                     <TableCell className="text-xs">{t.zoneName ?? "—"}</TableCell>
-                    <TableCell className="text-xs font-medium text-green-700">{t.chargeAmount ? formatCurrency(parseFloat(t.chargeAmount)) : "—"}</TableCell>
+                    <TableCell className="text-xs font-medium text-green-700">{t.chargeAmount ? fmt(parseFloat(t.chargeAmount)) : "—"}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -2087,6 +2204,8 @@ function ValetStaffTab({ outletId, tickets }: { outletId: string; tickets: any[]
 function SettingsTab({ outletId }: { outletId: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
 
   const { data: config, isLoading: configLoading } = useQuery<any>({
     queryKey: ["/api/parking/config", outletId],
@@ -2521,7 +2640,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                 </Select>
                 <Input
                   type="number"
-                  placeholder="Base rate (₹)"
+                  placeholder="Base rate"
                   value={rateForm.rateAmount}
                   onChange={e => setRateForm(f => ({ ...f, rateAmount: e.target.value }))}
                   className="w-28"
@@ -2543,7 +2662,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                     <div key={idx} className="flex items-center gap-2 text-xs" data-testid={`slab-row-${idx}`}>
                       <span className="text-muted-foreground w-6">{idx + 1}.</span>
                       <span>{slab.fromMinutes}–{slab.toMinutes ?? "∞"} min</span>
-                      <span className="font-medium">{formatCurrency(parseFloat(slab.charge) || 0)}</span>
+                      <span className="font-medium">{fmt(parseFloat(slab.charge) || 0)}</span>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -2574,7 +2693,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                     />
                     <Input
                       type="number"
-                      placeholder="Charge (₹)"
+                      placeholder="Charge"
                       value={newSlab.charge}
                       onChange={e => setNewSlab(s => ({ ...s, charge: e.target.value }))}
                       className="w-24 h-7 text-xs"
@@ -2643,7 +2762,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                         </Select>
                         <Input
                           type="number"
-                          placeholder="Rate (₹)"
+                          placeholder="Rate"
                           value={editRateForm.rateAmount}
                           onChange={e => setEditRateForm(f => ({ ...f, rateAmount: e.target.value }))}
                           className="w-28"
@@ -2656,7 +2775,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                           {editRateForm.slabs.map((slab, idx) => (
                             <div key={idx} className="flex items-center gap-2 text-xs">
                               <span>{slab.fromMinutes}–{slab.toMinutes ?? "∞"} min</span>
-                              <span className="font-medium">{formatCurrency(parseFloat(slab.charge) || 0)}</span>
+                              <span className="font-medium">{fmt(parseFloat(slab.charge) || 0)}</span>
                               <Button size="sm" variant="ghost" className="h-5 w-5 p-0 ml-auto text-red-400"
                                 onClick={() => setEditRateForm(f => ({ ...f, slabs: f.slabs.filter((_, i) => i !== idx) }))}
                                 data-testid={`button-remove-edit-slab-${idx}`}
@@ -2666,7 +2785,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                           <div className="flex flex-wrap gap-2">
                             <Input type="number" placeholder="From (min)" value={editNewSlab.fromMinutes} onChange={e => setEditNewSlab(s => ({ ...s, fromMinutes: e.target.value }))} className="w-24 h-7 text-xs" data-testid={`input-edit-slab-from-${r.id}`} />
                             <Input type="number" placeholder="To (blank=∞)" value={editNewSlab.toMinutes} onChange={e => setEditNewSlab(s => ({ ...s, toMinutes: e.target.value }))} className="w-28 h-7 text-xs" data-testid={`input-edit-slab-to-${r.id}`} />
-                            <Input type="number" placeholder="Charge (₹)" value={editNewSlab.charge} onChange={e => setEditNewSlab(s => ({ ...s, charge: e.target.value }))} className="w-24 h-7 text-xs" data-testid={`input-edit-slab-charge-${r.id}`} />
+                            <Input type="number" placeholder="Charge" value={editNewSlab.charge} onChange={e => setEditNewSlab(s => ({ ...s, charge: e.target.value }))} className="w-24 h-7 text-xs" data-testid={`input-edit-slab-charge-${r.id}`} />
                             <Button size="sm" variant="outline" className="h-7 text-xs"
                               disabled={!editNewSlab.fromMinutes || !editNewSlab.charge}
                               onClick={() => {
@@ -2690,7 +2809,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                       <div className="text-sm flex items-center gap-2 flex-wrap">
                         <span className="font-medium">{getVehicleIcon(r.vehicleType)} {r.vehicleType}</span>
                         <Badge variant="outline" className="text-[10px]">{r.rateType}</Badge>
-                        <span className="font-medium">{formatCurrency(parseFloat(r.rateAmount ?? "0"))}</span>
+                        <span className="font-medium">{fmt(parseFloat(r.rateAmount ?? "0"))}</span>
                         <span className="text-muted-foreground text-xs">
                           {r.rateType === "HOURLY" ? "/hr" : r.rateType === "FLAT" ? "flat" : ""}
                         </span>
@@ -2734,7 +2853,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                       {r.slabs.map((slab: any, idx: number) => (
                         <div key={idx} className="flex gap-3 text-xs px-2 py-1 bg-white rounded border">
                           <span className="text-muted-foreground">{slab.fromMinutes}–{slab.toMinutes ?? "∞"} min</span>
-                          <span className="font-medium ml-auto">{formatCurrency(parseFloat(slab.charge ?? "0"))}</span>
+                          <span className="font-medium ml-auto">{fmt(parseFloat(slab.charge ?? "0"))}</span>
                         </div>
                       ))}
                     </div>

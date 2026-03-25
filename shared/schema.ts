@@ -455,6 +455,9 @@ export const customers = pgTable("customers", {
   lastVisitAt: timestamp("last_visit_at"),
   birthday: text("birthday"),
   anniversary: text("anniversary"),
+  vehiclePlates: text("vehicle_plates").array().default([]),
+  parkingVisitCount: integer("parking_visit_count").default(0),
+  parkingTotalSpent: decimal("parking_total_spent", { precision: 10, scale: 2 }).default("0"),
 }, (t) => [
   index("idx_customers_tenant_id").on(t.tenantId),
   index("idx_customers_tenant_loyalty_tier").on(t.tenantId, t.loyaltyTier),
@@ -3224,6 +3227,7 @@ export const valetTickets = pgTable("valet_tickets", {
   slotId: varchar("slot_id", { length: 36 }),
   zoneId: varchar("zone_id", { length: 36 }),
   billId: varchar("bill_id", { length: 36 }),
+  customerId: varchar("customer_id", { length: 36 }),
   valetStaffId: varchar("valet_staff_id", { length: 36 }),
   vehicleNumber: text("vehicle_number"),
   vehicleType: varchar("vehicle_type", { length: 30 }).notNull().default("CAR"),

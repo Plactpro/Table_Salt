@@ -2925,6 +2925,12 @@ export async function runTask108Migrations(): Promise<void> {
     AND (description ILIKE '%Not applicable at POS%' OR description ILIKE '%manual application only%')
   `);
 
+  // Task #164: CRM sync — customer_id FK on valet_tickets + parking stats on customers
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS customer_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS vehicle_plates TEXT[] DEFAULT ARRAY[]::TEXT[]`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS parking_visit_count INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE customers ADD COLUMN IF NOT EXISTS parking_total_spent DECIMAL(10,2) DEFAULT 0`);
+
   // Post-merge fix: Create quotation_requests + quotation_request_items tables that exist in
   // schema.ts but were never created in the DB (causing Drizzle rename warnings on every db:push)
   await pool.query(`
