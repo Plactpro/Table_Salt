@@ -10,7 +10,7 @@ import { requireAuth, hashPassword, comparePasswords, validatePasswordPolicy, ch
 import { sendWelcomeEmail } from "../services/email-service";
 import { users } from "@shared/schema";
 import { auditLog, auditLogFromReq } from "../audit";
-import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled } from "../security-alerts";
+import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled, checkMultiAccountSameIp, checkCrossAccountFailedLogins } from "../security-alerts";
 import { trialEndsAtDate, isStripeConfigured, getUncachableStripeClient } from "../stripe";
 import { sendPasswordResetEmail } from "../email";
 
@@ -129,6 +129,8 @@ export function registerAuthRoutes(app: Express): void {
         const isLockout = msg.includes("locked");
         auditLog({ tenantId: null, action: "login_failed", entityType: "user", entityName: req.body.username, metadata: { username: req.body.username }, req });
         checkFailedLoginAlert(req.body.username, req);
+        const failedLoginIp = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() || req.socket?.remoteAddress || req.ip || "unknown";
+        checkCrossAccountFailedLogins(failedLoginIp, "platform").catch(() => {});
         return res.status(isLockout ? 423 : 401).json({ message: msg });
       }
 
@@ -187,6 +189,9 @@ export function registerAuthRoutes(app: Express): void {
 
         auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "login", entityType: "user", entityId: user.id, entityName: user.name, req });
         checkNewIpLoginAlert(user.id, user.tenantId, user.name, req);
+        const loginIp = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() || req.socket?.remoteAddress || req.ip || "unknown";
+        checkMultiAccountSameIp(loginIp, user.tenantId).catch(() => {});
+        checkCrossAccountFailedLogins(loginIp, user.tenantId).catch(() => {});
         const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = user;
         const redirectTo = (user.role as string) === "super_admin" ? "/admin" : undefined;
 

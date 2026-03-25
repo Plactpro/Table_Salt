@@ -5,6 +5,7 @@ import { serveStatic } from "./static";
 import { setupSecurity } from "./security";
 import { createServer } from "http";
 import { incrementApiRequestCount } from "./api-counter";
+import { checkApiRateAnomaly } from "./security-alerts";
 import { discoverPriceIds } from "./stripe";
 import { setupWebSocket } from "./realtime";
 import { pool } from "./db";
@@ -141,6 +142,15 @@ app.get("/api/health", async (_req: Request, res: Response) => {
       database: "disconnected",
     });
   }
+});
+
+// Rate anomaly detection — non-blocking sampler for authenticated GET requests
+app.use((req, _res, next) => {
+  const u = (req as any).user;
+  if (u && req.method === "GET" && req.path.startsWith("/api")) {
+    checkApiRateAnomaly(u.id, u.tenantId, u.name, req).catch(() => {});
+  }
+  next();
 });
 
 app.use((req, res, next) => {

@@ -9,7 +9,7 @@ import { requireSuperAdmin } from "../auth";
 import { auditLogFromReq } from "../audit";
 import { securityAlerts } from "@shared/schema";
 import { isValidCidr } from "../security";
-import { alertDataExport, createSecurityAlert } from "../security-alerts";
+import { alertDataExport, createSecurityAlert, checkOffHoursBulkAccess } from "../security-alerts";
 import { comparePasswords, hashPassword } from "../auth";
 import { isEncrypted, decryptField } from "../encryption";
 
@@ -127,6 +127,7 @@ export function registerComplianceRoutes(app: Express): void {
 
       auditLogFromReq(req, { action: "gdpr_data_export", entityType: "user", entityId: user.id, entityName: user.name });
       alertDataExport(user.id, user.tenantId, user.name, req);
+      checkOffHoursBulkAccess(user.id, user.tenantId, user.name, "/api/gdpr/export", 1, req).catch(() => {});
       res.json({ downloadUrl: `/api/gdpr/export/download?token=${token}`, expiresInMinutes: 10 });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -389,14 +390,14 @@ export function registerComplianceRoutes(app: Express): void {
   app.post("/api/admin/breach-incidents", requireSuperAdmin, async (req, res) => {
     try {
       const user = req.user as any;
-      const { title, description, severity, tenantId, affectedRecords, affectedDataTypes, rootCause, requiresDpaNotification, notificationRationale } = req.body;
+      const { title, description, severity, tenantId, affectedRecords, affectedDataTypes, rootCause, requiresDpaNotification, notificationRationale, detectedAt: detectedAtRaw } = req.body;
       if (!title || !description || !severity) {
         return res.status(400).json({ message: "title, description, and severity are required" });
       }
       if (requiresDpaNotification === false && !notificationRationale) {
         return res.status(400).json({ message: "notificationRationale is required when requiresDpaNotification is false" });
       }
-      const detectedAt = new Date();
+      const detectedAt = detectedAtRaw ? new Date(detectedAtRaw) : new Date();
       const notificationDeadline = new Date(detectedAt.getTime() + 72 * 60 * 60 * 1000);
       const { rows: [incident] } = await pool.query(
         `INSERT INTO breach_incidents (tenant_id, title, description, severity, status, detected_at, notification_deadline,

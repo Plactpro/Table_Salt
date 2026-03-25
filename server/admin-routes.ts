@@ -1,4 +1,5 @@
-import type { Express } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
+import { checkOffHoursBulkAccess } from "./security-alerts";
 import { db } from "./db";
 import { eq, and, desc, sql, ne, gte, lte, inArray, max, ilike, or } from "drizzle-orm";
 import { z } from "zod";
@@ -1196,6 +1197,12 @@ export function registerAdminRoutes(app: Express) {
         if (!e.userEmail) return e;
         return { ...e, userEmail: isEncrypted(e.userEmail) ? decryptField(e.userEmail) : e.userEmail };
       });
+
+      const adminUser = req.user as { id: string; tenantId: string; name: string } | undefined;
+      if (adminUser && events.length > 500) {
+        checkOffHoursBulkAccess(adminUser.id, adminUser.tenantId, adminUser.name, req.path, events.length, req as Request).catch(() => {});
+      }
+
       return res.json({ data, total: Number(total), limit: limitNum, offset: offsetNum });
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Unknown error";
@@ -1771,6 +1778,95 @@ export function registerAdminRoutes(app: Express) {
         .set({ acknowledged: true, acknowledgedBy: adminUser.id, acknowledgedAt: new Date() })
         .where(eq(securityAlerts.id, req.params.id))
         .returning();
+
+      return res.json(updated);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  // ─── Detection Alerts (potential_breach_hint) ────────────────────────────
+
+  app.get("/api/admin/detection-alerts", requireSuperAdmin, async (req, res) => {
+    try {
+      const { acknowledged, limit: limitStr } = req.query as Record<string, string>;
+      const limitVal = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
+
+      let whereClause = `WHERE type = 'potential_breach_hint'`;
+      const params: unknown[] = [];
+
+      if (acknowledged !== undefined && acknowledged !== "") {
+        params.push(acknowledged === "true");
+        whereClause += ` AND acknowledged = $${params.length}`;
+      } else {
+        whereClause += ` AND acknowledged = false`;
+      }
+
+      const { rows } = await pool.query(
+        `SELECT sa.*, t.name AS tenant_name
+         FROM security_alerts sa
+         LEFT JOIN tenants t ON sa.tenant_id = t.id
+         ${whereClause}
+         ORDER BY sa.created_at DESC
+         LIMIT ${limitVal}`,
+        params
+      );
+
+      const { rows: [{ total }] } = await pool.query(
+        `SELECT COUNT(*) AS total FROM security_alerts ${whereClause}`,
+        params
+      );
+
+      return res.json({ data: rows, total: Number(total) });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.patch("/api/admin/detection-alerts/:id/dismiss", requireSuperAdmin, async (req, res) => {
+    try {
+      const adminUser = req.user as { id: string; name: string };
+      const { reason, reasonType } = req.body as { reason?: string; reasonType?: string };
+
+      if (!reasonType) {
+        return res.status(400).json({ message: "dismissal reasonType is required" });
+      }
+
+      const { rows: [existing] } = await pool.query(
+        `SELECT * FROM security_alerts WHERE id = $1 AND type = 'potential_breach_hint'`,
+        [req.params.id]
+      );
+      if (!existing) return res.status(404).json({ message: "Detection alert not found" });
+
+      const dismissalMeta = { dismissedReason: reason || reasonType, dismissedReasonType: reasonType, dismissedBy: adminUser.id };
+      const mergedMeta = { ...(existing.metadata || {}), ...dismissalMeta };
+
+      const { rows: [updated] } = await pool.query(
+        `UPDATE security_alerts
+         SET acknowledged = true,
+             acknowledged_by = $1,
+             acknowledged_at = NOW(),
+             metadata = $2::jsonb
+         WHERE id = $3
+         RETURNING *`,
+        [adminUser.id, JSON.stringify(mergedMeta), req.params.id]
+      );
+
+      await pool.query(
+        `INSERT INTO audit_events (tenant_id, user_id, user_name, action, entity_type, entity_id, entity_name, metadata, ip_address, created_at)
+         VALUES ($1, $2, $3, 'detection_alert_dismissed', 'security_alert', $4, $5, $6::jsonb, $7, NOW())`,
+        [
+          existing.tenant_id,
+          adminUser.id,
+          adminUser.name,
+          req.params.id,
+          existing.title,
+          JSON.stringify({ reason: reason || reasonType, reasonType }),
+          (req as Request).ip || null,
+        ]
+      );
 
       return res.json(updated);
     } catch (err: unknown) {
