@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Settings, Shield, CreditCard, Clock, QrCode } from "lucide-react";
 import SettingsPage from "./settings";
@@ -7,15 +8,18 @@ import SecuritySettingsPage from "./security-settings";
 import SubscriptionSettings from "./subscription-settings";
 import ShiftsManagement from "./shifts-management";
 import QrRequestSettings from "./qr-request-settings";
+import AccessLogPage from "./access-log";
+import { apiRequest } from "@/lib/queryClient";
 
-const VALID_TABS = ["general", "shifts", "security", "subscription", "qr-settings"] as const;
-type ValidTab = typeof VALID_TABS[number];
+const BASE_TABS = ["general", "shifts", "security", "subscription", "qr-settings"] as const;
+type BaseTab = typeof BASE_TABS[number];
+type ValidTab = BaseTab | "access-log";
 
 function getInitialTab(): ValidTab {
   try {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab") as ValidTab | null;
-    if (tab && VALID_TABS.includes(tab)) return tab;
+    if (tab && ([...BASE_TABS, "access-log"] as string[]).includes(tab)) return tab;
   } catch {}
   return "general";
 }
@@ -24,13 +28,25 @@ export default function SettingsHub() {
   const [tab, setTab] = useState<ValidTab>(getInitialTab);
   const [, navigate] = useLocation();
 
+  const { data: prefs } = useQuery<{ showAccessLog: boolean }>({
+    queryKey: ["/api/tenant/access-preferences"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/tenant/access-preferences");
+      return r.json();
+    },
+    staleTime: 30000,
+  });
+
+  const showAccessLog = prefs?.showAccessLog !== false;
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlTab = params.get("tab") as ValidTab | null;
-    if (urlTab && VALID_TABS.includes(urlTab) && urlTab !== tab) {
+    const allTabs: string[] = [...BASE_TABS, ...(showAccessLog ? ["access-log"] : [])];
+    if (urlTab && allTabs.includes(urlTab) && urlTab !== tab) {
       setTab(urlTab);
     }
-  }, []);
+  }, [showAccessLog]);
 
   const handleTabChange = (value: string) => {
     setTab(value as ValidTab);
@@ -58,6 +74,11 @@ export default function SettingsHub() {
           <TabsTrigger value="qr-settings" data-testid="tab-qr-settings">
             <QrCode className="h-4 w-4 mr-1.5" />QR Requests
           </TabsTrigger>
+          {showAccessLog && (
+            <TabsTrigger value="access-log" data-testid="tab-access-log">
+              <Shield className="h-4 w-4 mr-1.5" />Account Access
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="general" className="mt-4">
           <SettingsPage />
@@ -74,6 +95,11 @@ export default function SettingsHub() {
         <TabsContent value="qr-settings" className="mt-4">
           <QrRequestSettings />
         </TabsContent>
+        {showAccessLog && (
+          <TabsContent value="access-log" className="mt-4">
+            <AccessLogPage />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

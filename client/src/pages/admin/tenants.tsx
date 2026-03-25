@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import ImpersonationStartDialog from "@/components/admin/impersonation-start-dialog";
 import {
   Building2,
   Search,
@@ -115,6 +116,7 @@ export default function TenantsPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
   const [showCreate, setShowCreate] = useState(false);
+  const [impersonateTarget, setImpersonateTarget] = useState<{ userId: string; tenantName: string } | null>(null);
   const PAGE_SIZE = 50;
   const [form, setForm] = useState<CreateTenantForm>({
     tenantName: "",
@@ -169,18 +171,6 @@ export default function TenantsPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const impersonateMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      const r = await apiRequest("POST", `/api/admin/impersonate/${userId}`);
-      return r.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/impersonation/status"] });
-      navigate("/");
-    },
-    onError: (e: Error) => toast({ title: "Impersonation failed", description: e.message, variant: "destructive" }),
-  });
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateTenantForm) => {
@@ -340,7 +330,7 @@ export default function TenantsPage() {
                       </DropdownMenuItem>
                       {t.ownerUserId && (
                         <DropdownMenuItem
-                          onClick={() => impersonateMutation.mutate(t.ownerUserId!)}
+                          onClick={() => setImpersonateTarget({ userId: t.ownerUserId!, tenantName: t.name })}
                           data-testid={`menu-impersonate-owner-${t.id}`}
                           className="text-amber-700"
                         >
@@ -515,6 +505,16 @@ export default function TenantsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Impersonation Start Dialog */}
+      {impersonateTarget && (
+        <ImpersonationStartDialog
+          open={!!impersonateTarget}
+          onOpenChange={(open) => { if (!open) setImpersonateTarget(null); }}
+          userId={impersonateTarget.userId}
+          tenantName={impersonateTarget.tenantName}
+          onSuccess={() => { navigate("/"); }}
+        />
+      )}
     </div>
   );
 }

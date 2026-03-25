@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import ImpersonationStartDialog from "@/components/admin/impersonation-start-dialog";
 import {
   Search,
   MoreHorizontal,
@@ -93,6 +94,7 @@ export default function UsersPage() {
   const [page, setPage] = useState(0);
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [resetForUser, setResetForUser] = useState<string | null>(null);
+  const [impersonateTarget, setImpersonateTarget] = useState<{ userId: string; tenantName: string } | null>(null);
 
   const offset = page * PAGE_SIZE;
 
@@ -155,18 +157,6 @@ export default function UsersPage() {
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const impersonateMutation = useMutation({
-    mutationFn: async (userId: string) => {
-      const r = await apiRequest("POST", `/api/admin/impersonate/${userId}`);
-      return r.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/impersonation/status"] });
-      navigate("/");
-    },
-    onError: (e: Error) => toast({ title: "Impersonation failed", description: e.message, variant: "destructive" }),
-  });
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="admin-users-page">
@@ -306,7 +296,7 @@ export default function UsersPage() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem
-                        onClick={() => impersonateMutation.mutate(u.id)}
+                        onClick={() => setImpersonateTarget({ userId: u.id, tenantName: u.tenantName ?? "Tenant" })}
                         data-testid={`menu-impersonate-user-${u.id}`}
                       >
                         <UserCheck className="h-4 w-4 mr-2" />
@@ -399,6 +389,17 @@ export default function UsersPage() {
       </Dialog>
 
       <p className="sr-only" aria-hidden>{resetForUser}</p>
+
+      {/* Impersonation Start Dialog */}
+      {impersonateTarget && (
+        <ImpersonationStartDialog
+          open={!!impersonateTarget}
+          onOpenChange={(open) => { if (!open) setImpersonateTarget(null); }}
+          userId={impersonateTarget.userId}
+          tenantName={impersonateTarget.tenantName}
+          onSuccess={() => { navigate("/"); }}
+        />
+      )}
     </div>
   );
 }

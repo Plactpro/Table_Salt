@@ -135,6 +135,12 @@ export function registerAdminRoutes(app: Express) {
   const handleImpersonateStart: import("express").RequestHandler = async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string; tenantId: string; role: string };
+      const { reason, accessMode = "READ_ONLY", supportTicketId, sessionTimeoutMinutes = 30 } = req.body ?? {};
+
+      if (!reason || !String(reason).trim()) {
+        return res.status(400).json({ message: "Access reason is required" });
+      }
+
       const [target] = await db.select().from(users).where(eq(users.id, req.params.userId));
       if (!target) return res.status(404).json({ message: "User not found" });
       if (target.role === "super_admin" as UserRoleValue) {
@@ -146,15 +152,6 @@ export function registerAdminRoutes(app: Express) {
 
       const [targetTenant] = await db.select({ name: tenants.name }).from(tenants).where(eq(tenants.id, target.tenantId));
 
-      // Capture backup values before session regeneration
-      const backupData = {
-        userId: adminUser.id,
-        userName: adminUser.name,
-        tenantId: adminUser.tenantId,
-        role: adminUser.role,
-        impersonatedTenantName: targetTenant?.name ?? null,
-      };
-
       await auditLog({
         tenantId: null,
         userId: adminUser.id,
@@ -163,9 +160,47 @@ export function registerAdminRoutes(app: Express) {
         entityType: "platform",
         entityId: target.id,
         entityName: target.name,
-        metadata: { targetTenantId: target.tenantId, targetRole: target.role },
+        metadata: { targetTenantId: target.tenantId, targetRole: target.role, reason, accessMode },
         req,
       });
+
+      // Insert impersonation_sessions row
+      const ipAddress = (req.headers["x-forwarded-for"] as string | undefined)?.split(",")[0]?.trim() ?? req.socket?.remoteAddress ?? null;
+      const sessionResult = await pool.query(
+        `INSERT INTO impersonation_sessions
+          (tenant_id, super_admin_id, super_admin_name, impersonated_user_id, impersonated_user_name,
+           impersonated_user_role, access_mode, access_reason, support_ticket_id, session_timeout_minutes, ip_address)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING id`,
+        [
+          target.tenantId,
+          adminUser.id,
+          adminUser.name,
+          target.id,
+          target.name,
+          target.role,
+          accessMode,
+          String(reason).trim(),
+          supportTicketId ?? null,
+          sessionTimeoutMinutes,
+          ipAddress,
+        ]
+      );
+      const impersonationSessionId = sessionResult.rows[0]?.id as string;
+
+      const backupData = {
+        userId: adminUser.id,
+        userName: adminUser.name,
+        tenantId: adminUser.tenantId,
+        role: adminUser.role,
+        impersonatedTenantName: targetTenant?.name ?? null,
+        impersonationSessionId,
+        accessMode,
+        sessionTimeoutMinutes: Number(sessionTimeoutMinutes),
+        startedAt: Date.now(),
+        reason: String(reason).trim(),
+        supportTicketId: supportTicketId ?? null,
+      };
 
       // Passport 0.6+ regenerates the session on req.login() by default.
       // We use keepSessionInfo:true to preserve existing session data (backup).
@@ -176,7 +211,12 @@ export function registerAdminRoutes(app: Express) {
         sess.superAdminBackup = backupData;
         req.session.save((saveErr) => {
           if (saveErr) return res.status(500).json({ message: "Failed to save session" });
-          return res.json({ message: "Impersonation started", user: stripSensitiveFields(target as Record<string, unknown>) });
+          return res.json({
+            message: "Impersonation started",
+            user: stripSensitiveFields(target as Record<string, unknown>),
+            sessionId: impersonationSessionId,
+            accessMode,
+          });
         });
       });
     } catch (err: unknown) {
@@ -193,6 +233,8 @@ export function registerAdminRoutes(app: Express) {
         userName: string;
         tenantId: string;
         role: string;
+        impersonationSessionId?: string;
+        startedAt?: number;
       } | undefined;
 
       if (!backup) {
@@ -214,6 +256,16 @@ export function registerAdminRoutes(app: Express) {
         metadata: { impersonatedTenantId: currentUser.tenantId, impersonatedRole: currentUser.role },
         req,
       });
+
+      // Update impersonation_sessions row
+      if (backup.impersonationSessionId) {
+        const startedAt = backup.startedAt ?? Date.now();
+        const durationMinutes = Math.round((Date.now() - startedAt) / 60000);
+        pool.query(
+          `UPDATE impersonation_sessions SET ended_at = NOW(), duration_minutes = $1, status = 'ended' WHERE id = $2`,
+          [durationMinutes, backup.impersonationSessionId]
+        ).catch(() => {});
+      }
 
       delete session.superAdminBackup;
 
@@ -239,20 +291,310 @@ export function registerAdminRoutes(app: Express) {
   app.post("/api/session/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
   app.post("/api/admin/impersonate/:userId", requireSuperAdmin, handleImpersonateStart);
 
-  const handleImpersonationStatus: import("express").RequestHandler = (req, res) => {
+  const handleImpersonationStatus: import("express").RequestHandler = async (req, res) => {
     const session = req.session as Record<string, unknown>;
     const backup = session.superAdminBackup as Record<string, unknown> | undefined;
     if (!backup) return res.json({ isImpersonating: false });
-    const backup2 = backup as Record<string, unknown>;
+
+    // Session timeout auto-expiry check
+    const startedAt = backup.startedAt as number | undefined;
+    const timeoutMinutes = (backup.sessionTimeoutMinutes as number | undefined) ?? 30;
+    if (startedAt && startedAt + timeoutMinutes * 60 * 1000 < Date.now()) {
+      // Session expired — restore original admin session and update DB row
+      const sessionId = backup.impersonationSessionId as string | undefined;
+      if (sessionId) {
+        pool.query(
+          `UPDATE impersonation_sessions SET status = 'expired', auto_expired = true, ended_at = NOW(), duration_minutes = $1 WHERE id = $2`,
+          [Math.round((Date.now() - startedAt) / 60000), sessionId]
+        ).catch(() => {});
+      }
+
+      // Restore original admin — same as handleImpersonateEnd
+      try {
+        const adminUserId = backup.userId as string | undefined;
+        if (adminUserId) {
+          const [originalAdmin] = await db.select().from(users).where(eq(users.id, adminUserId));
+          if (originalAdmin) {
+            delete session.superAdminBackup;
+            await new Promise<void>((resolve, reject) =>
+              req.login(originalAdmin, (err) => (err ? reject(err) : resolve()))
+            );
+            return res.json({ isImpersonating: false, expired: true });
+          }
+        }
+      } catch {
+        // Fall through to best-effort cleanup below
+      }
+
+      // Fallback: just clear the backup even if we couldn't re-login
+      delete session.superAdminBackup;
+      await new Promise<void>((resolve) => req.session.save(() => resolve()));
+      return res.json({ isImpersonating: false, expired: true });
+    }
+
     return res.json({
       isImpersonating: true,
       originalAdmin: { userId: backup.userId, userName: backup.userName, role: backup.role },
-      tenantName: backup2.impersonatedTenantName ?? null,
+      tenantName: (backup.impersonatedTenantName as string | null) ?? null,
+      accessMode: (backup.accessMode as string | undefined) ?? "READ_ONLY",
+      sessionId: (backup.impersonationSessionId as string | undefined) ?? null,
+      reason: (backup.reason as string | undefined) ?? null,
+      ticketId: (backup.supportTicketId as string | null) ?? null,
+      startedAt: startedAt ?? null,
+      timeoutMinutes,
     });
   };
 
   app.get("/api/session/impersonation/status", requireAuth, handleImpersonationStatus);
   app.get("/api/admin/impersonation/status", requireAuth, handleImpersonationStatus);
+
+  // ─── Read-only enforcement middleware ──────────────────────────────────────
+  // Must be registered before all other /api/* routes that mutate data.
+  const READ_ONLY_WHITELIST = [
+    "/api/admin/impersonate/end",
+    "/api/session/impersonate/end",
+    "/api/admin/impersonation/end",
+    "/api/admin/impersonation/unlock-edit",
+    "/api/admin/impersonation/return-readonly",
+    "/api/admin/impersonation/track-page",
+  ];
+
+  app.use((req, res, next) => {
+    const session = req.session as Record<string, unknown>;
+    const backup = session.superAdminBackup as Record<string, unknown> | undefined;
+    if (!backup) return next();
+    if ((backup.accessMode as string | undefined) !== "READ_ONLY") return next();
+    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+      // Fire-and-forget page tracking for GET requests
+      if (req.method === "GET" && backup.impersonationSessionId) {
+        const sid = backup.impersonationSessionId as string;
+        const path = req.path;
+        pool.query(
+          `UPDATE impersonation_sessions SET pages_visited = pages_visited || $1::jsonb, last_activity_at = NOW() WHERE id = $2`,
+          [JSON.stringify([path]), sid]
+        ).catch(() => {});
+      }
+      return next();
+    }
+    // Allow whitelisted paths
+    if (READ_ONLY_WHITELIST.some((w) => req.path === w || req.path.startsWith(w))) {
+      return next();
+    }
+    return res.status(403).json({
+      error: "READ_ONLY_SESSION",
+      message: "This support session is read-only. Unlock edit mode to make changes.",
+    });
+  });
+
+  // ─── Unlock edit mode ─────────────────────────────────────────────────────
+  app.post("/api/admin/impersonation/unlock-edit", requireAuth, async (req, res) => {
+    try {
+      const session = req.session as Record<string, unknown>;
+      const backup = session.superAdminBackup as Record<string, unknown> | undefined;
+      if (!backup) return res.status(400).json({ message: "Not in an impersonation session" });
+
+      const { reason } = req.body ?? {};
+      if (!reason || !String(reason).trim()) {
+        return res.status(400).json({ message: "A reason is required to unlock edit mode" });
+      }
+
+      const tenantId = (req.user as { tenantId?: string })?.tenantId;
+      if (tenantId) {
+        const prefRow = await pool.query(
+          `SELECT allow_edit_mode FROM tenant_access_preferences WHERE tenant_id = $1`,
+          [tenantId]
+        );
+        if (prefRow.rows[0] && prefRow.rows[0].allow_edit_mode === false) {
+          return res.status(403).json({ message: "This tenant has disabled edit mode during support sessions" });
+        }
+      }
+
+      const sid = backup.impersonationSessionId as string | undefined;
+      if (sid) {
+        await pool.query(
+          `UPDATE impersonation_sessions SET edit_unlocked = true, edit_unlocked_at = NOW(), edit_unlock_reason = $1, access_mode = 'EDIT' WHERE id = $2`,
+          [String(reason).trim(), sid]
+        );
+      }
+
+      (session.superAdminBackup as Record<string, unknown>).accessMode = "EDIT";
+      await new Promise<void>((resolve) => req.session.save(() => resolve()));
+      return res.json({ ok: true, accessMode: "EDIT" });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  // ─── Return to read-only ──────────────────────────────────────────────────
+  app.post("/api/admin/impersonation/return-readonly", requireAuth, async (req, res) => {
+    try {
+      const session = req.session as Record<string, unknown>;
+      const backup = session.superAdminBackup as Record<string, unknown> | undefined;
+      if (!backup) return res.status(400).json({ message: "Not in an impersonation session" });
+
+      const sid = backup.impersonationSessionId as string | undefined;
+      if (sid) {
+        await pool.query(
+          `UPDATE impersonation_sessions SET access_mode = 'READ_ONLY' WHERE id = $1`,
+          [sid]
+        );
+      }
+
+      (session.superAdminBackup as Record<string, unknown>).accessMode = "READ_ONLY";
+      await new Promise<void>((resolve) => req.session.save(() => resolve()));
+      return res.json({ ok: true, accessMode: "READ_ONLY" });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  // ─── Tenant access log endpoints ──────────────────────────────────────────
+  const requireRole = (...roles: string[]): import("express").RequestHandler => (req, res, next) => {
+    const user = req.user as { role?: string } | undefined;
+    if (!user?.role || !roles.includes(user.role)) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    return next();
+  };
+
+  app.get("/api/tenant/access-log", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as { tenantId: string };
+      const { limit: limitStr, offset: offsetStr, startDate, endDate } = req.query as Record<string, string>;
+      const limit = Math.min(parseInt(limitStr ?? "20", 10) || 20, 100);
+      const offset = Math.max(parseInt(offsetStr ?? "0", 10) || 0, 0);
+
+      // Build filters separately for count (no limit/offset) and data queries
+      const countParams: unknown[] = [user.tenantId];
+      let dateFilter = "";
+      if (startDate) {
+        countParams.push(startDate);
+        dateFilter += ` AND started_at >= $${countParams.length}`;
+      }
+      if (endDate) {
+        countParams.push(endDate);
+        dateFilter += ` AND started_at <= $${countParams.length}`;
+      }
+
+      const limitParamIdx = countParams.length + 1;
+      const offsetParamIdx = countParams.length + 2;
+      const dataParams = [...countParams, limit, offset];
+
+      const [countRes, rowsRes] = await Promise.all([
+        pool.query(
+          `SELECT COUNT(*)::int AS total FROM impersonation_sessions WHERE tenant_id = $1${dateFilter}`,
+          countParams
+        ),
+        pool.query(
+          `SELECT id, super_admin_name, impersonated_user_name, impersonated_user_role,
+                  access_mode, status, access_reason, support_ticket_id,
+                  started_at, ended_at, duration_minutes, last_activity_at,
+                  session_timeout_minutes, ip_address, edit_unlocked, edit_unlocked_at,
+                  edit_unlock_reason, pages_visited, changes_made, created_at
+           FROM impersonation_sessions
+           WHERE tenant_id = $1${dateFilter}
+           ORDER BY started_at DESC
+           LIMIT $${limitParamIdx} OFFSET $${offsetParamIdx}`,
+          dataParams
+        ),
+      ]);
+
+      // Mask IP: show last octet only
+      const rows = rowsRes.rows.map((r: Record<string, unknown>) => {
+        const ip = r.ip_address as string | null;
+        if (ip) {
+          const parts = ip.split(".");
+          if (parts.length === 4) r.ip_address = `${parts[0]}.${parts[1]}.${parts[2]}.xxx`;
+          else r.ip_address = "xxx";
+        }
+        return r;
+      });
+
+      // Monthly stats
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const statsRes = await pool.query(
+        `SELECT COUNT(*)::int AS total_sessions,
+                COUNT(*) FILTER (WHERE changes_made = true)::int AS sessions_with_changes
+         FROM impersonation_sessions
+         WHERE tenant_id = $1 AND started_at >= $2`,
+        [user.tenantId, startOfMonth]
+      );
+
+      return res.json({
+        data: rows,
+        total: countRes.rows[0]?.total ?? 0,
+        limit,
+        offset,
+        monthlyStats: statsRes.rows[0] ?? { total_sessions: 0, sessions_with_changes: 0 },
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.get("/api/tenant/access-preferences", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as { tenantId: string };
+      const row = await pool.query(
+        `SELECT * FROM tenant_access_preferences WHERE tenant_id = $1`,
+        [user.tenantId]
+      );
+      if (row.rows.length === 0) {
+        return res.json({
+          tenantId: user.tenantId,
+          showAccessLog: true,
+          notifyOnAccess: false,
+          notifyEmail: null,
+          allowEditMode: true,
+        });
+      }
+      const r = row.rows[0];
+      return res.json({
+        tenantId: r.tenant_id,
+        showAccessLog: r.show_access_log,
+        notifyOnAccess: r.notify_on_access,
+        notifyEmail: r.notify_email,
+        allowEditMode: r.allow_edit_mode,
+      });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
+
+  app.patch("/api/tenant/access-preferences", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as { tenantId: string };
+      const { showAccessLog, notifyOnAccess, notifyEmail, allowEditMode } = req.body ?? {};
+
+      await pool.query(
+        `INSERT INTO tenant_access_preferences (tenant_id, show_access_log, notify_on_access, notify_email, allow_edit_mode)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (tenant_id) DO UPDATE SET
+           show_access_log = EXCLUDED.show_access_log,
+           notify_on_access = EXCLUDED.notify_on_access,
+           notify_email = EXCLUDED.notify_email,
+           allow_edit_mode = EXCLUDED.allow_edit_mode,
+           updated_at = NOW()`,
+        [
+          user.tenantId,
+          showAccessLog ?? true,
+          notifyOnAccess ?? false,
+          notifyEmail ?? null,
+          allowEditMode ?? true,
+        ]
+      );
+
+      return res.json({ ok: true });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
 
   // ───────────────────────────────────────────────────────────────────────────
   // All routes below this point are under /api/admin/* and use requireSuperAdmin
