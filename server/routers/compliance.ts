@@ -956,6 +956,126 @@ export function registerComplianceRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // ─── GDPR Art. 18 — Right to Restriction of Processing ──────────────────────
+
+  const RESTRICTION_REASONS = [
+    "accuracy_contested",
+    "unlawful_processing",
+    "legal_claim",
+    "objection_pending",
+  ] as const;
+
+  app.post("/api/gdpr/restrict-processing", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { reason } = req.body;
+      if (!reason || !RESTRICTION_REASONS.includes(reason)) {
+        return res.status(400).json({
+          message: `reason must be one of: ${RESTRICTION_REASONS.join(", ")}`,
+        });
+      }
+
+      await pool.query(
+        `UPDATE users SET processing_restricted = true,
+          restriction_requested_at = NOW(),
+          restriction_reason = $1,
+          restriction_lifted_at = NULL,
+          restriction_lifted_by_id = NULL
+         WHERE id = $2`,
+        [reason, user.id]
+      );
+
+      auditLogFromReq(req, {
+        action: "processing_restriction_requested",
+        entityType: "user",
+        entityId: user.id,
+        entityName: user.name,
+      });
+
+      try {
+        await createSecurityAlert({
+          tenantId: user.tenantId,
+          userId: user.id,
+          type: "gdpr_restriction_requested",
+          severity: "info",
+          title: `User ${user.name} has requested processing restriction`,
+          description: `Reason: ${reason}`,
+        });
+      } catch (e) { console.warn("createSecurityAlert failed (non-fatal):", e); }
+
+      res.json({ message: "Processing restriction applied within 1 business day" });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/gdpr/lift-restriction/:userId", requireAuth, requireRole("owner", "hq_admin"), async (req, res) => {
+    try {
+      const admin = req.user as any;
+      const { userId } = req.params;
+      const { reason } = req.body;
+      if (!reason) return res.status(400).json({ message: "reason is required" });
+
+      const { rows: [targetUser] } = await pool.query(
+        `SELECT id, name, tenant_id FROM users WHERE id = $1 AND tenant_id = $2`,
+        [userId, admin.tenantId]
+      );
+      if (!targetUser) return res.status(404).json({ message: "User not found in your tenant" });
+
+      await pool.query(
+        `UPDATE users SET processing_restricted = false,
+          restriction_lifted_at = NOW(),
+          restriction_lifted_by_id = $1
+         WHERE id = $2 AND tenant_id = $3`,
+        [admin.id, userId, admin.tenantId]
+      );
+
+      auditLogFromReq(req, {
+        action: "processing_restriction_lifted",
+        entityType: "user",
+        entityId: userId,
+        entityName: targetUser.name,
+        after: { liftReason: reason },
+      });
+
+      res.json({ message: "Processing restriction lifted" });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/gdpr/restriction-status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows: [row] } = await pool.query(
+        `SELECT processing_restricted, restriction_requested_at, restriction_reason, restriction_lifted_at
+         FROM users WHERE id = $1`,
+        [user.id]
+      );
+      res.json({
+        restricted: row?.processing_restricted ?? false,
+        requestedAt: row?.restriction_requested_at ?? null,
+        reason: row?.restriction_reason ?? null,
+        liftedAt: row?.restriction_lifted_at ?? null,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/admin/users/:userId/restriction-status", requireAuth, requireRole("owner", "hq_admin"), async (req, res) => {
+    try {
+      const admin = req.user as any;
+      const { userId } = req.params;
+      const { rows: [row] } = await pool.query(
+        `SELECT processing_restricted, restriction_requested_at, restriction_reason, restriction_lifted_at
+         FROM users WHERE id = $1 AND tenant_id = $2`,
+        [userId, admin.tenantId]
+      );
+      if (!row) return res.status(404).json({ message: "User not found in your tenant" });
+      res.json({
+        restricted: row.processing_restricted ?? false,
+        requestedAt: row.restriction_requested_at ?? null,
+        reason: row.restriction_reason ?? null,
+        liftedAt: row.restriction_lifted_at ?? null,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // ─── Cookie Consent ──────────────────────────────────────────────────────────
 
   app.post("/api/consent/cookies", async (req, res) => {

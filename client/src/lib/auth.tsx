@@ -52,6 +52,9 @@ export interface AuthUser {
   outletId?: string | null;
   tenant?: TenantInfo;
   themePreference?: ThemePreference;
+  processingRestricted?: boolean;
+  restrictionRequestedAt?: string | null;
+  restrictionReason?: string | null;
 }
 
 interface AuthContextType {

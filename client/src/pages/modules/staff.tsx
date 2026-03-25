@@ -16,7 +16,7 @@ import {
   Plus, UserCog, Search, Edit, ChevronLeft, ChevronRight,
   Crown, ShieldCheck, ConciergeBell, ChefHat, Calculator, Users,
   Calendar, Clock, CheckCircle, XCircle, AlertCircle, Trash2,
-  LayoutGrid, CalendarDays, ClipboardCheck, LogIn, LogOut, Timer,
+  LayoutGrid, CalendarDays, ClipboardCheck, LogIn, LogOut, Timer, Lock,
 } from "lucide-react";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant", "delivery_agent", "cleaning_staff"] as const;
@@ -62,6 +62,9 @@ interface StaffMember {
   email: string | null;
   phone: string | null;
   active: boolean | null;
+  processingRestricted?: boolean;
+  restrictionReason?: string | null;
+  restrictionRequestedAt?: string | null;
 }
 
 interface ScheduleEntry {
@@ -472,6 +475,15 @@ export default function StaffPage() {
                                 <RoleIcon className="h-4 w-4" />
                               </div>
                               {staff.name}
+                              {staff.processingRestricted && (
+                                <span
+                                  title="Data processing restricted (GDPR Art. 18)"
+                                  data-testid={`badge-restriction-${staff.id}`}
+                                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 border border-amber-300 dark:border-amber-700"
+                                >
+                                  <Lock className="h-3 w-3" /> Restricted
+                                </span>
+                              )}
                             </div>
                           </TableCell>
                           <TableCell data-testid={`text-staff-username-${staff.id}`}>{staff.username}</TableCell>

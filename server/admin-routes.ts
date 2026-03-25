@@ -1060,9 +1060,30 @@ export function registerAdminRoutes(app: Express) {
       ]);
 
       const loginMap = new Map(lastLogins.map(r => [r.userId, r.lastLogin]));
+
+      let restrictionMap = new Map<string, { processingRestricted: boolean; restrictionReason: string | null; restrictionRequestedAt: string | null }>();
+      if (pageRows.length > 0) {
+        const ids = pageRows.map(r => r.id);
+        try {
+          const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
+          const { rows: restrictionRows } = await pool.query(
+            `SELECT id, processing_restricted, restriction_reason, restriction_requested_at FROM users WHERE id IN (${placeholders})`,
+            ids
+          );
+          for (const row of restrictionRows) {
+            restrictionMap.set(row.id, {
+              processingRestricted: row.processing_restricted ?? false,
+              restrictionReason: row.restriction_reason ?? null,
+              restrictionRequestedAt: row.restriction_requested_at ?? null,
+            });
+          }
+        } catch (_) { /* column may not exist in older DB — safe to ignore */ }
+      }
+
       const data = pageRows.map(u => ({
         ...decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS),
         lastLogin: loginMap.get(u.id) ?? null,
+        ...restrictionMap.get(u.id) ?? {},
       }));
 
       const total = totalResult[0]?.cnt ?? 0;

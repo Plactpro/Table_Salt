@@ -15,6 +15,7 @@ import {
   ShieldCheck,
   ChevronLeft,
   ChevronRight,
+  Lock,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { DialogDescription } from "@/components/ui/dialog";
+
 interface AdminUser {
   id: string;
   tenantId: string;
@@ -54,6 +59,9 @@ interface AdminUser {
   tenantName: string | null;
   tenantPlan: string | null;
   lastLogin: string | null;
+  processingRestricted?: boolean;
+  restrictionReason?: string | null;
+  restrictionRequestedAt?: string | null;
 }
 
 interface Tenant {
@@ -95,6 +103,8 @@ export default function UsersPage() {
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [resetForUser, setResetForUser] = useState<string | null>(null);
   const [impersonateTarget, setImpersonateTarget] = useState<{ userId: string; tenantName: string } | null>(null);
+  const [liftRestrictionTarget, setLiftRestrictionTarget] = useState<AdminUser | null>(null);
+  const [liftReason, setLiftReason] = useState("");
 
   const offset = page * PAGE_SIZE;
 
@@ -152,6 +162,21 @@ export default function UsersPage() {
     onSuccess: (data, id) => {
       setTempPassword(data.tempPassword);
       setResetForUser(id);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
+    },
+    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const liftRestrictionMutation = useMutation({
+    mutationFn: async ({ userId, reason }: { userId: string; reason: string }) => {
+      const r = await apiRequest("POST", `/api/gdpr/lift-restriction/${userId}`, { reason });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Restriction lifted", description: "The processing restriction has been removed." });
+      setLiftRestrictionTarget(null);
+      setLiftReason("");
       queryClient.invalidateQueries({ queryKey: ["/api/admin/users"] });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -250,7 +275,12 @@ export default function UsersPage() {
                   data-testid={`row-user-${u.id}`}
                 >
                   <div className="min-w-0">
-                    <p className="font-medium text-sm text-slate-900 truncate">{u.name}</p>
+                    <p className="font-medium text-sm text-slate-900 truncate flex items-center gap-1.5">
+                      {u.name}
+                      {u.processingRestricted && (
+                        <Lock className="h-3.5 w-3.5 text-amber-600 shrink-0" title="Processing restriction active" data-testid={`icon-restricted-${u.id}`} />
+                      )}
+                    </p>
                     <p className="text-xs text-slate-400 truncate">
                       @{u.username}{u.email ? ` · ${u.email}` : ""}
                     </p>
@@ -310,6 +340,16 @@ export default function UsersPage() {
                         Reset Password
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
+                      {u.processingRestricted && (
+                        <DropdownMenuItem
+                          onClick={() => { setLiftRestrictionTarget(u); setLiftReason(""); }}
+                          data-testid={`menu-lift-restriction-${u.id}`}
+                          className="text-amber-600"
+                        >
+                          <Lock className="h-4 w-4 mr-2" />
+                          Lift Processing Restriction
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         onClick={() => toggleActiveMutation.mutate({ id: u.id, active: u.active === false })}
                         data-testid={`menu-toggle-active-${u.id}`}
@@ -389,6 +429,56 @@ export default function UsersPage() {
       </Dialog>
 
       <p className="sr-only" aria-hidden>{resetForUser}</p>
+
+      {/* Lift Restriction Dialog */}
+      <Dialog open={!!liftRestrictionTarget} onOpenChange={(open) => { if (!open) { setLiftRestrictionTarget(null); setLiftReason(""); } }}>
+        <DialogContent data-testid="dialog-lift-restriction">
+          <DialogHeader>
+            <DialogTitle>Lift Processing Restriction</DialogTitle>
+            <DialogDescription>
+              {liftRestrictionTarget && (
+                <>Remove the GDPR Art. 18 processing restriction for <strong>{liftRestrictionTarget.name}</strong>. Provide a reason for the audit trail.</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {liftRestrictionTarget && (
+            <div className="space-y-4">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                <p className="font-medium">RESTRICTION ACTIVE</p>
+                {liftRestrictionTarget.restrictionReason && (
+                  <p>User's reason: {liftRestrictionTarget.restrictionReason.replace(/_/g, " ")}</p>
+                )}
+                {liftRestrictionTarget.restrictionRequestedAt && (
+                  <p>Requested: {new Date(liftRestrictionTarget.restrictionRequestedAt).toLocaleDateString()}</p>
+                )}
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="lift-reason">Reason for lifting restriction</Label>
+                <Textarea
+                  id="lift-reason"
+                  value={liftReason}
+                  onChange={e => setLiftReason(e.target.value)}
+                  placeholder="e.g. Data accuracy confirmed, restriction no longer required"
+                  rows={3}
+                  data-testid="input-lift-reason"
+                />
+              </div>
+              <div className="flex gap-2 justify-end">
+                <Button variant="outline" onClick={() => { setLiftRestrictionTarget(null); setLiftReason(""); }}>
+                  Cancel
+                </Button>
+                <Button
+                  onClick={() => liftRestrictionMutation.mutate({ userId: liftRestrictionTarget.id, reason: liftReason })}
+                  disabled={liftRestrictionMutation.isPending || !liftReason.trim()}
+                  data-testid="button-confirm-lift-restriction"
+                >
+                  {liftRestrictionMutation.isPending ? "Lifting..." : "Lift Restriction"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Impersonation Start Dialog */}
       {impersonateTarget && (

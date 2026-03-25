@@ -7,8 +7,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Shield, Download, Trash2, FileText, Database } from "lucide-react";
+import { Shield, Download, Trash2, FileText, Database, Lock } from "lucide-react";
 import { format } from "date-fns";
+import { useAuth } from "@/lib/auth";
 
 interface ConsentStatus {
   tos: { version: string; acceptedAt: string } | null;
@@ -20,6 +21,113 @@ interface RetentionPolicy {
   dataRetentionMonths: number;
   autoDeleteAnonymized: boolean;
   auditLogRetentionMonths: number;
+}
+
+const RESTRICTION_REASON_LABELS: Record<string, string> = {
+  accuracy_contested: "I am disputing the accuracy of my data",
+  unlawful_processing: "Processing is unlawful but I don't want deletion",
+  legal_claim: "I need my data preserved for a legal claim",
+  objection_pending: "I have objected to processing (pending review)",
+};
+
+interface RestrictionStatus {
+  restricted: boolean;
+  requestedAt: string | null;
+  reason: string | null;
+  liftedAt: string | null;
+}
+
+function RestrictProcessingDialog({ onClose }: { onClose: () => void }) {
+  const { toast } = useToast();
+  const [reason, setReason] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const r = await apiRequest("POST", "/api/gdpr/restrict-processing", { reason });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Restriction requested", description: "Processing restriction has been applied." });
+      onClose();
+      setTimeout(() => window.location.reload(), 1500);
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+  });
+
+  if (!confirmed) {
+    return (
+      <Dialog open onOpenChange={onClose}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Right to Restrict Processing</DialogTitle>
+            <DialogDescription>Choose the reason for your restriction request (GDPR Art. 18)</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {Object.entries(RESTRICTION_REASON_LABELS).map(([value, label]) => (
+              <label
+                key={value}
+                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${reason === value ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`}
+                data-testid={`radio-restriction-reason-${value}`}
+              >
+                <input
+                  type="radio"
+                  name="restriction-reason"
+                  value={value}
+                  checked={reason === value}
+                  onChange={() => setReason(value)}
+                  className="mt-0.5"
+                />
+                <span className="text-sm">{label}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button
+              variant="default"
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              onClick={() => setConfirmed(true)}
+              disabled={!reason}
+              data-testid="button-next-confirm-restriction"
+            >
+              Continue
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Confirm Restriction Request</DialogTitle>
+          <DialogDescription>
+            This will pause all write operations on your account.
+            You will still be able to log in and view your data.
+            This cannot be self-reversed — contact your admin to lift it.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+          ⚠️ Reason: <strong>{RESTRICTION_REASON_LABELS[reason]}</strong>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" onClick={() => setConfirmed(false)}>Back</Button>
+          <Button
+            className="bg-amber-600 hover:bg-amber-700 text-white"
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            data-testid="button-confirm-restriction"
+          >
+            {mutation.isPending ? "Requesting..." : "Yes, Request Restriction"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
@@ -83,8 +191,19 @@ function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
 
 export default function GdprRightsPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showRestrictDialog, setShowRestrictDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+
+  const { data: restrictionStatus, refetch: refetchRestriction } = useQuery<RestrictionStatus>({
+    queryKey: ["/api/gdpr/restriction-status"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/gdpr/restriction-status");
+      if (!r.ok) return { restricted: false, requestedAt: null, reason: null, liftedAt: null };
+      return r.json();
+    },
+  });
 
   const { data: consentStatus } = useQuery<ConsentStatus>({
     queryKey: ["/api/consent/status"],
@@ -192,6 +311,65 @@ export default function GdprRightsPage() {
         </CardContent>
       </Card>
 
+      <Card className={restrictionStatus?.restricted ? "border-amber-300" : ""} data-testid="card-restriction-status">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm flex items-center gap-2">
+            <Lock className="h-4 w-4 text-amber-600" />
+            Right to Restrict Processing
+            <span className="text-xs font-normal text-muted-foreground ml-1">Article 18, GDPR</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {restrictionStatus?.restricted ? (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg" data-testid="status-restriction-active">
+              <p className="text-sm font-medium text-amber-800">
+                ⚠️ RESTRICTION ACTIVE
+                {restrictionStatus.requestedAt && (
+                  <span className="font-normal"> since {format(new Date(restrictionStatus.requestedAt), "d MMM yyyy")}</span>
+                )}
+              </p>
+              {restrictionStatus.reason && (
+                <p className="text-sm text-amber-700 mt-1">
+                  Reason: {RESTRICTION_REASON_LABELS[restrictionStatus.reason] ?? restrictionStatus.reason}
+                </p>
+              )}
+              <p className="text-sm text-amber-700 mt-1">
+                Write operations on your account are currently paused. Contact your administrator to lift the restriction.
+              </p>
+            </div>
+          ) : (
+            <div className="mb-4 p-3 bg-green-50 border border-green-100 rounded-lg" data-testid="status-restriction-inactive">
+              <p className="text-sm text-green-700">✅ Not restricted — all processing normal</p>
+            </div>
+          )}
+          <div className="mb-4 space-y-1.5 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground text-xs uppercase tracking-wide mb-2">When should you request restriction?</p>
+            <ul className="list-disc pl-4 space-y-1">
+              <li>You believe your data is inaccurate and want it frozen while you contest it</li>
+              <li>Processing is unlawful but you prefer restriction over deletion</li>
+              <li>You need your data preserved for a legal claim</li>
+              <li>You have objected to processing (Art. 21) and want processing paused while we verify</li>
+            </ul>
+          </div>
+          {!restrictionStatus?.restricted && (
+            <>
+              <Button
+                size="sm"
+                className="bg-amber-600 hover:bg-amber-700 text-white"
+                onClick={() => setShowRestrictDialog(true)}
+                data-testid="button-request-restriction"
+              >
+                <Lock className="h-3.5 w-3.5 mr-1.5" />
+                Request Processing Restriction
+              </Button>
+              <p className="text-xs text-muted-foreground mt-2">
+                Restriction is honoured within 1 business day. We will contact you at your email to confirm.
+              </p>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
       <Card className="border-red-100">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center gap-2 text-red-700">
@@ -290,6 +468,9 @@ export default function GdprRightsPage() {
       )}
 
       {showDeleteDialog && <DeleteAccountDialog onClose={() => setShowDeleteDialog(false)} />}
+      {showRestrictDialog && (
+        <RestrictProcessingDialog onClose={() => { setShowRestrictDialog(false); refetchRestriction(); }} />
+      )}
     </div>
   );
 }

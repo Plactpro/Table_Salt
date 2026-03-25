@@ -90,6 +90,10 @@ export async function registerRoutes(
   setupAuth(app);
   setupCsrf(app);
   setupIpAllowlistMiddleware(app);
+
+  const { blockIfRestricted } = await import("./middleware/check-restriction");
+  app.use(blockIfRestricted);
+
   registerAdminRoutes(app);
 
   const express = (await import("express")).default;
