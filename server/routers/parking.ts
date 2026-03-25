@@ -314,6 +314,7 @@ export function registerParkingRoutes(app: Express): void {
         outletId,
         ticketNumber,
         status: "parked",
+        customerId: req.body.customerId || null,
       });
 
       if (ticket.slotId) {
@@ -357,6 +358,19 @@ export function registerParkingRoutes(app: Express): void {
         if (ticket.billId && !ticket.chargeAddedToBill) {
           applyParkingChargeToBill(ticket.billId, ticket.id, user.tenantId).catch(e =>
             console.error("[parking] Auto apply charge failed:", e)
+          );
+        }
+
+        // Task #164: CRM sync — update customer stats when ticket is completed
+        const customerId = ticket.customerId;
+        if (customerId) {
+          _syncCrmOnCheckout(customerId, ticket, user.tenantId).catch((e: any) =>
+            console.error("[parking] CRM sync failed (non-blocking):", e?.message ?? e)
+          );
+        } else if (ticket.customerPhone) {
+          // If no customerId but phone present, try to create/find customer and sync
+          _ensureCustomerAndSync(ticket, user.tenantId).catch((e: any) =>
+            console.error("[parking] CRM auto-create failed (non-blocking):", e?.message ?? e)
           );
         }
       }
@@ -557,6 +571,91 @@ export function registerParkingRoutes(app: Express): void {
       );
 
       res.status(201).json({ success: true, requestId: request.id });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── CRM Customer Lookup (by plate, phone, or customerId) ───────────────────
+  app.get("/api/parking/customer-lookup", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { phone, plate, customerId } = req.query as { phone?: string; plate?: string; customerId?: string };
+      if (!phone && !plate && !customerId) return res.status(400).json({ message: "phone, plate, or customerId required" });
+
+      // Normalise phone for comparison (strip spaces/dashes/parens)
+      const normalisePhone = (p: string) => String(p ?? "").replace(/[\s\-\(\)]/g, "");
+
+      let foundCustomer: any = null;
+
+      if (customerId) {
+        // ID lookup — no PII involved, can query directly
+        const { rows } = await pool.query(
+          `SELECT id, tenant_id, name, loyalty_tier, parking_visit_count, parking_total_spent, vehicle_plates FROM customers WHERE tenant_id=$1 AND id=$2 LIMIT 1`,
+          [user.tenantId, customerId]
+        );
+        if (rows[0]) foundCustomer = { id: rows[0].id, name: rows[0].name, loyaltyTier: rows[0].loyalty_tier, parkingVisitCount: rows[0].parking_visit_count ?? 0, parkingTotalSpent: rows[0].parking_total_spent ?? "0", phone: null };
+      }
+
+      if (!foundCustomer && plate && plate.trim().length >= 4) {
+        // Plate is stored UPPERCASE so compare directly
+        const plateUpper = plate.trim().toUpperCase();
+        const { rows } = await pool.query(
+          `SELECT id, name, loyalty_tier, parking_visit_count, parking_total_spent, vehicle_plates FROM customers
+           WHERE tenant_id=$1
+             AND ARRAY(SELECT UPPER(p) FROM unnest(COALESCE(vehicle_plates, ARRAY[]::TEXT[])) p) @> ARRAY[$2]::TEXT[]
+           LIMIT 1`,
+          [user.tenantId, plateUpper]
+        );
+        if (rows[0]) {
+          // Fetch full decrypted record for the phone
+          const all = await storage.getCustomersByTenant(user.tenantId, { limit: 500, offset: 0 });
+          const match = all.find(c => c.id === rows[0].id);
+          if (match) foundCustomer = { id: match.id, name: match.name, phone: match.phone, loyaltyTier: match.loyaltyTier, parkingVisitCount: rows[0].parking_visit_count ?? 0, parkingTotalSpent: rows[0].parking_total_spent ?? "0" };
+        }
+      }
+
+      if (!foundCustomer && phone && phone.trim().length >= 6) {
+        // Phone is encrypted — fetch all and compare in memory after decryption
+        const all = await storage.getCustomersByTenant(user.tenantId, { limit: 500, offset: 0 });
+        const match = all.find(c => normalisePhone(c.phone ?? "") === normalisePhone(phone.trim()));
+        if (match) {
+          // Get parking stats from raw row (not encrypted)
+          const { rows } = await pool.query(
+            `SELECT parking_visit_count, parking_total_spent FROM customers WHERE id=$1 AND tenant_id=$2 LIMIT 1`,
+            [match.id, user.tenantId]
+          );
+          foundCustomer = { id: match.id, name: match.name, phone: match.phone, loyaltyTier: match.loyaltyTier, parkingVisitCount: rows[0]?.parking_visit_count ?? 0, parkingTotalSpent: rows[0]?.parking_total_spent ?? "0" };
+        }
+      }
+
+      if (!foundCustomer) return res.json(null);
+
+      const { rows: lastSessions } = await pool.query(
+        `SELECT vt.exit_time, vt.vehicle_number, vt.duration_minutes,
+                bpc.final_charge, pz.name AS zone_name
+         FROM valet_tickets vt
+         LEFT JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
+         LEFT JOIN parking_slots ps ON ps.id = vt.slot_id
+         LEFT JOIN parking_zones pz ON pz.id = ps.zone_id
+         WHERE vt.customer_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
+         ORDER BY vt.exit_time DESC LIMIT 5`,
+        [foundCustomer.id, user.tenantId]
+      );
+
+      res.json({
+        id: foundCustomer.id,
+        name: foundCustomer.name,
+        phone: foundCustomer.phone ?? null,
+        loyaltyTier: foundCustomer.loyaltyTier,
+        parkingVisitCount: foundCustomer.parkingVisitCount,
+        parkingTotalSpent: foundCustomer.parkingTotalSpent,
+        lastSessions: lastSessions.map((r: any) => ({
+          exitTime: r.exit_time,
+          vehicleNumber: r.vehicle_number,
+          durationMinutes: r.duration_minutes,
+          chargeAmount: r.final_charge,
+          zoneName: r.zone_name,
+        })),
+      });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -872,6 +971,75 @@ export function registerParkingRoutes(app: Express): void {
       res.json(result);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
+}
+
+// Task #164: CRM sync helpers (non-blocking, called fire-and-forget)
+async function _getTicketCharge(ticketId: string, tenantId: string): Promise<number> {
+  // Fetch actual charge from bill_parking_charges; fall back to 0 if not found
+  const { rows } = await pool.query(
+    `SELECT total_charge FROM bill_parking_charges WHERE ticket_id=$1 AND tenant_id=$2 LIMIT 1`,
+    [ticketId, tenantId]
+  );
+  return parseFloat(rows[0]?.total_charge ?? "0") || 0;
+}
+
+async function _syncCrmOnCheckout(customerId: string, ticket: any, tenantId: string): Promise<void> {
+  const plate = (ticket.vehicleNumber ?? "").trim().toUpperCase();
+  const charge = await _getTicketCharge(ticket.id, tenantId);
+
+  if (plate) {
+    // Add plate to vehicle_plates UPPERCASE (deduplicate, cap at 5)
+    await pool.query(
+      `UPDATE customers
+       SET vehicle_plates = (
+         SELECT ARRAY(
+           SELECT DISTINCT unnest
+           FROM unnest(
+             ARRAY(SELECT DISTINCT UPPER(e) FROM unnest(COALESCE(vehicle_plates, ARRAY[]::TEXT[]) || ARRAY[$1]) e) || ARRAY[]::TEXT[]
+           ) LIMIT 5
+         )
+       ),
+       parking_visit_count = COALESCE(parking_visit_count, 0) + 1,
+       parking_total_spent = COALESCE(parking_total_spent, 0) + $2,
+       visit_count = COALESCE(visit_count, 0) + 1,
+       last_visit_at = NOW()
+       WHERE id=$3 AND tenant_id=$4`,
+      [plate, charge, customerId, tenantId]
+    );
+  } else {
+    await pool.query(
+      `UPDATE customers
+       SET parking_visit_count = COALESCE(parking_visit_count, 0) + 1,
+           parking_total_spent = COALESCE(parking_total_spent, 0) + $1,
+           visit_count = COALESCE(visit_count, 0) + 1,
+           last_visit_at = NOW()
+       WHERE id=$2 AND tenant_id=$3`,
+      [charge, customerId, tenantId]
+    );
+  }
+}
+
+async function _ensureCustomerAndSync(ticket: any, tenantId: string): Promise<void> {
+  // Only auto-create CRM record when phone is provided — never match existing customers to avoid incorrect linkage
+  if (!ticket.customerPhone) return;
+  const phone = (ticket.customerPhone as string).trim();
+  // Use customer name if provided; otherwise derive a placeholder from the phone for the CRM record
+  const name = ((ticket.customerName as string | null | undefined) ?? "").trim() || `Guest (${phone.slice(-4)})`;
+
+  // Create new customer via storage (ensures PII encryption is applied consistently)
+  let newCustomer: any;
+  try {
+    newCustomer = await storage.createCustomer({ tenantId, name, phone, loyaltyTier: "bronze" });
+  } catch (_e) {
+    return; // If insert fails (e.g., duplicate phone), skip silently
+  }
+  const newCustomerId = newCustomer?.id;
+  if (!newCustomerId) return;
+
+  // Link new customer back to ticket
+  await pool.query(`UPDATE valet_tickets SET customer_id=$1 WHERE id=$2 AND tenant_id=$3`, [newCustomerId, ticket.id, tenantId]);
+
+  await _syncCrmOnCheckout(newCustomerId, ticket, tenantId);
 }
 
 async function _recalcAvailability(outletId: string, tenantId: string): Promise<void> {

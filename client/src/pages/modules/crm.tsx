@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   Users, Search, Plus, Edit, Trash2, Phone, Mail, Star,
   Tag, Award, DollarSign, ShoppingBag, ChevronLeft, ChevronRight, X,
-  UserPlus, Filter, Megaphone, MessageSquare,
+  UserPlus, Filter, Megaphone, MessageSquare, Car, Clock, ParkingSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,6 +38,9 @@ interface CustomerData {
   gstin: string | null;
   birthday: string | null;
   anniversary: string | null;
+  vehiclePlates: string[] | null;
+  parkingVisitCount: number | null;
+  parkingTotalSpent: string | null;
 }
 
 interface OrderData {
@@ -123,6 +126,19 @@ export default function CrmPage() {
     queryKey: ["/api/orders"],
   });
   const orders = ordersRes?.data ?? [];
+
+  const { data: parkingHistory = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/customer-history", selectedCustomer?.id],
+    queryFn: async () => {
+      if (!selectedCustomer?.id) return [];
+      const res = await fetch(`/api/parking/customer-lookup?customerId=${encodeURIComponent(selectedCustomer.id)}`, { credentials: "include" });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data?.lastSessions ?? [];
+    },
+    enabled: showProfileDialog && !!selectedCustomer?.id,
+    staleTime: 30000,
+  });
 
   const { data: feedback = [] } = useQuery<FeedbackData[]>({
     queryKey: ["/api/feedback"],
@@ -682,6 +698,63 @@ export default function CrmPage() {
                   );
                 })()}
               </div>
+
+              {/* Parking History Section */}
+              {((selectedCustomer.parkingVisitCount && selectedCustomer.parkingVisitCount > 0) || parkingHistory.length > 0) && (
+                <div data-testid="section-parking-history">
+                  <div className="flex items-center gap-2 mb-2">
+                    <ParkingSquare className="w-4 h-4 text-blue-600" />
+                    <h4 className="text-sm font-semibold">Parking History</h4>
+                    <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-blue-300 text-blue-700 bg-blue-50" data-testid="badge-parking-visit-count">
+                      {selectedCustomer.parkingVisitCount ?? 0} visits
+                    </Badge>
+                    {selectedCustomer.parkingTotalSpent && parseFloat(selectedCustomer.parkingTotalSpent) > 0 && (
+                      <span className="text-xs text-muted-foreground ml-auto" data-testid="text-parking-total-spent">
+                        {fmt(parseFloat(selectedCustomer.parkingTotalSpent))} total
+                      </span>
+                    )}
+                  </div>
+                  {selectedCustomer.vehiclePlates && selectedCustomer.vehiclePlates.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {selectedCustomer.vehiclePlates.map((plate, idx) => (
+                        <Badge key={idx} variant="secondary" className="text-[10px] px-2 gap-1" data-testid={`badge-plate-${idx}`}>
+                          <Car className="w-3 h-3" /> {plate}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  {parkingHistory.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No completed parking sessions found</p>
+                  ) : (
+                    <div className="space-y-1.5 max-h-44 overflow-y-auto">
+                      {parkingHistory.map((session: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between px-3 py-2 rounded-lg bg-blue-50 border border-blue-100 text-sm" data-testid={`row-parking-session-${idx}`}>
+                          <div className="flex items-center gap-2">
+                            <Car className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                            <div>
+                              <span className="font-medium text-xs">{session.vehicleNumber}</span>
+                              {session.zoneName && <span className="text-[10px] text-muted-foreground ml-1">· {session.zoneName}</span>}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs">
+                            {session.durationMinutes != null && (
+                              <span className="flex items-center gap-0.5 text-muted-foreground">
+                                <Clock className="w-3 h-3" /> {session.durationMinutes}m
+                              </span>
+                            )}
+                            {session.chargeAmount != null && (
+                              <span className="font-semibold text-blue-700">{fmt(parseFloat(session.chargeAmount))}</span>
+                            )}
+                            {session.exitTime && (
+                              <span className="text-muted-foreground">{new Date(session.exitTime).toLocaleDateString()}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <DialogFooter className="gap-2">
                 <Button variant="outline" onClick={() => { setShowProfileDialog(false); openEdit(selectedCustomer); }} data-testid="button-edit-customer">
