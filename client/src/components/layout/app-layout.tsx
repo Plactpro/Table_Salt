@@ -1,24 +1,183 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import Sidebar from "./sidebar";
 import Header from "./header";
-import { Headset, AlertTriangle, ArrowLeft } from "lucide-react";
+import { Headset, Lock, Pencil, X, ShieldAlert } from "lucide-react";
 import ContactSupportModal from "@/components/widgets/contact-support-modal";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { Button } from "@/components/ui/button";
+import { ToastAction } from "@/components/ui/toast";
 import TrialBanner from "@/components/billing/trial-banner";
 import { RealtimeStatusBanner } from "@/components/RealtimeStatusBanner";
+import UnlockEditDialog from "@/components/admin/unlock-edit-dialog";
+import { useToast } from "@/hooks/use-toast";
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
+function ImpersonationBanner() {
+  const {
+    isImpersonating,
+    tenantName,
+    originalAdmin,
+    accessMode,
+    reason,
+    ticketId,
+    startedAt,
+    timeoutMinutes,
+    endImpersonation,
+    returnToReadOnly,
+  } = useImpersonation();
+  const { toast } = useToast();
+  const [timeLeft, setTimeLeft] = useState("");
+  const [showUnlock, setShowUnlock] = useState(false);
+
+  // Countdown timer
+  useEffect(() => {
+    if (!startedAt || !timeoutMinutes) return;
+    const expiresAt = startedAt + timeoutMinutes * 60 * 1000;
+    const tick = () => {
+      const diff = expiresAt - Date.now();
+      if (diff <= 0) {
+        setTimeLeft("00:00");
+        return;
+      }
+      const m = Math.floor(diff / 60000);
+      const s = Math.floor((diff % 60000) / 1000);
+      setTimeLeft(`${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [startedAt, timeoutMinutes]);
+
+  // Listen for read-only blocked events
+  const unlockRef = useRef<(() => void) | null>(null);
+  unlockRef.current = () => setShowUnlock(true);
+  useEffect(() => {
+    const handler = () => {
+      toast({
+        title: "Read-Only Session",
+        description: "You're in a read-only support session. Unlock edit mode to make changes.",
+        action: (
+          <ToastAction altText="Unlock Edit Mode" onClick={() => unlockRef.current?.()}>
+            Unlock Edit
+          </ToastAction>
+        ),
+      });
+    };
+    window.addEventListener("read-only-session-blocked", handler);
+    return () => window.removeEventListener("read-only-session-blocked", handler);
+  }, [toast]);
+
+  if (!isImpersonating) return null;
+
+  const isEdit = accessMode === "EDIT";
+  const bannerBg = isEdit ? "bg-orange-600" : "bg-amber-500";
+  const bannerText = isEdit ? "text-white" : "text-amber-950";
+
+  return (
+    <>
+      <div
+        className={`w-full ${bannerBg} ${bannerText} px-4 py-2 z-50 shrink-0`}
+        data-testid="impersonation-banner-app"
+      >
+        <div className="max-w-7xl mx-auto">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-sm font-medium">
+              <ShieldAlert className="h-4 w-4 shrink-0" />
+              <span>
+                {isEdit ? "SUPPORT SESSION — EDIT ENABLED" : "SUPPORT SESSION"}
+              </span>
+              {tenantName && (
+                <>
+                  <span className="opacity-60">·</span>
+                  <span>Tenant: <strong>{tenantName}</strong></span>
+                </>
+              )}
+              {originalAdmin && (
+                <>
+                  <span className="opacity-60">·</span>
+                  <span>Admin: {originalAdmin.userName}</span>
+                </>
+              )}
+              {!isEdit && (
+                <>
+                  <span className="opacity-60">·</span>
+                  <span className="flex items-center gap-1">
+                    <Lock className="h-3 w-3" /> READ ONLY
+                  </span>
+                </>
+              )}
+              {isEdit && (
+                <>
+                  <span className="opacity-60">·</span>
+                  <span>Every change is logged</span>
+                </>
+              )}
+              {timeLeft && !isEdit && (
+                <>
+                  <span className="opacity-60">·</span>
+                  <span>⏱ {timeLeft} left</span>
+                </>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              {reason && (
+                <span className="opacity-75 hidden sm:inline">Reason: {reason}</span>
+              )}
+              {ticketId && (
+                <span className="opacity-75 hidden sm:inline">· Ticket: {ticketId}</span>
+              )}
+              {!isEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-current text-current bg-transparent hover:bg-black/10 h-7 text-xs font-semibold"
+                  onClick={() => setShowUnlock(true)}
+                  data-testid="button-unlock-edit"
+                >
+                  <Pencil className="h-3 w-3 mr-1" />
+                  Unlock Edit
+                </Button>
+              )}
+              {isEdit && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-current text-current bg-transparent hover:bg-black/10 h-7 text-xs font-semibold"
+                  onClick={returnToReadOnly}
+                  data-testid="button-return-readonly"
+                >
+                  <Lock className="h-3 w-3 mr-1" />
+                  Return to Read Only
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-current text-current bg-transparent hover:bg-black/10 h-7 text-xs font-semibold"
+                onClick={endImpersonation}
+                data-testid="button-end-impersonation-app"
+              >
+                <X className="h-3 w-3 mr-1" />
+                End Session
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <UnlockEditDialog open={showUnlock} onOpenChange={setShowUnlock} />
+    </>
+  );
+}
+
 export default function AppLayout({ children }: AppLayoutProps) {
   const [location] = useLocation();
   const [showContactSupport, setShowContactSupport] = useState(false);
-  const { isImpersonating, tenantName, originalAdmin, endImpersonation } = useImpersonation();
 
   const { data: contactConfig } = useQuery<{ salesEnabled: boolean; supportEnabled: boolean }>({
     queryKey: ["/api/contact-config"],
@@ -32,30 +191,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     <div className="flex flex-col min-h-screen" data-testid="app-layout">
       <RealtimeStatusBanner />
       <TrialBanner />
-      {isImpersonating && (
-        <div
-          className="w-full bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-between z-50 shrink-0"
-          data-testid="impersonation-banner-app"
-        >
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            <span>
-              Impersonating: {tenantName ?? "Tenant"}
-              {originalAdmin ? ` (as ${originalAdmin.userName})` : ""}
-            </span>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            className="border-amber-700 text-amber-900 bg-amber-100 hover:bg-amber-200 h-7 text-xs font-semibold"
-            onClick={endImpersonation}
-            data-testid="button-end-impersonation-app"
-          >
-            <ArrowLeft className="h-3 w-3 mr-1" />
-            Return to Admin
-          </Button>
-        </div>
-      )}
+      <ImpersonationBanner />
 
       <div className="flex flex-1 min-h-0">
         <Sidebar />

@@ -2966,4 +2966,50 @@ export async function runTask108Migrations(): Promise<void> {
       specifications TEXT
     )
   `);
+
+  // Task #168: Impersonation Trust & Transparency — impersonation sessions audit table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS impersonation_sessions (
+      id                      VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id               VARCHAR(36) NOT NULL,
+      super_admin_id          VARCHAR(36) NOT NULL,
+      super_admin_name        VARCHAR(255) NOT NULL,
+      impersonated_user_id    VARCHAR(36) NOT NULL,
+      impersonated_user_name  VARCHAR(255) NOT NULL,
+      impersonated_user_role  VARCHAR(50),
+      access_mode             VARCHAR(20) DEFAULT 'READ_ONLY',
+      status                  VARCHAR(20) DEFAULT 'active',
+      access_reason           TEXT NOT NULL,
+      support_ticket_id       VARCHAR(100),
+      started_at              TIMESTAMP NOT NULL DEFAULT NOW(),
+      ended_at                TIMESTAMP,
+      duration_minutes        INT,
+      last_activity_at        TIMESTAMP,
+      session_timeout_minutes INT DEFAULT 30,
+      ip_address              VARCHAR(50),
+      edit_unlocked           BOOLEAN DEFAULT false,
+      edit_unlocked_at        TIMESTAMP,
+      edit_unlock_reason      TEXT,
+      pages_visited           JSONB DEFAULT '[]',
+      changes_made            BOOLEAN DEFAULT false,
+      created_at              TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  // Task #168 follow-up: add auto_expired tracking column (safe if already exists)
+  await pool.query(`ALTER TABLE impersonation_sessions ADD COLUMN IF NOT EXISTS auto_expired BOOLEAN DEFAULT false`);
+
+  // Task #168: Tenant access preferences table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS tenant_access_preferences (
+      id                   VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id            VARCHAR(36) NOT NULL UNIQUE,
+      show_access_log      BOOLEAN DEFAULT true,
+      notify_on_access     BOOLEAN DEFAULT false,
+      notify_email         VARCHAR(255),
+      allow_edit_mode      BOOLEAN DEFAULT true,
+      created_at           TIMESTAMP DEFAULT NOW(),
+      updated_at           TIMESTAMP DEFAULT NOW()
+    )
+  `);
 }

@@ -1,4 +1,4 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, MutationCache } from "@tanstack/react-query";
 
 function getCsrfToken(): string | null {
   const match = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
@@ -7,8 +7,16 @@ function getCsrfToken(): string | null {
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
+    let body: unknown;
+    try {
+      body = await res.json();
+    } catch {
+      const text = await res.text();
+      throw new Error(`${res.status}: ${text || res.statusText}`);
+    }
+    const err = new Error(`${res.status}: ${(body as { message?: string })?.message ?? res.statusText}`);
+    (err as { cause?: unknown }).cause = body;
+    throw err;
   }
 }
 
@@ -51,6 +59,16 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+// Global READ_ONLY_SESSION handler — fires a custom event so the banner can show a toast
+function handleReadOnlyError(error: Error) {
+  try {
+    const cause = (error as { cause?: unknown }).cause as { error?: string } | undefined;
+    if (cause?.error === "READ_ONLY_SESSION") {
+      window.dispatchEvent(new CustomEvent("read-only-session-blocked"));
+    }
+  } catch {}
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -64,4 +82,9 @@ export const queryClient = new QueryClient({
       retry: false,
     },
   },
+  mutationCache: new MutationCache({
+    onError: (error) => {
+      handleReadOnlyError(error as Error);
+    },
+  }),
 });
