@@ -978,4 +978,33 @@ export function registerOrdersRoutes(app: Express): void {
     const result = await storage.getOrdersWithOfferDetails(user.tenantId);
     res.json(result);
   });
+
+  app.post("/api/orders/archive-stale", requireRole("owner", "manager", "franchise_owner", "hq_admin", "outlet_manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const staleStatuses = ["new", "in_progress", "sent_to_kitchen", "ready"];
+      const result = await pool.query(
+        `UPDATE orders
+         SET status = 'cancelled', notes = COALESCE(NULLIF(notes, ''), '') || CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE ' | ' END || 'Auto-archived: stale order'
+         WHERE tenant_id = $1
+           AND status = ANY($2::text[])
+           AND created_at < $3
+         RETURNING id`,
+        [user.tenantId, staleStatuses, cutoff]
+      );
+      const archived = result.rowCount ?? 0;
+      auditLogFromReq(req, {
+        action: "STALE_ORDERS_ARCHIVED",
+        entityType: "orders",
+        metadata: { archived, cutoff: cutoff.toISOString() },
+      });
+      if (archived > 0) {
+        emitToTenant(user.tenantId, "order:stale_archived", { count: archived });
+      }
+      res.json({ success: true, archived });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 }

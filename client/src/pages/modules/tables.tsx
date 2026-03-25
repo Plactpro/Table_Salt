@@ -183,6 +183,14 @@ function getTimeSince(dateStr: string) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
+function getWaitlistTimeSince(dateStr: string): string {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins > 180) return "—";
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
 const GRID_SIZE = 20;
 const TABLE_W = 100;
 const TABLE_H = 80;
@@ -670,6 +678,15 @@ function TablesPageContent() {
     onSuccess: () => { invalidateAll(); toast({ title: "Notification sent" }); },
   });
 
+  const clearStaleOrdersMut = useMutation({
+    mutationFn: async () => { const r = await apiRequest("POST", "/api/orders/archive-stale", {}); return r.json(); },
+    onSuccess: (data: { archived: number }) => {
+      invalidateAll();
+      toast({ title: `Cleared ${data.archived} stale order${data.archived !== 1 ? "s" : ""}`, description: "Orders older than 24 hours have been archived." });
+    },
+    onError: (err: Error) => { toast({ title: "Failed to clear stale orders", description: err.message, variant: "destructive" }); },
+  });
+
   const transferMut = useMutation({
     mutationFn: async ({ sourceId, targetId }: { sourceId: string; targetId: string }) => {
       const r = await apiRequest("POST", `/api/tables/${sourceId}/transfer`, { targetTableId: targetId });
@@ -781,7 +798,23 @@ function TablesPageContent() {
           <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">Table & Queue Management</h1>
           <p className="text-muted-foreground mt-1">Floor plan, waitlist, and reservations</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          {["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"].includes(user?.role ?? "") && (
+            <Button
+              onClick={() => {
+                if (confirm("Archive all open orders older than 24 hours as cancelled? This cannot be undone.")) {
+                  clearStaleOrdersMut.mutate();
+                }
+              }}
+              variant="outline"
+              size="sm"
+              disabled={clearStaleOrdersMut.isPending}
+              className="text-muted-foreground border-dashed"
+              data-testid="button-clear-stale-orders"
+            >
+              <Archive className="w-4 h-4 mr-2" />Clear Stale Orders
+            </Button>
+          )}
           <Button onClick={() => setShowAddWaitlist(true)} variant="outline" data-testid="button-add-waitlist">
             <UserPlus className="w-4 h-4 mr-2" />Add to Waitlist
           </Button>
@@ -1106,7 +1139,7 @@ function TablesPageContent() {
                             <span className="flex items-center gap-1"><Users className="w-3 h-3" />{entry.partySize} guests</span>
                             {entry.customerPhone && <span className="flex items-center gap-1"><Phone className="w-3 h-3" />{entry.customerPhone}</span>}
                             {entry.preferredZone && <span className="flex items-center gap-1"><MapPin className="w-3 h-3" />{entry.preferredZone}</span>}
-                            {entry.createdAt && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Waiting {getTimeSince(entry.createdAt)}</span>}
+                            {entry.createdAt && <span className="flex items-center gap-1"><Clock className="w-3 h-3" />Waiting {getWaitlistTimeSince(entry.createdAt)}</span>}
                           </div>
                           {entry.notes && <div className="text-xs text-muted-foreground mt-1">{entry.notes}</div>}
                         </div>
