@@ -460,9 +460,12 @@ function TablesPageContent() {
   const { data: analytics } = useQuery<AnalyticsData>({ queryKey: ["/api/table-analytics"] });
   const { data: customersRes } = useQuery<{ data: CustomerData[]; total: number }>({ queryKey: ["/api/customers"] });
   const customers = customersRes?.data ?? [];
-  const { data: outlets = [] } = useQuery<{ id: string }[]>({ queryKey: ["/api/outlets"] });
+  const { data: outlets = [], isLoading: outletsLoading } = useQuery<{ id: string }[]>({
+    queryKey: ["/api/outlets"],
+    enabled: !user?.outletId,
+  });
 
-  const outletId: string | null = user?.outletId ?? outlets[0]?.id ?? null;
+  const outletId: string | null = user?.outletId ?? (outletsLoading ? null : outlets[0]?.id ?? null);
 
   useRealtimeEvent("resource:updated", useCallback(() => {
     if (outletId) {
@@ -762,10 +765,11 @@ function TablesPageContent() {
     return reservations.filter(r => r.dateTime?.startsWith(dateStr));
   };
 
-  if (tablesLoading) {
+  if (tablesLoading || outletsLoading) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        <p className="text-sm text-muted-foreground">Loading floor plan...</p>
       </div>
     );
   }
@@ -1498,7 +1502,6 @@ function TablesPageContent() {
                     <div><span className="text-muted-foreground">Zone:</span> <span className="font-medium">{selectedTable.zone || "Main"}</span></div>
                     <div><span className="text-muted-foreground">Capacity:</span> <span className="font-medium">{selectedTable.capacity || 4}</span></div>
                     <div><span className="text-muted-foreground">Shape:</span> <span className="font-medium capitalize">{selectedTable.shape || "square"}</span></div>
-                    <div><span className="text-muted-foreground">Position:</span> <span className="font-medium">({selectedTable.posX || 0}, {selectedTable.posY || 0})</span></div>
                     {selectedTable.partyName && <div><span className="text-muted-foreground">Party:</span> <span className="font-medium">{selectedTable.partyName}</span></div>}
                     {selectedTable.partySize && <div><span className="text-muted-foreground">Guests:</span> <span className="font-medium">{selectedTable.partySize}</span></div>}
                     {selectedTable.seatedAt && <div><span className="text-muted-foreground">Seated:</span> <span className="font-medium">{getTimeSince(selectedTable.seatedAt)} ago</span></div>}
@@ -1924,7 +1927,7 @@ function TablesPageContent() {
               <div><Label>Phone</Label><Input value={resFormData.customerPhone} onChange={e => setResFormData({ ...resFormData, customerPhone: e.target.value })} data-testid="input-res-phone" /></div>
               <div><Label>Guests</Label><Input type="number" value={resFormData.guests} onChange={e => setResFormData({ ...resFormData, guests: e.target.value })} data-testid="input-res-guests" /></div>
             </div>
-            <div><Label>Date & Time</Label><Input type="datetime-local" value={resFormData.dateTime} onChange={e => setResFormData({ ...resFormData, dateTime: e.target.value })} data-testid="input-res-datetime" /></div>
+            <div><Label>Date & Time</Label><input type="datetime-local" value={resFormData.dateTime} onChange={e => setResFormData({ ...resFormData, dateTime: e.target.value })} placeholder="YYYY-MM-DDTHH:MM" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" data-testid="input-res-datetime" /></div>
             <div><Label>Table (Optional)</Label>
               <Select value={resFormData.tableId || "none"} onValueChange={v => setResFormData({ ...resFormData, tableId: v === "none" ? "" : v })}>
                 <SelectTrigger data-testid="select-res-table"><SelectValue placeholder="Auto-assign" /></SelectTrigger>

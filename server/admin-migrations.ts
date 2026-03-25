@@ -2898,6 +2898,33 @@ export async function runTask108Migrations(): Promise<void> {
     WHERE username = 'cleaning' AND role != 'cleaning_staff'
   `);
 
+  // Task #163 / BUG-014: Re-run Charlotte role fix to ensure it is applied
+  await pool.query(`
+    UPDATE users SET role = 'cleaning_staff'
+    WHERE username = 'cleaning'
+  `);
+
+  // Task #163 / BUG-013: Clean up test zones (DupTestZone, UniqueTestZone) from demo tenant
+  await pool.query(`
+    DELETE FROM table_zones
+    WHERE name ~* '(test|dup|unique)'
+    AND tenant_id IN (SELECT id FROM tenants WHERE name ILIKE '%demo%' OR slug ILIKE '%demo%')
+  `);
+  // Also remove exact test zone names scoped to demo tenants (catches single-tenant demo setups)
+  await pool.query(`
+    DELETE FROM table_zones
+    WHERE name IN ('DupTestZone', 'UniqueTestZone')
+    AND tenant_id IN (SELECT id FROM tenants WHERE name ILIKE '%demo%' OR slug ILIKE '%demo%')
+  `);
+
+  // Task #163 / BUG-011: Fix Combo Meal Deal promotion description to accurately reflect auto-apply behavior
+  await pool.query(`
+    UPDATE promotion_rules
+    SET description = 'Auto-applied at POS when conditions are met. Customers receive a combo discount when ordering qualifying items together.'
+    WHERE name ILIKE '%Combo Meal Deal%'
+    AND (description ILIKE '%Not applicable at POS%' OR description ILIKE '%manual application only%')
+  `);
+
   // Post-merge fix: Create quotation_requests + quotation_request_items tables that exist in
   // schema.ts but were never created in the DB (causing Drizzle rename warnings on every db:push)
   await pool.query(`

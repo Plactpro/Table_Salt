@@ -270,6 +270,11 @@ function calculateDiscount(rule: PromotionRule, input: EvaluateInput): DiscountC
 export function evaluateRules(rules: PromotionRule[], input: EvaluateInput): EvaluateResult {
   const activeRules = rules
     .filter((r) => isRuleActive(r))
+    .filter((r) => {
+      const cond = r.conditions as Record<string, unknown> | null;
+      if (cond?.applyMode === "manual") return false;
+      return true;
+    })
     .filter((r) => isChannelAllowed(r, input.channel))
     .filter((r) => isScopeMatched(r, input))
     .filter((r) => isTimeConditionMet(r, input))
