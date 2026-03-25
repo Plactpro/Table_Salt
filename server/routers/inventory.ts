@@ -11,6 +11,18 @@ import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { inventoryItems as inventoryItemsTable } from "@shared/schema";
 import { alertEngine } from "../services/alert-engine";
 
+function sanitizeInventoryBody(body: Record<string, unknown>) {
+  const numericFields = ["currentStock", "reorderLevel", "costPrice", "costPerPiece",
+                         "parLevelPerShift", "reorderPieces", "parLevelPerShiftUnit"];
+  const result = { ...body };
+  for (const field of numericFields) {
+    if (result[field] === "" || result[field] === undefined) {
+      result[field] = null;
+    }
+  }
+  return result;
+}
+
 export function registerInventoryRoutes(app: Express): void {
   app.get("/api/inventory", requireAuth, async (req, res) => {
     try {
@@ -49,13 +61,13 @@ export function registerInventoryRoutes(app: Express): void {
 
   app.post("/api/inventory", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
     const user = req.user as any;
-    const item = await storage.createInventoryItem({ ...req.body, tenantId: user.tenantId });
+    const item = await storage.createInventoryItem({ ...sanitizeInventoryBody(req.body), tenantId: user.tenantId });
     res.json(item);
   });
 
   app.patch("/api/inventory/:id", requireRole("owner", "manager"), requirePermission("manage_inventory"), async (req, res) => {
     const user = req.user as any;
-    const item = await storage.updateInventoryItem(req.params.id, req.body, user.tenantId);
+    const item = await storage.updateInventoryItem(req.params.id, sanitizeInventoryBody(req.body), user.tenantId);
     if (!item) return res.status(404).json({ message: "Item not found" });
     res.json(item);
   });
