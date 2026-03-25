@@ -33,6 +33,7 @@ export default function ProcurementPage() {
   const [grnDialog, setGrnDialog] = useState(false);
   const [detailPO, setDetailPO] = useState<string | null>(null);
   const [poForm, setPoForm] = useState({ supplierId: "", notes: "", expectedDelivery: "" });
+  const [poFormErrors, setPoFormErrors] = useState<{ expectedDelivery?: string }>({});
   const [poItems, setPoItems] = useState<Array<{ inventoryItemId: string; quantity: string; unitCost: string }>>([]);
 
   const fmt = (amount: string | number) => {
@@ -122,6 +123,7 @@ export default function ProcurementPage() {
     }));
     setPoItems(items);
     setPoForm({ supplierId: "", notes: "Auto-generated from low stock alerts", expectedDelivery: "" });
+    setPoFormErrors({});
     setPoDialog(true);
   };
 
@@ -166,7 +168,7 @@ export default function ProcurementPage() {
               <AlertTriangle className="h-4 w-4 mr-2 text-amber-500" />{lowStock.length} Low Stock
             </Button>
           )}
-          <Button onClick={() => { setPoForm({ supplierId: "", notes: "", expectedDelivery: "" }); setPoItems([]); setPoDialog(true); }} data-testid="button-create-po"><Plus className="h-4 w-4 mr-2" />New PO</Button>
+          <Button onClick={() => { setPoForm({ supplierId: "", notes: "", expectedDelivery: "" }); setPoFormErrors({}); setPoItems([]); setPoDialog(true); }} data-testid="button-create-po"><Plus className="h-4 w-4 mr-2" />New PO</Button>
         </div>
       </div>
 
@@ -451,7 +453,19 @@ export default function ProcurementPage() {
                   <SelectContent>{suppliersList.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                 </Select>
               </div>
-              <div><Label>Expected Delivery</Label><Input type="date" value={poForm.expectedDelivery} onChange={e => setPoForm({ ...poForm, expectedDelivery: e.target.value })} data-testid="input-expected-delivery" /></div>
+              <div>
+                <Label>Expected Delivery *</Label>
+                <Input
+                  type="date"
+                  value={poForm.expectedDelivery}
+                  onChange={e => { setPoForm({ ...poForm, expectedDelivery: e.target.value }); setPoFormErrors(prev => ({ ...prev, expectedDelivery: undefined })); }}
+                  data-testid="input-expected-delivery"
+                  className={poFormErrors.expectedDelivery ? "border-destructive" : ""}
+                />
+                {poFormErrors.expectedDelivery && (
+                  <p className="text-xs text-destructive mt-1" data-testid="error-expected-delivery">{poFormErrors.expectedDelivery}</p>
+                )}
+              </div>
             </div>
             <div><Label>Notes</Label><Input value={poForm.notes} onChange={e => setPoForm({ ...poForm, notes: e.target.value })} data-testid="input-po-notes" /></div>
 
@@ -487,7 +501,18 @@ export default function ProcurementPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPoDialog(false)}>Cancel</Button>
-            <Button onClick={() => createPOMut.mutate({ ...poForm, items: poItems })} disabled={!poForm.supplierId || poItems.length === 0} data-testid="button-save-po">Create PO</Button>
+            <Button
+              onClick={() => {
+                if (!poForm.expectedDelivery) {
+                  setPoFormErrors({ expectedDelivery: "Expected delivery date is required" });
+                  return;
+                }
+                setPoFormErrors({});
+                createPOMut.mutate({ ...poForm, items: poItems });
+              }}
+              disabled={!poForm.supplierId || poItems.length === 0}
+              data-testid="button-save-po"
+            >Create PO</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

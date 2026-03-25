@@ -163,6 +163,11 @@ type ExtendedFormData = {
   costPerPiece: string;
 };
 
+type InventoryItemPayload = Omit<ExtendedFormData, "parLevelPerShift" | "reorderPieces"> & {
+  parLevelPerShift: number | null;
+  reorderPieces: number | null;
+};
+
 const CATEGORY_FILTERS = [
   { value: "ALL", label: "All" },
   { value: "INGREDIENT", label: "Food" },
@@ -207,13 +212,13 @@ function InventoryTab() {
     return formatCurrency(v, tenant?.currency || "AED", tenant?.currencyPosition || "before", tenant?.currencyDecimals ?? 2);
   };
 
-  const queryParams = new URLSearchParams({ limit: String(INVENTORY_LIMIT), offset: String(inventoryPage * INVENTORY_LIMIT) });
-  if (categoryFilter !== "ALL") queryParams.set("itemCategory", categoryFilter);
-
   const { data: inventoryRes, isLoading } = useQuery<{ data: ExtendedInventoryItem[]; total: number }>({
     queryKey: ["/api/inventory", inventoryPage, categoryFilter],
-    queryFn: async () => {
-      const res = await fetch(`/api/inventory?${queryParams}`, { credentials: "include" });
+    queryFn: async ({ queryKey }) => {
+      const [, page, category] = queryKey as [string, number, string];
+      const params = new URLSearchParams({ limit: String(INVENTORY_LIMIT), offset: String(Number(page) * INVENTORY_LIMIT) });
+      if (category !== "ALL") params.set("itemCategory", String(category));
+      const res = await fetch(`/api/inventory?${params}`, { credentials: "include" });
       return res.json();
     },
   });
@@ -221,12 +226,12 @@ function InventoryTab() {
   const inventoryTotal = inventoryRes?.total ?? 0;
 
   const createMutation = useMutation({
-    mutationFn: async (data: ExtendedFormData) => { const res = await apiRequest("POST", "/api/inventory", data); return res.json(); },
+    mutationFn: async (data: InventoryItemPayload) => { const res = await apiRequest("POST", "/api/inventory", data); return res.json(); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); resetForm(); toast({ title: "Item added" }); },
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: ExtendedFormData }) => { const res = await apiRequest("PATCH", `/api/inventory/${id}`, data); return res.json(); },
+    mutationFn: async ({ id, data }: { id: string; data: InventoryItemPayload }) => { const res = await apiRequest("PATCH", `/api/inventory/${id}`, data); return res.json(); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); setEditingItem(null); resetForm(); toast({ title: "Item updated" }); },
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
@@ -605,12 +610,15 @@ function InventoryTab() {
             <Button
               onClick={() => {
                 if (!formData.name.trim()) return;
-                const payload = {
+                const coerceInt = (v: string): number | null => (v === "") ? null : parseInt(v, 10);
+                const apiPayload: InventoryItemPayload = {
                   ...formData,
                   unit: isPieceCategory(formData.itemCategory) ? "pcs" : formData.unit,
                   costPrice: isPieceCategory(formData.itemCategory) ? formData.costPerPiece : formData.costPrice,
+                  parLevelPerShift: coerceInt(formData.parLevelPerShift),
+                  reorderPieces: coerceInt(formData.reorderPieces),
                 };
-                editingItem ? updateMutation.mutate({ id: editingItem.id, data: payload }) : createMutation.mutate(payload);
+                editingItem ? updateMutation.mutate({ id: editingItem.id, data: apiPayload }) : createMutation.mutate(apiPayload);
               }}
               disabled={createMutation.isPending || updateMutation.isPending}
               data-testid="button-save-inventory"
