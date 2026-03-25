@@ -398,7 +398,44 @@ export function registerParkingRoutes(app: Express): void {
         statusFilter = parts.length === 1 ? parts[0] : parts;
       }
       const requests = await storage.getRetrievalRequests(req.params.outletId, user.tenantId, statusFilter ? { status: statusFilter } : undefined);
-      res.json(requests);
+
+      // Promote matured scheduled requests (scheduled_for <= NOW()) by fetching from DB
+      const { rows: maturedRows } = await pool.query(
+        `UPDATE valet_retrieval_requests
+         SET scheduled_for = NULL
+         WHERE outlet_id=$1 AND tenant_id=$2
+           AND scheduled_for IS NOT NULL AND scheduled_for <= NOW()
+           AND status='pending'
+         RETURNING id, ticket_id`,
+        [req.params.outletId, user.tenantId]
+      );
+      for (const r of maturedRows) {
+        // Emit real-time so valet dashboards pick it up
+        emitToTenant(user.tenantId, "parking:retrieval_requested", { ticketId: r.ticket_id, source: "QR_TABLE_SCHEDULED" });
+        // Mark ticket as requested
+        await pool.query(
+          `UPDATE valet_tickets SET status='requested' WHERE id=$1 AND tenant_id=$2 AND status='parked'`,
+          [r.ticket_id, user.tenantId]
+        );
+      }
+
+      // Enrich requests with scheduled_for from DB (not stored in storage layer)
+      const { rows: scheduledRows } = await pool.query(
+        `SELECT id, scheduled_for FROM valet_retrieval_requests
+         WHERE outlet_id=$1 AND tenant_id=$2 AND scheduled_for IS NOT NULL AND status='pending'`,
+        [req.params.outletId, user.tenantId]
+      );
+      const scheduledMap: Record<string, string> = {};
+      for (const r of scheduledRows) {
+        scheduledMap[r.id] = r.scheduled_for;
+      }
+
+      const enriched = requests.map((r: any) => ({
+        ...r,
+        scheduledFor: scheduledMap[r.id] ?? null,
+      }));
+
+      res.json(enriched);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -453,6 +490,108 @@ export function registerParkingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // ─── Valet Staff Performance (per-day aggregates) ───────────────────────────
+  app.get("/api/parking/valet-staff-performance/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.params;
+      const dateStr = (req.query.date as string) || new Date().toISOString().split("T")[0];
+      const tenantId = user.tenantId;
+
+      // Get all staff for this outlet
+      const { rows: staffRows } = await pool.query(
+        `SELECT id, name, badge_number, is_on_duty, duty_started_at FROM valet_staff
+         WHERE outlet_id=$1 AND tenant_id=$2 AND is_active=true`,
+        [outletId, tenantId]
+      );
+
+      // Per staff: tickets checked in on given date
+      const { rows: checkInRows } = await pool.query(
+        `SELECT valet_staff_id, COUNT(*) as check_ins
+         FROM valet_tickets
+         WHERE outlet_id=$1 AND tenant_id=$2
+           AND DATE(entry_time)=$3
+           AND valet_staff_id IS NOT NULL
+         GROUP BY valet_staff_id`,
+        [outletId, tenantId, dateStr]
+      );
+      const checkInMap: Record<string, number> = {};
+      for (const r of checkInRows) {
+        checkInMap[r.valet_staff_id] = parseInt(r.check_ins);
+      }
+
+      // Per staff: retrieval completions and avg timing using ticket events.
+      // Timing = time between STATUS_REQUESTED event and STATUS_COMPLETED event for each ticket.
+      // Group by the staff member who performed the STATUS_COMPLETED event (performed_by).
+      const { rows: retrievalRows } = await pool.query(
+        `WITH requested AS (
+           SELECT ticket_id, MIN(created_at) AS requested_at
+           FROM valet_ticket_events
+           WHERE tenant_id=$2 AND event_type='STATUS_REQUESTED'
+             AND DATE(created_at)=$3
+           GROUP BY ticket_id
+         ),
+         completed AS (
+           SELECT ticket_id, performed_by, MIN(created_at) AS completed_at
+           FROM valet_ticket_events
+           WHERE tenant_id=$2 AND event_type='STATUS_COMPLETED'
+             AND DATE(created_at)=$3
+           GROUP BY ticket_id, performed_by
+         )
+         SELECT c.performed_by AS staff_id,
+                COUNT(*) AS retrievals_completed,
+                AVG(EXTRACT(EPOCH FROM (c.completed_at - r.requested_at))/60) AS avg_retrieval_min
+         FROM completed c
+         JOIN requested r ON r.ticket_id = c.ticket_id
+         JOIN valet_tickets vt ON vt.id = c.ticket_id AND vt.outlet_id=$1
+         WHERE c.completed_at > r.requested_at
+         GROUP BY c.performed_by`,
+        [outletId, tenantId, dateStr]
+      );
+      const retrievalByStaffId: Record<string, { retrievals: number; avgMin: number }> = {};
+      for (const r of retrievalRows) {
+        retrievalByStaffId[r.staff_id] = {
+          retrievals: parseInt(r.retrievals_completed ?? "0"),
+          avgMin: parseFloat(r.avg_retrieval_min ?? "0"),
+        };
+      }
+
+      // Shift totals: check-ins since duty started (for currently on-duty staff)
+      const shiftCheckInMap: Record<string, number> = {};
+      for (const s of staffRows as any[]) {
+        if (s.is_on_duty && s.duty_started_at) {
+          const { rows: shiftRows } = await pool.query(
+            `SELECT COUNT(*) as cnt FROM valet_tickets
+             WHERE outlet_id=$1 AND tenant_id=$2 AND valet_staff_id=$3
+               AND entry_time >= $4`,
+            [outletId, tenantId, s.id, s.duty_started_at]
+          );
+          shiftCheckInMap[s.id] = parseInt(shiftRows[0]?.cnt ?? "0");
+        }
+      }
+
+      const performance = (staffRows as any[]).map((s: any) => {
+        const rByStaff = retrievalByStaffId[s.id] ?? { retrievals: 0, avgMin: 0 };
+        return {
+          staffId: s.id,
+          name: s.name,
+          badgeNumber: s.badge_number,
+          isOnDuty: s.is_on_duty,
+          dutyStartedAt: s.duty_started_at,
+          checkInsToday: checkInMap[s.id] ?? 0,
+          checkInsShift: shiftCheckInMap[s.id] ?? null,
+          retrievalsCompleted: rByStaff.retrievals,
+          avgRetrievalMinutes: Math.round(rByStaff.avgMin * 10) / 10,
+        };
+      });
+
+      // Sort by retrievals descending, then check-ins
+      performance.sort((a, b) => b.retrievalsCompleted - a.retrievalsCompleted || b.checkInsToday - a.checkInsToday);
+
+      res.json({ date: dateStr, performance });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // ─── Guest Ticket Check (via QR table token — no session auth) ──────────────
   // Used by the QR page to check if this table has an active linked valet ticket
   // before showing the "Retrieve My Vehicle" CTA
@@ -477,7 +616,8 @@ export function registerParkingRoutes(app: Express): void {
       if (!outletRows[0]) return res.json({ hasActiveTicket: false });
 
       const { rows: ticketRows } = await pool.query(
-        `SELECT vt.id FROM valet_tickets vt
+        `SELECT vt.id, vt.status, vt.vehicle_type, vt.vehicle_number, vt.ticket_number, vt.entry_time
+         FROM valet_tickets vt
          LEFT JOIN bills b ON b.id = vt.bill_id
          LEFT JOIN orders o ON o.id = b.order_id
          WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
@@ -487,17 +627,57 @@ export function registerParkingRoutes(app: Express): void {
         [outletId, tenantId, tableId]
       );
 
-      res.json({ hasActiveTicket: !!ticketRows[0] });
+      if (!ticketRows[0]) return res.json({ hasActiveTicket: false });
+
+      const ticket = ticketRows[0];
+      const maskedPlate = ticket.vehicle_number
+        ? ticket.vehicle_number.slice(0, -3) + "***"
+        : null;
+
+      res.json({
+        hasActiveTicket: true,
+        status: ticket.status,
+        vehicleType: ticket.vehicle_type,
+        maskedPlate,
+        ticketNumber: ticket.ticket_number,
+        entryTime: ticket.entry_time,
+      });
     } catch (err: any) {
       res.json({ hasActiveTicket: false });
     }
+  });
+
+  // ─── Condition Report PATCH (add/update condition on existing ticket) ─────────
+  app.patch("/api/parking/tickets/:id/condition", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const { conditionReport, isExitCheck } = req.body;
+      // For exit checks, merge exit condition into the existing report under "exit" key
+      let mergedReport: any;
+      if (isExitCheck && ticket.conditionReport) {
+        mergedReport = { ...ticket.conditionReport, exit: conditionReport, exitCheckedAt: new Date().toISOString() };
+      } else {
+        mergedReport = conditionReport;
+      }
+      const updated = await storage.updateValetTicket(ticket.id, user.tenantId, { conditionReport: mergedReport });
+      await storage.appendValetTicketEvent(ticket.id, user.tenantId, {
+        eventType: isExitCheck ? "EXIT_CONDITION_CHECK" : "ENTRY_CONDITION_CHECK",
+        performedBy: user.id,
+        performedByName: user.name || user.username,
+        notes: JSON.stringify(conditionReport),
+      });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   // ─── Guest Retrieval Request (via QR table token) ────────────────────────────
   // No session auth required — verified via the QR table token
   app.post("/api/parking/guest-retrieval", async (req, res) => {
     try {
-      const { token, outletId, notes } = req.body;
+      const { token, outletId, notes, scheduledDelayMinutes } = req.body;
       if (!token || !outletId) return res.status(400).json({ message: "token and outletId are required" });
 
       // Validate token maps to an active QR table and resolve tenant
@@ -546,6 +726,10 @@ export function registerParkingRoutes(app: Express): void {
         return res.status(409).json({ message: "A retrieval request is already in progress for this vehicle", requestId: existingRequests[0].id });
       }
 
+      const scheduledFor = scheduledDelayMinutes && scheduledDelayMinutes > 0
+        ? new Date(Date.now() + scheduledDelayMinutes * 60 * 1000)
+        : null;
+
       const request = await storage.createRetrievalRequest({
         tenantId,
         outletId,
@@ -557,20 +741,30 @@ export function registerParkingRoutes(app: Express): void {
         notes: notes ?? null,
       });
 
-      emitToTenant(tenantId, "parking:retrieval_requested", {
-        request,
-        ticketNumber: ticket.ticket_number,
-        source: "QR_TABLE",
-        tableId,
-      });
+      // If scheduled, update row with scheduled_for
+      if (scheduledFor) {
+        await pool.query(
+          `UPDATE valet_retrieval_requests SET scheduled_for=$1 WHERE id=$2`,
+          [scheduledFor, request.id]
+        );
+      }
 
-      // Update ticket status to requested
-      await pool.query(
-        `UPDATE valet_tickets SET status='requested' WHERE id=$1 AND tenant_id=$2`,
-        [ticket.id, tenantId]
-      );
+      // Only emit and update ticket to 'requested' immediately if not scheduled
+      if (!scheduledFor) {
+        emitToTenant(tenantId, "parking:retrieval_requested", {
+          request,
+          ticketNumber: ticket.ticket_number,
+          source: "QR_TABLE",
+          tableId,
+        });
 
-      res.status(201).json({ success: true, requestId: request.id });
+        await pool.query(
+          `UPDATE valet_tickets SET status='requested' WHERE id=$1 AND tenant_id=$2`,
+          [ticket.id, tenantId]
+        );
+      }
+
+      res.status(201).json({ success: true, requestId: request.id, scheduledFor: scheduledFor?.toISOString() ?? null });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

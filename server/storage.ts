@@ -4464,7 +4464,7 @@ export class DatabaseStorage implements IStorage {
     return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, userId: r.user_id, name: r.name, phone: r.phone, badgeNumber: r.badge_number, isOnDuty: r.is_on_duty, isActive: r.is_active, createdAt: r.created_at };
   }
   private _mapValetTicket(r: any): ValetTicket {
-    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketNumber: r.ticket_number, slotId: r.slot_id, zoneId: r.zone_id, billId: r.bill_id, valetStaffId: r.valet_staff_id, vehicleNumber: r.vehicle_number, vehicleType: r.vehicle_type, vehicleMake: r.vehicle_make, vehicleColor: r.vehicle_color, customerName: r.customer_name, customerPhone: r.customer_phone, status: r.status, entryTime: r.entry_time, exitTime: r.exit_time, durationMinutes: r.duration_minutes, chargeAddedToBill: r.charge_added_to_bill, events: r.events, notes: r.notes, createdAt: r.created_at };
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketNumber: r.ticket_number, slotId: r.slot_id, zoneId: r.zone_id, billId: r.bill_id, customerId: r.customer_id ?? null, valetStaffId: r.valet_staff_id, vehicleNumber: r.vehicle_number, vehicleType: r.vehicle_type, vehicleMake: r.vehicle_make, vehicleColor: r.vehicle_color, customerName: r.customer_name, customerPhone: r.customer_phone, status: r.status, entryTime: r.entry_time, exitTime: r.exit_time, durationMinutes: r.duration_minutes, chargeAddedToBill: r.charge_added_to_bill, events: r.events, notes: r.notes, conditionReport: r.condition_report ?? null, createdAt: r.created_at };
   }
   private _mapRetrievalRequest(r: any): ValetRetrievalRequest {
     return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketId: r.ticket_id, source: r.source, requestedBy: r.requested_by, requestedByName: r.requested_by_name, assignedValetId: r.assigned_valet_id, assignedValetName: r.assigned_valet_name, status: r.status, notes: r.notes, completedAt: r.completed_at, createdAt: r.created_at };
@@ -4621,11 +4621,12 @@ export class DatabaseStorage implements IStorage {
     return rows[0] ? this._mapValetStaff(rows[0]) : undefined;
   }
 
-  async createValetTicket(data: InsertValetTicket): Promise<ValetTicket> {
+  async createValetTicket(data: InsertValetTicket & { conditionReport?: any }): Promise<ValetTicket> {
+    const conditionReportVal = data.conditionReport ? JSON.stringify(data.conditionReport) : null;
     const { rows } = await pool.query(
-      `INSERT INTO valet_tickets (tenant_id, outlet_id, ticket_number, slot_id, zone_id, bill_id, valet_staff_id, vehicle_number, vehicle_type, vehicle_make, vehicle_color, customer_name, customer_phone, status, exit_time, duration_minutes, charge_added_to_bill, events, notes)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
-      [data.tenantId, data.outletId, data.ticketNumber, data.slotId ?? null, data.zoneId ?? null, data.billId ?? null, data.valetStaffId ?? null, data.vehicleNumber ?? null, data.vehicleType ?? "CAR", data.vehicleMake ?? null, data.vehicleColor ?? null, data.customerName ?? null, data.customerPhone ?? null, data.status ?? "parked", data.exitTime ?? null, data.durationMinutes ?? null, data.chargeAddedToBill ?? false, JSON.stringify(data.events ?? []), data.notes ?? null]
+      `INSERT INTO valet_tickets (tenant_id, outlet_id, ticket_number, slot_id, zone_id, bill_id, valet_staff_id, vehicle_number, vehicle_type, vehicle_make, vehicle_color, customer_name, customer_phone, status, exit_time, duration_minutes, charge_added_to_bill, events, notes, condition_report)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      [data.tenantId, data.outletId, data.ticketNumber, data.slotId ?? null, data.zoneId ?? null, data.billId ?? null, data.valetStaffId ?? null, data.vehicleNumber ?? null, data.vehicleType ?? "CAR", data.vehicleMake ?? null, data.vehicleColor ?? null, data.customerName ?? null, data.customerPhone ?? null, data.status ?? "parked", data.exitTime ?? null, data.durationMinutes ?? null, data.chargeAddedToBill ?? false, JSON.stringify(data.events ?? []), data.notes ?? null, conditionReportVal]
     );
     return this._mapValetTicket(rows[0]);
   }
@@ -4654,12 +4655,14 @@ export class DatabaseStorage implements IStorage {
       slotId: "slot_id", zoneId: "zone_id", billId: "bill_id", valetStaffId: "valet_staff_id",
       vehicleNumber: "vehicle_number", vehicleType: "vehicle_type", vehicleMake: "vehicle_make", vehicleColor: "vehicle_color",
       customerName: "customer_name", customerPhone: "customer_phone", status: "status",
-      exitTime: "exit_time", durationMinutes: "duration_minutes", chargeAddedToBill: "charge_added_to_bill", events: "events", notes: "notes"
+      exitTime: "exit_time", durationMinutes: "duration_minutes", chargeAddedToBill: "charge_added_to_bill",
+      events: "events", notes: "notes", conditionReport: "condition_report"
     };
     const sets: string[] = []; const vals: any[] = [id, tenantId];
     for (const [k, col] of Object.entries(fields)) {
       if ((data as any)[k] !== undefined) {
-        vals.push(k === "events" ? JSON.stringify((data as any)[k]) : (data as any)[k]);
+        const jsonbFields = new Set(["events", "conditionReport"]);
+        vals.push(jsonbFields.has(k) ? JSON.stringify((data as any)[k]) : (data as any)[k]);
         sets.push(`${col} = $${vals.length}`);
       }
     }
