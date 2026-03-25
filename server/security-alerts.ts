@@ -1,7 +1,8 @@
-import { db } from "./db";
+import { db, pool } from "./db";
 import { securityAlerts, auditEvents } from "@shared/schema";
 import { eq, and, gte, lte, count } from "drizzle-orm";
 import type { Request } from "express";
+import { emitToTenant } from "./realtime";
 
 function getIpFromReq(req: Request): string {
   const forwarded = req.headers["x-forwarded-for"] as string | undefined;
@@ -25,7 +26,7 @@ interface CreateAlertParams {
 
 export async function createSecurityAlert(params: CreateAlertParams): Promise<void> {
   try {
-    await db.insert(securityAlerts).values({
+    const [inserted] = await db.insert(securityAlerts).values({
       tenantId: params.tenantId || null,
       userId: params.userId || null,
       type: params.type,
@@ -34,7 +35,28 @@ export async function createSecurityAlert(params: CreateAlertParams): Promise<vo
       description: params.description || null,
       ipAddress: params.ipAddress || null,
       metadata: params.metadata || null,
-    });
+    }).returning({ id: securityAlerts.id });
+
+    if (params.severity === "critical" && params.type === "potential_breach_hint" && inserted?.id) {
+      const payload = {
+        type: "security_alert",
+        severity: "critical",
+        message: params.title,
+        alertId: inserted.id,
+        description: params.description,
+      };
+      if (params.tenantId) {
+        emitToTenant(params.tenantId, "security_alert", payload);
+      }
+      try {
+        const { rows: platformRows } = await pool.query(
+          `SELECT id FROM tenants WHERE slug = 'platform' LIMIT 1`
+        );
+        if (platformRows[0]?.id && platformRows[0].id !== params.tenantId) {
+          emitToTenant(platformRows[0].id, "security_alert", payload);
+        }
+      } catch (_) {}
+    }
   } catch (err) {
     console.error("Security alert write failed:", err instanceof Error ? err.message : String(err));
   }
@@ -181,4 +203,162 @@ export async function alertBulkDataExport(userId: string, tenantId: string, user
     ipAddress: getIpFromReq(req),
     metadata: { userName, rowCount },
   });
+}
+
+// ─── Breach Auto-Detection Functions ─────────────────────────────────────────
+
+// In-memory API rate counter (simple sliding window, no Redis needed)
+const apiCallCounts = new Map<string, { count: number; windowStart: number }>();
+
+function incrementApiCounter(userId: string): number {
+  const now = Date.now();
+  const windowMs = 60_000;
+  const entry = apiCallCounts.get(userId);
+  if (!entry || now - entry.windowStart > windowMs) {
+    apiCallCounts.set(userId, { count: 1, windowStart: now });
+    return 1;
+  }
+  entry.count++;
+  return entry.count;
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of apiCallCounts.entries()) {
+    if (now - entry.windowStart > 120_000) apiCallCounts.delete(key);
+  }
+}, 5 * 60_000);
+
+export async function checkOffHoursBulkAccess(
+  userId: string, tenantId: string, userName: string,
+  endpoint: string, recordCount: number, req: Request
+): Promise<void> {
+  const hour = new Date().getUTCHours();
+  const isOffHours = hour >= 22 || hour <= 5;
+  if (isOffHours && recordCount > 500) {
+    const ip = getIpFromReq(req);
+    await createSecurityAlert({
+      tenantId,
+      userId,
+      type: "potential_breach_hint",
+      severity: "critical",
+      title: "Off-Hours Bulk Data Access",
+      description:
+        `${userName} accessed ${recordCount} records from ${endpoint} ` +
+        `at ${new Date().toISOString()} (off-hours). ` +
+        `IP: ${ip}. Investigate if this was expected.`,
+      ipAddress: ip,
+      metadata: { endpoint, recordCount, hour, ip },
+    });
+  }
+}
+
+export async function checkMultiAccountSameIp(
+  ip: string, tenantId: string
+): Promise<void> {
+  try {
+    const { rows } = await pool.query(`
+      SELECT COUNT(DISTINCT user_id) as cnt
+      FROM audit_events
+      WHERE ip_address = $1
+        AND tenant_id = $2
+        AND action = 'login'
+        AND created_at > NOW() - INTERVAL '30 minutes'
+    `, [ip, tenantId]);
+
+    const count = parseInt(rows[0]?.cnt || "0");
+    if (count >= 5) {
+      const { rows: existing } = await pool.query(`
+        SELECT id FROM security_alerts
+        WHERE tenant_id = $1
+          AND type = 'potential_breach_hint'
+          AND metadata->>'ip' = $2
+          AND metadata->>'detectionType' = 'multi_account_ip'
+          AND created_at > NOW() - INTERVAL '1 hour'
+        LIMIT 1
+      `, [tenantId, ip]);
+      if (existing.length > 0) return;
+
+      await createSecurityAlert({
+        tenantId,
+        type: "potential_breach_hint",
+        severity: "critical",
+        title: "Single IP Accessing Multiple Accounts",
+        description:
+          `IP address ${ip} has logged into ${count} different accounts ` +
+          `in the last 30 minutes. This may indicate credential stuffing or ` +
+          `unauthorized access. Consider blocking this IP.`,
+        ipAddress: ip,
+        metadata: { ip, distinctAccounts: count, detectionType: "multi_account_ip" },
+      });
+    }
+  } catch (err) {
+    console.error("checkMultiAccountSameIp error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+export async function checkCrossAccountFailedLogins(
+  ip: string, tenantId: string
+): Promise<void> {
+  try {
+    const { rows } = await pool.query(`
+      SELECT COUNT(*) as fail_count, COUNT(DISTINCT entity_id) as account_count
+      FROM audit_events
+      WHERE ip_address = $1
+        AND action = 'login_failed'
+        AND created_at > NOW() - INTERVAL '10 minutes'
+    `, [ip]);
+
+    const failCount = parseInt(rows[0]?.fail_count || "0");
+    const accountCount = parseInt(rows[0]?.account_count || "0");
+
+    if (accountCount >= 3 && failCount >= 20) {
+      const existing = await pool.query(`
+        SELECT id FROM security_alerts
+        WHERE type = 'potential_breach_hint'
+          AND metadata->>'ip' = $1
+          AND metadata->>'detectionType' = 'credential_stuffing'
+          AND created_at > NOW() - INTERVAL '1 hour'
+        LIMIT 1
+      `, [ip]);
+      if (existing.rows.length > 0) return;
+
+      await createSecurityAlert({
+        tenantId,
+        type: "potential_breach_hint",
+        severity: "critical",
+        title: "Possible Credential Stuffing Attack",
+        description:
+          `IP ${ip} attempted login on ${accountCount} different accounts ` +
+          `with ${failCount} failures in the last 10 minutes. ` +
+          `This pattern matches credential stuffing. Consider blocking this IP immediately.`,
+        ipAddress: ip,
+        metadata: { ip, failCount, accountCount, detectionType: "credential_stuffing" },
+      });
+    }
+  } catch (err) {
+    console.error("checkCrossAccountFailedLogins error:", err instanceof Error ? err.message : String(err));
+  }
+}
+
+export async function checkApiRateAnomaly(
+  userId: string, tenantId: string, userName: string, req: Request
+): Promise<void> {
+  const count = incrementApiCounter(userId);
+  if (count === 300) {
+    const ip = getIpFromReq(req);
+    await createSecurityAlert({
+      tenantId,
+      userId,
+      type: "potential_breach_hint",
+      severity: "critical",
+      title: "Unusually High API Call Rate",
+      description:
+        `${userName} has made ${count}+ API requests in the last 60 seconds. ` +
+        `This may indicate automated scraping or a compromised account. ` +
+        `IP: ${ip}`,
+      ipAddress: ip,
+      metadata: { callCount: count, ip, windowSeconds: 60 },
+    });
+  }
 }

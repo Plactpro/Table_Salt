@@ -11,7 +11,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Plus, Eye, RefreshCw, Clock } from "lucide-react";
+import { AlertTriangle, Plus, Eye, RefreshCw, Clock, Search, TrendingUp, X } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { getJurisdictionByCurrency } from "@shared/jurisdictions";
 
@@ -66,6 +66,254 @@ const STATUS_COLORS: Record<string, string> = {
 
 const DATA_TYPES = ["name", "email", "phone", "financial", "payment", "health", "other"];
 const STATUSES = ["detected", "investigating", "contained", "notified", "resolved"];
+
+interface DetectionAlert {
+  id: string;
+  tenant_id: string | null;
+  tenant_name?: string;
+  user_id: string | null;
+  type: string;
+  severity: string;
+  title: string;
+  description: string | null;
+  ip_address: string | null;
+  metadata: Record<string, unknown> | null;
+  acknowledged: boolean;
+  created_at: string;
+}
+
+const DISMISS_REASON_TYPES = [
+  { value: "legitimate", label: "Legitimate — authorized admin running scheduled backup" },
+  { value: "false_positive", label: "False positive — known IP and expected behavior" },
+  { value: "pentest", label: "Test — this was a planned penetration test" },
+  { value: "other", label: "Other" },
+];
+
+function DismissAlertDialog({
+  alert,
+  onClose,
+  onDismissed,
+}: {
+  alert: DetectionAlert;
+  onClose: () => void;
+  onDismissed: () => void;
+}) {
+  const { toast } = useToast();
+  const [reasonType, setReasonType] = useState("");
+  const [otherReason, setOtherReason] = useState("");
+
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const reason = reasonType === "other" ? otherReason : DISMISS_REASON_TYPES.find(r => r.value === reasonType)?.label || reasonType;
+      const r = await apiRequest("PATCH", `/api/admin/detection-alerts/${alert.id}/dismiss`, { reason, reasonType });
+      if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Alert dismissed", description: "The detection alert has been dismissed." });
+      onDismissed();
+      onClose();
+    },
+    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+  });
+
+  const canSubmit = reasonType && (reasonType !== "other" || otherReason.trim().length > 0);
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Dismiss Detection Alert</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm">
+            <p className="font-medium text-amber-800">{alert.title}</p>
+            <p className="text-amber-700 mt-1 text-xs">{alert.description}</p>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm font-medium">Dismissal Reason</Label>
+            {DISMISS_REASON_TYPES.map(r => (
+              <label key={r.value} className="flex items-start gap-2 text-sm cursor-pointer" data-testid={`radio-dismiss-${r.value}`}>
+                <input
+                  type="radio"
+                  name="dismissReason"
+                  value={r.value}
+                  checked={reasonType === r.value}
+                  onChange={() => setReasonType(r.value)}
+                  className="mt-0.5"
+                />
+                {r.label}
+              </label>
+            ))}
+            {reasonType === "other" && (
+              <Textarea
+                placeholder="Describe the reason..."
+                value={otherReason}
+                onChange={e => setOtherReason(e.target.value)}
+                rows={2}
+                data-testid="input-dismiss-other-reason"
+              />
+            )}
+          </div>
+          <div className="flex gap-2 justify-end">
+            <Button variant="outline" onClick={onClose} data-testid="button-cancel-dismiss">Cancel</Button>
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={mutation.isPending || !canSubmit}
+              data-testid="button-confirm-dismiss"
+            >
+              {mutation.isPending ? "Dismissing..." : "Dismiss Alert"}
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DetectionAlertsTab({
+  onEscalate,
+}: {
+  onEscalate: (alert: DetectionAlert) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [showAcknowledged, setShowAcknowledged] = useState(false);
+  const [dismissTarget, setDismissTarget] = useState<DetectionAlert | null>(null);
+
+  const { data, isLoading, refetch } = useQuery<{ data: DetectionAlert[]; total: number }>({
+    queryKey: ["/api/admin/detection-alerts", showAcknowledged],
+    queryFn: async () => {
+      const params = new URLSearchParams({ acknowledged: String(showAcknowledged), limit: "50" });
+      const r = await apiRequest("GET", `/api/admin/detection-alerts?${params}`);
+      return r.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  const alerts = data?.data || [];
+  const total = data?.total || 0;
+
+  const severityIcon = (sev: string) => {
+    if (sev === "critical") return "🔴";
+    if (sev === "high") return "🟠";
+    if (sev === "warning") return "🟡";
+    return "🔵";
+  };
+
+  return (
+    <div className="space-y-4" data-testid="detection-alerts-tab">
+      <div className="flex items-center justify-between">
+        <div className="p-4 border border-blue-200 bg-blue-50 dark:bg-blue-950/30 rounded-lg flex-1 mr-4">
+          <div className="flex items-center gap-2 mb-1">
+            <Search className="h-4 w-4 text-blue-600" />
+            <span className="font-semibold text-blue-800 dark:text-blue-300 text-sm">Automated Detection Alerts</span>
+          </div>
+          <p className="text-xs text-blue-700 dark:text-blue-400">
+            These are suspicious patterns detected automatically. They are <strong>NOT</strong> formal breach incidents.
+            Investigate each one and either escalate to a formal incident or dismiss as a false positive.
+          </p>
+        </div>
+        <div className="flex flex-col gap-2 shrink-0">
+          <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-detection-alerts">
+            <RefreshCw className="h-4 w-4 mr-1" />
+            Refresh
+          </Button>
+          <label className="flex items-center gap-1.5 text-xs cursor-pointer whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={showAcknowledged}
+              onChange={e => setShowAcknowledged(e.target.checked)}
+              data-testid="checkbox-show-dismissed"
+            />
+            Show dismissed
+          </label>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="text-center py-12 text-muted-foreground" data-testid="detection-alerts-loading">Loading detection alerts...</div>
+      ) : alerts.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center text-muted-foreground" data-testid="detection-alerts-empty">
+            {showAcknowledged ? "No dismissed alerts found." : "No active detection alerts. The system is monitoring for suspicious patterns."}
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-3">
+          {alerts.map(alert => (
+            <Card key={alert.id} data-testid={`card-detection-alert-${alert.id}`} className={alert.acknowledged ? "opacity-60" : ""}>
+              <CardContent className="p-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-base">{severityIcon(alert.severity)}</span>
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase ${SEVERITY_COLORS[alert.severity] || "bg-gray-100 text-gray-700"}`}
+                        data-testid={`badge-alert-severity-${alert.id}`}>
+                        {alert.severity}
+                      </span>
+                      {alert.acknowledged && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500">
+                          Dismissed
+                        </span>
+                      )}
+                    </div>
+                    <p className="font-semibold text-sm mb-1" data-testid={`text-alert-title-${alert.id}`}>{alert.title}</p>
+                    <p className="text-xs text-muted-foreground mb-1">
+                      {format(new Date(alert.created_at), "d MMM yyyy HH:mm")}
+                      {alert.tenant_name && ` · Tenant: ${alert.tenant_name}`}
+                    </p>
+                    {alert.description && (
+                      <p className="text-xs text-muted-foreground" data-testid={`text-alert-desc-${alert.id}`}>{alert.description}</p>
+                    )}
+                    {alert.metadata && (alert.metadata as any).dismissedReasonType && (
+                      <p className="text-xs text-muted-foreground mt-1 italic">
+                        Dismissed: {(alert.metadata as any).dismissedReason}
+                      </p>
+                    )}
+                  </div>
+                  {!alert.acknowledged && (
+                    <div className="flex flex-col gap-1.5 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => onEscalate(alert)}
+                        data-testid={`button-escalate-alert-${alert.id}`}
+                      >
+                        <TrendingUp className="h-3.5 w-3.5 mr-1" />
+                        Escalate to Breach
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-muted-foreground hover:text-destructive"
+                        onClick={() => setDismissTarget(alert)}
+                        data-testid={`button-dismiss-alert-${alert.id}`}
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" />
+                        Dismiss
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {dismissTarget && (
+        <DismissAlertDialog
+          alert={dismissTarget}
+          onClose={() => setDismissTarget(null)}
+          onDismissed={() => {
+            queryClient.invalidateQueries({ queryKey: ["/api/admin/detection-alerts"] });
+            setDismissTarget(null);
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
 function CountdownTimer({ detectedAt, hours, label, colorClass }: {
   detectedAt: string;
@@ -123,12 +371,13 @@ interface TenantOutlet {
   currency_code?: string | null;
 }
 
-function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants: Tenant[] }) {
+function LogIncidentDialog({ onClose, tenants, prefill }: { onClose: () => void; tenants: Tenant[]; prefill?: { title: string; description: string; severity: string; detectedAt?: string } }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [severity, setSeverity] = useState("medium");
+  const [title, setTitle] = useState(prefill?.title || "");
+  const [description, setDescription] = useState(prefill?.description || "");
+  const [severity, setSeverity] = useState(prefill?.severity || "medium");
+  const [detectedAt, setDetectedAt] = useState(prefill?.detectedAt ? new Date(prefill.detectedAt).toISOString().slice(0, 16) : "");
   const [tenantId, setTenantId] = useState("platform-wide");
   const [selectedOutletId, setSelectedOutletId] = useState<string>("");
   const [affectedRecords, setAffectedRecords] = useState("0");
@@ -171,6 +420,7 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
         rootCause: rootCause || null,
         requiresDpaNotification: requiresDpa,
         notificationRationale: rationale || null,
+        ...(detectedAt ? { detectedAt } : {}),
       });
       if (!r.ok) { const e = await r.json(); throw new Error(e.message); }
       return r.json();
@@ -194,6 +444,23 @@ function LogIncidentDialog({ onClose, tenants }: { onClose: () => void; tenants:
           <DialogTitle>Log New Breach Incident</DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
+          {prefill && (
+            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-800" data-testid="banner-escalated-from-alert">
+              <strong>Escalated from detection alert.</strong> Review and complete the details below before submitting.
+            </div>
+          )}
+          {prefill?.detectedAt && (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Detection Time (from alert — adjustable)</Label>
+              <Input
+                type="datetime-local"
+                value={detectedAt}
+                onChange={e => setDetectedAt(e.target.value)}
+                data-testid="input-escalate-detected-at"
+              />
+              <p className="text-xs text-muted-foreground">This sets the formal breach detected_at timestamp, which determines your GDPR 72h notification deadline.</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label>Severity</Label>
@@ -525,6 +792,8 @@ export default function BreachIncidentsPage() {
   const [viewIncident, setViewIncident] = useState<BreachIncident | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [severityFilter, setSeverityFilter] = useState("all");
+  const [activeTab, setActiveTab] = useState<"incidents" | "detection">("incidents");
+  const [escalateFromAlert, setEscalateFromAlert] = useState<DetectionAlert | null>(null);
 
   const { data, isLoading, refetch } = useQuery<{ data: BreachIncident[]; total: number }>({
     queryKey: ["/api/admin/breach-incidents", statusFilter, severityFilter],
@@ -538,6 +807,15 @@ export default function BreachIncidentsPage() {
     refetchInterval: 60000,
   });
 
+  const { data: detectionData } = useQuery<{ data: DetectionAlert[]; total: number }>({
+    queryKey: ["/api/admin/detection-alerts", false],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/admin/detection-alerts?acknowledged=false&limit=50");
+      return r.json();
+    },
+    refetchInterval: 30000,
+  });
+
   const { data: tenantsData } = useQuery<{ data: Tenant[] }>({
     queryKey: ["/api/admin/tenants"],
     queryFn: async () => {
@@ -548,6 +826,7 @@ export default function BreachIncidentsPage() {
 
   const tenants = (tenantsData as any)?.tenants || (tenantsData as any)?.data || [];
   const incidents = data?.data || [];
+  const unacknowledgedDetectionCount = detectionData?.total || 0;
 
   const isOpen = (incident: BreachIncident) => !["resolved"].includes(incident.status);
 
@@ -558,18 +837,54 @@ export default function BreachIncidentsPage() {
           <AlertTriangle className="h-6 w-6 text-red-600" />
           <h1 className="text-2xl font-bold" data-testid="text-breach-title">Data Breach Incidents</h1>
         </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-incidents">
-            <RefreshCw className="h-4 w-4 mr-1" />
-            Refresh
-          </Button>
-          <Button size="sm" onClick={() => setShowLog(true)} data-testid="button-log-incident">
-            <Plus className="h-4 w-4 mr-1" />
-            Log New Incident
-          </Button>
-        </div>
+        {activeTab === "incidents" && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-incidents">
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Refresh
+            </Button>
+            <Button size="sm" onClick={() => setShowLog(true)} data-testid="button-log-incident">
+              <Plus className="h-4 w-4 mr-1" />
+              Log New Incident
+            </Button>
+          </div>
+        )}
       </div>
 
+      <div className="flex border-b" data-testid="breach-page-tabs">
+        <button
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "incidents" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setActiveTab("incidents")}
+          data-testid="tab-formal-incidents"
+        >
+          Formal Incidents ({incidents.length})
+        </button>
+        <button
+          className={`relative px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === "detection" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+          onClick={() => setActiveTab("detection")}
+          data-testid="tab-detection-alerts"
+        >
+          Detection Alerts
+          {unacknowledgedDetectionCount > 0 && (
+            <span className="ml-1.5 inline-flex items-center justify-center px-1.5 py-0.5 text-xs font-bold bg-red-500 text-white rounded-full" data-testid="badge-detection-count">
+              {unacknowledgedDetectionCount} NEW
+            </span>
+          )}
+        </button>
+      </div>
+
+      {activeTab === "detection" && (
+        <DetectionAlertsTab
+          onEscalate={(alert) => {
+            setEscalateFromAlert(alert);
+            setShowLog(true);
+            setActiveTab("incidents");
+          }}
+        />
+      )}
+
+      {activeTab === "incidents" && (
+        <>
       <div className="flex gap-3">
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-40" data-testid="select-filter-status">
@@ -678,8 +993,14 @@ export default function BreachIncidentsPage() {
 
       {showLog && (
         <LogIncidentDialog
-          onClose={() => setShowLog(false)}
+          onClose={() => { setShowLog(false); setEscalateFromAlert(null); }}
           tenants={Array.isArray(tenants) ? tenants : []}
+          prefill={escalateFromAlert ? {
+            title: escalateFromAlert.title,
+            description: escalateFromAlert.description || "",
+            severity: escalateFromAlert.severity === "critical" ? "critical" : escalateFromAlert.severity === "high" ? "high" : "medium",
+            detectedAt: escalateFromAlert.created_at,
+          } : undefined}
         />
       )}
       {selectedIncident && (
@@ -739,6 +1060,8 @@ export default function BreachIncidentsPage() {
             </div>
           </DialogContent>
         </Dialog>
+      )}
+        </>
       )}
     </div>
   );
