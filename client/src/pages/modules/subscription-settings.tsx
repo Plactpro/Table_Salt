@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -277,6 +278,7 @@ export default function SubscriptionSettings() {
 
   return (
     <div className="space-y-6" data-testid="subscription-settings">
+      <PageTitle title="Subscription" />
       <div>
         <h2 className="text-lg font-semibold text-foreground">Subscription & Billing</h2>
         <p className="text-sm text-muted-foreground mt-0.5">Manage your plan and payment method</p>

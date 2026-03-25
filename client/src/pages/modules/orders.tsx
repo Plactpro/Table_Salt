@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
@@ -259,6 +260,7 @@ export default function OrdersPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6 max-w-7xl mx-auto">
+      <PageTitle title="Orders History" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">Online Orders</h1>

@@ -279,7 +279,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
         onMarkAllRead={markAllPrepRead}
       />
 
-      <header className="h-14 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-10" data-testid="header">
+      <header className="h-14 border-b border-border bg-card flex items-center justify-between px-6 sticky top-0 z-10" data-testid="header" role="banner">
         <div className="flex items-center gap-3">
           <motion.span
             initial={{ opacity: 0, scale: 0.8 }}
@@ -304,9 +304,10 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                 className="relative h-9 w-9 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:bg-cyan-950"
                 onClick={onOpenSupport}
                 title="Need help? Contact Support"
+                aria-label="Contact Support"
                 data-testid="button-contact-support-header"
               >
-                <Headset className="h-[18px] w-[18px]" />
+                <Headset className="h-[18px] w-[18px]" aria-hidden="true" />
               </Button>
             </motion.div>
           )}
@@ -319,13 +320,15 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                 className="relative h-9 w-9 text-muted-foreground hover:text-foreground"
                 onClick={() => setDrawerOpen(true)}
                 title="Kitchen prep notifications"
+                aria-label={prepUnread > 0 ? `Kitchen prep notifications — ${prepUnread} unread` : "Kitchen prep notifications"}
                 data-testid="button-prep-notifications"
               >
-                <ChefHat className="h-4 w-4" />
+                <ChefHat className="h-4 w-4" aria-hidden="true" />
                 {prepUnread > 0 && (
                   <span
                     className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card"
                     data-testid="badge-prep-unread"
+                    aria-hidden="true"
                   >
                     {prepUnread > 9 ? "9+" : prepUnread}
                   </span>
@@ -338,12 +341,19 @@ export default function Header({ onOpenSupport }: HeaderProps) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                  <Button variant="ghost" size="icon" className="relative h-9 w-9 text-muted-foreground hover:text-foreground" data-testid="button-notifications">
-                    <Bell className="h-4 w-4" />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="relative h-9 w-9 text-muted-foreground hover:text-foreground"
+                    data-testid="button-notifications"
+                    aria-label={invUnreadCount > 0 ? `Low stock alerts — ${invUnreadCount} unread` : "Low stock alerts"}
+                  >
+                    <Bell className="h-4 w-4" aria-hidden="true" />
                     {invUnreadCount > 0 && (
                       <span
                         className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card"
                         data-testid="badge-inventory-alerts"
+                        aria-hidden="true"
                       >
                         {invUnreadCount > 9 ? "9+" : invUnreadCount}
                       </span>

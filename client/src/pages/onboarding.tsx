@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useLocation } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -743,6 +744,7 @@ export default function OnboardingPage() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col" data-testid="onboarding-page">
+      <PageTitle title="Welcome" />
       <header className="flex items-center justify-between px-6 py-4 border-b">
         <TableSaltLogo variant="full" iconSize={28} />
         <div className="text-sm text-muted-foreground">

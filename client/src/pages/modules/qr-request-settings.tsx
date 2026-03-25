@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -112,6 +113,7 @@ export default function QrRequestSettings() {
 
   return (
     <div className="space-y-6" data-testid="qr-request-settings">
+      <PageTitle title="QR Settings" />
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">

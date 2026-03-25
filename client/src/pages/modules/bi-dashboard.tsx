@@ -1,4 +1,5 @@
 import { useState, useMemo, Component } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import type { ErrorInfo, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -187,6 +188,7 @@ export default function BIDashboard() {
 
   return (
     <div className="space-y-6">
+      <PageTitle title="BI Dashboards" />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">BI Dashboards & Forecasting</h1>

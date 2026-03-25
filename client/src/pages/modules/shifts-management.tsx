@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -139,6 +140,7 @@ export default function ShiftsManagement() {
 
   return (
     <div className="space-y-6" data-testid="shifts-management">
+      <PageTitle title="Shifts" />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Shift Management</h2>
@@ -195,11 +197,11 @@ export default function ShiftsManagement() {
                             <span className="text-sm text-muted-foreground">Active</span>
                           </div>
                           <div className="flex gap-1">
-                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(shift)} data-testid={`button-edit-shift-${shift.id}`}>
-                              <Edit2 className="h-3.5 w-3.5" />
+                            <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(shift)} data-testid={`button-edit-shift-${shift.id}`} aria-label={`Edit shift ${shift.name}`}>
+                              <Edit2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </Button>
-                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(shift.id)} data-testid={`button-delete-shift-${shift.id}`}>
-                              <Trash2 className="h-3.5 w-3.5" />
+                            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(shift.id)} data-testid={`button-delete-shift-${shift.id}`} aria-label={`Delete shift ${shift.name}`}>
+                              <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                             </Button>
                           </div>
                         </div>
@@ -237,11 +239,11 @@ export default function ShiftsManagement() {
                           <span className="text-sm text-muted-foreground">Inactive</span>
                         </div>
                         <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(shift)}>
-                            <Edit2 className="h-3.5 w-3.5" />
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => openEdit(shift)} aria-label={`Edit shift ${shift.name}`}>
+                            <Edit2 className="h-3.5 w-3.5" aria-hidden="true" />
                           </Button>
-                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(shift.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setDeleteId(shift.id)} aria-label={`Delete shift ${shift.name}`}>
+                            <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
                           </Button>
                         </div>
                       </div>

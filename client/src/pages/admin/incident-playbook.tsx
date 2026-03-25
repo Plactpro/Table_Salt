@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -142,6 +143,7 @@ export default function IncidentPlaybookPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="incident-playbook-page">
+      <PageTitle title="Admin — Incident Playbook" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ClipboardList className="h-6 w-6 text-primary" />

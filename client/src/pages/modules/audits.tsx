@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -462,6 +463,7 @@ export default function AuditsPage() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+      <PageTitle title="Audits" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold font-heading flex items-center gap-2" data-testid="text-audits-title">

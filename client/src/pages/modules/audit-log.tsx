@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -187,6 +188,7 @@ export default function AuditLogPage() {
 
   return (
     <div className="space-y-6" data-testid="audit-log-page">
+      <PageTitle title="Audit Log" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-audit-log-title">

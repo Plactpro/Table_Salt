@@ -147,11 +147,12 @@ export default function AlertNotificationBell() {
           )}
           onClick={() => setOpen(v => !v)}
           data-testid="button-alert-bell"
+          aria-label={hasCritical ? "Security alerts — critical alerts present" : "Security alerts"}
         >
           {hasCritical ? (
-            <BellRing className="h-4 w-4 animate-bounce" />
+            <BellRing className="h-4 w-4 animate-bounce" aria-hidden="true" />
           ) : (
-            <Bell className="h-4 w-4" />
+            <Bell className="h-4 w-4" aria-hidden="true" />
           )}
           {count > 0 && (
             <span

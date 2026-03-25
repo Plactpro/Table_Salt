@@ -14,6 +14,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Building2, Plus, Edit, Check, RefreshCw, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
+import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 
 interface VendorRisk {
   id: string;
@@ -112,10 +113,11 @@ function VendorDialog({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/vendor-risks"] });
+      announceToScreenReader(vendor ? "Vendor updated successfully." : "Vendor added successfully.");
       toast({ title: vendor ? "Vendor updated" : "Vendor added" });
       onClose();
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+    onError: (e: any) => { announceToScreenReader("Error: " + e.message); toast({ variant: "destructive", title: "Error", description: e.message }); },
   });
 
   return (
@@ -254,13 +256,15 @@ export default function VendorRisksPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/vendor-risks"] });
+      announceToScreenReader("Vendor marked as reviewed.");
       toast({ title: "Marked as reviewed" });
     },
-    onError: (e: any) => toast({ variant: "destructive", title: "Error", description: e.message }),
+    onError: (e: any) => { announceToScreenReader("Error: " + e.message); toast({ variant: "destructive", title: "Error", description: e.message }); },
   });
 
   return (
     <div className="p-6 space-y-6" data-testid="vendor-risks-page">
+      <PageTitle title="Vendor Risks" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Building2 className="h-6 w-6 text-primary" />

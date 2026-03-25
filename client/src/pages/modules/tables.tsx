@@ -3,6 +3,7 @@ import type { ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { motion, AnimatePresence } from "framer-motion";
 import QRCodeLib from "qrcode";
@@ -595,7 +596,7 @@ function TablesPageContent() {
 
   const createTableMut = useMutation({
     mutationFn: async (data: Record<string, unknown>) => { const r = await apiRequest("POST", "/api/tables", data); return r.json(); },
-    onSuccess: () => { invalidateAll(); setShowAddDialog(false); toast({ title: "Table added" }); },
+    onSuccess: () => { invalidateAll(); setShowAddDialog(false); toast({ title: "Table added" }); announceToScreenReader("Table added successfully."); },
     onError: (e: Error) => { toast({ title: "Failed", description: e.message, variant: "destructive" }); },
   });
   const updateTableMut = useMutation({
@@ -609,7 +610,7 @@ function TablesPageContent() {
   });
   const seatTableMut = useMutation({
     mutationFn: async ({ id, ...data }: Record<string, unknown>) => { const r = await apiRequest("PATCH", `/api/tables/${id}/seat`, data); return r.json(); },
-    onSuccess: () => { invalidateAll(); setShowSeatDialog(false); setShowDetailDialog(false); toast({ title: "Party seated" }); },
+    onSuccess: () => { invalidateAll(); setShowSeatDialog(false); setShowDetailDialog(false); toast({ title: "Party seated" }); announceToScreenReader("Party seated successfully."); },
   });
   const clearTableMut = useMutation({
     mutationFn: async (id: string) => { const r = await apiRequest("PATCH", `/api/tables/${id}/clear`, {}); return r.json(); },
@@ -800,6 +801,7 @@ function TablesPageContent() {
 
   return (
     <div className="space-y-6">
+      <PageTitle title="Tables" />
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">Table & Queue Management</h1>
@@ -1154,8 +1156,8 @@ function TablesPageContent() {
                       <div className="flex items-center gap-2">
                         <div className="text-xs font-medium text-muted-foreground">~{entry.estimatedWaitMinutes || "?"}min</div>
                         {entry.customerPhone && !entry.notificationSent && (
-                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => notifyWaitlistMut.mutate(entry.id)} title="Send notification" data-testid={`button-notify-waitlist-${entry.id}`}>
-                            <Bell className="w-4 h-4" />
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => notifyWaitlistMut.mutate(entry.id)} title="Send notification" data-testid={`button-notify-waitlist-${entry.id}`} aria-label={`Send notification to ${entry.customerName || "customer"}`}>
+                            <Bell className="w-4 h-4" aria-hidden="true" />
                           </Button>
                         )}
                         <Select onValueChange={(tableId) => seatWaitlistMut.mutate({ id: entry.id, tableId })}>
@@ -1168,8 +1170,8 @@ function TablesPageContent() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeWaitlistMut.mutate(entry.id)} data-testid={`button-remove-waitlist-${entry.id}`}>
-                          <X className="w-4 h-4" />
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => removeWaitlistMut.mutate(entry.id)} data-testid={`button-remove-waitlist-${entry.id}`} aria-label={`Remove ${entry.customerName || "customer"} from waitlist`}>
+                          <X className="w-4 h-4" aria-hidden="true" />
                         </Button>
                       </div>
                     </CardContent>
@@ -1183,14 +1185,14 @@ function TablesPageContent() {
         <TabsContent value="reservations" className="space-y-4">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="icon" onClick={() => setCalendarWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} data-testid="button-prev-week">
-                <ChevronLeft className="w-4 h-4" />
+              <Button variant="outline" size="icon" onClick={() => setCalendarWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() - 7); return n; })} data-testid="button-prev-week" aria-label="Previous week">
+                <ChevronLeft className="w-4 h-4" aria-hidden="true" />
               </Button>
               <span className="text-sm font-medium min-w-[200px] text-center">
                 {calendarWeekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {weekDays[6]?.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               </span>
-              <Button variant="outline" size="icon" onClick={() => setCalendarWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} data-testid="button-next-week">
-                <ChevronRight className="w-4 h-4" />
+              <Button variant="outline" size="icon" onClick={() => setCalendarWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} data-testid="button-next-week" aria-label="Next week">
+                <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </Button>
             </div>
             <Button onClick={() => { setResFormData({ customerName: "", customerPhone: "", tableId: "", guests: "2", dateTime: "", notes: "", customerId: "" }); setShowAddReservation(true); }} data-testid="button-add-reservation">
@@ -1268,8 +1270,8 @@ function TablesPageContent() {
                     </div>
                     {editingZone?.id !== zone.id && (
                       <div className="flex gap-1">
-                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingZone(zone)} data-testid={`button-edit-zone-${zone.id}`}><Edit2 className="w-4 h-4" /></Button>
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteZoneMut.mutate(zone.id)} data-testid={`button-delete-zone-${zone.id}`}><Trash2 className="w-4 h-4" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingZone(zone)} data-testid={`button-edit-zone-${zone.id}`} aria-label={`Edit zone ${zone.name}`}><Edit2 className="w-4 h-4" aria-hidden="true" /></Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={() => deleteZoneMut.mutate(zone.id)} data-testid={`button-delete-zone-${zone.id}`} aria-label={`Delete zone ${zone.name}`}><Trash2 className="w-4 h-4" aria-hidden="true" /></Button>
                       </div>
                     )}
                   </div>
@@ -2104,8 +2106,8 @@ function TablesPageContent() {
                   <span className="text-sm font-medium">{zone.name}</span>
                   <span className="text-xs text-muted-foreground">({tables.filter(t => t.zone === zone.name).length})</span>
                 </div>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteZoneMut.mutate(zone.id)}>
-                  <Trash2 className="w-3.5 h-3.5" />
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteZoneMut.mutate(zone.id)} aria-label={`Delete zone ${zone.name}`}>
+                  <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                 </Button>
               </div>
             ))}

@@ -1,4 +1,5 @@
 import { useState, Component } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag, UtensilsCrossed } from "lucide-react";
@@ -40,6 +41,7 @@ export default function ReportsHub() {
 
   return (
     <div className="space-y-6" data-testid="reports-hub">
+      <PageTitle title="Reports" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="reports-tabs" className="flex-wrap h-auto">
           <TabsTrigger value="reports" data-testid="tab-reports">

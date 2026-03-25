@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { MessageCircle, Filter, Search } from "lucide-react";
@@ -99,6 +100,7 @@ export default function AdminSupportPage() {
 
   return (
     <div className="p-6" data-testid="page-admin-support">
+      <PageTitle title="Admin — Support" />
       <div className="mb-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">

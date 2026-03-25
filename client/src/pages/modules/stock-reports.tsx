@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -896,6 +897,7 @@ export default function StockReportsPage() {
 
   return (
     <div className="p-6 space-y-6 min-h-full" data-testid="stock-reports-page">
+      <PageTitle title="Stock Reports" />
       {/* Page header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">

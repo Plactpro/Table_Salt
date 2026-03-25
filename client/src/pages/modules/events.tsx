@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { PageTitle } from "@/lib/accessibility";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import type { Event as CalEvent, Offer, Outlet } from "@shared/schema";
@@ -632,6 +633,7 @@ export default function EventsPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="events-page">
+      <PageTitle title="Events" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <CalendarIcon className="h-7 w-7 text-primary" />
@@ -672,8 +674,8 @@ export default function EventsPage() {
 
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => setCurrentDate(new Date())} data-testid="button-today">Today</Button>
-          <Button variant="outline" size="icon" onClick={() => view === "month" ? navigateMonth(-1) : view === "week" ? navigateWeek(-1) : navigateDay(-1)} data-testid="button-prev">
-            <ChevronLeft className="h-4 w-4" />
+          <Button variant="outline" size="icon" onClick={() => view === "month" ? navigateMonth(-1) : view === "week" ? navigateWeek(-1) : navigateDay(-1)} data-testid="button-prev" aria-label="Previous period">
+            <ChevronLeft className="h-4 w-4" aria-hidden="true" />
           </Button>
           <span className="text-sm font-medium min-w-[180px] text-center" data-testid="text-current-period">
             {view === "month" && currentDate.toLocaleDateString(undefined, { month: "long", year: "numeric" })}
@@ -687,8 +689,8 @@ export default function EventsPage() {
             {view === "day" && currentDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}
             {view === "list" && "All Events"}
           </span>
-          <Button variant="outline" size="icon" onClick={() => view === "month" ? navigateMonth(1) : view === "week" ? navigateWeek(1) : navigateDay(1)} data-testid="button-next">
-            <ChevronRight className="h-4 w-4" />
+          <Button variant="outline" size="icon" onClick={() => view === "month" ? navigateMonth(1) : view === "week" ? navigateWeek(1) : navigateDay(1)} data-testid="button-next" aria-label="Next period">
+            <ChevronRight className="h-4 w-4" aria-hidden="true" />
           </Button>
         </div>
 

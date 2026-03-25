@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Mail, ArrowLeft, CheckCircle } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { apiRequest } from "@/lib/queryClient";
+import { PageTitle } from "@/lib/accessibility";
 
 export default function ForgotPasswordPage() {
   const [, navigate] = useLocation();
@@ -31,7 +32,9 @@ export default function ForgotPasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-md">
+      <PageTitle title="Forgot Password" />
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg">Skip to main content</a>
+      <div className="w-full max-w-md" id="main-content">
         <div className="flex items-center justify-center mb-8">
           <TableSaltLogo variant="full" iconSize={32} />
         </div>
@@ -68,7 +71,7 @@ export default function ForgotPasswordPage() {
               <div className="space-y-2">
                 <Label htmlFor="email">Email address</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                   <Input
                     id="email"
                     data-testid="input-reset-email"

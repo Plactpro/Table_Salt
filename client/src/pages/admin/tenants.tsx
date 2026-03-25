@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -194,6 +195,7 @@ export default function TenantsPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-4" data-testid="admin-tenants-page">
+      <PageTitle title="Admin — Tenants" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900" data-testid="page-title-tenants">Tenants</h1>
@@ -266,24 +268,25 @@ export default function TenantsPage() {
               <p className="text-sm text-slate-400">No tenants found</p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
-                <span>Name / Slug</span>
-                <span>Plan</span>
-                <span>Status</span>
-                <span>Business Type</span>
-                <span>Users / Outlets</span>
-                <span>Created</span>
-                <span>Last Active</span>
-                <span></span>
+            <div className="divide-y divide-slate-100" role="table" aria-label="Tenants">
+              <div role="row" className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+                <span role="columnheader">Name / Slug</span>
+                <span role="columnheader">Plan</span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader">Business Type</span>
+                <span role="columnheader">Users / Outlets</span>
+                <span role="columnheader">Created</span>
+                <span role="columnheader">Last Active</span>
+                <span role="columnheader" aria-label="Actions"></span>
               </div>
               {filtered.map((t) => (
                 <div
                   key={t.id}
+                  role="row"
                   className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr_1fr_1fr_auto] gap-3 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
                   data-testid={`row-tenant-${t.id}`}
                 >
-                  <div className="min-w-0">
+                  <div role="cell" className="min-w-0">
                     <p
                       className="font-medium text-sm text-slate-900 truncate cursor-pointer hover:text-emerald-600"
                       onClick={() => navigate(`/admin/tenants/${t.id}`)}
@@ -293,23 +296,23 @@ export default function TenantsPage() {
                     </p>
                     <p className="text-xs text-slate-400 truncate">{t.slug}</p>
                   </div>
-                  <PlanBadge plan={t.plan} />
-                  <StatusBadge active={t.active} />
-                  <span className="text-sm text-slate-600 capitalize truncate" data-testid={`tenant-business-type-${t.id}`}>
+                  <span role="cell"><PlanBadge plan={t.plan} /></span>
+                  <span role="cell"><StatusBadge active={t.active} /></span>
+                  <span role="cell" className="text-sm text-slate-600 capitalize truncate" data-testid={`tenant-business-type-${t.id}`}>
                     {t.businessType?.replace(/_/g, " ") ?? "—"}
                   </span>
-                  <span className="text-sm text-slate-600" data-testid={`tenant-users-outlets-${t.id}`}>
+                  <span role="cell" className="text-sm text-slate-600" data-testid={`tenant-users-outlets-${t.id}`}>
                     {t.userCount}u / {t.outletCount}o
                   </span>
-                  <span className="text-xs text-slate-500" data-testid={`tenant-created-${t.id}`}>
+                  <span role="cell" className="text-xs text-slate-500" data-testid={`tenant-created-${t.id}`}>
                     {t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}
                   </span>
-                  <span className="text-xs text-slate-500" data-testid={`tenant-last-active-${t.id}`}>
+                  <span role="cell" className="text-xs text-slate-500" data-testid={`tenant-last-active-${t.id}`}>
                     {t.lastActivity
                       ? new Date(t.lastActivity).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" })
                       : "—"}
                   </span>
-                  <DropdownMenu>
+                  <div role="cell"><DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <Button
                         variant="ghost"
@@ -365,6 +368,7 @@ export default function TenantsPage() {
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
+                  </div>
                 </div>
               ))}
             </div>

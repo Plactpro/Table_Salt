@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -159,6 +160,7 @@ export default function OmnichannelPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="omnichannel-page">
+      <PageTitle title="Omnichannel" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-heading font-bold" data-testid="text-page-title">Omnichannel Dashboard</h1>

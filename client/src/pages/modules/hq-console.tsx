@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -153,6 +154,7 @@ export default function HQConsolePage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="hq-console-page">
+      <PageTitle title="HQ Console" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

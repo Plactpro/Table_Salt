@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PageTitle } from "@/lib/accessibility";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -73,6 +74,7 @@ export default function AnalyticsPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="admin-analytics-page">
+      <PageTitle title="Admin — Analytics" />
       <div>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2" data-testid="page-title-analytics">
           <BarChart2 className="h-5 w-5 text-emerald-700" />

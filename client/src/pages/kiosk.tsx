@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery } from "@tanstack/react-query";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { syncManager, type SyncStatus } from "@/lib/sync-manager";
@@ -411,6 +412,7 @@ export default function KioskPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900 text-white select-none overflow-hidden" data-testid="kiosk-page" onClick={resetIdleTimer}>
+      <PageTitle title="Kiosk" />
       <div className="fixed top-3 right-3 z-50 flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-black/40 backdrop-blur-sm" data-testid="kiosk-sync-indicator">
         {syncStatus === "online" && <Wifi className="h-3.5 w-3.5 text-green-400" />}
         {syncStatus === "offline" && <WifiOff className="h-3.5 w-3.5 text-red-400" />}

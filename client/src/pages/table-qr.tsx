@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
+import { PageTitle } from "@/lib/accessibility";
 const ModificationDrawer = lazy(() => import("@/components/modifications/ModificationDrawer"));
 import { useSearch, useParams } from "wouter";
 import { motion, AnimatePresence } from "framer-motion";
@@ -1233,6 +1234,7 @@ export default function TableQrPage() {
 
   return (
     <div className="min-h-screen bg-gray-50" dir={dir}>
+      <PageTitle title="Order at Table" />
       <div className="max-w-md mx-auto flex flex-col min-h-screen">
         <div className="text-white px-5 pt-10 pb-6" style={{ backgroundColor: PRIMARY }}>
           <div className="flex justify-between items-start">

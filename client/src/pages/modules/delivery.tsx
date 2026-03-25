@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { PageTitle } from "@/lib/accessibility";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency, type FormatCurrencyOptions } from "@shared/currency";
 import { motion } from "framer-motion";
@@ -338,6 +339,7 @@ export default function DeliveryPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
+      <PageTitle title="Delivery" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
@@ -450,8 +452,8 @@ export default function DeliveryPage() {
                             </div>
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => e.stopPropagation()}>
-                                  <MoreVertical className="w-3 h-3" />
+                                <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={(e) => e.stopPropagation()} aria-label="Order actions menu">
+                                  <MoreVertical className="w-3 h-3" aria-hidden="true" />
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">

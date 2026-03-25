@@ -429,3 +429,64 @@
     inset: -1px;
   }
 }
+
+/* ============================================================
+   WCAG 2.1 Level AA — Accessibility
+   ============================================================ */
+
+/* Visible focus indicators for keyboard users */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Remove focus ring for mouse/pointer users, keep for keyboard */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Explicit focus ring on interactive elements for keyboard navigation */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+/* Placeholder text — meet 4.5:1 contrast ratio on white */
+input::placeholder,
+textarea::placeholder {
+  color: hsl(215, 16%, 47%);
+  opacity: 1;
+}
+
+/* Disabled elements — slightly more visible than browser default */
+[disabled],
+[aria-disabled="true"] {
+  opacity: 0.6;
+}
+
+/* Skip link — visually hidden but appears on keyboard focus */
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 9999;
+  background: #fff;
+  color: #1d4ed8;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.1s;
+}
+.skip-link:focus {
+  top: 0.5rem;
+  left: 0.5rem;
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}

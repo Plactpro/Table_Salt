@@ -553,6 +553,15 @@ function App() {
         <TooltipProvider>
           <AuthProvider>
             <ImpersonationProvider>
+              <a href="#main-content" className="skip-link">
+                Skip to main content
+              </a>
+              <div
+                id="aria-announcer"
+                aria-live="polite"
+                aria-atomic="true"
+                className="sr-only"
+              />
               <Toaster />
               <CookieConsentBanner />
               <Router />

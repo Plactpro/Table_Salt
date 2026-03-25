@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Store, Building2 } from "lucide-react";
@@ -12,6 +13,7 @@ export default function LocationsHub() {
 
   return (
     <div className="space-y-6" data-testid="locations-hub">
+      <PageTitle title="Locations" />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="locations-tabs">
           <TabsTrigger value="outlets" data-testid="tab-outlets">

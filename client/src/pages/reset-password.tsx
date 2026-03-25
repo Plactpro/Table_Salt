@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Lock, Eye, EyeOff, CheckCircle, ArrowLeft } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { apiRequest } from "@/lib/queryClient";
+import { PageTitle } from "@/lib/accessibility";
 
 function getTokenFromUrl(): string | null {
   const params = new URLSearchParams(window.location.search);
@@ -98,7 +99,9 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-background">
-      <div className="w-full max-w-md">
+      <PageTitle title="Reset Password" />
+      <a href="#main-content" className="sr-only focus:not-sr-only focus:fixed focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-primary focus:text-primary-foreground focus:rounded-md focus:shadow-lg">Skip to main content</a>
+      <div className="w-full max-w-md" id="main-content">
         <div className="flex items-center justify-center mb-8">
           <TableSaltLogo variant="full" iconSize={32} />
         </div>
@@ -112,7 +115,7 @@ export default function ResetPasswordPage() {
           <div className="space-y-2">
             <Label htmlFor="new-password">New password</Label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <Input
                 id="new-password"
                 data-testid="input-new-password"
@@ -127,9 +130,10 @@ export default function ResetPasswordPage() {
                 type="button"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 onClick={() => setShowNew(!showNew)}
+                aria-label={showNew ? "Hide new password" : "Show new password"}
                 tabIndex={-1}
               >
-                {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showNew ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
               </button>
             </div>
           </div>
@@ -148,7 +152,7 @@ export default function ResetPasswordPage() {
           <div className="space-y-2">
             <Label htmlFor="confirm-password">Confirm new password</Label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
               <Input
                 id="confirm-password"
                 data-testid="input-confirm-password"
@@ -163,13 +167,14 @@ export default function ResetPasswordPage() {
                 type="button"
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                 onClick={() => setShowConfirm(!showConfirm)}
+                aria-label={showConfirm ? "Hide confirm password" : "Show confirm password"}
                 tabIndex={-1}
               >
-                {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showConfirm ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
               </button>
             </div>
             {confirmPassword && newPassword !== confirmPassword && (
-              <p className="text-xs text-red-500" data-testid="text-password-mismatch">Passwords don't match</p>
+              <p className="text-xs text-red-500" role="alert" data-testid="text-password-mismatch">Passwords don't match</p>
             )}
           </div>
 

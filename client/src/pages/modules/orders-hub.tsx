@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -254,6 +255,7 @@ export default function OrdersHub() {
 
   return (
     <div className="p-6 space-y-6" data-testid="orders-hub-page">
+      <PageTitle title="Orders" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

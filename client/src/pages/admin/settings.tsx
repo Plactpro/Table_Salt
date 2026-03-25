@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle } from "@/lib/accessibility";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -163,6 +164,7 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-5" data-testid="admin-settings-page">
+      <PageTitle title="Admin — Settings" />
       <div>
         <h1 className="text-xl font-bold text-slate-900 flex items-center gap-2" data-testid="page-title-platform-settings">
           <Settings className="h-5 w-5" />

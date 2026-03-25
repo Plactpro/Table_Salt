@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -1022,23 +1023,23 @@ function CampaignCard({ campaign, onEdit, onDelete, onViewCreatives, onStatusCha
         </div>
       </div>
       <div className="flex gap-1 shrink-0">
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onViewCreatives} data-testid={`button-creatives-${campaign.id}`} title="Manage Creatives">
-          <Image className="w-3.5 h-3.5" />
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onViewCreatives} data-testid={`button-creatives-${campaign.id}`} title="Manage Creatives" aria-label={`Manage creatives for ${campaign.name}`}>
+          <Image className="w-3.5 h-3.5" aria-hidden="true" />
         </Button>
-        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit} data-testid={`button-edit-${campaign.id}`} title="Edit">
-          <Edit2 className="w-3.5 h-3.5" />
+        <Button size="icon" variant="ghost" className="h-7 w-7" onClick={onEdit} data-testid={`button-edit-${campaign.id}`} title="Edit" aria-label={`Edit campaign ${campaign.name}`}>
+          <Edit2 className="w-3.5 h-3.5" aria-hidden="true" />
         </Button>
         {campaign.status === "active" ? (
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onStatusChange("paused")} data-testid={`button-pause-${campaign.id}`} title="Pause">
-            <Pause className="w-3.5 h-3.5" />
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onStatusChange("paused")} data-testid={`button-pause-${campaign.id}`} title="Pause" aria-label={`Pause campaign ${campaign.name}`}>
+            <Pause className="w-3.5 h-3.5" aria-hidden="true" />
           </Button>
         ) : campaign.status === "paused" || campaign.status === "draft" ? (
-          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onStatusChange("active")} data-testid={`button-activate-${campaign.id}`} title="Activate">
-            <Play className="w-3.5 h-3.5" />
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => onStatusChange("active")} data-testid={`button-activate-${campaign.id}`} title="Activate" aria-label={`Activate campaign ${campaign.name}`}>
+            <Play className="w-3.5 h-3.5" aria-hidden="true" />
           </Button>
         ) : null}
-        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={onDelete} data-testid={`button-delete-${campaign.id}`} title="Delete">
-          <Trash2 className="w-3.5 h-3.5" />
+        <Button size="icon" variant="ghost" className="h-7 w-7 text-red-500 hover:text-red-600" onClick={onDelete} data-testid={`button-delete-${campaign.id}`} title="Delete" aria-label={`Delete campaign ${campaign.name}`}>
+          <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
         </Button>
       </div>
     </div>
@@ -1134,6 +1135,7 @@ export default function AdvertisementsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto" data-testid="ads-page">
+      <PageTitle title="Advertisements" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">

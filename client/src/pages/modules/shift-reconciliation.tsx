@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -216,6 +217,7 @@ export default function ShiftReconciliation() {
 
   return (
     <div className="space-y-6" data-testid="shift-reconciliation">
+      <PageTitle title="Shift Reconciliation" />
       <div>
         <h2 className="text-xl font-semibold">Shift Reconciliation</h2>
         <p className="text-sm text-muted-foreground mt-0.5">

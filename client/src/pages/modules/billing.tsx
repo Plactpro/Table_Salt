@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -312,6 +313,7 @@ export default function BillingPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-billing">
+      <PageTitle title="Billing" />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10">
           <CreditCard className="h-6 w-6 text-primary" />

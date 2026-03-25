@@ -1033,22 +1033,22 @@ export default function BillPreviewModal({
           {fullPage ? (
             <div className="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b px-4 py-3 flex items-center gap-2 no-print">
               {step !== "preview" && (
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goBack}>
-                  <ArrowLeft className="h-4 w-4" />
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={goBack} aria-label="Go back">
+                  <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                 </Button>
               )}
-              <Receipt className="h-5 w-5 text-primary" />
+              <Receipt className="h-5 w-5 text-primary" aria-hidden="true" />
               <span className="font-semibold text-sm">{stepLabel}</span>
-              <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto" onClick={handleClose} data-testid="button-close-bill-page">
-                <X className="h-4 w-4" />
+              <Button variant="ghost" size="icon" className="h-7 w-7 ml-auto" onClick={handleClose} data-testid="button-close-bill-page" aria-label="Close bill preview">
+                <X className="h-4 w-4" aria-hidden="true" />
               </Button>
             </div>
           ) : (
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 {step !== "preview" && (
-                  <Button variant="ghost" size="icon" className="h-7 w-7 no-print" onClick={goBack}>
-                    <ArrowLeft className="h-4 w-4" />
+                  <Button variant="ghost" size="icon" className="h-7 w-7 no-print" onClick={goBack} aria-label="Go back">
+                    <ArrowLeft className="h-4 w-4" aria-hidden="true" />
                   </Button>
                 )}
                 <Receipt className="h-5 w-5 text-primary" />
@@ -1794,8 +1794,8 @@ export default function BillPreviewModal({
                         <Input placeholder="Ref" value={row.referenceNo}
                           onChange={e => updateSplitRow(row.id, "referenceNo", e.target.value)} className="h-8 text-xs w-20" />
                       )}
-                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeSplitRow(row.id)}>
-                        <X className="h-3 w-3" />
+                      <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeSplitRow(row.id)} aria-label="Remove payment row">
+                        <X className="h-3 w-3" aria-hidden="true" />
                       </Button>
                     </div>
                   ))}

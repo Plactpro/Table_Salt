@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -673,6 +674,7 @@ export default function ReportsPage() {
       className="p-6 space-y-6"
     >
       <div className="flex items-center justify-between">
+        <PageTitle title="Sales Reports" />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <BarChart3 className="h-6 w-6 text-primary" />

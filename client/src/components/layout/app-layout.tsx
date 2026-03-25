@@ -378,10 +378,11 @@ export default function AppLayout({ children }: AppLayoutProps) {
             className={`flex-1 overflow-auto ${isPosPage ? "" : "p-6"}`}
             data-testid="main-content"
             id="main-content"
+            tabIndex={-1}
           >
             {children}
           </motion.main>
-          <footer className="border-t bg-muted/30 px-6 py-3 text-xs text-muted-foreground flex items-center gap-2 shrink-0" data-testid="app-footer">
+          <footer className="border-t bg-muted/30 px-6 py-3 text-xs text-muted-foreground flex items-center gap-2 shrink-0" data-testid="app-footer" role="contentinfo">
             <span>© {new Date().getFullYear()} Table Salt</span>
             <span className="opacity-40">·</span>
             <a
@@ -411,10 +412,10 @@ export default function AppLayout({ children }: AppLayoutProps) {
           whileTap={{ scale: 0.9 }}
           onClick={() => setShowContactSupport(true)}
           className="fixed z-[999] w-12 h-12 rounded-full bg-cyan-600 hover:bg-cyan-700 text-white shadow-lg hover:shadow-xl flex items-center justify-center transition-colors sm:hidden bottom-[30px] right-[30px]"
-          title="Contact Support"
+          aria-label="Contact Support"
           data-testid="button-contact-support-float"
         >
-          <Headset className="h-5 w-5" />
+          <Headset className="h-5 w-5" aria-hidden="true" />
         </motion.button>
       )}
 

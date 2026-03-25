@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
@@ -86,9 +87,10 @@ export default function AdminsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/super-admins"] });
       setShowCreate(false);
       setForm({ username: "", name: "", email: "", password: "" });
+      announceToScreenReader("Super admin created successfully.");
       toast({ title: "Super admin created successfully" });
     },
-    onError: (e: Error) => toast({ title: "Creation failed", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => { announceToScreenReader("Creation failed: " + e.message); toast({ title: "Creation failed", description: e.message, variant: "destructive" }); },
   });
 
   const deactivateMutation = useMutation({
@@ -99,9 +101,10 @@ export default function AdminsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/super-admins"] });
       setConfirmDeactivate(null);
+      announceToScreenReader("Super admin deactivated.");
       toast({ title: "Super admin deactivated" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => { announceToScreenReader("Error: " + e.message); toast({ title: "Error", description: e.message, variant: "destructive" }); },
   });
 
   const filtered = (admins ?? []).filter((a) => {
@@ -113,6 +116,7 @@ export default function AdminsPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-4" data-testid="admin-admins-page">
+      <PageTitle title="Admin — Admins" />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-900" data-testid="page-title-admins">
@@ -176,24 +180,25 @@ export default function AdminsPage() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-slate-100">
-              <div className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_auto] gap-4 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
-                <span>Name</span>
-                <span>Username</span>
-                <span>Email</span>
-                <span>Status</span>
-                <span>Last Active</span>
-                <span></span>
+            <div className="divide-y divide-slate-100" role="table" aria-label="Super Admins">
+              <div role="row" className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_auto] gap-4 px-4 py-2.5 text-xs font-medium text-slate-500 uppercase tracking-wide bg-slate-50 rounded-t-lg">
+                <span role="columnheader">Name</span>
+                <span role="columnheader">Username</span>
+                <span role="columnheader">Email</span>
+                <span role="columnheader">Status</span>
+                <span role="columnheader">Last Active</span>
+                <span role="columnheader" aria-label="Actions"></span>
               </div>
               {filtered.map((a) => {
                 const isSelf = a.id === user?.id;
                 return (
                   <div
                     key={a.id}
+                    role="row"
                     className="grid grid-cols-[2fr_1fr_2fr_1fr_1fr_auto] gap-4 items-center px-4 py-3 hover:bg-slate-50 transition-colors"
                     data-testid={`row-admin-${a.id}`}
                   >
-                    <div className="min-w-0">
+                    <div role="cell" className="min-w-0">
                       <div className="flex items-center gap-2">
                         <p className="font-medium text-sm text-slate-900 truncate" data-testid={`admin-name-${a.id}`}>
                           {a.name}
@@ -210,13 +215,13 @@ export default function AdminsPage() {
                         )}
                       </div>
                     </div>
-                    <p className="text-xs text-slate-500 font-mono truncate" data-testid={`admin-username-${a.id}`}>
+                    <p role="cell" className="text-xs text-slate-500 font-mono truncate" data-testid={`admin-username-${a.id}`}>
                       @{a.username}
                     </p>
-                    <p className="text-xs text-slate-600 truncate" data-testid={`admin-email-${a.id}`}>
+                    <p role="cell" className="text-xs text-slate-600 truncate" data-testid={`admin-email-${a.id}`}>
                       {a.email ?? "—"}
                     </p>
-                    <span>
+                    <span role="cell">
                       {a.active === false ? (
                         <Badge variant="outline" className="text-xs text-red-600 border-red-200 bg-red-50">
                           Inactive
@@ -227,11 +232,12 @@ export default function AdminsPage() {
                         </Badge>
                       )}
                     </span>
-                    <span className="text-xs text-slate-400 truncate" data-testid={`admin-last-active-${a.id}`}>
+                    <span role="cell" className="text-xs text-slate-400 truncate" data-testid={`admin-last-active-${a.id}`}>
                       {a.lastActive
                         ? new Date(a.lastActive).toLocaleDateString()
                         : <span className="italic">Never</span>}
                     </span>
+                    <div role="cell">
                     <Button
                       variant="ghost"
                       size="sm"
@@ -240,9 +246,10 @@ export default function AdminsPage() {
                       disabled={isSelf || a.active === false}
                       data-testid={`button-deactivate-admin-${a.id}`}
                     >
-                      <UserX className="h-3.5 w-3.5 mr-1" />
+                      <UserX className="h-3.5 w-3.5 mr-1" aria-hidden="true" />
                       {isSelf ? "Cannot deactivate self" : "Deactivate"}
                     </Button>
+                    </div>
                   </div>
                 );
               })}

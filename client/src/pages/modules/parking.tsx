@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -4124,6 +4125,7 @@ export default function ParkingPage() {
       data-testid="parking-page"
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <PageTitle title="Parking" />
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ParkingSquare className="h-6 w-6 text-blue-600" />

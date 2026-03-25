@@ -1,3 +1,4 @@
+import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -183,6 +184,7 @@ export default function PciCompliancePage() {
 
   return (
     <div className="space-y-6" data-testid="pci-compliance-page">
+      <PageTitle title="PCI Compliance" />
       <div className="flex items-center gap-3">
         <Lock className="h-6 w-6 text-primary" />
         <div>
