@@ -24,6 +24,8 @@ import {
   Lock,
   Pencil,
   X,
+  AlertTriangle,
+  Activity,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import UnlockEditDialog from "@/components/admin/unlock-edit-dialog";
@@ -44,6 +46,8 @@ const navItems: NavItem[] = [
   { id: "support", label: "Support", icon: MessageCircle, path: "/admin/support" },
   { id: "audit", label: "Audit Log", icon: ScrollText, path: "/admin/audit" },
   { id: "security", label: "Security", icon: Shield, path: "/admin/security" },
+  { id: "breach-incidents", label: "Breach Incidents", icon: AlertTriangle, path: "/admin/breach-incidents" },
+  { id: "system-health", label: "System Health", icon: Activity, path: "/admin/system-health" },
   { id: "admins", label: "Admins", icon: ShieldCheck, path: "/admin/admins" },
   { id: "settings", label: "Settings", icon: Settings, path: "/admin/settings" },
   { id: "ad-approvals", label: "Ad Approvals", icon: Megaphone, path: "/admin/ad-approvals" },

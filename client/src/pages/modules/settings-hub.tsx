@@ -2,24 +2,26 @@ import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Settings, Shield, CreditCard, Clock, QrCode } from "lucide-react";
+import { Settings, Shield, CreditCard, Clock, QrCode, FileCheck } from "lucide-react";
 import SettingsPage from "./settings";
 import SecuritySettingsPage from "./security-settings";
 import SubscriptionSettings from "./subscription-settings";
 import ShiftsManagement from "./shifts-management";
 import QrRequestSettings from "./qr-request-settings";
 import AccessLogPage from "./access-log";
+import ComplianceReport from "./compliance-report";
 import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
 
 const BASE_TABS = ["general", "shifts", "security", "subscription", "qr-settings"] as const;
 type BaseTab = typeof BASE_TABS[number];
-type ValidTab = BaseTab | "access-log";
+type ValidTab = BaseTab | "access-log" | "compliance";
 
 function getInitialTab(): ValidTab {
   try {
     const params = new URLSearchParams(window.location.search);
     const tab = params.get("tab") as ValidTab | null;
-    if (tab && ([...BASE_TABS, "access-log"] as string[]).includes(tab)) return tab;
+    if (tab && ([...BASE_TABS, "access-log", "compliance"] as string[]).includes(tab)) return tab;
   } catch {}
   return "general";
 }
@@ -27,6 +29,7 @@ function getInitialTab(): ValidTab {
 export default function SettingsHub() {
   const [tab, setTab] = useState<ValidTab>(getInitialTab);
   const [, navigate] = useLocation();
+  const { user } = useAuth();
 
   const { data: prefs } = useQuery<{ showAccessLog: boolean }>({
     queryKey: ["/api/tenant/access-preferences"],
@@ -38,15 +41,20 @@ export default function SettingsHub() {
   });
 
   const showAccessLog = prefs?.showAccessLog !== false;
+  const showCompliance = !!(user && ["owner", "hq_admin", "franchise_owner"].includes(user.role));
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlTab = params.get("tab") as ValidTab | null;
-    const allTabs: string[] = [...BASE_TABS, ...(showAccessLog ? ["access-log"] : [])];
+    const allTabs: string[] = [
+      ...BASE_TABS,
+      ...(showAccessLog ? ["access-log"] : []),
+      ...(showCompliance ? ["compliance"] : []),
+    ];
     if (urlTab && allTabs.includes(urlTab) && urlTab !== tab) {
       setTab(urlTab);
     }
-  }, [showAccessLog]);
+  }, [showAccessLog, showCompliance]);
 
   const handleTabChange = (value: string) => {
     setTab(value as ValidTab);
@@ -79,6 +87,11 @@ export default function SettingsHub() {
               <Shield className="h-4 w-4 mr-1.5" />Account Access
             </TabsTrigger>
           )}
+          {showCompliance && (
+            <TabsTrigger value="compliance" data-testid="tab-compliance">
+              <FileCheck className="h-4 w-4 mr-1.5" />Compliance
+            </TabsTrigger>
+          )}
         </TabsList>
         <TabsContent value="general" className="mt-4">
           <SettingsPage />
@@ -98,6 +111,11 @@ export default function SettingsHub() {
         {showAccessLog && (
           <TabsContent value="access-log" className="mt-4">
             <AccessLogPage />
+          </TabsContent>
+        )}
+        {showCompliance && (
+          <TabsContent value="compliance" className="mt-4">
+            <ComplianceReport />
           </TabsContent>
         )}
       </Tabs>

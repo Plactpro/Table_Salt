@@ -311,6 +311,13 @@ app.use((req, res, next) => {
   }
 
   try {
+    const { startHealthLogger } = await import("./routers/compliance");
+    startHealthLogger();
+  } catch (e) {
+    console.error("Health logger init error:", e);
+  }
+
+  try {
     const { startEscalationJob } = await import("./routers/table-requests");
     startEscalationJob();
   } catch (e) {

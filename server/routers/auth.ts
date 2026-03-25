@@ -17,9 +17,12 @@ import { sendPasswordResetEmail } from "../email";
 export function registerAuthRoutes(app: Express): void {
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const { restaurantName, name, username, password, email, phone } = req.body;
+      const { restaurantName, name, username, password, email, phone, tosAccepted } = req.body;
       if (!restaurantName || !name || !username || !password) {
         return res.status(400).json({ message: "All fields are required" });
+      }
+      if (tosAccepted !== true) {
+        return res.status(400).json({ message: "You must accept the Terms of Service to create an account" });
       }
       if (!email) {
         return res.status(400).json({ message: "Email address is required" });
@@ -85,6 +88,28 @@ export function registerAuthRoutes(app: Express): void {
           console.warn("Could not set email_hash (non-fatal):", hashErr);
         }
         sendWelcomeEmail(email, name, restaurantName).catch(() => {});
+      }
+      // Log ToS and Privacy Policy consent
+      try {
+        const { rows: [platformSettings] } = await pool.query(
+          `SELECT tos_version, privacy_version FROM platform_settings WHERE id = 'singleton' LIMIT 1`
+        );
+        const tosVersion = platformSettings?.tos_version || "2026-01";
+        const privacyVersion = platformSettings?.privacy_version || "2026-01";
+        const ip = (req.headers["x-forwarded-for"] as string || req.ip || "").split(",")[0].trim();
+        const userAgent = (req.headers["user-agent"] || "").slice(0, 500);
+        await pool.query(
+          `INSERT INTO consent_log (user_id, tenant_id, document_type, document_version, accepted_at, ip_address, user_agent)
+           VALUES ($1, $2, 'tos', $3, NOW(), $4, $5)`,
+          [user.id, tenant.id, tosVersion, ip, userAgent]
+        );
+        await pool.query(
+          `INSERT INTO consent_log (user_id, tenant_id, document_type, document_version, accepted_at, ip_address, user_agent)
+           VALUES ($1, $2, 'privacy_policy', $3, NOW(), $4, $5)`,
+          [user.id, tenant.id, privacyVersion, ip, userAgent]
+        );
+      } catch (consentErr) {
+        console.warn("Consent log insert failed (non-fatal):", consentErr);
       }
       req.login(user, (err) => {
         if (err) return res.status(500).json({ message: "Login failed" });
@@ -164,7 +189,39 @@ export function registerAuthRoutes(app: Express): void {
         checkNewIpLoginAlert(user.id, user.tenantId, user.name, req);
         const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = user;
         const redirectTo = (user.role as string) === "super_admin" ? "/admin" : undefined;
-        return res.json({ ...safeUser, onboardingCompleted: tenant?.onboardingCompleted ?? false, ...(redirectTo ? { redirectTo } : {}) });
+
+        // Consent version check
+        let requiresConsentUpdate = false;
+        const outdatedDocuments: string[] = [];
+        try {
+          const { rows: [platformSettings] } = await pool.query(
+            `SELECT tos_version, privacy_version FROM platform_settings WHERE id = 'singleton' LIMIT 1`
+          );
+          if (platformSettings && user.role !== "super_admin") {
+            const { rows: consentRows } = await pool.query(
+              `SELECT DISTINCT ON (document_type) document_type, document_version, accepted_at
+               FROM consent_log WHERE user_id = $1 ORDER BY document_type, accepted_at DESC`,
+              [user.id]
+            );
+            const tosConsent = consentRows.find(r => r.document_type === "tos");
+            const privacyConsent = consentRows.find(r => r.document_type === "privacy_policy");
+            if (!tosConsent || tosConsent.document_version !== platformSettings.tos_version) {
+              outdatedDocuments.push("tos");
+              requiresConsentUpdate = true;
+            }
+            if (!privacyConsent || privacyConsent.document_version !== platformSettings.privacy_version) {
+              outdatedDocuments.push("privacy_policy");
+              requiresConsentUpdate = true;
+            }
+          }
+        } catch (_) { /* consent check non-fatal */ }
+
+        return res.json({
+          ...safeUser,
+          onboardingCompleted: tenant?.onboardingCompleted ?? false,
+          ...(redirectTo ? { redirectTo } : {}),
+          ...(requiresConsentUpdate ? { requiresConsentUpdate: true, consentDocuments: outdatedDocuments } : {}),
+        });
       });
     })(req, res, next);
   });

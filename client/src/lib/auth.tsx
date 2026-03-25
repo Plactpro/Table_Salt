@@ -59,7 +59,7 @@ interface AuthContextType {
   tenant: TenantInfo | null;
   isLoading: boolean;
   login: (username: string, password: string, totpCode?: string) => Promise<AuthUser | { requires2FA: true; userId: string }>;
-  register: (data: { restaurantName: string; name: string; username: string; password: string; email?: string; phone?: string }) => Promise<AuthUser>;
+  register: (data: { restaurantName: string; name: string; username: string; password: string; email?: string; phone?: string; tosAccepted?: boolean }) => Promise<AuthUser>;
   logout: () => Promise<void>;
 }
 
@@ -154,7 +154,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const registerMutation = useMutation({
-    mutationFn: async (data: { restaurantName: string; name: string; username: string; password: string; email?: string; phone?: string }) => {
+    mutationFn: async (data: { restaurantName: string; name: string; username: string; password: string; email?: string; phone?: string; tosAccepted?: boolean }) => {
       const res = await apiRequest("POST", "/api/auth/register", data);
       return res.json();
     },
@@ -177,7 +177,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return loginMutation.mutateAsync({ username, password, totpCode });
   };
 
-  const register = async (data: { restaurantName: string; name: string; username: string; password: string; email?: string; phone?: string }) => {
+  const register = async (data: { restaurantName: string; name: string; username: string; password: string; email?: string; phone?: string; tosAccepted?: boolean }) => {
     return registerMutation.mutateAsync(data);
   };
 

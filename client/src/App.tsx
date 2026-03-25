@@ -88,6 +88,8 @@ const SecurityConsolePage = lazy(() => import("@/pages/admin/security"));
 const AdminSupportPage = lazy(() => import("@/pages/admin/support"));
 const AdminSupportTicketPage = lazy(() => import("@/pages/admin/support-ticket"));
 const AdminAdApprovalsPage = lazy(() => import("@/pages/admin/ad-approvals"));
+const BreachIncidentsPage = lazy(() => import("@/pages/admin/breach-incidents"));
+const SystemHealthPage = lazy(() => import("@/pages/admin/system-health"));
 
 import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
@@ -361,6 +363,8 @@ function AdminShell() {
           <Route path="/admin/support" component={AdminSupportPage} />
           <Route path="/admin/audit" component={AuditLogPage} />
           <Route path="/admin/security" component={SecurityConsolePage} />
+          <Route path="/admin/breach-incidents" component={BreachIncidentsPage} />
+          <Route path="/admin/system-health" component={SystemHealthPage} />
           <Route path="/admin/admins" component={AdminsPage} />
           <Route path="/admin/settings" component={AdminSettingsPage} />
           <Route path="/admin/ad-approvals" component={AdminAdApprovalsPage} />

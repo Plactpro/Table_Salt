@@ -1,18 +1,23 @@
 import { ReactNode, useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import Sidebar from "./sidebar";
 import Header from "./header";
-import { Headset, Lock, Pencil, X, ShieldAlert } from "lucide-react";
+import { Headset, Lock, Pencil, X, ShieldAlert, FileText, ExternalLink } from "lucide-react";
 import ContactSupportModal from "@/components/widgets/contact-support-modal";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { ToastAction } from "@/components/ui/toast";
 import TrialBanner from "@/components/billing/trial-banner";
 import { RealtimeStatusBanner } from "@/components/RealtimeStatusBanner";
 import UnlockEditDialog from "@/components/admin/unlock-edit-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -175,6 +180,128 @@ function ImpersonationBanner() {
   );
 }
 
+interface ConsentStatus {
+  tos: { version: string; acceptedAt: string } | null;
+  privacy_policy: { version: string; acceptedAt: string } | null;
+  platform: { tosVersion: string; privacyVersion: string; tosUrl: string; privacyUrl: string };
+}
+
+function ConsentUpdateModal() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const [accepted, setAccepted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  const { data: consentStatus } = useQuery<ConsentStatus>({
+    queryKey: ["/api/consent/status"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/consent/status");
+      if (!r.ok) throw new Error("Failed to fetch consent status");
+      return r.json();
+    },
+    enabled: !!user && user.role !== "super_admin",
+    staleTime: 60000,
+  });
+
+  const needsUpdate = consentStatus && (
+    (consentStatus.tos === null || consentStatus.tos.version !== consentStatus.platform.tosVersion) ||
+    (consentStatus.privacy_policy === null || consentStatus.privacy_policy.version !== consentStatus.platform.privacyVersion)
+  );
+
+  const handleAccept = async () => {
+    if (!consentStatus || !accepted) return;
+    setSubmitting(true);
+    try {
+      const docs = [];
+      if (!consentStatus.tos || consentStatus.tos.version !== consentStatus.platform.tosVersion) {
+        docs.push({ documentType: "tos", documentVersion: consentStatus.platform.tosVersion });
+      }
+      if (!consentStatus.privacy_policy || consentStatus.privacy_policy.version !== consentStatus.platform.privacyVersion) {
+        docs.push({ documentType: "privacy_policy", documentVersion: consentStatus.platform.privacyVersion });
+      }
+      for (const doc of docs) {
+        await apiRequest("POST", "/api/consent/accept", doc);
+      }
+      queryClient.invalidateQueries({ queryKey: ["/api/consent/status"] });
+    } catch (e) {
+      console.error("Consent accept failed:", e);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (!needsUpdate) return null;
+
+  const tosVersion = consentStatus?.platform.tosVersion;
+  const tosUrl = consentStatus?.platform.tosUrl || "/legal/terms";
+  const privacyUrl = consentStatus?.platform.privacyUrl || "/legal/privacy";
+
+  return (
+    <Dialog open={true} onOpenChange={() => {}}>
+      <DialogContent
+        className="max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+        data-testid="consent-update-modal"
+      >
+        <DialogHeader>
+          <div className="flex items-center gap-2 mb-1">
+            <FileText className="h-5 w-5 text-primary" />
+            <DialogTitle>Updated Terms of Service</DialogTitle>
+          </div>
+          <DialogDescription>
+            We've updated our Terms of Service{tosVersion ? ` (v${tosVersion})` : ""} and Privacy Policy. Please review and accept to continue using Table Salt.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex gap-3">
+            <a
+              href={tosUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 text-sm text-primary hover:underline border rounded-md px-3 py-2"
+              data-testid="link-view-terms"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              View Terms of Service
+            </a>
+            <a
+              href={privacyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 text-sm text-primary hover:underline border rounded-md px-3 py-2"
+              data-testid="link-view-privacy"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              View Privacy Policy
+            </a>
+          </div>
+          <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+            <Checkbox
+              id="consent-accept"
+              data-testid="checkbox-consent-accept"
+              checked={accepted}
+              onCheckedChange={(c) => setAccepted(c === true)}
+              className="mt-0.5"
+            />
+            <Label htmlFor="consent-accept" className="text-sm leading-relaxed cursor-pointer">
+              I have read and accept the updated terms
+            </Label>
+          </div>
+          <Button
+            className="w-full"
+            disabled={!accepted || submitting}
+            onClick={handleAccept}
+            data-testid="button-accept-consent"
+          >
+            {submitting ? "Saving..." : "Accept & Continue"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function AppLayout({ children }: AppLayoutProps) {
   const [location] = useLocation();
   const [showContactSupport, setShowContactSupport] = useState(false);
@@ -187,11 +314,26 @@ export default function AppLayout({ children }: AppLayoutProps) {
   const isPosPage = location === "/pos";
   const supportEnabled = contactConfig?.supportEnabled !== false;
 
+  const { data: platformSettings } = useQuery<{ tosUrl?: string; privacyUrl?: string }>({
+    queryKey: ["/api/consent/status/platform"],
+    queryFn: async () => {
+      try {
+        const r = await apiRequest("GET", "/api/consent/status");
+        if (!r.ok) return {};
+        const d = await r.json();
+        return d.platform || {};
+      } catch { return {}; }
+    },
+    staleTime: 300000,
+    enabled: true,
+  });
+
   return (
     <div className="flex flex-col min-h-screen" data-testid="app-layout">
       <RealtimeStatusBanner />
       <TrialBanner />
       <ImpersonationBanner />
+      <ConsentUpdateModal />
 
       <div className="flex flex-1 min-h-0">
         <Sidebar />
@@ -211,6 +353,25 @@ export default function AppLayout({ children }: AppLayoutProps) {
           >
             {children}
           </motion.main>
+          <footer className="border-t bg-muted/30 px-6 py-3 text-xs text-muted-foreground flex items-center gap-2 shrink-0" data-testid="app-footer">
+            <span>© {new Date().getFullYear()} Table Salt</span>
+            <span className="opacity-40">·</span>
+            <a
+              href={platformSettings?.privacyUrl || "/legal/privacy"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+              data-testid="link-footer-privacy"
+            >Privacy Policy</a>
+            <span className="opacity-40">·</span>
+            <a
+              href={platformSettings?.tosUrl || "/legal/terms"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground transition-colors"
+              data-testid="link-footer-terms"
+            >Terms of Service</a>
+          </footer>
         </div>
       </div>
 

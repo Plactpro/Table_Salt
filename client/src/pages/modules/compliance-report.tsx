@@ -1,0 +1,265 @@
+import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useAuth } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { FileCheck, RefreshCw, Download, Shield, Lock, FileText, BarChart2, Eye, AlertTriangle, CheckCircle, XCircle } from "lucide-react";
+import { format } from "date-fns";
+
+interface ComplianceReport {
+  generatedAt: string;
+  tenant: { id: string; name: string; slug: string; plan: string; country: string | null; createdAt: string | null; subscriptionStatus: string };
+  dataProtection: { encryptionAtRest: boolean; encryptionInTransit: string; retentionPolicyMonths: number; autoDeleteAnonymized: boolean; auditLogRetentionMonths: number };
+  accessControl: { totalActiveUsers: number; byRole: Record<string, number>; usersWithMFA: number; mfaAdoptionPct: number; ipAllowlistEnabled: boolean };
+  consentRecords: { tosVersion: string; tosAcceptedAt: string | null; privacyPolicyVersion: string; privacyPolicyAcceptedAt: string | null };
+  auditLog: { totalEntriesAllTime: number; entriesLast30Days: number; oldestEntry: string | null; newestEntry: string | null };
+  impersonationSessions: { totalAllTime: number; last90Days: number; editSessionsLast90Days: number };
+  securityAlerts: { totalUnacknowledged: number; last30Days: number };
+  dataRequests: { gdprExportsLast90Days: number; deletionRequestsLast90Days: number };
+  breachIncidents: { total: number; open: number; lastIncidentDate: string | null };
+}
+
+function Tick({ value }: { value: boolean }) {
+  return value ? <CheckCircle className="h-4 w-4 text-green-600 inline" /> : <XCircle className="h-4 w-4 text-red-500 inline" />;
+}
+
+function StatRow({ label, value, testId }: { label: string; value: React.ReactNode; testId?: string }) {
+  return (
+    <div className="flex justify-between items-center py-1 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-medium" data-testid={testId}>{value}</span>
+    </div>
+  );
+}
+
+export default function ComplianceReport() {
+  const { user } = useAuth();
+  const allowedRoles = ["owner", "hq_admin", "franchise_owner"];
+  const hasAccess = user && allowedRoles.includes(user.role);
+
+  const { data, isLoading, refetch, dataUpdatedAt } = useQuery<ComplianceReport>({
+    queryKey: ["/api/compliance/report"],
+    queryFn: async () => {
+      const r = await apiRequest("GET", "/api/compliance/report?format=json");
+      if (!r.ok) throw new Error("Failed to fetch compliance report");
+      return r.json();
+    },
+    enabled: !!hasAccess,
+    staleTime: 60000,
+  });
+
+  const handleDownloadJSON = async () => {
+    const r = await apiRequest("GET", "/api/compliance/report?format=json");
+    const blob = new Blob([await r.text()], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `compliance-report-${new Date().toISOString().split("T")[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadCSV = async () => {
+    const r = await apiRequest("GET", "/api/compliance/report?format=csv-summary");
+    const blob = new Blob([await r.text()], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `compliance-report-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (!hasAccess) {
+    return (
+      <div className="p-6 text-center" data-testid="compliance-access-denied">
+        <Shield className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+        <p className="text-muted-foreground">Access denied. This report is only available to account owners and administrators.</p>
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return <div className="p-6 text-center text-muted-foreground">Generating compliance report...</div>;
+  }
+
+  if (!data) {
+    return <div className="p-6 text-center text-muted-foreground">Failed to load compliance report.</div>;
+  }
+
+  return (
+    <div className="space-y-6" data-testid="compliance-report">
+      <div className="flex items-start justify-between gap-4 flex-wrap">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <FileCheck className="h-5 w-5 text-primary" />
+            <h2 className="text-lg font-semibold" data-testid="text-compliance-title">Compliance Report</h2>
+          </div>
+          <p className="text-sm text-muted-foreground max-w-lg">
+            This report summarises your account's data protection status. Download and share with auditors or your DPO.
+          </p>
+          {dataUpdatedAt && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Last generated: {format(dataUpdatedAt, "d MMM yyyy HH:mm")}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-report">
+            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
+            Refresh
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDownloadJSON} data-testid="button-download-json">
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+            Download JSON
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleDownloadCSV} data-testid="button-download-csv">
+            <Download className="h-3.5 w-3.5 mr-1.5" />
+            Download CSV
+          </Button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Lock className="h-4 w-4 text-primary" />
+              Data Protection
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y">
+            <StatRow label="Encryption at rest" value={<><Tick value={data.dataProtection.encryptionAtRest} /> AES-256-GCM</>} />
+            <StatRow label="Encryption in transit" value={data.dataProtection.encryptionInTransit} />
+            <StatRow label="Retention policy" value={`${data.dataProtection.retentionPolicyMonths} months`} />
+            <StatRow label="Auto-delete anonymized" value={<Tick value={data.dataProtection.autoDeleteAnonymized} />} testId="text-auto-delete" />
+            <StatRow label="Audit log retention" value={`${data.dataProtection.auditLogRetentionMonths} months`} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Shield className="h-4 w-4 text-primary" />
+              Access Control
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y">
+            <StatRow label="Active users" value={data.accessControl.totalActiveUsers} testId="text-active-users" />
+            <StatRow label="Users with MFA" value={data.accessControl.usersWithMFA} testId="text-mfa-users" />
+            <StatRow label="MFA adoption" value={`${data.accessControl.mfaAdoptionPct}%`} testId="text-mfa-pct" />
+            <StatRow label="IP allowlist" value={data.accessControl.ipAllowlistEnabled ? "✅ Enabled" : "Not configured"} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <FileText className="h-4 w-4 text-primary" />
+              Consent Records
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y">
+            <StatRow
+              label={`ToS v${data.consentRecords.tosVersion}`}
+              value={data.consentRecords.tosAcceptedAt ? (
+                <span className="text-green-600">✅ {format(new Date(data.consentRecords.tosAcceptedAt), "d MMM yyyy")}</span>
+              ) : (
+                <span className="text-amber-600">⚠ Not accepted</span>
+              )}
+              testId="text-tos-status"
+            />
+            <StatRow
+              label={`Privacy v${data.consentRecords.privacyPolicyVersion}`}
+              value={data.consentRecords.privacyPolicyAcceptedAt ? (
+                <span className="text-green-600">✅ {format(new Date(data.consentRecords.privacyPolicyAcceptedAt), "d MMM yyyy")}</span>
+              ) : (
+                <span className="text-amber-600">⚠ Not accepted</span>
+              )}
+              testId="text-privacy-status"
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <BarChart2 className="h-4 w-4 text-primary" />
+              Audit Activity
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y">
+            <StatRow label="Total entries" value={data.auditLog.totalEntriesAllTime.toLocaleString()} testId="text-audit-total" />
+            <StatRow label="Last 30 days" value={data.auditLog.entriesLast30Days.toLocaleString()} />
+            {data.auditLog.oldestEntry && (
+              <StatRow label="Oldest entry" value={format(new Date(data.auditLog.oldestEntry), "d MMM yyyy")} />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Eye className="h-4 w-4 text-primary" />
+              Support Access (Impersonation)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y">
+            <StatRow label="Sessions (all time)" value={data.impersonationSessions.totalAllTime} testId="text-impersonation-total" />
+            <StatRow label="Sessions (90d)" value={data.impersonationSessions.last90Days} />
+            <StatRow label="Edit sessions (90d)" value={data.impersonationSessions.editSessionsLast90Days} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-primary" />
+              Security Alerts
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="divide-y">
+            <StatRow
+              label="Unacknowledged"
+              value={
+                <span className={data.securityAlerts.totalUnacknowledged > 0 ? "text-amber-600 font-semibold" : ""}>
+                  {data.securityAlerts.totalUnacknowledged}
+                </span>
+              }
+              testId="text-unacked-alerts"
+            />
+            <StatRow label="Last 30 days" value={data.securityAlerts.last30Days} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">GDPR Data Requests (last 90 days)</CardTitle>
+        </CardHeader>
+        <CardContent className="flex gap-8">
+          <StatRow label="Exports" value={data.dataRequests.gdprExportsLast90Days} testId="text-gdpr-exports" />
+          <StatRow label="Deletion requests" value={data.dataRequests.deletionRequestsLast90Days} testId="text-gdpr-deletions" />
+        </CardContent>
+      </Card>
+
+      {data.breachIncidents.total > 0 && (
+        <Card className="border-amber-200 bg-amber-50/30">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2 text-amber-800">
+              <AlertTriangle className="h-4 w-4" />
+              Breach Incidents
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex gap-8">
+            <StatRow label="Total" value={data.breachIncidents.total} testId="text-breach-total" />
+            <StatRow label="Open" value={<span className={data.breachIncidents.open > 0 ? "text-red-600 font-semibold" : ""}>{data.breachIncidents.open}</span>} />
+            {data.breachIncidents.lastIncidentDate && (
+              <StatRow label="Last incident" value={format(new Date(data.breachIncidents.lastIncidentDate), "d MMM yyyy")} />
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}

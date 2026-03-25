@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, Building2, UserCircle, Mail, Phone } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
@@ -31,6 +32,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [tosAccepted, setTosAccepted] = useState(false);
 
   const passwordMismatch = confirmPassword.length > 0 && password !== confirmPassword;
 
@@ -46,7 +48,7 @@ export default function RegisterPage() {
     }
     setLoading(true);
     try {
-      await register({ restaurantName, name, username, password, email, phone });
+      await register({ restaurantName, name, username, password, email, phone, tosAccepted });
       navigate("/onboarding");
     } catch (err: any) {
       toast({
@@ -317,6 +319,32 @@ export default function RegisterPage() {
               )}
             </motion.div>
             <motion.div
+              className="space-y-2"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5, delay: 0.64 }}
+            >
+              <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+                <Checkbox
+                  id="tosAccepted"
+                  data-testid="checkbox-tos"
+                  checked={tosAccepted}
+                  onCheckedChange={(checked) => setTosAccepted(checked === true)}
+                  className="mt-0.5"
+                />
+                <Label htmlFor="tosAccepted" className="text-sm leading-relaxed cursor-pointer">
+                  I agree to the{" "}
+                  <a href="/legal/terms" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Terms of Service</a>
+                  {" "}and{" "}
+                  <a href="/legal/privacy" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline font-medium">Privacy Policy</a>
+                  {" "}(required)
+                  <span className="block text-muted-foreground mt-1 text-xs">
+                    By creating an account, I accept that Table Salt may access my account for support purposes (logged and visible to me).
+                  </span>
+                </Label>
+              </div>
+            </motion.div>
+            <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.65 }}
@@ -324,7 +352,7 @@ export default function RegisterPage() {
               <Button
                 type="submit"
                 className="w-full h-11 text-base gap-2"
-                disabled={loading || passwordMismatch}
+                disabled={loading || passwordMismatch || !tosAccepted}
                 data-testid="button-register"
               >
                 {loading ? (
