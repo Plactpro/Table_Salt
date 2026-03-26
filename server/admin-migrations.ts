@@ -3350,6 +3350,42 @@ export async function runTask108Migrations(): Promise<void> {
   `);
   await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_key_storage_code ON key_storage_locations(tenant_id, outlet_id, location_code)`);
 
+  // Task #180: Valet Phase 2 — valet_incidents table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS valet_incidents (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      ticket_id VARCHAR(36),
+      shift_id VARCHAR(36),
+      incident_number VARCHAR(30) NOT NULL UNIQUE,
+      incident_type VARCHAR(40) NOT NULL DEFAULT 'OTHER',
+      severity VARCHAR(20) NOT NULL DEFAULT 'LOW',
+      description TEXT NOT NULL,
+      vehicle_number TEXT,
+      customer_name TEXT,
+      customer_phone TEXT,
+      reported_by_id VARCHAR(36),
+      reported_by_name TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'open',
+      resolution TEXT,
+      manager_notified BOOLEAN NOT NULL DEFAULT false,
+      police_report_no TEXT,
+      insurance_claim_no TEXT,
+      estimated_damage_cost DECIMAL(10,2),
+      actual_damage_cost DECIMAL(10,2),
+      resolved_by_id VARCHAR(36),
+      resolved_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_incidents_tenant ON valet_incidents(tenant_id, status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_incidents_outlet ON valet_incidents(outlet_id, tenant_id)`);
+
+  // Task #180: Add overnight config to parking_layout_config
+  await pool.query(`ALTER TABLE parking_layout_config ADD COLUMN IF NOT EXISTS overnight_fee DECIMAL(10,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE parking_layout_config ADD COLUMN IF NOT EXISTS overnight_cutoff_hour INTEGER DEFAULT 23`);
+
   // New table: key_management_log
   await pool.query(`
     CREATE TABLE IF NOT EXISTS key_management_log (
@@ -3361,12 +3397,18 @@ export async function runTask108Migrations(): Promise<void> {
       performed_by VARCHAR(36),
       performed_by_name TEXT,
       key_location VARCHAR(100),
+      incident_id VARCHAR(36),
       notes TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_key_log_tenant ON key_management_log(tenant_id, outlet_id, created_at DESC)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_key_log_ticket ON key_management_log(ticket_id)`);
+
+  // Ensure key_management_log has all Phase 1 columns (idempotent ALTERs for cases where Phase 2 schema was applied first)
+  await pool.query(`ALTER TABLE key_management_log ADD COLUMN IF NOT EXISTS key_location VARCHAR(100)`);
+  await pool.query(`ALTER TABLE key_management_log ADD COLUMN IF NOT EXISTS performed_by VARCHAR(36)`);
+  await pool.query(`ALTER TABLE key_management_log ADD COLUMN IF NOT EXISTS incident_id VARCHAR(36)`);
 
   // Extend valet_tickets with new columns
   await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS shift_id VARCHAR(36)`);
@@ -3384,6 +3426,7 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS parked_by_name TEXT`);
   await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS retrieved_by_name TEXT`);
   await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS charge_amount NUMERIC(10,2)`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS final_charge DECIMAL(10,2) DEFAULT 0`);
 
   // Extend valet_retrieval_requests with priority + queue fields
   await pool.query(`ALTER TABLE valet_retrieval_requests ADD COLUMN IF NOT EXISTS priority VARCHAR(10) DEFAULT 'NORMAL'`);

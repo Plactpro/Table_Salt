@@ -1451,6 +1451,170 @@ export function registerParkingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // ─── Task #180: Incidents API ────────────────────────────────────────────────
+
+  // Generate incident number: INC-YYYYMMDD-NNNN
+  async function _generateIncidentNumber(tenantId: string): Promise<string> {
+    const now = new Date();
+    const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+    const { rows } = await pool.query(
+      `SELECT COUNT(*) AS cnt FROM valet_incidents WHERE tenant_id=$1 AND incident_number LIKE $2`,
+      [tenantId, `INC-${dateStr}-%`]
+    );
+    const seq = parseInt(rows[0].cnt, 10) + 1;
+    return `INC-${dateStr}-${String(seq).padStart(4, "0")}`;
+  }
+
+  // POST /api/parking/incidents — create incident
+  app.post("/api/parking/incidents", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId, ticketId, incidentType, severity, description, vehicleNumber, customerName, customerPhone } = req.body;
+      if (!outletId) return res.status(400).json({ message: "outletId is required" });
+      if (!description) return res.status(400).json({ message: "description is required" });
+
+      const incidentNumber = await _generateIncidentNumber(user.tenantId);
+
+      const { rows } = await pool.query(`
+        INSERT INTO valet_incidents (tenant_id, outlet_id, ticket_id, incident_number, incident_type, severity, description, vehicle_number, customer_name, customer_phone, reported_by_id, reported_by_name, status)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'open') RETURNING *
+      `, [
+        user.tenantId, outletId, ticketId ?? null, incidentNumber,
+        incidentType ?? "OTHER", severity ?? "LOW", description,
+        vehicleNumber ?? null, customerName ?? null, customerPhone ?? null,
+        user.id, user.name || user.username,
+      ]);
+
+      const incident = rows[0];
+
+      // CRITICAL/HIGH: set ticket status to 'incident'
+      if (ticketId && (severity === "HIGH" || severity === "CRITICAL")) {
+        await pool.query(
+          `UPDATE valet_tickets SET status='incident' WHERE id=$1 AND tenant_id=$2`,
+          [ticketId, user.tenantId]
+        );
+        await storage.appendValetTicketEvent(ticketId, user.tenantId, {
+          eventType: "INCIDENT_REPORTED",
+          performedBy: user.id,
+          performedByName: user.name || user.username,
+          notes: `${incidentType} — ${severity} — ${incidentNumber}`,
+        });
+      }
+
+      // LOST_KEY: auto-log key_management_log entry + set key_location = LOST
+      if (incidentType === "LOST_KEY" && ticketId) {
+        await pool.query(
+          `INSERT INTO key_management_log (tenant_id, outlet_id, ticket_id, incident_id, action, notes, performed_by_id, performed_by_name)
+           VALUES ($1,$2,$3,$4,'LOST_REPORTED',$5,$6,$7)`,
+          [user.tenantId, outletId, ticketId, incident.id, description, user.id, user.name || user.username]
+        );
+        await pool.query(
+          `UPDATE valet_tickets SET key_location='LOST' WHERE id=$1 AND tenant_id=$2`,
+          [ticketId, user.tenantId]
+        );
+      }
+
+      res.status(201).json(_mapIncident(incident));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // GET /api/parking/incidents/:outletId/summary — dashboard widget
+  app.get("/api/parking/incidents/:outletId/summary", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.params;
+      const { rows } = await pool.query(`
+        SELECT severity, status, COUNT(*) AS cnt
+        FROM valet_incidents
+        WHERE outlet_id=$1 AND tenant_id=$2
+        GROUP BY severity, status
+      `, [outletId, user.tenantId]);
+
+      let totalOpen = 0;
+      const bySeverity: Record<string, number> = { LOW: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0 };
+      for (const r of rows) {
+        const cnt = parseInt(r.cnt, 10);
+        if (r.status !== "resolved") {
+          totalOpen += cnt;
+          if (bySeverity[r.severity] !== undefined) bySeverity[r.severity] += cnt;
+        }
+      }
+      res.json({ totalOpen, bySeverity });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // GET /api/parking/incidents/:outletId — list incidents with filters
+  app.get("/api/parking/incidents/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.params;
+      const { status, severity, from, to } = req.query as Record<string, string>;
+
+      let q = `SELECT * FROM valet_incidents WHERE outlet_id=$1 AND tenant_id=$2`;
+      const vals: any[] = [outletId, user.tenantId];
+      if (status) { vals.push(status); q += ` AND status=$${vals.length}`; }
+      if (severity) { vals.push(severity); q += ` AND severity=$${vals.length}`; }
+      if (from) { vals.push(from); q += ` AND created_at >= $${vals.length}`; }
+      if (to) { vals.push(to + "T23:59:59Z"); q += ` AND created_at <= $${vals.length}`; }
+      q += ` ORDER BY created_at DESC LIMIT 200`;
+
+      const { rows } = await pool.query(q, vals);
+      res.json(rows.map(_mapIncident));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // PATCH /api/parking/incidents/:id — update status, resolution, etc.
+  app.patch("/api/parking/incidents/:id", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { id } = req.params;
+      const { status, resolution, policeReportNo, insuranceClaimNo, actualDamageCost, managerNotified } = req.body;
+
+      const fields: string[] = [];
+      const vals: any[] = [id, user.tenantId];
+
+      if (status !== undefined) { vals.push(status); fields.push(`status=$${vals.length}`); }
+      if (resolution !== undefined) { vals.push(resolution); fields.push(`resolution=$${vals.length}`); }
+      if (policeReportNo !== undefined) { vals.push(policeReportNo); fields.push(`police_report_no=$${vals.length}`); }
+      if (insuranceClaimNo !== undefined) { vals.push(insuranceClaimNo); fields.push(`insurance_claim_no=$${vals.length}`); }
+      if (actualDamageCost !== undefined) { vals.push(actualDamageCost); fields.push(`actual_damage_cost=$${vals.length}`); }
+      if (managerNotified !== undefined) { vals.push(managerNotified); fields.push(`manager_notified=$${vals.length}`); }
+      if (status === "resolved") {
+        vals.push(user.id); fields.push(`resolved_by_id=$${vals.length}`);
+        fields.push(`resolved_at=now()`);
+      }
+
+      if (!fields.length) return res.status(400).json({ message: "No fields to update" });
+
+      const { rows } = await pool.query(
+        `UPDATE valet_incidents SET ${fields.join(",")} WHERE id=$1 AND tenant_id=$2 RETURNING *`,
+        vals
+      );
+      if (!rows[0]) return res.status(404).json({ message: "Incident not found" });
+      res.json(_mapIncident(rows[0]));
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #180: Overnight Checkout ──────────────────────────────────────────
+
+  // PATCH /api/parking/tickets/:id/overnight-checkout
+  app.patch("/api/parking/tickets/:id/overnight-checkout", requireAuth, async (req, res) => {    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const { keyLocation, keyType } = req.body;
+      const updated = await storage.updateValetTicket(req.params.id, user.tenantId, { keyLocation, keyType });
+      if (keyLocation) {
+        await pool.query(
+          `UPDATE key_storage_locations SET current_count = (SELECT COUNT(*) FROM valet_tickets WHERE tenant_id=$1 AND outlet_id=$2 AND key_location=$3 AND status NOT IN ('checked_out','cancelled')) WHERE tenant_id=$1 AND outlet_id=$2 AND location_code=$3`,
+          [user.tenantId, ticket.outletId, keyLocation]
+        );
+      }
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // ─── Task #179: VIP flag, overnight flag, tip recording ──────────────────────
   app.patch("/api/parking/tickets/:id/vip", requireAuth, async (req, res) => {
     try {
@@ -1579,6 +1743,151 @@ export function registerParkingRoutes(app: Express): void {
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
+
+  // ─── Task #180: Overnight Checkout ──────────────────────────────────────────
+
+  // PATCH /api/parking/tickets/:id/overnight-checkout
+  app.patch("/api/parking/tickets/:id/overnight-checkout", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      if (ticket.status === "completed") return res.status(400).json({ message: "Ticket already completed" });
+
+      const exitTime = new Date();
+      const entryTime = ticket.entryTime ? new Date(ticket.entryTime) : exitTime;
+      const durationMinutes = Math.floor((exitTime.getTime() - entryTime.getTime()) / 60000);
+
+      // Fetch overnight fee from config
+      const config = await storage.getParkingConfig(ticket.outletId, user.tenantId);
+      const overnightFee = parseFloat(String((config as any)?.overnightFee ?? 0)) || 0;
+      const overnightCutoffHour = (config as any)?.overnightCutoffHour ?? 23;
+
+      // Calculate nights: hours past cutoff
+      const entryHour = entryTime.getHours();
+      const hoursParked = durationMinutes / 60;
+      const nights = Math.max(1, Math.ceil((exitTime.getTime() - entryTime.getTime()) / (24 * 3600 * 1000)));
+      const overnightCharge = overnightFee * nights;
+
+      // Release slot
+      if (ticket.slotId) {
+        await storage.updateParkingSlot(ticket.slotId, user.tenantId, { status: "available" });
+        await _recalcAvailability(ticket.outletId, user.tenantId);
+      }
+
+      const updated = await storage.updateValetTicket(ticket.id, user.tenantId, {
+        status: "completed",
+        exitTime,
+        durationMinutes,
+        finalCharge: overnightCharge,
+      } as any);
+
+      await storage.appendValetTicketEvent(ticket.id, user.tenantId, {
+        eventType: "OVERNIGHT_CHECKOUT",
+        performedBy: user.id,
+        performedByName: user.name || user.username,
+        notes: `Overnight: ${nights} night(s) × ${overnightFee} = ${overnightCharge}. Duration: ${durationMinutes}m`,
+      });
+
+      res.json({ ...updated, overnightCharge, nights, overnightFee });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // GET /api/parking/overnight/:outletId — list overnight tickets
+  app.get("/api/parking/overnight/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { outletId } = req.params;
+
+      const config = await storage.getParkingConfig(outletId, user.tenantId);
+      const overnightFee = parseFloat(String((config as any)?.overnightFee ?? 0)) || 0;
+      const overnightCutoffHour = (config as any)?.overnightCutoffHour ?? 23;
+
+      // Overnight: parked tickets where entry_time was before yesterday's cutoff
+      const { rows } = await pool.query(`
+        SELECT vt.*, ps.slot_code
+        FROM valet_tickets vt
+        LEFT JOIN parking_slots ps ON ps.id = vt.slot_id
+        WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
+          AND vt.status IN ('parked','requested','retrieving','ready','incident')
+          AND vt.is_overnight = true
+        ORDER BY vt.entry_time ASC
+      `, [outletId, user.tenantId]);
+
+      // Also include any ticket where the vehicle has been parked past cutoff (auto-detect)
+      const now = new Date();
+      const { rows: autoDetect } = await pool.query(`
+        SELECT vt.*, ps.slot_code
+        FROM valet_tickets vt
+        LEFT JOIN parking_slots ps ON ps.id = vt.slot_id
+        WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
+          AND vt.status IN ('parked','requested','retrieving','ready','incident')
+          AND vt.is_overnight = false
+          AND EXTRACT(EPOCH FROM (NOW() - vt.entry_time))/3600 > 12
+        ORDER BY vt.entry_time ASC
+      `, [outletId, user.tenantId]);
+
+      // Merge, deduplicate
+      const allRows = [...rows];
+      const seenIds = new Set(rows.map((r: any) => r.id));
+      for (const r of autoDetect) {
+        if (!seenIds.has(r.id)) allRows.push(r);
+      }
+
+      const enriched = allRows.map((r: any) => {
+        const entryTime = new Date(r.entry_time);
+        const hoursParked = (now.getTime() - entryTime.getTime()) / (3600 * 1000);
+        const nights = Math.max(1, Math.ceil((now.getTime() - entryTime.getTime()) / (24 * 3600 * 1000)));
+        return {
+          id: r.id,
+          ticketNumber: r.ticket_number,
+          vehicleNumber: r.vehicle_number,
+          vehicleType: r.vehicle_type,
+          customerName: r.customer_name,
+          customerPhone: r.customer_phone,
+          slotCode: r.slot_code,
+          entryTime: r.entry_time,
+          hoursParked: Math.round(hoursParked * 10) / 10,
+          nights,
+          estimatedOvernightFee: overnightFee * nights,
+          status: r.status,
+          isOvernight: r.is_overnight,
+          keyLocation: r.key_location,
+        };
+      });
+
+      res.json({ tickets: enriched, overnightFee, overnightCutoffHour });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+}
+
+function _mapIncident(r: any) {
+  return {
+    id: r.id,
+    tenantId: r.tenant_id,
+    outletId: r.outlet_id,
+    ticketId: r.ticket_id,
+    incidentNumber: r.incident_number,
+    incidentType: r.incident_type,
+    severity: r.severity,
+    description: r.description,
+    vehicleNumber: r.vehicle_number,
+    customerName: r.customer_name,
+    customerPhone: r.customer_phone,
+    reportedById: r.reported_by_id,
+    reportedByName: r.reported_by_name,
+    status: r.status,
+    resolution: r.resolution,
+    managerNotified: r.manager_notified,
+    policeReportNo: r.police_report_no,
+    insuranceClaimNo: r.insurance_claim_no,
+    estimatedDamageCost: r.estimated_damage_cost,
+    actualDamageCost: r.actual_damage_cost,
+    resolvedById: r.resolved_by_id,
+    resolvedAt: r.resolved_at,
+    createdAt: r.created_at,
+  };
 }
 
 // Task #164: CRM sync helpers (non-blocking, called fire-and-forget)

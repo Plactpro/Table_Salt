@@ -15,6 +15,7 @@ import {
   Settings, Users, Download, Trash2, Edit2, ToggleLeft, ToggleRight,
   TrendingUp, CalendarDays, Shield, BadgeCheck, Search, Zap, List, LayoutGrid, Bell,
   Moon, Star, Key, Banknote, LogIn, LogOut, UserCheck, ClipboardList, ArrowUpCircle,
+  Hourglass, TriangleAlert, KeyRound, FileWarning, ChevronDown, ChevronUp,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -84,6 +85,7 @@ function StatusBadge({ status }: { status: string }) {
     ready: { label: "Ready", className: "bg-purple-100 text-purple-700 border-purple-200" },
     completed: { label: "Completed", className: "bg-gray-100 text-gray-600 border-gray-200" },
     cancelled: { label: "Cancelled", className: "bg-red-100 text-red-600 border-red-200" },
+    incident: { label: "Incident", className: "bg-red-100 text-red-700 border-red-300 animate-pulse" },
   };
   const s = statusMap[status] ?? { label: status, className: "bg-gray-100 text-gray-600 border-gray-200" };
   return (
@@ -824,7 +826,9 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
   const [exitCondition, setExitCondition] = useState({ body: "clean", interior: "clean", fuelLevel: "full", acWorking: "yes", spareTyre: "yes", notes: "" });
   const [tipAmount, setTipAmount] = useState("");
   const [showVipNotesInput, setShowVipNotesInput] = useState(false);
-  const [vipNotesDraft, setVipNotesDraft] = useState(ticket.vipNotes ?? "");
+  const [vipNotesDraft, setVipNotesDraft] = useState(ticket.vipNotes ?? "");  const [showIncidentForm, setShowIncidentForm] = useState(false);
+  const [incidentForm, setIncidentForm] = useState({ incidentType: "OTHER", severity: "LOW", description: "" });
+  const [incidentConfirm, setIncidentConfirm] = useState<string | null>(null);
 
   const updateMutation = useMutation({
     mutationFn: async (status: string) => {
@@ -901,7 +905,29 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
       queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
       queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
       toast({ title: ticket.isOvernight ? "Overnight removed" : "Marked as overnight" });
+    },  const reportIncidentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/parking/incidents", {
+        outletId,
+        ticketId: ticket.id,
+        incidentType: incidentForm.incidentType,
+        severity: incidentForm.severity,
+        description: incidentForm.description,
+        vehicleNumber: ticket.vehicleNumber,
+        customerName: ticket.customerName,
+        customerPhone: ticket.customerPhone,
+      });
+      return res.json();
     },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/incidents", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/incidents/summary", outletId] });
+      setIncidentConfirm(data.incidentNumber);
+      setShowIncidentForm(false);
+      setIncidentForm({ incidentType: "OTHER", severity: "LOW", description: "" });
+    },
+    onError: (err: Error) => toast({ title: "Failed to report incident", description: err.message, variant: "destructive" }),
   });
 
   const entryCondition = ticket.conditionReport;
@@ -1048,6 +1074,16 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
               </Button>
             </>
           )}
+          {ticket.status !== "completed" && ticket.status !== "cancelled" && (
+            <Button size="sm" variant="ghost" className="h-7 text-xs text-orange-600 hover:text-orange-700" onClick={() => setShowIncidentForm(true)} data-testid={`button-report-incident-${ticket.id}`}>
+              <TriangleAlert className="h-3 w-3 mr-1" /> Report Incident
+            </Button>
+          )}
+          {ticket.keyLocation === "LOST" && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs bg-red-100 text-red-700 rounded-full border border-red-200" data-testid={`badge-lost-key-${ticket.id}`}>
+              <KeyRound className="h-3 w-3" /> Lost Key
+            </span>
+          )}
         </div>
 
         {/* VIP Notes inline form */}
@@ -1083,7 +1119,84 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
                 >
                   Save Notes Only
                 </Button>
-              )}
+              )}        {/* Incident Confirmation */}
+        {incidentConfirm && (
+          <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700 flex items-center justify-between" data-testid={`incident-confirm-${ticket.id}`}>
+            <span>Incident <strong>{incidentConfirm}</strong> filed</span>
+            <button onClick={() => setIncidentConfirm(null)} className="ml-2 text-orange-400 hover:text-orange-600"><X className="h-3 w-3" /></button>
+          </div>
+        )}
+
+        {/* Report Incident Form */}
+        {showIncidentForm && (
+          <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="incident-report-dialog">
+            <div className="bg-background rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-base flex items-center gap-2"><TriangleAlert className="h-4 w-4 text-orange-500" /> Report Incident</h3>
+                <button onClick={() => setShowIncidentForm(false)}><X className="h-4 w-4 text-muted-foreground" /></button>
+              </div>
+              <p className="text-xs text-muted-foreground">Ticket {ticket.ticketNumber} · {ticket.vehicleNumber}</p>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs">Incident Type</Label>
+                  <Select value={incidentForm.incidentType} onValueChange={v => setIncidentForm(f => ({ ...f, incidentType: v }))}>
+                    <SelectTrigger className="h-8 text-xs mt-1" data-testid="select-incident-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="VEHICLE_DAMAGE">Vehicle Damage</SelectItem>
+                      <SelectItem value="LOST_KEY">Lost Key</SelectItem>
+                      <SelectItem value="ACCIDENT">Accident</SelectItem>
+                      <SelectItem value="THEFT">Theft</SelectItem>
+                      <SelectItem value="CUSTOMER_COMPLAINT">Customer Complaint</SelectItem>
+                      <SelectItem value="WRONG_VEHICLE_MOVED">Wrong Vehicle Moved</SelectItem>
+                      <SelectItem value="OTHER">Other</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Severity</Label>
+                  <Select value={incidentForm.severity} onValueChange={v => setIncidentForm(f => ({ ...f, severity: v }))}>
+                    <SelectTrigger className="h-8 text-xs mt-1" data-testid="select-incident-severity">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="LOW">Low</SelectItem>
+                      <SelectItem value="MEDIUM">Medium</SelectItem>
+                      <SelectItem value="HIGH">High</SelectItem>
+                      <SelectItem value="CRITICAL">Critical</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">Description</Label>
+                  <Textarea
+                    className="mt-1 text-xs"
+                    rows={3}
+                    placeholder="Describe what happened..."
+                    value={incidentForm.description}
+                    onChange={e => setIncidentForm(f => ({ ...f, description: e.target.value }))}
+                    data-testid="input-incident-description"
+                  />
+                </div>
+                {(incidentForm.severity === "HIGH" || incidentForm.severity === "CRITICAL") && (
+                  <p className="text-xs text-red-600 bg-red-50 rounded p-2 border border-red-200">
+                    ⚠ This ticket will be marked as <strong>Incident</strong> status
+                  </p>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button variant="ghost" size="sm" className="flex-1" onClick={() => setShowIncidentForm(false)}>Cancel</Button>
+                  <Button
+                    size="sm"
+                    className="flex-1 bg-orange-600 hover:bg-orange-700"
+                    disabled={!incidentForm.description.trim() || reportIncidentMutation.isPending}
+                    onClick={() => reportIncidentMutation.mutate()}
+                    data-testid="button-submit-incident"
+                  >
+                    {reportIncidentMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Submit"}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1938,15 +2051,50 @@ function DashboardTab({
   const { data: activeShift } = useQuery<any>({
     queryKey: ["/api/parking/shifts", outletId, "active"],
     queryFn: async () => {
-      const res = await fetch(`/api/parking/shifts/${outletId}/active`, { credentials: "include" });
+      const res = await fetch(`/api/parking/shifts/${outletId}/active`, { credentials: "include" });  const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
+
+  const { data: incidentSummary } = useQuery<any>({
+    queryKey: ["/api/parking/incidents/summary", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/incidents/${outletId}/summary`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!outletId && isOwnerOrManager,
+    staleTime: 60000,
+    refetchInterval: 120000,
+  });
+
+  const { data: overnightData } = useQuery<any>({
+    queryKey: ["/api/parking/overnight", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/overnight/${outletId}`, { credentials: "include" });
       if (!res.ok) return null;
       return res.json();
     },
     enabled: !!outletId,
-    staleTime: 30000,
-    refetchInterval: 60000,
+    staleTime: 60000,
+    refetchInterval: 120000,
   });
 
+  const [overnightCheckoutId, setOvernightCheckoutId] = useState<string | null>(null);
+  const overnightTickets: any[] = overnightData?.tickets ?? [];
+  const overnightFee = overnightData?.overnightFee ?? 0;
+
+  const overnightCheckoutMutation = useMutation({
+    mutationFn: async (ticketId: string) => {
+      const res = await apiRequest("PATCH", `/api/parking/tickets/${ticketId}/overnight-checkout`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/overnight", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+      setOvernightCheckoutId(null);
+      toast({ title: "Overnight checkout processed" });
+    },
+    onError: (err: Error) => toast({ title: "Checkout failed", description: err.message, variant: "destructive" }),
+  });
   const overnightCount = tickets.filter((t: any) => t.isOvernight || t.is_overnight).length;
   const vipCount = tickets.filter((t: any) => t.isVip || t.is_vip).length;
 
@@ -2202,6 +2350,115 @@ function DashboardTab({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* ─── Overnight Vehicles Section ─── */}
+      {overnightTickets.length > 0 && (
+        <div className="space-y-3" data-testid="overnight-section">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Moon className="h-4 w-4 text-indigo-500" />
+            <Hourglass className="h-4 w-4 text-indigo-400" />
+            Overnight Vehicles ({overnightTickets.length})
+          </h3>
+          <div className="space-y-2">
+            {overnightTickets.map((t: any) => (
+              <div key={t.id} className="p-3 rounded-lg border bg-indigo-50 border-indigo-200 flex flex-wrap items-center gap-2" data-testid={`row-overnight-${t.id}`}>
+                <span className="text-lg">{getVehicleIcon(t.vehicleType)}</span>
+                <div className="min-w-0">
+                  <p className="font-mono font-bold text-xs">{t.ticketNumber}</p>
+                  <p className="text-xs text-muted-foreground">{t.vehicleNumber}</p>
+                </div>
+                {t.customerName && <span className="text-xs text-muted-foreground">{t.customerName}</span>}
+                {t.slotCode && <span className="text-xs bg-white border rounded px-1.5 py-0.5">{t.slotCode}</span>}
+                <span className="text-xs text-indigo-600 font-medium">{t.hoursParked}h parked</span>
+                <span className="text-xs text-indigo-700 font-semibold">{t.nights} night(s) · {fmt(t.estimatedOvernightFee)}</span>
+                <Button
+                  size="sm"
+                  className="ml-auto h-7 text-xs bg-indigo-600 hover:bg-indigo-700"
+                  onClick={() => setOvernightCheckoutId(t.id)}
+                  data-testid={`button-overnight-checkout-${t.id}`}
+                >
+                  Process Checkout
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          {/* Overnight Checkout Dialog */}
+          {overnightCheckoutId && (() => {
+            const t = overnightTickets.find(x => x.id === overnightCheckoutId);
+            if (!t) return null;
+            return (
+              <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="overnight-checkout-dialog">
+                <div className="bg-background rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-bold text-base flex items-center gap-2"><Moon className="h-4 w-4 text-indigo-500" /> Overnight Checkout</h3>
+                    <button onClick={() => setOvernightCheckoutId(null)}><X className="h-4 w-4 text-muted-foreground" /></button>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between"><span className="text-muted-foreground">Ticket</span><span className="font-mono font-bold">{t.ticketNumber}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Vehicle</span><span>{t.vehicleNumber}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Hours Parked</span><span>{t.hoursParked}h</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Nights</span><span>{t.nights}</span></div>
+                    <div className="flex justify-between"><span className="text-muted-foreground">Rate per Night</span><span>{fmt(overnightFee)}</span></div>
+                    <Separator />
+                    <div className="flex justify-between font-bold text-indigo-700"><span>Overnight Fee</span><span>{fmt(t.estimatedOvernightFee)}</span></div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" className="flex-1" onClick={() => setOvernightCheckoutId(null)}>Cancel</Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-indigo-600 hover:bg-indigo-700"
+                      disabled={overnightCheckoutMutation.isPending}
+                      onClick={() => overnightCheckoutMutation.mutate(t.id)}
+                      data-testid="button-confirm-overnight-checkout"
+                    >
+                      {overnightCheckoutMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Confirm Checkout"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* ─── Incidents Summary Widget ─── */}
+      {isOwnerOrManager && incidentSummary && incidentSummary.totalOpen > 0 && (
+        <div className="space-y-2" data-testid="incidents-widget">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <TriangleAlert className="h-4 w-4 text-orange-500" />
+            Open Incidents
+          </h3>
+          <Card className="border-orange-200 bg-orange-50">
+            <CardContent className="p-3 flex flex-wrap items-center gap-3">
+              <div className="text-2xl font-bold text-orange-700" data-testid="text-incident-total">{incidentSummary.totalOpen}</div>
+              <div className="text-xs text-orange-600">open incidents</div>
+              <div className="flex gap-2 ml-auto flex-wrap">
+                {incidentSummary.bySeverity.CRITICAL > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-red-700 bg-red-100 border border-red-200 px-2 py-0.5 rounded-full" data-testid="badge-incident-critical">
+                    <span className="w-2 h-2 rounded-full bg-red-600 animate-pulse inline-block" /> CRITICAL: {incidentSummary.bySeverity.CRITICAL}
+                  </span>
+                )}
+                {incidentSummary.bySeverity.HIGH > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-orange-700 bg-orange-100 border border-orange-200 px-2 py-0.5 rounded-full" data-testid="badge-incident-high">
+                    <span className="w-2 h-2 rounded-full bg-orange-500 inline-block" /> HIGH: {incidentSummary.bySeverity.HIGH}
+                  </span>
+                )}
+                {incidentSummary.bySeverity.MEDIUM > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-yellow-700 bg-yellow-50 border border-yellow-200 px-2 py-0.5 rounded-full" data-testid="badge-incident-medium">
+                    <span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" /> MED: {incidentSummary.bySeverity.MEDIUM}
+                  </span>
+                )}
+                {incidentSummary.bySeverity.LOW > 0 && (
+                  <span className="flex items-center gap-1 text-xs font-semibold text-gray-600 bg-gray-100 border border-gray-200 px-2 py-0.5 rounded-full" data-testid="badge-incident-low">
+                    <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" /> LOW: {incidentSummary.bySeverity.LOW}
+                  </span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -4236,6 +4493,257 @@ function AttendantTab({ outletId, outletName, onOpenNewTicket }: { outletId: str
   );
 }
 
+// ─── Incidents Tab ────────────────────────────────────────────────────────────
+function IncidentsTab({ outletId }: { outletId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
+
+  const [filterStatus, setFilterStatus] = useState("all");
+  const [filterSeverity, setFilterSeverity] = useState("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
+
+  const { data: incidents = [], isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/parking/incidents", outletId, filterStatus, filterSeverity],
+    queryFn: async () => {
+      let url = `/api/parking/incidents/${outletId}?`;
+      if (filterStatus !== "all") url += `status=${filterStatus}&`;
+      if (filterSeverity !== "all") url += `severity=${filterSeverity}&`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const updateIncidentMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: any }) => {
+      const res = await apiRequest("PATCH", `/api/parking/incidents/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/incidents", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/incidents/summary", outletId] });
+      setEditingId(null);
+      toast({ title: "Incident updated" });
+    },
+    onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
+  });
+
+  function getSeverityClass(severity: string) {
+    switch (severity) {
+      case "CRITICAL": return "text-red-700 bg-red-100 border-red-300";
+      case "HIGH": return "text-orange-700 bg-orange-100 border-orange-200";
+      case "MEDIUM": return "text-yellow-700 bg-yellow-50 border-yellow-200";
+      default: return "text-gray-600 bg-gray-100 border-gray-200";
+    }
+  }
+  function getSeverityDot(severity: string) {
+    switch (severity) {
+      case "CRITICAL": return "bg-red-600 animate-pulse";
+      case "HIGH": return "bg-orange-500";
+      case "MEDIUM": return "bg-yellow-400";
+      default: return "bg-gray-400";
+    }
+  }
+
+  const INCIDENT_TYPES: Record<string, string> = {
+    VEHICLE_DAMAGE: "Vehicle Damage",
+    LOST_KEY: "Lost Key",
+    ACCIDENT: "Accident",
+    THEFT: "Theft",
+    CUSTOMER_COMPLAINT: "Customer Complaint",
+    WRONG_VEHICLE_MOVED: "Wrong Vehicle Moved",
+    OTHER: "Other",
+  };
+
+  const STATUSES = ["open", "investigating", "resolved", "escalated"];
+
+  return (
+    <div className="space-y-4" data-testid="incidents-tab">
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <TriangleAlert className="h-4 w-4 text-orange-500" />
+          Incident Reports
+        </h2>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Select value={filterSeverity} onValueChange={setFilterSeverity}>
+            <SelectTrigger className="h-8 text-xs w-32" data-testid="select-filter-severity">
+              <SelectValue placeholder="Severity" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Severities</SelectItem>
+              <SelectItem value="CRITICAL">Critical</SelectItem>
+              <SelectItem value="HIGH">High</SelectItem>
+              <SelectItem value="MEDIUM">Medium</SelectItem>
+              <SelectItem value="LOW">Low</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={filterStatus} onValueChange={setFilterStatus}>
+            <SelectTrigger className="h-8 text-xs w-32" data-testid="select-filter-status">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Statuses</SelectItem>
+              <SelectItem value="open">Open</SelectItem>
+              <SelectItem value="investigating">Investigating</SelectItem>
+              <SelectItem value="escalated">Escalated</SelectItem>
+              <SelectItem value="resolved">Resolved</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="ghost" size="sm" onClick={() => refetch()} data-testid="button-refresh-incidents">
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="flex justify-center py-8"><Loader2 className="h-6 w-6 animate-spin" /></div>
+      ) : incidents.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-incidents">
+          <FileWarning className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No incidents found</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {incidents.map((inc: any) => (
+            <div key={inc.id} className="rounded-lg border" data-testid={`incident-card-${inc.id}`}>
+              <div
+                className="flex flex-wrap items-center gap-2 p-3 cursor-pointer hover:bg-muted/30"
+                onClick={() => setExpandedId(expandedId === inc.id ? null : inc.id)}
+              >
+                {/* Severity dot */}
+                <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${getSeverityDot(inc.severity)}`} />
+                <span className="font-mono text-xs font-bold text-muted-foreground" data-testid={`text-incident-num-${inc.id}`}>{inc.incidentNumber}</span>
+                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold border ${getSeverityClass(inc.severity)}`} data-testid={`badge-severity-${inc.id}`}>
+                  {inc.severity}
+                </span>
+                <Badge variant="outline" className="text-[10px]" data-testid={`badge-type-${inc.id}`}>
+                  {INCIDENT_TYPES[inc.incidentType] ?? inc.incidentType}
+                </Badge>
+                <span className="text-xs text-muted-foreground flex-1 min-w-0 truncate">{inc.description}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${inc.status === "resolved" ? "bg-green-50 text-green-700 border-green-200" : inc.status === "escalated" ? "bg-red-50 text-red-700 border-red-200" : inc.status === "investigating" ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-amber-50 text-amber-700 border-amber-200"}`} data-testid={`badge-inc-status-${inc.id}`}>
+                  {inc.status}
+                </span>
+                <span className="text-xs text-muted-foreground">{new Date(inc.createdAt).toLocaleDateString()}</span>
+                {expandedId === inc.id ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground ml-auto" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground ml-auto" />}
+              </div>
+
+              {expandedId === inc.id && (
+                <div className="border-t p-4 space-y-3 bg-muted/10" data-testid={`incident-detail-${inc.id}`}>
+                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    {inc.vehicleNumber && <div><span className="font-semibold">Vehicle:</span> {inc.vehicleNumber}</div>}
+                    {inc.customerName && <div><span className="font-semibold">Customer:</span> {inc.customerName}</div>}
+                    {inc.reportedByName && <div><span className="font-semibold">Reported by:</span> {inc.reportedByName}</div>}
+                    {inc.resolvedByName && <div><span className="font-semibold">Resolved by:</span> {inc.resolvedByName}</div>}
+                    {inc.policeReportNo && <div><span className="font-semibold">Police Report #:</span> {inc.policeReportNo}</div>}
+                    {inc.insuranceClaimNo && <div><span className="font-semibold">Insurance Claim #:</span> {inc.insuranceClaimNo}</div>}
+                    {inc.actualDamageCost && <div><span className="font-semibold">Actual Damage:</span> {fmt(parseFloat(inc.actualDamageCost))}</div>}
+                  </div>
+                  {inc.resolution && (
+                    <div className="text-xs bg-green-50 border border-green-200 rounded p-2">
+                      <span className="font-semibold text-green-700">Resolution: </span>{inc.resolution}
+                    </div>
+                  )}
+
+                  {editingId === inc.id ? (
+                    <div className="space-y-3 p-3 bg-blue-50 rounded-lg border border-blue-200" data-testid={`incident-edit-form-${inc.id}`}>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">Status</Label>
+                          <Select value={editForm.status} onValueChange={v => setEditForm((f: any) => ({ ...f, status: v }))}>
+                            <SelectTrigger className="h-8 text-xs mt-1" data-testid={`select-inc-status-${inc.id}`}><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {STATUSES.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label className="text-xs">Actual Damage Cost</Label>
+                          <Input
+                            type="number"
+                            className="h-8 text-xs mt-1"
+                            placeholder="0.00"
+                            value={editForm.actualDamageCost ?? ""}
+                            onChange={e => setEditForm((f: any) => ({ ...f, actualDamageCost: e.target.value }))}
+                            data-testid={`input-damage-cost-${inc.id}`}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <Label className="text-xs">Police Report #</Label>
+                        <Input
+                          className="h-8 text-xs mt-1"
+                          value={editForm.policeReportNo ?? ""}
+                          onChange={e => setEditForm((f: any) => ({ ...f, policeReportNo: e.target.value }))}
+                          data-testid={`input-police-report-${inc.id}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Insurance Claim #</Label>
+                        <Input
+                          className="h-8 text-xs mt-1"
+                          value={editForm.insuranceClaimNo ?? ""}
+                          onChange={e => setEditForm((f: any) => ({ ...f, insuranceClaimNo: e.target.value }))}
+                          data-testid={`input-insurance-claim-${inc.id}`}
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-xs">Resolution Notes</Label>
+                        <Textarea
+                          className="text-xs mt-1"
+                          rows={2}
+                          value={editForm.resolution ?? ""}
+                          onChange={e => setEditForm((f: any) => ({ ...f, resolution: e.target.value }))}
+                          data-testid={`input-resolution-${inc.id}`}
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => setEditingId(null)}>Cancel</Button>
+                        <Button
+                          size="sm"
+                          disabled={updateIncidentMutation.isPending}
+                          onClick={() => updateIncidentMutation.mutate({ id: inc.id, data: editForm })}
+                          data-testid={`button-save-incident-${inc.id}`}
+                        >
+                          {updateIncidentMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-xs"
+                      onClick={() => {
+                        setEditingId(inc.id);
+                        setEditForm({
+                          status: inc.status,
+                          resolution: inc.resolution ?? "",
+                          policeReportNo: inc.policeReportNo ?? "",
+                          insuranceClaimNo: inc.insuranceClaimNo ?? "",
+                          actualDamageCost: inc.actualDamageCost ?? "",
+                        });
+                      }}
+                      data-testid={`button-edit-incident-${inc.id}`}
+                    >
+                      <Edit2 className="h-3 w-3 mr-1" /> Update Incident
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Settings Tab ────────────────────────────────────────────────────────────
 function SettingsTab({ outletId }: { outletId: string }) {
   const { toast } = useToast();
@@ -4296,6 +4804,8 @@ function SettingsTab({ outletId }: { outletId: string }) {
         freeMinutes: config.freeMinutes ?? 0,
         valetEnabled: config.valetEnabled ?? true,
         displayMessage: config.displayMessage ?? "",
+        overnightFee: config.overnightFee ?? 0,
+        overnightCutoffHour: config.overnightCutoffHour ?? 23,
       });
     }
   }, [config]);
@@ -4519,6 +5029,44 @@ function SettingsTab({ outletId }: { outletId: string }) {
                   data-testid="input-display-message"
                 />
               </div>
+              {/* Overnight Parking Config */}
+              <Separator />
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold flex items-center gap-2">
+                  <Moon className="h-4 w-4 text-indigo-500" />
+                  Overnight Parking
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs" htmlFor="overnight-fee">Overnight Fee (per night)</Label>
+                    <Input
+                      id="overnight-fee"
+                      type="number"
+                      min={0}
+                      step={0.01}
+                      placeholder="0.00"
+                      value={configForm.overnightFee ?? ""}
+                      onChange={e => setConfigForm((f: any) => ({ ...f, overnightFee: parseFloat(e.target.value) || 0 }))}
+                      data-testid="input-overnight-fee"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs" htmlFor="overnight-cutoff">Cutoff Hour (24h, 0–23)</Label>
+                    <Input
+                      id="overnight-cutoff"
+                      type="number"
+                      min={0}
+                      max={23}
+                      placeholder="23"
+                      value={configForm.overnightCutoffHour ?? ""}
+                      onChange={e => setConfigForm((f: any) => ({ ...f, overnightCutoffHour: parseInt(e.target.value) || 23 }))}
+                      data-testid="input-overnight-cutoff"
+                    />
+                    <p className="text-[10px] text-muted-foreground">Vehicles parked past this hour are flagged overnight</p>
+                  </div>
+                </div>
+              </div>
+
               <Button size="sm" onClick={() => saveConfigMutation.mutate()} disabled={saveConfigMutation.isPending} data-testid="button-save-config">
                 {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
                 Save Config
@@ -5130,6 +5678,12 @@ export default function ParkingPage() {
             <TabsTrigger value="attendant" data-testid="tab-attendant">Attendant</TabsTrigger>
           )}
           {isOwnerOrManager && (
+            <TabsTrigger value="incidents" data-testid="tab-incidents">
+              <TriangleAlert className="h-3 w-3 mr-1" />
+              Incidents
+            </TabsTrigger>
+          )}
+          {isOwnerOrManager && (
             <TabsTrigger value="settings" data-testid="tab-settings">Settings</TabsTrigger>
           )}
         </TabsList>
@@ -5331,6 +5885,12 @@ export default function ParkingPage() {
         {showAttendantTab && (
           <TabsContent value="attendant">
             {outletId && <AttendantTab outletId={outletId} outletName={outlets.find((o: any) => o.id === outletId)?.name ?? ""} onOpenNewTicket={() => setShowNewTicket(true)} />}
+          </TabsContent>
+        )}
+
+        {isOwnerOrManager && (
+          <TabsContent value="incidents">
+            {outletId && <IncidentsTab outletId={outletId} />}
           </TabsContent>
         )}
 

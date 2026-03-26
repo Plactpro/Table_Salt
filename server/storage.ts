@@ -4446,7 +4446,7 @@ export class DatabaseStorage implements IStorage {
   // ─── Task #135: Parking Management ───────────────────────────────────────────
 
   private _mapParkingConfig(r: any): ParkingLayoutConfig {
-    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, totalCapacity: r.total_capacity, availableSlots: r.available_slots, valetEnabled: r.valet_enabled, freeMinutes: r.free_minutes, validationEnabled: r.validation_enabled, validationMinSpend: r.validation_min_spend, displayMessage: r.display_message, createdAt: r.created_at, updatedAt: r.updated_at };
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, totalCapacity: r.total_capacity, availableSlots: r.available_slots, valetEnabled: r.valet_enabled, freeMinutes: r.free_minutes, validationEnabled: r.validation_enabled, validationMinSpend: r.validation_min_spend, displayMessage: r.display_message, overnightFee: r.overnight_fee ?? 0, overnightCutoffHour: r.overnight_cutoff_hour ?? 23, createdAt: r.created_at, updatedAt: r.updated_at };
   }
   private _mapParkingZone(r: any): ParkingZone {
     return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, name: r.name, level: r.level, color: r.color, totalSlots: r.total_slots, availableSlots: r.available_slots, isActive: r.is_active, sortOrder: r.sort_order, createdAt: r.created_at };
@@ -4475,7 +4475,7 @@ export class DatabaseStorage implements IStorage {
       shiftId: r.shift_id ?? null, isVip: r.is_vip ?? false, vipNotes: r.vip_notes ?? null,
       isOvernight: r.is_overnight ?? false, tipAmount: r.tip_amount ?? null,
       keyType: r.key_type ?? null, keyLocation: r.key_location ?? null,
-      chargeAmount: r.charge_amount ?? null,
+      chargeAmount: r.charge_amount ?? null, finalCharge: r.final_charge ?? 0,
     };
   }
   private _mapRetrievalRequest(r: any): ValetRetrievalRequest {
@@ -4506,10 +4506,12 @@ export class DatabaseStorage implements IStorage {
       validationEnabled: data.validationEnabled !== undefined ? data.validationEnabled : (existing?.validationEnabled ?? false),
       validationMinSpend: data.validationMinSpend ?? existing?.validationMinSpend ?? 0,
       displayMessage: data.displayMessage !== undefined ? data.displayMessage : (existing?.displayMessage ?? null),
+      overnightFee: (data as any).overnightFee !== undefined ? (data as any).overnightFee : ((existing as any)?.overnightFee ?? 0),
+      overnightCutoffHour: (data as any).overnightCutoffHour !== undefined ? (data as any).overnightCutoffHour : ((existing as any)?.overnightCutoffHour ?? 23),
     };
     const { rows } = await pool.query(`
-      INSERT INTO parking_layout_config (outlet_id, tenant_id, total_capacity, available_slots, valet_enabled, free_minutes, validation_enabled, validation_min_spend, display_message)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      INSERT INTO parking_layout_config (outlet_id, tenant_id, total_capacity, available_slots, valet_enabled, free_minutes, validation_enabled, validation_min_spend, display_message, overnight_fee, overnight_cutoff_hour)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       ON CONFLICT (tenant_id, outlet_id) DO UPDATE SET
         total_capacity = EXCLUDED.total_capacity,
         available_slots = EXCLUDED.available_slots,
@@ -4518,11 +4520,14 @@ export class DatabaseStorage implements IStorage {
         validation_enabled = EXCLUDED.validation_enabled,
         validation_min_spend = EXCLUDED.validation_min_spend,
         display_message = EXCLUDED.display_message,
+        overnight_fee = EXCLUDED.overnight_fee,
+        overnight_cutoff_hour = EXCLUDED.overnight_cutoff_hour,
         updated_at = now()
       RETURNING *
     `, [outletId, tenantId,
       merged.totalCapacity, merged.availableSlots, merged.valetEnabled,
-      merged.freeMinutes, merged.validationEnabled, merged.validationMinSpend, merged.displayMessage
+      merged.freeMinutes, merged.validationEnabled, merged.validationMinSpend, merged.displayMessage,
+      merged.overnightFee, merged.overnightCutoffHour
     ]);
     return this._mapParkingConfig(rows[0]);
   }
