@@ -59,19 +59,19 @@ const roleLabels: Partial<Record<Role, string>> = {
 };
 
 const roleBadgeColors: Partial<Record<Role, string>> = {
-  owner: "bg-amber-100 text-amber-800 border-amber-200",
-  manager: "bg-teal-100 text-teal-800 border-teal-200",
-  waiter: "bg-green-100 text-green-800 border-green-200",
-  kitchen: "bg-orange-100 text-orange-800 border-orange-200",
-  accountant: "bg-gray-100 text-gray-800 border-gray-200",
-  customer: "bg-stone-100 text-stone-800 border-stone-200",
-  cashier: "bg-blue-100 text-blue-800 border-blue-200",
-  supervisor: "bg-violet-100 text-violet-800 border-violet-200",
-  outlet_manager: "bg-cyan-100 text-cyan-800 border-cyan-200",
-  hq_admin: "bg-rose-100 text-rose-800 border-rose-200",
-  franchise_owner: "bg-orange-100 text-orange-800 border-orange-200",
-  auditor: "bg-slate-100 text-slate-800 border-slate-200",
-  super_admin: "bg-red-100 text-red-800 border-red-200",
+  owner: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/40 dark:text-amber-300 dark:border-amber-700",
+  manager: "bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-900/40 dark:text-teal-300 dark:border-teal-700",
+  waiter: "bg-green-100 text-green-800 border-green-200 dark:bg-green-900/40 dark:text-green-300 dark:border-green-700",
+  kitchen: "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700",
+  accountant: "bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600",
+  customer: "bg-stone-100 text-stone-800 border-stone-200 dark:bg-stone-900/40 dark:text-stone-300 dark:border-stone-700",
+  cashier: "bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/40 dark:text-blue-300 dark:border-blue-700",
+  supervisor: "bg-violet-100 text-violet-800 border-violet-200 dark:bg-violet-900/40 dark:text-violet-300 dark:border-violet-700",
+  outlet_manager: "bg-cyan-100 text-cyan-800 border-cyan-200 dark:bg-cyan-900/40 dark:text-cyan-300 dark:border-cyan-700",
+  hq_admin: "bg-rose-100 text-rose-800 border-rose-200 dark:bg-rose-900/40 dark:text-rose-300 dark:border-rose-700",
+  franchise_owner: "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/40 dark:text-orange-300 dark:border-orange-700",
+  auditor: "bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-600",
+  super_admin: "bg-red-100 text-red-800 border-red-200 dark:bg-red-900/40 dark:text-red-300 dark:border-red-700",
 };
 
 const roleIcons: Partial<Record<Role, LucideIcon>> = {

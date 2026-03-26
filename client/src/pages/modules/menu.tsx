@@ -5,6 +5,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { PageTitle } from "@/lib/accessibility";
 import { useAuth } from "@/lib/auth";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
+import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { Recipe, RecipeIngredient, InventoryItem } from "@shared/schema";
@@ -264,6 +265,9 @@ export default function MenuPage() {
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
   const [itemDialogTab, setItemDialogTab] = useState("details");
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [itemFormDirty, setItemFormDirty] = useState(false);
+  const [itemConfirmLeave, setItemConfirmLeave] = useState(false);
+  const [itemFormErrors, setItemFormErrors] = useState<{ name?: string; price?: string }>({});
   const [itemForm, setItemForm] = useState({
     name: "", description: "", price: "", categoryId: "",
     isVeg: false, available: true, image: "", spicyLevel: 0,
@@ -538,6 +542,8 @@ export default function MenuPage() {
   function openAddItem() {
     setEditingItem(null);
     setItemDialogTab("details");
+    setItemFormDirty(false);
+    setItemFormErrors({});
     setItemForm({
       name: "", description: "", price: "", categoryId: selectedCategoryId || "",
       isVeg: false, available: true, image: "", spicyLevel: 0,
@@ -551,6 +557,8 @@ export default function MenuPage() {
   function openEditItem(item: MenuItem) {
     setEditingItem(item);
     setItemDialogTab("details");
+    setItemFormDirty(false);
+    setItemFormErrors({});
     const ing = parseIngredients(item);
     setItemForm({
       name: item.name,
@@ -576,7 +584,15 @@ export default function MenuPage() {
   }
 
   function handleItemSubmit() {
-    if (!itemForm.name.trim() || !itemForm.price) return;
+    const errors: typeof itemFormErrors = {};
+    if (!itemForm.name.trim()) errors.name = "Name is required";
+    if (!itemForm.price) errors.price = "Price is required";
+    if (Object.keys(errors).length > 0) {
+      setItemFormErrors(errors);
+      const firstErrorField = !itemForm.name.trim() ? "item-name" : "item-price";
+      setTimeout(() => document.getElementById(firstErrorField)?.focus(), 50);
+      return;
+    }
     const ingredients: ParsedIngredients = {};
     if (itemForm.ingredientsList.trim()) {
       ingredients.items = itemForm.ingredientsList.split(",").map((s) => {
@@ -1055,22 +1071,36 @@ export default function MenuPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
+      <Dialog open={itemDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          if (itemFormDirty) { setItemConfirmLeave(true); } else { setItemDialogOpen(false); }
+        } else { setItemDialogOpen(true); }
+      }}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-item">
           <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Menu Item" : "Add Menu Item"}</DialogTitle>
           </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
           <Tabs value={itemDialogTab} onValueChange={setItemDialogTab} data-testid="dialog-item-tabs">
             <TabsList className="mb-2">
               <TabsTrigger value="details" data-testid="tab-item-details">Details</TabsTrigger>
               {editingItem && <TabsTrigger value="recipe" data-testid="tab-item-recipe"><ChefHat className="h-3.5 w-3.5 mr-1.5" />Recipe & Food Cost</TabsTrigger>}
             </TabsList>
           <TabsContent value="details">
-          <div className="space-y-4">
+          <div className="space-y-4" onChange={() => setItemFormDirty(true)}>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label htmlFor="item-name">Name</Label>
-                <Input id="item-name" value={itemForm.name} onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })} placeholder="e.g. Margherita Pizza" data-testid="input-item-name" />
+                <Label htmlFor="item-name">Name <span className="text-red-500 ml-0.5">*</span></Label>
+                <Input
+                  id="item-name"
+                  value={itemForm.name}
+                  onChange={(e) => { setItemForm({ ...itemForm, name: e.target.value }); setItemFormDirty(true); setItemFormErrors(prev => ({ ...prev, name: undefined })); }}
+                  onBlur={(e) => { if (!e.target.value.trim()) setItemFormErrors(prev => ({ ...prev, name: "Name is required" })); }}
+                  placeholder="e.g. Margherita Pizza"
+                  className={itemFormErrors.name ? "border-red-500" : ""}
+                  data-testid="input-item-name"
+                />
+                {itemFormErrors.name && <p className="text-red-500 text-xs mt-1">{itemFormErrors.name}</p>}
               </div>
               <div>
                 <Label htmlFor="item-image">Image</Label>
@@ -1110,8 +1140,20 @@ export default function MenuPage() {
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
-                <Label htmlFor="item-price">Price ($)</Label>
-                <Input id="item-price" type="number" step="0.01" min="0" value={itemForm.price} onChange={(e) => setItemForm({ ...itemForm, price: e.target.value })} placeholder="0.00" data-testid="input-item-price" />
+                <Label htmlFor="item-price">Price <span className="text-red-500 ml-0.5">*</span></Label>
+                <Input
+                  id="item-price"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={itemForm.price}
+                  onChange={(e) => { setItemForm({ ...itemForm, price: e.target.value }); setItemFormDirty(true); setItemFormErrors(prev => ({ ...prev, price: undefined })); }}
+                  onBlur={(e) => { if (!e.target.value) setItemFormErrors(prev => ({ ...prev, price: "Price is required" })); }}
+                  placeholder="0.00"
+                  className={itemFormErrors.price ? "border-red-500" : ""}
+                  data-testid="input-item-price"
+                />
+                {itemFormErrors.price && <p className="text-red-500 text-xs mt-1">{itemFormErrors.price}</p>}
               </div>
               <div>
                 <Label htmlFor="item-category">Category</Label>
@@ -1277,13 +1319,18 @@ export default function MenuPage() {
           </Tabs>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setItemDialogOpen(false)} data-testid="button-cancel-item">Cancel</Button>
+            <Button variant="outline" onClick={() => { if (itemFormDirty) { setItemConfirmLeave(true); } else { setItemDialogOpen(false); } }} data-testid="button-cancel-item">Cancel</Button>
             <Button onClick={handleItemSubmit} disabled={createItem.isPending || updateItem.isPending} data-testid="button-save-item">
               {editingItem ? "Update" : "Create"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmLeaveDialog
+        open={itemConfirmLeave}
+        onStay={() => setItemConfirmLeave(false)}
+        onLeave={() => { setItemConfirmLeave(false); setItemFormDirty(false); setItemDialogOpen(false); }}
+      />
 
       <Dialog open={comboDialogOpen} onOpenChange={setComboDialogOpen}>
         <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto" data-testid="dialog-combo">

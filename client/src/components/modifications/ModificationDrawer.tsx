@@ -272,7 +272,7 @@ export default function ModificationDrawer({
                   className={`px-2 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${
                     mod.allergies.includes(allergy)
                       ? "bg-red-600 text-white border-red-600"
-                      : "bg-white text-red-700 border-red-300 hover:border-red-500"
+                      : "bg-background text-red-700 border-red-300 hover:border-red-500"
                   }`}
                   onClick={() => toggleAllergy(allergy)}
                 >

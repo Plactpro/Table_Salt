@@ -949,7 +949,7 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
         {/* Exit Condition Dialog */}
         {showExitCondition && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="exit-condition-dialog">
-            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="bg-background rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
               <h3 className="font-bold text-base">Exit Condition Check</h3>
               {/* Diff vs entry condition */}
               {entryCondition && (() => {
@@ -1636,19 +1636,19 @@ function StatsHeader({ outletId }: { outletId: string }) {
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-testid="parking-stats-header">
-      <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-vehicles-in">
+      <div className="bg-card rounded-xl border p-3 text-center" data-testid="stat-vehicles-in">
         <p className="text-2xl font-bold text-blue-600">{stats?.vehiclesIn ?? "—"}</p>
         <p className="text-xs text-muted-foreground mt-0.5">Vehicles In</p>
       </div>
-      <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-revenue">
+      <div className="bg-card rounded-xl border p-3 text-center" data-testid="stat-revenue">
         <p className="text-2xl font-bold text-green-600">{stats?.revenueToday != null ? fmt(stats.revenueToday) : "—"}</p>
         <p className="text-xs text-muted-foreground mt-0.5">Revenue Today</p>
       </div>
-      <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-avg-duration">
+      <div className="bg-card rounded-xl border p-3 text-center" data-testid="stat-avg-duration">
         <p className="text-2xl font-bold text-amber-600">{stats?.avgDurationMinutes != null ? `${stats.avgDurationMinutes}m` : "—"}</p>
         <p className="text-xs text-muted-foreground mt-0.5">Avg Duration</p>
       </div>
-      <div className="bg-white rounded-xl border p-3 text-center" data-testid="stat-available-slots">
+      <div className="bg-card rounded-xl border p-3 text-center" data-testid="stat-available-slots">
         <p className="text-2xl font-bold text-purple-600">{stats?.availableSlots ?? "—"}<span className="text-base text-muted-foreground">/{stats?.totalSlots ?? "—"}</span></p>
         <p className="text-xs text-muted-foreground mt-0.5">Available Slots</p>
       </div>
@@ -3157,7 +3157,7 @@ function AttendantTab({ outletId, outletName, onOpenNewTicket }: { outletId: str
       {/* Exit Condition Dialog for attendant completion */}
       {pendingComplete && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="attendant-exit-condition-dialog">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-sm overflow-y-auto max-h-[90vh] p-4 space-y-3">
+          <div className="bg-background rounded-xl shadow-xl w-full max-w-sm overflow-y-auto max-h-[90vh] p-4 space-y-3">
             <h3 className="font-semibold text-base">Exit Condition Check</h3>
             <p className="text-xs text-muted-foreground">Record the vehicle condition at handover.</p>
 
@@ -3925,7 +3925,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
                     <div className="px-3 pb-3 space-y-1" data-testid={`slabs-expanded-${r.id}`}>
                       <div className="text-xs text-muted-foreground font-medium mb-1">Slabs</div>
                       {r.slabs.map((slab: any, idx: number) => (
-                        <div key={idx} className="flex gap-3 text-xs px-2 py-1 bg-white rounded border">
+                        <div key={idx} className="flex gap-3 text-xs px-2 py-1 bg-background rounded border">
                           <span className="text-muted-foreground">{slab.fromMinutes}–{slab.toMinutes ?? "∞"} min</span>
                           <span className="font-medium ml-auto">{fmt(parseFloat(slab.charge ?? "0"))}</span>
                         </div>

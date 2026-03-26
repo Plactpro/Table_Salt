@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Truck, Plus, Star, Package, Phone, Mail, MapPin, Pencil, Trash2, BookOpen } from "lucide-react";
+import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 
 interface Supplier { id: string; tenantId: string; name: string; contactName: string | null; email: string | null; phone: string | null; address: string | null; paymentTerms: string | null; leadTimeDays: number | null; rating: string | null; notes: string | null; active: boolean | null; createdAt: string; }
 interface CatalogItem { id: string; tenantId: string; supplierId: string; inventoryItemId: string; supplierSku: string | null; packSize: string | null; packUnit: string | null; packCost: string; contractedPrice: string | null; lastPurchasePrice: string | null; preferred: boolean | null; }
@@ -29,9 +30,14 @@ export default function SuppliersPage() {
   const [supplierDialog, setSupplierDialog] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptySupplier);
+  const [formDirty, setFormDirty] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [formErrors, setFormErrors] = useState<{ name?: string }>({});
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
   const [catalogDialog, setCatalogDialog] = useState(false);
   const [catalogForm, setCatalogForm] = useState(emptyCatalog);
+  const [catalogDirty, setCatalogDirty] = useState(false);
+  const [catalogConfirmLeave, setCatalogConfirmLeave] = useState(false);
 
   const { data: suppliersList = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory"] });
@@ -45,23 +51,35 @@ export default function SuppliersPage() {
   const onErr = (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" });
   const inv = () => queryClient.invalidateQueries({ queryKey: ["/api/suppliers"] });
 
-  const createMut = useMutation({ mutationFn: (data: Record<string, unknown>) => apiRequest("POST", "/api/suppliers", data).then(r => r.json()), onSuccess: () => { inv(); setSupplierDialog(false); toast({ title: "Supplier created" }); }, onError: onErr });
-  const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => apiRequest("PATCH", `/api/suppliers/${id}`, data).then(r => r.json()), onSuccess: () => { inv(); setSupplierDialog(false); toast({ title: "Supplier updated" }); }, onError: onErr });
+  const createMut = useMutation({ mutationFn: (data: Record<string, unknown>) => apiRequest("POST", "/api/suppliers", data).then(r => r.json()), onSuccess: () => { inv(); setFormDirty(false); setSupplierDialog(false); toast({ title: "Supplier created" }); }, onError: onErr });
+  const updateMut = useMutation({ mutationFn: ({ id, data }: { id: string; data: Record<string, unknown> }) => apiRequest("PATCH", `/api/suppliers/${id}`, data).then(r => r.json()), onSuccess: () => { inv(); setFormDirty(false); setSupplierDialog(false); toast({ title: "Supplier updated" }); }, onError: onErr });
   const deleteMut = useMutation({ mutationFn: (id: string) => apiRequest("DELETE", `/api/suppliers/${id}`).then(r => r.json()), onSuccess: () => { inv(); toast({ title: "Supplier deleted" }); }, onError: onErr });
 
-  const createCatalogMut = useMutation({ mutationFn: (data: Record<string, unknown>) => apiRequest("POST", "/api/supplier-catalog-items", data).then(r => r.json()), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/suppliers", selectedSupplier, "catalog"] }); setCatalogDialog(false); toast({ title: "Catalog item added" }); }, onError: onErr });
+  const createCatalogMut = useMutation({ mutationFn: (data: Record<string, unknown>) => apiRequest("POST", "/api/supplier-catalog-items", data).then(r => r.json()), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/suppliers", selectedSupplier, "catalog"] }); setCatalogDirty(false); setCatalogDialog(false); toast({ title: "Catalog item added" }); }, onError: onErr });
   const deleteCatalogMut = useMutation({ mutationFn: (id: string) => apiRequest("DELETE", `/api/supplier-catalog-items/${id}`).then(r => r.json()), onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/suppliers", selectedSupplier, "catalog"] }); toast({ title: "Catalog item removed" }); }, onError: onErr });
 
   const openEdit = (s: Supplier) => {
     setEditId(s.id);
     setForm({ name: s.name, contactName: s.contactName || "", email: s.email || "", phone: s.phone || "", address: s.address || "", paymentTerms: s.paymentTerms || "Net 30", leadTimeDays: s.leadTimeDays || 3, rating: s.rating || "0", notes: s.notes || "" });
+    setFormDirty(false);
+    setFormErrors({});
     setSupplierDialog(true);
   };
-  const openCreate = () => { setEditId(null); setForm(emptySupplier); setSupplierDialog(true); };
+  const openCreate = () => { setEditId(null); setForm(emptySupplier); setFormDirty(false); setFormErrors({}); setSupplierDialog(true); };
   const handleSave = () => {
+    if (!form.name.trim()) { setFormErrors({ name: "Name is required" }); return; }
+    setFormErrors({});
     const data = { ...form, leadTimeDays: Number(form.leadTimeDays) };
     if (editId) updateMut.mutate({ id: editId, data });
     else createMut.mutate(data);
+  };
+  const handleSupplierDialogChange = (open: boolean) => {
+    if (!open && formDirty) { setConfirmLeave(true); return; }
+    setSupplierDialog(open);
+  };
+  const handleCatalogDialogChange = (open: boolean) => {
+    if (!open && catalogDirty) { setCatalogConfirmLeave(true); return; }
+    setCatalogDialog(open);
   };
 
   const invMap = new Map(inventoryItems.map(i => [i.id, i]));
@@ -197,11 +215,16 @@ export default function SuppliersPage() {
         </div>
       </div>
 
-      <Dialog open={supplierDialog} onOpenChange={setSupplierDialog}>
+      <Dialog open={supplierDialog} onOpenChange={handleSupplierDialogChange}>
         <DialogContent>
           <DialogHeader><DialogTitle>{editId ? "Edit" : "Add"} Supplier</DialogTitle></DialogHeader>
-          <div className="space-y-3">
-            <div><Label>Name *</Label><Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} data-testid="input-supplier-name" /></div>
+          <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
+          <div className="space-y-3" onChange={() => setFormDirty(true)}>
+            <div>
+              <Label>Name <span className="text-red-500 ml-0.5">*</span></Label>
+              <Input value={form.name} onChange={e => { setForm({ ...form, name: e.target.value }); setFormErrors(p => ({ ...p, name: undefined })); }} onBlur={e => { if (!e.target.value.trim()) setFormErrors(p => ({ ...p, name: "Name is required" })); }} className={formErrors.name ? "border-red-500" : ""} data-testid="input-supplier-name" />
+              {formErrors.name && <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
+            </div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Contact Name</Label><Input value={form.contactName} onChange={e => setForm({ ...form, contactName: e.target.value })} data-testid="input-contact-name" /></div>
               <div><Label>Phone</Label><Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} data-testid="input-phone" /></div>
@@ -216,19 +239,26 @@ export default function SuppliersPage() {
             <div><Label>Notes</Label><Input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} data-testid="input-notes" /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setSupplierDialog(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={!form.name} data-testid="button-save-supplier">{editId ? "Update" : "Create"}</Button>
+            <Button variant="outline" onClick={() => { if (formDirty) { setConfirmLeave(true); } else { setSupplierDialog(false); } }}>Cancel</Button>
+            <Button onClick={handleSave} data-testid="button-save-supplier">{editId ? "Update" : "Create"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={catalogDialog} onOpenChange={setCatalogDialog}>
+      <ConfirmLeaveDialog
+        open={confirmLeave}
+        onStay={() => setConfirmLeave(false)}
+        onLeave={() => { setConfirmLeave(false); setFormDirty(false); setSupplierDialog(false); }}
+      />
+
+      <Dialog open={catalogDialog} onOpenChange={handleCatalogDialogChange}>
         <DialogContent>
           <DialogHeader><DialogTitle>Add Catalog Item</DialogTitle></DialogHeader>
-          <div className="space-y-3">
+          <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
+          <div className="space-y-3" onChange={() => setCatalogDirty(true)}>
             <div>
-              <Label>Inventory Item *</Label>
-              <Select value={catalogForm.inventoryItemId} onValueChange={v => setCatalogForm({ ...catalogForm, inventoryItemId: v })}>
+              <Label>Inventory Item <span className="text-red-500 ml-0.5">*</span></Label>
+              <Select value={catalogForm.inventoryItemId} onValueChange={v => { setCatalogForm({ ...catalogForm, inventoryItemId: v }); setCatalogDirty(true); }}>
                 <SelectTrigger data-testid="select-inventory-item"><SelectValue placeholder="Select item" /></SelectTrigger>
                 <SelectContent>{inventoryItems.map(i => <SelectItem key={i.id} value={i.id}>{i.name} ({i.sku || "no SKU"})</SelectItem>)}</SelectContent>
               </Select>
@@ -237,16 +267,22 @@ export default function SuppliersPage() {
             <div className="grid grid-cols-3 gap-3">
               <div><Label>Pack Size</Label><Input type="number" value={catalogForm.packSize} onChange={e => setCatalogForm({ ...catalogForm, packSize: e.target.value })} data-testid="input-pack-size" /></div>
               <div><Label>Pack Unit</Label><Input value={catalogForm.packUnit} onChange={e => setCatalogForm({ ...catalogForm, packUnit: e.target.value })} data-testid="input-pack-unit" /></div>
-              <div><Label>Pack Cost *</Label><Input type="number" step="0.01" value={catalogForm.packCost} onChange={e => setCatalogForm({ ...catalogForm, packCost: e.target.value })} data-testid="input-pack-cost" /></div>
+              <div><Label>Pack Cost <span className="text-red-500 ml-0.5">*</span></Label><Input type="number" step="0.01" value={catalogForm.packCost} onChange={e => setCatalogForm({ ...catalogForm, packCost: e.target.value })} data-testid="input-pack-cost" /></div>
             </div>
             <div><Label>Contracted Price</Label><Input type="number" step="0.01" value={catalogForm.contractedPrice} onChange={e => setCatalogForm({ ...catalogForm, contractedPrice: e.target.value })} data-testid="input-contracted-price" /></div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCatalogDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { if (catalogDirty) { setCatalogConfirmLeave(true); } else { setCatalogDialog(false); } }}>Cancel</Button>
             <Button onClick={() => createCatalogMut.mutate({ ...catalogForm, supplierId: selectedSupplier })} disabled={!catalogForm.inventoryItemId || !catalogForm.packCost} data-testid="button-save-catalog">Add</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ConfirmLeaveDialog
+        open={catalogConfirmLeave}
+        onStay={() => setCatalogConfirmLeave(false)}
+        onLeave={() => { setCatalogConfirmLeave(false); setCatalogDirty(false); setCatalogDialog(false); }}
+      />
     </div>
   );
 }

@@ -183,7 +183,7 @@ export default function SupportWidget() {
       </div>
 
       {open && (
-        <div className="fixed bottom-24 right-6 z-50 w-96 bg-white rounded-xl shadow-2xl flex flex-col border border-border overflow-hidden" style={{ maxHeight: "600px" }}>
+        <div className="fixed bottom-24 right-6 z-50 w-96 bg-background rounded-xl shadow-2xl flex flex-col border border-border overflow-hidden" style={{ maxHeight: "600px" }}>
           <div className="flex items-center justify-between px-4 py-3 bg-primary text-white shrink-0">
             <div className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4" />

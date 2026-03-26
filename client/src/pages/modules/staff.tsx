@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
@@ -99,6 +100,9 @@ export default function StaffPage() {
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<StaffMember | null>(null);
+  const [formDirty, setFormDirty] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
+  const [staffFormErrors, setStaffFormErrors] = useState<{ name?: string; username?: string; password?: string }>({});
   const [activeTab, setActiveTab] = useState<"roster" | "schedule" | "attendance">("roster");
   const [scheduleView, setScheduleView] = useState<"weekly" | "monthly">("weekly");
   const [showAddShift, setShowAddShift] = useState(false);
@@ -297,20 +301,34 @@ export default function StaffPage() {
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const formData = new FormData(e.currentTarget);
+    const name = formData.get("name") as string;
+    const username = formData.get("username") as string;
+    const password = formData.get("password") as string;
+    const errs: { name?: string; username?: string; password?: string } = {};
+    if (!name.trim()) errs.name = "Name is required";
+    if (!editingUser && !username.trim()) errs.username = "Username is required";
+    if (!editingUser && !password.trim()) errs.password = "Password is required";
+    if (Object.keys(errs).length > 0) {
+      setStaffFormErrors(errs);
+      const firstKey = Object.keys(errs)[0];
+      const el = e.currentTarget.querySelector<HTMLElement>(`[name="${firstKey}"]`);
+      el?.focus();
+      return;
+    }
+    setStaffFormErrors({});
     const data: Record<string, unknown> = {
-      name: formData.get("name") as string,
-      username: formData.get("username") as string,
+      name,
+      username,
       role: formData.get("role") as string,
       email: (formData.get("email") as string) || null,
       phone: (formData.get("phone") as string) || null,
     };
 
     if (editingUser) {
-      const pw = formData.get("password") as string;
-      if (pw) data.password = pw;
+      if (password) data.password = password;
       updateMutation.mutate({ id: editingUser.id, data });
     } else {
-      data.password = (formData.get("password") as string) || "demo123";
+      data.password = password || "demo123";
       createMutation.mutate(data);
     }
   };
@@ -329,12 +347,28 @@ export default function StaffPage() {
 
   const openEdit = (staff: StaffMember) => {
     setEditingUser(staff);
+    setFormDirty(false);
+    setStaffFormErrors({});
     setDialogOpen(true);
   };
 
   const openAdd = () => {
     setEditingUser(null);
+    setFormDirty(false);
+    setStaffFormErrors({});
     setDialogOpen(true);
+  };
+
+  const handleDialogClose = (open: boolean) => {
+    if (!open) {
+      if (formDirty) {
+        setConfirmLeave(true);
+      } else {
+        setDialogOpen(false);
+      }
+    } else {
+      setDialogOpen(true);
+    }
   };
 
   return (
@@ -359,7 +393,7 @@ export default function StaffPage() {
               <Calendar className="h-4 w-4 mr-2" /> Add Shift
             </Button>
           )}
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <Dialog open={dialogOpen} onOpenChange={handleDialogClose}>
             <DialogTrigger asChild>
               <Button data-testid="button-add-staff" onClick={openAdd}>
                 <Plus className="h-4 w-4 mr-2" /> Add Staff
@@ -369,22 +403,26 @@ export default function StaffPage() {
               <DialogHeader>
                 <DialogTitle>{editingUser ? "Edit Staff Member" : "Add Staff Member"}</DialogTitle>
               </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
+              <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
+              <form onSubmit={handleSubmit} className="space-y-4" onChange={() => setFormDirty(true)} noValidate>
                 <div className="space-y-2">
-                  <Label>Name</Label>
-                  <Input name="name" defaultValue={editingUser?.name || ""} required data-testid="input-staff-name" />
+                  <Label>Name <span className="text-red-500 ml-0.5">*</span></Label>
+                  <Input name="name" defaultValue={editingUser?.name || ""} onBlur={(e) => { if (!e.target.value.trim()) setStaffFormErrors(p => ({ ...p, name: "Name is required" })); else setStaffFormErrors(p => ({ ...p, name: undefined })); }} className={staffFormErrors.name ? "border-red-500" : ""} data-testid="input-staff-name" />
+                  {staffFormErrors.name && <p className="text-red-500 text-xs">{staffFormErrors.name}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Username</Label>
-                  <Input name="username" defaultValue={editingUser?.username || ""} required disabled={!!editingUser} data-testid="input-staff-username" />
+                  <Label>Username <span className="text-red-500 ml-0.5">*</span></Label>
+                  <Input name="username" defaultValue={editingUser?.username || ""} disabled={!!editingUser} onBlur={(e) => { if (!editingUser && !e.target.value.trim()) setStaffFormErrors(p => ({ ...p, username: "Username is required" })); else setStaffFormErrors(p => ({ ...p, username: undefined })); }} className={staffFormErrors.username ? "border-red-500" : ""} data-testid="input-staff-username" />
+                  {staffFormErrors.username && <p className="text-red-500 text-xs">{staffFormErrors.username}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>{editingUser ? "New Password (leave blank to keep)" : "Password"}</Label>
-                  <Input name="password" type="password" required={!editingUser} data-testid="input-staff-password" />
+                  <Label>{editingUser ? "New Password (leave blank to keep)" : <span>Password <span className="text-red-500 ml-0.5">*</span></span>}</Label>
+                  <Input name="password" type="password" onBlur={(e) => { if (!editingUser && !e.target.value.trim()) setStaffFormErrors(p => ({ ...p, password: "Password is required" })); else setStaffFormErrors(p => ({ ...p, password: undefined })); }} className={staffFormErrors.password ? "border-red-500" : ""} data-testid="input-staff-password" />
+                  {staffFormErrors.password && <p className="text-red-500 text-xs">{staffFormErrors.password}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Role</Label>
-                  <Select name="role" defaultValue={editingUser?.role || "waiter"}>
+                  <Label>Role <span className="text-red-500 ml-0.5">*</span></Label>
+                  <Select name="role" defaultValue={editingUser?.role || "waiter"} onValueChange={() => setFormDirty(true)}>
                     <SelectTrigger data-testid="select-staff-role"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       {ROLES.map((r) => {
@@ -986,6 +1024,11 @@ export default function StaffPage() {
           </div>
         </DialogContent>
       </Dialog>
+      <ConfirmLeaveDialog
+        open={confirmLeave}
+        onStay={() => setConfirmLeave(false)}
+        onLeave={() => { setConfirmLeave(false); setFormDirty(false); setDialogOpen(false); }}
+      />
     </motion.div>
   );
 }

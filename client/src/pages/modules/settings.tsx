@@ -237,7 +237,9 @@ export default function SettingsPage() {
   });
 
   const [name, setName] = useState("");
+  const [nameError, setNameError] = useState("");
   const [address, setAddress] = useState("");
+  const [profileDirty, setProfileDirty] = useState(false);
   const [currency, setCurrency] = useState("USD");
   const [currencyPosition, setCurrencyPosition] = useState("before");
   const [currencyDecimals, setCurrencyDecimals] = useState(2);
@@ -289,6 +291,13 @@ export default function SettingsPage() {
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    if (!profileDirty) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [profileDirty]);
+
   const showSaveAnimation = (section: string) => {
     setSavedSection(section);
     setTimeout(() => setSavedSection(null), 2000);
@@ -329,6 +338,9 @@ export default function SettingsPage() {
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!name.trim()) { setNameError("Restaurant name is required"); return; }
+    setNameError("");
+    setProfileDirty(false);
     updateMutation.mutate({ name, address });
   };
 
@@ -572,14 +584,16 @@ export default function SettingsPage() {
                 <CardDescription>Update your restaurant's basic information</CardDescription>
               </CardHeader>
               <CardContent>
-                <form onSubmit={handleProfileSubmit} className="space-y-4">
+                <form onSubmit={handleProfileSubmit} className="space-y-4" noValidate>
+                  <p className="text-xs text-muted-foreground"><span className="text-red-500">*</span> Required field</p>
                   <div className="space-y-2">
-                    <Label>Restaurant Name</Label>
-                    <Input value={name} onChange={(e) => setName(e.target.value)} required data-testid="input-settings-name" />
+                    <Label>Restaurant Name <span className="text-red-500 ml-0.5">*</span></Label>
+                    <Input value={name} onChange={(e) => { setName(e.target.value); setProfileDirty(true); if (e.target.value.trim()) setNameError(""); }} onBlur={(e) => { if (!e.target.value.trim()) setNameError("Restaurant name is required"); }} className={nameError ? "border-red-500" : ""} data-testid="input-settings-name" />
+                    {nameError && <p className="text-red-500 text-xs mt-1">{nameError}</p>}
                   </div>
                   <div className="space-y-2">
                     <Label>Address</Label>
-                    <Input value={address} onChange={(e) => setAddress(e.target.value)} data-testid="input-settings-address" />
+                    <Input value={address} onChange={(e) => { setAddress(e.target.value); setProfileDirty(true); }} data-testid="input-settings-address" />
                   </div>
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-profile" className="transition-all duration-200 hover:scale-[1.02]">
                     <Save className="h-4 w-4 mr-2" /> Save Profile

@@ -213,7 +213,7 @@ export default function AdminSupportTicketPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white rounded-lg border">
+          <div className="bg-card rounded-lg border">
             <div className="px-4 py-3 border-b bg-slate-50">
               <h2 className="text-sm font-semibold text-slate-700">Conversation</h2>
             </div>
@@ -272,7 +272,7 @@ export default function AdminSupportTicketPage() {
         </div>
 
         <div className="space-y-4">
-          <div className="bg-white rounded-lg border">
+          <div className="bg-card rounded-lg border">
             <div className="px-4 py-3 border-b bg-slate-50">
               <h2 className="text-sm font-semibold text-slate-700">Ticket Info</h2>
             </div>

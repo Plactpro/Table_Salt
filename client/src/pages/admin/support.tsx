@@ -114,23 +114,23 @@ export default function AdminSupportPage() {
 
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-            <div className="bg-white rounded-lg border p-3 text-center" data-testid="stat-tickets-open">
+            <div className="bg-card rounded-lg border p-3 text-center" data-testid="stat-tickets-open">
               <p className="text-2xl font-bold text-emerald-600">{stats.open + stats.awaiting_support}</p>
               <p className="text-xs text-slate-500">Open</p>
             </div>
-            <div className="bg-white rounded-lg border p-3 text-center" data-testid="stat-tickets-replied">
+            <div className="bg-card rounded-lg border p-3 text-center" data-testid="stat-tickets-replied">
               <p className="text-2xl font-bold text-purple-600">{stats.replied}</p>
               <p className="text-xs text-slate-500">Replied</p>
             </div>
-            <div className="bg-white rounded-lg border p-3 text-center">
+            <div className="bg-card rounded-lg border p-3 text-center">
               <p className="text-2xl font-bold text-blue-600">{stats.in_progress}</p>
               <p className="text-xs text-slate-500">In Progress</p>
             </div>
-            <div className="bg-white rounded-lg border p-3 text-center">
+            <div className="bg-card rounded-lg border p-3 text-center">
               <p className="text-2xl font-bold text-slate-600">{stats.resolved + stats.closed}</p>
               <p className="text-xs text-slate-500">Resolved</p>
             </div>
-            <div className="bg-white rounded-lg border p-3 text-center">
+            <div className="bg-card rounded-lg border p-3 text-center">
               <p className="text-2xl font-bold text-indigo-600">
                 {stats.avgResponseTime != null ? `${Math.round(stats.avgResponseTime)}m` : "—"}
               </p>
@@ -191,7 +191,7 @@ export default function AdminSupportPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border" data-testid="list-admin-tickets">
+      <div className="bg-card rounded-lg border" data-testid="list-admin-tickets">
         {filtered.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-slate-400">
             <MessageCircle className="h-12 w-12 mb-3 opacity-30" />

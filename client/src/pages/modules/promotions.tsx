@@ -167,6 +167,7 @@ export default function PromotionsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PromotionRule | null>(null);
   const [form, setForm] = useState<RuleForm>(emptyForm);
+  const [formErrors, setFormErrors] = useState<{ name?: string; discountValue?: string }>({});
   const [tab, setTab] = useState("all");
 
   const { data: rules = [] } = useQuery<PromotionRule[]>({
@@ -239,6 +240,7 @@ export default function PromotionsPage() {
   function openAdd() {
     setEditingRule(null);
     setForm(emptyForm);
+    setFormErrors({});
     setDialogOpen(true);
   }
 
@@ -275,11 +277,21 @@ export default function PromotionsPage() {
       customerSegment: (cond.customerSegment as string) || "",
       mutualExclusionGroup: (cond.mutualExclusionGroup as string) || "",
     });
+    setFormErrors({});
     setDialogOpen(true);
   }
 
   function handleSubmit() {
-    if (!form.name.trim() || (form.ruleType !== "free_item" && !form.discountValue)) return;
+    const errs: { name?: string; discountValue?: string } = {};
+    if (!form.name.trim()) errs.name = "Name is required";
+    if (form.ruleType !== "free_item" && !form.discountValue) errs.discountValue = "Value is required";
+    if (Object.keys(errs).length > 0) {
+      setFormErrors(errs);
+      if (errs.name) setTimeout(() => document.getElementById("rule-name")?.focus(), 50);
+      else if (errs.discountValue) setTimeout(() => document.getElementById("rule-value")?.focus(), 50);
+      return;
+    }
+    setFormErrors({});
 
     const conditions: Record<string, unknown> = {};
     if (form.startHour) conditions.startHour = parseInt(form.startHour);
@@ -570,17 +582,21 @@ export default function PromotionsPage() {
           <DialogHeader>
             <DialogTitle>{editingRule ? "Edit Promotion Rule" : "Create Promotion Rule"}</DialogTitle>
           </DialogHeader>
+          <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="col-span-2">
-                <Label htmlFor="rule-name">Name</Label>
+                <Label htmlFor="rule-name">Name <span className="text-red-500 ml-0.5">*</span></Label>
                 <Input
                   id="rule-name"
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, name: e.target.value }); setFormErrors(prev => ({ ...prev, name: undefined })); }}
+                  onBlur={(e) => { if (!e.target.value.trim()) setFormErrors(prev => ({ ...prev, name: "Name is required" })); }}
                   placeholder="e.g. Happy Hour 20% Off"
+                  className={formErrors.name ? "border-red-500" : ""}
                   data-testid="input-rule-name"
                 />
+                {formErrors.name && <p className="text-red-500 text-xs mt-1">{formErrors.name}</p>}
               </div>
               <div className="col-span-2">
                 <Label htmlFor="rule-desc">Description</Label>
@@ -625,6 +641,7 @@ export default function PromotionsPage() {
               <div>
                 <Label htmlFor="rule-value">
                   {form.discountType === "percentage" ? "Percentage (%)" : "Amount"}
+                  {form.ruleType !== "free_item" && <span className="text-red-500 ml-0.5">*</span>}
                 </Label>
                 <Input
                   id="rule-value"
@@ -632,10 +649,13 @@ export default function PromotionsPage() {
                   step="0.01"
                   min="0"
                   value={form.discountValue}
-                  onChange={(e) => setForm({ ...form, discountValue: e.target.value })}
+                  onChange={(e) => { setForm({ ...form, discountValue: e.target.value }); setFormErrors(prev => ({ ...prev, discountValue: undefined })); }}
+                  onBlur={(e) => { if (!e.target.value && form.ruleType !== "free_item") setFormErrors(prev => ({ ...prev, discountValue: "Value is required" })); }}
                   placeholder={form.discountType === "percentage" ? "e.g. 20" : "e.g. 5.00"}
+                  className={formErrors.discountValue ? "border-red-500" : ""}
                   data-testid="input-rule-value"
                 />
+                {formErrors.discountValue && <p className="text-red-500 text-xs mt-1">{formErrors.discountValue}</p>}
               </div>
             </div>
 
