@@ -78,9 +78,8 @@ export function registerInventoryRoutes(app: Express): void {
       const item = await storage.getInventoryItem(req.params.id, user.tenantId);
       if (!item) return res.status(404).json({ message: "Item not found" });
 
-      // Delete-in-use guard: check if any active recipe uses this ingredient
       const { rows: activeRecipes } = await pool.query(
-        `SELECT COUNT(*) AS cnt FROM recipe_ingredients ri
+        `SELECT COUNT(*)::int AS cnt FROM recipe_ingredients ri
          JOIN recipes r ON r.id = ri.recipe_id
          WHERE ri.inventory_item_id = $1
            AND r.tenant_id = $2
@@ -88,9 +87,30 @@ export function registerInventoryRoutes(app: Express): void {
            AND r.active = true`,
         [req.params.id, user.tenantId]
       );
-      const recipeCount = parseInt(activeRecipes[0].cnt, 10);
+      const recipeCount = activeRecipes[0]?.cnt ?? 0;
       if (recipeCount > 0) {
-        return res.status(400).json({ message: `Cannot delete — this ingredient is used in ${recipeCount} active recipe${recipeCount > 1 ? "s" : ""}.` });
+        return res.status(400).json({
+          message: `Cannot delete "${item.name}" — it is used in ${recipeCount} active recipe${recipeCount !== 1 ? "s" : ""}`,
+          inUse: true,
+          count: recipeCount,
+        });
+      }
+
+      const { rows: poRows } = await pool.query(
+        `SELECT COUNT(*)::int AS cnt FROM purchase_order_items poi
+         JOIN purchase_orders po ON po.id = poi.purchase_order_id
+         WHERE poi.inventory_item_id = $1
+           AND po.tenant_id = $2
+           AND po.status NOT IN ('closed','cancelled','received')`,
+        [req.params.id, user.tenantId]
+      );
+      const activePOCount = poRows[0]?.cnt ?? 0;
+      if (activePOCount > 0) {
+        return res.status(400).json({
+          message: `Cannot delete "${item.name}" — it is on ${activePOCount} active purchase order${activePOCount !== 1 ? "s" : ""}`,
+          inUse: true,
+          count: activePOCount,
+        });
       }
 
       await storage.deleteInventoryItem(req.params.id, user.tenantId, user.id);

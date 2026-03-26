@@ -742,12 +742,12 @@ function AddEditRuleSheet({
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-full sm:max-w-xl overflow-y-auto" data-testid="rule-sheet">
-        <SheetHeader>
+      <SheetContent className="w-full sm:max-w-xl flex flex-col h-full overflow-hidden" data-testid="rule-sheet">
+        <SheetHeader className="shrink-0">
           <SheetTitle>{editingRule ? "Edit Price Rule" : "Add Price Rule"}</SheetTitle>
           <SheetDescription>Configure how this rule adjusts prices for the selected outlet</SheetDescription>
         </SheetHeader>
-        <div className="space-y-4 py-4">
+        <div className="flex-1 overflow-y-auto space-y-4 py-4 pr-1">
           <div>
             <Label>Rule Name *</Label>
             <Input value={name} onChange={e => setName(e.target.value)} placeholder="e.g., Lunch Special" data-testid="input-rule-name" />
@@ -919,7 +919,7 @@ function AddEditRuleSheet({
             <Input type="number" min="0" max="10" value={priority} onChange={e => setPriority(e.target.value)} data-testid="input-priority" />
           </div>
         </div>
-        <SheetFooter>
+        <SheetFooter className="shrink-0 border-t pt-4">
           <Button variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-rule">Cancel</Button>
           <Button onClick={handleSave} disabled={isSaving} data-testid="button-save-rule">
             {isSaving ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : null}

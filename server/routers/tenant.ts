@@ -90,11 +90,41 @@ export function registerTenantRoutes(app: Express): void {
   app.post("/api/promotion-rules", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
     try {
       const user = req.user as any;
-      const rule = await storage.createPromotionRule({ ...parseRuleDates(req.body), tenantId: user.tenantId });
+      const body = req.body as Record<string, any>;
+
+      if (!body.name || typeof body.name !== "string" || !body.name.trim()) {
+        return res.status(400).json({ message: "Promotion name is required" });
+      }
+      if (!body.ruleType) {
+        return res.status(400).json({ message: "Rule type is required" });
+      }
+      if (!body.discountType) {
+        return res.status(400).json({ message: "Discount type is required" });
+      }
+      if (body.discountType !== "free_item" && (body.discountValue === "" || body.discountValue === null || body.discountValue === undefined)) {
+        return res.status(400).json({ message: "Discount value is required" });
+      }
+
+      const payload: Record<string, any> = {
+        ...parseRuleDates(body),
+        tenantId: user.tenantId,
+        discountValue: body.discountType === "free_item" && (!body.discountValue || body.discountValue === "") ? "0" : body.discountValue,
+        conditions: body.conditions ?? null,
+        channels: body.channels && Array.isArray(body.channels) && body.channels.length > 0 ? body.channels : null,
+        scopeRef: body.scopeRef || null,
+        maxDiscount: body.maxDiscount !== undefined && body.maxDiscount !== "" ? body.maxDiscount : null,
+        minOrderAmount: body.minOrderAmount !== undefined && body.minOrderAmount !== "" ? body.minOrderAmount : null,
+        usageLimit: body.usageLimit !== undefined && body.usageLimit !== "" ? body.usageLimit : null,
+        startDate: body.startDate || null,
+        endDate: body.endDate || null,
+      };
+
+      const rule = await storage.createPromotionRule(payload as any);
       auditLogFromReq(req, { action: "promotion_rule_created", entityType: "promotion_rule", entityId: rule.id, entityName: rule.name, after: { name: rule.name, ruleType: rule.ruleType, discountType: rule.discountType, discountValue: rule.discountValue } });
       res.json(rule);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error("[promotions] create error:", err);
+      res.status(500).json({ message: err.message || "Failed to create promotion rule" });
     }
   });
 

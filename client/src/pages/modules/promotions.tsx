@@ -316,7 +316,7 @@ export default function PromotionsPage() {
       description: form.description || null,
       ruleType: form.ruleType,
       discountType: form.discountType,
-      discountValue: form.discountValue,
+      discountValue: form.ruleType === "free_item" && !form.discountValue ? "0" : form.discountValue,
       scope: form.scope,
       scopeRef: form.scopeRef || null,
       channels: form.channels.length > 0 ? form.channels : null,

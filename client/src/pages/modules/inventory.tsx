@@ -247,7 +247,11 @@ function InventoryTab() {
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/inventory/${id}`); },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); toast({ title: "Deleted" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onError: (err: Error) => {
+      const cleanMsg = err.message.replace(/^\d+:\s*/, "");
+      const isInUse = cleanMsg.toLowerCase().includes("cannot delete") || cleanMsg.toLowerCase().includes("in use");
+      toast({ title: isInUse ? "Cannot delete item" : "Error", description: cleanMsg, variant: "destructive" });
+    },
   });
   const pendingAdjustRef = { current: null as { id: string; data: { type: string; quantity: string; reason: string } } | null };
 
@@ -691,6 +695,15 @@ function InventoryTab() {
               placeholder="Quantity"
               data-testid="input-adjust-quantity"
             />
+            {Number(adjustData.quantity) > 100 && (
+              <div className="flex items-start gap-2 p-3 rounded-md border border-amber-200 bg-amber-50" data-testid="warning-large-quantity">
+                <svg className="h-4 w-4 text-amber-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                <div className="text-sm text-amber-700">
+                  <p className="font-medium">Unusually large quantity ({adjustData.quantity})</p>
+                  <p className="text-xs mt-0.5">Please verify this amount before confirming.</p>
+                </div>
+              </div>
+            )}
             <Input value={adjustData.reason} onChange={(e) => setAdjustData({ ...adjustData, reason: e.target.value })} placeholder="Reason" data-testid="input-adjust-reason" />
           </div>
           <DialogFooter>

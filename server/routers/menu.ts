@@ -108,18 +108,21 @@ export function registerMenuRoutes(app: Express): void {
       const existing = await storage.getMenuItem(req.params.id, user.tenantId);
       if (!existing) return res.status(404).json({ message: "Menu item not found" });
 
-      // Delete-in-use guard: check for open/pending orders referencing this item
       const { rows: openOrders } = await pool.query(
-        `SELECT COUNT(*) AS cnt FROM order_items oi
+        `SELECT COUNT(*)::int AS cnt FROM order_items oi
          JOIN orders o ON o.id = oi.order_id
          WHERE oi.menu_item_id = $1
            AND o.tenant_id = $2
-           AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')`,
+           AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed', 'closed')`,
         [req.params.id, user.tenantId]
       );
-      const openCount = parseInt(openOrders[0].cnt, 10);
+      const openCount = openOrders[0]?.cnt ?? 0;
       if (openCount > 0) {
-        return res.status(400).json({ message: `Cannot delete — this item is in ${openCount} open order${openCount > 1 ? "s" : ""}.` });
+        return res.status(400).json({
+          message: `Cannot delete "${existing.name}" — it is in ${openCount} open order${openCount !== 1 ? "s" : ""}`,
+          inUse: true,
+          count: openCount,
+        });
       }
 
       await storage.deleteMenuItem(req.params.id, user.tenantId, user.id);

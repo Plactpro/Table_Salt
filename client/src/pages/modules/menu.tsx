@@ -443,7 +443,13 @@ export default function MenuPage() {
       toast({ title: "Item deleted" });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      const cleanMsg = err.message.replace(/^\d+:\s*/, "");
+      const isInUse = cleanMsg.toLowerCase().includes("cannot delete") || cleanMsg.toLowerCase().includes("in use");
+      toast({
+        title: isInUse ? "Cannot delete item" : "Error",
+        description: cleanMsg,
+        variant: "destructive",
+      });
     },
   });
 
