@@ -481,16 +481,14 @@ export default function Sidebar() {
       className="hidden md:flex flex-col w-64 shrink-0 h-screen sticky top-0 overflow-hidden z-30"
       style={{
         background: `linear-gradient(180deg,
-          hsl(222 30% 17%) 0%,
-          hsl(220 26% 12%) 38%,
-          hsl(220 24% 10%) 62%,
-          hsl(28 60% 20% / 0.85) 85%,
-          hsl(26 65% 18% / 0.95) 100%)`,
+          hsl(185 60% 28%) 0%,
+          hsl(188 55% 22%) 40%,
+          hsl(192 50% 16%) 75%,
+          hsl(196 45% 12%) 100%)`,
       }}
       data-testid="sidebar"
     >
       <SlateShimmer />
-      <EmberGlow />
 
       <div
         className="relative flex items-center justify-center px-6 py-5 overflow-hidden shrink-0"
@@ -504,7 +502,7 @@ export default function Sidebar() {
         />
         <span
           className="relative font-heading text-white text-[32px] font-semibold text-center"
-          style={{ textShadow: "0 1px 12px rgba(255,185,60,0.25), 0 1px 3px rgba(0,0,0,0.4)" }}
+          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)", WebkitFontSmoothing: "antialiased" }}
           data-testid="logo-table-salt"
         >
           Table Salt
