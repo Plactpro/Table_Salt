@@ -1,0 +1,396 @@
+Here is the complete prompt. Paste directly into Replit AI.
+
+***
+
+### Enhanced Valet Parking System — Fully Functional
+
+This is a continuation of the existing restaurant SaaS project in Replit. The following are already built: basic valet parking entry, parking slot management, parking charge integration with billing, QR vehicle retrieval request, and outlet parking settings.
+
+Now completely enhance the valet parking system to be **fully operational in a real restaurant environment** — covering every scenario a valet team faces during a busy service, from vehicle entry to handover, with staff coordination, damage documentation, key management, shift operations, and customer communication.
+
+***
+
+#### 1. What the basic system has vs what is needed
+
+```
+CURRENTLY BUILT (basic):
+  ✅ Vehicle entry recording
+  ✅ Parking slot assignment
+  ✅ Parking charge calculation
+  ✅ Bill integration
+  ✅ QR retrieval request
+  ✅ Basic ticket printing
+
+WHAT IS MISSING (real operations):
+  ❌ Valet staff shift management
+  ❌ Key management and handover tracking
+  ❌ Vehicle damage documentation with photos
+  ❌ Multi-valet coordination board
+  ❌ Vehicle retrieval queue management
+  ❌ Customer SMS/WhatsApp notification
+  ❌ Valet performance tracking
+  ❌ Incident reporting (accidents, complaints)
+  ❌ Vehicle search and location finder
+  ❌ Overnight parking management
+  ❌ VIP vehicle priority handling
+  ❌ Lost key procedure
+  ❌ Valet tip tracking
+  ❌ End of shift reconciliation
+  ❌ Vehicle inspection checklist
+  ❌ Parking lot capacity alerts
+```
+
+***
+
+#### 2. Database schema — complete enhancement
+
+```sql
+-- ─────────────────────────────────────
+-- VALET STAFF AND SHIFTS
+-- ─────────────────────────────────────
+
+CREATE TABLE valet_shifts (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  shift_date            DATE NOT NULL,
+  shift_type            VARCHAR(20) NOT NULL,
+    -- 'MORNING', 'AFTERNOON', 'EVENING', 'NIGHT'
+  shift_start           TIME NOT NULL,
+  shift_end             TIME NOT NULL,
+  head_valet_id         UUID,
+  head_valet_name       VARCHAR(255),
+  total_staff           INT DEFAULT 0,
+  vehicles_handled      INT DEFAULT 0,
+  total_tips            DECIMAL(10,2) DEFAULT 0,
+  incidents_reported    INT DEFAULT 0,
+  status                VARCHAR(20) DEFAULT 'scheduled',
+    -- 'scheduled', 'active', 'closed'
+  opening_notes         TEXT,
+  closing_notes         TEXT,
+  opened_at             TIMESTAMP,
+  closed_at             TIMESTAMP,
+  created_at            TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE valet_staff_assignments (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  shift_id              UUID NOT NULL,
+  staff_id              UUID NOT NULL,
+  staff_name            VARCHAR(255),
+  badge_number          VARCHAR(30),
+  role                  VARCHAR(30) DEFAULT 'VALET',
+    -- 'HEAD_VALET', 'VALET', 'RUNNER', 'CASHIER'
+  zone_assigned         VARCHAR(20),
+    -- which parking zone they manage
+  clocked_in_at         TIMESTAMP,
+  clocked_out_at        TIMESTAMP,
+  vehicles_handled      INT DEFAULT 0,
+  tips_collected        DECIMAL(10,2) DEFAULT 0,
+  incidents_today       INT DEFAULT 0,
+  status                VARCHAR(20) DEFAULT 'scheduled',
+    -- 'scheduled', 'active', 'on_break', 'clocked_out'
+  created_at            TIMESTAMP DEFAULT NOW()
+);
+
+-- ─────────────────────────────────────
+-- ENHANCED VALET TICKET
+-- ─────────────────────────────────────
+
+-- Drop and recreate with full fields
+CREATE TABLE valet_tickets (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  shift_id              UUID,
+  ticket_number         VARCHAR(50) UNIQUE NOT NULL,
+    -- VT-20260326-0001
+  ticket_status         VARCHAR(30) DEFAULT 'checked_in',
+    -- 'checked_in'   → vehicle received
+    -- 'parked'       → vehicle in bay
+    -- 'dining'       → customer inside
+    -- 'bill_paid'    → payment done
+    -- 'retrieval_requested' → customer wants car
+    -- 'retrieval_assigned'  → valet going to get it
+    -- 'retrieving'   → walking to car
+    -- 'driving_out'  → driving to entrance
+    -- 'ready'        → car at entrance
+    -- 'completed'    → handed over
+    -- 'overnight'    → staying past closing
+    -- 'incident'     → problem reported
+    -- 'cancelled'    → cancelled
+
+  -- Vehicle details
+  vehicle_type          VARCHAR(30) NOT NULL,
+  vehicle_number        VARCHAR(30),
+  vehicle_make          VARCHAR(100),
+  vehicle_model         VARCHAR(100),
+  vehicle_color         VARCHAR(50),
+  vehicle_year          VARCHAR(10),
+  fuel_level            VARCHAR(20),
+    -- 'EMPTY', 'QUARTER', 'HALF', 'THREE_QUARTER', 'FULL'
+  odometer_reading      INT,
+
+  -- Parking details
+  slot_id               UUID,
+  slot_code             VARCHAR(20),
+  zone_id               UUID,
+  zone_code             VARCHAR(20),
+  zone_name             VARCHAR(100),
+
+  -- Key management
+  key_tag_number        VARCHAR(50),
+  key_type              VARCHAR(20) DEFAULT 'PHYSICAL',
+    -- 'PHYSICAL', 'SMART_KEY', 'CARD_KEY', 'VALET_KEY'
+  spare_key_taken       BOOLEAN DEFAULT false,
+  key_location          VARCHAR(100),
+    -- 'KEY_BOX_A', 'HEAD_VALET_DESK', etc.
+  key_handover_staff_id UUID,
+  key_received_back     BOOLEAN DEFAULT false,
+
+  -- Customer details
+  customer_name         VARCHAR(255),
+  customer_phone        VARCHAR(30),
+  customer_id           UUID,
+  is_vip                BOOLEAN DEFAULT false,
+  vip_notes             TEXT,
+
+  -- Restaurant linkage
+  table_id              UUID,
+  table_number          VARCHAR(20),
+  order_id              UUID,
+  bill_id               UUID,
+  reservation_id        UUID,
+
+  -- Staff tracking
+  received_by_id        UUID NOT NULL,
+  received_by_name      VARCHAR(255),
+  parked_by_id          UUID,
+  parked_by_name        VARCHAR(255),
+  retrieved_by_id       UUID,
+  retrieved_by_name     VARCHAR(255),
+  handed_over_by_id     UUID,
+  handed_over_by_name   VARCHAR(255),
+
+  -- Timing
+  arrival_time          TIMESTAMP NOT NULL DEFAULT NOW(),
+  parked_at             TIMESTAMP,
+  retrieval_requested_at TIMESTAMP,
+  retrieval_assigned_at TIMESTAMP,
+  retrieval_started_at  TIMESTAMP,
+  vehicle_ready_at      TIMESTAMP,
+  departure_time        TIMESTAMP,
+  duration_minutes      INT,
+
+  -- Charge details
+  charge_mode           VARCHAR(20),
+  gross_charge          DECIMAL(10,2) DEFAULT 0,
+  free_minutes_applied  INT DEFAULT 0,
+  validation_applied    BOOLEAN DEFAULT false,
+  validation_discount   DECIMAL(10,2) DEFAULT 0,
+  final_charge          DECIMAL(10,2) DEFAULT 0,
+  tax_amount            DECIMAL(10,2) DEFAULT 0,
+  total_charge          DECIMAL(10,2) DEFAULT 0,
+  tip_amount            DECIMAL(10,2) DEFAULT 0,
+  payment_status        VARCHAR(20) DEFAULT 'pending',
+
+  -- Inspection
+  inspection_done       BOOLEAN DEFAULT false,
+  vehicle_condition     VARCHAR(20) DEFAULT 'GOOD',
+    -- 'GOOD', 'MINOR_DAMAGE', 'EXISTING_DAMAGE'
+  pre_existing_damage   TEXT,
+  damage_photos_in      JSONB DEFAULT '[]',
+  damage_photos_out     JSONB DEFAULT '[]',
+
+  -- Customer notification
+  sms_sent              BOOLEAN DEFAULT false,
+  whatsapp_sent         BOOLEAN DEFAULT false,
+  notification_sent_at  TIMESTAMP,
+
+  -- Special flags
+  is_overnight          BOOLEAN DEFAULT false,
+  overnight_approved_by UUID,
+  overnight_fee         DECIMAL(10,2),
+  is_incident           BOOLEAN DEFAULT false,
+  incident_id           UUID,
+
+  notes                 TEXT,
+  internal_notes        TEXT,
+
+  created_at            TIMESTAMP DEFAULT NOW(),
+  updated_at            TIMESTAMP DEFAULT NOW()
+);
+
+-- ─────────────────────────────────────
+-- VEHICLE INSPECTION
+-- ─────────────────────────────────────
+
+CREATE TABLE vehicle_inspections (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  ticket_id             UUID NOT NULL,
+  inspection_type       VARCHAR(20) NOT NULL,
+    -- 'CHECK_IN', 'CHECK_OUT'
+  inspector_id          UUID NOT NULL,
+  inspector_name        VARCHAR(255),
+
+  -- Condition checklist
+  body_condition        VARCHAR(20) DEFAULT 'GOOD',
+  windscreen_condition  VARCHAR(20) DEFAULT 'GOOD',
+  left_front            VARCHAR(20) DEFAULT 'GOOD',
+  right_front           VARCHAR(20) DEFAULT 'GOOD',
+  left_rear             VARCHAR(20) DEFAULT 'GOOD',
+  right_rear            VARCHAR(20) DEFAULT 'GOOD',
+  roof_condition        VARCHAR(20) DEFAULT 'GOOD',
+  interior_condition    VARCHAR(20) DEFAULT 'GOOD',
+
+  -- Values: 'GOOD', 'SCRATCH', 'DENT',
+  --         'CRACK', 'MISSING', 'DIRTY'
+
+  -- Items checklist
+  spare_tyre_present    BOOLEAN DEFAULT true,
+  jack_present          BOOLEAN DEFAULT true,
+  registration_present  BOOLEAN DEFAULT true,
+  valuables_noted       TEXT,
+    -- list any valuables customer mentions
+
+  fuel_level            VARCHAR(20),
+  odometer              INT,
+
+  -- Damage documentation
+  damage_noted          BOOLEAN DEFAULT false,
+  damage_description    TEXT,
+  damage_photos         JSONB DEFAULT '[]',
+
+  -- Customer acknowledgement
+  customer_signed       BOOLEAN DEFAULT false,
+  customer_signature    TEXT,
+    -- base64 signature or acknowledgement flag
+  customer_agreed_condition BOOLEAN DEFAULT false,
+
+  inspected_at          TIMESTAMP DEFAULT NOW(),
+  notes                 TEXT
+);
+
+-- ─────────────────────────────────────
+-- KEY MANAGEMENT
+-- ─────────────────────────────────────
+
+CREATE TABLE key_management_log (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  ticket_id             UUID NOT NULL,
+  ticket_number         VARCHAR(50),
+  key_tag_number        VARCHAR(50),
+  action                VARCHAR(30) NOT NULL,
+    -- 'RECEIVED_FROM_CUSTOMER',
+    -- 'STORED_IN_BOX',
+    -- 'TAKEN_FOR_RETRIEVAL',
+    -- 'RETURNED_AFTER_RETRIEVAL',
+    -- 'HANDED_TO_CUSTOMER',
+    -- 'LOST_REPORTED',
+    -- 'FOUND'
+  performed_by_id       UUID NOT NULL,
+  performed_by_name     VARCHAR(255),
+  key_location          VARCHAR(100),
+  notes                 TEXT,
+  created_at            TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE key_storage_locations (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  location_code         VARCHAR(30) UNIQUE NOT NULL,
+    -- 'BOX-A', 'BOX-B', 'HEAD_DESK', 'SAFE'
+  location_name         VARCHAR(100),
+  capacity              INT DEFAULT 20,
+  current_count         INT DEFAULT 0,
+  is_secure             BOOLEAN DEFAULT true,
+  is_active             BOOLEAN DEFAULT true
+);
+
+-- ─────────────────────────────────────
+-- RETRIEVAL QUEUE
+-- ─────────────────────────────────────
+
+CREATE TABLE valet_retrieval_queue (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  ticket_id             UUID NOT NULL,
+  ticket_number         VARCHAR(50),
+  queue_position        INT NOT NULL,
+  priority              VARCHAR(20) DEFAULT 'NORMAL',
+    -- 'VIP', 'URGENT', 'NORMAL', 'LOW'
+  request_source        VARCHAR(30),
+    -- 'QR_TABLE', 'WAITER', 'CASHIER',
+    -- 'CUSTOMER_DIRECT', 'PHONE'
+  customer_name         VARCHAR(255),
+  customer_phone        VARCHAR(30),
+  vehicle_type          VARCHAR(30),
+  vehicle_number        VARCHAR(30),
+  slot_code             VARCHAR(20),
+  zone_code             VARCHAR(20),
+  assigned_valet_id     UUID,
+  assigned_valet_name   VARCHAR(255),
+  status                VARCHAR(20) DEFAULT 'queued',
+    -- 'queued', 'assigned', 'in_progress',
+    -- 'ready', 'completed', 'cancelled'
+  estimated_wait_min    INT DEFAULT 5,
+  requested_at          TIMESTAMP DEFAULT NOW(),
+  assigned_at           TIMESTAMP,
+  ready_at              TIMESTAMP,
+  completed_at          TIMESTAMP,
+  notes                 TEXT
+);
+
+-- ─────────────────────────────────────
+-- INCIDENTS
+-- ─────────────────────────────────────
+
+CREATE TABLE valet_incidents (
+  id                    UUID PRIMARY KEY,
+  tenant_id             UUID NOT NULL,
+  outlet_id             UUID NOT NULL,
+  ticket_id             UUID,
+  shift_id              UUID,
+  incident_number       VARCHAR(50) UNIQUE NOT NULL,
+    -- INC-20260326-0001
+  incident_type         VARCHAR(30) NOT NULL,
+    -- 'VEHICLE_DAMAGE', 'LOST_KEY',
+    -- 'ACCIDENT', 'THEFT', 'CUSTOMER_COMPLAINT',
+    -- 'WRONG_VEHICLE_MOVED', 'FUEL_ISSUE',
+    -- 'UNAUTHORIZED_ENTRY', 'OTHER'
+  severity              VARCHAR(20) DEFAULT 'MEDIUM',
+    -- 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
+  description           TEXT NOT NULL,
+  vehicle_number        VARCHAR(30),
+  customer_name         VARCHAR(255),
+  customer_phone        VARCHAR(30),
+  reported_by_id        UUID NOT NULL,
+  reported_by_name      VARCHAR(255),
+  status                VARCHAR(20) DEFAULT 'open',
+    -- 'open', 'investigating', 'resolved',
+    -- 'escalated', 'insurance_claimed'
+  resolution            TEXT,
+  manager_notified      BOOLEAN DEFAULT false,
+  manager_notified_at   TIMESTAMP,
+  police_report_no      VARCHAR(100),
+  insurance_claim_no    VARCHAR(100),
+  estimated_damage_cost DECIMAL(10,2),
+  actual_damage_cost    DECIMAL(10,2),
+  photos                JSONB DEFAULT '[]',
+  resolved_by_id        UUID,
+  resolved_at           TIMESTAMP,
+  created_at            TIMESTAMP DEFAULT NOW()
+);
+
+-- ─────────────────────────────────────
+-- OVERNIGHT PARKING
+-- ─────────────────────────────────────
+
+CREATE TABLE overnight_
