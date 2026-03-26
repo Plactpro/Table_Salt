@@ -2554,6 +2554,7 @@ export async function runTask108Migrations(): Promise<void> {
     )
   `);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_zones_tenant ON parking_zones(tenant_id, outlet_id)`);
+  await pool.query(`ALTER TABLE parking_zones ADD COLUMN IF NOT EXISTS description TEXT`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS parking_slots (
@@ -2572,6 +2573,8 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_slots_tenant ON parking_slots(tenant_id, outlet_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_slots_zone ON parking_slots(zone_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS idx_parking_slots_status ON parking_slots(tenant_id, status)`);
+  await pool.query(`ALTER TABLE parking_slots ADD COLUMN IF NOT EXISTS pos_x INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE parking_slots ADD COLUMN IF NOT EXISTS pos_y INTEGER DEFAULT 0`);
   await pool.query(`
     DO $$ BEGIN
       ALTER TABLE parking_slots ADD CONSTRAINT fk_parking_slots_zone
@@ -3282,4 +3285,256 @@ export async function runTask108Migrations(): Promise<void> {
       user_agent      VARCHAR(500)
     )
   `);
+
+  // Task #179: Valet Parking Phase 1 — Shifts, Key Management, Priority Queue, VIP, Overnight, Tips
+
+  // New table: valet_shifts
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS valet_shifts (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      shift_date DATE NOT NULL DEFAULT CURRENT_DATE,
+      shift_type VARCHAR(20) NOT NULL DEFAULT 'EVENING',
+      head_valet_id VARCHAR(36),
+      head_valet_name TEXT,
+      status VARCHAR(20) NOT NULL DEFAULT 'active',
+      vehicle_count INTEGER NOT NULL DEFAULT 0,
+      total_tips NUMERIC(12,2) NOT NULL DEFAULT 0,
+      total_fees NUMERIC(12,2) NOT NULL DEFAULT 0,
+      incidents INTEGER NOT NULL DEFAULT 0,
+      opening_notes TEXT,
+      closing_notes TEXT,
+      opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      closed_at TIMESTAMPTZ,
+      created_by VARCHAR(36),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_shifts_tenant ON valet_shifts(tenant_id, outlet_id, shift_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_shifts_status ON valet_shifts(tenant_id, status)`);
+
+  // New table: valet_staff_assignments (shift-to-staff mapping)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS valet_staff_assignments (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      shift_id VARCHAR(36) NOT NULL,
+      staff_id VARCHAR(36) NOT NULL,
+      staff_name TEXT,
+      role VARCHAR(30) NOT NULL DEFAULT 'VALET',
+      zone VARCHAR(100),
+      clock_in TIMESTAMPTZ,
+      clock_out TIMESTAMPTZ,
+      vehicles_handled INTEGER NOT NULL DEFAULT 0,
+      tips_collected NUMERIC(12,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_staff_assignments_shift ON valet_staff_assignments(shift_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_staff_assignments_staff ON valet_staff_assignments(staff_id, tenant_id)`);
+
+  // New table: key_storage_locations
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS key_storage_locations (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      location_code VARCHAR(50) NOT NULL,
+      location_name TEXT NOT NULL,
+      capacity INTEGER NOT NULL DEFAULT 50,
+      current_count INTEGER NOT NULL DEFAULT 0,
+      is_secure BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_key_storage_code ON key_storage_locations(tenant_id, outlet_id, location_code)`);
+
+  // New table: key_management_log
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS key_management_log (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36) NOT NULL,
+      ticket_id VARCHAR(36),
+      action VARCHAR(40) NOT NULL,
+      performed_by VARCHAR(36),
+      performed_by_name TEXT,
+      key_location VARCHAR(100),
+      notes TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_key_log_tenant ON key_management_log(tenant_id, outlet_id, created_at DESC)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_key_log_ticket ON key_management_log(ticket_id)`);
+
+  // Extend valet_tickets with new columns
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS shift_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS is_vip BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS vip_notes TEXT`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS is_overnight BOOLEAN NOT NULL DEFAULT false`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS tip_amount NUMERIC(12,2)`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS key_tag_number VARCHAR(50)`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS key_type VARCHAR(20)`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS key_location VARCHAR(100)`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS slot_code VARCHAR(50)`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS zone_name TEXT`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS table_number TEXT`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS parked_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS parked_by_name TEXT`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS retrieved_by_name TEXT`);
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS charge_amount NUMERIC(10,2)`);
+
+  // Extend valet_retrieval_requests with priority + queue fields
+  await pool.query(`ALTER TABLE valet_retrieval_requests ADD COLUMN IF NOT EXISTS priority VARCHAR(10) DEFAULT 'NORMAL'`);
+  await pool.query(`ALTER TABLE valet_retrieval_requests ADD COLUMN IF NOT EXISTS queue_position INTEGER`);
+  await pool.query(`ALTER TABLE valet_retrieval_requests ADD COLUMN IF NOT EXISTS request_source VARCHAR(30)`);
+  await pool.query(`ALTER TABLE valet_retrieval_requests ADD COLUMN IF NOT EXISTS estimated_ready_at TIMESTAMPTZ`);
+
+  // Task #179: Demo seed — valet parking data for the first non-platform tenant
+  // Guarded: skip if valet_staff already seeded for this outlet (idempotent)
+  {
+    const demoTenantRow = await pool.query(
+      `SELECT t.id AS tenant_id, o.id AS outlet_id
+       FROM tenants t JOIN outlets o ON o.tenant_id = t.id
+       WHERE t.slug != 'platform'
+       ORDER BY t.created_at ASC NULLS LAST LIMIT 1`
+    );
+    if (demoTenantRow.rows.length > 0) {
+      const { tenant_id, outlet_id } = demoTenantRow.rows[0];
+
+      // Check if already seeded
+      const alreadySeeded = await pool.query(
+        `SELECT 1 FROM valet_staff WHERE tenant_id=$1 AND outlet_id=$2 AND badge_number IN ('VAL-001','VAL-002') LIMIT 1`,
+        [tenant_id, outlet_id]
+      );
+
+      if (alreadySeeded.rows.length === 0) {
+        // parking_layout_config
+        await pool.query(`
+          INSERT INTO parking_layout_config (id, tenant_id, outlet_id, valet_enabled, total_capacity, available_slots, free_minutes, display_message, updated_at)
+          VALUES (gen_random_uuid(), $1, $2, true, 40, 30, 15, '10 spots available', now())
+          ON CONFLICT (tenant_id, outlet_id) DO UPDATE SET valet_enabled=true, total_capacity=40, free_minutes=15
+        `, [tenant_id, outlet_id]);
+
+        // 2 zones
+        const gfZoneId = `seed-pz-gf-${outlet_id.slice(0,8)}`;
+        const bsZoneId = `seed-pz-bs-${outlet_id.slice(0,8)}`;
+        await pool.query(`
+          INSERT INTO parking_zones (id, tenant_id, outlet_id, name, description, total_slots, available_slots, color, is_active)
+          VALUES ($1, $2, $3, 'Ground Floor', 'Main ground floor parking area', 6, 4, '#3b82f6', true)
+          ON CONFLICT DO NOTHING
+        `, [gfZoneId, tenant_id, outlet_id]);
+        await pool.query(`
+          INSERT INTO parking_zones (id, tenant_id, outlet_id, name, description, total_slots, available_slots, color, is_active)
+          VALUES ($1, $2, $3, 'Basement', 'Underground parking level B1', 4, 2, '#8b5cf6', true)
+          ON CONFLICT DO NOTHING
+        `, [bsZoneId, tenant_id, outlet_id]);
+
+        // 10 slots (mix of available/occupied)
+        const slotsData = [
+          { id: `seed-ps-a01-${outlet_id.slice(0,8)}`, code: 'A-01', zoneId: gfZoneId, type: 'STANDARD', status: 'occupied', x: 1, y: 1 },
+          { id: `seed-ps-a02-${outlet_id.slice(0,8)}`, code: 'A-02', zoneId: gfZoneId, type: 'STANDARD', status: 'available', x: 2, y: 1 },
+          { id: `seed-ps-a03-${outlet_id.slice(0,8)}`, code: 'A-03', zoneId: gfZoneId, type: 'LARGE', status: 'available', x: 3, y: 1 },
+          { id: `seed-ps-a04-${outlet_id.slice(0,8)}`, code: 'A-04', zoneId: gfZoneId, type: 'STANDARD', status: 'available', x: 1, y: 2 },
+          { id: `seed-ps-a05-${outlet_id.slice(0,8)}`, code: 'A-05', zoneId: gfZoneId, type: 'COMPACT', status: 'available', x: 2, y: 2 },
+          { id: `seed-ps-a06-${outlet_id.slice(0,8)}`, code: 'A-06', zoneId: gfZoneId, type: 'STANDARD', status: 'available', x: 3, y: 2 },
+          { id: `seed-ps-b01-${outlet_id.slice(0,8)}`, code: 'B-01', zoneId: bsZoneId, type: 'STANDARD', status: 'occupied', x: 1, y: 3 },
+          { id: `seed-ps-b02-${outlet_id.slice(0,8)}`, code: 'B-02', zoneId: bsZoneId, type: 'STANDARD', status: 'available', x: 2, y: 3 },
+          { id: `seed-ps-b03-${outlet_id.slice(0,8)}`, code: 'B-03', zoneId: bsZoneId, type: 'COMPACT', status: 'available', x: 3, y: 3 },
+          { id: `seed-ps-b04-${outlet_id.slice(0,8)}`, code: 'B-04', zoneId: bsZoneId, type: 'LARGE', status: 'available', x: 1, y: 4 },
+        ];
+        for (const s of slotsData) {
+          await pool.query(`
+            INSERT INTO parking_slots (id, tenant_id, outlet_id, zone_id, slot_code, slot_type, status, pos_x, pos_y, is_active)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true)
+            ON CONFLICT DO NOTHING
+          `, [s.id, tenant_id, outlet_id, s.zoneId, s.code, s.type, s.status, s.x, s.y]);
+        }
+
+        // 2 valet staff
+        const staff1Id = `seed-vs-001-${outlet_id.slice(0,8)}`;
+        const staff2Id = `seed-vs-002-${outlet_id.slice(0,8)}`;
+        await pool.query(`
+          INSERT INTO valet_staff (id, tenant_id, outlet_id, name, phone, badge_number, is_on_duty, is_active)
+          VALUES ($1, $2, $3, 'Ravi Kumar', '+91-98765-00001', 'VAL-001', true, true)
+          ON CONFLICT DO NOTHING
+        `, [staff1Id, tenant_id, outlet_id]);
+        await pool.query(`
+          INSERT INTO valet_staff (id, tenant_id, outlet_id, name, phone, badge_number, is_on_duty, is_active)
+          VALUES ($1, $2, $3, 'Priya Singh', '+91-98765-00002', 'VAL-002', true, true)
+          ON CONFLICT DO NOTHING
+        `, [staff2Id, tenant_id, outlet_id]);
+
+        // 2 key storage locations
+        const kslBoxA = `seed-ksl-boxa-${outlet_id.slice(0,8)}`;
+        const kslDesk = `seed-ksl-desk-${outlet_id.slice(0,8)}`;
+        await pool.query(`
+          INSERT INTO key_storage_locations (id, tenant_id, outlet_id, location_code, location_name, capacity, current_count, is_secure)
+          VALUES ($1, $2, $3, 'BOX-A', 'Key Box A (Main)', 30, 2, true)
+          ON CONFLICT DO NOTHING
+        `, [kslBoxA, tenant_id, outlet_id]);
+        await pool.query(`
+          INSERT INTO key_storage_locations (id, tenant_id, outlet_id, location_code, location_name, capacity, current_count, is_secure)
+          VALUES ($1, $2, $3, 'HEAD_DESK', 'Head Valet Desk', 10, 0, false)
+          ON CONFLICT DO NOTHING
+        `, [kslDesk, tenant_id, outlet_id]);
+
+        // 1 active shift (Evening, head: Ravi Kumar)
+        const shiftId = `seed-shift-eve-${outlet_id.slice(0,8)}`;
+        await pool.query(`
+          INSERT INTO valet_shifts (id, tenant_id, outlet_id, shift_date, shift_type, head_valet_id, head_valet_name, status, vehicle_count, total_tips, opened_at)
+          VALUES ($1, $2, $3, CURRENT_DATE, 'EVENING', $4, 'Ravi Kumar', 'active', 2, 0, now() - INTERVAL '2 hours')
+          ON CONFLICT DO NOTHING
+        `, [shiftId, tenant_id, outlet_id, staff1Id]);
+
+        // Staff assignments for the shift
+        await pool.query(`
+          INSERT INTO valet_staff_assignments (id, tenant_id, shift_id, staff_id, staff_name, role, zone, clock_in, vehicles_handled, tips_collected)
+          VALUES (gen_random_uuid(), $1, $2, $3, 'Ravi Kumar', 'HEAD_VALET', 'Ground Floor', now() - INTERVAL '2 hours', 1, 0)
+          ON CONFLICT DO NOTHING
+        `, [tenant_id, shiftId, staff1Id]);
+        await pool.query(`
+          INSERT INTO valet_staff_assignments (id, tenant_id, shift_id, staff_id, staff_name, role, zone, clock_in, vehicles_handled, tips_collected)
+          VALUES (gen_random_uuid(), $1, $2, $3, 'Priya Singh', 'VALET', 'Basement', now() - INTERVAL '2 hours', 1, 0)
+          ON CONFLICT DO NOTHING
+        `, [tenant_id, shiftId, staff2Id]);
+
+        // 2 active tickets: one VIP (A-01), one normal (B-01)
+        const slot1Id = `seed-ps-a01-${outlet_id.slice(0,8)}`;
+        const slot2Id = `seed-ps-b01-${outlet_id.slice(0,8)}`;
+        const ticket1Id = `seed-vt-001-${outlet_id.slice(0,8)}`;
+        const ticket2Id = `seed-vt-002-${outlet_id.slice(0,8)}`;
+        await pool.query(`
+          INSERT INTO valet_tickets (id, tenant_id, outlet_id, ticket_number, slot_id, zone_id, valet_staff_id, vehicle_number, vehicle_type, vehicle_make, vehicle_color, customer_name, customer_phone, status, entry_time, shift_id, is_vip, vip_notes, is_overnight, key_type, key_location, slot_code, zone_name, parked_by_name)
+          VALUES ($1, $2, $3, 'VP-0001', $4, $5, $6, 'MH01AB1234', 'SUV', 'Mercedes', 'Black', 'Arjun Mehta', '+91-99999-00001', 'parked', now() - INTERVAL '1 hour', $7, true, 'Regular VIP guest', false, 'Physical', 'BOX-A', 'A-01', 'Ground Floor', 'Ravi Kumar')
+          ON CONFLICT DO NOTHING
+        `, [ticket1Id, tenant_id, outlet_id, slot1Id, gfZoneId, staff1Id, shiftId]);
+        await pool.query(`
+          INSERT INTO valet_tickets (id, tenant_id, outlet_id, ticket_number, slot_id, zone_id, valet_staff_id, vehicle_number, vehicle_type, vehicle_make, vehicle_color, customer_name, customer_phone, status, entry_time, shift_id, is_vip, is_overnight, key_type, key_location, slot_code, zone_name, parked_by_name)
+          VALUES ($1, $2, $3, 'VP-0002', $4, $5, $6, 'DL05CD5678', 'CAR', 'Honda', 'White', 'Sunita Rao', '+91-99999-00002', 'requested', now() - INTERVAL '30 minutes', $7, false, false, 'Physical', 'BOX-A', 'B-01', 'Basement', 'Priya Singh')
+          ON CONFLICT DO NOTHING
+        `, [ticket2Id, tenant_id, outlet_id, slot2Id, bsZoneId, staff2Id, shiftId]);
+
+        // 1 pending retrieval request for the normal ticket
+        await pool.query(`
+          INSERT INTO valet_retrieval_requests (id, tenant_id, outlet_id, ticket_id, source, requested_by_name, status, priority, queue_position)
+          VALUES (gen_random_uuid(), $1, $2, $3, 'MANUAL', 'Sunita Rao', 'pending', 'NORMAL', 1)
+          ON CONFLICT DO NOTHING
+        `, [tenant_id, outlet_id, ticket2Id]);
+
+        // Key log entries
+        await pool.query(`
+          INSERT INTO key_management_log (id, tenant_id, outlet_id, ticket_id, action, performed_by_name, key_location, notes)
+          VALUES (gen_random_uuid(), $1, $2, $3, 'KEY_RECEIVED', 'Ravi Kumar', 'BOX-A', 'Key received from customer')
+          ON CONFLICT DO NOTHING
+        `, [tenant_id, outlet_id, ticket1Id]);
+        await pool.query(`
+          INSERT INTO key_management_log (id, tenant_id, outlet_id, ticket_id, action, performed_by_name, key_location, notes)
+          VALUES (gen_random_uuid(), $1, $2, $3, 'KEY_RECEIVED', 'Priya Singh', 'BOX-A', 'Key received from customer')
+          ON CONFLICT DO NOTHING
+        `, [tenant_id, outlet_id, ticket2Id]);
+      }
+    }
+  }
 }

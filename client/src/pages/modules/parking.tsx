@@ -14,6 +14,7 @@ import {
   Hash, Clipboard, ParkingSquare, BarChart3, Timer, DollarSign, Layers,
   Settings, Users, Download, Trash2, Edit2, ToggleLeft, ToggleRight,
   TrendingUp, CalendarDays, Shield, BadgeCheck, Search, Zap, List, LayoutGrid, Bell,
+  Moon, Star, Key, Banknote, LogIn, LogOut, UserCheck, ClipboardList, ArrowUpCircle,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -821,6 +822,9 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
   const queryClient = useQueryClient();
   const [showExitCondition, setShowExitCondition] = useState(false);
   const [exitCondition, setExitCondition] = useState({ body: "clean", interior: "clean", fuelLevel: "full", acWorking: "yes", spareTyre: "yes", notes: "" });
+  const [tipAmount, setTipAmount] = useState("");
+  const [showVipNotesInput, setShowVipNotesInput] = useState(false);
+  const [vipNotesDraft, setVipNotesDraft] = useState(ticket.vipNotes ?? "");
 
   const updateMutation = useMutation({
     mutationFn: async (status: string) => {
@@ -841,29 +845,93 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
         conditionReport: exitCondition,
         isExitCheck: true,
       });
+      const tipVal = parseFloat(tipAmount);
+      if (tipVal > 0) {
+        await apiRequest("PATCH", `/api/parking/tickets/${ticket.id}/tip`, { tipAmount: tipVal });
+      }
       const res = await apiRequest("PATCH", `/api/parking/tickets/${ticket.id}/status`, { status: "completed" });
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
       queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
-      toast({ title: "Ticket completed with exit condition recorded" });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/shifts", outletId] });
+      const tipVal = parseFloat(tipAmount);
+      if (tipVal > 0) {
+        toast({ title: `Tip of ₹${tipVal} recorded`, description: ticket.parkedByName ? `For ${ticket.parkedByName}` : undefined });
+      } else {
+        toast({ title: "Ticket completed with exit condition recorded" });
+      }
       setShowExitCondition(false);
+      setTipAmount("");
     },
     onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
   });
 
+  const vipMutation = useMutation({
+    mutationFn: async (vipNotes?: string) => {
+      const res = await apiRequest("PATCH", `/api/parking/tickets/${ticket.id}/vip`, { isVip: !ticket.isVip, vipNotes: vipNotes ?? null });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      toast({ title: ticket.isVip ? "VIP flag removed" : "Marked as VIP" });
+      setShowVipNotesInput(false);
+    },
+  });
+
+  const saveVipNotesMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/parking/tickets/${ticket.id}/vip`, { isVip: true, vipNotes: vipNotesDraft });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      setShowVipNotesInput(false);
+      toast({ title: "VIP notes saved" });
+    },
+  });
+
+  const overnightMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("PATCH", `/api/parking/tickets/${ticket.id}/overnight`, { isOvernight: !ticket.isOvernight });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
+      toast({ title: ticket.isOvernight ? "Overnight removed" : "Marked as overnight" });
+    },
+  });
+
   const entryCondition = ticket.conditionReport;
-  const hasEntryCondition = !!entryCondition;
+
+  const cardBorder = ticket.isOvernight
+    ? "border-indigo-400 bg-indigo-50/30"
+    : ticket.isVip
+      ? "border-yellow-400 bg-yellow-50/20"
+      : "";
 
   return (
-    <Card data-testid={`card-ticket-${ticket.ticketNumber}`} className="hover:shadow-sm transition-shadow">
+    <Card data-testid={`card-ticket-${ticket.ticketNumber}`} className={`hover:shadow-sm transition-shadow ${cardBorder}`}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-2">
             <span className="text-2xl">{getVehicleIcon(ticket.vehicleType)}</span>
             <div>
-              <p className="font-bold text-sm font-mono" data-testid={`text-ticket-num-${ticket.id}`}>{ticket.ticketNumber}</p>
+              <div className="flex items-center gap-1.5">
+                <p className="font-bold text-sm font-mono" data-testid={`text-ticket-num-${ticket.id}`}>{ticket.ticketNumber}</p>
+                {ticket.isVip && (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-400 text-yellow-900" data-testid={`badge-vip-${ticket.id}`}>
+                    <Star className="h-2.5 w-2.5" /> VIP
+                  </span>
+                )}
+                {ticket.isOvernight && (
+                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-700" data-testid={`badge-overnight-${ticket.id}`}>
+                    <Moon className="h-2.5 w-2.5" /> Overnight
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-muted-foreground" data-testid={`text-vehicle-num-${ticket.id}`}>{ticket.vehicleNumber}</p>
             </div>
           </div>
@@ -894,6 +962,14 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
             <LiveTimer entryTime={ticket.entryTime} />
           </div>
         </div>
+
+        {/* VIP Notes */}
+        {ticket.isVip && ticket.vipNotes && (
+          <div className="mb-2 text-xs text-yellow-800 bg-yellow-50 border border-yellow-200 rounded-md px-2 py-1 flex items-start gap-1.5" data-testid={`vip-notes-${ticket.id}`}>
+            <Star className="h-3 w-3 mt-0.5 text-yellow-600 shrink-0" />
+            <span>{ticket.vipNotes}</span>
+          </div>
+        )}
 
         {/* Entry condition summary (if recorded) */}
         {entryCondition && (
@@ -940,16 +1016,82 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
             </Button>
           )}
           {ticket.status !== "completed" && ticket.status !== "cancelled" && (
-            <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600 hover:text-red-700" onClick={() => updateMutation.mutate("cancelled")} data-testid={`button-cancel-${ticket.id}`}>
-              Cancel
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant={ticket.isVip ? "default" : "outline"}
+                className={`h-7 text-xs ${ticket.isVip ? "bg-yellow-400 hover:bg-yellow-500 text-yellow-900 border-yellow-400" : "border-yellow-300 text-yellow-700 hover:bg-yellow-50"}`}
+                onClick={() => {
+                  if (!ticket.isVip) {
+                    setShowVipNotesInput(true);
+                  } else {
+                    vipMutation.mutate();
+                  }
+                }}
+                disabled={vipMutation.isPending}
+                data-testid={`button-toggle-vip-${ticket.id}`}
+              >
+                <Star className="h-3 w-3 mr-0.5" /> {ticket.isVip ? "VIP" : "Set VIP"}
+              </Button>
+              <Button
+                size="sm"
+                variant={ticket.isOvernight ? "default" : "outline"}
+                className={`h-7 text-xs ${ticket.isOvernight ? "bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600" : "border-indigo-300 text-indigo-700 hover:bg-indigo-50"}`}
+                onClick={() => overnightMutation.mutate()}
+                disabled={overnightMutation.isPending}
+                data-testid={`button-toggle-overnight-${ticket.id}`}
+              >
+                <Moon className="h-3 w-3 mr-0.5" /> {ticket.isOvernight ? "Overnight" : "Overnight"}
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs text-red-600 hover:text-red-700" onClick={() => updateMutation.mutate("cancelled")} data-testid={`button-cancel-${ticket.id}`}>
+                Cancel
+              </Button>
+            </>
           )}
         </div>
+
+        {/* VIP Notes inline form */}
+        {showVipNotesInput && (
+          <div className="mt-2 p-2 rounded-lg border border-yellow-200 bg-yellow-50/40 space-y-2" data-testid={`vip-notes-form-${ticket.id}`}>
+            <Label className="text-xs font-semibold text-yellow-800">Add VIP Notes (optional)</Label>
+            <Input
+              value={vipNotesDraft}
+              onChange={e => setVipNotesDraft(e.target.value)}
+              placeholder="e.g. Regular guest, preferred parking spot A1"
+              className="h-7 text-xs bg-white"
+              data-testid={`input-vip-notes-${ticket.id}`}
+            />
+            <div className="flex gap-1.5">
+              <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => setShowVipNotesInput(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                className="h-6 text-[10px] bg-yellow-400 hover:bg-yellow-500 text-yellow-900 border-yellow-400"
+                onClick={() => vipMutation.mutate(vipNotesDraft || undefined)}
+                disabled={vipMutation.isPending}
+                data-testid={`button-confirm-vip-${ticket.id}`}
+              >
+                Confirm VIP
+              </Button>
+              {vipNotesDraft && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-[10px]"
+                  onClick={() => saveVipNotesMutation.mutate()}
+                  disabled={saveVipNotesMutation.isPending}
+                  data-testid={`button-save-vip-notes-${ticket.id}`}
+                >
+                  Save Notes Only
+                </Button>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Exit Condition Dialog */}
         {showExitCondition && (
           <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="exit-condition-dialog">
-            <div className="bg-background rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4">
+            <div className="bg-background rounded-2xl shadow-2xl w-full max-w-sm p-5 space-y-4 max-h-[90vh] overflow-y-auto">
               <h3 className="font-bold text-base">Exit Condition Check</h3>
               {/* Diff vs entry condition */}
               {entryCondition && (() => {
@@ -1058,6 +1200,21 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
                     data-testid="exit-condition-notes"
                   />
                 </div>
+                <div>
+                  <label className="text-xs font-semibold block mb-1 flex items-center gap-1">
+                    <Banknote className="h-3 w-3 text-green-600" /> Tip Amount (optional)
+                  </label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="0"
+                    value={tipAmount}
+                    onChange={e => setTipAmount(e.target.value)}
+                    className="text-xs h-8"
+                    data-testid="input-tip-amount"
+                  />
+                </div>
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setShowExitCondition(false)}>Cancel</Button>
@@ -1080,8 +1237,14 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
 function RetrievalRequestCard({ request, outletId }: { request: any; outletId: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
   const [valetName, setValetName] = useState(request.assignedValetName || "");
   const [showAssignForm, setShowAssignForm] = useState(false);
+  const [showPriorityForm, setShowPriorityForm] = useState(false);
+  const [editPriority, setEditPriority] = useState(request.priority || "NORMAL");
+  const estimatedReadyAtVal = request.estimatedReadyAt ?? request.estimated_ready_at;
+  const [editEstimatedReady, setEditEstimatedReady] = useState(estimatedReadyAtVal ? new Date(estimatedReadyAtVal).toISOString().slice(0,16) : "");
+  const isManager = user?.role === "owner" || user?.role === "manager";
 
   const updateMutation = useMutation({
     mutationFn: async (body: Record<string, unknown>) => {
@@ -1092,23 +1255,45 @@ function RetrievalRequestCard({ request, outletId }: { request: any; outletId: s
       queryClient.invalidateQueries({ queryKey: ["/api/parking/retrieval-requests", outletId] });
       toast({ title: "Request updated" });
       setShowAssignForm(false);
+      setShowPriorityForm(false);
     },
     onError: (err: Error) => toast({ title: "Update failed", description: err.message, variant: "destructive" }),
   });
 
+  const priorityClass = (request.priority === "VIP" || request.is_vip)
+    ? "border-yellow-400 bg-yellow-50/50"
+    : request.priority === "URGENT"
+      ? "border-red-300 bg-red-50/30"
+      : "border-amber-200 bg-amber-50/50";
+
   return (
-    <Card data-testid={`card-retrieval-${request.id}`} className="border-amber-200 bg-amber-50/50">
+    <Card data-testid={`card-retrieval-${request.id}`} className={priorityClass}>
       <CardContent className="p-4">
         <div className="flex items-start justify-between gap-2 mb-2">
           <div>
-            <div className="flex items-center gap-2">
-              <SourceBadge source={request.requestSource} />
-              <p className="font-bold text-sm font-mono" data-testid={`text-retrieval-ticket-${request.id}`}>{request.ticketNumber}</p>
+            <div className="flex items-center gap-2 flex-wrap">
+              {(request.priority === "VIP" || request.is_vip) && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-400 text-yellow-900" data-testid={`badge-priority-vip-${request.id}`}>
+                  <Star className="h-2.5 w-2.5" /> VIP
+                </span>
+              )}
+              {request.priority === "URGENT" && request.priority !== "VIP" && (
+                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">
+                  URGENT
+                </span>
+              )}
+              <SourceBadge source={request.requestSource || request.source} />
+              <p className="font-bold text-sm font-mono" data-testid={`text-retrieval-ticket-${request.id}`}>{request.ticketNumber || request.ticket_number}</p>
             </div>
-            {request.vehicleNumber && (
+            {(request.vehicleNumber || request.vehicle_number) && (
               <p className="text-xs text-muted-foreground mt-0.5" data-testid={`text-retrieval-vehicle-${request.id}`}>
-                {request.vehicleType && `${getVehicleIcon(request.vehicleType)} `}{request.vehicleNumber}
-                {request.vehicleColor && ` · ${request.vehicleColor}`}
+                {(request.vehicleType || request.vehicle_type) && `${getVehicleIcon(request.vehicleType || request.vehicle_type)} `}{request.vehicleNumber || request.vehicle_number}
+                {(request.vehicleColor || request.vehicle_color) && ` · ${request.vehicleColor || request.vehicle_color}`}
+              </p>
+            )}
+            {(request.estimatedReadyAt ?? request.estimated_ready_at) && (
+              <p className="text-xs text-blue-600 mt-0.5 flex items-center gap-1">
+                <Timer className="h-3 w-3" /> Ready at: {new Date(request.estimatedReadyAt ?? request.estimated_ready_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
               </p>
             )}
             {request.assignedValetName && (
@@ -1117,11 +1302,59 @@ function RetrievalRequestCard({ request, outletId }: { request: any; outletId: s
               </p>
             )}
           </div>
-          <StatusBadge status={request.status} />
+          <div className="flex flex-col items-end gap-1">
+            <StatusBadge status={request.status} />
+            {request.queuePosition != null && (
+              <span className="text-[10px] text-muted-foreground">#{request.queuePosition || request.queue_position}</span>
+            )}
+          </div>
         </div>
 
         {request.estimatedWaitMinutes && (
           <p className="text-xs text-muted-foreground mb-2">Est. wait: {request.estimatedWaitMinutes} min</p>
+        )}
+
+        {/* Manager-editable priority and estimated ready time */}
+        {showPriorityForm && isManager && (
+          <div className="mb-2 p-2 rounded-lg border bg-muted/20 space-y-2" data-testid={`priority-form-${request.id}`}>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label className="text-[10px]">Priority</Label>
+                <Select value={editPriority} onValueChange={setEditPriority}>
+                  <SelectTrigger className="h-7 text-xs" data-testid={`select-priority-${request.id}`}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="VIP">VIP</SelectItem>
+                    <SelectItem value="URGENT">Urgent</SelectItem>
+                    <SelectItem value="NORMAL">Normal</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-[10px]">Est. Ready At</Label>
+                <Input
+                  type="datetime-local"
+                  value={editEstimatedReady}
+                  onChange={e => setEditEstimatedReady(e.target.value)}
+                  className="h-7 text-xs"
+                  data-testid={`input-estimated-ready-${request.id}`}
+                />
+              </div>
+            </div>
+            <div className="flex gap-1.5">
+              <Button size="sm" variant="outline" className="h-6 text-[10px]" onClick={() => setShowPriorityForm(false)}>Cancel</Button>
+              <Button
+                size="sm"
+                className="h-6 text-[10px]"
+                disabled={updateMutation.isPending}
+                onClick={() => updateMutation.mutate({ priority: editPriority, estimatedReadyAt: editEstimatedReady || null })}
+                data-testid={`button-save-priority-${request.id}`}
+              >
+                Save
+              </Button>
+            </div>
+          </div>
         )}
 
         {showAssignForm && (
@@ -1149,6 +1382,11 @@ function RetrievalRequestCard({ request, outletId }: { request: any; outletId: s
         )}
 
         <div className="flex flex-wrap gap-1.5 mt-2">
+          {isManager && request.status !== "completed" && request.status !== "cancelled" && (
+            <Button size="sm" variant="outline" className="h-7 text-xs border-blue-200 text-blue-700 hover:bg-blue-50" onClick={() => setShowPriorityForm(v => !v)} data-testid={`button-edit-priority-${request.id}`}>
+              <Star className="h-3 w-3 mr-1" /> Priority
+            </Button>
+          )}
           {request.status === "pending" && !showAssignForm && (
             <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowAssignForm(true)} data-testid={`button-assign-valet-${request.id}`}>
               <User className="h-3 w-3 mr-1" /> Assign Valet
@@ -1671,6 +1909,7 @@ function DashboardTab({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
   const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
 
   const { data: stats } = useQuery<any>({
@@ -1695,6 +1934,21 @@ function DashboardTab({
     enabled: !!outletId,
     staleTime: 60000,
   });
+
+  const { data: activeShift } = useQuery<any>({
+    queryKey: ["/api/parking/shifts", outletId, "active"],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/shifts/${outletId}/active`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+    refetchInterval: 60000,
+  });
+
+  const overnightCount = tickets.filter((t: any) => t.isOvernight || t.is_overnight).length;
+  const vipCount = tickets.filter((t: any) => t.isVip || t.is_vip).length;
 
   const onDutyStaff = valetStaff.filter((s: any) => s.isOnDuty && s.isActive !== false);
 
@@ -1738,6 +1992,38 @@ function DashboardTab({
         </Button>
       </div>
 
+      {/* Active Shift Banner */}
+      {isOwnerOrManager && (
+        activeShift ? (
+          <div className="flex flex-wrap items-center gap-3 px-4 py-3 rounded-xl bg-green-50 border border-green-200 text-sm" data-testid="banner-active-shift">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+              <span className="font-semibold text-green-800">Active Shift: {activeShift.shift_type ?? activeShift.shiftType}</span>
+            </div>
+            {(activeShift.head_valet_name ?? activeShift.headValetName) && (
+              <span className="text-green-700 flex items-center gap-1">
+                <UserCheck className="h-3.5 w-3.5" /> {activeShift.head_valet_name ?? activeShift.headValetName}
+              </span>
+            )}
+            <span className="text-green-700 flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" /> Since {new Date(activeShift.opened_at ?? activeShift.openedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </span>
+            <span className="text-green-700 flex items-center gap-1">
+              <Car className="h-3.5 w-3.5" /> {activeShift.vehicle_count ?? activeShift.vehicleCount} vehicles
+            </span>
+            {parseFloat(activeShift.total_tips ?? activeShift.totalTips ?? "0") > 0 && (
+              <span className="text-green-700 flex items-center gap-1">
+                <Banknote className="h-3.5 w-3.5" /> Tips: {fmt(parseFloat(activeShift.total_tips ?? activeShift.totalTips ?? "0"))}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="px-4 py-3 rounded-xl bg-muted/50 border border-muted text-sm text-muted-foreground" data-testid="banner-no-shift">
+            No active shift — open one in the <strong>Shifts</strong> tab
+          </div>
+        )
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Card data-testid="dash-stat-vehicles-in">
           <CardContent className="p-4 text-center">
@@ -1768,6 +2054,22 @@ function DashboardTab({
           </CardContent>
         </Card>
       </div>
+
+      {/* VIP + Overnight quick counts */}
+      {(vipCount > 0 || overnightCount > 0) && (
+        <div className="flex gap-3 flex-wrap">
+          {vipCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-yellow-50 border border-yellow-200 text-xs font-medium text-yellow-800" data-testid="dash-vip-count">
+              <Star className="h-3.5 w-3.5" /> {vipCount} VIP vehicle{vipCount !== 1 ? "s" : ""}
+            </div>
+          )}
+          {overnightCount > 0 && (
+            <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-indigo-50 border border-indigo-200 text-xs font-medium text-indigo-800" data-testid="dash-overnight-count">
+              <Moon className="h-3.5 w-3.5" /> {overnightCount} overnight vehicle{overnightCount !== 1 ? "s" : ""}
+            </div>
+          )}
+        </div>
+      )}
 
       {pendingRetrievals.length > 0 && (
         <div className="space-y-3">
@@ -2343,6 +2645,644 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
   );
 }
 
+// ─── Key Management Panel ────────────────────────────────────────────────────
+function KeyManagementPanel({ outletId }: { outletId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [logForm, setLogForm] = useState({ ticketId: "", action: "KEY_RECEIVED", keyLocation: "", notes: "" });
+  const [showLogForm, setShowLogForm] = useState(false);
+
+  const { data: keyLocations = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/key-locations", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/key-locations/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+  });
+
+  const { data: keyLog = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/key-log", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/key-log/${outletId}?limit=20`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 15000,
+    refetchInterval: 30000,
+  });
+
+  const { data: activeTickets = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/tickets", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/tickets/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId && showLogForm,
+    staleTime: 30000,
+  });
+
+  const logMutation = useMutation({
+    mutationFn: async () => {
+      const res = await fetch(`/api/parking/key-log/${outletId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(logForm),
+      });
+      if (!res.ok) throw new Error((await res.json()).message);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/key-log", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/key-locations", outletId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
+      setLogForm({ ticketId: "", action: "KEY_RECEIVED", keyLocation: "", notes: "" });
+      setShowLogForm(false);
+      toast({ title: "Key action logged" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const actionColors: Record<string, string> = {
+    KEY_RECEIVED: "bg-blue-100 text-blue-700",
+    KEY_STORED: "bg-green-100 text-green-700",
+    KEY_TAKEN: "bg-amber-100 text-amber-700",
+    KEY_RETURNED_TO_CUSTOMER: "bg-purple-100 text-purple-700",
+  };
+
+  return (
+    <div className="space-y-4 mt-4" data-testid="key-management-panel">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Key className="h-4 w-4 text-amber-600" /> Key Board
+        </h3>
+        <Button size="sm" variant="outline" onClick={() => setShowLogForm(v => !v)} data-testid="button-log-key-action">
+          <Plus className="h-3.5 w-3.5 mr-1" /> Log Key Action
+        </Button>
+      </div>
+
+      {/* Key storage location cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        {keyLocations.map((loc: any) => (
+          <div key={loc.id} className="rounded-lg border p-3 bg-muted/20" data-testid={`key-location-${loc.location_code}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <Key className={`h-3.5 w-3.5 ${loc.is_secure ? "text-green-600" : "text-amber-600"}`} />
+              <span className="font-semibold text-xs">{loc.location_code}</span>
+              {loc.is_secure && <span className="text-[10px] text-green-600 bg-green-50 px-1 rounded">Secure</span>}
+            </div>
+            <p className="text-xs text-muted-foreground">{loc.location_name}</p>
+            <p className="text-sm font-bold mt-1">{loc.current_count} / {loc.capacity} keys</p>
+            <div className="h-1.5 bg-muted rounded-full mt-1 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${loc.current_count / loc.capacity > 0.8 ? "bg-red-400" : "bg-green-400"}`}
+                style={{ width: `${Math.min(100, (loc.current_count / loc.capacity) * 100)}%` }}
+              />
+            </div>
+          </div>
+        ))}
+        {keyLocations.length === 0 && (
+          <div className="col-span-full text-center py-4 text-sm text-muted-foreground border rounded-lg">
+            No key locations configured
+          </div>
+        )}
+      </div>
+
+      {/* Log key action form */}
+      {showLogForm && (
+        <div className="rounded-lg border p-4 bg-muted/10 space-y-3" data-testid="key-log-form">
+          <h4 className="text-xs font-semibold">Log Key Action</h4>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Action</Label>
+              <Select value={logForm.action} onValueChange={v => setLogForm(f => ({ ...f, action: v }))}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-key-action">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="KEY_RECEIVED">Key Received</SelectItem>
+                  <SelectItem value="KEY_STORED">Key Stored</SelectItem>
+                  <SelectItem value="KEY_TAKEN">Key Taken (retrieval)</SelectItem>
+                  <SelectItem value="KEY_RETURNED_TO_CUSTOMER">Returned to Customer</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Key Location</Label>
+              <Select value={logForm.keyLocation} onValueChange={v => setLogForm(f => ({ ...f, keyLocation: v }))}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-key-location">
+                  <SelectValue placeholder="Select location" />
+                </SelectTrigger>
+                <SelectContent>
+                  {keyLocations.map((loc: any) => (
+                    <SelectItem key={loc.id} value={loc.location_code}>{loc.location_code} — {loc.location_name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Ticket (optional)</Label>
+            <Select value={logForm.ticketId || "_none"} onValueChange={v => setLogForm(f => ({ ...f, ticketId: v === "_none" ? "" : v }))}>
+              <SelectTrigger className="h-8 text-xs" data-testid="select-key-ticket">
+                <SelectValue placeholder="Select ticket" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none">— General action —</SelectItem>
+                {activeTickets.map((t: any) => (
+                  <SelectItem key={t.id} value={t.id}>{t.ticketNumber} — {t.vehicleNumber}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs">Notes</Label>
+            <Input
+              value={logForm.notes}
+              onChange={e => setLogForm(f => ({ ...f, notes: e.target.value }))}
+              placeholder="Optional notes"
+              className="h-8 text-xs"
+              data-testid="input-key-notes"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={() => setShowLogForm(false)}>Cancel</Button>
+            <Button
+              size="sm"
+              onClick={() => logMutation.mutate()}
+              disabled={logMutation.isPending || !logForm.action}
+              data-testid="button-submit-key-action"
+            >
+              {logMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Log Action"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Key log */}
+      <div className="space-y-2">
+        <h4 className="text-xs font-semibold text-muted-foreground">Recent Key Actions</h4>
+        {keyLog.length === 0 ? (
+          <p className="text-xs text-muted-foreground py-2 text-center">No key actions logged</p>
+        ) : (
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {keyLog.map((entry: any) => (
+              <div key={entry.id} className="flex items-center gap-2 text-xs rounded-lg border px-3 py-2" data-testid={`key-log-${entry.id}`}>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${actionColors[entry.action] ?? "bg-muted text-muted-foreground"}`}>
+                  {entry.action.replace(/_/g, " ")}
+                </span>
+                {entry.ticket_number && <span className="font-mono font-bold">{entry.ticket_number}</span>}
+                {entry.key_location && <span className="text-muted-foreground">{entry.key_location}</span>}
+                <span className="text-muted-foreground ml-auto">{entry.performed_by_name}</span>
+                <span className="text-muted-foreground">{new Date(entry.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Shifts Tab ───────────────────────────────────────────────────────────────
+function ShiftsTab({ outletId }: { outletId: string }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
+
+  const today = new Date().toISOString().split("T")[0];
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [showOpenForm, setShowOpenForm] = useState(false);
+  const [showReconcile, setShowReconcile] = useState<any>(null);
+  const [openForm, setOpenForm] = useState({ shiftType: "EVENING", headValetId: "", headValetName: "", openingNotes: "" });
+  const [reconcileData, setReconcileData] = useState<any>(null);
+  const [closingNotes, setClosingNotes] = useState("");
+
+  const { data: shifts = [], refetch: refetchShifts } = useQuery<any[]>({
+    queryKey: ["/api/parking/shifts", outletId, selectedDate],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/shifts/${outletId}?date=${selectedDate}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 15000,
+  });
+
+  const { data: activeShift } = useQuery<any>({
+    queryKey: ["/api/parking/shifts", outletId, "active"],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/shifts/${outletId}/active`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 15000,
+  });
+
+  const { data: valetStaff = [] } = useQuery<any[]>({
+    queryKey: ["/api/parking/valet-staff", outletId],
+    queryFn: async () => {
+      const res = await fetch(`/api/parking/valet-staff/${outletId}`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 60000,
+  });
+
+  const openShiftMutation = useMutation({
+    mutationFn: async () => {
+      const headStaff = valetStaff.find((s: any) => s.id === openForm.headValetId);
+      const res = await fetch(`/api/parking/shifts/${outletId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          shiftType: openForm.shiftType,
+          headValetId: openForm.headValetId || null,
+          headValetName: headStaff?.name || openForm.headValetName || null,
+          openingNotes: openForm.openingNotes || null,
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/shifts", outletId] });
+      setShowOpenForm(false);
+      setOpenForm({ shiftType: "EVENING", headValetId: "", headValetName: "", openingNotes: "" });
+      toast({ title: "Shift opened" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const closeShiftMutation = useMutation({
+    mutationFn: async ({ shiftId }: { shiftId: string }) => {
+      const res = await fetch(`/api/parking/shifts/${outletId}/${shiftId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ status: "closed", closingNotes }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/shifts", outletId] });
+      setShowReconcile(null);
+      setReconcileData(null);
+      setClosingNotes("");
+      toast({ title: "Shift closed" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const fetchSummary = async (shift: any) => {
+    const res = await fetch(`/api/parking/shifts/${outletId}/${shift.id}/summary`, { credentials: "include" });
+    if (res.ok) {
+      const data = await res.json();
+      setReconcileData(data);
+    }
+    setShowReconcile(shift);
+  };
+
+  const [assignForm, setAssignForm] = useState({ staffId: "", role: "VALET", zone: "" });
+  const addAssignmentMutation = useMutation({
+    mutationFn: async (shiftId: string) => {
+      const staff = valetStaff.find((s: any) => s.id === assignForm.staffId);
+      const res = await fetch(`/api/parking/shift-assignments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ shiftId, staffId: assignForm.staffId, staffName: staff?.name, role: assignForm.role, zone: assignForm.zone || null }),
+      });
+      if (!res.ok) throw new Error((await res.json()).message);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/shifts", outletId] });
+      setAssignForm({ staffId: "", role: "VALET", zone: "" });
+      toast({ title: "Staff assigned to shift" });
+    },
+    onError: (err: Error) => toast({ title: "Failed", description: err.message, variant: "destructive" }),
+  });
+
+  const clockMutation = useMutation({
+    mutationFn: async ({ assignmentId, action }: { assignmentId: string; action: "in" | "out" }) => {
+      const body = action === "in" ? { clockIn: true } : { clockOut: true };
+      const res = await fetch(`/api/parking/shift-assignments/${assignmentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error((await res.json()).message);
+      return res.json();
+    },
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/parking/shifts", outletId] });
+      toast({ title: vars.action === "in" ? "Clocked In" : "Clocked Out" });
+    },
+  });
+
+  return (
+    <div className="space-y-5" data-testid="shifts-tab">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <CalendarDays className="h-4 w-4" /> Shift Management
+        </h2>
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            value={selectedDate}
+            onChange={e => setSelectedDate(e.target.value)}
+            className="h-8 text-xs w-36"
+            data-testid="input-shift-date"
+          />
+          {!activeShift && (
+            <Button size="sm" onClick={() => setShowOpenForm(v => !v)} data-testid="button-open-shift">
+              <Plus className="h-3.5 w-3.5 mr-1" /> Open Shift
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Open New Shift Form */}
+      {showOpenForm && (
+        <div className="rounded-xl border p-4 bg-muted/10 space-y-4" data-testid="open-shift-form">
+          <h3 className="font-semibold text-sm">Open New Shift</h3>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label className="text-xs">Shift Type</Label>
+              <Select value={openForm.shiftType} onValueChange={v => setOpenForm(f => ({ ...f, shiftType: v }))}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-shift-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="MORNING">Morning</SelectItem>
+                  <SelectItem value="AFTERNOON">Afternoon</SelectItem>
+                  <SelectItem value="EVENING">Evening</SelectItem>
+                  <SelectItem value="NIGHT">Night</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs">Head Valet</Label>
+              <Select value={openForm.headValetId || "_none"} onValueChange={v => setOpenForm(f => ({ ...f, headValetId: v === "_none" ? "" : v }))}>
+                <SelectTrigger className="h-8 text-xs" data-testid="select-head-valet">
+                  <SelectValue placeholder="Select head valet" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="_none">— None —</SelectItem>
+                  {valetStaff.filter((s: any) => s.isActive !== false).map((s: any) => (
+                    <SelectItem key={s.id} value={s.id}>{s.name} {s.badgeNumber ? `(${s.badgeNumber})` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div>
+            <Label className="text-xs">Opening Notes</Label>
+            <Input
+              value={openForm.openingNotes}
+              onChange={e => setOpenForm(f => ({ ...f, openingNotes: e.target.value }))}
+              placeholder="Optional notes"
+              className="h-8 text-xs"
+              data-testid="input-shift-opening-notes"
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setShowOpenForm(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => openShiftMutation.mutate()} disabled={openShiftMutation.isPending} data-testid="button-confirm-open-shift">
+              {openShiftMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Open Shift"}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Active Shift Card */}
+      {activeShift && (
+        <Card className="border-green-300 bg-green-50/30" data-testid="active-shift-card">
+          <CardContent className="p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                  <span className="font-bold text-sm text-green-800">{activeShift.shift_type} Shift</span>
+                  <span className="text-xs text-muted-foreground">— Active</span>
+                </div>
+                {activeShift.head_valet_name && (
+                  <p className="text-xs flex items-center gap-1">
+                    <UserCheck className="h-3.5 w-3.5 text-green-700" /> Head: {activeShift.head_valet_name}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Started: {new Date(activeShift.opened_at).toLocaleString()}
+                </p>
+                <div className="flex gap-4 mt-2 text-xs">
+                  <span className="flex items-center gap-1"><Car className="h-3 w-3" /> {activeShift.vehicle_count} vehicles</span>
+                  <span className="flex items-center gap-1"><Banknote className="h-3 w-3" /> {fmt(parseFloat(activeShift.total_tips ?? "0"))} tips</span>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="border-red-300 text-red-700 hover:bg-red-50"
+                onClick={() => fetchSummary(activeShift)}
+                data-testid="button-close-shift"
+              >
+                Close Shift
+              </Button>
+            </div>
+
+            {/* Staff assignments */}
+            {Array.isArray(activeShift.assignments) && activeShift.assignments.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h4 className="text-xs font-semibold text-muted-foreground">Staff On This Shift</h4>
+                <div className="space-y-1.5">
+                  {activeShift.assignments.map((a: any) => (
+                    <div key={a.id} className="flex items-center gap-2 text-xs rounded-lg border bg-background px-3 py-2" data-testid={`shift-assignment-${a.id}`}>
+                      <UserCheck className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="font-medium">{a.staff_name}</span>
+                      <span className="text-muted-foreground">{a.role}</span>
+                      {a.zone && <span className="text-muted-foreground">· {a.zone}</span>}
+                      <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${a.clock_in && !a.clock_out ? "bg-green-100 text-green-700" : a.clock_out ? "bg-gray-100 text-gray-500" : "bg-muted text-muted-foreground"}`}>
+                        {a.clock_in && !a.clock_out ? "On Duty" : a.clock_out ? "Clocked Out" : "Not clocked"}
+                      </span>
+                      {a.clock_in && !a.clock_out ? (
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] text-red-600"
+                          onClick={() => clockMutation.mutate({ assignmentId: a.id, action: "out" })}
+                          data-testid={`button-clock-out-${a.id}`}
+                        >
+                          <LogOut className="h-3 w-3 mr-0.5" /> Out
+                        </Button>
+                      ) : !a.clock_in && (
+                        <Button size="sm" variant="ghost" className="h-6 text-[10px] text-green-700"
+                          onClick={() => clockMutation.mutate({ assignmentId: a.id, action: "in" })}
+                          data-testid={`button-clock-in-${a.id}`}
+                        >
+                          <LogIn className="h-3 w-3 mr-0.5" /> In
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Add staff to shift */}
+            <div className="mt-3 pt-3 border-t">
+              <h4 className="text-xs font-semibold text-muted-foreground mb-2">Add Staff to Shift</h4>
+              <div className="flex flex-wrap gap-2">
+                <Select value={assignForm.staffId || "_none"} onValueChange={v => setAssignForm(f => ({ ...f, staffId: v === "_none" ? "" : v }))}>
+                  <SelectTrigger className="h-7 text-xs w-40" data-testid="select-assign-staff">
+                    <SelectValue placeholder="Select staff" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">— Select staff —</SelectItem>
+                    {valetStaff.filter((s: any) => s.isActive !== false).map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={assignForm.role} onValueChange={v => setAssignForm(f => ({ ...f, role: v }))}>
+                  <SelectTrigger className="h-7 text-xs w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="HEAD_VALET">Head Valet</SelectItem>
+                    <SelectItem value="VALET">Valet</SelectItem>
+                    <SelectItem value="RUNNER">Runner</SelectItem>
+                    <SelectItem value="CASHIER">Cashier</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Input
+                  value={assignForm.zone}
+                  onChange={e => setAssignForm(f => ({ ...f, zone: e.target.value }))}
+                  placeholder="Zone (optional)"
+                  className="h-7 text-xs w-32"
+                  data-testid="input-assign-zone"
+                />
+                <Button
+                  size="sm"
+                  className="h-7 text-xs"
+                  disabled={!assignForm.staffId || addAssignmentMutation.isPending}
+                  onClick={() => addAssignmentMutation.mutate(activeShift.id)}
+                  data-testid="button-add-assignment"
+                >
+                  Add
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Today's shifts list */}
+      {shifts.filter((s: any) => s.id !== activeShift?.id).length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-sm font-semibold">Shifts on {selectedDate}</h3>
+          {shifts.filter((s: any) => s.id !== activeShift?.id).map((shift: any) => (
+            <div key={shift.id} className="rounded-lg border p-3 text-xs space-y-1 bg-muted/20" data-testid={`shift-${shift.id}`}>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold">{shift.shift_type}</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${shift.status === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>{shift.status}</span>
+                </div>
+                {shift.head_valet_name && <span className="text-muted-foreground">Head: {shift.head_valet_name}</span>}
+              </div>
+              <div className="flex gap-4 text-muted-foreground">
+                <span>{new Date(shift.opened_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} – {shift.closed_at ? new Date(shift.closed_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "ongoing"}</span>
+                <span>{shift.vehicle_count} vehicles</span>
+                <span>{fmt(parseFloat(shift.total_tips ?? "0"))} tips</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!activeShift && shifts.length === 0 && (
+        <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-xl" data-testid="empty-shifts">
+          <CalendarDays className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">No shifts found for this date</p>
+          <p className="text-xs mt-1">Open a new shift to start tracking</p>
+        </div>
+      )}
+
+      {/* Reconciliation Dialog */}
+      {showReconcile && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4" data-testid="reconcile-dialog">
+          <div className="bg-background rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="font-bold text-base">End-of-Shift Reconciliation</h3>
+            <div className="rounded-lg border p-4 bg-muted/10 space-y-2 text-sm">
+              <p className="font-semibold text-green-800">{showReconcile.shift_type} Shift</p>
+              {reconcileData ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-muted-foreground">Total Tickets:</span> <strong>{reconcileData.totalTickets}</strong></div>
+                    <div><span className="text-muted-foreground">Open Tickets:</span> <strong className={reconcileData.openTickets > 0 ? "text-amber-600" : ""}>{reconcileData.openTickets}</strong></div>
+                    <div><span className="text-muted-foreground">Total Tips:</span> <strong className="text-green-700">{fmt(reconcileData.totalTips)}</strong></div>
+                    <div><span className="text-muted-foreground">Fees Collected:</span> <strong className="text-blue-700">{fmt(reconcileData.billedFees ?? reconcileData.totalFees ?? 0)}</strong></div>
+                    <div><span className="text-muted-foreground">Vehicles:</span> <strong>{showReconcile.vehicle_count}</strong></div>
+                    <div><span className="text-muted-foreground">Total Revenue:</span> <strong>{fmt((reconcileData.totalTips ?? 0) + (reconcileData.billedFees ?? reconcileData.totalFees ?? 0))}</strong></div>
+                  </div>
+                  {Array.isArray(reconcileData.shift?.assignments) && reconcileData.shift.assignments.length > 0 && (
+                    <div className="mt-2">
+                      <p className="text-xs font-semibold text-muted-foreground mb-1">Tips per Staff:</p>
+                      {reconcileData.shift.assignments.map((a: any) => (
+                        <div key={a.id} className="flex justify-between text-xs py-0.5">
+                          <span>{a.staff_name} ({a.role})</span>
+                          <span className="font-medium text-green-700">{fmt(parseFloat(a.tips_collected ?? "0"))}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {reconcileData.openTickets > 0 && (
+                    <p className="text-xs text-amber-600 flex items-center gap-1">
+                      <AlertCircle className="h-3.5 w-3.5" /> {reconcileData.openTickets} vehicle(s) still in lot
+                    </p>
+                  )}
+                </>
+              ) : (
+                <Loader2 className="h-4 w-4 animate-spin mx-auto" />
+              )}
+            </div>
+            <div>
+              <Label className="text-xs">Closing Notes</Label>
+              <Textarea
+                rows={2}
+                placeholder="Any notes for this shift..."
+                value={closingNotes}
+                onChange={e => setClosingNotes(e.target.value)}
+                className="text-xs mt-1"
+                data-testid="input-closing-notes"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => { setShowReconcile(null); setReconcileData(null); }}>Cancel</Button>
+              <Button
+                className="flex-1 bg-red-600 hover:bg-red-700"
+                onClick={() => closeShiftMutation.mutate({ shiftId: showReconcile.id })}
+                disabled={closeShiftMutation.isPending}
+                data-testid="button-confirm-close-shift"
+              >
+                {closeShiftMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Close Shift"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Valet Staff Tab ─────────────────────────────────────────────────────────
 function ValetStaffTab({ outletId, tickets }: { outletId: string; tickets: any[] }) {
   const { toast } = useToast();
@@ -2628,6 +3568,10 @@ function ValetStaffTab({ outletId, tickets }: { outletId: string; tickets: any[]
           </div>
         </>
       )}
+
+      {/* Key Management Panel */}
+      <Separator />
+      <KeyManagementPanel outletId={outletId} />
     </div>
   );
 }
@@ -2869,9 +3813,18 @@ function AttendantTab({ outletId, outletName, onOpenNewTicket }: { outletId: str
     r.status === "pending" && r.scheduledFor && new Date(r.scheduledFor) > new Date()
   );
   const upcomingIds = new Set(upcomingScheduled.map((r: any) => r.id));
+  const priorityOrder: Record<string, number> = { VIP: 0, URGENT: 1, NORMAL: 2, LOW: 3 };
   const activeQueue = allPending
     .filter((r: any) => !upcomingIds.has(r.id))
-    .sort((a: any, b: any) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime()); // oldest first = highest priority
+    .sort((a: any, b: any) => {
+      const pa = priorityOrder[a.priority ?? "NORMAL"] ?? 2;
+      const pb = priorityOrder[b.priority ?? "NORMAL"] ?? 2;
+      if (pa !== pb) return pa - pb;
+      const qa = a.queuePosition ?? a.queue_position ?? 9999;
+      const qb = b.queuePosition ?? b.queue_position ?? 9999;
+      if (qa !== qb) return qa - qb;
+      return new Date(a.createdAt ?? a.created_at ?? 0).getTime() - new Date(b.createdAt ?? b.created_at ?? 0).getTime();
+    });
 
   const parkedCount = activeTickets.filter((t: any) => t.status === "parked").length;
 
@@ -2987,7 +3940,7 @@ function AttendantTab({ outletId, outletName, onOpenNewTicket }: { outletId: str
         <Car className="h-5 w-5 mr-2" /> Quick Check-In
       </Button>
 
-      {/* Active Retrieval Queue — sorted by wait time (oldest = highest priority) */}
+      {/* Active Retrieval Queue — sorted by priority (VIP → URGENT → NORMAL) then queue position then age */}
       {activeQueue.length > 0 && (
         <div>
           <h3 className="text-sm font-semibold mb-2 flex items-center gap-2" data-testid="heading-pending-retrievals">
@@ -2998,18 +3951,25 @@ function AttendantTab({ outletId, outletName, onOpenNewTicket }: { outletId: str
           <div className="space-y-2">
             {activeQueue.map((req: any) => {
               const ticket = activeTickets.find((t: any) => t.id === req.ticketId);
-              const reqTime = new Date(req.requestedAt);
-              const minutesAgo = Math.floor((now - reqTime.getTime()) / 60000);
+              const reqTimeMs = new Date(req.createdAt ?? req.created_at ?? req.requestedAt ?? 0).getTime();
+              const minutesAgo = Math.floor((now - reqTimeMs) / 60000);
               const isCritical = minutesAgo >= 10;
               const isUrgent = minutesAgo >= 5 && !isCritical;
+              const reqPriority: string = req.priority ?? "NORMAL";
+              const isVip = reqPriority === "VIP";
+              const isUrgentPriority = reqPriority === "URGENT";
               const waitClass = isCritical ? "text-red-600 font-bold" : isUrgent ? "text-amber-600 font-semibold" : "text-muted-foreground";
-              const statusColors: Record<string, string> = {
-                pending: isCritical ? "border-red-400 bg-red-50/60" : isUrgent ? "border-red-300 bg-red-50/40" : "border-amber-200 bg-amber-50/30",
-                accepted: "border-blue-200 bg-blue-50/30",
-                in_progress: ticket?.status === "ready" ? "border-green-300 bg-green-50/60" : "border-green-200 bg-green-50/30",
-              };
+              const borderClass = isVip
+                ? "border-yellow-400 bg-yellow-50/60"
+                : isUrgentPriority
+                  ? "border-red-400 bg-red-50/50"
+                  : {
+                      pending: isCritical ? "border-red-400 bg-red-50/60" : isUrgent ? "border-red-300 bg-red-50/40" : "border-amber-200 bg-amber-50/30",
+                      accepted: "border-blue-200 bg-blue-50/30",
+                      in_progress: ticket?.status === "ready" ? "border-green-300 bg-green-50/60" : "border-green-200 bg-green-50/30",
+                    }[req.status] ?? "";
               const statusLabel: Record<string, string> = {
-                pending: isCritical ? "CRITICAL" : isUrgent ? "URGENT" : "NEW",
+                pending: isCritical ? "CRITICAL" : isUrgent ? "WAIT" : "NEW",
                 accepted: "ACCEPTED",
                 in_progress: ticket?.status === "ready" ? "READY" : "RETRIEVING",
               };
@@ -3019,12 +3979,14 @@ function AttendantTab({ outletId, outletName, onOpenNewTicket }: { outletId: str
                 in_progress: ticket?.status === "ready" ? "bg-green-200 text-green-800" : "bg-green-100 text-green-700",
               };
               return (
-                <Card key={req.id} data-testid={`card-retrieval-${req.id}`} className={statusColors[req.status] ?? ""}>
+                <Card key={req.id} data-testid={`card-retrieval-${req.id}`} className={borderClass}>
                   <CardContent className="p-3 space-y-2">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="text-xl">{getVehicleIcon(ticket?.vehicleType)}</span>
+                          {isVip && <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-800" data-testid={`badge-priority-vip-${req.id}`}>VIP</span>}
+                          {isUrgentPriority && <span className="text-xs font-bold px-1.5 py-0.5 rounded bg-red-200 text-red-800" data-testid={`badge-priority-urgent-${req.id}`}>URGENT</span>}
                           <span className={`text-xs font-bold px-1.5 py-0.5 rounded ${statusBadgeColor[req.status]}`}>
                             {statusLabel[req.status] ?? req.status}
                           </span>
@@ -4161,6 +5123,9 @@ export default function ParkingPage() {
           <TabsTrigger value="slot-board" data-testid="tab-slot-board">Slot Board</TabsTrigger>
           <TabsTrigger value="revenue" data-testid="tab-revenue">Revenue & History</TabsTrigger>
           <TabsTrigger value="staff" data-testid="tab-staff">Valet Staff</TabsTrigger>
+          {isOwnerOrManager && (
+            <TabsTrigger value="shifts" data-testid="tab-shifts">Shifts</TabsTrigger>
+          )}
           {showAttendantTab && (
             <TabsTrigger value="attendant" data-testid="tab-attendant">Attendant</TabsTrigger>
           )}
@@ -4356,6 +5321,12 @@ export default function ParkingPage() {
         <TabsContent value="staff">
           {outletId && <ValetStaffTab outletId={outletId} tickets={tickets} />}
         </TabsContent>
+
+        {isOwnerOrManager && (
+          <TabsContent value="shifts">
+            {outletId && <ShiftsTab outletId={outletId} />}
+          </TabsContent>
+        )}
 
         {showAttendantTab && (
           <TabsContent value="attendant">
