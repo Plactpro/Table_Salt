@@ -19,28 +19,15 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import type { Order, OrderItem, Table as TableType, Customer } from "@shared/schema";
+import { useOutletTimezone, formatLocal, formatLocalDate } from "@/hooks/use-outlet-timezone";
 
 type OrderWithItems = Order & { items?: OrderItem[] };
-
-function formatDate(date: string | Date | null) {
-  if (!date) return "—";
-  return new Date(date).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
-function formatShortDate(date: string | Date | null) {
-  if (!date) return "—";
-  return new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-function getDateKey(date: string | Date | null): string {
-  if (!date) return "unknown";
-  return new Date(date).toLocaleDateString("en-US", { year: "numeric", month: "2-digit", day: "2-digit" });
-}
 
 type InvoiceView = "list" | "by_table" | "by_day" | "by_customer";
 
 export default function BillingPage() {
   const { user } = useAuth();
+  const outletTimezone = useOutletTimezone();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
   const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
@@ -147,14 +134,23 @@ export default function BillingPage() {
   const byDayData = useMemo(() => {
     const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
     filteredInvoices.forEach((o) => {
-      const key = getDateKey(o.createdAt);
-      const label = formatShortDate(o.createdAt);
+      if (!o.createdAt) return;
+      const d = new Date(o.createdAt);
+      let key: string;
+      let label: string;
+      try {
+        key = new Intl.DateTimeFormat("en-US", { timeZone: outletTimezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
+        label = new Intl.DateTimeFormat("en-US", { timeZone: outletTimezone, month: "short", day: "numeric", year: "numeric" }).format(d);
+      } catch {
+        key = d.toLocaleDateString("en-US", { year: "numeric", month: "2-digit", day: "2-digit" });
+        label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      }
       if (!groups[key]) groups[key] = { label, orders: [], revenue: 0 };
       groups[key].orders.push(o);
       groups[key].revenue += Number(o.total);
     });
     return Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0]));
-  }, [filteredInvoices]);
+  }, [filteredInvoices, outletTimezone]);
 
   const handleViewInvoice = async (orderId: string) => {
     try {
@@ -233,7 +229,7 @@ export default function BillingPage() {
         <TableBody>
           {invoices.map((order) => (
             <TableRow key={order.id} className="hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
-              <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
+              <TableCell className="text-sm">{formatLocalDate(order.createdAt, outletTimezone)}</TableCell>
               <TableCell className="font-mono text-xs" data-testid={`text-invoice-number-${order.id}`}>{getInvoiceLabel(order.id)}</TableCell>
               <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
               <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>
@@ -291,7 +287,7 @@ export default function BillingPage() {
                 {group.orders.map((order) => (
                   <TableRow key={order.id} className="hover:bg-muted/50" data-testid={`row-invoice-${order.id}`}>
                     <TableCell className="font-mono text-xs" data-testid={`text-invoice-number-${order.id}`}>{getInvoiceLabel(order.id)}</TableCell>
-                    <TableCell className="text-sm">{formatShortDate(order.createdAt)}</TableCell>
+                    <TableCell className="text-sm">{formatLocalDate(order.createdAt, outletTimezone)}</TableCell>
                     <TableCell><Badge variant="outline" className="text-xs">{typeLabels[order.orderType || "dine_in"]}</Badge></TableCell>
                     {showTableCol && <TableCell className="text-sm">{order.tableId ? tableMap[order.tableId] || "—" : "—"}</TableCell>}
                     <TableCell className="text-sm capitalize">{order.paymentMethod || "—"}</TableCell>
@@ -426,7 +422,7 @@ export default function BillingPage() {
             <div className="space-y-4">
               <div className="text-center border-b pb-3">
                 <h3 className="font-heading font-bold text-lg">{tenant?.name || "Restaurant"}</h3>
-                <p className="text-xs text-muted-foreground">{formatDate(selectedInvoice.createdAt)}</p>
+                <p className="text-xs text-muted-foreground">{formatLocal(selectedInvoice.createdAt, outletTimezone)}</p>
                 <div className="flex items-center justify-center gap-2 mt-1">
                   {selectedInvoice.tableId && <Badge variant="outline">{tableMap[selectedInvoice.tableId]}</Badge>}
                   {selectedInvoice.paymentMethod && <Badge variant="outline" className="capitalize">{selectedInvoice.paymentMethod}</Badge>}

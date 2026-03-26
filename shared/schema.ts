@@ -173,6 +173,7 @@ export const outlets = pgTable("outlets", {
   decimalPlaces: integer("decimal_places").default(2),
   denominationConfig: jsonb("denomination_config"),
   cashRounding: varchar("cash_rounding", { length: 20 }).default("NONE"),
+  timezone: varchar("timezone", { length: 100 }).default("UTC"),
 }, (t) => [
   index("idx_outlets_tenant_id").on(t.tenantId),
   index("idx_outlets_tenant_active").on(t.tenantId, t.active),

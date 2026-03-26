@@ -10,6 +10,7 @@ import {
   Navigation, Globe, Clock, CheckCircle2, Banknote, DollarSign, Save, AlertCircle, Package, X,
   Settings, Wrench, Shield,
 } from "lucide-react";
+import { timezones, getTimezoneLabel } from "@/lib/timezones";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1907,6 +1908,7 @@ export default function OutletsPage() {
     franchiseeName: "",
     royaltyRate: "",
     minimumGuarantee: "",
+    timezone: "",
   });
 
   const { data: tenant } = useQuery<any>({
@@ -1982,7 +1984,7 @@ export default function OutletsPage() {
   });
 
   function resetForm() {
-    setFormData({ name: "", address: "", openingHours: "", regionId: "", isFranchise: false, franchiseeName: "", royaltyRate: "", minimumGuarantee: "" });
+    setFormData({ name: "", address: "", openingHours: "", regionId: "", isFranchise: false, franchiseeName: "", royaltyRate: "", minimumGuarantee: "", timezone: tenant?.timezone || "" });
   }
 
   function openAddDialog() {
@@ -2002,6 +2004,7 @@ export default function OutletsPage() {
       franchiseeName: outlet.franchiseeName || "",
       royaltyRate: outlet.royaltyRate || "",
       minimumGuarantee: outlet.minimumGuarantee || "",
+      timezone: (outlet as any).timezone || tenant?.timezone || "",
     });
     setDialogOpen(true);
   }
@@ -2279,6 +2282,18 @@ export default function OutletsPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Timezone</Label>
+                    <Select value={formData.timezone || "UTC"} onValueChange={(v) => setFormData({ ...formData, timezone: v })}>
+                      <SelectTrigger data-testid="select-outlet-timezone"><SelectValue placeholder="Select timezone" /></SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        {timezones.map(tz => (
+                          <SelectItem key={tz.iana} value={tz.iana}>{tz.flag} {tz.label} ({tz.offset})</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Controls how dates and times are displayed for this outlet</p>
+                  </div>
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />
                     <Label htmlFor="outlet-franchise">Franchise Outlet</Label>
@@ -2337,6 +2352,18 @@ export default function OutletsPage() {
                       {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> Timezone</Label>
+                  <Select value={formData.timezone || "UTC"} onValueChange={(v) => setFormData({ ...formData, timezone: v })}>
+                    <SelectTrigger data-testid="select-outlet-timezone"><SelectValue placeholder="Select timezone" /></SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {timezones.map(tz => (
+                        <SelectItem key={tz.iana} value={tz.iana}>{tz.flag} {tz.label} ({tz.offset})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">Controls how dates and times are displayed for this outlet</p>
                 </div>
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />

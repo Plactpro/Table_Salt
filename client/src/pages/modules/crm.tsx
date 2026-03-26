@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { PageTitle } from "@/lib/accessibility";
+import { useOutletTimezone, formatLocal, formatLocalDate } from "@/hooks/use-outlet-timezone";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -88,6 +89,7 @@ const tierColors: Record<string, string> = {
 
 export default function CrmPage() {
   const { user } = useAuth();
+  const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const currency = user?.tenant?.currency || "USD";
@@ -583,7 +585,7 @@ export default function CrmPage() {
                     {fb.comment && <p className="text-xs text-muted-foreground">{fb.comment}</p>}
                     {fb.createdAt && (
                       <p className="text-[10px] text-muted-foreground mt-1">
-                        {new Date(fb.createdAt).toLocaleDateString()}
+                        {formatLocalDate(fb.createdAt, outletTimezone)}
                         {fb.orderId && ` · Order #${fb.orderId.slice(-6).toUpperCase()}`}
                       </p>
                     )}
@@ -687,7 +689,7 @@ export default function CrmPage() {
                           <div>
                             <span className="font-medium">{order.orderType}</span>
                             <span className="text-muted-foreground ml-2">
-                              {order.createdAt ? new Date(order.createdAt).toLocaleDateString() : ""}
+                              {order.createdAt ? formatLocalDate(order.createdAt, outletTimezone) : ""}
                             </span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -748,7 +750,7 @@ export default function CrmPage() {
                               <span className="font-semibold text-blue-700">{fmt(parseFloat(session.chargeAmount))}</span>
                             )}
                             {session.exitTime && (
-                              <span className="text-muted-foreground">{new Date(session.exitTime).toLocaleDateString()}</span>
+                              <span className="text-muted-foreground">{formatLocalDate(session.exitTime, outletTimezone)}</span>
                             )}
                           </div>
                         </div>
@@ -947,7 +949,7 @@ export default function CrmPage() {
                       .slice(0, 10)
                       .map((o) => (
                         <SelectItem key={o.id} value={o.id}>
-                          #{o.id.slice(-6).toUpperCase()} · {fmt(Number(o.total || 0))} · {o.createdAt ? new Date(o.createdAt).toLocaleDateString() : ""}
+                          #{o.id.slice(-6).toUpperCase()} · {fmt(Number(o.total || 0))} · {o.createdAt ? formatLocalDate(o.createdAt, outletTimezone) : ""}
                         </SelectItem>
                       ))}
                   </SelectContent>

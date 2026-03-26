@@ -201,8 +201,16 @@ export function registerWastageRoutes(app: Express): void {
       const user = req.user as any;
       const tenantId = user.tenantId;
       const outletId = (req.query.outletId as string) || null;
-      const today = new Date().toISOString().slice(0, 10);
-      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+
+      const tzRes = outletId
+        ? await pool.query(`SELECT COALESCE(timezone, 'UTC') AS tz FROM outlets WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [outletId, tenantId])
+        : await pool.query(`SELECT COALESCE(timezone, 'UTC') AS tz FROM outlets WHERE tenant_id = $1 ORDER BY created_at LIMIT 1`, [tenantId]);
+      const outletTz: string = tzRes.rows[0]?.tz || "UTC";
+
+      const nowInTz = new Date().toLocaleString("sv-SE", { timeZone: outletTz }).slice(0, 10);
+      const today = nowInTz;
+      const weekAgoDate = new Date(Date.now() - 7 * 86400000);
+      const weekAgo = weekAgoDate.toLocaleString("sv-SE", { timeZone: outletTz }).slice(0, 10);
 
       const outletCond = outletId
         ? `AND COALESCE(outlet_id, '') = COALESCE($3, '')`
@@ -218,7 +226,7 @@ export function registerWastageRoutes(app: Express): void {
         : `SELECT COALESCE(SUM(total_cost), 0) AS total, COUNT(*) AS cnt FROM wastage_logs WHERE tenant_id = $1 AND wastage_date >= $2 AND is_voided = false`;
 
       const revOutletCond = outletId ? "AND outlet_id = $3" : "";
-      const todayRevQ = `SELECT COALESCE(SUM(total::numeric), 0) AS revenue FROM orders WHERE tenant_id = $1 AND status IN ('paid','completed') AND DATE(created_at AT TIME ZONE 'UTC') = $2::date ${revOutletCond}`;
+      const todayRevQ = `SELECT COALESCE(SUM(total::numeric), 0) AS revenue FROM orders WHERE tenant_id = $1 AND status IN ('paid','completed') AND DATE(created_at AT TIME ZONE '${outletTz.replace(/'/g, "''")}') = $2::date ${revOutletCond}`;
 
       const [todayRes, weekRes, targetRes, recentRes, catRes, counterRes, chefRes, todayRevRes] = await Promise.all([
         pool.query(todayQ, params2),
@@ -386,7 +394,14 @@ export function registerWastageRoutes(app: Express): void {
       const user = req.user as any;
       const tenantId = user.tenantId;
       const outletId = (req.query.outletId as string) || null;
-      const day30 = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+
+      const tzRes2 = outletId
+        ? await pool.query(`SELECT COALESCE(timezone, 'UTC') AS tz FROM outlets WHERE id = $1 AND tenant_id = $2 LIMIT 1`, [outletId, tenantId])
+        : await pool.query(`SELECT COALESCE(timezone, 'UTC') AS tz FROM outlets WHERE tenant_id = $1 ORDER BY created_at LIMIT 1`, [tenantId]);
+      const revTz: string = (tzRes2.rows[0]?.tz || "UTC").replace(/'/g, "''");
+
+      const day30Date = new Date(Date.now() - 30 * 86400000);
+      const day30 = day30Date.toLocaleString("sv-SE", { timeZone: revTz }).slice(0, 10);
       const outletCond = outletId ? "AND COALESCE(outlet_id,'') = COALESCE($3,'')" : "";
       const revOutletCond = outletId ? "AND outlet_id = $3" : "";
 
@@ -398,9 +413,9 @@ export function registerWastageRoutes(app: Express): void {
           outletId ? [tenantId, day30, outletId] : [tenantId, day30]
         ),
         pool.query(
-          `SELECT DATE(created_at AT TIME ZONE 'UTC') AS date, COALESCE(SUM(total::numeric), 0) AS revenue
+          `SELECT DATE(created_at AT TIME ZONE '${revTz}') AS date, COALESCE(SUM(total::numeric), 0) AS revenue
            FROM orders WHERE tenant_id = $1 AND status IN ('paid','completed') AND created_at >= $2 ${revOutletCond}
-           GROUP BY DATE(created_at AT TIME ZONE 'UTC') ORDER BY date`,
+           GROUP BY DATE(created_at AT TIME ZONE '${revTz}') ORDER BY date`,
           outletId ? [tenantId, day30, outletId] : [tenantId, day30]
         ),
       ]);

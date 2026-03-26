@@ -12,6 +12,14 @@ function esc(str: string | null | undefined): string {
     .replace(/'/g, "&#x27;");
 }
 
+function formatInTimezone(date: Date, timezone: string, dateOpts: Intl.DateTimeFormatOptions): string {
+  try {
+    return new Intl.DateTimeFormat("en-US", { ...dateOpts, timeZone: timezone }).format(date);
+  } catch {
+    return new Intl.DateTimeFormat("en-US", dateOpts).format(date);
+  }
+}
+
 export interface KotPrintOptions {
   restaurantName: string;
   kotNumber?: string;
@@ -20,6 +28,7 @@ export interface KotPrintOptions {
   tableNumber?: number | null;
   station?: string | null;
   sentAt: string;
+  timezone?: string;
   items: Array<{
     name: string;
     quantity: number;
@@ -29,10 +38,10 @@ export interface KotPrintOptions {
 }
 
 export function renderKotHtml(opts: KotPrintOptions): string {
-  const { restaurantName, kotNumber, orderId, orderType, tableNumber, station, sentAt, items } = opts;
+  const { restaurantName, kotNumber, orderId, orderType, tableNumber, station, sentAt, items, timezone = "UTC" } = opts;
   const date = new Date(sentAt);
-  const dateStr = date.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = date.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const dateStr = formatInTimezone(date, timezone, { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = formatInTimezone(date, timezone, { hour: "2-digit", minute: "2-digit", hour12: true });
   const orderRef = esc(orderId.slice(-6).toUpperCase());
 
   const courseOrder = ["starter", "Starter", "main", "Main", "dessert", "Dessert", "beverage", "Beverage"];
@@ -144,6 +153,7 @@ export interface BillPrintOptions {
   orderType?: string | null;
   tableNumber?: number | null;
   waiterName?: string;
+  timezone?: string;
   items: Array<{
     name: string;
     quantity: number;
@@ -180,11 +190,12 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     cgstAmount, sgstAmount, tips = 0, totalAmount,
     currency = "₹", paymentMethod, paidAt,
     customerName, customerGstin, loyaltyPointsEarned, digitalReceiptUrl,
+    timezone = "UTC",
   } = opts;
 
   const now = paidAt ? new Date(paidAt) : new Date();
-  const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const dateStr = formatInTimezone(now, timezone, { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = formatInTimezone(now, timezone, { hour: "2-digit", minute: "2-digit", hour12: true });
   const fmt = (n: number) => `${currency}${n.toFixed(2)}`;
 
   const orderLabel =
