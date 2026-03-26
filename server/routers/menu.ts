@@ -7,6 +7,7 @@ import { auditLogFromReq } from "../audit";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { pool } from "../db";
 import { deleteFile } from "../services/file-storage";
+import { MenuCache } from "../lib/menu-cache";
 
 export function registerMenuRoutes(app: Express): void {
   app.get("/api/menu-categories", requireAuth, async (req, res) => {
@@ -38,8 +39,20 @@ export function registerMenuRoutes(app: Express): void {
 
   app.get("/api/menu-items", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const items = await storage.getMenuItemsByTenant(user.tenantId);
-    res.json(items);
+    const outletId = (req.query.outletId as string | undefined) || (user.outletId as string | undefined);
+    const cacheKey = outletId ? `${user.tenantId}:${outletId}` : user.tenantId;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 500);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+    let allItems = MenuCache.get(cacheKey);
+    if (!allItems) {
+      allItems = await storage.getMenuItemsByTenantAndOutlet(user.tenantId, outletId);
+      MenuCache.set(cacheKey, allItems);
+    }
+
+    const total = allItems.length;
+    const data = allItems.slice(offset, offset + limit);
+    res.json({ data, total, limit, offset, hasMore: offset + data.length < total });
   });
 
   app.get("/api/menu-items/:id/modifiers", requireAuth, async (req, res) => {
@@ -76,6 +89,7 @@ export function registerMenuRoutes(app: Express): void {
   app.post("/api/menu-items", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
     const user = req.user as any;
     const item = await storage.createMenuItem({ ...req.body, tenantId: user.tenantId });
+    MenuCache.invalidateByTenant(user.tenantId);
     auditLogFromReq(req, { action: "menu_item_created", entityType: "menu_item", entityId: item.id, entityName: item.name, after: { name: item.name, price: item.price } });
     res.json(item);
   });
@@ -98,6 +112,7 @@ export function registerMenuRoutes(app: Express): void {
 
     const { supervisorOverride: _so, ...updateData } = req.body;
     const item = await storage.updateMenuItem(req.params.id, user.tenantId, updateData);
+    MenuCache.invalidateByTenant(user.tenantId);
     if (existing) auditLogFromReq(req, { action: "menu_item_updated", entityType: "menu_item", entityId: req.params.id, entityName: existing.name, before: { name: existing.name, price: existing.price }, after: updateData });
     res.json(item);
   });
@@ -126,6 +141,7 @@ export function registerMenuRoutes(app: Express): void {
       }
 
       await storage.deleteMenuItem(req.params.id, user.tenantId, user.id);
+      MenuCache.invalidateByTenant(user.tenantId);
       if (existing.image) {
         deleteFile(existing.image).catch((e) => console.error("[menu] deleteFile error:", e));
       }

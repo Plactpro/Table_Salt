@@ -34,6 +34,7 @@ import {
   Package, Copy, Calendar, Clock, Store, TrendingUp, Percent, ChefHat, ExternalLink, Loader2,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, KitchenStation, ComboOffer } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 const categoryIcons: Record<string, React.ElementType> = {
   appetizers: Soup, starters: Soup, mains: Beef, main: Beef,
@@ -299,7 +300,11 @@ export default function MenuPage() {
   });
 
   const { data: categories = [], isLoading: categoriesLoading } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
-  const { data: allItems = [], isLoading: menuItemsLoading } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: allItems = [], isLoading: menuItemsLoading } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({
+    queryKey: ["/api/menu-items", "all"],
+    queryFn: () => fetch("/api/menu-items?limit=500", { credentials: "include" }).then(r => r.json()),
+    select: selectPageData,
+  });
   const menuLoading = categoriesLoading || menuItemsLoading;
   const { data: stations = [] } = useQuery<KitchenStation[]>({ queryKey: ["/api/kitchen-stations"] });
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });

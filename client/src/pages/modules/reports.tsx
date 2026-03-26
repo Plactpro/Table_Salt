@@ -1,7 +1,8 @@
 import { PageTitle } from "@/lib/accessibility";
 import { CardGridSkeleton, ChartSkeleton } from "@/components/ui/skeletons";
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useBackgroundReport } from "@/hooks/use-background-report";
 import { useAuth } from "@/lib/auth";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,9 +17,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { motion } from "framer-motion";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Cell } from "recharts";
-import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, FileText, FileDown, RotateCcw, Clock, ChevronDown, ChevronUp, AlertTriangle, Star, Timer } from "lucide-react";
+import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, FileText, FileDown, RotateCcw, Clock, ChevronDown, ChevronUp, AlertTriangle, Star, Timer, Loader2, RefreshCw } from "lucide-react";
 import { exportToPdf } from "@/lib/pdf-export";
 import { format, subDays } from "date-fns";
+import { apiRequest } from "@/lib/queryClient";
 
 const WATERFALL_COLORS = ["#3b82f6", "#14b8a6", "#f97316", "#ef4444", "#a855f7", "#22c55e"];
 const WATERFALL_KEYS = ["waiterResponse", "kitchenPickup", "idleWait", "cooking", "passWait", "service"];
@@ -609,6 +611,176 @@ function KitchenTimeTab() {
   );
 }
 
+const REPORT_TYPES = [
+  { value: "WEEKLY_REVENUE", label: "Weekly Revenue Summary" },
+  { value: "TOP_DISHES", label: "Top Dishes by Period" },
+  { value: "PEAK_HOURS", label: "Peak Hour Analysis" },
+  { value: "STOCK_MOVEMENT", label: "Stock Movement Report" },
+  { value: "CHEF_ACCOUNTABILITY", label: "Chef Accountability Report" },
+  { value: "WASTAGE_ANALYSIS", label: "Wastage Analysis Report" },
+  { value: "AUDIT_TRAIL_EXPORT", label: "Audit Trail Export" },
+  { value: "INVENTORY_VALUATION", label: "Inventory Valuation Report" },
+  { value: "SHIFT_RECONCILIATION", label: "Shift Reconciliation Report" },
+];
+
+function AsyncReportPanel() {
+  const [reportType, setReportType] = useState("WEEKLY_REVENUE");
+  const [from, setFrom] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
+  const [to, setTo] = useState(format(new Date(), "yyyy-MM-dd"));
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "generating" | "ready" | "failed">("idle");
+  const [result, setResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queryClient = useQueryClient();
+
+  const cacheKey = `/api/reports/result/${reportType}/${from}/${to}`;
+
+  useEffect(() => {
+    const cached = queryClient.getQueryData<any>([cacheKey]);
+    if (cached?.result) {
+      setStatus("ready");
+      setResult(cached.result);
+    }
+  }, [reportType, from, to]);
+
+  useEffect(() => {
+    return () => {
+      if (pollTimer.current) clearTimeout(pollTimer.current);
+    };
+  }, []);
+
+  function pollStatus(id: string) {
+    pollTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/reports/status/${id}`, { credentials: "include" });
+        const data = await res.json();
+        if (data.status === "ready") {
+          setStatus("ready");
+          setResult(data.result);
+          queryClient.setQueryData([cacheKey], { result: data.result });
+        } else if (data.status === "failed") {
+          setStatus("failed");
+          setError("Report generation failed. Please try again.");
+        } else {
+          pollStatus(id);
+        }
+      } catch (_) {
+        pollStatus(id);
+      }
+    }, 5000);
+  }
+
+  async function handleGenerate() {
+    if (pollTimer.current) clearTimeout(pollTimer.current);
+    setStatus("generating");
+    setResult(null);
+    setError(null);
+    setJobId(null);
+    try {
+      const res = await apiRequest("POST", "/api/reports/generate", { reportType, from, to });
+      const data = await res.json();
+      if (data.status === "ready") {
+        setStatus("ready");
+        setResult(data.result);
+        queryClient.setQueryData([cacheKey], { result: data.result });
+      } else if (data.status === "generating") {
+        setJobId(data.jobId);
+        pollStatus(data.jobId);
+      } else {
+        setStatus("failed");
+        setError("Unexpected response from server.");
+      }
+    } catch (err: any) {
+      setStatus("failed");
+      setError(err.message || "Failed to start report generation.");
+    }
+  }
+
+  function renderResult() {
+    if (!result) return null;
+    const label = REPORT_TYPES.find(r => r.value === reportType)?.label ?? reportType;
+    return (
+      <div className="space-y-3" data-testid="section-report-result">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{label}</h3>
+          <Badge variant="outline" className="text-green-700 border-green-300 text-xs">Ready</Badge>
+        </div>
+        <pre className="text-xs bg-muted/50 rounded-lg p-3 overflow-auto max-h-72 whitespace-pre-wrap" data-testid="text-report-json">
+          {JSON.stringify(result, null, 2)}
+        </pre>
+      </div>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm flex items-center gap-2">
+          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          Advanced Reports
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="space-y-1">
+            <Label className="text-xs">Report Type</Label>
+            <Select value={reportType} onValueChange={setReportType} data-testid="select-report-type">
+              <SelectTrigger className="h-8 text-sm" data-testid="select-report-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {REPORT_TYPES.map(rt => (
+                  <SelectItem key={rt.value} value={rt.value}>{rt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">From</Label>
+            <Input type="date" value={from} onChange={e => setFrom(e.target.value)} className="h-8 text-sm" data-testid="input-adv-report-from" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">To</Label>
+            <Input type="date" value={to} onChange={e => setTo(e.target.value)} className="h-8 text-sm" data-testid="input-adv-report-to" />
+          </div>
+        </div>
+        <Button
+          size="sm"
+          onClick={handleGenerate}
+          disabled={status === "generating"}
+          data-testid="button-generate-report"
+        >
+          {status === "generating" ? (
+            <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating…</>
+          ) : (
+            <><BarChart3 className="h-4 w-4 mr-2" />Generate Report</>
+          )}
+        </Button>
+
+        {status === "generating" && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200" data-testid="status-report-generating">
+            <Loader2 className="h-5 w-5 text-blue-600 animate-spin shrink-0" />
+            <div>
+              <p className="text-sm font-medium text-blue-800">Generating report — this may take a few seconds…</p>
+              {jobId && <p className="text-xs text-blue-600 mt-0.5">Job ID: {jobId}</p>}
+            </div>
+          </div>
+        )}
+
+        {status === "failed" && (
+          <div className="flex items-center gap-3 p-3 rounded-lg bg-red-50 border border-red-200" data-testid="status-report-failed">
+            <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+            <p className="text-sm text-red-800">{error || "Report generation failed."}</p>
+          </div>
+        )}
+
+        {status === "ready" && renderResult()}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function ReportsPage() {
   const { user } = useAuth();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
@@ -619,14 +791,7 @@ export default function ReportsPage() {
   const [toDate, setToDate] = useState(format(new Date(), "yyyy-MM-dd"));
   const [isExporting, setIsExporting] = useState(false);
 
-  const { data: report, isLoading } = useQuery<any>({
-    queryKey: ["/api/reports/sales", fromDate, toDate],
-    queryFn: async () => {
-      const res = await fetch(`/api/reports/sales?from=${fromDate}&to=${toDate}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load report");
-      return res.json();
-    },
-  });
+  const { data: report, isLoading, isGenerating: salesGenerating } = useBackgroundReport<any>(["/api/reports/sales", fromDate, toDate], `/api/reports/sales?from=${fromDate}&to=${toDate}`);
 
   const { data: dashboardStats } = useQuery<any>({
     queryKey: ["/api/dashboard"],
@@ -740,10 +905,17 @@ export default function ReportsPage() {
           <TabsTrigger value="kitchen-time" data-testid="tab-kitchen-time">
             <Clock className="h-4 w-4 mr-2" />Kitchen Time
           </TabsTrigger>
+          <TabsTrigger value="advanced" data-testid="tab-advanced-reports">
+            <RefreshCw className="h-4 w-4 mr-2" />Advanced Reports
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="kitchen-time">
           <KitchenTimeTab />
+        </TabsContent>
+
+        <TabsContent value="advanced">
+          <AsyncReportPanel />
         </TabsContent>
 
         <TabsContent value="sales" className="space-y-6">

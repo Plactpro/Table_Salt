@@ -16,6 +16,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, Star, Pencil, BookOpen, X } from "lucide-react";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface Supplier {
   id: string;
@@ -112,7 +113,7 @@ export default function SuppliersTab() {
     });
   };
 
-  const { data: suppliers = [], isLoading } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
+  const { data: suppliers = [], isLoading } = useQuery<PaginatedResponse<Supplier>, Error, Supplier[]>({ queryKey: ["/api/suppliers"], select: selectPageData });
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory"] });
   const inventoryItems = inventoryRes?.data ?? [];
   const { data: catalog = [] } = useQuery<CatalogItem[]>({

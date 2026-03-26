@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useBackgroundReport } from "@/hooks/use-background-report";
 import { StatCard } from "@/components/widgets/stat-card";
 import { ChartWidget } from "@/components/widgets/chart-widget";
 import { DataTable } from "@/components/widgets/data-table";
@@ -215,9 +216,7 @@ export default function OwnerDashboard() {
     queryKey: ["/api/dashboard"],
   });
 
-  const { data: salesReport } = useQuery<any>({
-    queryKey: ["/api/reports/sales"],
-  });
+  const { data: salesReport } = useBackgroundReport<any>(["/api/reports/sales"], "/api/reports/sales");
 
   if (isLoading) {
     return (

@@ -75,7 +75,7 @@ import {
   type StockTakeLine, type InsertStockTakeLine,
   type KitchenStation, type InsertKitchenStation,
   orderChannels, channelConfigs, onlineMenuMappings,
-  regions, franchiseInvoices, outletMenuOverrides,
+  regions, franchiseInvoices, outletMenuOverrides, outletMenuPrices,
   suppliers, supplierCatalogItems, purchaseOrders, purchaseOrderItems,
   goodsReceivedNotes, grnItems, procurementApprovals,
   type OrderChannel, type InsertOrderChannel,
@@ -220,6 +220,7 @@ export interface IStorage {
   deleteCategory(id: string): Promise<void>;
 
   getMenuItemsByTenant(tenantId: string): Promise<MenuItem[]>;
+  getMenuItemsByTenantAndOutlet(tenantId: string, outletId?: string): Promise<MenuItem[]>;
   getMenuItemsByCategory(categoryId: string): Promise<MenuItem[]>;
   getMenuItem(id: string, tenantId: string): Promise<MenuItem | undefined>;
   createMenuItem(data: InsertMenuItem): Promise<MenuItem>;
@@ -244,7 +245,7 @@ export interface IStorage {
   updateWaitlistEntry(id: string, tenantId: string, data: Partial<InsertWaitlistEntry>): Promise<WaitlistEntry | undefined>;
   deleteWaitlistEntry(id: string, tenantId: string): Promise<void>;
 
-  getReservationsByTenant(tenantId: string): Promise<Reservation[]>;
+  getReservationsByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Reservation[]>;
   createReservation(data: InsertReservation): Promise<Reservation>;
   updateReservation(id: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
   updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
@@ -951,6 +952,15 @@ export class DatabaseStorage implements IStorage {
   async getMenuItemsByTenant(tenantId: string) {
     return db.select().from(menuItems).where(and(eq(menuItems.tenantId, tenantId), eq(menuItems.isDeleted, false))).limit(500);
   }
+  async getMenuItemsByTenantAndOutlet(tenantId: string, outletId?: string): Promise<MenuItem[]> {
+    const baseItems = await db.select().from(menuItems).where(and(eq(menuItems.tenantId, tenantId), eq(menuItems.isDeleted, false))).limit(500);
+    if (!outletId) return baseItems;
+    const overrides = await db.select().from(outletMenuPrices).where(
+      and(eq(outletMenuPrices.tenantId, tenantId), eq(outletMenuPrices.outletId, outletId), eq(outletMenuPrices.priceType, "OUTLET_BASE"), eq(outletMenuPrices.isActive, true))
+    );
+    const overrideMap = new Map(overrides.map(o => [o.menuItemId, o.price]));
+    return baseItems.map(item => overrideMap.has(item.id) ? { ...item, price: overrideMap.get(item.id)! } : item);
+  }
   async getMenuItemsByCategory(categoryId: string) {
     return db.select().from(menuItems).where(and(eq(menuItems.categoryId, categoryId), eq(menuItems.isDeleted, false)));
   }
@@ -1033,9 +1043,11 @@ export class DatabaseStorage implements IStorage {
     await db.delete(waitlistEntries).where(and(eq(waitlistEntries.id, id), eq(waitlistEntries.tenantId, tenantId)));
   }
 
-  async getReservationsByTenant(tenantId: string) {
-    const rows = await db.select().from(reservations).where(and(eq(reservations.tenantId, tenantId), eq(reservations.isDeleted, false))).orderBy(desc(reservations.dateTime));
-    return rows.map(r => decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation);
+  async getReservationsByTenant(tenantId: string, opts?: { limit?: number; offset?: number }) {
+    let q = db.select().from(reservations).where(and(eq(reservations.tenantId, tenantId), eq(reservations.isDeleted, false))).orderBy(desc(reservations.dateTime)) as any;
+    if (opts?.limit !== undefined && opts?.offset !== undefined) q = q.limit(opts.limit).offset(opts.offset);
+    const rows = await q;
+    return rows.map((r: any) => decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation);
   }
   async createReservation(data: InsertReservation) {
     const encData = encryptPiiFields(data as Record<string, unknown>, RESERVATION_PII_FIELDS) as InsertReservation;

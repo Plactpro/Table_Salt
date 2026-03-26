@@ -8,6 +8,7 @@ import { can } from "@/lib/permissions";
 import { formatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import {
   ChefHat, Plus, Trash2, ArrowLeft, Save, Link2, Loader2, X,
   DollarSign, TrendingUp, Clock, Package, AlertTriangle, Copy, Search, Info,
@@ -66,7 +67,7 @@ export default function RecipeEditorPage() {
     queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
   });
   const inventory = inventoryRes?.data ?? [];
-  const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: menuItems = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({ queryKey: ["/api/menu-items"], select: selectPageData });
   const { data: unlinkedMenuItems = [] } = useQuery<{ id: string; name: string; price: number }[]>({
     queryKey: ["/api/recipes/unlinked-menu-items"],
   });

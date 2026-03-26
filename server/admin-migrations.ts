@@ -3676,4 +3676,24 @@ export async function runTask108Migrations(): Promise<void> {
   // PR-001: Widen idempotency key columns to VARCHAR(100) for composite keys (pay-<billId>-<uuid>)
   await pool.query(`ALTER TABLE idempotency_keys ALTER COLUMN key TYPE VARCHAR(100)`);
   await pool.query(`ALTER TABLE orders ALTER COLUMN idempotency_key TYPE VARCHAR(100)`);
+
+  // PR-005: report_cache table for background report jobs
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS report_cache (
+      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      report_type VARCHAR(64) NOT NULL,
+      outlet_id VARCHAR(36),
+      parameters JSONB NOT NULL DEFAULT '{}',
+      status VARCHAR(20) NOT NULL DEFAULT 'generating',
+      result JSONB,
+      computed_at TIMESTAMPTZ,
+      expires_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_report_cache_tenant_type_status
+    ON report_cache(tenant_id, report_type, status)
+  `);
 }

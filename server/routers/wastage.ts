@@ -634,10 +634,10 @@ export function registerWastageRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const tenantId = user.tenantId;
-      const { from, to, category, chefId, counterId, preventable, minCost, outletId, page = "1", limit: limitParam = "50" } = req.query;
+      const { from, to, category, chefId, counterId, preventable, minCost, outletId, limit: limitParam = "50", offset: offsetParam = "0" } = req.query;
 
       let whereClauses = ["wl.tenant_id = $1"];
-      const params: any[] = [tenantId];
+      const params: unknown[] = [tenantId];
 
       if (outletId) { params.push(outletId); whereClauses.push(`COALESCE(wl.outlet_id,'') = COALESCE($${params.length},'')`); }
       if (from) { params.push(from); whereClauses.push(`wl.wastage_date >= $${params.length}`); }
@@ -648,16 +648,17 @@ export function registerWastageRoutes(app: Express): void {
       if (preventable !== undefined) { params.push(preventable === "true"); whereClauses.push(`wl.is_preventable = $${params.length}`); }
       if (minCost) { params.push(Number(minCost)); whereClauses.push(`wl.total_cost >= $${params.length}`); }
 
-      const limitN = Math.min(parseInt(limitParam as string), 200);
-      const offset = (parseInt(page as string) - 1) * limitN;
+      const limit = Math.min(parseInt(limitParam as string) || 50, 100);
+      const offset = Math.max(parseInt(offsetParam as string) || 0, 0);
       const whereStr = whereClauses.join(" AND ");
 
       const [dataRes, countRes] = await Promise.all([
-        pool.query(`SELECT wl.* FROM wastage_logs wl WHERE ${whereStr} ORDER BY wl.wastage_date DESC, wl.created_at DESC LIMIT ${limitN} OFFSET ${offset}`, params),
+        pool.query(`SELECT wl.* FROM wastage_logs wl WHERE ${whereStr} ORDER BY wl.wastage_date DESC, wl.created_at DESC LIMIT ${limit} OFFSET ${offset}`, params),
         pool.query(`SELECT COUNT(*) AS total FROM wastage_logs wl WHERE ${whereStr}`, params),
       ]);
 
-      res.json({ data: dataRes.rows, total: parseInt(countRes.rows[0].total), page: parseInt(page as string), limit: limitN });
+      const total = parseInt(countRes.rows[0].total);
+      res.json({ data: dataRes.rows, total, limit, offset, hasMore: offset + dataRes.rows.length < total });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -9,6 +9,7 @@ import { checkApiRateAnomaly } from "./security-alerts";
 import { discoverPriceIds } from "./stripe";
 import { setupWebSocket } from "./realtime";
 import { pool } from "./db";
+import { routeContext } from "./lib/query-logger";
 
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
   console.error("[CRITICAL] SESSION_SECRET env var is not set. Using insecure default — set it before deploying to AWS.");
@@ -151,6 +152,14 @@ app.use((req, _res, next) => {
     checkApiRateAnomaly(u.id, u.tenantId, u.name, req).catch(() => {});
   }
   next();
+});
+
+app.use((req, _res, next) => {
+  if (req.path.startsWith("/api")) {
+    routeContext.run({ route: `${req.method} ${req.path}` }, next);
+  } else {
+    next();
+  }
 });
 
 app.use((req, res, next) => {

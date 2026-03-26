@@ -10,13 +10,13 @@ export function registerDeliveryRoutes(app: Express): void {
   app.get("/api/delivery-orders", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       const [data, [{ total }]] = await Promise.all([
         storage.getDeliveryOrdersByTenant(user.tenantId, { limit, offset }),
         db.select({ total: sql<number>`count(*)::int` }).from(deliveryOrdersTable).where(eq(deliveryOrdersTable.tenantId, user.tenantId)),
       ]);
-      res.json({ data, total: Number(total), limit, offset });
+      res.json({ data, total: Number(total), limit, offset, hasMore: offset + data.length < Number(total) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

@@ -11,18 +11,22 @@ export function registerCustomersRoutes(app: Express): void {
       const user = req.user as any;
       const phone = req.query.phone as string | undefined;
       if (phone) {
-        const all = await storage.getCustomersByTenant(user.tenantId, { limit: 500, offset: 0 });
-        const normalise = (p: string) => String(p ?? "").replace(/[\s\-\(\)]/g, "");
-        const match = all.filter(c => normalise(c.phone ?? "") === normalise(phone));
-        return res.json({ data: match, total: match.length, limit: 500, offset: 0 });
+        const normalizedPhone = phone.replace(/[\s\-\(\)]/g, "");
+        const match = await db
+          .select()
+          .from(customers)
+          .where(
+            sql`${customers.tenantId} = ${user.tenantId} AND REGEXP_REPLACE(COALESCE(${customers.phone}, ''), '[\\s\\-\\(\\)]', '', 'g') = ${normalizedPhone}`
+          );
+        return res.json({ data: match, total: match.length, limit: match.length, offset: 0, hasMore: false });
       }
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       const [data, [{ total }]] = await Promise.all([
         storage.getCustomersByTenant(user.tenantId, { limit, offset }),
         db.select({ total: sql<number>`count(*)::int` }).from(customers).where(eq(customers.tenantId, user.tenantId)),
       ]);
-      res.json({ data, total: Number(total), limit, offset });
+      res.json({ data, total: Number(total), limit, offset, hasMore: offset + data.length < Number(total) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -37,9 +41,15 @@ export function registerCustomersRoutes(app: Express): void {
       const user = req.user as any;
       const phone = req.query.phone as string | undefined;
       if (!phone || !phone.trim()) return res.status(400).json({ message: "phone query param is required" });
-      const all = await storage.getCustomersByTenant(user.tenantId, { limit: 500, offset: 0 });
-      const normalise = (p: string) => String(p ?? "").replace(/[\s\-\(\)]/g, "");
-      const match = all.find(c => normalise(c.phone ?? "") === normalise(phone.trim()));
+      const normalizedPhone = phone.trim().replace(/[\s\-\(\)]/g, "");
+      const found = await db
+        .select()
+        .from(customers)
+        .where(
+          sql`${customers.tenantId} = ${user.tenantId} AND REGEXP_REPLACE(COALESCE(${customers.phone}, ''), '[\\s\\-\\(\\)]', '', 'g') = ${normalizedPhone}`
+        )
+        .limit(1);
+      const match = found[0];
       if (!match) return res.status(404).json({ message: "Customer not found" });
 
       const tenantOffers = await storage.getOffersByTenant(user.tenantId);

@@ -15,6 +15,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { formatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -66,7 +67,7 @@ function RecipesTab() {
     queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
   });
   const inventory = inventoryRes?.data ?? [];
-  const { data: menuItemsList = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: menuItemsList = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({ queryKey: ["/api/menu-items"], select: selectPageData });
 
   const invMap = new Map(inventory.map(i => [i.id, i]));
   const menuMap = new Map(menuItemsList.map(m => [m.id, m]));

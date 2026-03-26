@@ -16,6 +16,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Building2, MapPin, TrendingUp, DollarSign, BarChart3, Receipt, Plus, FileText, Calculator, Store, Crown, ChevronRight, ExternalLink, XCircle } from "lucide-react";
 import { useLocation } from "wouter";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface Region { id: string; tenantId: string; name: string; description: string | null; sortOrder: number; active: boolean; }
 interface Outlet { id: string; tenantId: string; regionId: string | null; name: string; address: string | null; openingHours: string | null; isFranchise: boolean | null; franchiseeName: string | null; royaltyRate: string | null; minimumGuarantee: string | null; active: boolean | null; }
@@ -56,7 +57,7 @@ export default function HQConsolePage() {
   const { data: outlets = [] } = useQuery<Outlet[]>({ queryKey: ["/api/outlets"] });
   const { data: kpis = [] } = useQuery<OutletKPI[]>({ queryKey: ["/api/hq/outlet-kpis"] });
   const { data: invoices = [] } = useQuery<FranchiseInvoice[]>({ queryKey: ["/api/franchise-invoices"] });
-  const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: menuItems = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({ queryKey: ["/api/menu-items"], select: selectPageData });
   const { data: overrides = [] } = useQuery<OutletMenuOverride[]>({
     queryKey: ["/api/outlet-menu-overrides", overrideOutlet],
     enabled: !!overrideOutlet,

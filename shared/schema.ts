@@ -3359,3 +3359,19 @@ export const billParkingCharges = pgTable("bill_parking_charges", {
 export const insertBillParkingChargeSchema = createInsertSchema(billParkingCharges).omit({ id: true, createdAt: true });
 export type BillParkingCharge = typeof billParkingCharges.$inferSelect;
 export type InsertBillParkingCharge = z.infer<typeof insertBillParkingChargeSchema>;
+
+export const reportCache = pgTable("report_cache", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  reportType: varchar("report_type", { length: 64 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  parameters: jsonb("parameters").notNull().default({}),
+  status: varchar("status", { length: 20 }).notNull().default("generating"),
+  result: jsonb("result"),
+  computedAt: timestamp("computed_at", { withTimezone: true }),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+export const insertReportCacheSchema = createInsertSchema(reportCache).omit({ id: true, createdAt: true });
+export type ReportCache = typeof reportCache.$inferSelect;
+export type InsertReportCache = z.infer<typeof insertReportCacheSchema>;

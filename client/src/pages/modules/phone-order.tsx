@@ -19,6 +19,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface MenuItem {
   id: string;
@@ -87,8 +88,9 @@ export default function PhoneOrderPage() {
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [successOrder, setSuccessOrder] = useState<{ orderNumber: string; orderType: string } | null>(null);
 
-  const { data: menuItemsData } = useQuery<MenuItem[]>({
+  const { data: menuItemsData } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({
     queryKey: ["/api/menu-items"],
+    select: selectPageData,
   });
   const menuItems = menuItemsData ?? [];
 
