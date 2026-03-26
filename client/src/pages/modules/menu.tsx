@@ -6,6 +6,8 @@ import { PageTitle } from "@/lib/accessibility";
 import { useAuth } from "@/lib/auth";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
+import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
+import { TableSkeleton, ListCardSkeleton } from "@/components/ui/skeletons";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { Recipe, RecipeIngredient, InventoryItem } from "@shared/schema";
@@ -15,6 +17,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CharCountTextarea } from "@/components/ui/character-count-input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -266,6 +269,7 @@ export default function MenuPage() {
   const [itemDialogTab, setItemDialogTab] = useState("details");
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
   const [itemFormDirty, setItemFormDirty] = useState(false);
+  useDirtyFormGuard(itemFormDirty);
   const [itemConfirmLeave, setItemConfirmLeave] = useState(false);
   const [itemFormErrors, setItemFormErrors] = useState<{ name?: string; price?: string }>({});
   const [itemForm, setItemForm] = useState({
@@ -294,8 +298,9 @@ export default function MenuPage() {
     isActive: true,
   });
 
-  const { data: categories = [] } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
-  const { data: allItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: categories = [], isLoading: categoriesLoading } = useQuery<MenuCategory[]>({ queryKey: ["/api/menu-categories"] });
+  const { data: allItems = [], isLoading: menuItemsLoading } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const menuLoading = categoriesLoading || menuItemsLoading;
   const { data: stations = [] } = useQuery<KitchenStation[]>({ queryKey: ["/api/kitchen-stations"] });
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
   const { data: outletsList = [] } = useQuery<{ id: string; name: string }[]>({ queryKey: ["/api/outlets"] });
@@ -595,8 +600,7 @@ export default function MenuPage() {
     if (!itemForm.price) errors.price = "Price is required";
     if (Object.keys(errors).length > 0) {
       setItemFormErrors(errors);
-      const firstErrorField = !itemForm.name.trim() ? "item-name" : "item-price";
-      setTimeout(() => document.getElementById(firstErrorField)?.focus(), 50);
+      setTimeout(scrollToFirstError, 0);
       return;
     }
     const ingredients: ParsedIngredients = {};
@@ -847,10 +851,17 @@ export default function MenuPage() {
               </Button>
             </div>
 
-            {filteredItems.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20 text-muted-foreground" data-testid="text-no-items">
-                <UtensilsCrossed className="h-12 w-12 mb-3 opacity-40" />
-                <p className="text-sm">No menu items yet. Add your first item!</p>
+            {menuLoading ? (
+              <ListCardSkeleton count={8} />
+            ) : filteredItems.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 gap-4 text-muted-foreground" data-testid="text-no-items">
+                <UtensilsCrossed className="h-12 w-12 opacity-40" />
+                <p className="text-sm text-center">
+                  {selectedCategoryId ? "No items in this category yet." : "No menu items yet. Add your first item to get started."}
+                </p>
+                <Button onClick={openAddItem} data-testid="button-add-first-menu-item">
+                  <Plus className="h-4 w-4 mr-2" />Add Menu Item
+                </Button>
               </div>
             ) : (
               <motion.div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" variants={containerVariants} initial="hidden" animate="show">
@@ -1142,7 +1153,7 @@ export default function MenuPage() {
             </div>
             <div>
               <Label htmlFor="item-desc">Description</Label>
-              <Textarea id="item-desc" value={itemForm.description} onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })} placeholder="Brief description..." rows={2} data-testid="input-item-description" />
+              <CharCountTextarea id="item-desc" maxLength={300} value={itemForm.description} onChange={(e) => setItemForm({ ...itemForm, description: e.target.value })} placeholder="Brief description..." rows={2} data-testid="input-item-description" />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div>
@@ -1356,7 +1367,7 @@ export default function MenuPage() {
             </div>
             <div>
               <Label htmlFor="combo-desc">Description</Label>
-              <Textarea id="combo-desc" value={comboForm.description} onChange={(e) => setComboForm({ ...comboForm, description: e.target.value })} placeholder="Describe this combo..." rows={2} data-testid="input-combo-description" />
+              <CharCountTextarea id="combo-desc" maxLength={300} value={comboForm.description} onChange={(e) => setComboForm({ ...comboForm, description: e.target.value })} placeholder="Describe this combo..." rows={2} data-testid="input-combo-description" />
             </div>
 
             <div className="border rounded-lg p-4 space-y-3 bg-muted/30">

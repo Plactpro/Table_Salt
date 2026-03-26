@@ -5,6 +5,7 @@ import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
+import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ export default function ProcurementPage() {
   const [activeTab, setActiveTab] = useState("orders");
   const [poDialog, setPoDialog] = useState(false);
   const [poFormDirty, setPoFormDirty] = useState(false);
+  useDirtyFormGuard(poFormDirty);
   const [poConfirmLeave, setPoConfirmLeave] = useState(false);
   const [grnDialog, setGrnDialog] = useState(false);
   const [detailPO, setDetailPO] = useState<string | null>(null);
@@ -529,11 +531,7 @@ export default function ProcurementPage() {
                 if (!poForm.expectedDelivery) errs.expectedDelivery = "Expected delivery date is required";
                 if (Object.keys(errs).length > 0) {
                   setPoFormErrors(errs);
-                  if (errs.supplier) {
-                    setTimeout(() => document.querySelector<HTMLElement>("[data-testid='select-po-supplier']")?.focus(), 50);
-                  } else {
-                    setTimeout(() => document.querySelector<HTMLInputElement>("[data-testid='input-expected-delivery']")?.focus(), 50);
-                  }
+                  setTimeout(scrollToFirstError, 0);
                   return;
                 }
                 setPoFormErrors({});

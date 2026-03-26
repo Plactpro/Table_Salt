@@ -3,16 +3,21 @@ import { useEffect, useRef, useState } from "react";
 type Handler = (payload: unknown) => void;
 type ConnectionStatusHandler = (connected: boolean) => void;
 
+const MAX_RECONNECT_ATTEMPTS = 10;
+
 class RealtimeClient {
   private ws: WebSocket | null = null;
   private listeners = new Map<string, Set<Handler>>();
   private statusListeners = new Set<ConnectionStatusHandler>();
+  private reconnectCountListeners = new Set<(count: number) => void>();
   private delay = 1000;
   private maxDelay = 30000;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private active = false;
   private connected = false;
+  private reconnectCount = 0;
+  private maxAttemptsReached = false;
 
   start() {
     if (this.active) return;
@@ -58,20 +63,41 @@ class RealtimeClient {
     this.statusListeners.delete(handler);
   }
 
+  onReconnectCount(handler: (count: number) => void) {
+    this.reconnectCountListeners.add(handler);
+    handler(this.reconnectCount);
+  }
+
+  offReconnectCount(handler: (count: number) => void) {
+    this.reconnectCountListeners.delete(handler);
+  }
+
+  isMaxAttemptsReached() {
+    return this.maxAttemptsReached;
+  }
+
   private _setConnected(value: boolean) {
     if (this.connected === value) return;
     this.connected = value;
     this.statusListeners.forEach(h => { try { h(value); } catch (_) {} });
   }
 
+  private _setReconnectCount(count: number) {
+    this.reconnectCount = count;
+    this.reconnectCountListeners.forEach(h => { try { h(count); } catch (_) {} });
+  }
+
   private _connect() {
     if (!this.active) return;
+    if (this.maxAttemptsReached) return;
     try {
       const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
       this.ws = new WebSocket(`${proto}//${window.location.host}/ws`);
 
       this.ws.onopen = () => {
         this.delay = 1000;
+        this._setReconnectCount(0);
+        this.maxAttemptsReached = false;
         this._setConnected(true);
         this._startHeartbeat();
       };
@@ -90,8 +116,16 @@ class RealtimeClient {
         this.ws = null;
         this._setConnected(false);
         if (!this.active) return;
+
+        const nextCount = this.reconnectCount + 1;
+        this._setReconnectCount(nextCount);
+
+        if (nextCount >= MAX_RECONNECT_ATTEMPTS) {
+          this.maxAttemptsReached = true;
+          return;
+        }
+
         // Code 1006 = abnormal close (server restarted/crashed) — retry fast
-        // Code 4001 = auth failure — still retry, session may be restored
         const retryDelay = evt.code === 1006 ? 1000 : this.delay;
         this.timer = setTimeout(() => {
           this.delay = Math.min(this.delay * 2, this.maxDelay);
@@ -136,4 +170,19 @@ export function useRealtimeConnectionStatus(): boolean {
   }, []);
 
   return connected;
+}
+
+export function useRealtimeReconnectCount(): number {
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    realtimeClient.start();
+    const handler = (c: number) => setCount(c);
+    realtimeClient.onReconnectCount(handler);
+    return () => {
+      realtimeClient.offReconnectCount(handler);
+    };
+  }, []);
+
+  return count;
 }

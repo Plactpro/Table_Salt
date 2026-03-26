@@ -792,9 +792,12 @@ function TablesPageContent() {
 
   if (tablesLoading || outletsLoading) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 gap-3">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        <p className="text-sm text-muted-foreground">Loading floor plan...</p>
+      <div className="space-y-6 p-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          {Array.from({ length: 12 }).map((_, i) => (
+            <div key={i} className="h-24 rounded-lg bg-muted animate-pulse" />
+          ))}
+        </div>
       </div>
     );
   }
@@ -1199,6 +1202,19 @@ function TablesPageContent() {
               <Plus className="w-4 h-4 mr-2" />Reservation
             </Button>
           </div>
+          {reservations.length === 0 && (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <div className="flex flex-col items-center gap-4">
+                  <CalendarDays className="w-10 h-10 text-muted-foreground" />
+                  <p className="text-muted-foreground text-sm" data-testid="text-no-reservations">No reservations yet. Add your first reservation to get started.</p>
+                  <Button onClick={() => { setResFormData({ customerName: "", customerPhone: "", tableId: "", guests: "2", dateTime: "", notes: "", customerId: "" }); setShowAddReservation(true); }} data-testid="button-add-first-reservation">
+                    <Plus className="w-4 h-4 mr-2" />Add Reservation
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
           <div className="grid grid-cols-7 gap-2">
             {weekDays.map(day => {
               const dayReservations = getReservationsForDay(day);

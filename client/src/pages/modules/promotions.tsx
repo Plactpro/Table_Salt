@@ -1,4 +1,6 @@
 import { PageTitle } from "@/lib/accessibility";
+import { scrollToFirstError } from "@/lib/form-utils";
+import { ListCardSkeleton } from "@/components/ui/skeletons";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -170,7 +172,7 @@ export default function PromotionsPage() {
   const [formErrors, setFormErrors] = useState<{ name?: string; discountValue?: string }>({});
   const [tab, setTab] = useState("all");
 
-  const { data: rules = [] } = useQuery<PromotionRule[]>({
+  const { data: rules = [], isLoading: rulesLoading } = useQuery<PromotionRule[]>({
     queryKey: ["/api/promotion-rules"],
   });
 
@@ -287,8 +289,7 @@ export default function PromotionsPage() {
     if (form.ruleType !== "free_item" && !form.discountValue) errs.discountValue = "Value is required";
     if (Object.keys(errs).length > 0) {
       setFormErrors(errs);
-      if (errs.name) setTimeout(() => document.getElementById("rule-name")?.focus(), 50);
-      else if (errs.discountValue) setTimeout(() => document.getElementById("rule-value")?.focus(), 50);
+      setTimeout(() => scrollToFirstError(), 50);
       return;
     }
     setFormErrors({});
@@ -420,7 +421,9 @@ export default function PromotionsPage() {
         </TabsList>
 
         <TabsContent value={tab} className="mt-4">
-          {filteredRules.length === 0 ? (
+          {rulesLoading ? (
+            <ListCardSkeleton count={6} />
+          ) : filteredRules.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20 text-muted-foreground" data-testid="text-no-rules">
               <Zap className="h-12 w-12 mb-3 opacity-40" />
               <p className="text-sm">No promotion rules found. Create your first rule!</p>

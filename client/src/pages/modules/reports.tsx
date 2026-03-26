@@ -1,4 +1,5 @@
 import { PageTitle } from "@/lib/accessibility";
+import { CardGridSkeleton, ChartSkeleton } from "@/components/ui/skeletons";
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
@@ -768,6 +769,9 @@ export default function ReportsPage() {
         </div>
       </div>
 
+      {isLoading ? (
+        <CardGridSkeleton count={4} />
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { title: "Gross Revenue", value: fmt(Number(totals.revenue || 0)), icon: DollarSign, color: "text-green-600", bg: "bg-green-100", testId: "stat-total-revenue", delay: 0 },
@@ -792,8 +796,9 @@ export default function ReportsPage() {
           </motion.div>
         ))}
       </div>
+      )}
 
-      {(report?.totalRefunded > 0 || report?.netRevenue !== undefined) && (
+      {!isLoading && (report?.totalRefunded > 0 || report?.netRevenue !== undefined) && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
             <StatCard
@@ -842,7 +847,9 @@ export default function ReportsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {chartData.length > 0 ? (
+              {isLoading ? (
+                <ChartSkeleton />
+              ) : chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <BarChart data={chartData}>
                     <defs>
@@ -871,7 +878,7 @@ export default function ReportsPage() {
                 </ResponsiveContainer>
               ) : (
                 <div className="h-[300px] flex items-center justify-center text-muted-foreground" data-testid="text-no-chart-data">
-                  {isLoading ? "Loading..." : "No data for selected period"}
+                  No data for selected period
                 </div>
               )}
             </CardContent>
@@ -891,7 +898,9 @@ export default function ReportsPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {chartData.length > 0 ? (
+              {isLoading ? (
+                <ChartSkeleton />
+              ) : chartData.length > 0 ? (
                 <ResponsiveContainer width="100%" height={300}>
                   <LineChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
@@ -917,7 +926,7 @@ export default function ReportsPage() {
                 </ResponsiveContainer>
               ) : (
                 <div className="h-[300px] flex items-center justify-center text-muted-foreground">
-                  {isLoading ? "Loading..." : "No data for selected period"}
+                  No data for selected period
                 </div>
               )}
             </CardContent>
@@ -991,10 +1000,20 @@ export default function ReportsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {chartData.length === 0 ? (
+                  {isLoading ? (
                     <TableRow>
                       <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
-                        {isLoading ? "Loading..." : "No data for selected period"}
+                        <div className="flex justify-center gap-2 animate-pulse">
+                          {Array.from({ length: 5 }).map((_, i) => (
+                            <div key={i} className="h-4 bg-muted rounded w-16" />
+                          ))}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ) : chartData.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="text-center py-4 text-muted-foreground">
+                        No data for selected period
                       </TableCell>
                     </TableRow>
                   ) : (

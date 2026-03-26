@@ -1,4 +1,5 @@
 import { useOutletTimezone, formatLocalTime } from "@/hooks/use-outlet-timezone";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useState, useMemo, useCallback, useEffect, useRef, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useLocation } from "wouter";
@@ -46,6 +47,7 @@ import { StartShiftModal, CloseShiftDialog } from "@/components/pos/PosSessionMo
 import DeliveryQueuePanel, { DeliveryQueueButton } from "@/components/pos/DeliveryQueuePanel";
 import ModificationDrawer, { type FoodModification, DEFAULT_MODIFICATION, hasModification } from "@/components/modifications/ModificationDrawer";
 import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
+import { PosMenuSkeleton, PosCategorySkeleton } from "@/components/ui/skeletons";
 
 interface EngineDiscount {
   ruleId: string;
@@ -443,7 +445,7 @@ export default function POSPage() {
   const [heldTabs, setHeldTabs] = useState<HeldTab[]>(() => loadHeldTabsFromStorage());
   const [showRecall, setShowRecall] = useState(false);
 
-  const { data: serverHeldOrders = [] } = useQuery<ServerHeldOrder[]>({
+  const { data: serverHeldOrders = [], isLoading: heldOrdersLoading } = useQuery<ServerHeldOrder[]>({
     queryKey: ["/api/orders/on-hold"],
     enabled: showRecall,
     staleTime: 0,
@@ -517,8 +519,9 @@ export default function POSPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
   }, [queryClient]));
 
-  const { data: categories = [] } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
-  const { data: menuItems = [] } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");
+  const { data: categories = [], isLoading: categoriesLoading } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
+  const { data: menuItems = [], isLoading: menuItemsLoading } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");
+  const posMenuLoading = categoriesLoading || menuItemsLoading;
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
@@ -595,6 +598,35 @@ export default function POSPage() {
     }
     return items;
   }, [menuItems, selectedCategory, searchQuery]);
+
+  const getPosGridCols = () => {
+    if (typeof window === "undefined") return 3;
+    if (window.innerWidth >= 1024) return 4;
+    if (window.innerWidth >= 768) return 3;
+    return 2;
+  };
+  const [posGridCols, setPosGridCols] = useState(getPosGridCols);
+  useEffect(() => {
+    const onResize = () => setPosGridCols(getPosGridCols());
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const posGridRows = useMemo(() => {
+    const rows: (typeof filteredItems)[] = [];
+    for (let i = 0; i < filteredItems.length; i += posGridCols) {
+      rows.push(filteredItems.slice(i, i + posGridCols));
+    }
+    return rows;
+  }, [filteredItems, posGridCols]);
+  const usePosVirtual = filteredItems.length > 50;
+  const posMenuScrollRef = useRef<HTMLDivElement>(null);
+  const posMenuVirtualizer = useVirtualizer({
+    count: posGridRows.length,
+    getScrollElement: () => posMenuScrollRef.current,
+    estimateSize: () => 198,
+    overscan: 3,
+    enabled: usePosVirtual,
+  });
 
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
 
@@ -1298,23 +1330,29 @@ export default function POSPage() {
             <Input ref={searchInputRef} data-testid="input-search-menu" placeholder="Search menu items... (/ to focus)" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" aria-label="Search menu items" />
           </div>
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-            <Button data-testid="button-category-all" variant={selectedCategory === null && !showCombos ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(null); setShowCombos(false); }}>
-              <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> All
-            </Button>
-            {activeCombos.length > 0 && (
-              <Button data-testid="button-category-combos" variant={showCombos ? "default" : "outline"} size="sm" onClick={() => { setShowCombos(true); setSelectedCategory(null); }} className="whitespace-nowrap">
-                <Package className="h-3.5 w-3.5 mr-1" /> Combos
-                <Badge variant="secondary" className="ml-1 text-xs h-4 px-1">{activeCombos.length}</Badge>
-              </Button>
-            )}
-            {categories.filter((c) => c.active !== false).map((cat) => {
-              const CatIcon = getCategoryIcon(cat.name);
-              return (
-                <Button key={cat.id} data-testid={`button-category-${cat.id}`} variant={selectedCategory === cat.id ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(cat.id); setShowCombos(false); }} className="whitespace-nowrap">
-                  <CatIcon className="h-3.5 w-3.5 mr-1" /> {cat.name}
+            {posMenuLoading ? (
+              <PosCategorySkeleton />
+            ) : (
+              <>
+                <Button data-testid="button-category-all" variant={selectedCategory === null && !showCombos ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(null); setShowCombos(false); }}>
+                  <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> All
                 </Button>
-              );
-            })}
+                {activeCombos.length > 0 && (
+                  <Button data-testid="button-category-combos" variant={showCombos ? "default" : "outline"} size="sm" onClick={() => { setShowCombos(true); setSelectedCategory(null); }} className="whitespace-nowrap">
+                    <Package className="h-3.5 w-3.5 mr-1" /> Combos
+                    <Badge variant="secondary" className="ml-1 text-xs h-4 px-1">{activeCombos.length}</Badge>
+                  </Button>
+                )}
+                {categories.filter((c) => c.active !== false).map((cat) => {
+                  const CatIcon = getCategoryIcon(cat.name);
+                  return (
+                    <Button key={cat.id} data-testid={`button-category-${cat.id}`} variant={selectedCategory === cat.id ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(cat.id); setShowCombos(false); }} className="whitespace-nowrap">
+                      <CatIcon className="h-3.5 w-3.5 mr-1" /> {cat.name}
+                    </Button>
+                  );
+                })}
+              </>
+            )}
           </div>
         </div>
 
@@ -1369,9 +1407,45 @@ export default function POSPage() {
                 })}
               </div>
             )
+          ) : posMenuLoading ? (
+            <PosMenuSkeleton />
           ) : filteredItems.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <UtensilsCrossed className="h-12 w-12 mb-2" /><p>No items found</p>
+            </div>
+          ) : usePosVirtual ? (
+            <div ref={posMenuScrollRef} className="overflow-auto flex-1">
+              <div style={{ height: `${posMenuVirtualizer.getTotalSize()}px`, position: "relative" }}>
+                {posMenuVirtualizer.getVirtualItems().map((vRow) => (
+                  <div key={vRow.index} style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vRow.start}px)`, display: "grid", gridTemplateColumns: `repeat(${posGridCols}, minmax(0, 1fr))`, gap: "0.75rem", paddingBottom: "0.75rem" }}>
+                    {posGridRows[vRow.index]?.map((item) => {
+                      const inCart = cart.find((c) => c.menuItemId === item.id && !c.isCombo);
+                      const justAdded = addedItemId === item.id;
+                      const isUnavailable = item.available === false;
+                      const resolvedItemPrice = resolvedPriceMap.get(item.id);
+                      const hasSpecialPrice = resolvedItemPrice?.hasRule && resolvedItemPrice.resolvedPrice !== resolvedItemPrice.basePrice;
+                      return (
+                        <Card key={item.id} data-testid={`card-menu-item-${item.id}`} className={`transition-all duration-200 relative overflow-hidden ${isUnavailable ? "opacity-60 cursor-not-allowed" : "cursor-pointer hover:shadow-lg hover:scale-[1.02]"} ${inCart && !isUnavailable ? "border-primary/40 ring-1 ring-primary/20" : ""}`} onClick={() => !isUnavailable && addToCart(item)}>
+                          <AnimatePresence>{justAdded && (<motion.div key="added" initial={{ scale: 0, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0, opacity: 0 }} className="absolute inset-0 z-10 flex items-center justify-center bg-primary/20 backdrop-blur-sm rounded-lg"><motion.div initial={{ scale: 0 }} animate={{ scale: [0, 1.3, 1] }} transition={{ duration: 0.4 }}><CheckCircle2 className="h-8 w-8 text-primary" /></motion.div></motion.div>)}</AnimatePresence>
+                          {isUnavailable && <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/60 backdrop-blur-[1px] rounded-lg"><span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-muted text-muted-foreground border">Unavailable</span></div>}
+                          {item.image ? (<div className="overflow-hidden bg-muted" style={{ height: "110px" }}><img src={item.image} alt={item.name} className="w-full h-full object-cover" loading="lazy" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} /></div>) : (<div className="bg-muted/50 flex items-center justify-center" style={{ height: "110px" }}><UtensilsCrossed className="h-6 w-6 text-muted-foreground/40" /></div>)}
+                          <CardContent className="p-2.5">
+                            <div className="flex items-start justify-between mb-0.5">
+                              <h4 className="font-medium text-sm leading-tight line-clamp-2 flex-1 mr-1">{item.name}</h4>
+                              {item.isVeg === true ? (<span className="h-4 w-4 shrink-0 border-2 border-green-600 rounded-sm flex items-center justify-center mt-0.5"><span className="w-2 h-2 rounded-full bg-green-600" /></span>) : item.isVeg === false ? (<span className="h-4 w-4 shrink-0 border-2 border-red-600 rounded-sm flex items-center justify-center mt-0.5"><span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-600" /></span>) : null}
+                            </div>
+                            {item.description && <p className="text-[10px] text-muted-foreground line-clamp-1 mb-1.5">{item.description}</p>}
+                            <div className="flex items-center justify-between">
+                              <span className="font-semibold text-sm text-primary" data-testid={`text-price-${item.id}`}>{fmt(resolvedItemPrice?.resolvedPrice ?? item.price)}</span>
+                              {inCart && !isUnavailable ? (<div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button><span className="w-6 text-center text-sm font-semibold">{inCart.quantity}</span><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button></div>) : (!isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={() => addToCart(item)}><Plus className="h-3.5 w-3.5 text-primary" /></button>)}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -2192,7 +2266,13 @@ export default function POSPage() {
       <Dialog open={showRecall} onOpenChange={setShowRecall}>
         <DialogContent className="max-w-sm" data-testid="dialog-recall">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-primary" /> Held Orders</DialogTitle></DialogHeader>
-          {heldTabs.length === 0 && orphanedServerOrders.length === 0 ? (
+          {heldOrdersLoading ? (
+            <div className="space-y-2 py-2">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />
+              ))}
+            </div>
+          ) : heldTabs.length === 0 && orphanedServerOrders.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">No held orders</p>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
