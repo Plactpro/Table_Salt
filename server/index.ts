@@ -313,6 +313,22 @@ app.use((req, res, next) => {
 
   await registerRoutes(httpServer, app);
 
+  // PR-002: Audit Trail Hard-Protection startup assertion — runs AFTER routes are registered.
+  // Verifies no DELETE/PUT/PATCH route exists for the security audit-log (/api/audit-log).
+  // NOTE: /api/audits/* (cleaning/compliance audit templates) is a separate feature and is
+  // intentionally excluded from this check — only the append-only audit_events trail is protected.
+  const AUDIT_TRAIL_PATH_PREFIXES = ["/api/audit-log", "/api/audit-events"];
+  const auditDeleteRoutes = (app as any)._router?.stack?.filter((layer: any) => {
+    const path: string = layer?.route?.path ?? "";
+    const isAuditTrail = AUDIT_TRAIL_PATH_PREFIXES.some(prefix => path === prefix || path.startsWith(prefix + "/"));
+    return isAuditTrail && (layer?.route?.methods?.delete || layer?.route?.methods?.put || layer?.route?.methods?.patch);
+  }) ?? [];
+  if (auditDeleteRoutes.length > 0) {
+    const offenders = auditDeleteRoutes.map((l: any) => `${Object.keys(l.route.methods).join(",").toUpperCase()} ${l.route.path}`);
+    console.error("[STARTUP ASSERTION FAILED] Detected DELETE/UPDATE route(s) for audit trail endpoint — audit_events must be append-only:", offenders);
+    process.exit(1);
+  }
+
   try {
     const { startRetentionScheduler } = await import("./retention-cleanup");
     startRetentionScheduler();

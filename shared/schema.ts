@@ -136,6 +136,9 @@ export const users = pgTable("users", {
   passwordChangedAt: timestamp("password_changed_at"),
   passwordHistory: text("password_history").array(),
   createdAt: timestamp("created_at").defaultNow(),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_users_tenant_id").on(t.tenantId),
 ]);
@@ -206,6 +209,9 @@ export const menuItems = pgTable("menu_items", {
   course: text("course"),
   hsnCode: text("hsn_code"),
   prepTimeMinutes: integer("prep_time_minutes"),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_menu_items_tenant_id").on(t.tenantId),
   index("idx_menu_items_tenant_category").on(t.tenantId, t.categoryId),
@@ -290,6 +296,9 @@ export const reservations = pgTable("reservations", {
   notes: text("notes"),
   status: reservationStatusEnum("status").default("pending"),
   resourceRequirements: jsonb("resource_requirements").default([]),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_reservations_tenant_datetime").on(t.tenantId, t.dateTime),
   index("idx_reservations_tenant_status").on(t.tenantId, t.status),
@@ -328,6 +337,7 @@ export const orders = pgTable("orders", {
   estimatedReadyAt: timestamp("estimated_ready_at"),
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow(),
+  version: integer("version").notNull().default(1),
 }, (t) => [
   index("idx_orders_tenant_id").on(t.tenantId),
   index("idx_orders_tenant_created").on(t.tenantId, t.createdAt),
@@ -402,6 +412,9 @@ export const inventoryItems = pgTable("inventory_items", {
   reorderPieces: integer("reorder_pieces"),
   costPerPiece: decimal("cost_per_piece", { precision: 10, scale: 2 }),
   supplierIdRef: varchar("supplier_id_ref", { length: 36 }),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_inventory_items_tenant_id").on(t.tenantId),
   index("idx_inventory_items_tenant_category").on(t.tenantId, t.category),
@@ -458,6 +471,9 @@ export const customers = pgTable("customers", {
   vehiclePlates: text("vehicle_plates").array().default([]),
   parkingVisitCount: integer("parking_visit_count").default(0),
   parkingTotalSpent: decimal("parking_total_spent", { precision: 10, scale: 2 }).default("0"),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_customers_tenant_id").on(t.tenantId),
   index("idx_customers_tenant_loyalty_tier").on(t.tenantId, t.loyaltyTier),
@@ -909,6 +925,9 @@ export const recipes = pgTable("recipes", {
   notes: text("notes"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_recipes_tenant_id").on(t.tenantId),
 ]);
@@ -1098,6 +1117,9 @@ export const suppliers = pgTable("suppliers", {
   notes: text("notes"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_suppliers_tenant_id").on(t.tenantId),
 ]);
@@ -1148,6 +1170,9 @@ export const purchaseOrders = pgTable("purchase_orders", {
   updatedAt: timestamp("updated_at"),
   supplierName: varchar("supplier_name", { length: 255 }),
   createdByName: varchar("created_by_name", { length: 255 }),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 }, (t) => [
   index("idx_purchase_orders_tenant_id").on(t.tenantId),
   index("idx_purchase_orders_tenant_status").on(t.tenantId, t.status),
@@ -1571,6 +1596,9 @@ export const promotionRules = pgTable("promotion_rules", {
   endDate: timestamp("end_date"),
   active: boolean("active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 });
 
 export const insertPromotionRuleSchema = createInsertSchema(promotionRules).omit({ id: true, createdAt: true, usageCount: true });
@@ -3252,6 +3280,9 @@ export const valetTickets = pgTable("valet_tickets", {
   keyType: varchar("key_type", { length: 30 }),
   keyLocation: text("key_location"),
   chargeAmount: numeric("charge_amount", { precision: 10, scale: 2 }),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  deletedBy: varchar("deleted_by", { length: 36 }),
 });
 export const insertValetTicketSchema = createInsertSchema(valetTickets).omit({ id: true, createdAt: true, entryTime: true });
 export type ValetTicket = typeof valetTickets.$inferSelect;

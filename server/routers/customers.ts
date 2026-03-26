@@ -102,7 +102,7 @@ export function registerCustomersRoutes(app: Express): void {
 
   app.delete("/api/customers/:id", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
-    await storage.deleteCustomerByTenant(req.params.id, user.tenantId);
+    await storage.deleteCustomerByTenant(req.params.id, user.tenantId, user.id);
     res.json({ message: "Deleted" });
   });
 

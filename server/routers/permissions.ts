@@ -100,6 +100,13 @@ export function registerPermissionsRoutes(app: Express): void {
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
   });
 
+  // ─── Audit Trail Hard-Protection ─────────────────────────────────────────
+  // The audit_events table is append-only. There are intentionally NO DELETE
+  // or UPDATE routes for audit_events anywhere in this codebase. Any attempt
+  // to add such routes MUST be rejected — audit records are immutable evidence
+  // required for compliance and forensic investigations.
+  // ─────────────────────────────────────────────────────────────────────────
+
   app.get("/api/audit-log/export", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;

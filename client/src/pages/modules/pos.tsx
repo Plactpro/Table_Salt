@@ -31,6 +31,7 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
@@ -92,6 +93,7 @@ interface OrderTab {
   dismissedRuleIds: string[];
   sentCartKeys: string[];
   heldOrderId?: string;
+  heldOrderVersion?: number;
   customerName?: string;
   customerPhone?: string;
   covers?: number;
@@ -346,6 +348,7 @@ export default function POSPage() {
   const [showBillModal, setShowBillModal] = useState(false);
   const [reprintManagerDialog, setReprintManagerDialog] = useState<{ open: boolean; orderId: string } | null>(null);
   const [reprintManagerLoading, setReprintManagerLoading] = useState(false);
+  const [posVersionConflict, setPosVersionConflict] = useState(false);
 
   const [tabs, setTabs] = useState<OrderTab[]>(() => {
     const stored = loadTabsFromStorage();
@@ -770,21 +773,42 @@ export default function POSPage() {
     mutationFn: async () => {
       const hasPlacedOrder = !!activeTab?.heldOrderId;
       if (hasPlacedOrder) {
-        await apiRequest("PATCH", `/api/orders/${activeTab!.heldOrderId}`, { status: "on_hold" });
-        return activeTab!.heldOrderId!;
+        const version = activeTab!.heldOrderVersion;
+        if (version === undefined) {
+          // Fetch current version if not tracked
+          const fetchRes = await apiRequest("GET", `/api/orders/${activeTab!.heldOrderId}`);
+          const fetchedOrder = await fetchRes.json();
+          const res = await apiRequest("PATCH", `/api/orders/${activeTab!.heldOrderId}`, { status: "on_hold", version: fetchedOrder.version });
+          if (!res.ok) {
+            const data = await res.json().catch(() => ({}));
+            if ((res.status === 409 && data.code === "VERSION_CONFLICT") || (res.status === 400 && data.code === "VERSION_REQUIRED")) throw Object.assign(new Error(data.message), { isVersionConflict: true });
+            throw new Error(data.message || "Failed to hold order");
+          }
+          const updated = await res.json();
+          return { id: activeTab!.heldOrderId!, version: updated.version };
+        }
+        const res = await apiRequest("PATCH", `/api/orders/${activeTab!.heldOrderId}`, { status: "on_hold", version });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if ((res.status === 409 && data.code === "VERSION_CONFLICT") || (res.status === 400 && data.code === "VERSION_REQUIRED")) throw Object.assign(new Error(data.message), { isVersionConflict: true });
+          throw new Error(data.message || "Failed to hold order");
+        }
+        const updated = await res.json();
+        return { id: activeTab!.heldOrderId!, version: updated.version };
       }
       if (cart.length === 0) return null;
       const orderData = buildOrderData();
       orderData.status = "on_hold";
       const res = await apiRequest("POST", "/api/orders", orderData);
       const order = await res.json();
-      return order.id as string;
+      return { id: order.id as string, version: order.version as number };
     },
-    onSuccess: (orderId) => {
+    onSuccess: (result) => {
+      const orderId = result?.id ?? activeTab!.heldOrderId;
       const tabLabel = isDineIn && selectedTable
         ? `Table ${tables.find(t => t.id === selectedTable)?.number || ""}`
         : orderType === "takeaway" ? "Takeaway" : "Delivery";
-      const heldTab: OrderTab = { ...activeTab!, heldOrderId: orderId ?? activeTab!.heldOrderId };
+      const heldTab: OrderTab = { ...activeTab!, heldOrderId: orderId, heldOrderVersion: result?.version ?? activeTab!.heldOrderVersion };
       const held: HeldTab = { tab: heldTab, heldAt: new Date().toISOString(), label: tabLabel };
       const updated = [...heldTabs, held];
       setHeldTabs(updated);
@@ -793,7 +817,8 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders/on-hold"] });
       toast({ title: "Order held", description: `${tabLabel} saved. Use Recall to restore it.` });
     },
-    onError: (err: Error) => {
+    onError: (err: any) => {
+      if (err.isVersionConflict) { setPosVersionConflict(true); return; }
       toast({ title: "Failed to hold order", description: err.message, variant: "destructive" });
     },
   });
@@ -819,7 +844,7 @@ export default function POSPage() {
     setHeldTabs(updatedHeld);
     saveHeldTabsToStorage(updatedHeld);
     if (held.tab.heldOrderId) {
-      apiRequest("PATCH", `/api/orders/${held.tab.heldOrderId}`, { status: "in_progress" }).catch(() => {});
+      apiRequest("PATCH", `/api/orders/${held.tab.heldOrderId}`, { status: "in_progress", version: held.tab.heldOrderVersion }).catch(() => {});
     }
     setShowRecall(false);
     toast({ title: "Order recalled", description: `${held.label} restored to cart.` });
@@ -856,10 +881,11 @@ export default function POSPage() {
       dismissedRuleIds: [],
       sentCartKeys: [],
       heldOrderId: order.id,
+      heldOrderVersion: order.version,
     };
     setTabs(prev => { const u = [...prev, tab]; saveTabsToStorage(u); return u; });
     setActiveTabId(tab.id);
-    apiRequest("PATCH", `/api/orders/${order.id}`, { status: "in_progress" }).catch(() => {});
+    apiRequest("PATCH", `/api/orders/${order.id}`, { status: "in_progress", version: order.version }).catch(() => {});
     queryClient.invalidateQueries({ queryKey: ["/api/orders/on-hold"] });
     setShowRecall(false);
     toast({ title: "Order recalled", description: "Server order restored to cart." });
@@ -1006,6 +1032,7 @@ export default function POSPage() {
         updateActiveTab({
           sentCartKeys: allSentKeys,
           heldOrderId: data.id,
+          heldOrderVersion: data.version,
           discount: "",
           orderNotes: "",
           selectedOfferId: null,
@@ -2347,6 +2374,29 @@ export default function POSPage() {
           }}
         />
       )}
+      <AlertDialog open={posVersionConflict} onOpenChange={() => {}}>
+        <AlertDialogContent data-testid="dialog-pos-version-conflict">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Order Updated by Someone Else</AlertDialogTitle>
+            <AlertDialogDescription>
+              This order was modified by another user since you last loaded it.
+              You must refresh to see the latest version before making changes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="button-pos-refresh-order"
+              onClick={() => {
+                setPosVersionConflict(false);
+                queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+                queryClient.invalidateQueries({ queryKey: ["/api/orders/on-hold"] });
+              }}
+            >
+              Refresh Orders
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div></></PageErrorBoundary>
   );
 }

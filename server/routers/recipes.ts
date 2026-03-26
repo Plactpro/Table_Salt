@@ -89,7 +89,7 @@ export function registerRecipesRoutes(app: Express): void {
   app.delete("/api/recipes/:id", requireAuth, requirePermission("edit_recipe"), async (req, res) => {
     try {
       const user = req.user as any;
-      await storage.deleteRecipe(req.params.id, user.tenantId);
+      await storage.deleteRecipe(req.params.id, user.tenantId, user.id);
       auditLogFromReq(req, { action: "recipe_deleted", entityType: "recipe", entityId: req.params.id });
       res.json({ message: "Deleted" });
     } catch (err: any) { res.status(500).json({ message: err.message }); }

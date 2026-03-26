@@ -9,6 +9,7 @@ import { setupCsrf, setupIpAllowlistMiddleware } from "./security";
 import { uploadFile } from "./services/file-storage";
 
 import { registerAuthRoutes } from "./routers/auth";
+import { registerRecycleBinRoutes } from "./routers/recycle-bin";
 import { registerUsersRoutes } from "./routers/users";
 import { registerMenuRoutes } from "./routers/menu";
 import { registerTablesRoutes } from "./routers/tables";
@@ -146,6 +147,7 @@ export async function registerRoutes(
   });
 
   registerAuthRoutes(app);
+  registerRecycleBinRoutes(app);
   registerUsersRoutes(app);
   registerMenuRoutes(app);
   registerTablesRoutes(app);

@@ -170,10 +170,14 @@ export function registerOrdersRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      if (req.body.version === undefined || req.body.version === null) { return res.status(400).json({ code: "VERSION_REQUIRED", message: "Order version is required for updates." }); }
+      if (Number(req.body.version) !== Number(order.version)) {
+        return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was modified by someone else. Please refresh." });
+      }
       const etaMinutes = Math.max(5, Math.min(120, parseInt(req.body.etaMinutes) || 30));
       const estimatedReadyAt = new Date(Date.now() + etaMinutes * 60 * 1000);
       await pool.query(
-        `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1 WHERE id = $2`,
+        `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1, version = COALESCE(version, 0) + 1 WHERE id = $2`,
         [estimatedReadyAt, order.id]
       );
       try {
@@ -194,9 +198,13 @@ export function registerOrdersRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      if (req.body.version === undefined || req.body.version === null) { return res.status(400).json({ code: "VERSION_REQUIRED", message: "Order version is required for updates." }); }
+      if (Number(req.body.version) !== Number(order.version)) {
+        return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was modified by someone else. Please refresh." });
+      }
       const rejectionReason = String(req.body.rejectionReason || "Order rejected by restaurant");
       await pool.query(
-        `UPDATE orders SET status = 'cancelled', rejection_reason = $1 WHERE id = $2`,
+        `UPDATE orders SET status = 'cancelled', rejection_reason = $1, version = COALESCE(version, 0) + 1 WHERE id = $2`,
         [rejectionReason, order.id]
       );
       emitToTenant(user.tenantId, "order:delivery_rejected", { orderId: order.id, rejectionReason });
@@ -212,6 +220,10 @@ export function registerOrdersRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      if (req.body.version === undefined || req.body.version === null) { return res.status(400).json({ code: "VERSION_REQUIRED", message: "Order version is required for updates." }); }
+      if (Number(req.body.version) !== Number(order.version)) {
+        return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was modified by someone else. Please refresh." });
+      }
       await storage.updateOrder(order.id, { status: "served" });
       emitToTenant(user.tenantId, "order:delivery_dispatched", { orderId: order.id });
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "served", orderType: "delivery" });
@@ -226,10 +238,14 @@ export function registerOrdersRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      if (req.body.version === undefined || req.body.version === null) { return res.status(400).json({ code: "VERSION_REQUIRED", message: "Order version is required for updates." }); }
+      if (Number(req.body.version) !== Number(order.version)) {
+        return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was modified by someone else. Please refresh." });
+      }
       const etaMinutes = Math.max(5, Math.min(120, parseInt(req.body.etaMinutes) || 30));
       const estimatedReadyAt = new Date(Date.now() + etaMinutes * 60 * 1000);
       await pool.query(
-        `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1 WHERE id = $2`,
+        `UPDATE orders SET status = 'in_progress', estimated_ready_at = $1, version = COALESCE(version, 0) + 1 WHERE id = $2`,
         [estimatedReadyAt, order.id]
       );
       try {
@@ -250,9 +266,13 @@ export function registerOrdersRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
       if (order.orderType !== "delivery") return res.status(400).json({ message: "Not a delivery order" });
+      if (req.body.version === undefined || req.body.version === null) { return res.status(400).json({ code: "VERSION_REQUIRED", message: "Order version is required for updates." }); }
+      if (Number(req.body.version) !== Number(order.version)) {
+        return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was modified by someone else. Please refresh." });
+      }
       const rejectionReason = String(req.body.rejectionReason || "Order rejected by restaurant");
       await pool.query(
-        `UPDATE orders SET status = 'cancelled', rejection_reason = $1 WHERE id = $2`,
+        `UPDATE orders SET status = 'cancelled', rejection_reason = $1, version = COALESCE(version, 0) + 1 WHERE id = $2`,
         [rejectionReason, order.id]
       );
       emitToTenant(user.tenantId, "order:delivery_rejected", { orderId: order.id, rejectionReason });
@@ -650,6 +670,13 @@ export function registerOrdersRoutes(app: Express): void {
     const existing = await storage.getOrder(req.params.id, user.tenantId);
     if (!existing) return res.status(404).json({ message: "Order not found" });
 
+    // Optimistic locking: version is REQUIRED for all order updates.
+    // Clients must always send the current version they loaded; server rejects stale updates with 409.
+    if (req.body.version === undefined || req.body.version === null) {
+      return res.status(400).json({ code: "VERSION_REQUIRED", message: "Order version is required for updates. Reload the order and try again." });
+    }
+    const clientVersion = Number(req.body.version);
+
     const secSettings = await getSecuritySettings(user.tenantId);
 
     if (req.body.status === "voided" && secSettings.requireSupervisorForVoid && !can(user, "void_order")) {
@@ -758,10 +785,17 @@ export function registerOrdersRoutes(app: Express): void {
       }
     }
 
+    // Strip version from updateData before passing to Drizzle — version is managed by the server.
+    const { version: _versionField, ...updateDataNoVersion }: Record<string, unknown> = updateData;
+    // Build atomic WHERE clause: always include version (now always required)
+    const orderWhereClause = and(eq(ordersTable.id, req.params.id), eq(ordersTable.version, clientVersion));
+    const updateDataWithVersion = { ...updateDataNoVersion, version: sql`COALESCE(${ordersTable.version}, 0) + 1` };
+
     let order;
     if (depletionWrites.length > 0) {
       order = await db.transaction(async (tx) => {
-        const [updated] = await tx.update(ordersTable).set(updateData).where(eq(ordersTable.id, req.params.id)).returning();
+        const [updated] = await tx.update(ordersTable).set(updateDataWithVersion).where(orderWhereClause).returning();
+        if (!updated) return undefined;
         for (const w of depletionWrites) {
           await tx.update(inventoryItemsTable)
             .set({ currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)` })
@@ -781,7 +815,8 @@ export function registerOrdersRoutes(app: Express): void {
       });
     } else if (reversalEntries.length > 0) {
       order = await db.transaction(async (tx) => {
-        const [updated] = await tx.update(ordersTable).set(updateData).where(eq(ordersTable.id, req.params.id)).returning();
+        const [updated] = await tx.update(ordersTable).set(updateDataWithVersion).where(orderWhereClause).returning();
+        if (!updated) return undefined;
         for (const rv of reversalEntries) {
           await tx.update(inventoryItemsTable)
             .set({ currentStock: sql`LEAST(${inventoryItemsTable.currentStock}::numeric + ${rv.qty}, 999999999)` })
@@ -800,7 +835,12 @@ export function registerOrdersRoutes(app: Express): void {
         return updated;
       });
     } else {
-      order = await storage.updateOrder(req.params.id, updateData);
+      order = await storage.updateOrder(req.params.id, updateData, clientVersion);
+    }
+
+    // If version check failed (no rows updated), return 409
+    if (!order) {
+      return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was updated by someone else — refresh and try again." });
     }
 
     if (req.body.status === "sent_to_kitchen" && existing.status !== "sent_to_kitchen") {

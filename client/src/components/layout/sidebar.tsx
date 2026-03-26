@@ -146,6 +146,7 @@ const navItems: NavItem[] = [
   { id: "m-34", name: "QR Settings",         icon: ScanQrCode,       path: "/qr-settings",       group: "admin",      roles: ["manager", "outlet_manager"], featureKey: "tables" },
   { id: "m-42", name: "Printer Setup",       icon: Printer,          path: "/settings/printers", group: "admin",      roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
   { id: "m-46", name: "Alert Sounds",        icon: Bell,             path: "/settings/alerts",   group: "admin",      roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  { id: "m-51", name: "Recycle Bin",         icon: Trash2,           path: "/recycle-bin",        group: "admin",      roles: ["owner", "manager"] },
 ];
 
 const STORAGE_KEY = "sidebar_group_state_v2";
