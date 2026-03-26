@@ -139,6 +139,12 @@ export const users = pgTable("users", {
   isDeleted: boolean("is_deleted").notNull().default(false),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   deletedBy: varchar("deleted_by", { length: 36 }),
+  // PR-001: Session token for concurrent-session detection (requireFreshSession)
+  sessionToken: text("session_token"),
+  // PR-001: Quick-PIN login fields
+  pinHash: text("pin_hash"),
+  pinSetAt: timestamp("pin_set_at", { withTimezone: true }),
+  pinExpiresAt: timestamp("pin_expires_at", { withTimezone: true }),
 }, (t) => [
   index("idx_users_tenant_id").on(t.tenantId),
 ]);
@@ -339,6 +345,8 @@ export const orders = pgTable("orders", {
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at").defaultNow(),
   version: integer("version").notNull().default(1),
+  // PR-001: Idempotency key stored on the order for deterministic duplicate detection
+  idempotencyKey: varchar("idempotency_key", { length: 100 }),
 }, (t) => [
   index("idx_orders_tenant_id").on(t.tenantId),
   index("idx_orders_tenant_created").on(t.tenantId, t.createdAt),
@@ -1860,6 +1868,11 @@ export const billPayments = pgTable("bill_payments", {
   refundReason: text("refund_reason"),
   razorpayPaymentId: text("razorpay_payment_id"),
   razorpayRefundId: text("razorpay_refund_id"),
+  // PR-001: gateway fallback — tracks payments recorded when gateway was unreachable
+  gatewayStatus: varchar("gateway_status", { length: 30 }),
+  // PR-001: Explicit link from refund record → original payment record for per-payment cap scoping.
+  // Works for ALL payment methods (Razorpay, cash, UPI, card, etc.).
+  originalPaymentId: varchar("original_payment_id", { length: 36 }).references(() => billPayments.id),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_bill_payments_bill_id").on(t.billId),

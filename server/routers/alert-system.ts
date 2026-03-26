@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { requireAuth, requireRole } from "../auth";
+import { requireAuth, requireRole, requireFreshSession } from "../auth";
 import { storage } from "../storage";
 import { alertEngine } from "../services/alert-engine";
 import { z } from "zod";
@@ -69,7 +69,7 @@ export function registerAlertSystemRoutes(app: Express): void {
     })),
   });
 
-  app.put("/api/alerts/outlet-configs/:outletId", requireAuth, requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"), async (req: Request, res: Response) => {
+  app.put("/api/alerts/outlet-configs/:outletId", requireAuth, requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"), requireFreshSession, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const { outletId } = req.params;

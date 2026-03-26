@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { requireAuth, requireRole } from "../auth";
+import { requireAuth, requireRole, requireFreshSession } from "../auth";
 import { requirePermission } from "../permissions";
 import { auditLogFromReq } from "../audit";
 
@@ -87,7 +87,7 @@ export function registerTenantRoutes(app: Express): void {
     return data;
   }
 
-  app.post("/api/promotion-rules", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
+  app.post("/api/promotion-rules", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const body = req.body as Record<string, any>;
@@ -128,7 +128,7 @@ export function registerTenantRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/promotion-rules/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
+  app.patch("/api/promotion-rules/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), requireFreshSession, async (req, res) => {
     const user = req.user as any;
     const existing = await storage.getPromotionRule(req.params.id, user.tenantId);
     const rule = await storage.updatePromotionRule(req.params.id, user.tenantId, parseRuleDates(req.body));
@@ -137,7 +137,7 @@ export function registerTenantRoutes(app: Express): void {
     res.json(rule);
   });
 
-  app.delete("/api/promotion-rules/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
+  app.delete("/api/promotion-rules/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), requireFreshSession, async (req, res) => {
     const user = req.user as any;
     const existing = await storage.getPromotionRule(req.params.id, user.tenantId);
     await storage.deletePromotionRule(req.params.id, user.tenantId, user.id);

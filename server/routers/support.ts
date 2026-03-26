@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { requireAuth, requireRole } from "../auth";
+import { requireAuth, requireRole, requireFreshSession } from "../auth";
 import { storage } from "../storage";
 import { emitToTenant } from "../realtime";
 import { pool } from "../db";
@@ -187,7 +187,7 @@ export function registerSupportRoutes(app: Express): void {
     }
   });
 
-  app.post("/api/admin/support/tickets/:id/reply", requireAuth, requireSuperAdminOrPlatform, async (req: Request, res: Response) => {
+  app.post("/api/admin/support/tickets/:id/reply", requireAuth, requireSuperAdminOrPlatform, requireFreshSession, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
       const parsed = replySchema.safeParse(req.body);
@@ -238,7 +238,7 @@ export function registerSupportRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/admin/support/tickets/:id", requireAuth, requireSuperAdminOrPlatform, async (req: Request, res: Response) => {
+  app.patch("/api/admin/support/tickets/:id", requireAuth, requireSuperAdminOrPlatform, requireFreshSession, async (req: Request, res: Response) => {
     try {
       const parsed = adminUpdateSchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Validation failed" });

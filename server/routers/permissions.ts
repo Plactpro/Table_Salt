@@ -3,10 +3,10 @@ import { eq, and, desc } from "drizzle-orm";
 import { db } from "../db";
 import { storage } from "../storage";
 import { requireAuth, requireRole, requirePermission } from "../middleware";
+import { requireFreshSession, comparePasswords } from "../auth";
 import { auditLogFromReq } from "../audit";
 import { can, needsSupervisorApproval, getPermissionsForRole, type PermissionAction } from "../permissions";
 import { alertRoleEscalation, alertBulkDataExport } from "../security-alerts";
-import { comparePasswords } from "../auth";
 import { deviceSessions } from "@shared/schema";
 import { otpApprovalTokens } from "./_shared";
 
@@ -188,7 +188,7 @@ export function registerPermissionsRoutes(app: Express): void {
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Server error" }); }
   });
 
-  app.patch("/api/security/settings", requireRole("owner", "franchise_owner", "hq_admin"), requirePermission("manage_security"), async (req, res) => {
+  app.patch("/api/security/settings", requireRole("owner", "franchise_owner", "hq_admin"), requirePermission("manage_security"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const tenantId = String(user.tenantId);
@@ -318,7 +318,7 @@ export function registerPermissionsRoutes(app: Express): void {
     } catch (err: unknown) { res.status(500).json({ message: err instanceof Error ? err.message : "Unknown error" }); }
   });
 
-  app.patch("/api/users/:id/role", requireRole("owner"), requirePermission("manage_users"), async (req, res) => {
+  app.patch("/api/users/:id/role", requireRole("owner"), requirePermission("manage_users"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const targetUser = await storage.getUser(req.params.id);

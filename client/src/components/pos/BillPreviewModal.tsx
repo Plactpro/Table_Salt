@@ -122,6 +122,8 @@ export default function BillPreviewModal({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const printRef = useRef<HTMLDivElement>(null);
+  // PR-001: Stable per-bill-session idempotency key — generated once, reused on retry, reset on success
+  const paymentIdemKeyRef = useRef<string | null>(null);
 
   const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -210,6 +212,7 @@ export default function BillPreviewModal({
   const [refundMode, setRefundMode] = useState<"items" | "manual">("items");
   const [refundStep, setRefundStep] = useState(false);
   const [upiMarkedPaid, setUpiMarkedPaid] = useState(false);
+  const [gatewayDown, setGatewayDown] = useState(false); // PR-001: shown when gateway returns 503 GATEWAY_DOWN
   const [loyaltySearchPhone, setLoyaltySearchPhone] = useState("");
   const [lookedUpCustomer, setLookedUpCustomer] = useState<{
     id: string; name: string; loyaltyPoints: number; gstin?: string | null;
@@ -480,10 +483,12 @@ export default function BillPreviewModal({
     setRzpInitiating(true);
     setRzpAttempted(true); // mark gateway as attempted — enables manual fallback if this link later fails
     try {
+      // PR-001: Pass a client-generated idempotency key so duplicate taps/races are safely deduplicated
+      const paymentRequestIdemKey = crypto.randomUUID();
       const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payment-request`, {
         method: activeMethod,
         tips: tipAmount || 0,
-      });
+      }, { idempotencyKey: paymentRequestIdemKey });
       const data = await res.json();
       setRzpLinkId(data.paymentLinkId);
       setRzpShortUrl(data.shortUrl);
@@ -560,22 +565,59 @@ export default function BillPreviewModal({
           payments.push({ paymentMethod: "LOYALTY", amount: loyaltyRedemptionValue });
         }
       }
+      // PR-001: Stable idempotency key — generate once per payment session, reuse on retry
+      if (!paymentIdemKeyRef.current) {
+        paymentIdemKeyRef.current = `pay-${createdBill.id}-${crypto.randomUUID()}`;
+      }
       const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payments`, {
         payments,
         tips: tipAmount || undefined,
         loyaltyPointsRedeemed: loyaltyPointsToRedeem || undefined,
         loyaltyCustomerId: lookedUpCustomer?.id || undefined,
-      });
+      }, { idempotencyKey: paymentIdemKeyRef.current });
       return res.json();
     },
     onSuccess: () => {
+      paymentIdemKeyRef.current = null; // reset so a new bill gets a fresh key
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setStep("receipt");
     },
-    onError: (err: Error) => toast({ title: "Payment failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => {
+      const cause = (err as { cause?: { code?: string; message?: string } }).cause;
+      const isGatewayDown = cause?.code === "GATEWAY_DOWN";
+      if (isGatewayDown) {
+        setGatewayDown(true);
+        toast({
+          variant: "destructive",
+          title: "Payment gateway unavailable",
+          description: "The payment gateway is currently unreachable. You can record a manual payment to continue.",
+        });
+      } else {
+        toast({ title: "Payment failed", description: err.message, variant: "destructive" });
+      }
+    },
+  });
+
+  const recordManualPendingMutation = useMutation({
+    mutationFn: async () => {
+      if (!createdBill) throw new Error("No bill created");
+      const billTotal = Number(createdBill.totalAmount);
+      const res = await apiRequest("POST", `/api/restaurant-bills/${createdBill.id}/payments/manual-pending`, {
+        amount: billTotal,
+        paymentMethod: "manual_pending",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      setGatewayDown(false);
+      toast({ title: "Manual payment recorded", description: "Payment recorded as pending gateway reconciliation." });
+      queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
+      setStep("receipt");
+    },
+    onError: (err: Error) => toast({ title: "Failed to record manual payment", description: err.message, variant: "destructive" }),
   });
 
   const voidBillMutation = useMutation({
@@ -629,7 +671,18 @@ export default function BillPreviewModal({
         }).catch(() => {});
       }
     },
-    onError: (err: Error) => toast({ title: "Refund failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => {
+      const cause = (err as { cause?: { code?: string } }).cause;
+      if (cause?.code === "GATEWAY_DOWN") {
+        toast({
+          variant: "destructive",
+          title: "Payment gateway unavailable",
+          description: "The gateway is unreachable. Record a cash refund manually or retry shortly.",
+        });
+      } else {
+        toast({ title: "Refund failed", description: err.message, variant: "destructive" });
+      }
+    },
   });
 
   const handleProceedToPayment = () => {
@@ -1852,6 +1905,18 @@ export default function BillPreviewModal({
                 </div>
               ) : (
                 <div className="space-y-2">
+                  {/* PR-001: Gateway-down fallback — offer manual pending record when Razorpay is unreachable */}
+                  {gatewayDown && createdBill && (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm space-y-2">
+                      <p className="font-medium text-amber-800">Payment gateway unavailable</p>
+                      <p className="text-amber-700 text-xs">The payment gateway is unreachable. You can record this payment as manually collected and reconcile with the gateway later.</p>
+                      <Button size="sm" variant="outline" className="w-full border-amber-400 text-amber-800 hover:bg-amber-100" data-testid="button-record-manual-payment"
+                        disabled={recordManualPendingMutation.isPending}
+                        onClick={() => recordManualPendingMutation.mutate()}>
+                        {recordManualPendingMutation.isPending ? "Recording…" : "Record Manual Payment (Gateway Pending)"}
+                      </Button>
+                    </div>
+                  )}
                   <Button className="w-full" size="lg" data-testid="button-confirm-payment"
                     disabled={
                       payBillMutation.isPending ||

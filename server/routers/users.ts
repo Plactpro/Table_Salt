@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { requireAuth, requireRole, hashPassword } from "../auth";
+import { requireAuth, requireRole, hashPassword, requireFreshSession } from "../auth";
 import { auditLogFromReq } from "../audit";
 import { sendStaffInviteEmail } from "../services/email-service";
 import { pool } from "../db";
@@ -79,7 +79,7 @@ export function registerUsersRoutes(app: Express): void {
     }
   });
 
-  app.patch("/api/users/:id", requireRole("owner", "manager"), async (req, res) => {
+  app.patch("/api/users/:id", requireRole("owner", "manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const data = { ...req.body };

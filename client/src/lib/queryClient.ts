@@ -1,4 +1,4 @@
-import { QueryClient, QueryFunction, MutationCache } from "@tanstack/react-query";
+import { QueryClient, QueryFunction, MutationCache, Mutation } from "@tanstack/react-query";
 
 function getCsrfToken(): string | null {
   const match = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
@@ -20,25 +20,81 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
+/**
+ * PR-001: Operation-aware timeout helper.
+ * fast    = 5s  — menu/list GETs
+ * standard = 8s — order mutations, most POST/PATCH
+ * heavy   = 30s — analytics, reports, CSV exports
+ */
+export type TimeoutType = "fast" | "standard" | "heavy";
+
+export function getTimeout(type: TimeoutType): number {
+  switch (type) {
+    case "fast":
+      return 5_000;
+    case "standard":
+      return 8_000;
+    case "heavy":
+      return 30_000;
+    default:
+      return 8_000;
+  }
+}
+
+function getTimeoutForUrl(url: string, method: string): TimeoutType {
+  const isGet = method.toUpperCase() === "GET";
+  const isHeavy =
+    url.includes("/reports") ||
+    url.includes("/analytics") ||
+    url.includes("/export") ||
+    url.includes("/csv") ||
+    url.includes("/stock-reports") ||
+    url.includes("/time-performance");
+
+  if (isHeavy) return "heavy";
+  if (isGet) return "fast";
+  return "standard";
+}
+
 export async function apiRequest(
   method: string,
   url: string,
   data?: unknown | undefined,
+  options?: { timeoutType?: TimeoutType; idempotencyKey?: string }
 ): Promise<Response> {
   const headers: Record<string, string> = {};
   if (data) headers["Content-Type"] = "application/json";
   const csrf = getCsrfToken();
   if (csrf) headers["x-csrf-token"] = csrf;
+  if (options?.idempotencyKey) headers["x-idempotency-key"] = options.idempotencyKey;
 
-  const res = await fetch(url, {
-    method,
-    headers,
-    body: data ? JSON.stringify(data) : undefined,
-    credentials: "include",
-  });
+  const timeoutType = options?.timeoutType ?? getTimeoutForUrl(url, method);
+  const timeoutMs = getTimeout(timeoutType);
 
-  await throwIfResNotOk(res);
-  return res;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers,
+      body: data ? JSON.stringify(data) : undefined,
+      credentials: "include",
+      signal: controller.signal,
+    });
+
+    await throwIfResNotOk(res);
+    return res;
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name === "AbortError") {
+      const timeoutErr = new Error(`Request timed out after ${timeoutMs / 1000}s — tap to retry`);
+      timeoutErr.name = "TimeoutError";
+      throw timeoutErr;
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
@@ -47,16 +103,58 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
-    });
+    const url = queryKey.join("/") as string;
+    const timeoutType = getTimeoutForUrl(url, "GET");
+    const timeoutMs = getTimeout(timeoutType);
+    const csrf = getCsrfToken();
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const headers: Record<string, string> = {};
+      if (csrf) headers["x-csrf-token"] = csrf;
+
+      const res = await fetch(url, {
+        credentials: "include",
+        signal: controller.signal,
+        headers,
+      });
+
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        return null;
+      }
+
+      // PR-001: Handle SESSION_CONFLICT from server
+      if (res.status === 401) {
+        try {
+          const body = await res.clone().json();
+          if (body?.code === "SESSION_CONFLICT") {
+            window.dispatchEvent(new CustomEvent("session-conflict"));
+          }
+        } catch {}
+      }
+
+      await throwIfResNotOk(res);
+      return await res.json();
+    } catch (err: unknown) {
+      if (err instanceof Error && err.name === "AbortError") {
+        const timeoutErr = new Error(`Request timed out — tap to retry`);
+        timeoutErr.name = "TimeoutError";
+        // PR-001: Dispatch api-timeout so GlobalSecurityListeners shows the retry toast for queries too.
+        // retryFn directly invalidates the timed-out query via the global queryClient instance.
+        window.dispatchEvent(new CustomEvent("api-timeout", {
+          detail: {
+            message: timeoutErr.message,
+            retryFn: () => queryClient.invalidateQueries({ queryKey }),
+          },
+        }));
+        throw timeoutErr;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
     }
-
-    await throwIfResNotOk(res);
-    return await res.json();
   };
 
 // Global READ_ONLY_SESSION handler — fires a custom event so the banner can show a toast
@@ -69,6 +167,15 @@ function handleReadOnlyError(error: Error) {
   } catch {}
 }
 
+function isNetworkError(error: Error): boolean {
+  return (
+    error.name === "TypeError" ||
+    error.message.includes("Failed to fetch") ||
+    error.message.includes("NetworkError") ||
+    error.name === "TimeoutError"
+  );
+}
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -76,15 +183,43 @@ export const queryClient = new QueryClient({
       refetchInterval: false,
       refetchOnWindowFocus: false,
       staleTime: Infinity,
-      retry: false,
+      retry: (failureCount, error) => {
+        if (failureCount >= 3) return false;
+        const err = error as Error;
+        if (isNetworkError(err)) {
+          return true;
+        }
+        const statusMatch = err.message.match(/^(\d{3}):/);
+        if (statusMatch) {
+          const status = parseInt(statusMatch[1]);
+          if (status >= 400) return false;
+        }
+        return false;
+      },
+      retryDelay: (attempt) => Math.min(1000 * Math.pow(2, attempt), 30000),
     },
     mutations: {
       retry: false,
     },
   },
   mutationCache: new MutationCache({
-    onError: (error) => {
+    onError: (error, _variables, _context, mutation) => {
       handleReadOnlyError(error as Error);
+      // PR-001: Dispatch session-conflict event for mutations
+      try {
+        const cause = (error as { cause?: { code?: string } }).cause;
+        if (cause?.code === "SESSION_CONFLICT") {
+          window.dispatchEvent(new CustomEvent("session-conflict"));
+        }
+      } catch {}
+      // PR-001: Dispatch timeout event so global UI can show "tap to retry" toast with actual retry callback
+      if ((error as Error).name === "TimeoutError") {
+        const retryFn = () => {
+          const vars = (mutation as Mutation).state.variables;
+          (mutation as Mutation).execute(vars);
+        };
+        window.dispatchEvent(new CustomEvent("api-timeout", { detail: { message: (error as Error).message, retryFn } }));
+      }
     },
   }),
 });

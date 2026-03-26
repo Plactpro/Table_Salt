@@ -7,7 +7,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
-import { requireAuth } from "../auth";
+import { requireAuth, requireFreshSession } from "../auth";
 import { storage } from "../storage";
 import { pool } from "../db";
 import { uploadFile, deleteFile } from "../services/file-storage";
@@ -713,7 +713,7 @@ export function registerAdsRoutes(app: any) {
     }
   });
 
-  app.post("/api/admin/ad-approvals/:id/approve", requireAuth, async (req: any, res: any) => {
+  app.post("/api/admin/ad-approvals/:id/approve", requireAuth, requireFreshSession, async (req: any, res: any) => { 
     try {
       if ((req.user.role as string) !== "super_admin") return res.status(403).json({ error: "Forbidden" });
       await pool.query(
@@ -726,7 +726,7 @@ export function registerAdsRoutes(app: any) {
     }
   });
 
-  app.post("/api/admin/ad-approvals/:id/reject", requireAuth, async (req: any, res: any) => {
+  app.post("/api/admin/ad-approvals/:id/reject", requireAuth, requireFreshSession, async (req: any, res: any) => {
     try {
       if ((req.user.role as string) !== "super_admin") return res.status(403).json({ error: "Forbidden" });
       const { reason } = req.body;

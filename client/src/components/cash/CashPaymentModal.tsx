@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -80,6 +80,8 @@ export default function CashPaymentModal({
 }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
+  // PR-001: Stable idempotency key — generated once per open dialog, reused on retry, reset on success
+  const paymentIdemKeyRef = useRef<string | null>(null);
 
   const currencyCode = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const currencyInfo = currencyMap[currencyCode as keyof typeof currencyMap];
@@ -122,6 +124,9 @@ export default function CashPaymentModal({
 
   const payMutation = useMutation({
     mutationFn: async () => {
+      if (!paymentIdemKeyRef.current) {
+        paymentIdemKeyRef.current = `pay-${billId}-${crypto.randomUUID()}`;
+      }
       const res = await apiRequest("POST", `/api/restaurant-bills/${billId}/payments`, {
         payments: [{
           paymentMethod: "CASH",
@@ -130,10 +135,11 @@ export default function CashPaymentModal({
           changeGiven: changeResult?.change || 0,
         }],
         cashSessionId: posSessionId || undefined,
-      });
+      }, { idempotencyKey: paymentIdemKeyRef.current });
       return res.json();
     },
     onSuccess: () => {
+      paymentIdemKeyRef.current = null; // reset so a fresh key is used for the next payment
       const change = changeResult?.change || 0;
       toast({
         title: "✅ Payment received",

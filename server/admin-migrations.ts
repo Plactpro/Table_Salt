@@ -3636,4 +3636,44 @@ export async function runTask108Migrations(): Promise<void> {
       AND t.timezone IS NOT NULL
       AND t.timezone != 'UTC'
   `);
+
+  // PR-001: Idempotency — idempotency_key column on orders table
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(100)`);
+  await pool.query(`ALTER TABLE orders ALTER COLUMN idempotency_key TYPE VARCHAR(100)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_orders_idempotency_key ON orders(tenant_id, idempotency_key) WHERE idempotency_key IS NOT NULL`);
+
+  // PR-001: Idempotency keys table (for KOT and other non-persistent endpoints)
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS idempotency_keys (
+      key VARCHAR(100) NOT NULL,
+      tenant_id VARCHAR(36) NOT NULL,
+      endpoint TEXT NOT NULL,
+      response_code INTEGER NOT NULL DEFAULT 200,
+      response_body JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (key, tenant_id)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_idempotency_keys_created_at ON idempotency_keys(created_at)`);
+  // Cleanup records older than 5 minutes on startup
+  await pool.query(`DELETE FROM idempotency_keys WHERE created_at < NOW() - INTERVAL '5 minutes'`);
+
+  // PR-001: Session token for concurrent session detection
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_token VARCHAR(36)`);
+
+  // PR-001: PIN login columns for staff users
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_hash VARCHAR(100)`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_set_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS pin_expires_at TIMESTAMPTZ`);
+
+  // PR-001: Gateway-down fallback — track gateway_status on bill payments
+  await pool.query(`ALTER TABLE bill_payments ADD COLUMN IF NOT EXISTS gateway_status VARCHAR(30)`);
+
+  // PR-001: Explicit FK from refund record → original payment record for per-payment cap scoping.
+  // Works for all payment methods (Razorpay, cash, UPI, card, etc.).
+  await pool.query(`ALTER TABLE bill_payments ADD COLUMN IF NOT EXISTS original_payment_id VARCHAR(36) REFERENCES bill_payments(id)`);
+
+  // PR-001: Widen idempotency key columns to VARCHAR(100) for composite keys (pay-<billId>-<uuid>)
+  await pool.query(`ALTER TABLE idempotency_keys ALTER COLUMN key TYPE VARCHAR(100)`);
+  await pool.query(`ALTER TABLE orders ALTER COLUMN idempotency_key TYPE VARCHAR(100)`);
 }

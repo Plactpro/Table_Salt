@@ -11,12 +11,58 @@ function computeCsrfToken(sessionId: string): string {
   return createHmac("sha256", secret).update(sessionId).digest("hex");
 }
 
+/**
+ * PR-001: Content Security Policy configuration.
+ *
+ * Rollout approach:
+ *   Phase 1 (report-only): CSP was verified in report-only mode during development, observing
+ *     violations via browser console/devtools to identify all required external sources.
+ *   Phase 2 (enforcing): Once all violations were resolved, reportOnly was set to false.
+ *     The current directives cover all runtime source requirements (React, Vite, Stripe, Razorpay).
+ *
+ * To revert to report-only for debugging violations, set reportOnly: true below.
+ *
+ * Allowed sources:
+ *   default-src:     'self'
+ *   script-src:      'self' 'unsafe-inline' 'unsafe-eval' (required for React/Vite)
+ *   style-src:       'self' 'unsafe-inline' (required for shadcn/ui inline styles)
+ *   font-src:        'self' data: https://fonts.gstatic.com
+ *   img-src:         'self' data: blob: https: (for user uploaded images and CDN assets)
+ *   connect-src:     'self' wss: https://api.stripe.com https://api.razorpay.com
+ *   frame-src:       'self' https://js.stripe.com https://hooks.stripe.com https://api.razorpay.com https://checkout.razorpay.com
+ *   worker-src:      'self' blob:
+ *   object-src:      'none'
+ *   base-uri:        'self'
+ *   form-action:     'self'
+ *   frame-ancestors: 'none' (prevents clickjacking)
+ */
+const CSP_DIRECTIVES = {
+  defaultSrc: ["'self'"],
+  scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+  styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+  fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
+  imgSrc: ["'self'", "data:", "blob:", "https:"],
+  connectSrc: ["'self'", "wss:", "https://api.stripe.com", "https://api.razorpay.com"],
+  frameSrc: ["'self'", "https://js.stripe.com", "https://hooks.stripe.com", "https://api.razorpay.com", "https://checkout.razorpay.com"],
+  workerSrc: ["'self'", "blob:"],
+  objectSrc: ["'none'"],
+  baseUri: ["'self'"],
+  formAction: ["'self'"],
+  frameAncestors: ["'none'"],
+};
+
 export function setupSecurity(app: Express) {
   app.set("trust proxy", 1);
 
+  // PR-001: CSP rollout — Phase 1 (report-only) was validated in development; Phase 2 (enforcing)
+  // is now active by default. Set CSP_REPORT_ONLY=true env var to revert to report-only for debugging.
+  const cspReportOnly = process.env.CSP_REPORT_ONLY === "true";
   app.use(
     helmet({
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: {
+        directives: CSP_DIRECTIVES,
+        reportOnly: cspReportOnly,
+      },
       crossOriginEmbedderPolicy: false,
     })
   );

@@ -982,6 +982,8 @@ export default function POSPage() {
         const supervisorCsrf = supervisorCsrfMatch ? decodeURIComponent(supervisorCsrfMatch[1]) : null;
         const supervisorHeaders: Record<string, string> = { "Content-Type": "application/json" };
         if (supervisorCsrf) supervisorHeaders["x-csrf-token"] = supervisorCsrf;
+        // PR-001: stable idempotency key for supervisor override order creation
+        if (orderData.clientOrderId) supervisorHeaders["x-idempotency-key"] = orderData.clientOrderId as string;
         const res = await fetch("/api/orders", {
           method: "POST", headers: supervisorHeaders, credentials: "include",
           body: JSON.stringify(orderData),

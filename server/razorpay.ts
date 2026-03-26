@@ -1,5 +1,23 @@
 import crypto from "crypto";
 
+export class GatewayDownError extends Error {
+  readonly code = "GATEWAY_DOWN";
+  constructor(gateway: string, cause?: unknown) {
+    super(`${gateway} payment gateway is unreachable. Please try again shortly.`);
+    this.name = "GatewayDownError";
+    if (cause instanceof Error && (cause as any).cause) this.cause = cause;
+  }
+}
+
+function wrapNetworkError(err: unknown, gateway: string): never {
+  if (err instanceof GatewayDownError) throw err;
+  const isNetworkError =
+    err instanceof TypeError ||
+    (err instanceof Error && /ECONNREFUSED|ETIMEDOUT|ECONNRESET|EHOSTUNREACH|socket hang up|network/i.test(err.message));
+  if (isNetworkError) throw new GatewayDownError(gateway, err);
+  throw err;
+}
+
 export interface RazorpayPaymentLink {
   id: string;
   short_url: string;
@@ -51,29 +69,41 @@ export async function createPaymentLink(params: {
     expire_by: Math.floor(Date.now() / 1000) + 900,
   };
 
-  const response = await fetch("https://api.razorpay.com/v1/payment_links", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: authHeader(keyId, keySecret) },
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(razorpayErrorMessage(err, response.status, "Razorpay API error"));
+  let response: Response;
+  try {
+    response = await fetch("https://api.razorpay.com/v1/payment_links", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authHeader(keyId, keySecret) },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    wrapNetworkError(err, "Razorpay");
   }
-  return response.json() as Promise<RazorpayPaymentLink>;
+
+  if (!response!.ok) {
+    if (response!.status >= 500) throw new GatewayDownError("Razorpay");
+    const err = await response!.json().catch(() => ({}));
+    throw new Error(razorpayErrorMessage(err, response!.status, "Razorpay API error"));
+  }
+  return response!.json() as Promise<RazorpayPaymentLink>;
 }
 
 export async function getPaymentLink(linkId: string, tenantKeyId?: string | null, tenantKeySecret?: string | null): Promise<RazorpayPaymentLink> {
   const { keyId, keySecret } = getCredentials(tenantKeyId, tenantKeySecret);
-  const response = await fetch(`https://api.razorpay.com/v1/payment_links/${linkId}`, {
-    headers: { Authorization: authHeader(keyId, keySecret) },
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(razorpayErrorMessage(err, response.status, "Razorpay API error"));
+  let response: Response;
+  try {
+    response = await fetch(`https://api.razorpay.com/v1/payment_links/${linkId}`, {
+      headers: { Authorization: authHeader(keyId, keySecret) },
+    });
+  } catch (err) {
+    wrapNetworkError(err, "Razorpay");
   }
-  return response.json() as Promise<RazorpayPaymentLink>;
+  if (!response!.ok) {
+    if (response!.status >= 500) throw new GatewayDownError("Razorpay");
+    const err = await response!.json().catch(() => ({}));
+    throw new Error(razorpayErrorMessage(err, response!.status, "Razorpay API error"));
+  }
+  return response!.json() as Promise<RazorpayPaymentLink>;
 }
 
 export function verifyWebhookSignature(rawBody: string, signature: string): boolean {
@@ -94,14 +124,20 @@ export async function refundRazorpayPayment(
     amount: amountPaise,
     notes: { reason: reason.slice(0, 255) },
   };
-  const response = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: authHeader(keyId, keySecret) },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(razorpayErrorMessage(err, response.status, "Razorpay refund API error"));
+  let response: Response;
+  try {
+    response = await fetch(`https://api.razorpay.com/v1/payments/${paymentId}/refund`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: authHeader(keyId, keySecret) },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    wrapNetworkError(err, "Razorpay");
   }
-  return response.json() as Promise<{ id: string; [key: string]: unknown }>;
+  if (!response!.ok) {
+    if (response!.status >= 500) throw new GatewayDownError("Razorpay");
+    const err = await response!.json().catch(() => ({}));
+    throw new Error(razorpayErrorMessage(err, response!.status, "Razorpay refund API error"));
+  }
+  return response!.json() as Promise<{ id: string; [key: string]: unknown }>;
 }
