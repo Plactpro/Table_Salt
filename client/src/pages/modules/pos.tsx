@@ -8,7 +8,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
-import { syncManager } from "@/lib/sync-manager";
+import { syncManager, type SyncStatus, type OfflineOrder } from "@/lib/sync-manager";
 import { useCachedQuery } from "@/hooks/use-cached-query";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { useKotAutoDispatch } from "@/hooks/use-kot-auto-dispatch";
@@ -39,7 +39,7 @@ import {
   StickyNote, CreditCard, Banknote, Wallet, Coffee, Beef, IceCream,
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
   Receipt, Clock, Pause, RotateCcw, Scissors, Flame, ChevronDown, Users, Phone, User,
-  MapPin, ChevronRight, Printer, AlertCircle,
+  MapPin, ChevronRight, Printer, AlertCircle, RefreshCw, WifiOff,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
@@ -49,6 +49,7 @@ import DeliveryQueuePanel, { DeliveryQueueButton } from "@/components/pos/Delive
 import ModificationDrawer, { type FoodModification, DEFAULT_MODIFICATION, hasModification } from "@/components/modifications/ModificationDrawer";
 import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 import { PosMenuSkeleton, PosCategorySkeleton } from "@/components/ui/skeletons";
+import SyncErrorPanel from "@/components/sync-error-panel";
 
 interface EngineDiscount {
   ruleId: string;
@@ -335,6 +336,7 @@ export default function POSPage() {
     open: boolean; url: string; qrDataUrl: string; copied: boolean; orderId?: string;
   } | null>(null);
   const [posSessionId, setPosSessionId] = useState<string | null>(null);
+  const posCartKey = userOutletId ? `pos_cart_${userOutletId}_${posSessionId ?? "default"}` : null;
   const [posSession, setPosSession] = useState<{ id: string; shiftName: string | null; openedAt: string } | null>(null);
   const [showStartShift, setShowStartShift] = useState(false);
   const [showCloseShift, setShowCloseShift] = useState(false);
@@ -380,9 +382,10 @@ export default function POSPage() {
     setTabs(prev => {
       const updated = prev.map(t => t.id === id ? { ...t, ...patch } : t);
       saveTabsToStorage(updated);
+      if (posCartKey) syncManager.saveActiveCart(posCartKey, updated).catch(() => {});
       return updated;
     });
-  }, []);
+  }, [posCartKey]);
 
   const updateActiveTab = useCallback((patch: Partial<OrderTab>) => {
     if (!activeTabId) return;
@@ -393,9 +396,10 @@ export default function POSPage() {
     setTabs(prev => {
       const updated = prev.map(t => t.id === activeTabId ? { ...t, cart: fn(t.cart) } : t);
       saveTabsToStorage(updated);
+      if (posCartKey) syncManager.saveActiveCart(posCartKey, updated).catch(() => {});
       return updated;
     });
-  }, [activeTabId]);
+  }, [activeTabId, posCartKey]);
 
   const addTab = useCallback(() => {
     if (tabs.length >= MAX_TABS) {
@@ -406,29 +410,32 @@ export default function POSPage() {
     setTabs(prev => {
       const updated = [...prev, tab];
       saveTabsToStorage(updated);
+      if (posCartKey) syncManager.saveActiveCart(posCartKey, updated).catch(() => {});
       return updated;
     });
     setActiveTabId(tab.id);
-  }, [tabs.length, toast]);
+  }, [tabs.length, toast, posCartKey]);
 
   const closeTab = useCallback((id: string) => {
     setTabs(prev => {
       if (prev.length === 1) {
         const fresh = [newTab()];
         saveTabsToStorage(fresh);
+        if (posCartKey) syncManager.saveActiveCart(posCartKey, fresh).catch(() => {});
         setActiveTabId(fresh[0].id);
         return fresh;
       }
       const idx = prev.findIndex(t => t.id === id);
       const updated = prev.filter(t => t.id !== id);
       saveTabsToStorage(updated);
+      if (posCartKey) syncManager.saveActiveCart(posCartKey, updated).catch(() => {});
       if (activeTabId === id) {
         const newIdx = Math.max(0, idx - 1);
         setActiveTabId(updated[newIdx]?.id ?? updated[0].id);
       }
       return updated;
     });
-  }, [activeTabId]);
+  }, [activeTabId, posCartKey]);
 
   const requestCloseTab = useCallback((id: string) => {
     const tab = tabs.find(t => t.id === id);
@@ -446,12 +453,51 @@ export default function POSPage() {
   const [heldTabs, setHeldTabs] = useState<HeldTab[]>(() => loadHeldTabsFromStorage());
   const [showRecall, setShowRecall] = useState(false);
 
-  const { data: serverHeldOrders = [], isLoading: heldOrdersLoading } = useQuery<ServerHeldOrder[]>({
+  useEffect(() => { syncManager.init(); }, []);
+
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("online");
+  const [syncPending, setSyncPending] = useState(0);
+  const isOffline = syncStatus === "offline";
+
+  const [heldOrdersFromCache, setHeldOrdersFromCache] = useState(false);
+  const [cachedHeldOrders, setCachedHeldOrders] = useState<ServerHeldOrder[]>([]);
+
+  const { data: serverHeldOrdersRaw = [], isLoading: heldOrdersLoading } = useQuery<ServerHeldOrder[]>({
     queryKey: ["/api/orders/on-hold"],
     enabled: showRecall,
     staleTime: 0,
     refetchOnWindowFocus: false,
   });
+
+  useEffect(() => {
+    if (!heldOrdersLoading && showRecall && !isOffline && userOutletId) {
+      syncManager.setOpenOrdersCache(userOutletId, serverHeldOrdersRaw).catch(() => {});
+      setCachedHeldOrders(serverHeldOrdersRaw);
+      setHeldOrdersFromCache(false);
+    }
+  }, [serverHeldOrdersRaw, heldOrdersLoading, showRecall, isOffline, userOutletId]);
+
+  useEffect(() => {
+    if (!showRecall || !userOutletId || !isOffline) return;
+    syncManager.init().then(async () => {
+      const snap = await syncManager.getOpenOrdersCache(userOutletId);
+      if (snap && snap.orders.length > 0) {
+        setCachedHeldOrders(snap.orders as ServerHeldOrder[]);
+        setHeldOrdersFromCache(true);
+      }
+    }).catch(() => {});
+  }, [showRecall, userOutletId, isOffline]);
+
+  const [offlineQueuedOrders, setOfflineQueuedOrders] = useState<OfflineOrder[]>([]);
+  useEffect(() => {
+    if (!showRecall) return;
+    syncManager.init().then(async () => {
+      const orders = await syncManager.getOfflineOrders(userOutletId);
+      setOfflineQueuedOrders(orders.filter(o => o.status === "queued"));
+    }).catch(() => {});
+  }, [showRecall, userOutletId]);
+
+  const serverHeldOrders = isOffline ? cachedHeldOrders : (serverHeldOrdersRaw.length > 0 ? serverHeldOrdersRaw : cachedHeldOrders);
   const orphanedServerOrders = useMemo<ServerHeldOrder[]>(() =>
     serverHeldOrders.filter(o => !heldTabs.some(h => h.tab.heldOrderId === o.id)),
     [serverHeldOrders, heldTabs]
@@ -490,7 +536,57 @@ export default function POSPage() {
 
   useEffect(() => { setDiscountPreset("none"); }, [activeTabId]);
 
-  useEffect(() => { syncManager.init(); }, []);
+  const [menuCacheNotice, setMenuCacheNotice] = useState<{ cachedAt: number; fromCache: boolean } | null>(null);
+  const [menuRefreshing, setMenuRefreshing] = useState(false);
+  const [showOfflinePaymentDialog, setShowOfflinePaymentDialog] = useState(false);
+  const offlinePaymentPendingRef = useRef(false);
+
+  useEffect(() => {
+    const unsub = syncManager.subscribe((s, p) => {
+      setSyncStatus(s);
+      setSyncPending(p);
+    });
+    const unsubComplete = syncManager.onSyncComplete((count) => {
+      toast({
+        title: `${count} offline order${count !== 1 ? "s" : ""} synced successfully`,
+        description: "All queued orders have been sent to the server.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/orders/on-hold"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+      if (userOutletId) {
+        fetch("/api/orders/on-hold", { credentials: "include" })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => {
+            if (Array.isArray(data) && userOutletId) {
+              syncManager.setOpenOrdersCache(userOutletId, data).catch(() => {});
+            }
+          })
+          .catch(() => {});
+      }
+    });
+    return () => { unsub(); unsubComplete(); };
+  }, [toast, queryClient, userOutletId]);
+
+  useEffect(() => {
+    if (!posCartKey) return;
+    let cancelled = false;
+    syncManager.init().then(async () => {
+      if (cancelled) return;
+      try {
+        const saved = await syncManager.getActiveCart(posCartKey);
+        if (saved && Array.isArray(saved) && saved.length > 0) {
+          const storedTabs = loadTabsFromStorage();
+          const hasContent = storedTabs.some(t => t.cart.length > 0);
+          if (!hasContent) {
+            setTabs(saved as OrderTab[]);
+            setActiveTabId((saved as OrderTab[])[0]?.id ?? "");
+          }
+        }
+      } catch {}
+    });
+    return () => { cancelled = true; };
+  }, [posCartKey]);
 
   const paymentModalRef = useRef(paymentLinkModal);
   paymentModalRef.current = paymentLinkModal;
@@ -520,9 +616,51 @@ export default function POSPage() {
     queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
   }, [queryClient]));
 
-  const { data: categories = [], isLoading: categoriesLoading } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
-  const { data: menuItems = [], isLoading: menuItemsLoading } = useCachedQuery<MenuItem[], PaginatedResponse<MenuItem>>(["/api/menu-items", "all"], "/api/menu-items?limit=500", { select: selectPageData });
+  const { data: categoriesRaw = [], isLoading: categoriesLoading, isOfflineCached: categoriesFromCache } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
+  const { data: menuItemsRaw = [], isLoading: menuItemsLoading, isOfflineCached: itemsFromCache, refetch: refetchMenuItems } = useCachedQuery<MenuItem[], PaginatedResponse<MenuItem>>(["/api/menu-items", "all"], "/api/menu-items?limit=500", { select: selectPageData });
+
+  const [menuCacheData, setMenuCacheData] = useState<{ categories: MenuCategory[]; items: MenuItem[]; cachedAt: number } | null>(null);
+
+  useEffect(() => {
+    if (!categoriesLoading && !menuItemsLoading) {
+      if (!categoriesFromCache && !itemsFromCache && categoriesRaw.length > 0 && userOutletId) {
+        syncManager.setMenuCache(userOutletId, { categories: categoriesRaw, items: menuItemsRaw }).catch(() => {});
+        setMenuCacheData(null);
+        setMenuCacheNotice(null);
+      }
+    }
+  }, [categoriesFromCache, itemsFromCache, categoriesRaw.length, menuItemsRaw.length, categoriesLoading, menuItemsLoading, userOutletId]);
+
+  useEffect(() => {
+    if (!isOffline || !userOutletId) return;
+    syncManager.init().then(async () => {
+      const cached = await syncManager.getMenuCache(userOutletId);
+      if (cached) {
+        setMenuCacheData({ categories: cached.categories as MenuCategory[], items: cached.items as MenuItem[], cachedAt: cached.cachedAt });
+        setMenuCacheNotice({ cachedAt: cached.cachedAt, fromCache: true });
+      }
+    }).catch(() => {});
+  }, [isOffline, userOutletId]);
+
+  const categories: MenuCategory[] = (isOffline && menuCacheData) ? menuCacheData.categories : categoriesRaw;
+  const menuItems: MenuItem[] = (isOffline && menuCacheData) ? menuCacheData.items : menuItemsRaw;
   const posMenuLoading = categoriesLoading || menuItemsLoading;
+
+  const handleMenuRefresh = useCallback(async () => {
+    if (isOffline || menuRefreshing) return;
+    setMenuRefreshing(true);
+    try {
+      await refetchMenuItems();
+      await queryClient.refetchQueries({ queryKey: ["/api/menu-categories"] });
+      setMenuCacheNotice(null);
+      toast({ title: "Menu refreshed" });
+    } catch {
+      toast({ title: "Menu refresh failed", description: "Could not reach the server", variant: "destructive" });
+    } finally {
+      setMenuRefreshing(false);
+    }
+  }, [isOffline, menuRefreshing, refetchMenuItems, queryClient, toast]);
+
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
@@ -993,6 +1131,7 @@ export default function POSPage() {
         }
         if (tabIsDineIn && (tab.covers ?? 1) > 1) parts.push(`Covers: ${tab.covers}`);
         if (tab.orderNotes?.trim()) parts.push(tab.orderNotes.trim());
+        if (offlinePaymentPendingRef.current) parts.push("payment_pending_offline: true");
         return parts.length > 0 ? parts.join(" | ") : null;
       })(),
       status: tabIsDineIn ? "in_progress" : "new",
@@ -1032,7 +1171,10 @@ export default function POSPage() {
       }
       try {
         const { queued, orderId } = await syncManager.enqueueOrder(orderData);
-        if (queued) return { id: orderId, queued: true };
+        if (queued) {
+          const localTicket = `LOCAL-${orderId.slice(-6).toUpperCase()}`;
+          return { id: orderId, queued: true, localTicket };
+        }
         return { id: orderId };
       } catch (syncErr: any) {
         if (syncErr.status === 403 && syncErr.data?.requiresSupervisor) {
@@ -1042,9 +1184,11 @@ export default function POSPage() {
       }
     },
     onSuccess: (data: any) => {
+      offlinePaymentPendingRef.current = false;
       if (data?.queued) {
-        toast({ title: "Order queued", description: "Will sync when connection is restored" });
-        announceToScreenReader("Order queued. Will sync when connection is restored.");
+        const ticket = data.localTicket || `LOCAL-${data.id?.slice(-6)?.toUpperCase() || "QUEUE"}`;
+        toast({ title: `Order queued [${ticket}]`, description: "Will sync when connection is restored" });
+        announceToScreenReader(`Order queued as ${ticket}. Will sync when connection is restored.`);
       } else {
         const isAddonKot = (activeTab?.sentCartKeys.length ?? 0) > 0 && isDineIn;
         const msg = isAddonKot ? "Add-on KOT sent!" : isDineIn ? "Order sent to kitchen!" : "Order placed!";
@@ -1078,6 +1222,7 @@ export default function POSPage() {
       } else {
         setShowBillModal(true);
         updateActiveTab({ cart: [], discount: "", orderNotes: "", selectedOfferId: null, dismissedRuleIds: [], sentCartKeys: [], selectedTable: "", heldOrderId: undefined });
+        if (posCartKey) syncManager.clearActiveCart(posCartKey).catch(() => {});
       }
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
@@ -1085,6 +1230,7 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/combo-offers"] });
     },
     onError: (err: Error) => {
+      offlinePaymentPendingRef.current = false;
       if (err.message.startsWith("__SUPERVISOR_REQUIRED__:")) {
         const action = err.message.split(":")[1];
         setSupervisorDialog({ open: true, action: action || "apply_large_discount", actionLabel: "Apply Large Discount" });
@@ -1124,6 +1270,10 @@ export default function POSPage() {
       return;
     }
     if (!isDineIn) {
+      if (isOffline) {
+        setShowOfflinePaymentDialog(true);
+        return;
+      }
       setTenderedAmount("");
       setShowPaymentModal(true);
       return;
@@ -1326,10 +1476,40 @@ export default function POSPage() {
 
       <div className="flex-1 flex flex-col overflow-hidden border-r">
         <div className="p-4 border-b space-y-3">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input ref={searchInputRef} data-testid="input-search-menu" placeholder="Search menu items... (/ to focus)" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" aria-label="Search menu items" />
+          <div className="flex gap-2 items-center">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input ref={searchInputRef} data-testid="input-search-menu" placeholder="Search menu items... (/ to focus)" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" aria-label="Search menu items" />
+            </div>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 shrink-0"
+                  onClick={handleMenuRefresh}
+                  disabled={isOffline || menuRefreshing}
+                  data-testid="button-refresh-menu"
+                  aria-label="Refresh menu"
+                >
+                  <RefreshCw className={menuRefreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <p className="text-xs">
+                  {isOffline ? "Cannot refresh while offline" : menuCacheNotice?.cachedAt
+                    ? `Menu: updated ${Math.round((Date.now() - menuCacheNotice.cachedAt) / 60000)} min ago`
+                    : "Refresh menu"}
+                </p>
+              </TooltipContent>
+            </Tooltip>
           </div>
+          {menuCacheNotice?.fromCache && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded-md px-2.5 py-1.5" data-testid="notice-menu-cache">
+              <WifiOff className="h-3.5 w-3.5 shrink-0" />
+              <span>Using cached menu (last updated {Math.round((Date.now() - menuCacheNotice.cachedAt) / 60000)} min ago)</span>
+            </div>
+          )}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
             {posMenuLoading ? (
               <PosCategorySkeleton />
@@ -1995,6 +2175,8 @@ export default function POSPage() {
             </div>
           </div>
 
+          <SyncErrorPanel className="mt-1" />
+
           <div className="flex gap-1.5">
             <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={holdCurrentTab} disabled={cart.length === 0 && !activeTab?.heldOrderId} title="Hold order">
               <Pause className="h-3.5 w-3.5" /> Hold
@@ -2005,7 +2187,7 @@ export default function POSPage() {
               </Button>
             )}
             <Button data-testid="button-place-order" className="flex-1 h-10 font-semibold text-sm transition-all duration-200 hover:scale-[1.01] shadow-sm" onClick={handlePlaceOrder} disabled={!hasUnsentItems || placeOrderMutation.isPending}>
-              {placeOrderMutation.isPending ? "Sending…" : isAddonKotMode ? "Send Add-on KOT" : isDineIn ? "Send to Kitchen" : `Pay — ${fmt(total)}`}
+              {placeOrderMutation.isPending ? "Sending…" : isAddonKotMode ? "Send Add-on KOT" : isDineIn ? "Send to Kitchen" : (isOffline && !isDineIn) ? `Queue Order (Offline) — ${fmt(total)}` : `Pay — ${fmt(total)}`}
             </Button>
           </div>
         </div>
@@ -2267,16 +2449,33 @@ export default function POSPage() {
       <Dialog open={showRecall} onOpenChange={setShowRecall}>
         <DialogContent className="max-w-sm" data-testid="dialog-recall">
           <DialogHeader><DialogTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-primary" /> Held Orders</DialogTitle></DialogHeader>
+          {heldOrdersFromCache && (
+            <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="text-held-orders-stale">
+              <AlertCircle className="h-3 w-3 shrink-0" />
+              <span>⚠️ Order list may be outdated — reconnect to refresh</span>
+            </div>
+          )}
           {heldOrdersLoading ? (
             <div className="space-y-2 py-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="h-14 rounded-lg bg-muted animate-pulse" />
               ))}
             </div>
-          ) : heldTabs.length === 0 && orphanedServerOrders.length === 0 ? (
+          ) : heldTabs.length === 0 && orphanedServerOrders.length === 0 && offlineQueuedOrders.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">No held orders</p>
           ) : (
             <div className="space-y-2 max-h-80 overflow-y-auto">
+              {offlineQueuedOrders.map((order) => (
+                <div key={order.localId} className="flex items-center gap-2 p-3 border border-amber-300 bg-amber-50 rounded-lg" data-testid={`held-order-offline-${order.localId}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm flex items-center gap-1.5">
+                      {order.localTicket}
+                      <span className="text-xs font-medium text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5">Queued</span>
+                    </p>
+                    <p className="text-xs text-muted-foreground">{String(order.payload.orderType || "order")} · {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                  </div>
+                </div>
+              ))}
               {heldTabs.map((held, i) => (
                 <div key={i} className="flex items-center gap-2 p-3 border rounded-lg" data-testid={`held-order-${i}`}>
                   <div className="flex-1 min-w-0">
@@ -2446,6 +2645,36 @@ export default function POSPage() {
       </Dialog>
 
       <DeliveryQueuePanel open={showDeliveryQueue} onClose={() => setShowDeliveryQueue(false)} />
+
+      {/* ── Offline Payment Dialog ─────────────────────────────────────── */}
+      <Dialog open={showOfflinePaymentDialog} onOpenChange={setShowOfflinePaymentDialog}>
+        <DialogContent className="max-w-sm" data-testid="dialog-offline-payment">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <WifiOff className="h-5 w-5 text-amber-500" /> Payment Unavailable Offline
+            </DialogTitle>
+            <DialogDescription>
+              Payment requires an internet connection. You can still create the order — payment will be collected when connection is restored.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="rounded-lg bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+            The order will be queued and synced automatically when you reconnect. Note that payment is marked as pending.
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setShowOfflinePaymentDialog(false)} data-testid="button-offline-payment-cancel">Cancel</Button>
+            <Button
+              onClick={() => {
+                setShowOfflinePaymentDialog(false);
+                offlinePaymentPendingRef.current = true;
+                placeOrderMutation.mutate(undefined);
+              }}
+              data-testid="button-offline-payment-queue"
+            >
+              Queue Order
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {customizeItem && (
         <ModificationDrawer

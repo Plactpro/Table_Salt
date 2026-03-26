@@ -20,6 +20,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LogIn } from "lucide-react";
+import { OfflineBanner } from "@/components/sync-status-indicator";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -409,7 +410,7 @@ function ConsentUpdateModal() {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
   const [showContactSupport, setShowContactSupport] = useState(false);
 
   const { data: contactConfig } = useQuery<{ salesEnabled: boolean; supportEnabled: boolean }>({
@@ -441,6 +442,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <GlobalSecurityListeners />
       <ImpersonationBanner />
       <RestrictionBanner />
+      <OfflineBanner onViewQueue={() => { if (location !== "/pos") setLocation("/pos"); }} />
       <ConsentUpdateModal />
 
       <div className="flex flex-1 min-h-0">

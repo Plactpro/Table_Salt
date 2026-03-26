@@ -10,9 +10,13 @@ function getCsrfToken(): string | null {
 }
 
 const DB_NAME = "tablesalt_sync";
-const DB_VERSION = 1;
+const DB_VERSION = 3;
 const QUEUE_STORE = "sync_queue";
 const CONFIG_STORE = "config_cache";
+const MENU_CACHE_STORE = "menu_cache";
+const OPEN_ORDERS_STORE = "open_orders";
+const ACTIVE_CART_STORE = "active_cart";
+const OFFLINE_ORDERS_STORE = "offline_orders";
 
 export interface SyncQueueItem {
   id: string;
@@ -33,6 +37,35 @@ export interface ConfigSnapshot {
   version: number;
 }
 
+export interface MenuCacheEntry {
+  outletId: string;
+  categories: unknown[];
+  items: unknown[];
+  cachedAt: number;
+}
+
+export interface OpenOrdersCache {
+  outletId: string;
+  orders: unknown[];
+  cachedAt: number;
+}
+
+export interface ActiveCartEntry {
+  key: string;
+  cart: unknown;
+  updatedAt: number;
+}
+
+export interface OfflineOrder {
+  localId: string;
+  localTicket: string;
+  outletId: string | null;
+  payload: Record<string, unknown>;
+  status: "queued" | "synced" | "failed";
+  serverId: string | null;
+  createdAt: number;
+}
+
 export type SyncStatus = "online" | "offline" | "syncing";
 
 type SyncListener = (status: SyncStatus, pendingCount: number) => void;
@@ -40,8 +73,10 @@ type SyncListener = (status: SyncStatus, pendingCount: number) => void;
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (event) => {
       const db = req.result;
+      const oldVersion = (event as IDBVersionChangeEvent).oldVersion;
+
       if (!db.objectStoreNames.contains(QUEUE_STORE)) {
         const qs = db.createObjectStore(QUEUE_STORE, { keyPath: "id" });
         qs.createIndex("status", "status", { unique: false });
@@ -49,6 +84,24 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(CONFIG_STORE)) {
         db.createObjectStore(CONFIG_STORE, { keyPath: "key" });
+      }
+      if (oldVersion < 2) {
+        if (!db.objectStoreNames.contains(MENU_CACHE_STORE)) {
+          db.createObjectStore(MENU_CACHE_STORE, { keyPath: "outletId" });
+        }
+        if (!db.objectStoreNames.contains(OPEN_ORDERS_STORE)) {
+          db.createObjectStore(OPEN_ORDERS_STORE, { keyPath: "outletId" });
+        }
+        if (!db.objectStoreNames.contains(ACTIVE_CART_STORE)) {
+          db.createObjectStore(ACTIVE_CART_STORE, { keyPath: "key" });
+        }
+      }
+      if (oldVersion < 3) {
+        if (!db.objectStoreNames.contains(OFFLINE_ORDERS_STORE)) {
+          const os = db.createObjectStore(OFFLINE_ORDERS_STORE, { keyPath: "localId" });
+          os.createIndex("status", "status", { unique: false });
+          os.createIndex("outletId", "outletId", { unique: false });
+        }
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -70,6 +123,7 @@ class SyncManager implements SyncService, ConfigCache {
   private configRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
   private baseBackoffMs = 2000;
+  private _syncCompleteCallbacks: Array<(count: number) => void> = [];
 
   get status(): SyncStatus {
     return this._status;
@@ -123,10 +177,25 @@ class SyncManager implements SyncService, ConfigCache {
   }
 
   private async handleOnline(): Promise<void> {
+    const hadPending = this._pendingCount;
     this.setStatus("syncing");
-    await this.processQueue();
+    const successCount = await this.processQueue();
     await this.refreshPendingCount();
-    this.setStatus(this._pendingCount > 0 ? "syncing" : "online");
+    const remaining = this._pendingCount;
+    const failedAfterSync = await this.getFailedQueueItems();
+    this.setStatus(remaining > 0 ? "syncing" : "online");
+    if (remaining === 0 && failedAfterSync.length === 0 && successCount > 0) {
+      for (const cb of this._syncCompleteCallbacks) {
+        try { cb(successCount); } catch {}
+      }
+    }
+  }
+
+  onSyncComplete(cb: (count: number) => void): () => void {
+    this._syncCompleteCallbacks.push(cb);
+    return () => {
+      this._syncCompleteCallbacks = this._syncCompleteCallbacks.filter(f => f !== cb);
+    };
   }
 
   private setStatus(status: SyncStatus): void {
@@ -185,11 +254,33 @@ class SyncManager implements SyncService, ConfigCache {
         if (err.status === 403 || (err instanceof Error && err.message.includes("Permission denied"))) {
           throw err;
         }
+        const localTicketFallback = `LOCAL-${orderId.slice(-6).toUpperCase()}`;
+        const fallbackOfflineOrder: OfflineOrder = {
+          localId: orderId,
+          localTicket: localTicketFallback,
+          outletId: (finalPayload.outletId as string) || null,
+          payload: finalPayload,
+          status: "queued",
+          serverId: null,
+          createdAt: Date.now(),
+        };
+        await this.saveOfflineOrder(fallbackOfflineOrder);
         await this.addToQueue(orderId, finalPayload);
         return { queued: true, orderId };
       }
     }
 
+    const localTicket = `LOCAL-${orderId.slice(-6).toUpperCase()}`;
+    const offlineOrder: OfflineOrder = {
+      localId: orderId,
+      localTicket,
+      outletId: (finalPayload.outletId as string) || null,
+      payload: finalPayload,
+      status: "queued",
+      serverId: null,
+      createdAt: Date.now(),
+    };
+    await this.saveOfflineOrder(offlineOrder);
     await this.addToQueue(orderId, finalPayload);
     return { queued: true, orderId };
   }
@@ -222,16 +313,18 @@ class SyncManager implements SyncService, ConfigCache {
     this.retryTimer = setTimeout(() => this.processQueue(), this.baseBackoffMs);
   }
 
-  private async processQueue(): Promise<void> {
-    if (!this.db) return;
+  private async processQueue(): Promise<number> {
+    if (!this.db) return 0;
     const items = await this.getPendingItems();
-    if (items.length === 0) return;
+    if (items.length === 0) return 0;
 
     this.setStatus("syncing");
+    let successCount = 0;
 
     for (const item of items) {
       if (item.retryCount >= item.maxRetries) {
         await this.updateQueueItem(item.id, { status: "failed", error: "Max retries exceeded" });
+        await this.updateOfflineOrderStatus(item.id, "failed");
         continue;
       }
 
@@ -260,13 +353,18 @@ class SyncManager implements SyncService, ConfigCache {
         });
 
         if (res.ok || res.status === 409) {
+          const responseData = await res.json().catch(() => null);
           await this.updateQueueItem(item.id, { status: "completed" });
+          const serverId = responseData?.id || responseData?.order?.id || null;
+          await this.updateOfflineOrderStatus(item.id, "synced", serverId || undefined);
+          successCount++;
         } else if (res.status >= 400 && res.status < 500 && res.status !== 408) {
           const errData = await res.json().catch(() => ({ message: "Client error" }));
           await this.updateQueueItem(item.id, {
             status: "failed",
             error: errData.message || `HTTP ${res.status}`,
           });
+          await this.updateOfflineOrderStatus(item.id, "failed");
         } else {
           await this.updateQueueItem(item.id, {
             status: "pending",
@@ -291,6 +389,7 @@ class SyncManager implements SyncService, ConfigCache {
     } else {
       this.setStatus("online");
     }
+    return successCount;
   }
 
   private async getPendingItems(): Promise<SyncQueueItem[]> {
@@ -348,6 +447,37 @@ class SyncManager implements SyncService, ConfigCache {
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => resolve([]);
     });
+  }
+
+  async getFailedQueueItems(): Promise<SyncQueueItem[]> {
+    if (!this.db) return [];
+    const tx = this.db.transaction(QUEUE_STORE, "readonly");
+    const store = tx.objectStore(QUEUE_STORE);
+    const idx = store.index("status");
+    const req = idx.getAll("failed");
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  }
+
+  async requeueFailedItem(id: string): Promise<void> {
+    await this.updateQueueItem(id, { status: "pending", retryCount: 0, error: null, lastAttemptAt: null });
+    await this.updateOfflineOrderStatus(id, "queued");
+    await this.refreshPendingCount();
+    this.scheduleRetry();
+  }
+
+  async discardQueueItem(id: string): Promise<void> {
+    if (!this.db) return;
+    const tx = this.db.transaction(QUEUE_STORE, "readwrite");
+    tx.objectStore(QUEUE_STORE).delete(id);
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+    await this.deleteOfflineOrder(id);
+    await this.refreshPendingCount();
   }
 
   async clearCompleted(): Promise<void> {
@@ -465,6 +595,133 @@ class SyncManager implements SyncService, ConfigCache {
 
     await this.addToQueue(orderId, { ...finalPayload, _kioskToken: kioskToken, _endpoint: "/api/kiosk/order" });
     return { queued: true, orderId };
+  }
+
+  async setMenuCache(outletId: string, data: { categories: unknown[]; items: unknown[] }): Promise<void> {
+    if (!this.db) return;
+    const entry: MenuCacheEntry = {
+      outletId,
+      categories: data.categories,
+      items: data.items,
+      cachedAt: Date.now(),
+    };
+    const tx = this.db.transaction(MENU_CACHE_STORE, "readwrite");
+    tx.objectStore(MENU_CACHE_STORE).put(entry);
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+
+  async getMenuCache(outletId: string): Promise<MenuCacheEntry | null> {
+    if (!this.db) return null;
+    const tx = this.db.transaction(MENU_CACHE_STORE, "readonly");
+    const req = tx.objectStore(MENU_CACHE_STORE).get(outletId);
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  }
+
+  async setOpenOrdersCache(outletId: string, orders: unknown[]): Promise<void> {
+    if (!this.db) return;
+    const entry: OpenOrdersCache = { outletId, orders, cachedAt: Date.now() };
+    const tx = this.db.transaction(OPEN_ORDERS_STORE, "readwrite");
+    tx.objectStore(OPEN_ORDERS_STORE).put(entry);
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+
+  async getOpenOrdersCache(outletId: string): Promise<OpenOrdersCache | null> {
+    if (!this.db) return null;
+    const tx = this.db.transaction(OPEN_ORDERS_STORE, "readonly");
+    const req = tx.objectStore(OPEN_ORDERS_STORE).get(outletId);
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  }
+
+  async saveActiveCart(key: string, cart: unknown): Promise<void> {
+    if (!this.db) return;
+    const entry: ActiveCartEntry = { key, cart, updatedAt: Date.now() };
+    const tx = this.db.transaction(ACTIVE_CART_STORE, "readwrite");
+    tx.objectStore(ACTIVE_CART_STORE).put(entry);
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+
+  async getActiveCart(key: string): Promise<unknown | null> {
+    if (!this.db) return null;
+    const tx = this.db.transaction(ACTIVE_CART_STORE, "readonly");
+    const req = tx.objectStore(ACTIVE_CART_STORE).get(key);
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result?.cart ?? null);
+      req.onerror = () => resolve(null);
+    });
+  }
+
+  async clearActiveCart(key: string): Promise<void> {
+    if (!this.db) return;
+    const tx = this.db.transaction(ACTIVE_CART_STORE, "readwrite");
+    tx.objectStore(ACTIVE_CART_STORE).delete(key);
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+
+  async saveOfflineOrder(order: OfflineOrder): Promise<void> {
+    if (!this.db) return;
+    const tx = this.db.transaction(OFFLINE_ORDERS_STORE, "readwrite");
+    tx.objectStore(OFFLINE_ORDERS_STORE).put(order);
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
+  }
+
+  async getOfflineOrders(outletId: string | null): Promise<OfflineOrder[]> {
+    if (!this.db) return [];
+    const tx = this.db.transaction(OFFLINE_ORDERS_STORE, "readonly");
+    const store = tx.objectStore(OFFLINE_ORDERS_STORE);
+    const req = outletId ? store.index("outletId").getAll(outletId) : store.getAll();
+    return new Promise((resolve) => {
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => resolve([]);
+    });
+  }
+
+  async updateOfflineOrderStatus(localId: string, status: "queued" | "synced" | "failed", serverId?: string): Promise<void> {
+    if (!this.db) return;
+    const tx = this.db.transaction(OFFLINE_ORDERS_STORE, "readwrite");
+    const store = tx.objectStore(OFFLINE_ORDERS_STORE);
+    const getReq = store.get(localId);
+    return new Promise((resolve) => {
+      getReq.onsuccess = () => {
+        const item = getReq.result as OfflineOrder | undefined;
+        if (item) {
+          store.put({ ...item, status, ...(serverId ? { serverId } : {}) });
+        }
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      };
+      getReq.onerror = () => resolve();
+    });
+  }
+
+  async deleteOfflineOrder(localId: string): Promise<void> {
+    if (!this.db) return;
+    const tx = this.db.transaction(OFFLINE_ORDERS_STORE, "readwrite");
+    tx.objectStore(OFFLINE_ORDERS_STORE).delete(localId);
+    await new Promise<void>((resolve) => {
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    });
   }
 
   destroy(): void {
