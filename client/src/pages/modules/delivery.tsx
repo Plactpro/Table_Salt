@@ -148,6 +148,24 @@ export default function DeliveryPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedDelivery, setSelectedDelivery] = useState<DeliveryOrder | null>(null);
   const [showDetailDialog, setShowDetailDialog] = useState(false);
+
+  interface OrderItem {
+    id: string;
+    name: string;
+    quantity: number;
+    price: string | number;
+    modifiers?: string | null;
+  }
+
+  const { data: selectedOrderDetail } = useQuery<{ items: OrderItem[] }>({
+    queryKey: ["/api/orders", selectedDelivery?.orderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/orders/${selectedDelivery!.orderId}`, { credentials: "include" });
+      if (!res.ok) return { items: [] };
+      return res.json();
+    },
+    enabled: !!selectedDelivery?.orderId && showDetailDialog,
+  });
   const [showAgentDialog, setShowAgentDialog] = useState(false);
   const [selectedAgent, setSelectedAgent] = useState("");
   const [assigningDelivery, setAssigningDelivery] = useState<DeliveryOrder | null>(null);
@@ -777,6 +795,25 @@ export default function DeliveryPage() {
                     {selectedDelivery.customerAddress}
                   </p>
                 </div>
+
+                {selectedOrderDetail?.items && selectedOrderDetail.items.length > 0 && (
+                  <div className="p-3 rounded-lg bg-muted/50">
+                    <p className="text-xs text-muted-foreground mb-2">Order Items</p>
+                    <div className="space-y-1" data-testid="list-order-items">
+                      {selectedOrderDetail.items.map((item) => (
+                        <div key={item.id} className="flex items-center justify-between text-sm" data-testid={`item-order-${item.id}`}>
+                          <div>
+                            <span className="font-medium">{item.quantity}× {item.name}</span>
+                            {item.modifiers && (
+                              <p className="text-xs text-muted-foreground">{item.modifiers}</p>
+                            )}
+                          </div>
+                          <span className="text-muted-foreground">{fmt(Number(item.price) * item.quantity)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {(selectedDelivery.driverName || selectedDelivery.driverPhone) && (
                   <div className="grid grid-cols-2 gap-3">

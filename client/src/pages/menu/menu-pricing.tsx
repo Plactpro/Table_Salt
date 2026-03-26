@@ -298,7 +298,7 @@ export default function MenuPricingPage() {
                   <SelectTrigger data-testid="select-dish-item">
                     <SelectValue placeholder="Choose a menu item..." />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-80 overflow-y-auto z-50">
                     {menuItems.map(item => (
                       <SelectItem key={item.id} value={item.id} data-testid={`option-item-${item.id}`}>
                         {item.name} — {fmt(item.price)}
