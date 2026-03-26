@@ -213,7 +213,7 @@ export default function CashPaymentModal({
 
           <div>
             <p className="text-xs uppercase tracking-wide text-muted-foreground font-medium mb-1">Amount Tendered</p>
-            <div className="rounded-lg border bg-white px-4 py-3 text-2xl font-bold flex items-center justify-between min-h-[56px]" data-testid="input-tendered">
+            <div className="rounded-lg border bg-background px-4 py-3 text-2xl font-bold flex items-center justify-between min-h-[56px]" data-testid="input-tendered">
               <span>{symbol}</span>
               <span className="flex-1 text-right">{tendered || "0"}</span>
             </div>

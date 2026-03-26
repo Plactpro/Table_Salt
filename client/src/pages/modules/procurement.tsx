@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,10 +32,12 @@ export default function ProcurementPage() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("orders");
   const [poDialog, setPoDialog] = useState(false);
+  const [poFormDirty, setPoFormDirty] = useState(false);
+  const [poConfirmLeave, setPoConfirmLeave] = useState(false);
   const [grnDialog, setGrnDialog] = useState(false);
   const [detailPO, setDetailPO] = useState<string | null>(null);
   const [poForm, setPoForm] = useState({ supplierId: "", notes: "", expectedDelivery: "" });
-  const [poFormErrors, setPoFormErrors] = useState<{ expectedDelivery?: string }>({});
+  const [poFormErrors, setPoFormErrors] = useState<{ expectedDelivery?: string; supplier?: string }>({});
   const [poItems, setPoItems] = useState<Array<{ inventoryItemId: string; quantity: string; unitCost: string }>>([]);
 
   const fmt = (amount: string | number) => {
@@ -65,7 +68,7 @@ export default function ProcurementPage() {
 
   const createPOMut = useMutation({
     mutationFn: (data: Record<string, unknown>) => apiRequest("POST", "/api/purchase-orders", data).then(r => r.json()),
-    onSuccess: () => { invAll(); setPoDialog(false); toast({ title: "Purchase Order created" }); },
+    onSuccess: () => { invAll(); setPoDialog(false); setPoFormDirty(false); toast({ title: "Purchase Order created" }); },
     onError: onErr,
   });
   const approveMut = useMutation({
@@ -108,13 +111,14 @@ export default function ProcurementPage() {
     }
   };
 
-  const addPoItem = () => setPoItems([...poItems, { inventoryItemId: "", quantity: "1", unitCost: "0" }]);
+  const addPoItem = () => { setPoItems([...poItems, { inventoryItemId: "", quantity: "1", unitCost: "0" }]); setPoFormDirty(true); };
   const updatePoItem = (idx: number, field: string, value: string) => {
     const items = [...poItems];
     (items[idx] as Record<string, string>)[field] = value;
     setPoItems(items);
+    setPoFormDirty(true);
   };
-  const removePoItem = (idx: number) => setPoItems(poItems.filter((_, i) => i !== idx));
+  const removePoItem = (idx: number) => { setPoItems(poItems.filter((_, i) => i !== idx)); setPoFormDirty(true); };
 
   const openCreateFromLowStock = () => {
     const items = lowStock.map(ls => ({
@@ -125,6 +129,7 @@ export default function ProcurementPage() {
     setPoItems(items);
     setPoForm({ supplierId: "", notes: "Auto-generated from low stock alerts", expectedDelivery: "" });
     setPoFormErrors({});
+    setPoFormDirty(false);
     setPoDialog(true);
   };
 
@@ -170,7 +175,7 @@ export default function ProcurementPage() {
               <AlertTriangle className="h-4 w-4 mr-2 text-amber-500" />{lowStock.length} Low Stock
             </Button>
           )}
-          <Button onClick={() => { setPoForm({ supplierId: "", notes: "", expectedDelivery: "" }); setPoFormErrors({}); setPoItems([]); setPoDialog(true); }} data-testid="button-create-po"><Plus className="h-4 w-4 mr-2" />New PO</Button>
+          <Button onClick={() => { setPoForm({ supplierId: "", notes: "", expectedDelivery: "" }); setPoFormErrors({}); setPoItems([]); setPoFormDirty(false); setPoDialog(true); }} data-testid="button-create-po"><Plus className="h-4 w-4 mr-2" />New PO</Button>
         </div>
       </div>
 
@@ -443,24 +448,30 @@ export default function ProcurementPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={poDialog} onOpenChange={setPoDialog}>
+      <Dialog open={poDialog} onOpenChange={(open) => {
+        if (!open) {
+          if (poFormDirty) { setPoConfirmLeave(true); } else { setPoDialog(false); }
+        } else { setPoDialog(true); }
+      }}>
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>Create Purchase Order</DialogTitle></DialogHeader>
-          <div className="space-y-4">
+          <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
+          <div className="space-y-4" onChange={() => setPoFormDirty(true)}>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Supplier *</Label>
-                <Select value={poForm.supplierId} onValueChange={v => setPoForm({ ...poForm, supplierId: v })}>
-                  <SelectTrigger data-testid="select-po-supplier"><SelectValue placeholder="Select supplier" /></SelectTrigger>
+                <Label>Supplier <span className="text-red-500 ml-0.5">*</span></Label>
+                <Select value={poForm.supplierId} onValueChange={v => { setPoForm({ ...poForm, supplierId: v }); setPoFormDirty(true); setPoFormErrors(prev => ({ ...prev, supplier: undefined })); }}>
+                  <SelectTrigger data-testid="select-po-supplier" className={poFormErrors.supplier ? "border-red-500" : ""}><SelectValue placeholder="Select supplier" /></SelectTrigger>
                   <SelectContent>{suppliersList.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                 </Select>
+                {poFormErrors.supplier && <p className="text-red-500 text-xs mt-1">{poFormErrors.supplier}</p>}
               </div>
               <div>
-                <Label>Expected Delivery *</Label>
+                <Label>Expected Delivery <span className="text-red-500 ml-0.5">*</span></Label>
                 <Input
                   type="date"
                   value={poForm.expectedDelivery}
-                  onChange={e => { setPoForm({ ...poForm, expectedDelivery: e.target.value }); setPoFormErrors(prev => ({ ...prev, expectedDelivery: undefined })); }}
+                  onChange={e => { setPoForm({ ...poForm, expectedDelivery: e.target.value }); setPoFormDirty(true); setPoFormErrors(prev => ({ ...prev, expectedDelivery: undefined })); }}
                   data-testid="input-expected-delivery"
                   className={poFormErrors.expectedDelivery ? "border-destructive" : ""}
                 />
@@ -502,22 +513,35 @@ export default function ProcurementPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setPoDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { if (poFormDirty) { setPoConfirmLeave(true); } else { setPoDialog(false); } }}>Cancel</Button>
             <Button
               onClick={() => {
-                if (!poForm.expectedDelivery) {
-                  setPoFormErrors({ expectedDelivery: "Expected delivery date is required" });
+                const errs: { expectedDelivery?: string; supplier?: string } = {};
+                if (!poForm.supplierId) errs.supplier = "Supplier is required";
+                if (!poForm.expectedDelivery) errs.expectedDelivery = "Expected delivery date is required";
+                if (Object.keys(errs).length > 0) {
+                  setPoFormErrors(errs);
+                  if (errs.supplier) {
+                    setTimeout(() => document.querySelector<HTMLElement>("[data-testid='select-po-supplier']")?.focus(), 50);
+                  } else {
+                    setTimeout(() => document.querySelector<HTMLInputElement>("[data-testid='input-expected-delivery']")?.focus(), 50);
+                  }
                   return;
                 }
                 setPoFormErrors({});
                 createPOMut.mutate({ ...poForm, items: poItems });
               }}
-              disabled={!poForm.supplierId || poItems.length === 0}
+              disabled={poItems.length === 0}
               data-testid="button-save-po"
             >Create PO</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmLeaveDialog
+        open={poConfirmLeave}
+        onStay={() => setPoConfirmLeave(false)}
+        onLeave={() => { setPoConfirmLeave(false); setPoFormDirty(false); setPoDialog(false); }}
+      />
 
       <Dialog open={grnDialog} onOpenChange={setGrnDialog}>
         <DialogContent className="max-w-2xl">

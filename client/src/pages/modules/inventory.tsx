@@ -3,7 +3,9 @@ import { useState, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { useLocation } from "wouter";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
+import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { formatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
@@ -12,6 +14,7 @@ import {
   Package, Plus, Search, AlertTriangle, Edit, Trash2, ArrowUpDown,
   Warehouse, BoxIcon, TrendingDown, ChefHat, ClipboardList, DollarSign,
   BookOpen, X, Percent, Activity, ChevronLeft, ChevronRight, FileDown, ChevronDown, ChevronUp,
+  ArrowDownCircle, ArrowUpCircle, RotateCcw, ShoppingCart, ExternalLink,
 } from "lucide-react";
 import { exportToPdf } from "@/lib/pdf-export";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -192,7 +195,12 @@ function InventoryTab() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
+  const [itemFormDirty, setItemFormDirty] = useState(false);
+  const [itemConfirmLeave, setItemConfirmLeave] = useState(false);
+  const [inventoryFormErrors, setInventoryFormErrors] = useState<{ name?: string }>({});
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
+  const [adjustFormDirty, setAdjustFormDirty] = useState(false);
+  const [adjustConfirmLeave, setAdjustConfirmLeave] = useState(false);
   const [editingItem, setEditingItem] = useState<ExtendedInventoryItem | null>(null);
   const [adjustingItem, setAdjustingItem] = useState<ExtendedInventoryItem | null>(null);
   const [formData, setFormData] = useState<ExtendedFormData>({
@@ -297,6 +305,8 @@ function InventoryTab() {
       reorderPieces: item.reorderPieces?.toString() || "",
       costPerPiece: item.costPerPiece?.toString() || "",
     });
+    setItemFormDirty(false);
+    setInventoryFormErrors({});
     setItemDialogOpen(true);
   }
 
@@ -385,7 +395,7 @@ function InventoryTab() {
               >
                 <FileDown className="h-3.5 w-3.5 mr-1.5" /> Download PDF
               </Button>
-              {canEdit && <Button onClick={() => { setEditingItem(null); resetForm(); setItemDialogOpen(true); }} data-testid="button-add-inventory"><Plus className="h-4 w-4 mr-2" />Add Item</Button>}
+              {canEdit && <Button onClick={() => { setEditingItem(null); resetForm(); setItemFormDirty(false); setInventoryFormErrors({}); setItemDialogOpen(true); }} data-testid="button-add-inventory"><Plus className="h-4 w-4 mr-2" />Add Item</Button>}
             </div>
           </div>
 
@@ -478,7 +488,7 @@ function InventoryTab() {
                       {canEdit && (
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button variant="ghost" size="sm" onClick={() => { setAdjustingItem(item); setAdjustData({ type: "in", quantity: "", reason: "" }); setAdjustDialogOpen(true); }} data-testid={`button-adjust-${item.id}`}><ArrowUpDown className="h-4 w-4" /></Button>
+                            <Button variant="ghost" size="sm" onClick={() => { setAdjustingItem(item); setAdjustData({ type: "in", quantity: "", reason: "" }); setAdjustFormDirty(false); setAdjustDialogOpen(true); }} data-testid={`button-adjust-${item.id}`}><ArrowUpDown className="h-4 w-4" /></Button>
                             <Button variant="ghost" size="sm" onClick={() => openEditDialog(item)} data-testid={`button-edit-${item.id}`}><Edit className="h-4 w-4" /></Button>
                             <Button variant="ghost" size="sm" onClick={() => deleteMutation.mutate(item.id)} data-testid={`button-delete-${item.id}`}><Trash2 className="h-4 w-4 text-destructive" /></Button>
                           </div>
@@ -519,15 +529,30 @@ function InventoryTab() {
       </AnimatePresence>
 
       {/* Add/Edit Item Dialog */}
-      <Dialog open={itemDialogOpen} onOpenChange={setItemDialogOpen}>
+      <Dialog open={itemDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          if (itemFormDirty) { setItemConfirmLeave(true); } else { setItemDialogOpen(false); }
+        } else { setItemDialogOpen(true); }
+      }}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingItem ? "Edit Inventory Item" : "Add Inventory Item"}</DialogTitle>
             <DialogDescription>{editingItem ? "Update the details." : "Add a new item."}</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
+          <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
+          <div className="grid gap-4 py-2" onChange={() => setItemFormDirty(true)}>
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2"><Label>Name *</Label><Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} data-testid="input-inventory-name" /></div>
+              <div className="space-y-2">
+                <Label>Name <span className="text-red-500 ml-0.5">*</span></Label>
+                <Input
+                  value={formData.name}
+                  onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setItemFormDirty(true); setInventoryFormErrors(prev => ({ ...prev, name: undefined })); }}
+                  onBlur={(e) => { if (!e.target.value.trim()) setInventoryFormErrors(prev => ({ ...prev, name: "Name is required" })); }}
+                  className={inventoryFormErrors.name ? "border-red-500" : ""}
+                  data-testid="input-inventory-name"
+                />
+                {inventoryFormErrors.name && <p className="text-red-500 text-xs mt-1">{inventoryFormErrors.name}</p>}
+              </div>
               <div className="space-y-2"><Label>SKU</Label><Input value={formData.sku} onChange={(e) => setFormData({ ...formData, sku: e.target.value })} data-testid="input-inventory-sku" /></div>
             </div>
 
@@ -607,10 +632,15 @@ function InventoryTab() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setItemDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { if (itemFormDirty) { setItemConfirmLeave(true); } else { setItemDialogOpen(false); } }}>Cancel</Button>
             <Button
               onClick={() => {
-                if (!formData.name.trim()) return;
+                if (!formData.name.trim()) {
+                  setInventoryFormErrors({ name: "Name is required" });
+                  setTimeout(() => document.querySelector<HTMLInputElement>("[data-testid='input-inventory-name']")?.focus(), 50);
+                  return;
+                }
+                setInventoryFormErrors({});
                 const coerceInt = (v: string): number | null => (v === "") ? null : parseInt(v, 10);
                 const apiPayload: InventoryItemPayload = {
                   ...formData,
@@ -629,8 +659,17 @@ function InventoryTab() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmLeaveDialog
+        open={itemConfirmLeave}
+        onStay={() => setItemConfirmLeave(false)}
+        onLeave={() => { setItemConfirmLeave(false); setItemFormDirty(false); setItemDialogOpen(false); resetForm(); }}
+      />
 
-      <Dialog open={adjustDialogOpen} onOpenChange={setAdjustDialogOpen}>
+      <Dialog open={adjustDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          if (adjustFormDirty) { setAdjustConfirmLeave(true); } else { setAdjustDialogOpen(false); }
+        } else { setAdjustDialogOpen(true); }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Adjust Stock — {adjustingItem?.name}</DialogTitle>
@@ -638,8 +677,8 @@ function InventoryTab() {
               Current: {adjustingItem ? (isPieceCategory(adjustingItem.itemCategory || "") ? Math.round(Number(adjustingItem.currentStock)) + " pcs" : Number(adjustingItem.currentStock).toFixed(1) + " " + (adjustingItem.unit || "")) : 0}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <Select value={adjustData.type} onValueChange={(v) => setAdjustData({ ...adjustData, type: v as "in" | "out" })}>
+          <div className="grid gap-4 py-2" onChange={() => setAdjustFormDirty(true)}>
+            <Select value={adjustData.type} onValueChange={(v) => { setAdjustData({ ...adjustData, type: v as "in" | "out" }); setAdjustFormDirty(true); }}>
               <SelectTrigger data-testid="select-adjust-type"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="in">Stock In (Add)</SelectItem><SelectItem value="out">Stock Out (Remove)</SelectItem></SelectContent>
             </Select>
@@ -655,11 +694,16 @@ function InventoryTab() {
             <Input value={adjustData.reason} onChange={(e) => setAdjustData({ ...adjustData, reason: e.target.value })} placeholder="Reason" data-testid="input-adjust-reason" />
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAdjustDialogOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => { if (adjustFormDirty) { setAdjustConfirmLeave(true); } else { setAdjustDialogOpen(false); } }}>Cancel</Button>
             <Button onClick={() => { if (adjustingItem && adjustData.quantity) adjustMutation.mutate({ id: adjustingItem.id, data: adjustData }); }} disabled={adjustMutation.isPending || !adjustData.quantity} data-testid="button-confirm-adjust">Confirm</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ConfirmLeaveDialog
+        open={adjustConfirmLeave}
+        onStay={() => setAdjustConfirmLeave(false)}
+        onLeave={() => { setAdjustConfirmLeave(false); setAdjustFormDirty(false); setAdjustDialogOpen(false); }}
+      />
       {supervisorDialog && (
         <SupervisorApprovalDialog
           open={supervisorDialog.open}
@@ -1146,31 +1190,369 @@ function UpcomingEventsSidebar() {
   );
 }
 
+function StockMovementsTab() {
+  const [filters, setFilters] = useState({ from: "", to: "", type: "", ingredientId: "" });
+  const [applied, setApplied] = useState({ from: "", to: "", type: "", ingredientId: "" });
+
+  const { data: inventoryRes } = useQuery<{ data: Array<{ id: string; name: string }>; total: number }>({ queryKey: ["/api/inventory"] });
+  const ingredientList = inventoryRes?.data ?? [];
+
+  const buildUrl = (f: typeof applied) => {
+    const params = new URLSearchParams({ limit: "200" });
+    if (f.from) params.set("from", f.from);
+    if (f.to) params.set("to", f.to);
+    if (f.type && f.type !== "all") params.set("type", f.type);
+    if (f.ingredientId && f.ingredientId !== "all") params.set("ingredientId", f.ingredientId);
+    return `/api/stock-movements?${params}`;
+  };
+
+  const { data: movements = [], isLoading } = useQuery<any[]>({
+    queryKey: ["/api/stock-movements", applied],
+    queryFn: async () => {
+      const res = await fetch(buildUrl(applied), { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const TYPE_CONFIG: Record<string, { label: string; badgeClass: string }> = {
+    RECIPE_CONSUMPTION: { label: "Consumed", badgeClass: "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300" },
+    WASTAGE: { label: "Wastage", badgeClass: "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300" },
+    STOCK_IN: { label: "Stock In", badgeClass: "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" },
+    ADJUSTMENT: { label: "Adjustment", badgeClass: "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300" },
+    TRANSFER: { label: "Transfer", badgeClass: "bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300" },
+    RECIPE_REVERSAL: { label: "Reversal", badgeClass: "bg-muted text-muted-foreground" },
+  };
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex flex-wrap gap-3 items-end">
+            <div className="flex-1 min-w-[140px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">From</label>
+              <Input type="date" value={filters.from} onChange={e => setFilters(f => ({ ...f, from: e.target.value }))} data-testid="input-movements-from" />
+            </div>
+            <div className="flex-1 min-w-[140px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">To</label>
+              <Input type="date" value={filters.to} onChange={e => setFilters(f => ({ ...f, to: e.target.value }))} data-testid="input-movements-to" />
+            </div>
+            <div className="flex-1 min-w-[140px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Type</label>
+              <Select value={filters.type || "all"} onValueChange={v => setFilters(f => ({ ...f, type: v }))}>
+                <SelectTrigger data-testid="select-movements-type"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Types</SelectItem>
+                  {Object.entries(TYPE_CONFIG).map(([k, v]) => <SelectItem key={k} value={k}>{v.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex-1 min-w-[160px] space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Ingredient</label>
+              <Select value={filters.ingredientId || "all"} onValueChange={v => setFilters(f => ({ ...f, ingredientId: v }))}>
+                <SelectTrigger data-testid="select-movements-ingredient"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Ingredients</SelectItem>
+                  {ingredientList.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={() => setApplied({ ...filters })} data-testid="button-apply-movements-filter">Apply</Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="text-center py-8 text-muted-foreground">Loading...</div>
+          ) : movements.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="text-no-movements">No movements found</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Ingredient</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movements.map((m: any) => {
+                  const cfg = TYPE_CONFIG[m.type] || { label: m.type, badgeClass: "bg-muted text-muted-foreground" };
+                  return (
+                    <TableRow key={m.id} data-testid={`row-movement-${m.id}`}>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : "—"}
+                      </TableCell>
+                      <TableCell className="font-medium">{m.ingredientName || "—"}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={`text-xs ${cfg.badgeClass}`}>{cfg.label}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right font-medium">{Number(m.quantity).toFixed(2)} {m.ingredientUnit || ""}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{m.reason || "—"}</TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function WastageTab() {
+  const [, navigate] = useLocation();
+  const { data: wastageRes } = useQuery<any[]>({
+    queryKey: ["/api/stock-movements", "wastage-only"],
+    queryFn: async () => {
+      const res = await fetch("/api/stock-movements?type=WASTAGE&limit=100", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const movements = wastageRes ?? [];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Wastage Log</h3>
+        <Button onClick={() => navigate("/wastage-log")} data-testid="button-log-wastage">
+          <Plus className="h-4 w-4 mr-2" /> Log Wastage
+        </Button>
+      </div>
+      <Card>
+        <CardContent className="pt-4">
+          {movements.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="text-no-wastage">No wastage entries yet.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Ingredient</TableHead>
+                  <TableHead className="text-right">Quantity</TableHead>
+                  <TableHead>Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {movements.map((m: any) => (
+                  <TableRow key={m.id} data-testid={`row-wastage-${m.id}`}>
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                      {m.createdAt ? new Date(m.createdAt).toLocaleDateString() : "—"}
+                    </TableCell>
+                    <TableCell className="font-medium">{m.ingredientName || "—"}</TableCell>
+                    <TableCell className="text-right font-medium text-red-600">
+                      -{Number(m.quantity).toFixed(2)} {m.ingredientUnit || ""}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">{m.reason || "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function ProcurementTab() {
+  const [, navigate] = useLocation();
+  const { data: purchaseOrders = [] } = useQuery<any[]>({ queryKey: ["/api/purchase-orders"] });
+
+  const statusColor = (s: string | null) => {
+    switch (s) {
+      case "draft": return "bg-muted text-muted-foreground";
+      case "approved": return "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300";
+      case "sent": return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
+      case "partially_received": return "bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300";
+      case "closed": return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
+      default: return "bg-muted text-muted-foreground";
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="text-base font-semibold">Purchase Orders</h3>
+        <Button onClick={() => navigate("/procurement")} data-testid="button-go-procurement">
+          <ExternalLink className="h-4 w-4 mr-2" /> Full Procurement
+        </Button>
+      </div>
+      <Card>
+        <CardContent className="pt-4">
+          {purchaseOrders.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="text-no-pos">No purchase orders yet.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>PO #</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Expected</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {purchaseOrders.slice(0, 20).map((po: any) => (
+                  <TableRow key={po.id} data-testid={`row-po-${po.id}`}>
+                    <TableCell className="font-semibold">{po.poNumber}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={`text-xs ${statusColor(po.status)}`}>
+                        {(po.status || "draft").replace("_", " ")}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-semibold">{po.totalAmount || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {po.expectedDelivery ? new Date(po.expectedDelivery).toLocaleDateString() : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {new Date(po.createdAt).toLocaleDateString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+function CrockeryTab() {
+  const { data: inventoryRes } = useQuery<{ data: ExtendedInventoryItem[]; total: number }>({
+    queryKey: ["/api/inventory", "crockery-tab"],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: "200", offset: "0" });
+      const res = await fetch(`/api/inventory?${params}`, { credentials: "include" });
+      return res.json();
+    },
+  });
+  const all = inventoryRes?.data ?? [];
+  const crockery = all.filter(i => isPieceCategory(i.itemCategory || ""));
+
+  return (
+    <div className="space-y-4">
+      <h3 className="text-base font-semibold">Non-Food Inventory (Crockery, Cutlery, Glassware)</h3>
+      <ParLevelStatusPanel />
+      <Card>
+        <CardContent className="pt-4">
+          {crockery.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground" data-testid="text-no-crockery">No crockery items yet. Add items via the Stock List tab.</div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Item</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead className="text-right">Current Stock</TableHead>
+                  <TableHead className="text-right">Par / Shift</TableHead>
+                  <TableHead className="text-right">Reorder At</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {crockery.map((item) => {
+                  const stock = Number(item.currentStock);
+                  const par = Number(item.parLevelPerShift || 0);
+                  const reorder = Number(item.reorderPieces || item.reorderLevel || 0);
+                  const belowPar = par > 0 && stock < par;
+                  const belowReorder = reorder > 0 && stock < reorder;
+                  return (
+                    <TableRow key={item.id} data-testid={`row-crockery-${item.id}`} className={belowPar ? "bg-red-50 dark:bg-red-950/20" : belowReorder ? "bg-amber-50 dark:bg-amber-950/20" : ""}>
+                      <TableCell className="font-medium">{item.name}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">{item.itemCategory}</Badge>
+                      </TableCell>
+                      <TableCell className={`text-right font-semibold ${belowPar ? "text-red-600" : ""}`}>
+                        {Math.round(stock)} pcs
+                      </TableCell>
+                      <TableCell className="text-right">{par > 0 ? `${Math.round(par)} pcs` : "—"}</TableCell>
+                      <TableCell className="text-right">{reorder > 0 ? `${Math.round(reorder)} pcs` : "—"}</TableCell>
+                      <TableCell>
+                        {belowPar
+                          ? <Badge variant="destructive">Below Par</Badge>
+                          : belowReorder
+                            ? <Badge className="bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200">Below Reorder</Badge>
+                            : <Badge variant="secondary">OK</Badge>}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+const INVENTORY_TABS = [
+  { value: "stock-list", label: "Stock List", icon: Package },
+  { value: "movements", label: "Stock Movements", icon: ArrowUpDown },
+  { value: "wastage", label: "Wastage", icon: Trash2 },
+  { value: "procurement", label: "Procurement", icon: ShoppingCart },
+  { value: "stock-count", label: "Stock Count", icon: ClipboardList },
+  { value: "crockery", label: "Crockery", icon: BoxIcon },
+] as const;
+
+type InventoryTabValue = typeof INVENTORY_TABS[number]["value"];
+
 export default function InventoryPage() {
+  const [location, navigate] = useLocation();
+
+  const getTabFromUrl = (): InventoryTabValue => {
+    const searchStr = location.includes("?") ? location.split("?")[1] : "";
+    const params = new URLSearchParams(searchStr);
+    const tab = params.get("tab");
+    if (tab && INVENTORY_TABS.some(t => t.value === tab)) return tab as InventoryTabValue;
+    return "stock-list";
+  };
+
+  const activeTab = getTabFromUrl();
+
+  const setTab = (tab: string) => {
+    navigate(`/inventory?tab=${tab}`);
+  };
+
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-inventory">
       <PageTitle title="Stock & Inventory" />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10"><Warehouse className="h-6 w-6 text-primary" /></div>
         <div>
-          <h1 className="text-2xl font-bold font-heading" data-testid="text-inventory-title">Inventory & Recipes</h1>
-          <p className="text-muted-foreground">Manage stock, recipes, food costing & stock takes</p>
+          <h1 className="text-2xl font-bold font-heading" data-testid="text-inventory-title">Inventory</h1>
+          <p className="text-muted-foreground">Manage stock, movements, wastage, procurement & more</p>
         </div>
       </div>
 
       <UpcomingEventsSidebar />
 
-      <Tabs defaultValue="inventory" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="inventory" data-testid="tab-inventory"><Package className="h-4 w-4 mr-2" />Inventory</TabsTrigger>
-          <TabsTrigger value="recipes" data-testid="tab-recipes"><ChefHat className="h-4 w-4 mr-2" />Recipes</TabsTrigger>
-          <TabsTrigger value="stock-takes" data-testid="tab-stock-takes"><ClipboardList className="h-4 w-4 mr-2" />Stock Takes</TabsTrigger>
-          <TabsTrigger value="food-cost" data-testid="tab-food-cost"><DollarSign className="h-4 w-4 mr-2" />Food Cost</TabsTrigger>
+      <Tabs value={activeTab} onValueChange={setTab} className="w-full">
+        <TabsList className="flex flex-wrap h-auto gap-1 justify-start">
+          {INVENTORY_TABS.map(({ value, label, icon: Icon }) => (
+            <TabsTrigger
+              key={value}
+              value={value}
+              data-testid={`tab-${value}`}
+              className="flex items-center gap-1.5"
+            >
+              <Icon className="h-4 w-4" />
+              {label}
+            </TabsTrigger>
+          ))}
         </TabsList>
-        <TabsContent value="inventory"><InventoryTab /></TabsContent>
-        <TabsContent value="recipes"><RecipesTab /></TabsContent>
-        <TabsContent value="stock-takes"><StockTakesTab /></TabsContent>
-        <TabsContent value="food-cost"><FoodCostTab /></TabsContent>
+        <TabsContent value="stock-list" className="mt-4"><InventoryTab /></TabsContent>
+        <TabsContent value="movements" className="mt-4"><StockMovementsTab /></TabsContent>
+        <TabsContent value="wastage" className="mt-4"><WastageTab /></TabsContent>
+        <TabsContent value="procurement" className="mt-4"><ProcurementTab /></TabsContent>
+        <TabsContent value="stock-count" className="mt-4"><StockTakesTab /></TabsContent>
+        <TabsContent value="crockery" className="mt-4"><CrockeryTab /></TabsContent>
       </Tabs>
     </motion.div>
   );

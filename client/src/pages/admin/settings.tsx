@@ -265,7 +265,7 @@ export default function AdminSettingsPage() {
                         className={`relative flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-all ${
                           gateway.activePaymentGateway === opt.id
                             ? "border-primary bg-primary/5 ring-2 ring-primary"
-                            : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                            : "border-border bg-background hover:border-muted-foreground/30 hover:bg-muted/30"
                         }`}
                       >
                         {gateway.activePaymentGateway === opt.id && (
