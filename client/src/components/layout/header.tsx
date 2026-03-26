@@ -31,7 +31,7 @@ import {
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { useRealtimeEvent } from "@/hooks/use-realtime";
+import { useRealtimeEvent, useRealtimeConnectionStatus } from "@/hooks/use-realtime";
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { usePrepNotifications } from "@/hooks/use-prep-notifications";
@@ -108,6 +108,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
   const { play: playSound } = usePrepAlertSound(user?.id?.toString());
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
+  const wsConnected = useRealtimeConnectionStatus();
 
   const canSeeInventoryAlerts = user && ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"].includes(user.role);
   const canSeePrepNotif = user && PREP_NOTIF_ROLES.includes(user.role as Role);
@@ -294,6 +295,11 @@ export default function Header({ onOpenSupport }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-2">
+          <div
+            title={wsConnected ? "Live connection active" : "Reconnecting…"}
+            data-testid="indicator-ws-status"
+            className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${wsConnected ? "bg-green-500" : "bg-orange-400 animate-pulse"}`}
+          />
           <SyncStatusIndicator />
           <AlertNotificationBell />
           {onOpenSupport && (
