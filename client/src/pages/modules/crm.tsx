@@ -1,4 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
+import { ListCardSkeleton } from "@/components/ui/skeletons";
 import { PageTitle } from "@/lib/accessibility";
 import { useOutletTimezone, formatLocal, formatLocalDate } from "@/hooks/use-outlet-timezone";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -17,6 +20,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { CharCountTextarea } from "@/components/ui/character-count-input";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from "@/components/ui/dialog";
@@ -87,6 +91,53 @@ const tierColors: Record<string, string> = {
   platinum: "bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300",
 };
 
+function CustomerCard({ customer, fmt, tierColors, onClick }: { customer: CustomerData; fmt: (v: string | number) => string; tierColors: Record<string, string>; onClick: () => void }) {
+  return (
+    <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={onClick} data-testid={`card-customer-${customer.id}`}>
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
+              {customer.name.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <p className="font-semibold" data-testid={`text-customer-name-${customer.id}`}>{customer.name}</p>
+              {customer.phone && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Phone className="w-3 h-3" /> {customer.phone}
+                </p>
+              )}
+            </div>
+          </div>
+          <Badge className={tierColors[customer.loyaltyTier || "bronze"]} data-testid={`badge-tier-${customer.id}`}>
+            {customer.loyaltyTier || "bronze"}
+          </Badge>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <Star className="w-3 h-3" />
+            <span data-testid={`text-points-${customer.id}`}>{customer.loyaltyPoints || 0} pts</span>
+          </div>
+          <div className="flex items-center gap-1 text-muted-foreground">
+            <DollarSign className="w-3 h-3" />
+            <span data-testid={`text-spent-${customer.id}`}>{fmt(Number(customer.totalSpent || 0))}</span>
+          </div>
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        </div>
+        {customer.tags && customer.tags.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {customer.tags.map((tag, i) => (
+              <Badge key={i} variant="outline" className="text-xs" data-testid={`tag-${customer.id}-${i}`}>
+                <Tag className="w-2.5 h-2.5 mr-1" /> {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function CrmPage() {
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
@@ -106,10 +157,14 @@ export default function CrmPage() {
   const [customersPage, setCustomersPage] = useState(0);
   const CUSTOMERS_LIMIT = 50;
 
+  const [crmFormDirty, setCrmFormDirty] = useState(false);
+  useDirtyFormGuard(crmFormDirty && (showAddDialog || showEditDialog));
+
   const [formData, setFormData] = useState({
     name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "",
     gstin: "", birthday: "", anniversary: "",
   });
+  const [crmFormErrors, setCrmFormErrors] = useState<{ name?: string }>({});
 
   const [feedbackForm, setFeedbackForm] = useState({
     customerId: "", orderId: "", rating: "5", comment: "",
@@ -253,6 +308,24 @@ export default function CrmPage() {
     return matchesSearch && matchesTier;
   });
 
+  const CRM_GRID_COLS = 3;
+  const customerGridRows = useMemo(() => {
+    const rows: (typeof filteredCustomers)[] = [];
+    for (let i = 0; i < filteredCustomers.length; i += CRM_GRID_COLS) {
+      rows.push(filteredCustomers.slice(i, i + CRM_GRID_COLS));
+    }
+    return rows;
+  }, [filteredCustomers]);
+  const useVirtualCustomers = filteredCustomers.length > 100;
+  const crmScrollRef = useRef<HTMLDivElement>(null);
+  const customerVirtualizer = useVirtualizer({
+    count: customerGridRows.length,
+    getScrollElement: () => crmScrollRef.current,
+    estimateSize: () => 188,
+    overscan: 3,
+    enabled: useVirtualCustomers,
+  });
+
   const getCustomerOrders = (customerId: string) =>
     orders.filter((o) => o.customerId === customerId);
 
@@ -283,6 +356,12 @@ export default function CrmPage() {
   };
 
   const handleSubmitAdd = () => {
+    if (!formData.name.trim()) {
+      setCrmFormErrors({ name: "Name is required" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    setCrmFormErrors({});
     const tags = formData.tags ? formData.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
     createMutation.mutate({
       name: formData.name,
@@ -299,6 +378,12 @@ export default function CrmPage() {
 
   const handleSubmitEdit = () => {
     if (!selectedCustomer) return;
+    if (!formData.name.trim()) {
+      setCrmFormErrors({ name: "Name is required" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    setCrmFormErrors({});
     const tags = formData.tags ? formData.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
     updateMutation.mutate({
       id: selectedCustomer.id,
@@ -407,18 +492,35 @@ export default function CrmPage() {
       </div>
 
       {isLoading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="h-40 rounded-lg bg-muted animate-pulse" />
-          ))}
-        </div>
+        <ListCardSkeleton count={6} />
       ) : filteredCustomers.length === 0 ? (
         <Card>
-          <CardContent className="py-12 text-center">
-            <Users className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-            <p className="text-muted-foreground" data-testid="text-no-customers">No customers found.</p>
+          <CardContent className="py-16 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <Users className="w-12 h-12 text-muted-foreground" />
+              <p className="text-muted-foreground" data-testid="text-no-customers">
+                {search || filterTier !== "all" ? "No customers match your filters." : "No customers yet. Add your first customer to get started."}
+              </p>
+              {!search && filterTier === "all" && (
+                <Button onClick={openAdd} data-testid="button-add-first-customer">
+                  <UserPlus className="w-4 h-4 mr-2" />Add Customer
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
+      ) : useVirtualCustomers ? (
+        <div ref={crmScrollRef} className="overflow-auto" style={{ maxHeight: "70vh" }}>
+          <div style={{ height: `${customerVirtualizer.getTotalSize()}px`, position: "relative" }}>
+            {customerVirtualizer.getVirtualItems().map((vRow) => (
+              <div key={vRow.index} style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vRow.start}px)`, display: "grid", gridTemplateColumns: `repeat(${CRM_GRID_COLS}, minmax(0, 1fr))`, gap: "1rem", paddingBottom: "1rem" }}>
+                {customerGridRows[vRow.index]?.map((customer) => (
+                  <CustomerCard key={customer.id} customer={customer} fmt={fmt} tierColors={tierColors} onClick={() => openProfile(customer)} />
+                ))}
+              </div>
+            ))}
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <AnimatePresence>
@@ -427,60 +529,9 @@ export default function CrmPage() {
                 key={customer.id}
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: idx * 0.03 }}
+                transition={{ delay: Math.min(idx * 0.03, 0.5) }}
               >
-                <Card
-                  className="cursor-pointer hover:shadow-md transition-shadow"
-                  onClick={() => openProfile(customer)}
-                  data-testid={`card-customer-${customer.id}`}
-                >
-                  <CardContent className="p-4 space-y-3">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-bold text-sm">
-                          {customer.name.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <p className="font-semibold" data-testid={`text-customer-name-${customer.id}`}>
-                            {customer.name}
-                          </p>
-                          {customer.phone && (
-                            <p className="text-xs text-muted-foreground flex items-center gap-1">
-                              <Phone className="w-3 h-3" /> {customer.phone}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                      <Badge className={tierColors[customer.loyaltyTier || "bronze"]} data-testid={`badge-tier-${customer.id}`}>
-                        {customer.loyaltyTier || "bronze"}
-                      </Badge>
-                    </div>
-
-                    <div className="flex items-center justify-between text-sm">
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <Star className="w-3 h-3" />
-                        <span data-testid={`text-points-${customer.id}`}>{customer.loyaltyPoints || 0} pts</span>
-                      </div>
-                      <div className="flex items-center gap-1 text-muted-foreground">
-                        <DollarSign className="w-3 h-3" />
-                        <span data-testid={`text-spent-${customer.id}`}>
-                          {fmt(Number(customer.totalSpent || 0))}
-                        </span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    </div>
-
-                    {customer.tags && customer.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1">
-                        {customer.tags.map((tag, i) => (
-                          <Badge key={i} variant="outline" className="text-xs" data-testid={`tag-${customer.id}-${i}`}>
-                            <Tag className="w-2.5 h-2.5 mr-1" /> {tag}
-                          </Badge>
-                        ))}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
+                <CustomerCard customer={customer} fmt={fmt} tierColors={tierColors} onClick={() => openProfile(customer)} />
               </motion.div>
             ))}
           </AnimatePresence>
@@ -778,15 +829,16 @@ export default function CrmPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
+      <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) setCrmFormDirty(false); setShowAddDialog(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add New Customer</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4" onChange={() => setCrmFormDirty(true)}>
             <div>
               <Label>Name *</Label>
-              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} data-testid="input-customer-name" />
+              <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-customer-name" />
+              {crmFormErrors.name && <p className="text-red-500 text-xs mt-1">{crmFormErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -818,7 +870,7 @@ export default function CrmPage() {
             </div>
             <div>
               <Label>Notes</Label>
-              <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-customer-notes" />
+              <CharCountTextarea maxLength={500} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-customer-notes" />
             </div>
             {currency === "INR" && (
               <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">
@@ -846,15 +898,16 @@ export default function CrmPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
+      <Dialog open={showEditDialog} onOpenChange={(open) => { if (!open) setCrmFormDirty(false); setShowEditDialog(open); }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Edit Customer</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4" onChange={() => setCrmFormDirty(true)}>
             <div>
               <Label>Name *</Label>
-              <Input value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} data-testid="input-edit-customer-name" />
+              <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-edit-customer-name" />
+              {crmFormErrors.name && <p className="text-red-500 text-xs mt-1">{crmFormErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -886,7 +939,7 @@ export default function CrmPage() {
             </div>
             <div>
               <Label>Notes</Label>
-              <Textarea value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-edit-customer-notes" />
+              <CharCountTextarea maxLength={500} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-edit-customer-notes" />
             </div>
             {currency === "INR" && (
               <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">

@@ -46,6 +46,7 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tanstack/react-query": "^5.60.5",
+    "@tanstack/react-virtual": "^3.13.23",
     "@types/bcrypt": "^6.0.0",
     "@types/compression": "^1.8.1",
     "@types/ioredis": "^4.28.10",

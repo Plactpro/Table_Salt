@@ -22,6 +22,8 @@ import {
   Calendar, Clock, CheckCircle, XCircle, AlertCircle, Trash2,
   LayoutGrid, CalendarDays, ClipboardCheck, LogIn, LogOut, Timer, Lock, KeyRound, Loader2,
 } from "lucide-react";
+import { TableSkeleton } from "@/components/ui/skeletons";
+import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant", "delivery_agent", "cleaning_staff"] as const;
 
@@ -104,6 +106,7 @@ export default function StaffPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<StaffMember | null>(null);
   const [formDirty, setFormDirty] = useState(false);
+  useDirtyFormGuard(formDirty);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [staffFormErrors, setStaffFormErrors] = useState<{ name?: string; username?: string; password?: string }>({});
   const [activeTab, setActiveTab] = useState<"roster" | "schedule" | "attendance">("roster");
@@ -359,9 +362,7 @@ export default function StaffPage() {
     if (!editingUser && !password.trim()) errs.password = "Password is required";
     if (Object.keys(errs).length > 0) {
       setStaffFormErrors(errs);
-      const firstKey = Object.keys(errs)[0];
-      const el = e.currentTarget.querySelector<HTMLElement>(`[name="${firstKey}"]`);
-      el?.focus();
+      setTimeout(scrollToFirstError, 0);
       return;
     }
     setStaffFormErrors({});
@@ -537,17 +538,27 @@ export default function StaffPage() {
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {isLoading ? (
+                {isLoading && <TableSkeleton rows={8} cols={7} />}
+                {!isLoading && filteredStaff.length === 0 && (
+                  <TableBody>
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Loading...</TableCell>
+                      <TableCell colSpan={7}>
+                        <div className="flex flex-col items-center justify-center py-16 gap-4">
+                          <Users className="w-12 h-12 text-muted-foreground" />
+                          <p className="text-muted-foreground text-center">
+                            {search ? "No staff match your search." : "No staff members yet. Add your first staff member to get started."}
+                          </p>
+                          {!search && (
+                            <Button onClick={openAdd} data-testid="button-add-first-staff"><Plus className="w-4 h-4 mr-2" />Add Staff</Button>
+                          )}
+                        </div>
+                      </TableCell>
                     </TableRow>
-                  ) : filteredStaff.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">No staff found</TableCell>
-                    </TableRow>
-                  ) : (
-                    filteredStaff.map((staff, index) => {
+                  </TableBody>
+                )}
+                {!isLoading && filteredStaff.length > 0 && (
+                  <TableBody>
+                    {filteredStaff.map((staff, index) => {
                       const RoleIcon = roleIcons[staff.role] || Users;
                       return (
                         <motion.tr
@@ -612,9 +623,9 @@ export default function StaffPage() {
                           </TableCell>
                         </motion.tr>
                       );
-                    })
-                  )}
-                </TableBody>
+                    })}
+                  </TableBody>
+                )}
               </Table>
             </CardContent>
           </Card>

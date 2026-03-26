@@ -175,15 +175,29 @@ export function setupWebSocket(httpServer: HttpServer) {
     ws.on("close", () => removeSocket(tenantId, ws));
     ws.on("error", () => removeSocket(tenantId, ws));
 
+    let pongTimeout: ReturnType<typeof setTimeout> | null = null;
+
+    const clearPongTimeout = () => {
+      if (pongTimeout) { clearTimeout(pongTimeout); pongTimeout = null; }
+    };
+
+    ws.on("pong", clearPongTimeout);
+
     const ping = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        try { ws.ping(); } catch (_) {}
-      } else {
+      if (ws.readyState !== WebSocket.OPEN) {
         clearInterval(ping);
+        clearPongTimeout();
+        return;
       }
+      try { ws.ping(); } catch (_) { return; }
+      pongTimeout = setTimeout(() => {
+        removeSocket(tenantId, ws);
+        try { ws.terminate(); } catch (_) {}
+        clearInterval(ping);
+      }, 10000);
     }, 25000);
 
-    ws.on("close", () => clearInterval(ping));
+    ws.on("close", () => { clearInterval(ping); clearPongTimeout(); });
   });
 
   console.log("[WS] WebSocket server listening on /ws");

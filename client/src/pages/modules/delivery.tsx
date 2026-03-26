@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { PageTitle } from "@/lib/accessibility";
@@ -11,6 +12,7 @@ import {
   Settings, ToggleLeft, ToggleRight, Zap, Timer,
   UserCheck, Send, LayoutGrid, List, MoreVertical,
 } from "lucide-react";
+import { ListCardSkeleton } from "@/components/ui/skeletons";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -612,16 +614,27 @@ export default function DeliveryPage() {
           </div>
 
           {isLoading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 4 }).map((_, i) => (
-                <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />
-              ))}
-            </div>
+            <ListCardSkeleton count={4} />
           ) : filteredDeliveries.length === 0 ? (
             <Card>
-              <CardContent className="py-12 text-center">
-                <Truck className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-                <p className="text-muted-foreground" data-testid="text-no-deliveries">No delivery orders found.</p>
+              <CardContent className="py-16 text-center">
+                <div className="flex flex-col items-center gap-4">
+                  <Truck className="w-12 h-12 text-muted-foreground" />
+                  <p className="text-muted-foreground" data-testid="text-no-deliveries">
+                    {filterStatus !== "all" ? "No delivery orders with this status." : "No delivery orders yet."}
+                  </p>
+                  {filterStatus !== "all" ? (
+                    <Button variant="outline" onClick={() => setFilterStatus("all")} data-testid="button-clear-delivery-filter">
+                      Clear Filter
+                    </Button>
+                  ) : (
+                    <Link href="/pos">
+                      <Button data-testid="button-go-to-pos-delivery">
+                        <Plus className="w-4 h-4 mr-2" />Create Delivery Order
+                      </Button>
+                    </Link>
+                  )}
+                </div>
               </CardContent>
             </Card>
           ) : (

@@ -1,5 +1,6 @@
 import { PageTitle } from "@/lib/accessibility";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -16,6 +17,9 @@ import {
   BookOpen, X, Percent, Activity, ChevronLeft, ChevronRight, FileDown, ChevronDown, ChevronUp,
   ArrowDownCircle, ArrowUpCircle, RotateCcw, ShoppingCart, ExternalLink,
 } from "lucide-react";
+import { TableSkeleton } from "@/components/ui/skeletons";
+import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
+import { CharCountTextarea } from "@/components/ui/character-count-input";
 import { exportToPdf } from "@/lib/pdf-export";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -194,8 +198,10 @@ function InventoryTab() {
   const { toast } = useToast();
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("ALL");
+  const tableContainerRef = useRef<HTMLDivElement>(null);
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
   const [itemFormDirty, setItemFormDirty] = useState(false);
+  useDirtyFormGuard(itemFormDirty);
   const [itemConfirmLeave, setItemConfirmLeave] = useState(false);
   const [inventoryFormErrors, setInventoryFormErrors] = useState<{ name?: string }>({});
   const [adjustDialogOpen, setAdjustDialogOpen] = useState(false);
@@ -331,6 +337,14 @@ function InventoryTab() {
   const totalValue = inventory.reduce((sum, item) => sum + Number(item.currentStock) * Number(item.costPrice), 0);
   const canEdit = user?.role === "owner" || user?.role === "manager";
   const isCrockeryTab = categoryFilter === "CROCKERY" || categoryFilter === "CUTLERY" || categoryFilter === "GLASSWARE";
+  const useVirtualRows = filtered.length > 100;
+  const rowVirtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => tableContainerRef.current,
+    estimateSize: () => 52,
+    overscan: 10,
+    enabled: useVirtualRows,
+  });
 
   function getRowHighlight(item: ExtendedInventoryItem) {
     if (!isPieceCategory(item.itemCategory || "")) {
@@ -420,9 +434,24 @@ function InventoryTab() {
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? <div className="text-center py-8 text-muted-foreground">Loading...</div> : filtered.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground" data-testid="text-no-inventory">{search ? "No items match" : "No inventory items yet"}</div>
+          {isLoading ? (
+            <Table>
+              <TableSkeleton rows={8} cols={7} />
+            </Table>
+          ) : filtered.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-4" data-testid="text-no-inventory">
+              <Package className="w-12 h-12 text-muted-foreground" />
+              <p className="text-muted-foreground text-center">
+                {search ? "No items match your search." : "No inventory items yet. Add your first ingredient to get started."}
+              </p>
+              {!search && canEdit && (
+                <Button onClick={() => { setEditingItem(null); resetForm(); setItemFormDirty(false); setInventoryFormErrors({}); setItemDialogOpen(true); }} data-testid="button-add-first-ingredient">
+                  <Plus className="w-4 h-4 mr-2" />Add Ingredient
+                </Button>
+              )}
+            </div>
           ) : (
+            <div ref={tableContainerRef} className={useVirtualRows ? "overflow-auto max-h-[600px]" : undefined}>
             <Table>
               <TableHeader>
                 <TableRow>
@@ -437,8 +466,8 @@ function InventoryTab() {
                   {canEdit && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
-              <TableBody>
-                {filtered.map((item, index) => {
+              <TableBody style={useVirtualRows ? { height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" } : undefined}>
+                {(useVirtualRows ? rowVirtualizer.getVirtualItems().map(vRow => ({ item: filtered[vRow.index], index: vRow.index, virtualRow: vRow })) : filtered.map((item, index) => ({ item, index, virtualRow: null }))).map(({ item, index, virtualRow }) => {
                   const isLowStock = Number(item.currentStock) <= Number(item.reorderLevel);
                   const belowPar = isBelowPar(item);
                   const rowClass = getRowHighlight(item);
@@ -448,7 +477,7 @@ function InventoryTab() {
                     : Number(item.currentStock).toFixed(1);
 
                   return (
-                    <motion.tr key={item.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: index * 0.02 }} className={`border-b transition-colors hover:bg-muted/50 ${rowClass}`} data-testid={`row-inventory-${item.id}`}>
+                    <motion.tr key={item.id} initial={virtualRow ? false : { opacity: 0 }} animate={virtualRow ? false : { opacity: 1 }} transition={virtualRow ? undefined : { delay: index * 0.02 }} className={`border-b transition-colors hover:bg-muted/50 ${rowClass}`} data-testid={`row-inventory-${item.id}`} style={virtualRow ? { position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${virtualRow.start}px)` } : undefined}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
                           {(isLowStock || belowPar) && <AlertTriangle className="h-4 w-4 text-red-500" />}
@@ -503,6 +532,7 @@ function InventoryTab() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
           {inventoryTotal > INVENTORY_LIMIT && (
             <div className="flex items-center justify-between px-4 py-3 border-t" data-testid="pagination-controls-inventory">
@@ -641,7 +671,7 @@ function InventoryTab() {
               onClick={() => {
                 if (!formData.name.trim()) {
                   setInventoryFormErrors({ name: "Name is required" });
-                  setTimeout(() => document.querySelector<HTMLInputElement>("[data-testid='input-inventory-name']")?.focus(), 50);
+                  setTimeout(scrollToFirstError, 0);
                   return;
                 }
                 setInventoryFormErrors({});
@@ -954,7 +984,7 @@ function RecipesTab() {
               <div><div className="text-xs text-muted-foreground">Margin</div><div className={`text-lg font-bold ${margin >= 0 ? "text-green-600" : "text-red-600"}`}>{sellingPrice > 0 ? fmt(margin) : "—"}</div></div>
             </div>
 
-            <div className="space-y-2"><Label>Notes</Label><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></div>
+            <div className="space-y-2"><Label>Notes</Label><CharCountTextarea maxLength={500} value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>

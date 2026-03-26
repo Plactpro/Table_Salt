@@ -15,6 +15,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Truck, Plus, Star, Package, Phone, Mail, MapPin, Pencil, Trash2, BookOpen } from "lucide-react";
 import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
+import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
+import { ListCardSkeleton } from "@/components/ui/skeletons";
 
 interface Supplier { id: string; tenantId: string; name: string; contactName: string | null; email: string | null; phone: string | null; address: string | null; paymentTerms: string | null; leadTimeDays: number | null; rating: string | null; notes: string | null; active: boolean | null; createdAt: string; }
 interface CatalogItem { id: string; tenantId: string; supplierId: string; inventoryItemId: string; supplierSku: string | null; packSize: string | null; packUnit: string | null; packCost: string; contractedPrice: string | null; lastPurchasePrice: string | null; preferred: boolean | null; }
@@ -31,6 +33,7 @@ export default function SuppliersPage() {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState(emptySupplier);
   const [formDirty, setFormDirty] = useState(false);
+  useDirtyFormGuard(formDirty);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [formErrors, setFormErrors] = useState<{ name?: string }>({});
   const [selectedSupplier, setSelectedSupplier] = useState<string | null>(null);
@@ -39,7 +42,7 @@ export default function SuppliersPage() {
   const [catalogDirty, setCatalogDirty] = useState(false);
   const [catalogConfirmLeave, setCatalogConfirmLeave] = useState(false);
 
-  const { data: suppliersList = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
+  const { data: suppliersList = [], isLoading: suppliersLoading } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory"] });
   const inventoryItems = inventoryRes?.data ?? [];
   const { data: catalog = [] } = useQuery<CatalogItem[]>({
@@ -67,7 +70,7 @@ export default function SuppliersPage() {
   };
   const openCreate = () => { setEditId(null); setForm(emptySupplier); setFormDirty(false); setFormErrors({}); setSupplierDialog(true); };
   const handleSave = () => {
-    if (!form.name.trim()) { setFormErrors({ name: "Name is required" }); return; }
+    if (!form.name.trim()) { setFormErrors({ name: "Name is required" }); setTimeout(scrollToFirstError, 0); return; }
     setFormErrors({});
     const data = { ...form, leadTimeDays: Number(form.leadTimeDays) };
     if (editId) updateMut.mutate({ id: editId, data });
@@ -102,7 +105,8 @@ export default function SuppliersPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-1 space-y-3">
           <h3 className="font-semibold text-sm text-muted-foreground uppercase tracking-wide">Supplier List</h3>
-          {suppliersList.map(s => (
+          {suppliersLoading && <ListCardSkeleton count={3} />}
+          {!suppliersLoading && suppliersList.map(s => (
             <Card key={s.id} className={`cursor-pointer transition-colors ${selectedSupplier === s.id ? "border-primary bg-primary/5" : "hover:bg-muted/50"}`} onClick={() => setSelectedSupplier(s.id)} data-testid={`supplier-card-${s.id}`}>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
@@ -122,7 +126,15 @@ export default function SuppliersPage() {
               </CardContent>
             </Card>
           ))}
-          {suppliersList.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No suppliers yet. Add one to get started.</p>}
+          {!suppliersLoading && suppliersList.length === 0 && (
+            <div className="flex flex-col items-center gap-3 py-12" data-testid="text-no-suppliers">
+              <Truck className="w-10 h-10 text-muted-foreground" />
+              <p className="text-sm text-muted-foreground text-center">No suppliers yet. Add one to get started.</p>
+              <Button size="sm" onClick={openCreate} data-testid="button-add-first-supplier">
+                <Plus className="h-4 w-4 mr-2" />Add Supplier
+              </Button>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-2">
