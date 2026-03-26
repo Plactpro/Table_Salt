@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { AlertTriangle, X, Zap, CreditCard } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
+import { useQuery } from "@tanstack/react-query";
 
 function getDismissKey() {
   const today = new Date().toISOString().slice(0, 10);
@@ -19,14 +20,55 @@ export default function TrialBanner() {
       return false;
     }
   });
+  // PR-009: Also detect grace via apiRequest's X-Subscription-Warning header event.
+  const [graceFromHeader, setGraceFromHeader] = useState(false);
+  useEffect(() => {
+    const handler = () => setGraceFromHeader(true);
+    window.addEventListener("subscription-grace-warning", handler);
+    return () => window.removeEventListener("subscription-grace-warning", handler);
+  }, []);
+
+  const { data: billingStatus } = useQuery<{ graceStatus?: string }>({
+    queryKey: ["/api/billing/status"],
+    staleTime: 5 * 60 * 1000,
+    enabled: !!tenant,
+  });
 
   if (!tenant) return null;
-  if (dismissed) return null;
 
   const status = tenant.subscriptionStatus ?? "trialing";
   const isPastDue = status === "past_due";
   const isTrialing = status === "trialing";
 
+  // PR-009: Show amber grace period banner when subscription expired within last 24 hours.
+  // Triggered by billing status poll OR by X-Subscription-Warning header from any API call.
+  // This banner is intentionally non-dismissible — it must remain visible until renewal.
+  const isExpiredGrace = billingStatus?.graceStatus === "expired_grace" || graceFromHeader;
+  if (isExpiredGrace) {
+    return (
+      <div
+        className="w-full bg-amber-500 text-amber-950 px-4 py-2 flex items-center justify-between z-40 shrink-0"
+        data-testid="banner-subscription-grace"
+      >
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>Subscription expired — please renew. Service continues for up to 24 hours.</span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-amber-700 text-amber-950 bg-amber-300 hover:bg-amber-400 h-7 text-xs font-semibold"
+          onClick={() => navigate("/settings?tab=subscription")}
+          data-testid="button-grace-renew"
+        >
+          <CreditCard className="h-3 w-3 mr-1" />
+          Renew Now
+        </Button>
+      </div>
+    );
+  }
+
+  if (dismissed) return null;
   if (!isTrialing && !isPastDue) return null;
 
   const handleDismiss = () => {

@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import Sidebar from "./sidebar";
 import Header from "./header";
-import { Headset, Lock, Pencil, X, ShieldAlert, FileText, ExternalLink, AlertTriangle } from "lucide-react";
+import { Headset, Lock, Pencil, X, ShieldAlert, FileText, ExternalLink, AlertTriangle, UserCheck } from "lucide-react";
 import ContactSupportModal from "@/components/widgets/contact-support-modal";
 import { useImpersonation } from "@/lib/impersonation-context";
 import { Button } from "@/components/ui/button";
@@ -37,6 +37,10 @@ function GlobalSecurityListeners() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [conflictBannerVisible, setConflictBannerVisible] = useState(false);
+  const { user } = useAuth();
+
+  // PR-009: Account sharing alerts are handled via the alert engine (ALERT-13 / alert:trigger),
+  // which persists in alert_events and is displayed by AlertListener + AlertNotificationBell.
 
   // Session conflict: another login invalidated this session
   useEffect(() => {

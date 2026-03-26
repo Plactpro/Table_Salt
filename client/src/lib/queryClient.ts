@@ -56,6 +56,19 @@ function getTimeoutForUrl(url: string, method: string): TimeoutType {
   return "standard";
 }
 
+/** PR-009: Fire a custom event when the server signals an expired grace period.
+ *  Checks both the X-Subscription-Warning header and the response body field.
+ */
+function checkSubscriptionWarning(res: Response, body?: any) {
+  try {
+    const headerWarning = res.headers.get("X-Subscription-Warning");
+    const bodyWarning = body?.subscriptionWarning;
+    if (headerWarning === "expired_grace" || bodyWarning === "expired_grace") {
+      window.dispatchEvent(new CustomEvent("subscription-grace-warning"));
+    }
+  } catch {}
+}
+
 export async function apiRequest(
   method: string,
   url: string,
@@ -83,6 +96,7 @@ export async function apiRequest(
       signal: controller.signal,
     });
 
+    checkSubscriptionWarning(res);
     await throwIfResNotOk(res);
     return res;
   } catch (err: unknown) {
@@ -133,7 +147,10 @@ export const getQueryFn: <T>(options: {
       }
 
       await throwIfResNotOk(res);
-      return await res.json();
+      const responseBody = await res.json();
+      // PR-009: Check for subscription grace warning in header or response body
+      checkSubscriptionWarning(res, responseBody);
+      return responseBody;
     } catch (err: unknown) {
       if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
         const timeoutErr = new Error(`Request timed out — tap to retry`);

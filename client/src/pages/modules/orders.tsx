@@ -134,6 +134,9 @@ export default function OrdersPage() {
   const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string; version?: number } | null>(null);
   const [versionConflictOpen, setVersionConflictOpen] = useState(false);
   const [ordersPage, setOrdersPage] = useState(0);
+  // PR-009: Wrong-table confirmation state
+  const [tableChangeConfirm, setTableChangeConfirm] = useState<{ orderId: string; oldTableId: string | null; newTableId: string; version: number } | null>(null);
+  const [showTableMoveSelect, setShowTableMoveSelect] = useState(false);
   const ORDERS_LIMIT = 50;
 
   const { data: ordersRes, isLoading } = useQuery<{ data: Order[]; total: number; limit: number; offset: number }>({
@@ -194,6 +197,24 @@ export default function OrdersPage() {
         return;
       }
       toast({ variant: "destructive", title: "Failed to update", description: error.message });
+    },
+  });
+
+  // PR-009: Mutation to change table on a sent order (triggers server-side TABLE_CHANGED audit log)
+  const changeTableMutation = useMutation({
+    mutationFn: async ({ orderId, tableId, version }: { orderId: string; tableId: string; version: number }) => {
+      const res = await apiRequest("PATCH", `/api/orders/${orderId}`, { tableId, version });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+      if (selectedOrderId) queryClient.invalidateQueries({ queryKey: ["/api/orders", selectedOrderId] });
+      setTableChangeConfirm(null);
+      setShowTableMoveSelect(false);
+      toast({ title: "Table updated", description: "Order moved to new table and event logged." });
+    },
+    onError: (err: Error) => {
+      toast({ variant: "destructive", title: "Failed to move table", description: err.message });
     },
   });
 
@@ -453,7 +474,57 @@ export default function OrdersPage() {
                 </div>
                 <div>
                   <p className="text-muted-foreground">Table</p>
-                  <p className="font-medium" data-testid="text-detail-table">{selectedOrderDetail.tableId ? tableMap[selectedOrderDetail.tableId] || "—" : "—"}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium" data-testid="text-detail-table">{selectedOrderDetail.tableId ? tableMap[selectedOrderDetail.tableId] || "—" : "—"}</p>
+                    {/* PR-009: Move table button for sent orders — shows confirmation if already sent to kitchen */}
+                    {selectedOrderDetail.orderType === "dine_in" && !["paid","voided","cancelled","completed"].includes(selectedOrderDetail.status || "") && (
+                      <button
+                        className="text-xs text-primary underline hover:no-underline"
+                        data-testid="button-move-table-orders"
+                        onClick={() => setShowTableMoveSelect(v => !v)}
+                      >
+                        Move
+                      </button>
+                    )}
+                  </div>
+                  {showTableMoveSelect && (
+                    <Select
+                      onValueChange={(newTableId) => {
+                        if (!selectedOrderDetail.tableId || selectedOrderDetail.tableId === newTableId) {
+                          setShowTableMoveSelect(false);
+                          return;
+                        }
+                        const sentStatuses = ["sent_to_kitchen","in_progress","ready","served","ready_to_pay"];
+                        const isSent = sentStatuses.includes(selectedOrderDetail.status || "");
+                        const orderVersion = selectedOrderDetail.version ?? 0;
+                        if (isSent) {
+                          setTableChangeConfirm({
+                            orderId: selectedOrderDetail.id,
+                            oldTableId: selectedOrderDetail.tableId || null,
+                            newTableId,
+                            version: orderVersion,
+                          });
+                        } else {
+                          changeTableMutation.mutate({
+                            orderId: selectedOrderDetail.id,
+                            tableId: newTableId,
+                            version: orderVersion,
+                          });
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-36 mt-1" data-testid="select-move-table-orders">
+                        <SelectValue placeholder="Select table…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tables.filter(t => t.status === "free" || t.id === selectedOrderDetail.tableId).map(t => (
+                          <SelectItem key={t.id} value={t.id} data-testid={`option-table-${t.id}`}>
+                            Table {t.number} {t.zone ? `(${t.zone})` : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
                 <div>
                   <p className="text-muted-foreground">Date</p>
@@ -581,6 +652,41 @@ export default function OrdersPage() {
           onApproved={handleSupervisorApproved}
         />
       )}
+
+      {/* PR-009: Wrong-table confirmation dialog — for sent orders in the orders view */}
+      <Dialog open={!!tableChangeConfirm} onOpenChange={() => setTableChangeConfirm(null)}>
+        <DialogContent className="max-w-sm" data-testid="dialog-wrong-table-confirm-orders">
+          <DialogHeader>
+            <DialogTitle>Move order to different table?</DialogTitle>
+            <DialogDescription>
+              This order has already been sent to the kitchen.
+              {tableChangeConfirm && (
+                <> Moving from <strong>{tableChangeConfirm.oldTableId ? tableMap[tableChangeConfirm.oldTableId] || "Unknown" : "No table"}</strong> to{" "}
+                <strong>{tableMap[tableChangeConfirm.newTableId] || "Unknown"}</strong>. The kitchen will not automatically update.</>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => { setTableChangeConfirm(null); setShowTableMoveSelect(false); }} data-testid="button-cancel-table-change-orders">Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={changeTableMutation.isPending}
+              data-testid="button-confirm-table-change-orders"
+              onClick={() => {
+                if (tableChangeConfirm) {
+                  changeTableMutation.mutate({
+                    orderId: tableChangeConfirm.orderId,
+                    tableId: tableChangeConfirm.newTableId,
+                    version: tableChangeConfirm.version,
+                  });
+                }
+              }}
+            >
+              Move Order
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog open={versionConflictOpen} onOpenChange={() => {}}>
         <AlertDialogContent data-testid="dialog-version-conflict">

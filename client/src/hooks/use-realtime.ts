@@ -105,7 +105,13 @@ class RealtimeClient {
       this.ws.onmessage = (evt: MessageEvent) => {
         try {
           const { event, payload } = JSON.parse(evt.data as string) as { event: string; payload: unknown };
-          if (event === "pong") return;
+          // PR-009: Respond immediately to server heartbeat ping with a pong.
+          // Server uses this to verify the connection is alive within 10s.
+          if (event === "ping") {
+            try { this.ws?.send(JSON.stringify({ event: "pong" })); } catch (_) {}
+            return;
+          }
+          if (event === "pong") return; // ignore server pong echoes
           const handlers = this.listeners.get(event);
           if (handlers) handlers.forEach(h => { try { h(payload); } catch (_) {} });
         } catch (_) {}

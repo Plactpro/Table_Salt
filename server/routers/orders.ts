@@ -1024,6 +1024,30 @@ export function registerOrdersRoutes(app: Express): void {
       auditLogFromReq(req, { action: "order_updated", entityType: "order", entityId: req.params.id, before: { status: existing.status }, after: { status: req.body.status } });
     }
 
+    // PR-009: Log TABLE_CHANGED event when table is changed on an already-sent order.
+    if (req.body.tableId && req.body.tableId !== existing.tableId) {
+      auditLogFromReq(req, {
+        action: "TABLE_CHANGED",
+        entityType: "order",
+        entityId: req.params.id,
+        before: { tableId: existing.tableId },
+        after: { tableId: req.body.tableId },
+        metadata: {
+          previousTableId: existing.tableId,
+          newTableId: req.body.tableId,
+          orderStatus: existing.status,
+          changedBy: user.name || user.id,
+          changedAt: new Date().toISOString(),
+        },
+      });
+      emitToTenant(user.tenantId, "order:table_changed", {
+        orderId: req.params.id,
+        previousTableId: existing.tableId,
+        newTableId: req.body.tableId,
+        changedBy: user.name || user.id,
+      });
+    }
+
     const enriched: Record<string, unknown> = { ...(order as object) };
     if (order?.tableId) {
       const table = await storage.getTable(order.tableId);
