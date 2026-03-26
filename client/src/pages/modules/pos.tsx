@@ -1,3 +1,4 @@
+import { useOutletTimezone, formatLocalTime } from "@/hooks/use-outlet-timezone";
 import { useState, useMemo, useCallback, useEffect, useRef, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useLocation } from "wouter";
@@ -304,6 +305,7 @@ class PageErrorBoundary extends Component<{ children: ReactNode; label: string }
 
 export default function POSPage() {
   const { user } = useAuth();
+  const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
   const { dispatchKotForOrder } = useKotAutoDispatch();
   const [, navigate] = useLocation();
@@ -2196,7 +2198,7 @@ export default function POSPage() {
                 <div key={i} className="flex items-center gap-2 p-3 border rounded-lg" data-testid={`held-order-${i}`}>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm">{held.label}</p>
-                    <p className="text-xs text-muted-foreground">{held.tab.cart.length} items · {new Date(held.heldAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
+                    <p className="text-xs text-muted-foreground">{held.tab.cart.length} items · {formatLocalTime(held.heldAt, outletTimezone)}</p>
                   </div>
                   <Button size="sm" className="text-xs h-7" onClick={() => recallHeldTab(held)} data-testid={`button-recall-${i}`}>Recall</Button>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteHeldTab(held)} data-testid={`button-delete-held-${i}`}><X className="h-3 w-3" /></Button>

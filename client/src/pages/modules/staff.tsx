@@ -1,4 +1,5 @@
 import { PageTitle } from "@/lib/accessibility";
+import { useOutletTimezone, formatLocal, formatLocalDate, formatLocalTime } from "@/hooks/use-outlet-timezone";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -95,6 +96,7 @@ const attendanceConfig: Record<string, { label: string; color: string; icon: typ
 
 export default function StaffPage() {
   const { user } = useAuth();
+  const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -950,10 +952,10 @@ export default function StaffPage() {
                         ) : (
                           attendanceLogs.map((log: any) => (
                             <TableRow key={log.id} data-testid={`row-attendance-${log.id}`}>
-                              <TableCell>{log.date ? new Date(log.date).toLocaleDateString() : "—"}</TableCell>
+                              <TableCell>{log.date ? formatLocalDate(log.date, outletTimezone) : "—"}</TableCell>
                               <TableCell className="font-medium">{staffMap.get(log.userId) || "Unknown"}</TableCell>
-                              <TableCell>{new Date(log.clockIn).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}</TableCell>
-                              <TableCell>{log.clockOut ? new Date(log.clockOut).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : <Badge variant="secondary" className="bg-green-100 text-green-700"><Clock className="h-3 w-3 mr-1" />Active</Badge>}</TableCell>
+                              <TableCell>{formatLocalTime(log.clockIn, outletTimezone)}</TableCell>
+                              <TableCell>{log.clockOut ? formatLocalTime(log.clockOut, outletTimezone) : <Badge variant="secondary" className="bg-green-100 text-green-700"><Clock className="h-3 w-3 mr-1" />Active</Badge>}</TableCell>
                               <TableCell>{log.hoursWorked ? `${parseFloat(log.hoursWorked).toFixed(1)}h` : "—"}</TableCell>
                               <TableCell>
                                 <Badge className={log.status === "late" ? "bg-amber-100 text-amber-700" : log.status === "on_time" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"} data-testid={`badge-attendance-status-${log.id}`}>

@@ -24,6 +24,7 @@ import {
   XCircle, CircleDot, Send, ChefHat, Bell, UtensilsCrossed, CreditCard, Ban, Receipt, Printer, RotateCcw,
 } from "lucide-react";
 import type { Order, OrderItem, Table } from "@shared/schema";
+import { useOutletTimezone, formatLocal } from "@/hooks/use-outlet-timezone";
 
 type OrderWithItems = Order & { items?: OrderItem[] };
 
@@ -106,13 +107,9 @@ const NEXT_STATUS: Record<string, string | null> = {
   voided: null,
 };
 
-function formatDate(date: string | Date | null) {
-  if (!date) return "—";
-  return new Date(date).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-}
-
 export default function OrdersPage() {
   const { user } = useAuth();
+  const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const isManagerOrOwner = user?.role === "owner" || user?.role === "manager";
@@ -388,7 +385,7 @@ export default function OrdersPage() {
                         </TableCell>
                         <TableCell className="font-medium" data-testid={`text-total-${order.id}`}>{fmt(order.total)}</TableCell>
                         <TableCell className="text-sm" data-testid={`text-payment-${order.id}`}>{order.paymentMethod || "—"}</TableCell>
-                        <TableCell className="text-sm text-muted-foreground" data-testid={`text-date-${order.id}`}>{formatDate(order.createdAt)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground" data-testid={`text-date-${order.id}`}>{formatLocal(order.createdAt, outletTimezone, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Button variant="ghost" size="sm" onClick={() => setSelectedOrderId(order.id)} data-testid={`button-view-order-${order.id}`} className="hover:scale-110 transition-transform">
@@ -460,7 +457,7 @@ export default function OrdersPage() {
                 </div>
                 <div>
                   <p className="text-muted-foreground">Date</p>
-                  <p className="font-medium" data-testid="text-detail-date">{formatDate(selectedOrderDetail.createdAt)}</p>
+                  <p className="font-medium" data-testid="text-detail-date">{formatLocal(selectedOrderDetail.createdAt, outletTimezone)}</p>
                 </div>
                 {selectedOrderDetail.paymentMethod && (
                   <div>

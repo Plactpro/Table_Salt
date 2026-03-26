@@ -3622,4 +3622,18 @@ export async function runTask108Migrations(): Promise<void> {
   for (const tbl of softDeleteTables) {
     await pool.query(`DELETE FROM ${tbl} WHERE is_deleted = true AND deleted_at < NOW() - INTERVAL '30 days'`);
   }
+
+  // PR-007: Per-outlet IANA timezone
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS timezone VARCHAR(100) DEFAULT 'UTC'`);
+
+  // Seed outlet timezone from tenant timezone where outlet has default 'UTC' but tenant has a real timezone
+  await pool.query(`
+    UPDATE outlets o
+    SET timezone = t.timezone
+    FROM tenants t
+    WHERE o.tenant_id = t.id
+      AND (o.timezone IS NULL OR o.timezone = 'UTC')
+      AND t.timezone IS NOT NULL
+      AND t.timezone != 'UTC'
+  `);
 }
