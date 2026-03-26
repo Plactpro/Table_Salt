@@ -4464,10 +4464,29 @@ export class DatabaseStorage implements IStorage {
     return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, userId: r.user_id, name: r.name, phone: r.phone, badgeNumber: r.badge_number, isOnDuty: r.is_on_duty, isActive: r.is_active, createdAt: r.created_at };
   }
   private _mapValetTicket(r: any): ValetTicket {
-    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketNumber: r.ticket_number, slotId: r.slot_id, zoneId: r.zone_id, billId: r.bill_id, customerId: r.customer_id ?? null, valetStaffId: r.valet_staff_id, vehicleNumber: r.vehicle_number, vehicleType: r.vehicle_type, vehicleMake: r.vehicle_make, vehicleColor: r.vehicle_color, customerName: r.customer_name, customerPhone: r.customer_phone, status: r.status, entryTime: r.entry_time, exitTime: r.exit_time, durationMinutes: r.duration_minutes, chargeAddedToBill: r.charge_added_to_bill, events: r.events, notes: r.notes, conditionReport: r.condition_report ?? null, createdAt: r.created_at };
+    return {
+      id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketNumber: r.ticket_number,
+      slotId: r.slot_id, zoneId: r.zone_id, billId: r.bill_id, customerId: r.customer_id ?? null,
+      valetStaffId: r.valet_staff_id, vehicleNumber: r.vehicle_number, vehicleType: r.vehicle_type,
+      vehicleMake: r.vehicle_make, vehicleColor: r.vehicle_color, customerName: r.customer_name,
+      customerPhone: r.customer_phone, status: r.status, entryTime: r.entry_time, exitTime: r.exit_time,
+      durationMinutes: r.duration_minutes, chargeAddedToBill: r.charge_added_to_bill,
+      events: r.events, notes: r.notes, conditionReport: r.condition_report ?? null, createdAt: r.created_at,
+      shiftId: r.shift_id ?? null, isVip: r.is_vip ?? false, vipNotes: r.vip_notes ?? null,
+      isOvernight: r.is_overnight ?? false, tipAmount: r.tip_amount ?? null,
+      keyType: r.key_type ?? null, keyLocation: r.key_location ?? null,
+      chargeAmount: r.charge_amount ?? null,
+    };
   }
   private _mapRetrievalRequest(r: any): ValetRetrievalRequest {
-    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketId: r.ticket_id, source: r.source, requestedBy: r.requested_by, requestedByName: r.requested_by_name, assignedValetId: r.assigned_valet_id, assignedValetName: r.assigned_valet_name, status: r.status, notes: r.notes, completedAt: r.completed_at, createdAt: r.created_at };
+    return {
+      id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, ticketId: r.ticket_id,
+      source: r.source, requestedBy: r.requested_by, requestedByName: r.requested_by_name,
+      assignedValetId: r.assigned_valet_id, assignedValetName: r.assigned_valet_name,
+      status: r.status, notes: r.notes, completedAt: r.completed_at, createdAt: r.created_at,
+      priority: r.priority ?? "NORMAL", queuePosition: r.queue_position ?? null,
+      estimatedReadyAt: r.estimated_ready_at ?? null, requestSource: r.request_source ?? null,
+    };
   }
   private _mapBillParkingCharge(r: any): BillParkingCharge {
     return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, billId: r.bill_id, ticketId: r.ticket_id, durationMinutes: r.duration_minutes, freeMinutesApplied: r.free_minutes_applied, grossCharge: r.gross_charge, validationDiscount: r.validation_discount, finalCharge: r.final_charge, taxAmount: r.tax_amount, totalCharge: r.total_charge, vehicleType: r.vehicle_type, rateType: r.rate_type, createdAt: r.created_at };
@@ -4624,9 +4643,10 @@ export class DatabaseStorage implements IStorage {
   async createValetTicket(data: InsertValetTicket & { conditionReport?: any }): Promise<ValetTicket> {
     const conditionReportVal = data.conditionReport ? JSON.stringify(data.conditionReport) : null;
     const { rows } = await pool.query(
-      `INSERT INTO valet_tickets (tenant_id, outlet_id, ticket_number, slot_id, zone_id, bill_id, valet_staff_id, vehicle_number, vehicle_type, vehicle_make, vehicle_color, customer_name, customer_phone, status, exit_time, duration_minutes, charge_added_to_bill, events, notes, condition_report)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
-      [data.tenantId, data.outletId, data.ticketNumber, data.slotId ?? null, data.zoneId ?? null, data.billId ?? null, data.valetStaffId ?? null, data.vehicleNumber ?? null, data.vehicleType ?? "CAR", data.vehicleMake ?? null, data.vehicleColor ?? null, data.customerName ?? null, data.customerPhone ?? null, data.status ?? "parked", data.exitTime ?? null, data.durationMinutes ?? null, data.chargeAddedToBill ?? false, JSON.stringify(data.events ?? []), data.notes ?? null, conditionReportVal]
+      `INSERT INTO valet_tickets (tenant_id, outlet_id, ticket_number, slot_id, zone_id, bill_id, valet_staff_id, vehicle_number, vehicle_type, vehicle_make, vehicle_color, customer_name, customer_phone, status, exit_time, duration_minutes, charge_added_to_bill, events, notes, condition_report, shift_id, is_vip, vip_notes, is_overnight, tip_amount, key_type, key_location)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27) RETURNING *`,
+      [data.tenantId, data.outletId, data.ticketNumber, data.slotId ?? null, data.zoneId ?? null, data.billId ?? null, data.valetStaffId ?? null, data.vehicleNumber ?? null, data.vehicleType ?? "CAR", data.vehicleMake ?? null, data.vehicleColor ?? null, data.customerName ?? null, data.customerPhone ?? null, data.status ?? "parked", data.exitTime ?? null, data.durationMinutes ?? null, data.chargeAddedToBill ?? false, JSON.stringify(data.events ?? []), data.notes ?? null, conditionReportVal,
+       data.shiftId ?? null, data.isVip ?? false, data.vipNotes ?? null, data.isOvernight ?? false, data.tipAmount ?? null, data.keyType ?? null, data.keyLocation ?? null]
     );
     return this._mapValetTicket(rows[0]);
   }
@@ -4656,7 +4676,9 @@ export class DatabaseStorage implements IStorage {
       vehicleNumber: "vehicle_number", vehicleType: "vehicle_type", vehicleMake: "vehicle_make", vehicleColor: "vehicle_color",
       customerName: "customer_name", customerPhone: "customer_phone", status: "status",
       exitTime: "exit_time", durationMinutes: "duration_minutes", chargeAddedToBill: "charge_added_to_bill",
-      events: "events", notes: "notes", conditionReport: "condition_report"
+      events: "events", notes: "notes", conditionReport: "condition_report",
+      shiftId: "shift_id", isVip: "is_vip", vipNotes: "vip_notes", isOvernight: "is_overnight",
+      tipAmount: "tip_amount", keyType: "key_type", keyLocation: "key_location",
     };
     const sets: string[] = []; const vals: any[] = [id, tenantId];
     for (const [k, col] of Object.entries(fields)) {
@@ -4689,9 +4711,10 @@ export class DatabaseStorage implements IStorage {
 
   async createRetrievalRequest(data: InsertValetRetrievalRequest): Promise<ValetRetrievalRequest> {
     const { rows } = await pool.query(
-      `INSERT INTO valet_retrieval_requests (tenant_id, outlet_id, ticket_id, source, requested_by, requested_by_name, assigned_valet_id, assigned_valet_name, status, notes, completed_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [data.tenantId, data.outletId, data.ticketId, data.source ?? "MANUAL", data.requestedBy ?? null, data.requestedByName ?? null, data.assignedValetId ?? null, data.assignedValetName ?? null, data.status ?? "pending", data.notes ?? null, data.completedAt ?? null]
+      `INSERT INTO valet_retrieval_requests (tenant_id, outlet_id, ticket_id, source, requested_by, requested_by_name, assigned_valet_id, assigned_valet_name, status, notes, completed_at, priority, queue_position, estimated_ready_at, request_source)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,
+      [data.tenantId, data.outletId, data.ticketId, data.source ?? "MANUAL", data.requestedBy ?? null, data.requestedByName ?? null, data.assignedValetId ?? null, data.assignedValetName ?? null, data.status ?? "pending", data.notes ?? null, data.completedAt ?? null,
+       data.priority ?? "NORMAL", data.queuePosition ?? null, data.estimatedReadyAt ?? null, data.requestSource ?? null]
     );
     return this._mapRetrievalRequest(rows[0]);
   }
@@ -4707,12 +4730,12 @@ export class DatabaseStorage implements IStorage {
         q += ` AND status=$${vals.length}`;
       }
     }
-    q += ` ORDER BY created_at DESC`;
+    q += ` ORDER BY CASE WHEN priority='VIP' THEN 0 WHEN priority='URGENT' THEN 1 ELSE 2 END, queue_position NULLS LAST, created_at ASC`;
     const { rows } = await pool.query(q, vals);
     return rows.map((r: any) => this._mapRetrievalRequest(r));
   }
   async updateRetrievalRequest(id: string, tenantId: string, data: Partial<InsertValetRetrievalRequest>): Promise<ValetRetrievalRequest | undefined> {
-    const fields: Record<string, string> = { status: "status", assignedValetId: "assigned_valet_id", assignedValetName: "assigned_valet_name", notes: "notes", completedAt: "completed_at" };
+    const fields: Record<string, string> = { status: "status", assignedValetId: "assigned_valet_id", assignedValetName: "assigned_valet_name", notes: "notes", completedAt: "completed_at", priority: "priority", queuePosition: "queue_position", estimatedReadyAt: "estimated_ready_at" };
     const sets: string[] = []; const vals: any[] = [id, tenantId];
     for (const [k, col] of Object.entries(fields)) {
       if ((data as any)[k] !== undefined) { vals.push((data as any)[k]); sets.push(`${col} = $${vals.length}`); }

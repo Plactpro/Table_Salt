@@ -3244,6 +3244,14 @@ export const valetTickets = pgTable("valet_tickets", {
   notes: text("notes"),
   conditionReport: jsonb("condition_report"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  shiftId: varchar("shift_id", { length: 36 }),
+  isVip: boolean("is_vip").notNull().default(false),
+  vipNotes: text("vip_notes"),
+  isOvernight: boolean("is_overnight").notNull().default(false),
+  tipAmount: numeric("tip_amount", { precision: 10, scale: 2 }),
+  keyType: varchar("key_type", { length: 30 }),
+  keyLocation: text("key_location"),
+  chargeAmount: numeric("charge_amount", { precision: 10, scale: 2 }),
 });
 export const insertValetTicketSchema = createInsertSchema(valetTickets).omit({ id: true, createdAt: true, entryTime: true });
 export type ValetTicket = typeof valetTickets.$inferSelect;
@@ -3277,6 +3285,10 @@ export const valetRetrievalRequests = pgTable("valet_retrieval_requests", {
   notes: text("notes"),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+  priority: varchar("priority", { length: 10 }).notNull().default("NORMAL"),
+  queuePosition: integer("queue_position"),
+  estimatedReadyAt: timestamp("estimated_ready_at", { withTimezone: true }),
+  requestSource: varchar("request_source", { length: 30 }),
 });
 export const insertValetRetrievalRequestSchema = createInsertSchema(valetRetrievalRequests).omit({ id: true, createdAt: true });
 export type ValetRetrievalRequest = typeof valetRetrievalRequests.$inferSelect;

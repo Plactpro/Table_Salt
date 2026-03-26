@@ -455,6 +455,24 @@ export function registerParkingRoutes(app: Express): void {
         }
       }
 
+      // Determine priority and auto-assign queue_position
+      const requestedPriority = req.body.priority || "NORMAL";
+      const ticketForPriority = req.body.ticketId ? await storage.getValetTicket(req.body.ticketId) : null;
+      const isVipRequest = requestedPriority === "VIP" || ticketForPriority?.isVip === true;
+      const finalPriority = isVipRequest ? "VIP" : requestedPriority;
+      // VIP requests always queue at position 1 (front of the line).
+      // URGENT and NORMAL requests append to the end of their respective priority groups.
+      let nextQueuePos: number;
+      if (finalPriority === "VIP") {
+        nextQueuePos = 1;
+      } else {
+        const { rows: queueRows } = await pool.query(
+          `SELECT COALESCE(MAX(queue_position), 0) AS max_pos FROM valet_retrieval_requests WHERE outlet_id=$1 AND tenant_id=$2 AND status NOT IN ('completed','cancelled') AND COALESCE(priority,'NORMAL')=$3`,
+          [outletId, user.tenantId, finalPriority]
+        );
+        nextQueuePos = parseInt(queueRows[0]?.max_pos ?? "0") + 1;
+      }
+
       const request = await storage.createRetrievalRequest({
         ...req.body,
         tenantId: user.tenantId,
@@ -462,6 +480,8 @@ export function registerParkingRoutes(app: Express): void {
         requestedBy: user.id,
         requestedByName: user.name || user.username,
         status: "pending",
+        priority: finalPriority,
+        queuePosition: nextQueuePos,
       });
 
       emitToTenant(user.tenantId, "parking:retrieval_requested", { request });
@@ -1163,6 +1183,400 @@ export function registerParkingRoutes(app: Express): void {
       const result = await applyParkingChargeToBill(ticket.billId, ticket.id, user.tenantId);
       if (!result) return res.status(409).json({ message: "Parking charge already applied or could not be applied" });
       res.json(result);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: Valet Shifts ─────────────────────────────────────────────────
+  app.get("/api/parking/shifts/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { date } = req.query as { date?: string };
+      const dateFilter = date ?? new Date().toISOString().split("T")[0];
+      const { rows } = await pool.query(
+        `SELECT vs.*, 
+          (SELECT json_agg(row_to_json(a)) FROM valet_staff_assignments a WHERE a.shift_id = vs.id) AS assignments
+         FROM valet_shifts vs
+         WHERE vs.outlet_id=$1 AND vs.tenant_id=$2 AND vs.shift_date=$3
+         ORDER BY vs.opened_at DESC`,
+        [req.params.outletId, user.tenantId, dateFilter]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.get("/api/parking/shifts/:outletId/active", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT vs.*, 
+          (SELECT json_agg(row_to_json(a)) FROM valet_staff_assignments a WHERE a.shift_id = vs.id) AS assignments
+         FROM valet_shifts vs
+         WHERE vs.outlet_id=$1 AND vs.tenant_id=$2 AND vs.status='active'
+         ORDER BY vs.opened_at DESC LIMIT 1`,
+        [req.params.outletId, user.tenantId]
+      );
+      res.json(rows[0] ?? null);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/parking/shifts/:outletId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { shiftType, headValetId, headValetName, openingNotes, shiftDate } = req.body;
+      // Guard: only one active shift per outlet at a time
+      const { rows: activeRows } = await pool.query(
+        `SELECT id FROM valet_shifts WHERE outlet_id=$1 AND tenant_id=$2 AND status='active' LIMIT 1`,
+        [req.params.outletId, user.tenantId]
+      );
+      if (activeRows.length > 0) {
+        return res.status(409).json({ message: "An active shift is already open for this outlet. Close it before opening a new one." });
+      }
+      const { rows } = await pool.query(
+        `INSERT INTO valet_shifts (id, tenant_id, outlet_id, shift_date, shift_type, head_valet_id, head_valet_name, status, vehicle_count, total_tips, opening_notes, opened_at, created_by)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, 'active', 0, 0, $7, now(), $8)
+         RETURNING *`,
+        [user.tenantId, req.params.outletId, shiftDate ?? new Date().toISOString().split("T")[0], shiftType ?? "EVENING", headValetId ?? null, headValetName ?? null, openingNotes ?? null, user.id]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/parking/shifts/:outletId/:shiftId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { status, closingNotes, vehicleCount, totalTips, totalFees, incidents } = req.body;
+      const updates: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (status !== undefined) { updates.push(`status=$${idx++}`); vals.push(status); }
+      if (closingNotes !== undefined) { updates.push(`closing_notes=$${idx++}`); vals.push(closingNotes); }
+      if (vehicleCount !== undefined) { updates.push(`vehicle_count=$${idx++}`); vals.push(vehicleCount); }
+      if (totalTips !== undefined) { updates.push(`total_tips=$${idx++}`); vals.push(totalTips); }
+      if (totalFees !== undefined) { updates.push(`total_fees=$${idx++}`); vals.push(totalFees); }
+      if (incidents !== undefined) { updates.push(`incidents=$${idx++}`); vals.push(incidents); }
+      if (status === "closed") { updates.push(`closed_at=$${idx++}`); vals.push(new Date()); }
+      if (updates.length === 0) return res.status(400).json({ message: "No fields to update" });
+      vals.push(req.params.shiftId, user.tenantId);
+      const { rows } = await pool.query(
+        `UPDATE valet_shifts SET ${updates.join(",")} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING *`,
+        vals
+      );
+      if (!rows[0]) return res.status(404).json({ message: "Shift not found" });
+      res.json(rows[0]);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: Shift Staff Assignments ──────────────────────────────────────
+  app.get("/api/parking/shift-assignments/:shiftId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT a.*, vs.badge_number FROM valet_staff_assignments a
+         LEFT JOIN valet_staff vs ON vs.id = a.staff_id
+         WHERE a.shift_id=$1 AND a.tenant_id=$2`,
+        [req.params.shiftId, user.tenantId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/parking/shift-assignments", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { shiftId, staffId, staffName, role, zone } = req.body;
+      const { rows } = await pool.query(
+        `INSERT INTO valet_staff_assignments (id, tenant_id, shift_id, staff_id, staff_name, role, zone)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6) RETURNING *`,
+        [user.tenantId, shiftId, staffId, staffName, role ?? "VALET", zone ?? null]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/parking/shift-assignments/:assignmentId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const isManager = user.role === "owner" || user.role === "manager";
+      const { clockIn, clockOut, vehiclesHandled, tipsCollected, role, zone } = req.body;
+
+      if (!isManager) {
+        // Non-managers may only clock themselves in/out.
+        // Verify the authenticated user owns this assignment via valet_staff.user_id -> assignment.staff_id
+        const { rows: checkRows } = await pool.query(
+          `SELECT a.id FROM valet_staff_assignments a
+           JOIN valet_staff s ON s.id = a.staff_id AND s.tenant_id = a.tenant_id
+           WHERE a.id=$1 AND a.tenant_id=$2 AND s.user_id=$3`,
+          [req.params.assignmentId, user.tenantId, user.id]
+        );
+        if (!checkRows[0]) return res.status(403).json({ message: "Forbidden: can only update your own clock" });
+        if (vehiclesHandled !== undefined || tipsCollected !== undefined || role !== undefined || zone !== undefined) {
+          return res.status(403).json({ message: "Forbidden: insufficient permissions" });
+        }
+      }
+
+      const updates: string[] = [];
+      const vals: unknown[] = [];
+      let idx = 1;
+      if (clockIn !== undefined) { updates.push(`clock_in=$${idx++}`); vals.push(clockIn === true ? new Date() : clockIn); }
+      if (clockOut !== undefined) { updates.push(`clock_out=$${idx++}`); vals.push(clockOut === true ? new Date() : clockOut); }
+      if (isManager && vehiclesHandled !== undefined) { updates.push(`vehicles_handled=$${idx++}`); vals.push(vehiclesHandled); }
+      if (isManager && tipsCollected !== undefined) { updates.push(`tips_collected=$${idx++}`); vals.push(tipsCollected); }
+      if (isManager && role !== undefined) { updates.push(`role=$${idx++}`); vals.push(role); }
+      if (isManager && zone !== undefined) { updates.push(`zone=$${idx++}`); vals.push(zone); }
+      if (updates.length === 0) return res.status(400).json({ message: "No fields to update" });
+      vals.push(req.params.assignmentId, user.tenantId);
+      const { rows } = await pool.query(
+        `UPDATE valet_staff_assignments SET ${updates.join(",")} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING *`,
+        vals
+      );
+      if (!rows[0]) return res.status(404).json({ message: "Assignment not found" });
+      res.json(rows[0]);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: Key Storage Locations ────────────────────────────────────────
+  app.get("/api/parking/key-locations/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT * FROM key_storage_locations WHERE outlet_id=$1 AND tenant_id=$2 ORDER BY location_code`,
+        [req.params.outletId, user.tenantId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/parking/key-locations/:outletId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { locationCode, locationName, capacity, isSecure } = req.body;
+      const { rows } = await pool.query(
+        `INSERT INTO key_storage_locations (id, tenant_id, outlet_id, location_code, location_name, capacity, current_count, is_secure)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, 0, $6) RETURNING *`,
+        [user.tenantId, req.params.outletId, locationCode, locationName, capacity ?? 50, isSecure ?? true]
+      );
+      res.status(201).json(rows[0]);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/parking/key-locations/:outletId/:locationId", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { locationName, capacity, isSecure, currentCount } = req.body;
+      const updates: string[] = [];
+      const vals: any[] = [];
+      let idx = 1;
+      if (locationName !== undefined) { updates.push(`location_name=$${idx++}`); vals.push(locationName); }
+      if (capacity !== undefined) { updates.push(`capacity=$${idx++}`); vals.push(capacity); }
+      if (isSecure !== undefined) { updates.push(`is_secure=$${idx++}`); vals.push(isSecure); }
+      if (currentCount !== undefined) { updates.push(`current_count=$${idx++}`); vals.push(currentCount); }
+      if (updates.length === 0) return res.status(400).json({ message: "No fields to update" });
+      vals.push(req.params.locationId, user.tenantId);
+      const { rows } = await pool.query(
+        `UPDATE key_storage_locations SET ${updates.join(",")} WHERE id=$${idx++} AND tenant_id=$${idx} RETURNING *`,
+        vals
+      );
+      if (!rows[0]) return res.status(404).json({ message: "Location not found" });
+      res.json(rows[0]);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: Key Management Log ───────────────────────────────────────────
+  app.get("/api/parking/key-log/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { ticketId, limit: limitQ } = req.query as { ticketId?: string; limit?: string };
+      const limitN = Math.min(parseInt(limitQ ?? "50"), 200);
+      let query = `SELECT kl.*, vt.ticket_number FROM key_management_log kl
+                   LEFT JOIN valet_tickets vt ON vt.id = kl.ticket_id
+                   WHERE kl.outlet_id=$1 AND kl.tenant_id=$2`;
+      const vals: any[] = [req.params.outletId, user.tenantId];
+      if (ticketId) { query += ` AND kl.ticket_id=$3`; vals.push(ticketId); }
+      query += ` ORDER BY kl.created_at DESC LIMIT ${limitN}`;
+      const { rows } = await pool.query(query, vals);
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/parking/key-log/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { ticketId, action, keyLocation, notes } = req.body;
+      const { rows } = await pool.query(
+        `INSERT INTO key_management_log (id, tenant_id, outlet_id, ticket_id, action, performed_by, performed_by_name, key_location, notes)
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+        [user.tenantId, req.params.outletId, ticketId ?? null, action, user.id, user.name || user.username, keyLocation ?? null, notes ?? null]
+      );
+      // Update key_location on valet_ticket
+      if (ticketId && keyLocation) {
+        await pool.query(
+          `UPDATE valet_tickets SET key_location=$1 WHERE id=$2 AND tenant_id=$3`,
+          [keyLocation, ticketId, user.tenantId]
+        );
+      }
+      // Update current_count on key_storage_locations
+      if (keyLocation) {
+        if (action === "KEY_STORED") {
+          await pool.query(
+            `UPDATE key_storage_locations SET current_count = current_count + 1 WHERE tenant_id=$1 AND outlet_id=$2 AND location_code=$3`,
+            [user.tenantId, req.params.outletId, keyLocation]
+          );
+        } else if (action === "KEY_TAKEN" || action === "KEY_RETURNED_TO_CUSTOMER") {
+          await pool.query(
+            `UPDATE key_storage_locations SET current_count = GREATEST(0, current_count - 1) WHERE tenant_id=$1 AND outlet_id=$2 AND location_code=$3`,
+            [user.tenantId, req.params.outletId, keyLocation]
+          );
+        }
+      }
+      res.status(201).json(rows[0]);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: Dedicated ticket key-location PATCH ──────────────────────────
+  app.patch("/api/parking/tickets/:id/key-location", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const { keyLocation, keyType } = req.body;
+      const updated = await storage.updateValetTicket(req.params.id, user.tenantId, { keyLocation, keyType });
+      if (keyLocation) {
+        await pool.query(
+          `UPDATE key_storage_locations SET current_count = (SELECT COUNT(*) FROM valet_tickets WHERE tenant_id=$1 AND outlet_id=$2 AND key_location=$3 AND status NOT IN ('checked_out','cancelled')) WHERE tenant_id=$1 AND outlet_id=$2 AND location_code=$3`,
+          [user.tenantId, ticket.outletId, keyLocation]
+        );
+      }
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: VIP flag, overnight flag, tip recording ──────────────────────
+  app.patch("/api/parking/tickets/:id/vip", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const { isVip, vipNotes } = req.body;
+      const updated = await storage.updateValetTicket(req.params.id, user.tenantId, { isVip: isVip ?? true, vipNotes: vipNotes ?? null });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/parking/tickets/:id/overnight", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const { isOvernight } = req.body;
+      const updated = await storage.updateValetTicket(req.params.id, user.tenantId, { isOvernight: isOvernight ?? true });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.patch("/api/parking/tickets/:id/tip", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const ticket = await storage.getValetTicket(req.params.id);
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      const { tipAmount, staffAssignmentId } = req.body;
+      if (tipAmount === undefined || tipAmount === null || isNaN(parseFloat(tipAmount))) return res.status(400).json({ message: "Valid tipAmount required" });
+      const newTip = parseFloat(tipAmount);
+      const prevTip = ticket.tipAmount ? parseFloat(String(ticket.tipAmount)) : 0;
+      const delta = newTip - prevTip;
+      // Update ticket tip (idempotent: set absolute value)
+      await pool.query(
+        `UPDATE valet_tickets SET tip_amount=$1 WHERE id=$2 AND tenant_id=$3`,
+        [newTip, req.params.id, user.tenantId]
+      );
+      // Roll up the delta to shift and staff assignment totals
+      if (delta !== 0 && ticket.shiftId) {
+        await pool.query(
+          `UPDATE valet_shifts SET total_tips = total_tips + $1 WHERE id=$2 AND tenant_id=$3`,
+          [delta, ticket.shiftId, user.tenantId]
+        );
+      }
+      if (delta !== 0) {
+        if (staffAssignmentId) {
+          await pool.query(
+            `UPDATE valet_staff_assignments SET tips_collected = tips_collected + $1 WHERE id=$2 AND tenant_id=$3`,
+            [delta, staffAssignmentId, user.tenantId]
+          );
+        } else if (ticket.shiftId && ticket.valetStaffId) {
+          await pool.query(
+            `UPDATE valet_staff_assignments SET tips_collected = tips_collected + $1
+             WHERE shift_id=$2 AND staff_id=$3 AND tenant_id=$4`,
+            [delta, ticket.shiftId, ticket.valetStaffId, user.tenantId]
+          );
+        }
+      }
+      const updated = await storage.getValetTicket(req.params.id);
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: Priority retrieval queue (sorted) ─────────────────────────────
+  // Override the GET retrieval-requests to support priority sorting
+  app.get("/api/parking/priority-queue/:outletId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows } = await pool.query(
+        `SELECT rr.*, vt.ticket_number, vt.vehicle_number, vt.vehicle_type, vt.vehicle_make, vt.vehicle_color, vt.is_vip
+         FROM valet_retrieval_requests rr
+         LEFT JOIN valet_tickets vt ON vt.id = rr.ticket_id
+         WHERE rr.outlet_id=$1 AND rr.tenant_id=$2 AND rr.status IN ('pending','assigned','in_progress')
+         ORDER BY
+           CASE WHEN COALESCE(rr.priority,'NORMAL') = 'VIP' THEN 1
+                WHEN COALESCE(rr.priority,'NORMAL') = 'URGENT' THEN 2
+                WHEN COALESCE(rr.priority,'NORMAL') = 'NORMAL' THEN 3
+                ELSE 4 END ASC,
+           rr.created_at ASC`,
+        [req.params.outletId, user.tenantId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // ─── Task #179: Shift reconciliation summary ─────────────────────────────────
+  app.get("/api/parking/shifts/:outletId/:shiftId/summary", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { rows: shiftRows } = await pool.query(
+        `SELECT vs.*, 
+          (SELECT json_agg(row_to_json(a)) FROM valet_staff_assignments a WHERE a.shift_id = vs.id) AS assignments
+         FROM valet_shifts vs WHERE vs.id=$1 AND vs.tenant_id=$2`,
+        [req.params.shiftId, user.tenantId]
+      );
+      if (!shiftRows[0]) return res.status(404).json({ message: "Shift not found" });
+      const shift = shiftRows[0];
+      // Count tickets for this shift — include tips and fees collected
+      const { rows: ticketStats } = await pool.query(
+        `SELECT COUNT(*) AS total_tickets,
+                COUNT(*) FILTER (WHERE status NOT IN ('completed','cancelled')) AS open_tickets,
+                COALESCE(SUM(tip_amount),0) AS total_tips,
+                COALESCE(SUM(charge_amount),0) AS total_fees
+         FROM valet_tickets WHERE shift_id=$1 AND tenant_id=$2`,
+        [req.params.shiftId, user.tenantId]
+      );
+      // Also sum fees from bill_parking_charges for tickets in this shift
+      const { rows: chargeStats } = await pool.query(
+        `SELECT COALESCE(SUM(bpc.final_charge),0) AS billed_fees
+         FROM bill_parking_charges bpc
+         JOIN valet_tickets vt ON vt.id = bpc.ticket_id
+         WHERE vt.shift_id=$1 AND vt.tenant_id=$2`,
+        [req.params.shiftId, user.tenantId]
+      );
+      res.json({
+        shift,
+        totalTickets: parseInt(ticketStats[0]?.total_tickets ?? "0"),
+        openTickets: parseInt(ticketStats[0]?.open_tickets ?? "0"),
+        totalTips: parseFloat(ticketStats[0]?.total_tips ?? "0"),
+        totalFees: parseFloat(ticketStats[0]?.total_fees ?? "0"),
+        billedFees: parseFloat(chargeStats[0]?.billed_fees ?? "0"),
+      });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }
