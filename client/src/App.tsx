@@ -70,6 +70,7 @@ const ProcurementHubPage = lazy(() => import("@/pages/procurement/index"));
 const TicketHistoryPage = lazy(() => import("@/pages/tickets/index"));
 const CashDashboardPage = lazy(() => import("@/pages/cash/index"));
 const TipReportPage = lazy(() => import("@/pages/tips/report"));
+const RecycleBinPage = lazy(() => import("@/pages/recycle-bin"));
 const ParkingPage = lazy(() => import("@/pages/modules/parking"));
 const AdvertisementsModule = lazy(() => import("@/pages/modules/advertisements"));
 const AdsEnterpriseGateLazy = lazy(() =>
@@ -151,6 +152,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
   "/tickets": { roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
   "/cash": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
   "/tips/report": { roles: ["manager", "owner"] },
+  "/recycle-bin": { roles: ["owner", "manager"] },
   "/parking": { roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
   "/advertisements": { roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "advertisement_management", subscriptionFallback: AdsEnterpriseGateLazy },
 };
@@ -456,6 +458,7 @@ function ProtectedPages() {
         <Route path="/tickets">{() => <GuardedRoute path="/tickets" component={TicketHistoryPage} />}</Route>
         <Route path="/cash">{() => <GuardedRoute path="/cash" component={CashDashboardPage} />}</Route>
         <Route path="/tips/report">{() => <GuardedRoute path="/tips/report" component={TipReportPage} />}</Route>
+        <Route path="/recycle-bin">{() => <GuardedRoute path="/recycle-bin" component={RecycleBinPage} />}</Route>
         <Route path="/parking">{() => <GuardedRoute path="/parking" component={ParkingPage} />}</Route>
         <Route path="/advertisements">{() => <GuardedRoute path="/advertisements" component={AdvertisementsModule} />}</Route>
         <Route path="/workforce">{() => <Redirect to="/staff" />}</Route>

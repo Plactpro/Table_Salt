@@ -60,7 +60,7 @@ export function registerReservationsRoutes(app: Express): void {
 
   app.delete("/api/reservations/:id", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
-    await storage.deleteReservationByTenant(req.params.id, user.tenantId);
+    await storage.deleteReservationByTenant(req.params.id, user.tenantId, user.id);
     res.json({ message: "Deleted" });
   });
 }

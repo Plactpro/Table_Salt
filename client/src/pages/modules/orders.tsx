@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
 import {
   Table as UITable, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -133,7 +134,8 @@ export default function OrdersPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [, navigate] = useLocation();
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
-  const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string } | null>(null);
+  const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string; version?: number } | null>(null);
+  const [versionConflictOpen, setVersionConflictOpen] = useState(false);
   const [ordersPage, setOrdersPage] = useState(0);
   const ORDERS_LIMIT = 50;
 
@@ -160,15 +162,20 @@ export default function OrdersPage() {
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ id, status, paymentMethod: pm, supervisorOverride }: { id: string; status: string; paymentMethod?: string; supervisorOverride?: { username: string; password: string; otpApprovalToken?: string } }) => {
+    mutationFn: async ({ id, status, paymentMethod: pm, supervisorOverride, version }: { id: string; status: string; paymentMethod?: string; supervisorOverride?: { username: string; password: string; otpApprovalToken?: string }; version?: number }) => {
       const body: Record<string, unknown> = { status };
       if (pm) body.paymentMethod = pm;
       if (supervisorOverride) body.supervisorOverride = supervisorOverride;
+      // Include version for optimistic locking — server will 409 if version has changed
+      if (version !== undefined && version !== null) body.version = version;
       const res = await apiRequest("PATCH", `/api/orders/${id}`, body);
       if (!res.ok) {
         const data = await res.json().catch(() => ({ message: "Request failed" }));
+        if (res.status === 409 && data.code === "VERSION_CONFLICT") {
+          throw Object.assign(new Error(data.message), { isVersionConflict: true });
+        }
         if (res.status === 403 && data.requiresSupervisor) {
-          throw Object.assign(new Error(data.message), { requiresSupervisor: true, action: data.action, orderId: id });
+          throw Object.assign(new Error(data.message), { requiresSupervisor: true, action: data.action, orderId: id, version });
         }
         throw new Error(data.message || "Request failed");
       }
@@ -180,9 +187,13 @@ export default function OrdersPage() {
       toast({ title: "Order status updated" });
     },
     onError: (err: unknown) => {
-      const error = err as Error & { requiresSupervisor?: boolean; action?: string; orderId?: string };
+      const error = err as Error & { requiresSupervisor?: boolean; action?: string; orderId?: string; isVersionConflict?: boolean; version?: number };
+      if (error.isVersionConflict) {
+        setVersionConflictOpen(true);
+        return;
+      }
       if (error.requiresSupervisor && error.orderId) {
-        setSupervisorDialog({ open: true, orderId: error.orderId, action: error.action || "void_order" });
+        setSupervisorDialog({ open: true, orderId: error.orderId, action: error.action || "void_order", version: error.version });
         return;
       }
       toast({ variant: "destructive", title: "Failed to update", description: error.message });
@@ -195,6 +206,7 @@ export default function OrdersPage() {
         id: supervisorDialog.orderId,
         status: "voided",
         supervisorOverride: credentials,
+        version: supervisorDialog.version,
       });
     }
     setSupervisorDialog(null);
@@ -388,7 +400,7 @@ export default function OrdersPage() {
                               </Button>
                             )}
                             {canUpdateStatus && NEXT_STATUS[order.status || "new"] && !isReadyToPay && (
-                              <Button variant="outline" size="sm" onClick={() => updateStatusMutation.mutate({ id: order.id, status: NEXT_STATUS[order.status || "new"]! })} disabled={updateStatusMutation.isPending} data-testid={`button-advance-status-${order.id}`} className="hover:scale-110 transition-transform">
+                              <Button variant="outline" size="sm" onClick={() => updateStatusMutation.mutate({ id: order.id, status: NEXT_STATUS[order.status || "new"]!, version: order.version ?? undefined })} disabled={updateStatusMutation.isPending} data-testid={`button-advance-status-${order.id}`} className="hover:scale-110 transition-transform">
                                 →
                               </Button>
                             )}
@@ -508,7 +520,7 @@ export default function OrdersPage() {
               {canUpdateStatus && (
                 <div className="flex gap-2 pt-2">
                   {selectedOrderDetail.status === "served" && (
-                    <Button className="bg-amber-500 hover:bg-amber-600 text-white" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "ready_to_pay" })} disabled={updateStatusMutation.isPending} data-testid="button-mark-ready-to-pay">
+                    <Button className="bg-amber-500 hover:bg-amber-600 text-white" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "ready_to_pay", version: selectedOrderDetail.version })} disabled={updateStatusMutation.isPending} data-testid="button-mark-ready-to-pay">
                       <Receipt className="h-4 w-4 mr-1" /> Mark Ready to Pay
                     </Button>
                   )}
@@ -518,7 +530,7 @@ export default function OrdersPage() {
                     </Button>
                   )}
                   {NEXT_STATUS[selectedOrderDetail.status || "new"] && selectedOrderDetail.status !== "served" && selectedOrderDetail.status !== "ready_to_pay" && (
-                    <Button onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: NEXT_STATUS[selectedOrderDetail.status || "new"]! })} disabled={updateStatusMutation.isPending} data-testid="button-advance-detail-status">
+                    <Button onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: NEXT_STATUS[selectedOrderDetail.status || "new"]!, version: selectedOrderDetail.version })} disabled={updateStatusMutation.isPending} data-testid="button-advance-detail-status">
                       Advance to {statusLabels[NEXT_STATUS[selectedOrderDetail.status || "new"]!]}
                     </Button>
                   )}
@@ -551,7 +563,7 @@ export default function OrdersPage() {
                           <Ban className="h-4 w-4 mr-1" /> Void Bill
                         </Button>
                       )}
-                      <Button variant="outline" className="text-destructive border-destructive/50" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled" })} disabled={updateStatusMutation.isPending} data-testid="button-cancel-order">
+                      <Button variant="outline" className="text-destructive border-destructive/50" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled", version: selectedOrderDetail.version })} disabled={updateStatusMutation.isPending} data-testid="button-cancel-order">
                         Cancel Order
                       </Button>
                     </>
@@ -572,6 +584,30 @@ export default function OrdersPage() {
           onApproved={handleSupervisorApproved}
         />
       )}
+
+      <AlertDialog open={versionConflictOpen} onOpenChange={() => {}}>
+        <AlertDialogContent data-testid="dialog-version-conflict">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Order Updated by Someone Else</AlertDialogTitle>
+            <AlertDialogDescription>
+              This order was modified by another user since you last loaded it.
+              You must refresh to see the latest version before making any changes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              data-testid="button-refresh-order"
+              onClick={() => {
+                setVersionConflictOpen(false);
+                if (selectedOrderId) queryClient.invalidateQueries({ queryKey: ["/api/orders", selectedOrderId] });
+                queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+              }}
+            >
+              Refresh Order
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }

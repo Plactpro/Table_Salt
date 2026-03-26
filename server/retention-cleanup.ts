@@ -1,5 +1,30 @@
-import { db } from "./db";
+import { db, pool } from "./db";
 import { sql } from "drizzle-orm";
+
+// Tables that support soft delete and require 30-day auto-purge
+const SOFT_DELETE_TABLES = [
+  "menu_items", "users", "customers", "suppliers", "inventory_items",
+  "valet_tickets", "purchase_orders", "recipes", "promotion_rules", "reservations",
+];
+
+export async function purgeExpiredRecycleBinItems(): Promise<number> {
+  let total = 0;
+  const client = await pool.connect();
+  try {
+    for (const table of SOFT_DELETE_TABLES) {
+      const { rowCount } = await client.query(
+        `DELETE FROM ${table} WHERE is_deleted = true AND deleted_at < NOW() - INTERVAL '30 days'`
+      );
+      total += rowCount ?? 0;
+    }
+    if (total > 0) {
+      console.log(`[recycle-bin-purge] Permanently deleted ${total} expired soft-deleted records (>30 days)`);
+    }
+  } finally {
+    client.release();
+  }
+  return total;
+}
 
 export async function runRetentionCleanup(): Promise<{ auditRowsDeleted: number; alertsDeleted: number; customersDeleted: number; healthLogsDeleted: number }> {
   let auditRowsDeleted = 0;
@@ -72,6 +97,8 @@ export function startRetentionScheduler() {
       if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0 || result.healthLogsDeleted > 0) {
         console.log(`[retention-cleanup] Startup run: deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers, ${result.healthLogsDeleted} health log entries`);
       }
+      // Also purge expired soft-deleted records from recycle bin (>30 days)
+      await purgeExpiredRecycleBinItems();
     } catch (err) {
       console.error("[retention-cleanup] Startup run error:", err);
     }
@@ -83,6 +110,8 @@ export function startRetentionScheduler() {
       if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0 || result.healthLogsDeleted > 0) {
         console.log(`[retention-cleanup] Deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers, ${result.healthLogsDeleted} health log entries`);
       }
+      // Also purge expired soft-deleted records from recycle bin (>30 days)
+      await purgeExpiredRecycleBinItems();
     } catch (err) {
       console.error("[retention-cleanup] Scheduler error:", err);
     }

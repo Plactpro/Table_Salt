@@ -3580,4 +3580,46 @@ export async function runTask108Migrations(): Promise<void> {
       }
     }
   }
+
+  // PR-002: Soft delete columns — add is_deleted + deleted_at to 10 tables
+  const softDeleteTables = [
+    "menu_items",
+    "users",
+    "customers",
+    "suppliers",
+    "inventory_items",
+    "valet_tickets",
+    "purchase_orders",
+    "recipes",
+    "promotion_rules",
+    "reservations",
+  ];
+  for (const tbl of softDeleteTables) {
+    await pool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS is_deleted BOOLEAN NOT NULL DEFAULT false`);
+    await pool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(36)`);
+  }
+
+  // Partial indexes for soft-deleted rows (where is_deleted = false) on each table
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_menu_items_not_deleted ON menu_items(tenant_id) WHERE is_deleted = false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_users_not_deleted ON users(tenant_id) WHERE is_deleted = false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customers_not_deleted ON customers(tenant_id) WHERE is_deleted = false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_suppliers_not_deleted ON suppliers(tenant_id) WHERE is_deleted = false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_inventory_items_not_deleted ON inventory_items(tenant_id) WHERE is_deleted = false`);
+  // valet_tickets and purchase_orders have outlet_id — use composite index
+  await pool.query(`DROP INDEX IF EXISTS idx_valet_tickets_not_deleted`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_valet_tickets_not_deleted ON valet_tickets(tenant_id, outlet_id) WHERE is_deleted = false`);
+  await pool.query(`DROP INDEX IF EXISTS idx_purchase_orders_not_deleted`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_purchase_orders_not_deleted ON purchase_orders(tenant_id, outlet_id) WHERE is_deleted = false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_recipes_not_deleted ON recipes(tenant_id) WHERE is_deleted = false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_promotion_rules_not_deleted ON promotion_rules(tenant_id) WHERE is_deleted = false`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_reservations_not_deleted ON reservations(tenant_id) WHERE is_deleted = false`);
+
+  // PR-002: Order version column for optimistic locking
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1`);
+
+  // PR-002: Nightly cleanup — hard-delete soft-deleted records older than 30 days (runs once on server start)
+  for (const tbl of softDeleteTables) {
+    await pool.query(`DELETE FROM ${tbl} WHERE is_deleted = true AND deleted_at < NOW() - INTERVAL '30 days'`);
+  }
 }

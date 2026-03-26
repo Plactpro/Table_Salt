@@ -103,16 +103,32 @@ export function registerMenuRoutes(app: Express): void {
   });
 
   app.delete("/api/menu-items/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
-    const user = req.user as any;
-    const existing = await storage.getMenuItem(req.params.id, user.tenantId);
-    await storage.deleteMenuItem(req.params.id, user.tenantId);
-    if (existing) {
-      auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
+    try {
+      const user = req.user as any;
+      const existing = await storage.getMenuItem(req.params.id, user.tenantId);
+      if (!existing) return res.status(404).json({ message: "Menu item not found" });
+
+      // Delete-in-use guard: check for open/pending orders referencing this item
+      const { rows: openOrders } = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         WHERE oi.menu_item_id = $1
+           AND o.tenant_id = $2
+           AND o.status NOT IN ('paid', 'cancelled', 'voided', 'completed')`,
+        [req.params.id, user.tenantId]
+      );
+      const openCount = parseInt(openOrders[0].cnt, 10);
+      if (openCount > 0) {
+        return res.status(400).json({ message: `Cannot delete — this item is in ${openCount} open order${openCount > 1 ? "s" : ""}.` });
+      }
+
+      await storage.deleteMenuItem(req.params.id, user.tenantId, user.id);
       if (existing.image) {
         deleteFile(existing.image).catch((e) => console.error("[menu] deleteFile error:", e));
       }
-    }
-    res.json({ message: "Deleted" });
+      auditLogFromReq(req, { action: "menu_item_deleted", entityType: "menu_item", entityId: req.params.id, entityName: existing.name });
+      res.json({ message: "Deleted" });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
   app.get("/api/menu-items/:id/removable-ingredients", requireAuth, async (req, res) => {

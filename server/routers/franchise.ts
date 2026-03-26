@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { requireRole, requireAuth } from "../middleware";
+import { pool } from "../db";
 import {
   insertRegionSchema,
   insertFranchiseInvoiceSchema,
@@ -223,7 +224,20 @@ export function registerFranchiseRoutes(app: Express): void {
   app.delete("/api/suppliers/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      await storage.deleteSupplier(req.params.id, user.tenantId);
+      // Delete-in-use guard: check for pending/open purchase orders from this supplier
+      const { rows: pendingPOs } = await pool.query(
+        `SELECT COUNT(*) AS cnt FROM purchase_orders
+         WHERE supplier_id = $1 AND tenant_id = $2
+           AND status NOT IN ('received', 'cancelled')
+           AND is_deleted = false`,
+        [req.params.id, user.tenantId]
+      );
+      const pendingCount = parseInt(pendingPOs[0].cnt, 10);
+      if (pendingCount > 0) {
+        return res.status(400).json({ message: `Cannot delete — this supplier has ${pendingCount} pending purchase order${pendingCount > 1 ? "s" : ""}.` });
+      }
+
+      await storage.deleteSupplier(req.params.id, user.tenantId, user.id);
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });

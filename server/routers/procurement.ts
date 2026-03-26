@@ -859,24 +859,43 @@ export function registerProcurementRoutes(app: Express): void {
       const session = await storage.getStockCount(req.params.id, user.tenantId);
       if (!session) return res.status(404).json({ message: "Count session not found" });
       const items = await storage.getStockCountItems(session.id);
-      // Adjust inventory for counted items
-      for (const item of items) {
-        if (item.counted && item.physicalQty !== null) {
-          const inv = await storage.getInventoryItem(item.inventoryItemId, user.tenantId);
-          if (inv) {
-            const rawVariance = parseFloat(item.physicalQty) - parseFloat(item.systemQty);
-            // For PIECE unit_type items, round to whole integers
-            const isPiece = inv.unitType === 'PIECE';
-            const variance = isPiece ? Math.round(rawVariance) : rawVariance;
-            const newStock = isPiece ? String(Math.round(parseFloat(item.physicalQty))) : item.physicalQty;
-            if (Math.abs(variance) > 0.001) {
-              await storage.updateInventoryItem(inv.id, { currentStock: newStock }, user.tenantId);
-              const movementQty = isPiece ? String(variance) : variance.toFixed(2);
-              await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "adjustment", quantity: movementQty, reason: `Stock count ${session.countNumber}` });
+
+      // SELECT FOR UPDATE: lock all affected inventory rows to prevent concurrent adjustments
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        for (const item of items) {
+          if (item.counted && item.physicalQty !== null) {
+            const { rows: invRows } = await client.query(
+              `SELECT * FROM inventory_items WHERE id = $1 AND tenant_id = $2 AND is_deleted = false FOR UPDATE`,
+              [item.inventoryItemId, user.tenantId]
+            );
+            const inv = invRows[0];
+            if (inv) {
+              const rawVariance = parseFloat(item.physicalQty) - parseFloat(item.systemQty);
+              const isPiece = inv.unit_type === "PIECE";
+              const variance = isPiece ? Math.round(rawVariance) : rawVariance;
+              const newStock = isPiece ? String(Math.round(parseFloat(item.physicalQty))) : item.physicalQty;
+              if (Math.abs(variance) > 0.001) {
+                await client.query(`UPDATE inventory_items SET current_stock = $1 WHERE id = $2`, [newStock, inv.id]);
+                const movementQty = isPiece ? String(variance) : variance.toFixed(2);
+                // Insert stock movement in the same transaction (not via storage to avoid cross-context)
+                await client.query(
+                  `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)`,
+                  [user.tenantId, inv.id, "adjustment", movementQty, `Stock count ${session.countNumber}`]
+                );
+              }
             }
           }
         }
+        await client.query("COMMIT");
+      } catch (txErr: any) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw txErr;
+      } finally {
+        client.release();
       }
+
       const updated = await storage.updateStockCount(session.id, user.tenantId, { status: "approved", approvedAt: new Date(), approvedBy: user.id });
       emitToTenant(user.tenantId, "stock:updated", { source: "stock_count", sessionId: session.id });
       res.json(updated);
@@ -909,14 +928,34 @@ export function registerProcurementRoutes(app: Express): void {
       const damage = await storage.createDamagedInventory(
         insertDamagedInventorySchema.parse({ ...normalizedBody, tenantId: user.tenantId, damageNumber, totalValue, createdBy: user.id })
       );
-      // Deduct from inventory
-      const inv = await storage.getInventoryItem(damage.inventoryItemId, user.tenantId);
-      if (inv) {
-        const rawNewStock = Math.max(0, parseFloat(inv.currentStock || "0") - parseFloat(damage.damagedQty));
-        const newStock = inv.unitType === 'PIECE' ? Math.round(rawNewStock) : rawNewStock;
-        const damagedQtyRounded = inv.unitType === 'PIECE' ? Math.round(parseFloat(damage.damagedQty)) : parseFloat(damage.damagedQty);
-        await storage.updateInventoryItem(inv.id, { currentStock: String(newStock) }, user.tenantId);
-        await storage.createStockMovement({ tenantId: user.tenantId, itemId: inv.id, type: "waste", quantity: String(-damagedQtyRounded), reason: `Damage ${damageNumber}` });
+      // Deduct from inventory atomically using SELECT FOR UPDATE to prevent race conditions
+      if (damage.inventoryItemId) {
+        const dbClient = await pool.connect();
+        try {
+          await dbClient.query("BEGIN");
+          const { rows } = await dbClient.query(
+            `SELECT * FROM inventory_items WHERE id = $1 AND tenant_id = $2 FOR UPDATE`,
+            [damage.inventoryItemId, user.tenantId]
+          );
+          if (rows[0]) {
+            const inv = rows[0];
+            const damagedQtyParsed = parseFloat(damage.damagedQty);
+            const damagedQtyRounded = inv.unit_type === 'PIECE' ? Math.round(damagedQtyParsed) : damagedQtyParsed;
+            const rawNewStock = Math.max(0, parseFloat(inv.current_stock || "0") - damagedQtyRounded);
+            const newStock = inv.unit_type === 'PIECE' ? Math.round(rawNewStock) : rawNewStock;
+            await dbClient.query(`UPDATE inventory_items SET current_stock = $1 WHERE id = $2`, [String(newStock), inv.id]);
+            await dbClient.query(
+              `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason) VALUES ($1, $2, $3, $4, $5)`,
+              [user.tenantId, inv.id, "waste", String(-damagedQtyRounded), `Damage ${damageNumber}`]
+            );
+          }
+          await dbClient.query("COMMIT");
+        } catch (err) {
+          await dbClient.query("ROLLBACK").catch(() => {});
+          throw err;
+        } finally {
+          dbClient.release();
+        }
       }
       res.json(damage);
     } catch (err: any) { res.status(400).json({ message: err.message }); }

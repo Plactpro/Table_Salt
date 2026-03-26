@@ -1,5 +1,5 @@
 import { eq, sql } from "drizzle-orm";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { storage } from "../storage";
 import {
   inventoryItems as inventoryItemsTable,
@@ -70,26 +70,32 @@ export async function deductRecipeInventoryForOrder(
   }
 
   if (writes.length > 0) {
-    await db.transaction(async (tx) => {
+    // SELECT FOR UPDATE: lock all inventory rows before deducting to prevent concurrent race conditions
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
       for (const w of writes) {
-        await tx
-          .update(inventoryItemsTable)
-          .set({
-            currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)`,
-          })
-          .where(eq(inventoryItemsTable.id, w.inventoryItemId));
-        await tx.insert(stockMovementsTable).values({
-          tenantId: w.tenantId,
-          itemId: w.inventoryItemId,
-          type: "RECIPE_CONSUMPTION",
-          quantity: String(w.qty),
-          reason: w.reason,
-          orderId,
-          menuItemId: w.menuItemId,
-          recipeId: w.recipeId,
-        });
+        await client.query(
+          `SELECT id FROM inventory_items WHERE id = $1 AND tenant_id = $2 AND is_deleted = false FOR UPDATE`,
+          [w.inventoryItemId, w.tenantId]
+        );
+        await client.query(
+          `UPDATE inventory_items SET current_stock = GREATEST(current_stock::numeric - $1, 0) WHERE id = $2 AND tenant_id = $3 AND is_deleted = false`,
+          [w.qty, w.inventoryItemId, w.tenantId]
+        );
+        await client.query(
+          `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason, order_id, menu_item_id, recipe_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [w.tenantId, w.inventoryItemId, "RECIPE_CONSUMPTION", String(w.qty), w.reason, orderId, w.menuItemId, w.recipeId]
+        );
       }
-    });
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   return { deducted: writes.length, skipped, alreadyDone: false };
@@ -146,26 +152,29 @@ export async function deductRecipeInventoryForItem(
   }
 
   if (writes.length > 0) {
-    await db.transaction(async (tx) => {
+    // SELECT FOR UPDATE: lock all inventory rows before deducting to prevent concurrent race conditions
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
       for (const w of writes) {
-        await tx
-          .update(inventoryItemsTable)
-          .set({
-            currentStock: sql`GREATEST(${inventoryItemsTable.currentStock}::numeric - ${w.qty}, 0)`,
-          })
-          .where(eq(inventoryItemsTable.id, w.inventoryItemId));
-        await tx.insert(stockMovementsTable).values({
-          tenantId,
-          itemId: w.inventoryItemId,
-          type: "RECIPE_CONSUMPTION",
-          quantity: String(w.qty),
-          reason: w.reason,
-          orderId,
-          menuItemId: orderItem.menuItemId!,
-          recipeId: recipe.id,
-        });
+        await client.query(`SELECT id FROM inventory_items WHERE id = $1 AND tenant_id = $2 AND is_deleted = false FOR UPDATE`, [w.inventoryItemId, tenantId]);
+        await client.query(
+          `UPDATE inventory_items SET current_stock = GREATEST(current_stock::numeric - $1, 0) WHERE id = $2 AND tenant_id = $3 AND is_deleted = false`,
+          [w.qty, w.inventoryItemId, tenantId]
+        );
+        await client.query(
+          `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason, order_id, menu_item_id, recipe_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [tenantId, w.inventoryItemId, "RECIPE_CONSUMPTION", String(w.qty), w.reason, orderId, orderItem.menuItemId!, recipe.id]
+        );
       }
-    });
+      await client.query("COMMIT");
+    } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   return { deducted: writes.length, skipped: 0, alreadyDone: false };

@@ -81,6 +81,7 @@ interface DeliveryQueueOrder {
   createdAt: string | null;
   estimatedReadyAt: string | null;
   queueType: "pending" | "active";
+  version: number;
   items: DeliveryOrderItem[];
 }
 
@@ -169,8 +170,13 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
   const activeOrders = orders.filter(o => o.queueType === "active");
 
   const acceptMutation = useMutation({
-    mutationFn: async ({ orderId, etaMin }: { orderId: string; etaMin: number }) => {
-      const res = await apiRequest("PATCH", `/api/orders/${orderId}/accept-delivery`, { etaMinutes: etaMin });
+    mutationFn: async ({ orderId, etaMin, version }: { orderId: string; etaMin: number; version: number }) => {
+      const res = await apiRequest("PATCH", `/api/orders/${orderId}/accept-delivery`, { etaMinutes: etaMin, version });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Request failed" }));
+        if (res.status === 409) { refetch(); throw new Error("Order was modified by someone else. Refreshing queue…"); }
+        throw new Error(data.message || "Request failed");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -183,8 +189,13 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
   });
 
   const rejectMutation = useMutation({
-    mutationFn: async ({ orderId, reason }: { orderId: string; reason: string }) => {
-      const res = await apiRequest("PATCH", `/api/orders/${orderId}/reject-delivery`, { rejectionReason: reason });
+    mutationFn: async ({ orderId, reason, version }: { orderId: string; reason: string; version: number }) => {
+      const res = await apiRequest("PATCH", `/api/orders/${orderId}/reject-delivery`, { rejectionReason: reason, version });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Request failed" }));
+        if (res.status === 409) { refetch(); throw new Error("Order was modified by someone else. Refreshing queue…"); }
+        throw new Error(data.message || "Request failed");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -196,8 +207,13 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
   });
 
   const dispatchMutation = useMutation({
-    mutationFn: async (orderId: string) => {
-      const res = await apiRequest("PATCH", `/api/orders/${orderId}/dispatch-delivery`, {});
+    mutationFn: async ({ orderId, version }: { orderId: string; version: number }) => {
+      const res = await apiRequest("PATCH", `/api/orders/${orderId}/dispatch-delivery`, { version });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ message: "Request failed" }));
+        if (res.status === 409) { refetch(); throw new Error("Order was modified by someone else. Refreshing queue…"); }
+        throw new Error(data.message || "Request failed");
+      }
       return res.json();
     },
     onSuccess: () => {
@@ -306,7 +322,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
               className="w-full h-8 gap-1 text-xs"
               variant={isReady ? "default" : "outline"}
               disabled={dispatchMutation.isPending}
-              onClick={() => dispatchMutation.mutate(order.id)}
+              onClick={() => dispatchMutation.mutate({ orderId: order.id, version: order.version })}
               data-testid={`button-dispatch-${order.id}`}
             >
               <Send className="h-3.5 w-3.5" />
@@ -427,7 +443,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"
               disabled={acceptMutation.isPending}
-              onClick={() => acceptingOrderId && acceptMutation.mutate({ orderId: acceptingOrderId, etaMin: parseInt(etaMinutes) })}
+              onClick={() => acceptingOrderId && acceptMutation.mutate({ orderId: acceptingOrderId, etaMin: parseInt(etaMinutes), version: acceptingOrder?.version ?? 1 })}
               data-testid="button-confirm-accept"
             >
               {acceptMutation.isPending ? "Accepting..." : "Confirm Accept"}
@@ -474,7 +490,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
             <Button
               variant="destructive"
               disabled={rejectMutation.isPending}
-              onClick={() => rejectingOrderId && rejectMutation.mutate({ orderId: rejectingOrderId, reason: rejectionReason })}
+              onClick={() => rejectingOrderId && rejectMutation.mutate({ orderId: rejectingOrderId, reason: rejectionReason, version: rejectingOrder?.version ?? 1 })}
               data-testid="button-confirm-reject"
             >
               {rejectMutation.isPending ? "Rejecting..." : "Confirm Reject"}

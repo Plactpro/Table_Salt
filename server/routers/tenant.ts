@@ -110,7 +110,7 @@ export function registerTenantRoutes(app: Express): void {
   app.delete("/api/promotion-rules/:id", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), requirePermission("manage_offers"), async (req, res) => {
     const user = req.user as any;
     const existing = await storage.getPromotionRule(req.params.id, user.tenantId);
-    await storage.deletePromotionRule(req.params.id, user.tenantId);
+    await storage.deletePromotionRule(req.params.id, user.tenantId, user.id);
     if (existing) auditLogFromReq(req, { action: "promotion_rule_deleted", entityType: "promotion_rule", entityId: req.params.id, entityName: existing.name });
     res.json({ message: "Deleted" });
   });
