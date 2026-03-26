@@ -489,7 +489,7 @@ export default function ProcurementPage() {
               </div>
               <div className="space-y-2">
                 {poItems.map((item, idx) => (
-                  <div key={idx} className="grid grid-cols-12 gap-2 items-end" data-testid={`po-line-${idx}`}>
+                  <div key={idx} className="grid grid-cols-12 gap-2 items-start" data-testid={`po-line-${idx}`}>
                     <div className="col-span-5">
                       <Select value={item.inventoryItemId} onValueChange={v => {
                         updatePoItem(idx, "inventoryItemId", v);
@@ -500,7 +500,15 @@ export default function ProcurementPage() {
                         <SelectContent>{inventoryItems.map(i => <SelectItem key={i.id} value={i.id}>{i.name}</SelectItem>)}</SelectContent>
                       </Select>
                     </div>
-                    <div className="col-span-2"><Input type="number" placeholder="Qty" value={item.quantity} onChange={e => updatePoItem(idx, "quantity", e.target.value)} /></div>
+                    <div className="col-span-2">
+                      <Input type="number" placeholder="Qty" value={item.quantity} onChange={e => updatePoItem(idx, "quantity", e.target.value)} data-testid={`input-po-qty-${idx}`} className={Number(item.quantity) > 100 ? "border-amber-400" : ""} />
+                      {Number(item.quantity) > 100 && (
+                        <p className="text-xs text-amber-600 mt-0.5 flex items-center gap-1" data-testid={`warning-po-qty-${idx}`}>
+                          <svg className="h-3 w-3 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                          Large qty
+                        </p>
+                      )}
+                    </div>
                     <div className="col-span-2"><Input type="number" step="0.01" placeholder="Cost" value={item.unitCost} onChange={e => updatePoItem(idx, "unitCost", e.target.value)} /></div>
                     <div className="col-span-2 text-sm font-semibold text-right pt-2">{fmt((parseFloat(item.quantity || "0") * parseFloat(item.unitCost || "0")).toFixed(2))}</div>
                     <div className="col-span-1"><Button variant="ghost" size="sm" className="text-red-500" onClick={() => removePoItem(idx)}>×</Button></div>

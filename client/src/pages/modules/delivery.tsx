@@ -154,7 +154,29 @@ export default function DeliveryPage() {
     name: string;
     quantity: number;
     price: string | number;
-    modifiers?: string | null;
+    modifiers?: unknown;
+    notes?: string | null;
+  }
+
+  function renderModifiers(modifiers: unknown): string | null {
+    if (!modifiers) return null;
+    if (typeof modifiers === "string") return modifiers || null;
+    if (Array.isArray(modifiers)) {
+      const parts = modifiers
+        .map((m: unknown) => {
+          if (!m) return null;
+          if (typeof m === "string") return m;
+          const mod = m as Record<string, unknown>;
+          return mod.name ? String(mod.name) : null;
+        })
+        .filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : null;
+    }
+    if (typeof modifiers === "object") {
+      const mod = modifiers as Record<string, unknown>;
+      return mod.name ? String(mod.name) : JSON.stringify(modifiers);
+    }
+    return null;
   }
 
   const { data: selectedOrderDetail } = useQuery<{ items: OrderItem[] }>({
@@ -804,8 +826,11 @@ export default function DeliveryPage() {
                         <div key={item.id} className="flex items-center justify-between text-sm" data-testid={`item-order-${item.id}`}>
                           <div>
                             <span className="font-medium">{item.quantity}× {item.name}</span>
-                            {item.modifiers && (
-                              <p className="text-xs text-muted-foreground">{item.modifiers}</p>
+                            {renderModifiers(item.modifiers) && (
+                              <p className="text-xs text-muted-foreground">{renderModifiers(item.modifiers)}</p>
+                            )}
+                            {item.notes && (
+                              <p className="text-xs text-muted-foreground italic">{item.notes}</p>
                             )}
                           </div>
                           <span className="text-muted-foreground">{fmt(Number(item.price) * item.quantity)}</span>
