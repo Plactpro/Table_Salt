@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, ChevronRight, CheckCircle, Send, Package, AlertTriangle, FileText, X, ClipboardCheck } from "lucide-react";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface Supplier { id: string; name: string; }
 interface InventoryItem {
@@ -106,13 +107,19 @@ export default function PurchaseOrdersTab() {
     });
   };
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
+  const { data: suppliers = [] } = useQuery<PaginatedResponse<Supplier>, Error, Supplier[]>({ queryKey: ["/api/suppliers"], select: selectPageData });
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({
     queryKey: ["/api/inventory", "all"],
     queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
   });
   const inventoryItems = inventoryRes?.data ?? [];
-  const { data: purchaseOrders = [], isLoading: loadingPOs } = useQuery<PurchaseOrder[]>({ queryKey: ["/api/purchase-orders"] });
+  const [poLimit, setPoLimit] = useState(50);
+  const { data: poPage, isLoading: loadingPOs } = useQuery<PaginatedResponse<PurchaseOrder>>({
+    queryKey: ["/api/purchase-orders", poLimit],
+    queryFn: () => fetch(`/api/purchase-orders?limit=${poLimit}`, { credentials: "include" }).then(r => r.json()),
+  });
+  const purchaseOrders: PurchaseOrder[] = poPage?.data ?? [];
+  const poHasMore = poPage?.hasMore ?? false;
   const { data: lowStock = [] } = useQuery<LowStockItem[]>({ queryKey: ["/api/procurement/low-stock"] });
   const { data: poDetail, isLoading: loadingDetail } = useQuery<PODetail>({
     queryKey: ["/api/purchase-orders", detailPO],
@@ -433,6 +440,13 @@ export default function PurchaseOrdersTab() {
                     )}
                   </TableBody>
                 </Table>
+              )}
+              {poHasMore && (
+                <div className="p-4 border-t">
+                  <Button variant="outline" size="sm" className="w-full" onClick={() => setPoLimit(l => l + 50)} data-testid="button-load-more-pos">
+                    Load more ({(poPage?.total ?? 0) - purchaseOrders.length} remaining)
+                  </Button>
+                </div>
               )}
             </CardContent>
           </Card>

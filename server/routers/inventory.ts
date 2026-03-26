@@ -27,7 +27,7 @@ export function registerInventoryRoutes(app: Express): void {
   app.get("/api/inventory", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
       const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
       const itemCategory = req.query.itemCategory as string | undefined;
       const countWhere = itemCategory
@@ -37,7 +37,7 @@ export function registerInventoryRoutes(app: Express): void {
         storage.getInventoryByTenant(user.tenantId, { limit, offset, itemCategory }),
         db.select({ total: sql<number>`count(*)::int` }).from(inventoryItemsTable).where(countWhere),
       ]);
-      res.json({ data, total: Number(total), limit, offset });
+      res.json({ data, total: Number(total), limit, offset, hasMore: offset + data.length < Number(total) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

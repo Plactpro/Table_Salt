@@ -24,6 +24,7 @@ import {
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import {
   Tag, Plus, Pencil, Trash2, Download, Upload, Copy, Settings2, AlertTriangle,
   CheckCircle2, TrendingUp, TrendingDown, Loader2, X, Eye,
@@ -135,9 +136,10 @@ export default function MenuPricingPage() {
     queryFn: async () => (await apiRequest("GET", "/api/pricing/outlets")).json(),
     staleTime: 60_000,
   });
-  const { data: menuItems = [] } = useQuery<MenuItem[]>({
+  const { data: menuItems = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({
     queryKey: ["/api/menu-items"],
     staleTime: 60_000,
+    select: selectPageData,
   });
   const { data: categories = [] } = useQuery<MenuCategory[]>({
     queryKey: ["/api/menu-categories"],

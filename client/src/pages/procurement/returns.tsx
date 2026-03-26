@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, X, ChevronRight } from "lucide-react";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface Supplier { id: string; name: string; }
 interface InventoryItem { id: string; name: string; unit: string | null; costPrice: string | null; }
@@ -69,7 +70,7 @@ export default function ReturnsTab() {
     });
   };
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
+  const { data: suppliers = [] } = useQuery<PaginatedResponse<Supplier>, Error, Supplier[]>({ queryKey: ["/api/suppliers"], select: selectPageData });
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory"] });
   const { data: returns = [], isLoading } = useQuery<PurchaseReturn[]>({ queryKey: ["/api/purchase-returns"] });
   const inventoryItems = inventoryRes?.data ?? [];

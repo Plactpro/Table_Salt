@@ -108,16 +108,13 @@ export const getQueryFn: <T>(options: {
     const timeoutMs = getTimeout(timeoutType);
     const csrf = getCsrfToken();
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const headers: Record<string, string> = {};
+    if (csrf) headers["x-csrf-token"] = csrf;
 
     try {
-      const headers: Record<string, string> = {};
-      if (csrf) headers["x-csrf-token"] = csrf;
-
       const res = await fetch(url, {
         credentials: "include",
-        signal: controller.signal,
+        signal: AbortSignal.timeout(timeoutMs),
         headers,
       });
 
@@ -138,11 +135,9 @@ export const getQueryFn: <T>(options: {
       await throwIfResNotOk(res);
       return await res.json();
     } catch (err: unknown) {
-      if (err instanceof Error && err.name === "AbortError") {
+      if (err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError")) {
         const timeoutErr = new Error(`Request timed out — tap to retry`);
         timeoutErr.name = "TimeoutError";
-        // PR-001: Dispatch api-timeout so GlobalSecurityListeners shows the retry toast for queries too.
-        // retryFn directly invalidates the timed-out query via the global queryClient instance.
         window.dispatchEvent(new CustomEvent("api-timeout", {
           detail: {
             message: timeoutErr.message,
@@ -152,8 +147,6 @@ export const getQueryFn: <T>(options: {
         throw timeoutErr;
       }
       throw err;
-    } finally {
-      clearTimeout(timer);
     }
   };
 

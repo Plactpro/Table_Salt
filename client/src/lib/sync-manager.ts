@@ -420,7 +420,8 @@ class SyncManager implements SyncService, ConfigCache {
 
   private async refreshAllConfigs(): Promise<void> {
     if (this._status === "offline") return;
-    await this.refreshConfig("menu-items", "/api/menu-items");
+    const menuRes = await this.refreshConfig("menu-items", "/api/menu-items") as any;
+    if (menuRes && menuRes.data) await this.cacheConfig("menu-items", menuRes.data);
     await this.refreshConfig("menu-categories", "/api/menu-categories");
     await this.refreshConfig("offers", "/api/offers");
   }

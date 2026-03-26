@@ -27,6 +27,7 @@ import {
   Truck, MapPin, Phone, User, ArrowRight, Filter, Hash, DollarSign, AlertCircle,
 } from "lucide-react";
 import type { Order, OrderItem, Outlet, MenuItem } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -139,7 +140,7 @@ export default function OrdersHub() {
   const { data: channels = [] } = useQuery<OrderChannel[]>({ queryKey: ["/api/order-channels"] });
   const { data: configs = [] } = useQuery<ChannelConfig[]>({ queryKey: ["/api/channel-configs"] });
   const { data: mappings = [] } = useQuery<OnlineMenuMapping[]>({ queryKey: ["/api/online-menu-mappings"] });
-  const { data: menuItems = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: menuItems = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({ queryKey: ["/api/menu-items"], select: selectPageData });
   const { data: outlets = [] } = useQuery<Outlet[]>({ queryKey: ["/api/outlets"] });
 
   const simulateOrder = useMutation({

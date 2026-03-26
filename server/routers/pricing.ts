@@ -2,6 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { pool } from "../db";
+import { MenuCache } from "../lib/menu-cache";
 
 function tenantGuard(req: any, res: any): string | null {
   const user = req.user as any;
@@ -635,6 +636,7 @@ export function registerPricingRoutes(app: Express): void {
           }
         }
         await client.query("COMMIT");
+        MenuCache.invalidateByTenant(tenantId);
         res.json({ success: true, updated: results.length, items: results });
       } catch (err) {
         await client.query("ROLLBACK");

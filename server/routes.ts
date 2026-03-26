@@ -59,6 +59,7 @@ import { registerOnboardingRoutes } from "./routers/onboarding";
 import { registerResourceRoutes } from "./routers/resources";
 import { registerParkingRoutes } from "./routers/parking";
 import { registerAdsRoutes } from "./routers/ads";
+import { registerReportsRoutes } from "./routers/reports";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -197,6 +198,7 @@ export async function registerRoutes(
   registerResourceRoutes(app);
   registerParkingRoutes(app);
   registerAdsRoutes(app);
+  registerReportsRoutes(app);
 
   app.post("/api/errors/client", (req: any, res: any) => {
     const { message, stack, pathname, userAgent } = req.body || {};

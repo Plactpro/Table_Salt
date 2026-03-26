@@ -19,6 +19,7 @@ import {
   Monitor, Plus, Trash2, Copy, Settings, Zap, ArrowRight, Eye, EyeOff,
 } from "lucide-react";
 import type { Outlet, MenuItem, MenuCategory } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface KioskDevice {
@@ -297,8 +298,9 @@ function UpsellTab() {
     queryKey: ["/api/menu-categories"],
   });
 
-  const { data: menuItems = [] } = useQuery<MenuItem[]>({
+  const { data: menuItems = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({
     queryKey: ["/api/menu-items"],
+    select: selectPageData,
   });
 
   const createMutation = useMutation({

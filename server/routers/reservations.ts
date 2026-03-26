@@ -1,12 +1,20 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
+import { db } from "../db";
+import { eq, sql } from "drizzle-orm";
+import { reservations as reservationsTable } from "@shared/schema";
 
 export function registerReservationsRoutes(app: Express): void {
   app.get("/api/reservations", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const reservationsList = await storage.getReservationsByTenant(user.tenantId);
-    res.json(reservationsList);
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const [data, [{ total }]] = await Promise.all([
+      storage.getReservationsByTenant(user.tenantId, { limit, offset }),
+      db.select({ total: sql<number>`count(*)::int` }).from(reservationsTable).where(eq(reservationsTable.tenantId, user.tenantId)),
+    ]);
+    res.json({ data, total: Number(total), limit, offset, hasMore: offset + data.length < Number(total) });
   });
 
   app.post("/api/reservations", requireAuth, async (req, res) => {

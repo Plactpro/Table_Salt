@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ShoppingCart, Plus, FileText, Package, CheckCircle, Send, TrendingUp, AlertTriangle, BarChart3, DollarSign, ClipboardCheck } from "lucide-react";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface Supplier { id: string; name: string; }
 interface InventoryItem { id: string; name: string; sku: string | null; unit: string | null; currentStock: string | null; reorderLevel: string | null; parLevel: string | null; costPrice: string | null; }
@@ -50,13 +51,13 @@ export default function ProcurementPage() {
     return sharedFormatCurrency(amount, String(tenant.currency || "USD"), { position: pos as "before" | "after", decimals: parseInt(String(tenant.currencyDecimals ?? "2")) });
   };
 
-  const { data: suppliersList = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
+  const { data: suppliersList = [] } = useQuery<PaginatedResponse<Supplier>, Error, Supplier[]>({ queryKey: ["/api/suppliers"], select: selectPageData });
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({
     queryKey: ["/api/inventory", "all"],
     queryFn: () => apiRequest("GET", "/api/inventory?limit=200").then(r => r.json()),
   });
   const inventoryItems = inventoryRes?.data ?? [];
-  const { data: purchaseOrders = [] } = useQuery<PurchaseOrder[]>({ queryKey: ["/api/purchase-orders"] });
+  const { data: purchaseOrders = [] } = useQuery<PaginatedResponse<PurchaseOrder>, Error, PurchaseOrder[]>({ queryKey: ["/api/purchase-orders"], select: selectPageData });
   const { data: lowStock = [] } = useQuery<LowStockItem[]>({ queryKey: ["/api/procurement/low-stock"] });
   const { data: analytics } = useQuery<Analytics>({ queryKey: ["/api/procurement/analytics"] });
   const { data: poDetail } = useQuery<PODetail>({

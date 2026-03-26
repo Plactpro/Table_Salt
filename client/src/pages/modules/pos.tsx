@@ -42,6 +42,7 @@ import {
   MapPin, ChevronRight, Printer, AlertCircle,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
 import { StartShiftModal, CloseShiftDialog } from "@/components/pos/PosSessionModal";
 import DeliveryQueuePanel, { DeliveryQueueButton } from "@/components/pos/DeliveryQueuePanel";
@@ -520,7 +521,7 @@ export default function POSPage() {
   }, [queryClient]));
 
   const { data: categories = [], isLoading: categoriesLoading } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
-  const { data: menuItems = [], isLoading: menuItemsLoading } = useCachedQuery<MenuItem[]>(["/api/menu-items"], "/api/menu-items");
+  const { data: menuItems = [], isLoading: menuItemsLoading } = useCachedQuery<MenuItem[], PaginatedResponse<MenuItem>>(["/api/menu-items", "all"], "/api/menu-items?limit=500", { select: selectPageData });
   const posMenuLoading = categoriesLoading || menuItemsLoading;
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");

@@ -191,7 +191,11 @@ export function registerFranchiseRoutes(app: Express): void {
   app.get("/api/suppliers", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      res.json(await storage.getSuppliersByTenant(user.tenantId));
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+      const all = await storage.getSuppliersByTenant(user.tenantId);
+      const data = all.slice(offset, offset + limit);
+      res.json({ data, total: all.length, limit, offset, hasMore: offset + data.length < all.length });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

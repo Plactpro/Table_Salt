@@ -2,6 +2,7 @@ import { useState, useMemo, Component } from "react";
 import { PageTitle } from "@/lib/accessibility";
 import type { ErrorInfo, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useBackgroundReport } from "@/hooks/use-background-report";
 import { useAuth } from "@/lib/auth";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -179,11 +180,11 @@ export default function BIDashboard() {
   const [forecastOutlet, setForecastOutlet] = useState("all");
 
   const queryParams = `?from=${dateRange.from}&to=${dateRange.to}`;
-  const { data: ops } = useQuery<OperationsData>({ queryKey: ["/api/reports/operations", dateRange], queryFn: () => fetch(`/api/reports/operations${queryParams}`, { credentials: "include" }).then(r => r.json()) });
-  const { data: fin } = useQuery<FinanceData>({ queryKey: ["/api/reports/finance", dateRange], queryFn: () => fetch(`/api/reports/finance${queryParams}`, { credentials: "include" }).then(r => r.json()) });
-  const { data: mkt } = useQuery<MarketingData>({ queryKey: ["/api/reports/marketing"], queryFn: () => fetch("/api/reports/marketing", { credentials: "include" }).then(r => r.json()) });
+  const { data: ops, isGenerating: opsGenerating } = useBackgroundReport<OperationsData>(["/api/reports/operations", dateRange.from, dateRange.to], `/api/reports/operations${queryParams}`);
+  const { data: fin, isGenerating: finGenerating } = useBackgroundReport<FinanceData>(["/api/reports/finance", dateRange.from, dateRange.to], `/api/reports/finance${queryParams}`);
+  const { data: mkt, isGenerating: mktGenerating } = useBackgroundReport<MarketingData>(["/api/reports/marketing"], "/api/reports/marketing");
   const forecastParams = forecastOutlet !== "all" ? `?outletId=${forecastOutlet}` : "";
-  const { data: forecast } = useQuery<ForecastData>({ queryKey: ["/api/reports/forecast", forecastOutlet], queryFn: () => fetch(`/api/reports/forecast${forecastParams}`, { credentials: "include" }).then(r => r.json()) });
+  const { data: forecast, isGenerating: fcastGenerating } = useBackgroundReport<ForecastData>(["/api/reports/forecast", forecastOutlet], `/api/reports/forecast${forecastParams}`);
   const { data: outlets } = useQuery<OutletEntry[]>({ queryKey: ["/api/outlets"], queryFn: () => fetch("/api/outlets", { credentials: "include" }).then(r => r.json()) });
 
   return (

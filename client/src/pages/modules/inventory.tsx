@@ -10,6 +10,7 @@ import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { formatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
 import type { InventoryItem, MenuItem, Recipe, RecipeIngredient } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Package, Plus, Search, AlertTriangle, Edit, Trash2, ArrowUpDown,
@@ -783,7 +784,7 @@ function RecipesTab() {
 
   const { data: allRecipes = [] } = useQuery<RecipeWithIngredients[]>({ queryKey: ["/api/recipes"] });
   const { data: inventoryAllRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory", "all"], queryFn: async () => { const res = await fetch("/api/inventory?limit=200&offset=0", { credentials: "include" }); return res.json(); } });
-  const { data: menuItemsList = [] } = useQuery<MenuItem[]>({ queryKey: ["/api/menu-items"] });
+  const { data: menuItemsList = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({ queryKey: ["/api/menu-items"], select: selectPageData });
 
   const invMap = new Map((inventoryAllRes?.data ?? []).map(i => [i.id, i]));
   const inventory = inventoryAllRes?.data ?? [];
@@ -1403,7 +1404,7 @@ function WastageTab() {
 
 function ProcurementTab() {
   const [, navigate] = useLocation();
-  const { data: purchaseOrders = [] } = useQuery<any[]>({ queryKey: ["/api/purchase-orders"] });
+  const { data: purchaseOrders = [] } = useQuery<PaginatedResponse<Record<string, unknown>>, Error, Record<string, unknown>[]>({ queryKey: ["/api/purchase-orders"], select: selectPageData });
 
   const statusColor = (s: string | null) => {
     switch (s) {

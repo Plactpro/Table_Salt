@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, X, AlertTriangle, Send, FileText, GitCompare, CheckCircle2 } from "lucide-react";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface Supplier { id: string; name: string; active: boolean | null; }
 interface InventoryItem { id: string; name: string; unit: string | null; }
@@ -78,7 +79,7 @@ export default function QuotationsTab() {
     });
   };
 
-  const { data: suppliers = [] } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
+  const { data: suppliers = [] } = useQuery<PaginatedResponse<Supplier>, Error, Supplier[]>({ queryKey: ["/api/suppliers"], select: selectPageData });
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory"] });
   const { data: lowStock = [] } = useQuery<LowStockItem[]>({ queryKey: ["/api/procurement/low-stock"] });
   const { data: rfqs = [], isLoading } = useQuery<RFQ[]>({ queryKey: ["/api/rfqs"] });

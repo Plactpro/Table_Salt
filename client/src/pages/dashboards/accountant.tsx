@@ -1,6 +1,7 @@
 import { useState, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useBackgroundReport } from "@/hooks/use-background-report";
 import { StatCard } from "@/components/widgets/stat-card";
 import { ChartWidget } from "@/components/widgets/chart-widget";
 import { DollarSign, Receipt, Percent, Download, TrendingUp, Wallet, PiggyBank, CalendarRange, AlertCircle } from "lucide-react";
@@ -58,14 +59,7 @@ export default function AccountantDashboard() {
   const [toDate, setToDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [isExporting, setIsExporting] = useState(false);
 
-  const { data: salesReport, isLoading } = useQuery<any>({
-    queryKey: ["/api/reports/sales", `?from=${fromDate}&to=${toDate}`],
-    queryFn: async () => {
-      const res = await fetch(`/api/reports/sales?from=${fromDate}&to=${toDate}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load report");
-      return res.json();
-    },
-  });
+  const { data: salesReport, isLoading, isGenerating: salesGenerating } = useBackgroundReport<any>(["/api/reports/sales", fromDate, toDate], `/api/reports/sales?from=${fromDate}&to=${toDate}`);
 
   const { data: stats } = useQuery<any>({
     queryKey: ["/api/dashboard"],

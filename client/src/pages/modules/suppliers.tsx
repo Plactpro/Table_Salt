@@ -17,6 +17,7 @@ import { Truck, Plus, Star, Package, Phone, Mail, MapPin, Pencil, Trash2, BookOp
 import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
 import { ListCardSkeleton } from "@/components/ui/skeletons";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 interface Supplier { id: string; tenantId: string; name: string; contactName: string | null; email: string | null; phone: string | null; address: string | null; paymentTerms: string | null; leadTimeDays: number | null; rating: string | null; notes: string | null; active: boolean | null; createdAt: string; }
 interface CatalogItem { id: string; tenantId: string; supplierId: string; inventoryItemId: string; supplierSku: string | null; packSize: string | null; packUnit: string | null; packCost: string; contractedPrice: string | null; lastPurchasePrice: string | null; preferred: boolean | null; }
@@ -42,7 +43,13 @@ export default function SuppliersPage() {
   const [catalogDirty, setCatalogDirty] = useState(false);
   const [catalogConfirmLeave, setCatalogConfirmLeave] = useState(false);
 
-  const { data: suppliersList = [], isLoading: suppliersLoading } = useQuery<Supplier[]>({ queryKey: ["/api/suppliers"] });
+  const [supplierLimit, setSupplierLimit] = useState(50);
+  const { data: suppliersPage } = useQuery<PaginatedResponse<Supplier>>({
+    queryKey: ["/api/suppliers", supplierLimit],
+    queryFn: () => fetch(`/api/suppliers?limit=${supplierLimit}`, { credentials: "include" }).then(r => r.json()),
+  });
+  const suppliersList: Supplier[] = suppliersPage?.data ?? [];
+  const suppliersHasMore = suppliersPage?.hasMore ?? false;
   const { data: inventoryRes } = useQuery<{ data: InventoryItem[]; total: number }>({ queryKey: ["/api/inventory"] });
   const inventoryItems = inventoryRes?.data ?? [];
   const { data: catalog = [] } = useQuery<CatalogItem[]>({
@@ -126,7 +133,7 @@ export default function SuppliersPage() {
               </CardContent>
             </Card>
           ))}
-          {!suppliersLoading && suppliersList.length === 0 && (
+          {suppliersList.length === 0 && (
             <div className="flex flex-col items-center gap-3 py-12" data-testid="text-no-suppliers">
               <Truck className="w-10 h-10 text-muted-foreground" />
               <p className="text-sm text-muted-foreground text-center">No suppliers yet. Add one to get started.</p>
@@ -134,6 +141,11 @@ export default function SuppliersPage() {
                 <Plus className="h-4 w-4 mr-2" />Add Supplier
               </Button>
             </div>
+          )}
+          {suppliersHasMore && (
+            <Button variant="outline" size="sm" className="w-full" onClick={() => setSupplierLimit(l => l + 50)} data-testid="button-load-more-suppliers">
+              Load more ({suppliersPage!.total - suppliersList.length} remaining)
+            </Button>
           )}
         </div>
 

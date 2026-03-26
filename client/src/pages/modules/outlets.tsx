@@ -29,6 +29,8 @@ import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
 import { currencyMap } from "@shared/currency";
 import { getJurisdictionByCurrency } from "@shared/jurisdictions";
+import type { MenuItem } from "@shared/schema";
+import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 
 const ROUNDING_OPTIONS = [
   { value: "none", label: "None" },
@@ -894,7 +896,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
     enabled: !!selectedOutletId,
   });
 
-  const { data: menuItems = [] } = useQuery<any[]>({ queryKey: ["/api/menu-items"] });
+  const { data: menuItems = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({ queryKey: ["/api/menu-items"], select: selectPageData });
   const { data: menuCategories = [] } = useQuery<any[]>({ queryKey: ["/api/menu-categories"] });
 
   const [showItemExemptPicker, setShowItemExemptPicker] = useState(false);
