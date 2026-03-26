@@ -1,0 +1,402 @@
+I have read all 5 documents carefully. Here is my complete gap analysis against everything we discussed.
+
+***
+
+## Overall Assessment
+
+```
+These 5 PRs are EXCELLENT and well-structured.
+They address the most critical production issues
+identified in our conversation.
+
+PR-001: Security & Auth Hardening ✅
+PR-002: Data Integrity ✅
+PR-003: UX & Error Handling Polish ✅
+PR-004: Hardware Operations Resilience ✅
+PR-005: Performance & Scalability ✅
+```
+
+***
+
+## PR-001 — Security & Auth Hardening
+
+### What Is Covered ✅
+```
+✅ Idempotency on orders + KOT + payments
+✅ Payment validation on all fields
+✅ CSP in report-only mode first
+✅ Session conflict detection (selective)
+✅ Session list UI
+✅ PIN login with all guardrails
+✅ Operation-aware timeouts (5/8/30 sec)
+```
+
+### Gaps Remaining ❌
+```
+GAP 1: Refund amount validation missing
+  → Validate refund ≤ original payment
+  → Prevents over-refund manipulation
+  → Add to Task 2 payment validation
+
+GAP 2: PIN expired fallback to password
+  → If PIN expired and manager not present
+  → Staff completely locked out
+  → Add: "PIN expired — use password login"
+  → Never block login completely
+
+GAP 3: Super admin routes missing from
+  session conflict check list
+  → Task 4 lists payment, void, refund,
+    delete, role, settings
+  → Missing: POST /api/admin/* routes
+  → Super admin actions are most sensitive
+
+GAP 4: Backwards sequential PIN rejection
+  → Task 6 mentions 1234, 2345 etc.
+  → Does not explicitly mention 9876, 8765
+  → Confirm backwards sequences also rejected
+```
+
+***
+
+## PR-002 — Data Integrity
+
+### What Is Covered ✅
+```
+✅ Soft delete on all critical tables
+✅ Recycle bin with 30-day recovery
+✅ Delete-in-use guards
+✅ SELECT FOR UPDATE on stock adjustments
+✅ Optimistic locking on orders (version column)
+✅ Version conflict UI (409 handling)
+```
+
+### Gaps Remaining ❌
+```
+GAP 1: Timezone handling NOT addressed
+  → Our conversation identified this as
+    critical (UAE GMT+4 vs India IST)
+  → All timestamps stored as UTC? Not confirmed
+  → Display in outlet local timezone? Not in PR
+  → This causes wrong daily totals, wrong shift
+    reports, wrong tax invoice dates
+  → NEEDS SEPARATE PR or addition here
+
+GAP 2: Valet tickets and parking records
+  not in soft delete list
+  → Task 1 lists: menu_items, staff,
+    customers, suppliers, inventory_items
+  → Missing: valet_tickets, purchase_orders,
+    recipes, promotions, reservations
+  → These also should not be hard-deleted
+
+GAP 3: Soft delete on audit_trail
+  → Audit trail must NEVER be deleted
+    (compliance requirement)
+  → Add explicit "no delete" protection
+  → Even owner cannot delete audit entries
+
+GAP 4: Stock count records
+  → SELECT FOR UPDATE covers adjustments
+  → But what about stock count submission?
+  → Two staff counting simultaneously
+    can still cause race condition
+  → Add to Task 5 scope
+```
+
+***
+
+## PR-003 — UX & Error Handling Polish
+
+### What Is Covered ✅
+```
+✅ Loading skeletons on all major pages
+✅ Empty states with CTA buttons
+✅ Auto-scroll to first form error
+✅ Character counters on text areas
+✅ Virtual scrolling for large lists
+✅ WebSocket max-attempt fallback
+✅ Browser navigation dirty-form guard
+```
+
+### Gaps Remaining ❌
+```
+GAP 1: Dark mode visibility bug
+  → Bug Report item #4 identified this
+  → Not addressed in PR-003
+  → Hardcoded colors not using theme tokens
+  → Needs explicit dark mode audit task
+
+GAP 2: Confirmation on cancel not complete
+  → Bug Report item #5
+  → Task 176/175 did cancel confirmations
+  → But "every cancel action" not verified
+  → PR-003 does not explicitly re-audit this
+
+GAP 3: Mandatory field indicator audit
+  → Bug Report item #8
+  → Required fields not marked everywhere
+  → Task 175 did some forms
+  → PR-003 does not explicitly audit ALL forms
+
+GAP 4: Inventory separate tabs
+  → Bug Report item #6
+  → Not in PR-003 or any other PR
+  → Still missing
+
+GAP 5: Online orders items not displayed
+  → Bug Report item #9
+  → Not in PR-003 or any other PR
+  → Still missing
+
+GAP 6: Menu pricing scroll bug
+  → Bug Report item #1
+  → Not in PR-003 or any other PR
+  → Still missing
+
+GAP 7: Promotions creation error
+  → Bug Report item #3
+  → Not in any PR
+  → Still missing
+
+GAP 8: Session tab closes on outside click
+  → Bug Report item #7
+  → Task 175 mentioned modal prevention
+  → Not explicitly confirmed as fixed
+  → Needs verification task
+```
+
+***
+
+## PR-004 — Hardware Operations Resilience
+
+### What Is Covered ✅
+```
+✅ Print job queue with retry
+✅ Cash drawer event logging
+✅ Unexpected drawer open alert
+✅ Idle logout timer with warning
+✅ KDS Wake Lock API
+✅ Printer status polling
+✅ Print job retry indicator on KDS
+```
+
+### Gaps Remaining ❌
+```
+GAP 1: Offline mode not addressed
+  → Our conversation identified this as
+    critical (ISP outage scenario)
+  → IndexedDB local storage not in any PR
+  → "Out of scope" in PR-003 as separate effort
+  → NEEDS dedicated PR — high priority
+  → Without this: ISP outage = restaurant stops
+
+GAP 2: Network congestion handling
+  → Multiple devices on same WiFi
+  → No WiFi network separation guidance
+  → No advice/warning to restaurant clients
+  → At minimum: in-app setup guide
+
+GAP 3: Cash drawer — manual open shortcut
+  → Our checklist mentioned keyboard shortcut
+  → PR-004 mentions manual open endpoint
+  → But keyboard shortcut not specified
+  → Add: Ctrl+D or configurable shortcut
+
+GAP 4: Device management
+  → Any device serving any station (not locked)
+  → Not in PR-004
+  → Station should be selectable on any device
+  → Not just assigned device
+
+GAP 5: KDS memory management
+  → Wake lock addressed
+  → But memory leak / auto-refresh not in PR
+  → KDS running 24/7 will degrade over time
+  → Add: auto-refresh every 4 hours
+    (invisible background refresh)
+```
+
+***
+
+## PR-005 — Performance & Scalability
+
+### What Is Covered ✅
+```
+✅ Pagination on all list endpoints
+✅ In-memory menu cache (5 min TTL)
+✅ Slow query logging (>500ms)
+✅ Background report jobs
+✅ Report polling with status
+✅ Gzip compression
+✅ AbortSignal timeout on fetch
+```
+
+### Gaps Remaining ❌
+```
+GAP 1: Database indexes not mentioned
+  → Our checklist had indexes as critical
+  → PR-005 does not audit/add missing indexes
+  → Slow query logging helps identify them
+  → But index creation should be explicit
+  → Add: index audit task
+
+GAP 2: Memory leak prevention
+  → WebSocket connection pile-up scenario
+  → Server-side cleanup of dead connections
+  → PR-003 mentions client-side WebSocket
+  → PR-005 does not mention server-side
+  → Add: server WebSocket cleanup job
+
+GAP 3: Database connection pool config
+  → Listed as out of scope
+    "requires production RDS metrics"
+  → But basic pool config (min 5, max 20)
+    should be set now not after metrics
+  → Add: basic pool configuration
+
+GAP 4: Multi-tenant load isolation
+  → One tenant's heavy use affecting others
+  → No per-tenant query limits
+  → No per-tenant API rate limiting
+    (tenant level, not just auth level)
+  → Add: per-tenant request throttling
+```
+
+***
+
+## Critical Issues Not in Any PR
+
+These are from our conversation but not addressed in any of the 5 PRs:
+
+### MISSING PR-006 — Offline Mode
+```
+PRIORITY: 🔴 Critical
+
+WHAT IS NEEDED:
+  → IndexedDB: cache menu, open orders
+  → Queue orders locally when offline
+  → Sync when reconnected
+  → Conflict resolution on sync
+  → "Offline Mode" banner
+  → Local network mode
+    (works without internet, staff WiFi only)
+
+WHY CRITICAL:
+  ISP outage = complete stoppage
+  This is NOT edge case in India/UAE
+  Restaurant loses revenue
+  Trust in platform destroyed
+```
+
+### MISSING PR-007 — Timezone Standardization
+```
+PRIORITY: 🔴 Critical for UAE market
+
+WHAT IS NEEDED:
+  → ALL timestamps stored in UTC
+  → Display in outlet configured timezone
+  → Reports grouped by outlet local time
+  → Tax invoice date in outlet local time
+  → Shift boundaries in local time
+  → Server clock used (not client)
+
+WHY CRITICAL:
+  UAE outlet on India server
+  = wrong daily totals
+  = wrong tax invoices
+  = wrong shift reports
+  = financial reporting errors
+```
+
+### MISSING PR-008 — Bug Fix Batch
+```
+PRIORITY: 🔴 High (from QA report)
+
+REMAINING BUGS NOT IN ANY PR:
+  → Bug 1: Menu pricing scroll broken
+  → Bug 3: Promotions cannot be created
+  → Bug 4: Dark mode visibility issues
+  → Bug 6: Inventory needs separate tabs
+  → Bug 9: Online order items not displayed
+  → Bug 7: Session tab closes on outside click
+             (needs verification not just plan)
+```
+
+### MISSING PR-009 — Offline and Resilience
+```
+PRIORITY: 🟠 High
+
+WHAT IS NEEDED:
+  → Staff account sharing prevention
+    (Quick PIN helps but needs enforcement)
+  → Wrong table assignment confirmation
+  → Large quantity entry validation
+    (500kg instead of 5kg scenario)
+  → Subscription expiry grace during service
+    (never lock mid-service)
+  → Active session check before expiry lock
+```
+
+***
+
+## Recommended PR Execution Order
+
+```
+BATCH 1 — Run immediately (already planned):
+  PR-001 Security & Auth Hardening
+  PR-002 Data Integrity
+  PR-003 UX & Error Handling Polish
+  PR-004 Hardware Operations Resilience
+  PR-005 Performance & Scalability
+
+BATCH 2 — Plan and run next:
+  PR-006 Offline Mode (critical)
+  PR-007 Timezone Standardization (critical for UAE)
+  PR-008 Bug Fix Batch (QA report items)
+  PR-009 Operational Resilience
+
+BATCH 3 — Plan after Batch 2:
+  PR-010 WCAG Accessibility
+  PR-011 Advanced Multi-Tenant Isolation
+  PR-012 Database Index Audit
+```
+
+***
+
+## Summary Table
+
+| PR | Status | Critical Gaps |
+|---|---|---|
+| PR-001 | ✅ Ready | Refund validation, PIN fallback |
+| PR-002 | ✅ Ready | Timezone, wider soft-delete scope |
+| PR-003 | ✅ Ready | 5 bug report items missing |
+| PR-004 | ✅ Ready | Offline mode, memory management |
+| PR-005 | ✅ Ready | Index audit, connection pool |
+| PR-006 Offline | ❌ Not planned | Needs new PR |
+| PR-007 Timezone | ❌ Not planned | Needs new PR |
+| PR-008 Bug fixes | ❌ Not planned | Needs new PR |
+| PR-009 Resilience | ❌ Not planned | Needs new PR |
+
+***
+
+## Immediate Recommendation
+
+```
+1. Run PR-001 through PR-005 as-is
+   (they are good and production-ready)
+
+2. Add these small fixes to existing PRs
+   before running:
+   → PR-001: Add refund amount validation
+             Add PIN expired password fallback
+   → PR-002: Add timezone note to migrations
+             Widen soft-delete table list
+   → PR-003: Add bug fixes 1,3,4,6,9 from QA
+
+3. Plan PR-006 (Offline) and PR-007 (Timezone)
+   as next sprint items
+
+Shall I write PR-006, PR-007, PR-008,
+and PR-009 as detailed Replit AI prompts? 🚀
+```

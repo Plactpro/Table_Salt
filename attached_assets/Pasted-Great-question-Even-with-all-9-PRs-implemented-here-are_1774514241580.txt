@@ -1,0 +1,564 @@
+Great question. Even with all 9 PRs implemented, here are the real-world issues that will still arise.
+
+***
+
+## What The 9 PRs Cover
+
+```
+✅ Security hardening
+✅ Data integrity and soft deletes
+✅ UX polish and error handling
+✅ Hardware resilience (printers, cash drawer)
+✅ Performance and pagination
+✅ Offline mode (ISP outage)
+✅ Timezone standardization
+✅ Bug fixes (promotions, delivery, pricing)
+✅ Operational resilience (subscription grace,
+   WS cleanup, KDS refresh)
+```
+
+***
+
+## What Will STILL Go Wrong in Real Life
+
+***
+
+### CATEGORY 1 — Human Behavior Issues
+#### These cannot be fixed by code
+
+##### 1.1 Staff Training Failure
+```
+WHAT HAPPENS:
+  Restaurant goes live Monday
+  Owner trained for 2 hours on Sunday
+  Chef never touched the tablet before
+  Waiter uses it wrong under pressure
+
+REAL SCENARIOS:
+  → Chef taps DONE without tapping START
+    → Timer never recorded
+    → Performance data useless
+    → Stock not deducted correctly
+
+  → Waiter creates order without selecting table
+    → Kitchen gets KOT with no table number
+    → Chef shouts "which table??"
+    → Service chaos
+
+  → Cashier closes shift without reconciliation
+    → Cash variance never explained
+    → Owner cannot audit
+
+  → Manager never checks wastage alerts
+    → Alerts pile up unread
+    → Alerts become noise
+    → Real alerts ignored
+
+CANNOT BE FIXED BY CODE
+SOLUTION:
+  → Mandatory onboarding checklist
+  → In-app guided tour (first login)
+  → Role-specific quick reference card
+  → 30-day post-launch support commitment
+```
+
+##### 1.2 Deliberate Misuse
+```
+WHAT HAPPENS:
+  → Waiter voids items and pockets cash
+    difference (classic restaurant fraud)
+  → Chef marks items ready without cooking
+    (to clear screen during rush)
+  → Manager gives own account to everyone
+    (bypasses PIN login entirely)
+  → Staff marks wastage for personal use
+    (claims food wasted, takes it home)
+
+YOUR SYSTEM HAS:
+  ✅ Void approval required
+  ✅ Audit trail on all actions
+  ✅ Account sharing detection
+
+BUT:
+  → Audit trail only helps AFTER fraud occurs
+  → Real-time fraud prevention needs
+    pattern detection (not yet built)
+  → Example: waiter voids 3+ items per shift
+    consistently → automatic manager alert
+```
+
+##### 1.3 Data Entry Errors
+```
+WHAT HAPPENS:
+  → Wrong price entered for new menu item
+    (₹350 entered as ₹35)
+    Bills underprice item all day
+    Owner discovers at day close
+
+  → Stock count entered wrong
+    (500 kg instead of 5 kg)
+    System shows massive overstock
+    Auto-reorder never triggers
+    Real stock runs out mid-service
+
+  → Recipe quantity wrong
+    (500g instead of 50g)
+    Stock deducted 10x per dish
+    System shows stock depleted
+    Chef gets out-of-stock warnings incorrectly
+
+YOUR SYSTEM HAS:
+  ✅ Large quantity warning (PR-008)
+
+STILL MISSING:
+  → Price anomaly detection:
+    "This price is 90% lower than before"
+  → Recipe quantity sanity check:
+    "500g per portion of salt seems high"
+```
+
+***
+
+### CATEGORY 2 — Infrastructure Issues
+#### These depend on client's setup
+
+##### 2.1 WiFi Network Quality
+```
+WHAT HAPPENS:
+  Your app works perfectly on good WiFi
+  Restaurant WiFi is often terrible:
+
+  COMMON SETUPS:
+  → Single consumer router for entire restaurant
+  → Kitchen staff WiFi + customer WiFi
+    on SAME network (congestion)
+  → Router placed in office, not kitchen
+    (signal too weak at chef tablet)
+  → No WiFi extenders in large venues
+  → Router never rebooted in months
+
+  REAL IMPACT:
+  → WebSocket drops every 10 minutes
+  → PR-009 WS cleanup helps server side
+  → But frequent reconnects annoy staff
+  → "App is broken" complaints
+    but it's actually WiFi
+
+YOUR APP HAS:
+  ✅ Auto-reconnect (PR-001)
+  ✅ Offline mode (PR-006)
+  ✅ Connection status indicator
+
+WHAT YOU NEED:
+  → WiFi requirements document
+    for restaurant clients
+  → Minimum: dual-band router
+    Staff on 5GHz, customers on 2.4GHz
+  → Recommended: mesh network for large venues
+  → This is CLIENT responsibility
+    but you must communicate it clearly
+```
+
+##### 2.2 Device Quality Variance
+```
+WHAT HAPPENS:
+  Owner buys cheap Android tablets
+  for kitchen use (₹5,000 tablets)
+
+  PROBLEMS:
+  → 1GB RAM: Chrome crashes frequently
+  → Android 8: some APIs not supported
+    (Wake Lock API, IndexedDB limitations)
+  → Slow processor: UI lags during peak
+  → Small screen: buttons too small
+    for chef with gloves
+  → Poor touch sensitivity: missed taps
+
+  REAL IMPACT:
+  → KDS feels "slow and broken"
+  → Customer blames your software
+  → Refund request
+
+YOUR APP HAS:
+  ✅ Wake Lock with graceful fallback
+  ✅ Virtual scrolling for performance
+
+WHAT YOU NEED:
+  → Minimum device specification document
+  → Tested device list (recommended hardware)
+  → App performance on low-end device testing
+```
+
+##### 2.3 Power Cuts
+```
+WHAT HAPPENS:
+  India/UAE: power cuts during service
+  UPS covers server room but not POS tablets
+
+  SCENARIO:
+  10 open orders in progress
+  Power cut for 2 minutes
+  All tablets restart
+  KDS wall screen restarts
+  
+  ON RESTART:
+  → Open orders restored from IndexedDB ✅
+  → KDS reloads from server ✅
+  → BUT: timers reset (cooking time wrong)
+  → AND: any unsaved cart data lost
+  → AND: printer needs re-initialization
+
+  YOUR APP HAS:
+  ✅ Offline mode handles some scenarios
+  ✅ Session recovery (PR-004 idle timer)
+
+  REAL GAP:
+  → Cart state in sessionStorage may clear
+    on full device power-off restart
+  → Difference: tab close vs power off
+  → sessionStorage does not survive power off
+  → Use localStorage or IndexedDB for cart
+```
+
+***
+
+### CATEGORY 3 — Data Volume Issues
+#### These appear after 60-90 days of real use
+
+##### 3.1 Report Generation Timeout
+```
+TIMELINE:
+  Month 1:  Reports load in 2 seconds ✅
+  Month 3:  Reports load in 8 seconds ⚠️
+  Month 6:  Reports timeout ❌
+
+  YOUR APP HAS:
+  ✅ Background report jobs (PR-005)
+  ✅ Report cache table
+
+  WHAT WILL STILL FAIL:
+  → Reports not yet moved to background:
+    → Stock movement report
+    → Chef accountability report
+    → Wastage analysis
+    → Audit trail export
+  → These will slow down at scale
+
+  RECOMMENDATION:
+  → Move ALL reports to background job pattern
+    not just the 3 identified in PR-005
+  → Do this before Month 2
+```
+
+##### 3.2 Audit Trail Size
+```
+TIMELINE:
+  Every action logs to audit trail
+  100 staff actions/hour
+  × 12 hours/day
+  × 30 days
+  = 36,000 rows per month per restaurant
+  × 100 restaurants
+  = 3.6 million rows/month
+
+  YOUR APP HAS:
+  ✅ Audit trail exists
+  ✅ Retention cleanup (30-day soft delete)
+
+  CRITICAL GAP:
+  → Audit trail should NOT be deleted
+    (compliance requirement — you confirmed this)
+  → But 3.6M rows/month will slow queries
+  → Conflict: keep forever vs query performance
+
+  SOLUTION NEEDED:
+  → Archive old audit entries (> 1 year)
+    to separate archive table
+  → Keep recent 12 months in main table
+  → Archive table: query separately
+  → This preserves compliance
+    while maintaining performance
+```
+
+##### 3.3 Notification Backlog
+```
+WHAT HAPPENS:
+  Busy restaurant: 200 alerts per day
+  Staff acknowledges 50% of them
+  Other 50% pile up as unread
+
+  After 1 month: 3,000 unread notifications
+  Notification panel is unusable
+  Staff ignores all alerts
+  Critical allergy alert missed in noise
+
+  YOUR APP HAS:
+  ✅ Alert system with priorities
+  ✅ Allergy alerts locked on
+
+  MISSING:
+  → Auto-acknowledge low-priority alerts
+    after 24 hours
+  → Notification inbox cleanup:
+    "Clear all acknowledged"
+  → Maximum unread badge: "99+"
+    not growing number
+  → Separate panel for critical vs info alerts
+```
+
+***
+
+### CATEGORY 4 — Multi-Tenant Production Issues
+
+##### 4.1 One Bad Tenant Affects Others
+```
+SCENARIO:
+  Restaurant A runs a large catering event
+  Processes 2,000 orders in one day
+  Database queries spike
+  CPU at 90%
+  Restaurant B experiences slowdowns
+  Restaurant B complains
+
+  YOUR APP HAS:
+  ✅ Pagination (PR-005)
+  ✅ Background reports (PR-005)
+
+  MISSING:
+  → Per-tenant API rate limiting
+    (tenant-level, not just auth-level)
+  → Per-tenant database query limits
+  → Tenant isolation on compute resources
+  → This requires infrastructure work
+    not just application code
+```
+
+##### 4.2 Cascading Failure
+```
+SCENARIO:
+  One endpoint has a bug (slow query)
+  All tenants hit it simultaneously at 8 PM
+  Database connection pool exhausted
+  All tenants get 500 errors
+  All restaurants in service affected
+
+  YOUR APP HAS:
+  ✅ Slow query logging (PR-005)
+  ✅ Error handling (PR-003)
+
+  MISSING:
+  → Circuit breaker pattern
+    (stop hammering failing endpoint)
+  → Database connection pool monitoring
+  → Health check degradation:
+    /api/health shows degraded before it crashes
+  → Alerting to YOUR team
+    (not just restaurant owners)
+    when server health degrades
+```
+
+##### 4.3 Deployment Downtime
+```
+SCENARIO:
+  You push a new version at 7 PM
+  Deployment takes 45 seconds
+  All restaurant users get 502 errors
+  KDS goes blank during dinner service
+  Staff panic
+
+  YOUR APP HAS:
+  ✅ Offline mode handles short outages
+
+  MISSING:
+  → Zero-downtime deployment strategy
+  → Maintenance mode page:
+    "System updating — back in 2 minutes"
+    (better than blank 502)
+  → Deployment schedule policy:
+    NEVER deploy between 7 PM and 10 PM
+    (peak dinner service)
+  → Rollback procedure documented and tested
+```
+
+***
+
+### CATEGORY 5 — Integration Failure Points
+
+##### 5.1 Payment Gateway Failures
+```
+WHAT HAPPENS:
+  Razorpay has outage (rare but happens)
+  All card/UPI payments fail
+  Customers cannot pay
+  Restaurant only accepts cash backup
+
+  YOUR APP HAS:
+  ✅ Payment validation (PR-001)
+  ✅ Manual payment record option
+
+  MISSING:
+  → Clear "Payment gateway down" message
+    (not generic error)
+  → Fallback to manual payment record:
+    "Record as manual payment pending
+     processing later"
+  → Retry payment after gateway recovery
+  → Razorpay status page link for staff
+```
+
+##### 5.2 Printer Driver Conflicts
+```
+WHAT HAPPENS:
+  Printer works fine on network
+  Restaurant IT person "updates" driver
+  Printer stops responding to ESC/POS commands
+  KOTs stop printing
+  Kitchen has no orders
+
+  YOUR APP HAS:
+  ✅ Print job queue (PR-004)
+  ✅ Printer offline alerts (PR-004)
+
+  MISSING:
+  → Printer test page with diagnostic info
+  → ESC/POS command verification tool
+  → Supported printer model list
+    with tested ESC/POS compatibility
+```
+
+##### 5.3 Third-Party Delivery Platform Webhooks
+```
+WHAT HAPPENS:
+  Zomato changes webhook format (it happens)
+  Your webhook parser breaks
+  Online orders stop coming in
+  Restaurant loses online revenue
+  Nobody notices for hours
+
+  YOUR APP HAS:
+  ✅ Webhook endpoint placeholders
+
+  MISSING:
+  → Webhook validation logging
+  → "Last received order" timestamp
+    visible to manager
+  → Alert if no online orders for
+    unexpected period:
+    "No Zomato orders in 2 hours —
+     check integration"
+  → Webhook payload versioning
+```
+
+***
+
+### CATEGORY 6 — Customer Experience Issues
+
+##### 6.1 QR Page Performance on Slow Phones
+```
+WHAT HAPPENS:
+  Customer scans QR on old budget phone
+  QR page takes 8 seconds to load
+  Customer gives up
+  Table experience ruined
+
+  YOUR APP HAS:
+  ✅ Timeout handling (PR-001)
+
+  MISSING:
+  → QR page bundle size optimization
+    (separate lightweight build)
+  → QR page: no heavy dependencies
+  → Progressive loading:
+    show menu categories first
+    load items after
+  → Image lazy loading on QR menu
+  → QR page lighthouse score target: > 85
+```
+
+##### 6.2 Multiple Customers Same Table Ordering
+```
+WHAT HAPPENS:
+  Table of 6 each scans QR
+  6 people ordering simultaneously
+  6 separate orders created for same table
+  Kitchen gets 6 separate KOTs
+  Bill cannot be easily combined
+
+  YOUR APP HAS:
+  → This was planned in earlier discussion
+  → Was it implemented?
+
+  IF NOT IMPLEMENTED:
+  → Critical UX gap for groups
+  → "Join existing order" flow needed
+  → OR: QR ordering disabled for this reason
+    and waiter-only ordering used
+```
+
+##### 6.3 Customer Complaint When Wrong Food
+```
+WHAT HAPPENS:
+  Chef did not read modification (less spice)
+  Customer receives wrong food
+  Customer complains to waiter
+  Waiter has no system to record complaint
+  Manager unaware
+  No follow-up
+
+  YOUR APP HAS:
+  ✅ QR feedback submission
+  ✅ Low-rating escalation to manager
+
+  MISSING:
+  → Waiter-side complaint logging:
+    "Log complaint for Table 5"
+  → Complaint tracking and resolution
+  → Link complaint to specific order
+  → Follow-up reminder to manager
+```
+
+***
+
+### CATEGORY 7 — Financial and Compliance Issues
+
+##### 7.1 GST/VAT Filing Errors
+```
+WHAT HAPPENS:
+  Month end: owner exports sales data
+  Data has timezone errors (pre-PR-007)
+  OR: some orders missing from report
+  OR: cancelled orders not excluded
+  
+  Owner files wrong GST return
+  Tax authority audit triggered
+
+  YOUR APP HAS:
+  ✅ Timezone fix (PR-007)
+  ✅ GST on invoices
+
+  MISSING:
+  → Dedicated GST report:
+    GSTR-1 compatible format (India)
+    VAT return compatible format (UAE)
+  → Reconciliation: total invoiced =
+    sum of all bills for period
+  → Cancelled order exclusion verified
+  → Export format that accountant can use
+    directly (not raw JSON)
+```
+
+##### 7.2 End of Month Reconciliation
+```
+WHAT HAPPENS:
+  Owner tries to reconcile:
+  → Total POS revenue
+  → vs Bank deposits
+  → vs Cash counted
+  → vs Card settlements
+
+  Each number comes from different screen
+  No single reconciliation report
+  Owner spends 2 days on spreadsheets
+  Finds discrepancy: cannot trace it
+
+  YOUR APP HAS:

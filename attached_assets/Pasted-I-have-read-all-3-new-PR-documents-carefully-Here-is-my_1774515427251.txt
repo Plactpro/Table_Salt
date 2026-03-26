@@ -1,0 +1,354 @@
+I have read all 3 new PR documents carefully. Here is my complete assessment.
+
+***
+
+## Overall Verdict
+
+```
+✅ ALL 3 NEW PRs ARE WELL DESIGNED
+✅ PLAN IS NOW COMPLETE
+✅ SPRINT 1 RUNNING — CORRECT TIMING
+```
+
+***
+
+## PR-010 — Data Volume & Retention Assessment
+
+### What Is Covered ✅
+```
+✅ Audit trail archival to separate table
+   (12-month rolling, never deleted)
+✅ Archive queryable via admin endpoint
+✅ Nightly job at 02:00 UTC
+✅ Auto-acknowledge low priority (24h)
+✅ Auto-acknowledge medium priority (48h)
+✅ Critical/high: NEVER auto-acknowledged
+✅ auto_acknowledged column to distinguish
+✅ Critical/Info tabs in notification panel
+✅ Bell badge: red critical + grey info
+✅ Max 99+ display cap
+✅ Clear all acknowledged button
+✅ Report cache cleanup (48h + last 5 per type)
+✅ Stale generating/failed entries (1h cleanup)
+```
+
+### Gaps and Observations
+```
+GAP 1: Nightly job timing conflict
+  → Job runs "once on process start,
+    then every 24 hours at 02:00 UTC"
+  → If server restarts at 01:55 UTC:
+    → Job runs immediately at 01:55
+    → Then schedules next run 24h later
+    → = 01:55 UTC next day
+    → Drifts over time away from 02:00
+  → MINOR: use a proper daily cron check
+    instead of "process start + 24h interval"
+  → Check: is current time between 02:00-02:05?
+    If yes and not run today: run now
+    This is more reliable
+
+GAP 2: Archive query performance
+  → Task 1 adds index on tenant_id, created_at
+  → But archive table will grow indefinitely
+  → After 3 years: archive has 1.3B rows
+    (100 restaurants × 36K/month × 36 months)
+  → Index helps but still slow at this scale
+  → RECOMMENDATION FOR FUTURE:
+    Add year-based partitioning to archive table
+    Not needed now but plan for it
+  → Mark as PR-013 future item
+
+GAP 3: Notification cleanup endpoint
+  → Task 5: hard delete acknowledged low/info
+  → These are "informational and not compliance"
+  → CORRECT — this is safe to hard delete
+  → But verify: do any info notifications
+    appear in compliance report?
+  → If yes: soft delete instead of hard delete
+
+THESE ARE MINOR — PR APPROVED AS-IS
+```
+
+***
+
+## PR-011 — System Health & Observability Assessment
+
+### What Is Covered ✅
+```
+✅ Circuit breaker: state machine (closed/open/half-open)
+✅ Sliding window with circular buffer (no external lib)
+✅ 503 on open circuit (not 500)
+✅ retryAfter: 30 in response
+✅ Applied to correct route groups:
+   orders, billing, kitchen, reports
+✅ NOT applied to: auth, health, menu GET ← correct
+✅ Super admin notification on circuit OPEN
+✅ Health endpoint: rich status object
+✅ Health endpoint: unauthenticated ← correct
+✅ Degraded: DB > 500ms OR pool > 80%
+✅ Down: DB unreachable
+✅ 5-second cache on health response ← smart
+✅ Webhook last_webhook_at tracking
+✅ 30-minute background check
+✅ Configurable threshold per platform
+✅ "Last received X min ago" in UI
+✅ Payment gateway down: specific message
+✅ "Record as manual payment" button
+✅ GATEWAY_FAILURE vs PAYMENT_FAILURE ← important
+✅ Super admin system health UI
+✅ system_events table for circuit breaker log
+```
+
+### Gaps and Observations
+```
+GAP 1: Circuit breaker on half-open state
+  → "Allows 1 test request, closes on success"
+  → What if the test request also fails?
+  → Should transition back to OPEN immediately
+  → Then retry after another 30 seconds
+  → Verify this is in the implementation:
+    HALF_OPEN → request fails → OPEN (reset timer)
+    HALF_OPEN → request succeeds → CLOSED
+
+GAP 2: Circuit breaker scope
+  → Applied to: orders, billing, kitchen, reports
+  → NOT applied to: auth, health, menu GET
+  → QUESTION: what about inventory endpoints?
+  → Stock adjustment during peak could be slow
+  → RECOMMENDATION:
+    Also apply to: inventory mutations
+    Not inventory reads (menu GET pattern)
+
+GAP 3: Payment manual record — reconciliation
+  → "Record manual payment with method=manual_pending"
+  → This is correct for the moment
+  → BUT: how does manager know to follow up?
+  → Need: daily report of manual_pending payments
+    "3 payments recorded as manual — gateway down
+     Please process these: [list]"
+  → Add to PR-010 or as addition here
+  → LOW PRIORITY but operationally important
+
+GAP 4: Webhook monitoring — false positives
+  → "If last_webhook_at > 2 hours during open hours"
+  → What about slow days? (Monday lunch, etc.)
+  → Restaurant may genuinely have no orders
+    for 2+ hours on a slow day
+  → Alert fires unnecessarily
+  → Manager ignores alerts ("false alarm again")
+  → RECOMMENDATION:
+    Only alert if outlet is in "busy period"
+    (e.g., weekend, or past hour had 5+ orders)
+    → Simple threshold: alert only if
+      previous_hour_order_count > 0
+    → This prevents false positives on slow days
+
+THESE ARE MINOR — PR APPROVED AS-IS
+```
+
+***
+
+## PR-012 — QR Page Optimization Assessment
+
+### What Is Covered ✅
+```
+✅ Separate Vite entry point for QR bundle
+✅ Target: < 300KB gzipped ← realistic
+✅ Excludes admin components, charts, etc.
+✅ Lazy loading on all images
+✅ WebP format with fallback
+✅ Branded placeholder (not broken image icon)
+✅ Progressive loading: categories first, items after
+✅ table_qr_sessions table
+✅ Join existing / Start separate flow
+✅ Session expires 30 min after bill paid
+✅ Cleanup job for expired sessions
+✅ Error states: invalid token, kitchen closed,
+   table unavailable, menu load failed ← all covered
+✅ "Call for help" button on all error states
+✅ Lighthouse target: > 85 score
+✅ FCP target: < 1.5 seconds
+✅ TTI target: < 3 seconds
+```
+
+### Gaps and Observations
+```
+GAP 1: Bundle size verification
+  → Task 1: "Verify with npm run build and
+    check generated chunk — target 300KB gzipped"
+  → This is correct approach
+  → BUT: needs to be actually measured and confirmed
+  → If shadcn/ui components are included
+    even the "subset" may exceed 300KB
+  → RECOMMENDATION:
+    After build: document actual bundle size
+    in PR notes for future reference
+  → If over 300KB: identify which component
+    is causing bloat and replace with
+    lighter alternative
+
+GAP 2: QR session — concurrent join timing
+  → Customer A and Customer B both scan at same time
+  → Both call GET /api/qr/[token]/session
+  → Both see: sessionExists = false
+  → Both call POST /api/qr/[token]/session/start
+  → Two sessions created for same table
+  → Race condition
+  → SOLUTION:
+    Use INSERT ... ON CONFLICT DO NOTHING
+    on table_id + is_active = true unique constraint
+    Second insert fails silently
+    Return existing session to second caller
+
+GAP 3: Join existing — cart UX
+  → Customer joins existing order
+  → They see the combined cart
+  → But they can only see items THEY added
+  → Or can they see ALL items?
+  → CLARIFY:
+    → Show all items (full transparency) ← better
+    → OR: show only own items ← privacy option
+  → Recommendation: show all items with
+    "Added by others" label
+  → Makes it easier to avoid duplicates
+    ("don't order Coke — someone already did")
+
+GAP 4: Error state — "Call for help" button
+  → Triggers a waiter request
+  → But QR token may be invalid
+  → How does system know which table to alert?
+  → If token is invalid: cannot identify table
+  → SOLUTION:
+    → Invalid token: show restaurant phone number
+    → Valid token but other error: use table from token
+    → This distinction matters for the implementation
+
+GAP 5: Kitchen closed — next open time
+  → "We reopen at [next open time from outlet hours]"
+  → Outlet hours must be accessible in QR bundle
+  → Verify: outlet hours are part of the QR
+    token validation response
+  → If not: add to GET /api/qr/[token] response
+
+THESE ARE MINOR — PR APPROVED WITH NOTES
+```
+
+***
+
+## Complete 12-PR Plan Final Review
+
+| Sprint | PR | Status | Key Risk |
+|---|---|---|---|
+| 1 | #187 Timezone | 🔄 Running | Low |
+| 1 | #182 Data Integrity | 🔄 Running | Low |
+| 1 | #188 Bug Fix Batch C | 🔄 Running | Low |
+| 2 | #181 Security + gateway message | ✅ Ready | Low |
+| 2 | #185 Performance + all reports | ✅ Ready | Medium |
+| 3 | #183 UX Polish | ✅ Ready | Low |
+| 3 | #184 Hardware Resilience | ✅ Ready | Low |
+| 4 | #186 Offline + cart IndexedDB | ✅ Ready | Medium |
+| 4 | #189 Operational Resilience | ✅ Ready | Low |
+| 5 | #190 Data Volume & Retention | ✅ Ready | Low |
+| 5 | #191 System Health | ✅ Ready | Medium |
+| 6 | #192 QR Optimization | ✅ Ready | Medium |
+
+***
+
+## Three Minor Additions Worth Noting
+
+```
+ADDITION 1 (PR-011):
+  Add manual_pending payment daily summary
+  to PR-010 or PR-011 scope:
+  "N payments recorded as manual pending
+   gateway failure — please process"
+  LOW EFFORT — HIGH OPERATIONAL VALUE
+
+ADDITION 2 (PR-011):
+  Webhook false positive prevention:
+  Only alert if previous hour had > 0 orders
+  Prevents alert fatigue on slow days
+  LOW EFFORT — PREVENTS ALERT FATIGUE
+
+ADDITION 3 (PR-012):
+  QR session race condition:
+  INSERT ON CONFLICT DO NOTHING
+  on table_id + is_active unique constraint
+  ONE LINE FIX — PREVENTS DUPLICATE SESSIONS
+```
+
+***
+
+## Non-Code Operational Checklist
+
+```
+YOUR RESPONSIBILITY BEFORE FIRST CLIENT:
+
+📋 WiFi minimum requirements document
+   → Dual-band router minimum
+   → Staff on 5GHz, customers on 2.4GHz
+   → Minimum 50Mbps for restaurants > 30 tables
+
+📋 Minimum device specification sheet
+   → Minimum: 2GB RAM, Android 10+
+   → Recommended: Samsung Tab A8 or equivalent
+   → KDS wall screen: minimum 1080p display
+
+📋 Deployment schedule policy
+   → No deployments: 7 PM — 10 PM daily
+   → No deployments: Friday/Saturday evenings
+   → Maintenance window: Tuesday 2 AM — 4 AM UTC
+
+📋 Staff training materials
+   → Per-role quick reference card (1 page)
+   → Video walkthrough per role (5-10 min)
+   → Common mistakes and how to fix them
+
+📋 Support escalation procedure
+   → Level 1: In-app help documentation
+   → Level 2: WhatsApp support (business hours)
+   → Level 3: Direct call for critical issues
+   → SLA: Critical = 1hr, High = 4hr, Normal = 24hr
+
+📋 Restaurant onboarding checklist
+   → WiFi setup verified
+   → Devices tested
+   → Printers configured and test printed
+   → Menu imported and verified
+   → Staff accounts created with PINs
+   → Test order placed end-to-end
+   → Payment tested (card + cash)
+   → QR code printed and laminated
+```
+
+***
+
+## Final Summary
+
+```
+THE PLAN IS COMPLETE AND PRODUCTION-READY.
+
+12 PRs covering:
+  ✅ Security (idempotency, payment validation, PIN)
+  ✅ Data integrity (soft deletes, optimistic locking)
+  ✅ UX polish (skeletons, empty states, errors)
+  ✅ Hardware (printers, cash drawer, wake lock)
+  ✅ Performance (pagination, cache, background jobs)
+  ✅ Offline mode (ISP outage coverage)
+  ✅ Timezone (UAE/India multi-outlet)
+  ✅ Bug fixes (promotions, delivery, pricing)
+  ✅ Operational resilience (subscription grace)
+  ✅ Data volume (archival, notification triage)
+  ✅ System health (circuit breaker, observability)
+  ✅ QR optimization (bundle size, multi-customer)
+
+Sprint 1 is running.
+Sprint 2-6 are planned and ready.
+
+When Sprint 1 completes:
+  → Verify all 3 timezone timezone changes ✓
+  → Verify soft deletes on all 10 tables ✓
+  → Verify promotions creation works ✓
+  → Then approve Sprint 2. 🚀
+```
