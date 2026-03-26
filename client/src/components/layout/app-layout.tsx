@@ -18,9 +18,87 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
 import { apiRequest } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { LogIn } from "lucide-react";
 
 interface AppLayoutProps {
   children: ReactNode;
+}
+
+/**
+ * PR-001: Global security event listeners — always mounted for any authenticated user
+ * regardless of impersonation state.
+ * - Session conflict: shows a persistent, dismissible banner (not just a toast) so the
+ *   user cannot miss it and can take deliberate action (go to login or dismiss if resolved).
+ * - API timeout: shows a toast with a Retry action.
+ */
+function GlobalSecurityListeners() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [conflictBannerVisible, setConflictBannerVisible] = useState(false);
+
+  // Session conflict: another login invalidated this session
+  useEffect(() => {
+    const handler = () => {
+      setConflictBannerVisible(true);
+    };
+    window.addEventListener("session-conflict", handler);
+    return () => window.removeEventListener("session-conflict", handler);
+  }, []);
+
+  // Operation-aware timeout: global "tap to retry" toast
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ message?: string; retryFn?: () => void }>).detail;
+      toast({
+        variant: "destructive",
+        title: "Request timed out",
+        description: "The server took too long to respond — tap Retry to try again.",
+        action: (
+          <ToastAction altText="Retry" onClick={() => {
+            if (typeof detail?.retryFn === "function") {
+              detail.retryFn();
+            } else {
+              queryClient.invalidateQueries();
+            }
+          }}>
+            Retry
+          </ToastAction>
+        ),
+      });
+    };
+    window.addEventListener("api-timeout", handler);
+    return () => window.removeEventListener("api-timeout", handler);
+  }, [toast, queryClient]);
+
+  if (!conflictBannerVisible) return null;
+
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[200] p-3" data-testid="banner-session-conflict">
+      <Alert variant="destructive" className="flex items-center justify-between shadow-lg border-red-500 bg-red-50 dark:bg-red-950">
+        <div className="flex items-center gap-3">
+          <LogIn className="h-5 w-5 text-red-600 flex-shrink-0" />
+          <AlertDescription className="text-red-800 dark:text-red-200 font-medium">
+            <strong>Signed in on another device.</strong> Your session may have been taken over. Please{" "}
+            <a href="/login" className="underline font-semibold hover:no-underline">
+              log in again
+            </a>{" "}
+            to secure your account.
+          </AlertDescription>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-4 flex-shrink-0 text-red-700 hover:text-red-900 hover:bg-red-100 dark:text-red-300"
+          onClick={() => setConflictBannerVisible(false)}
+          data-testid="button-dismiss-session-conflict"
+          aria-label="Dismiss session conflict warning"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      </Alert>
+    </div>
+  );
 }
 
 function ImpersonationBanner() {
@@ -77,6 +155,7 @@ function ImpersonationBanner() {
     window.addEventListener("read-only-session-blocked", handler);
     return () => window.removeEventListener("read-only-session-blocked", handler);
   }, [toast]);
+
 
   if (!isImpersonating) return null;
 
@@ -359,6 +438,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
     <div className="flex flex-col min-h-screen" data-testid="app-layout">
       <RealtimeStatusBanner />
       <TrialBanner />
+      <GlobalSecurityListeners />
       <ImpersonationBanner />
       <RestrictionBanner />
       <ConsentUpdateModal />

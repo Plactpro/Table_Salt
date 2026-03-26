@@ -6,7 +6,7 @@ import { z } from "zod";
 import {
   tenants, users, outlets, orders, auditEvents, roleEnum, securityAlerts, customers, reservations, deliveryOrders,
 } from "@shared/schema";
-import { requireSuperAdmin, requireAuth, hashPassword } from "./auth";
+import { requireSuperAdmin, requireAuth, hashPassword, requireFreshSession } from "./auth";
 import { auditLog } from "./audit";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
 import { deriveKey, encryptWithKey, decryptWithKey, rotateField } from "./encryption-rotation";
@@ -708,7 +708,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Tenant CRUD ──────────────────────────────────────────────────────────
 
-  app.get("/api/admin/tenants", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/tenants", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const platformTenantId = await getPlatformTenantId();
       const { search, plan, active, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
@@ -765,7 +765,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.get("/api/admin/tenants/:id", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/tenants/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const [tenant] = await db.select().from(tenants).where(eq(tenants.id, req.params.id));
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
@@ -811,7 +811,7 @@ export function registerAdminRoutes(app: Express) {
     businessType: z.string().default("casual_dining"),
   });
 
-  app.post("/api/admin/tenants", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/tenants", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = createTenantSchema.safeParse(req.body);
@@ -899,7 +899,7 @@ export function registerAdminRoutes(app: Express) {
     razorpayEnabled: z.boolean().optional(),
   });
 
-  app.patch("/api/admin/tenants/:id", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/tenants/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = updateTenantSchema.safeParse(req.body);
@@ -941,7 +941,7 @@ export function registerAdminRoutes(app: Express) {
 
   const suspendSchema = z.object({ reason: z.string().optional() });
 
-  app.post("/api/admin/tenants/:id/suspend", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/tenants/:id/suspend", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = suspendSchema.safeParse(req.body);
@@ -980,7 +980,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admin/tenants/:id/reactivate", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/tenants/:id/reactivate", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const [tenant] = await db.select().from(tenants).where(eq(tenants.id, req.params.id));
@@ -1010,7 +1010,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Cross-Tenant User Management ────────────────────────────────────────
 
-  app.get("/api/admin/users", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/users", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const platformTenantId = await getPlatformTenantId();
       const { tenantId, role, search, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
@@ -1096,7 +1096,7 @@ export function registerAdminRoutes(app: Express) {
 
   const toggleUserSchema = z.object({ active: z.boolean() });
 
-  app.patch("/api/admin/users/:id", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/users/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = toggleUserSchema.safeParse(req.body);
@@ -1132,7 +1132,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.post("/api/admin/users/:id/reset-password", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/users/:id/reset-password", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const [target] = await db.select().from(users).where(eq(users.id, req.params.id));
@@ -1170,7 +1170,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Audit Log ────────────────────────────────────────────────────────────
 
-  app.get("/api/admin/audit-log", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/audit-log", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { tenantId, userId, action, from, to, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
       const limitNum = Math.min(parseInt(limitStr || "50"), 200);
@@ -1276,7 +1276,7 @@ export function registerAdminRoutes(app: Express) {
     password: z.string().min(8),
   });
 
-  app.post("/api/admin/super-admins", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/super-admins", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = createSuperAdminSchema.safeParse(req.body);
@@ -1320,7 +1320,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.delete("/api/admin/super-admins/:id", requireSuperAdmin, async (req, res) => {
+  app.delete("/api/admin/super-admins/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       if (req.params.id === adminUser.id) {
@@ -1414,7 +1414,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/platform-settings", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/platform-settings", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = platformSettingsSchema.safeParse(req.body);
@@ -1490,7 +1490,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/platform-settings/gateway", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/platform-settings/gateway", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const parsed = gatewaySettingsSchema.safeParse(req.body);
@@ -1733,7 +1733,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Cross-Tenant Security Alerts ─────────────────────────────────────────
 
-  app.get("/api/admin/security-alerts", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/security-alerts", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { tenantId, severity, type, acknowledged, from, to, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
       const limitVal = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
@@ -1789,7 +1789,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/security-alerts/:id/acknowledge", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/security-alerts/:id/acknowledge", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const [alert] = await db.select().from(securityAlerts).where(eq(securityAlerts.id, req.params.id));
@@ -1809,7 +1809,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Detection Alerts (potential_breach_hint) ────────────────────────────
 
-  app.get("/api/admin/detection-alerts", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/detection-alerts", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { acknowledged, limit: limitStr } = req.query as Record<string, string>;
       const limitVal = Math.min(parseInt(limitStr ?? "50", 10) || 50, 200);
@@ -1846,7 +1846,7 @@ export function registerAdminRoutes(app: Express) {
     }
   });
 
-  app.patch("/api/admin/detection-alerts/:id/dismiss", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/detection-alerts/:id/dismiss", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const adminUser = req.user as { id: string; name: string };
       const { reason, reasonType } = req.body as { reason?: string; reasonType?: string };
@@ -1898,7 +1898,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Audit Log CSV Export ─────────────────────────────────────────────────
 
-  app.get("/api/admin/audit-log/export", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/audit-log/export", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { tenantId, action, from, to } = req.query as Record<string, string>;
 
@@ -1977,7 +1977,7 @@ export function registerAdminRoutes(app: Express) {
   // reminding the operator to do this.
   // ───────────────────────────────────────────────────────────────────────────
 
-  app.post("/api/admin/encryption/rotate-key", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/encryption/rotate-key", requireSuperAdmin, requireFreshSession, async (req, res) => {
     const bodySchema = z.object({
       newKey: z.string().min(16, "New key must be at least 16 characters"),
     });
@@ -2111,7 +2111,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Vendor Risk Assessments ─────────────────────────────────────────────────
 
-  app.get("/api/admin/vendor-risks", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/vendor-risks", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const category = req.query.category as string | undefined;
       const riskLevel = req.query.riskLevel as string | undefined;
@@ -2128,7 +2128,7 @@ export function registerAdminRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/admin/vendor-risks", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/vendor-risks", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const { vendorName, vendorCategory, website, serviceDescription, dataProcessed, riskLevel,
@@ -2149,7 +2149,7 @@ export function registerAdminRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/admin/vendor-risks/:id", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/vendor-risks/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const { rows: [existing] } = await pool.query(`SELECT * FROM vendor_risk_assessments WHERE id = $1`, [req.params.id]);
@@ -2179,7 +2179,7 @@ export function registerAdminRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/admin/vendor-risks/:id", requireSuperAdmin, async (req, res) => {
+  app.delete("/api/admin/vendor-risks/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const { rows: [existing] } = await pool.query(`SELECT * FROM vendor_risk_assessments WHERE id = $1`, [req.params.id]);
@@ -2192,7 +2192,7 @@ export function registerAdminRoutes(app: Express) {
 
   // ─── Incident Response Playbook ──────────────────────────────────────────────
 
-  app.get("/api/admin/incident-playbook", requireSuperAdmin, async (req, res) => {
+  app.get("/api/admin/incident-playbook", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { rows } = await pool.query(
         `SELECT * FROM incident_response_playbook ORDER BY step_number ASC`
@@ -2201,7 +2201,7 @@ export function registerAdminRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/admin/incident-playbook/steps", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/incident-playbook/steps", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { stepNumber, stepTitle, stepDescription, responsibleRole, timeTarget, checklist, notes } = req.body;
       if (!stepTitle || !stepDescription) return res.status(400).json({ message: "stepTitle and stepDescription are required" });
@@ -2215,7 +2215,7 @@ export function registerAdminRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/admin/incident-playbook/steps/:id", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/incident-playbook/steps/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { rows: [existing] } = await pool.query(`SELECT * FROM incident_response_playbook WHERE id = $1`, [req.params.id]);
       if (!existing) return res.status(404).json({ message: "Step not found" });
@@ -2237,7 +2237,7 @@ export function registerAdminRoutes(app: Express) {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.delete("/api/admin/incident-playbook/steps/:id", requireSuperAdmin, async (req, res) => {
+  app.delete("/api/admin/incident-playbook/steps/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { rows: [existing] } = await pool.query(`SELECT * FROM incident_response_playbook WHERE id = $1`, [req.params.id]);
       if (!existing) return res.status(404).json({ message: "Step not found" });

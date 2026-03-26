@@ -291,9 +291,54 @@ export function registerOrdersRoutes(app: Express): void {
   });
 
   app.post("/api/orders", requireAuth, async (req, res) => {
+    // PR-001: Tracking variables outside try so finally block can clean up on ALL failure paths
+    // (both exceptions AND early 4xx returns after the key was claimed).
+    const idempotencyKey = req.headers["x-idempotency-key"] as string | undefined;
+    let idemClaimed = false;
+    let idemResponseStored = false;
     try {
       const user = req.user as any;
       const { items, supervisorOverride, dismissedRuleIds, manualDiscountAmount, clientOrderId, ...orderData } = req.body;
+
+      // PR-001: Idempotency key deduplication — atomic INSERT to claim the key first
+      if (idempotencyKey) {
+        const { rows: claimRows } = await pool.query(
+          `INSERT INTO idempotency_keys (key, tenant_id, endpoint, response_code)
+           VALUES ($1, $2, 'POST /api/orders', 200)
+           ON CONFLICT (key, tenant_id) DO NOTHING
+           RETURNING key`,
+          [idempotencyKey, user.tenantId]
+        );
+        const wonRace = claimRows.length > 0;
+        if (!wonRace) {
+          // Lost the race — poll for winner's response_body with up to 3 retries
+          for (let attempt = 0; attempt < 3; attempt++) {
+            await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+            const { rows: replayRows } = await pool.query(
+              `SELECT response_body FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'POST /api/orders' AND created_at > NOW() - INTERVAL '60 seconds'`,
+              [idempotencyKey, user.tenantId]
+            );
+            if (replayRows[0]?.response_body) {
+              return res.status(200).json(replayRows[0].response_body);
+            }
+            // Also check if the order was created (winner may not have stored response_body yet)
+            const { rows: idemOrder } = await pool.query(
+              `SELECT id FROM orders WHERE tenant_id = $1 AND idempotency_key = $2 LIMIT 1`,
+              [user.tenantId, idempotencyKey]
+            );
+            if (idemOrder[0]) {
+              const dupOrder = await storage.getOrder(idemOrder[0].id, user.tenantId);
+              if (dupOrder) {
+                const dupItems = await storage.getOrderItemsByOrder(dupOrder.id);
+                return res.status(200).json({ ...dupOrder, items: dupItems });
+              }
+            }
+          }
+          // Winner still hasn't committed after all retries — return 202 Accepted so client retries
+          return res.status(202).json({ code: "PROCESSING", message: "Order is being processed. Please retry in a moment." });
+        }
+        idemClaimed = true; // won the race; finally block will clean up on failure
+      }
 
       if (clientOrderId) {
         const existing = await storage.getOrderByClientId(user.tenantId, clientOrderId);
@@ -304,6 +349,9 @@ export function registerOrdersRoutes(app: Express): void {
         orderData.channelOrderId = clientOrderId;
       }
       const hasClientOrderId = !!clientOrderId;
+      if (idempotencyKey) {
+        orderData.idempotencyKey = idempotencyKey;
+      }
 
       const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
@@ -659,9 +707,30 @@ export function registerOrdersRoutes(app: Express): void {
       if (order.status === "sent_to_kitchen" || order.status === "in_progress") {
         fireKdsArrival(user.tenantId, order.id, user.id, user.name || user.username || "System");
       }
-      res.json({ ...order, items: orderItems });
+      const orderResponse = { ...order, items: orderItems };
+      // PR-001: Store response_body so idempotency replays return deterministic data
+      if (idempotencyKey) {
+        pool.query(
+          `UPDATE idempotency_keys SET response_body = $1 WHERE key = $2 AND tenant_id = $3 AND endpoint = 'POST /api/orders'`,
+          [JSON.stringify(orderResponse), idempotencyKey, user.tenantId]
+        ).catch(() => {});
+      }
+      idemResponseStored = true; // mark before res.json so finally block doesn't clean up on success
+      res.json(orderResponse);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    } finally {
+      // PR-001: Idempotency lifecycle — delete key on ALL failure paths (exceptions, early 4xx)
+      // so retries are never permanently stuck in PROCESSING/conflict states.
+      if (idempotencyKey && idemClaimed && !idemResponseStored) {
+        const tenantId = (req as any).user?.tenantId;
+        if (tenantId) {
+          pool.query(
+            `DELETE FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'POST /api/orders' AND response_body IS NULL`,
+            [idempotencyKey, tenantId]
+          ).catch(() => {});
+        }
+      }
     }
   });
 
@@ -669,6 +738,33 @@ export function registerOrdersRoutes(app: Express): void {
     const user = req.user as Express.User & { tenantId: string; id: string; role: string; name: string };
     const existing = await storage.getOrder(req.params.id, user.tenantId);
     if (!existing) return res.status(404).json({ message: "Order not found" });
+
+    // PR-001: Idempotency must be checked BEFORE version validation so duplicate KOT sends
+    // always return the prior success, not a VERSION_CONFLICT.
+    // kotIdemClaimed/kotIdemResponseStored declared outside try so finally can clean up on ALL failure paths.
+    const kotIdemKey = req.headers["x-idempotency-key"] as string | undefined;
+    let kotIdemClaimed = false;
+    let kotIdemResponseStored = false;
+    try {
+    if (kotIdemKey && req.body.status === "sent_to_kitchen") {
+      const { rows: kotClaim } = await pool.query(
+        `INSERT INTO idempotency_keys (key, tenant_id, endpoint, response_code)
+         VALUES ($1, $2, 'KOT', 200)
+         ON CONFLICT (key, tenant_id) DO NOTHING
+         RETURNING key`,
+        [kotIdemKey, user.tenantId]
+      );
+      if (kotClaim.length === 0) {
+        // Duplicate — return cached success payload if available, or current order state
+        const { rows: [cached] } = await pool.query(
+          `SELECT response_body FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'KOT'`,
+          [kotIdemKey, user.tenantId]
+        );
+        if (cached?.response_body) return res.json({ ...cached.response_body, _idempotent: true });
+        return res.json({ ...existing, _idempotent: true });
+      }
+      kotIdemClaimed = true; // won the race; finally block will clean up on failure
+    }
 
     // Optimistic locking: version is REQUIRED for all order updates.
     // Clients must always send the current version they loaded; server rejects stale updates with 409.
@@ -937,7 +1033,28 @@ export function registerOrdersRoutes(app: Express): void {
       const customer = await storage.getCustomerByTenant(order.customerId, user.tenantId);
       if (customer) enriched.loyaltyStatus = { points: customer.loyaltyPoints, tier: customer.loyaltyTier };
     }
+
+    // PR-001: Store KOT success response so duplicate keys can replay deterministic payload
+    if (kotIdemKey && req.body.status === "sent_to_kitchen") {
+      kotIdemResponseStored = true; // mark before storing so finally doesn't clean up on success
+      pool.query(
+        `UPDATE idempotency_keys SET response_body = $1 WHERE key = $2 AND tenant_id = $3 AND endpoint = 'KOT'`,
+        [JSON.stringify(enriched), kotIdemKey, user.tenantId]
+      ).catch(() => {});
+    }
+
     res.json(enriched);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    } finally {
+      // PR-001: Cleanup claimed KOT key on ALL failure paths so retries aren't permanently stuck.
+      if (kotIdemKey && kotIdemClaimed && !kotIdemResponseStored) {
+        pool.query(
+          `DELETE FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'KOT' AND response_body IS NULL`,
+          [kotIdemKey, user.tenantId]
+        ).catch(() => {});
+      }
+    }
   });
 
   app.get("/api/order-items", requireAuth, async (req, res) => {

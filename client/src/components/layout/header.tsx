@@ -449,9 +449,13 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem data-testid="menu-item-profile">
+              <DropdownMenuItem
+                data-testid="menu-item-profile"
+                onClick={() => { window.location.href = "/account"; }}
+                className="cursor-pointer"
+              >
                 <User className="mr-2 h-4 w-4" />
-                Profile
+                My Account &amp; Sessions
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} data-testid="menu-item-logout">

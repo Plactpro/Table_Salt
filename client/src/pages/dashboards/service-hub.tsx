@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -105,9 +105,17 @@ export default function ServiceHubPage() {
     refetchInterval: 30000,
   });
 
+  // PR-001: Stable per-orderId idempotency keys for KOT sends — prevent duplicate KOTs from double-tap
+  const kotIdemKeys = useRef<Record<string, string>>({});
   const actionMutation = useMutation({
     mutationFn: async ({ orderId, status }: { orderId: string; status: string }) => {
-      const res = await apiRequest("PATCH", `/api/orders/${orderId}/coordination-status`, { status });
+      const opts: { idempotencyKey?: string } = {};
+      if (status === "sent_to_kitchen") {
+        if (!kotIdemKeys.current[orderId]) kotIdemKeys.current[orderId] = crypto.randomUUID();
+        opts.idempotencyKey = kotIdemKeys.current[orderId];
+      }
+      const res = await apiRequest("PATCH", `/api/orders/${orderId}/coordination-status`, { status }, opts);
+      if (status === "sent_to_kitchen") delete kotIdemKeys.current[orderId];
       return res.json();
     },
     onSuccess: () => {

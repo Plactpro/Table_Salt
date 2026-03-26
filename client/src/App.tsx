@@ -14,6 +14,7 @@ import RegisterPage from "@/pages/register";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import PosPage from "@/pages/modules/pos";
+import AccountPage from "@/pages/account";
 import KioskPage from "@/pages/kiosk";
 import GuestPage from "@/pages/guest";
 import KitchenDashboard from "@/pages/dashboards/kitchen";
@@ -461,6 +462,7 @@ function ProtectedPages() {
         <Route path="/recycle-bin">{() => <GuardedRoute path="/recycle-bin" component={RecycleBinPage} />}</Route>
         <Route path="/parking">{() => <GuardedRoute path="/parking" component={ParkingPage} />}</Route>
         <Route path="/advertisements">{() => <GuardedRoute path="/advertisements" component={AdvertisementsModule} />}</Route>
+        <Route path="/account" component={AccountPage} />
         <Route path="/workforce">{() => <Redirect to="/staff" />}</Route>
         <Route path="/performance">{() => <Redirect to="/staff" />}</Route>
         <Route path="/bi-dashboard">{() => <Redirect to="/reports" />}</Route>

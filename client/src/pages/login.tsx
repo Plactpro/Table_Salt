@@ -1,14 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { useLocation } from "wouter";
+import { queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, ShieldCheck, ArrowLeft } from "lucide-react";
+import { ChefHat, Flame, Coffee, Utensils, Eye, EyeOff, ArrowRight, User, Lock, ShieldCheck, ArrowLeft, KeyRound, AlertTriangle } from "lucide-react";
 import { TableSaltLogo } from "@/components/brand/table-salt-logo";
 import { motion } from "framer-motion";
 import { PageTitle } from "@/lib/accessibility";
+import { apiRequest } from "@/lib/queryClient";
 
 const floatingIcons = [
   { Icon: ChefHat, x: "15%", y: "20%", size: 32, delay: 0, duration: 6 },
@@ -27,16 +29,33 @@ const demoAccounts = [
   { role: "Delivery", username: "delivery1", password: "demo123" },
 ];
 
+type LoginTab = "password" | "pin";
+
 export default function LoginPage() {
   const { login } = useAuth();
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<LoginTab>("password");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [totpCode, setTotpCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [needs2FA, setNeeds2FA] = useState(false);
+  const [pinExpired, setPinExpired] = useState(false);
+
+  useEffect(() => {
+    const handleSessionConflict = () => {
+      toast({
+        variant: "destructive",
+        title: "Signed in elsewhere",
+        description: "Your account was signed in on another device. Please log in again.",
+      });
+    };
+    window.addEventListener("session-conflict", handleSessionConflict);
+    return () => window.removeEventListener("session-conflict", handleSessionConflict);
+  }, [toast]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +91,33 @@ export default function LoginPage() {
     }
   };
 
+  const handlePinSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!/^\d{4}$/.test(pin)) {
+      toast({ variant: "destructive", title: "Invalid PIN", description: "PIN must be exactly 4 digits" });
+      return;
+    }
+    setLoading(true);
+    setPinExpired(false);
+    try {
+      await apiRequest("POST", "/api/auth/pin-login", { username, pin }, { timeoutType: "standard" });
+      // PR-001: invalidate /api/auth/me so staleTime:Infinity does not keep the pre-login user cached
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      navigate("/");
+    } catch (err: unknown) {
+      const cause = err instanceof Error ? (err as { cause?: { code?: string; message?: string } }).cause : undefined;
+      const code = cause?.code;
+      const message = cause?.message ?? (err instanceof Error ? err.message.replace(/^\d+:\s*/, "") : "Invalid credentials");
+      if (code === "PIN_EXPIRED") {
+        setPinExpired(true);
+      } else {
+        toast({ variant: "destructive", title: "PIN login failed", description: message });
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleBack = () => {
     setNeeds2FA(false);
     setTotpCode("");
@@ -80,8 +126,15 @@ export default function LoginPage() {
   const fillDemo = (user: string, pass: string) => {
     setUsername(user);
     setPassword(pass);
+    setActiveTab("password");
     setNeeds2FA(false);
     setTotpCode("");
+    setPinExpired(false);
+  };
+
+  const handlePinDigit = (val: string) => {
+    const digits = val.replace(/\D/g, "").slice(0, 4);
+    setPin(digits);
   };
 
   return (
@@ -171,128 +224,240 @@ export default function LoginPage() {
             transition={{ duration: 0.5, delay: 0.4 }}
           >
             <h1 id="login-heading" className="text-2xl font-heading font-bold mb-1" data-testid="text-login-title">Welcome back</h1>
-            <p className="text-muted-foreground mb-8">Sign in to your account to continue</p>
+            <p className="text-muted-foreground mb-6">Sign in to your account to continue</p>
           </motion.div>
 
-          <form onSubmit={handleSubmit} className="space-y-5" role="form" aria-labelledby="login-heading" id="login-form">
-            {!needs2FA ? (
-              <>
+          {/* Login type tabs */}
+          <div className="flex rounded-lg border border-border bg-muted/50 p-1 mb-6 gap-1" role="tablist">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "password"}
+              data-testid="tab-password-login"
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${activeTab === "password" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => { setActiveTab("password"); setPinExpired(false); }}
+            >
+              <Lock className="h-4 w-4" />
+              Password
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "pin"}
+              data-testid="tab-pin-login"
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-md text-sm font-medium transition-all ${activeTab === "pin" ? "bg-background text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              onClick={() => { setActiveTab("pin"); setNeeds2FA(false); setPinExpired(false); }}
+            >
+              <KeyRound className="h-4 w-4" />
+              PIN Login
+            </button>
+          </div>
+
+          {activeTab === "password" ? (
+            <form onSubmit={handleSubmit} className="space-y-5" role="form" aria-labelledby="login-heading" id="login-form">
+              {!needs2FA ? (
+                <>
+                  <motion.div
+                    className="space-y-2"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.5 }}
+                  >
+                    <Label htmlFor="username">Username</Label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      <Input
+                        id="username"
+                        data-testid="input-username"
+                        placeholder="Enter your username"
+                        className="pl-10"
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </motion.div>
+                  <motion.div
+                    className="space-y-2"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.6 }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="password">Password</Label>
+                      <a
+                        href="/forgot-password"
+                        className="text-xs text-primary hover:underline"
+                        data-testid="link-forgot-password"
+                        onClick={(e) => { e.preventDefault(); navigate("/forgot-password"); }}
+                      >
+                        Forgot password?
+                      </a>
+                    </div>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      <Input
+                        id="password"
+                        data-testid="input-password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your password"
+                        className="pl-10 pr-10"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => setShowPassword(!showPassword)}
+                        data-testid="button-toggle-password"
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        tabIndex={-1}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                    </div>
+                  </motion.div>
+                </>
+              ) : (
                 <motion.div
-                  className="space-y-2"
+                  className="space-y-4"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.5 }}
+                  transition={{ duration: 0.4 }}
                 >
-                  <Label htmlFor="username">Username</Label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                    <Input
-                      id="username"
-                      data-testid="input-username"
-                      placeholder="Enter your username"
-                      className="pl-10"
-                      value={username}
-                      onChange={(e) => setUsername(e.target.value)}
-                      required
-                    />
+                  <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                    <ShieldCheck className="h-5 w-5 text-primary flex-shrink-0" />
+                    <div>
+                      <p className="text-sm font-medium">Two-Factor Authentication</p>
+                      <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app or a recovery code</p>
+                    </div>
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="totpCode">Verification Code</Label>
+                    <div className="relative">
+                      <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      <Input
+                        id="totpCode"
+                        data-testid="input-totp-code"
+                        placeholder="Enter 6-digit code"
+                        className="pl-10 text-center text-lg tracking-widest font-mono"
+                        value={totpCode}
+                        onChange={(e) => setTotpCode(e.target.value)}
+                        autoFocus
+                        required
+                      />
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleBack}
+                    className="gap-1"
+                    data-testid="button-2fa-back"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    Back to login
+                  </Button>
                 </motion.div>
-                <motion.div
-                  className="space-y-2"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.6 }}
-                >
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password">Password</Label>
-                    <a
-                      href="/forgot-password"
-                      className="text-xs text-primary hover:underline"
-                      data-testid="link-forgot-password"
-                      onClick={(e) => { e.preventDefault(); navigate("/forgot-password"); }}
-                    >
-                      Forgot password?
-                    </a>
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                    <Input
-                      id="password"
-                      data-testid="input-password"
-                      type={showPassword ? "text" : "password"}
-                      placeholder="Enter your password"
-                      className="pl-10 pr-10"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                    />
-                    <button
-                      type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                      onClick={() => setShowPassword(!showPassword)}
-                      data-testid="button-toggle-password"
-                      aria-label={showPassword ? "Hide password" : "Show password"}
-                      tabIndex={-1}
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-                    </button>
-                  </div>
-                </motion.div>
-              </>
-            ) : (
+              )}
               <motion.div
-                className="space-y-4"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.4 }}
+                transition={{ duration: 0.5, delay: needs2FA ? 0.2 : 0.7 }}
               >
-                <div className="flex items-center gap-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
-                  <ShieldCheck className="h-5 w-5 text-primary flex-shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Two-Factor Authentication</p>
-                    <p className="text-xs text-muted-foreground">Enter the 6-digit code from your authenticator app or a recovery code</p>
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="totpCode">Verification Code</Label>
-                  <div className="relative">
-                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-                    <Input
-                      id="totpCode"
-                      data-testid="input-totp-code"
-                      placeholder="Enter 6-digit code"
-                      className="pl-10 text-center text-lg tracking-widest font-mono"
-                      value={totpCode}
-                      onChange={(e) => setTotpCode(e.target.value)}
-                      autoFocus
-                      required
-                    />
-                  </div>
-                </div>
                 <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleBack}
-                  className="gap-1"
-                  data-testid="button-2fa-back"
+                  type="submit"
+                  className="w-full h-11 text-base gap-2"
+                  disabled={loading}
+                  aria-busy={loading}
+                  data-testid="button-login"
                 >
-                  <ArrowLeft className="h-3.5 w-3.5" />
-                  Back to login
+                  {loading ? (
+                    <motion.div
+                      className="h-5 w-5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
+                      animate={{ rotate: 360 }}
+                      transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                      aria-hidden="true"
+                    />
+                  ) : needs2FA ? (
+                    <>
+                      Verify &amp; Sign In
+                      <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+                    </>
+                  ) : (
+                    <>
+                      Sign In
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </>
+                  )}
                 </Button>
               </motion.div>
-            )}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.5, delay: needs2FA ? 0.2 : 0.7 }}
-            >
+            </form>
+          ) : (
+            /* PIN Login Tab */
+            <form onSubmit={handlePinSubmit} className="space-y-5" role="form" aria-label="PIN Login">
+              {pinExpired && (
+                <div className="flex items-start gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20" data-testid="status-pin-expired">
+                  <AlertTriangle className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-destructive">PIN expired</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Ask your manager to reset your PIN, or{" "}
+                      <button
+                        type="button"
+                        className="text-primary hover:underline font-medium"
+                        data-testid="link-switch-to-password"
+                        onClick={() => { setActiveTab("password"); setPinExpired(false); }}
+                      >
+                        switch to password login
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              )}
+              <div className="space-y-2">
+                <Label htmlFor="pin-username">Username</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    id="pin-username"
+                    data-testid="input-pin-username"
+                    placeholder="Enter your username"
+                    className="pl-10"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="pin-input">4-Digit PIN</Label>
+                <div className="relative">
+                  <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                  <Input
+                    id="pin-input"
+                    data-testid="input-pin"
+                    type="password"
+                    inputMode="numeric"
+                    pattern="\d{4}"
+                    maxLength={4}
+                    placeholder="Enter 4-digit PIN"
+                    className="pl-10 text-center text-2xl tracking-[0.5em] font-mono"
+                    value={pin}
+                    onChange={(e) => handlePinDigit(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">PIN login is available for waiter, cashier, and kitchen staff</p>
+              </div>
               <Button
                 type="submit"
                 className="w-full h-11 text-base gap-2"
                 disabled={loading}
                 aria-busy={loading}
-                data-testid="button-login"
+                data-testid="button-pin-login"
               >
                 {loading ? (
                   <motion.div
@@ -301,20 +466,26 @@ export default function LoginPage() {
                     transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
                     aria-hidden="true"
                   />
-                ) : needs2FA ? (
-                  <>
-                    Verify &amp; Sign In
-                    <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-                  </>
                 ) : (
                   <>
-                    Sign In
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    Sign In with PIN
+                    <KeyRound className="h-4 w-4" aria-hidden="true" />
                   </>
                 )}
               </Button>
-            </motion.div>
-          </form>
+              <p className="text-center text-xs text-muted-foreground">
+                Not a staff account?{" "}
+                <button
+                  type="button"
+                  className="text-primary hover:underline"
+                  data-testid="link-use-password"
+                  onClick={() => setActiveTab("password")}
+                >
+                  Use password login
+                </button>
+              </p>
+            </form>
+          )}
 
           <motion.div
             className="mt-6 text-center text-sm text-muted-foreground"

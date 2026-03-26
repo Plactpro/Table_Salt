@@ -1,18 +1,19 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { requireAuth, requireRole } from "../auth";
+import { requireAuth, requireRole, requireFreshSession } from "../auth";
 import { emitToTenant } from "../realtime";
 import { verifySupervisorOverride } from "./_shared";
 import { db, pool } from "../db";
 import { sql, eq } from "drizzle-orm";
 import { tenants as tenantsTable, type InsertCustomer } from "@shared/schema";
-import { createPaymentLink, getPaymentLink, refundRazorpayPayment } from "../razorpay";
+import { createPaymentLink, getPaymentLink, refundRazorpayPayment, GatewayDownError } from "../razorpay";
 import { routeAndPrint } from "../services/printer-service";
 import { recordAndDistributeTip } from "../services/tip-service";
 import { calculatePackingCharge } from "../services/packing-charge-service";
 import { applyParkingChargeToBill } from "../services/parking-charge-service";
 import { returnResourcesFromTable } from "../services/resource-service";
 import { sendEmail } from "../services/email-service";
+import { auditLog as auditLogImport } from "../audit";
 import { emailBase } from "../templates/email-base";
 
 function getFiscalYear(date: Date): string {
@@ -316,7 +317,12 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/restaurant-bills/:id/payments", requireAuth, async (req, res) => {
+  app.post("/api/restaurant-bills/:id/payments", requireAuth, requireFreshSession, async (req, res) => {
+    // PR-001: Declare idempotency tracking variables outside try so finally can clean up on ALL
+    // failure paths (both exceptions AND early 4xx returns after the key was claimed).
+    const paymentIdemKey = req.headers["x-idempotency-key"] as string | undefined;
+    let idemClaimed = false;
+    let idemResponseStored = false;
     try {
       const user = req.user as any;
       const bill = await storage.getBill(req.params.id);
@@ -331,6 +337,89 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         tipPercentage?: number;
       };
       if (!payments || !payments.length) return res.status(400).json({ message: "payments array required" });
+
+      // PR-001: Idempotency — prevent duplicate payment submissions (e.g. double-tap on Pay button)
+      if (paymentIdemKey) {
+        // Atomic INSERT: only the first caller gets a RETURNING row; concurrent callers get nothing
+        const { rows: claimRows } = await pool.query(
+          `INSERT INTO idempotency_keys (key, tenant_id, endpoint, response_code)
+           VALUES ($1, $2, 'POST /api/payments', 200)
+           ON CONFLICT (key, tenant_id) DO NOTHING
+           RETURNING key`,
+          [paymentIdemKey, user.tenantId]
+        );
+        const wonRace = claimRows.length > 0;
+        if (!wonRace) {
+          // We lost the race — wait briefly then return the winner's stored response
+          await new Promise(r => setTimeout(r, 300));
+          const { rows: replayRows } = await pool.query(
+            `SELECT response_body FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'POST /api/payments' AND created_at > NOW() - INTERVAL '60 seconds'`,
+            [paymentIdemKey, user.tenantId]
+          );
+          if (replayRows[0]?.response_body) {
+            return res.json(replayRows[0].response_body);
+          }
+          // Winner still processing — return 409 so client can retry
+          return res.status(409).json({ code: "IDEMPOTENCY_CONFLICT", message: "Duplicate payment request in progress. Please retry in a moment." });
+        }
+        idemClaimed = true; // won the race; finally block will clean up if we fail to store response
+      }
+
+      // PR-001: Payment field validation — re-query live bill and validate all submitted amounts
+      const { auditLog: auditLogFn } = await import("../audit");
+      const liveBillTotal = Number(bill.totalAmount);
+      const clientTips = Number(tips ?? 0);
+      if (clientTips < 0) {
+        auditLogFn({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "payment_validation_failed", entityType: "bill", entityId: bill.id, metadata: { reason: "negative_tip", tip: clientTips }, req }).catch(() => {});
+        return res.status(400).json({ message: "Tip amount cannot be negative" });
+      }
+      const clientDiscount = Number(req.body.discountAmount ?? bill.discountAmount ?? 0);
+      const clientSubtotal = Number(bill.subtotal ?? 0);
+      if (clientDiscount > clientSubtotal + 0.01) {
+        auditLogFn({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "payment_validation_failed", entityType: "bill", entityId: bill.id, metadata: { reason: "discount_exceeds_subtotal", discountAmount: clientDiscount, subtotal: clientSubtotal }, req }).catch(() => {});
+        return res.status(400).json({ message: `Discount amount (${clientDiscount.toFixed(2)}) exceeds bill subtotal (${clientSubtotal.toFixed(2)})` });
+      }
+      const paymentSum = payments.reduce((s, p) => s + Number(p.amount), 0);
+      // Validate that submitted payment total covers the live bill total (single and split)
+      if (Math.abs(paymentSum - liveBillTotal) > 1.01) {
+        auditLogFn({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "payment_validation_failed", entityType: "bill", entityId: bill.id, metadata: { reason: "payment_sum_mismatch", paymentSum, billTotal: liveBillTotal }, req }).catch(() => {});
+        return res.status(400).json({ message: `Payment total (${paymentSum.toFixed(2)}) does not match bill total (${liveBillTotal.toFixed(2)})` });
+      }
+
+      // PR-001: Tax-rate sanity check — verify stored taxAmount is consistent with outlet-configured rate
+      // This guards against tampered bills where the tax was manually reduced after creation
+      const billTaxAmount = Number(bill.taxAmount ?? 0);
+      const billSubtotal = Number(bill.subtotal ?? 0);
+      if (billSubtotal > 0.01 && billTaxAmount > 0) {
+        const tenant = await storage.getTenant(user.tenantId);
+        const configuredTaxRate = Number(tenant?.taxRate ?? 0);
+        if (configuredTaxRate > 0) {
+          const expectedTax = Math.round(billSubtotal * configuredTaxRate) / 100;
+          const taxDeviation = Math.abs(billTaxAmount - expectedTax);
+          const toleranceAmt = 1.0; // ±1 currency unit to absorb per-line rounding
+          if (taxDeviation > toleranceAmt) {
+            auditLogFn({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "payment_validation_failed", entityType: "bill", entityId: bill.id, metadata: { reason: "tax_rate_mismatch", storedTax: billTaxAmount, expectedTax, configuredTaxRate, subtotal: billSubtotal }, req }).catch(() => {});
+            return res.status(400).json({ message: `Bill tax amount (${billTaxAmount.toFixed(2)}) does not match expected tax at configured rate ${configuredTaxRate}% (expected ~${expectedTax.toFixed(2)})` });
+          }
+        }
+      }
+
+      // PR-001: Strict field-integrity check — if client submits bill-level fields, they must
+      // match the live bill exactly (within ±1 currency unit tolerance). This prevents tampered
+      // bill payloads from slipping through even when individual checks passed above.
+      const fieldsToCheck: Array<{ field: string; submitted: number | undefined; live: number }> = [
+        { field: "totalAmount",   submitted: req.body.totalAmount   !== undefined ? Number(req.body.totalAmount)   : undefined, live: Number(bill.totalAmount ?? 0) },
+        { field: "taxAmount",     submitted: req.body.taxAmount     !== undefined ? Number(req.body.taxAmount)     : undefined, live: Number(bill.taxAmount ?? 0) },
+        { field: "discountAmount",submitted: req.body.discountAmount !== undefined ? Number(req.body.discountAmount): undefined, live: Number(bill.discountAmount ?? 0) },
+        { field: "serviceCharge", submitted: req.body.serviceCharge !== undefined ? Number(req.body.serviceCharge) : undefined, live: Number(bill.serviceCharge ?? 0) },
+      ];
+      for (const { field, submitted, live } of fieldsToCheck) {
+        if (submitted !== undefined && Math.abs(submitted - live) > 1.01) {
+          const { auditLog: auditLogFn2 } = await import("../audit");
+          auditLogFn2({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "payment_validation_failed", entityType: "bill", entityId: bill.id, metadata: { reason: "field_integrity_mismatch", field, submitted, live }, req }).catch(() => {});
+          return res.status(400).json({ message: `Submitted ${field} (${submitted}) does not match bill value (${live.toFixed(2)}). Reload the bill and try again.` });
+        }
+      }
 
       const loyaltyCustomerId = req.body.loyaltyCustomerId as string | undefined;
       const loyaltyPointsRedeemed = Number(req.body.loyaltyPointsRedeemed ?? 0);
@@ -494,11 +583,50 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         })();
       }
 
-      res.json({ bill: updatedBill, payments: createdPayments });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      const paymentResult = { bill: updatedBill, payments: createdPayments };
+      // PR-001: Mark success BEFORE fire-and-forget so finally cleanup knows not to delete the key
+      idemResponseStored = true;
+      if (paymentIdemKey && idemClaimed) {
+        pool.query(
+          `UPDATE idempotency_keys SET response_body = $1 WHERE key = $2 AND tenant_id = $3 AND endpoint = 'POST /api/payments'`,
+          [JSON.stringify(paymentResult), paymentIdemKey, user.tenantId]
+        ).catch(() => {});
+      }
+      res.json(paymentResult);
+    } catch (err: any) {
+      // PR-001: Classify gateway outages — return 503 GATEWAY_DOWN instead of generic 500
+      const isGatewayErr = err?.message && (
+        /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|network|gateway|razorpay|stripe/i.test(err.message)
+        || err?.statusCode === 502 || err?.statusCode === 503
+      );
+      if (isGatewayErr) {
+        const failUser = (req as any).user;
+        if (failUser) {
+          const { auditLog: auditLogFn } = await import("../audit").catch(() => ({ auditLog: null }));
+          if (auditLogFn) {
+            auditLogFn({ tenantId: failUser.tenantId, userId: failUser.id, userName: failUser.name, action: "GATEWAY_FAILURE", entityType: "bill", entityId: req.params.id, metadata: { operation: "payment_submission", error: err.message }, req }).catch(() => {});
+          }
+        }
+        return res.status(503).json({ code: "GATEWAY_DOWN", message: "Payment gateway is unreachable. Use manual/cash payment or try again shortly." });
+      }
+      res.status(500).json({ message: err.message });
+    } finally {
+      // PR-001: Idempotency lifecycle — delete key on ALL failure paths (exceptions, early 4xx,
+      // and gateway-down) so retries are never permanently stuck. Only runs if key was claimed
+      // but response_body was never stored (i.e., any non-success terminal state).
+      if (paymentIdemKey && idemClaimed && !idemResponseStored) {
+        const tenantId = (req as any).user?.tenantId;
+        if (tenantId) {
+          pool.query(
+            `DELETE FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'POST /api/payments' AND response_body IS NULL`,
+            [paymentIdemKey, tenantId]
+          ).catch(() => {});
+        }
+      }
+    }
   });
 
-  app.put("/api/restaurant-bills/:id/void", requireRole("owner", "manager"), async (req, res) => {
+  app.put("/api/restaurant-bills/:id/void", requireRole("owner", "manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const bill = await storage.getBill(req.params.id);
@@ -567,7 +695,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/restaurant-bills/:id/refund", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/restaurant-bills/:id/refund", requireRole("owner", "manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const bill = await storage.getBill(req.params.id);
@@ -576,7 +704,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (!["paid", "partially_refunded"].includes(bill.paymentStatus || "")) {
         return res.status(400).json({ message: "Bill is not in a refundable state" });
       }
-      const { amount, reason, paymentMethod, refundedItemIds } = req.body;
+      const { amount, reason, paymentMethod, refundedItemIds, originalPaymentId } = req.body;
       if (!amount || !reason) return res.status(400).json({ message: "amount and reason required" });
       if (Number(amount) <= 0) return res.status(400).json({ message: "Refund amount must be greater than zero" });
 
@@ -588,9 +716,33 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         return res.status(400).json({ message: `Refund amount (${Number(amount).toFixed(2)}) exceeds net paid balance (${netPaid.toFixed(2)})` });
       }
 
+      // PR-001: Per-payment cap — refund amount must not exceed the referenced original payment record.
+      // If client provides originalPaymentId, validate against that specific record.
+      // Otherwise fall back to finding any Razorpay payment on the bill.
+      let razorpayOriginalPayment = originalPaymentId
+        ? allPayments.find(p => p.id === originalPaymentId && !p.isRefund)
+        : allPayments.find(p => !p.isRefund && p.razorpayPaymentId);
+
+      if (originalPaymentId && !razorpayOriginalPayment) {
+        return res.status(400).json({ message: "Referenced original payment record not found or is already a refund" });
+      }
+
+      if (razorpayOriginalPayment) {
+        const originalPaymentAmount = Math.abs(Number(razorpayOriginalPayment.amount));
+        // PR-001: Scope prior refunds to this specific payment record via originalPaymentId FK.
+        // This works for ALL payment methods (Razorpay, cash, UPI, card, etc.) because every
+        // refund now stores originalPaymentId pointing to the payment record it reverses.
+        const alreadyRefunded = allPayments
+          .filter(p => p.isRefund && p.originalPaymentId === razorpayOriginalPayment.id)
+          .reduce((s, p) => s + Math.abs(Number(p.amount)), 0);
+        const maxRefundable = originalPaymentAmount - alreadyRefunded;
+        if (Number(amount) > maxRefundable + 0.01) {
+          return res.status(400).json({ message: `Refund amount (${Number(amount).toFixed(2)}) exceeds the original payment amount available for refund (${maxRefundable.toFixed(2)})` });
+        }
+      }
+
       // Mandatory Razorpay gateway reversal if original payment used Razorpay
       let razorpayRefundId: string | null = null;
-      const razorpayOriginalPayment = allPayments.find(p => !p.isRefund && p.razorpayPaymentId);
       if (razorpayOriginalPayment?.razorpayPaymentId) {
         const tenant = await storage.getTenant(user.tenantId);
         if (!tenant?.razorpayKeyId || !tenant?.razorpayKeySecret) {
@@ -607,6 +759,10 @@ export function registerRestaurantBillingRoutes(app: Express): void {
           );
           razorpayRefundId = rzpRefund.id;
         } catch (rzpErr: unknown) {
+          if (rzpErr instanceof GatewayDownError) {
+            auditLogImport({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "GATEWAY_FAILURE", entityType: "bill", entityId: bill.id, metadata: { operation: "refund", amount: Number(amount), error: rzpErr.message }, req }).catch(() => {});
+            return res.status(503).json({ code: "GATEWAY_DOWN", message: rzpErr.message });
+          }
           const msg = rzpErr instanceof Error ? rzpErr.message : "Unknown Razorpay error";
           return res.status(502).json({ message: `Razorpay refund failed: ${msg}` });
         }
@@ -626,6 +782,10 @@ export function registerRestaurantBillingRoutes(app: Express): void {
           ? `${reason} | items:${JSON.stringify(refundedItemIds)}`
           : reason,
         collectedBy: user.id,
+        // PR-001: Explicit link to original payment record for per-payment cap scoping.
+        // Works for ALL payment methods (Razorpay, cash, UPI, card, etc.).
+        ...(razorpayOriginalPayment ? { originalPaymentId: razorpayOriginalPayment.id } : {}),
+        ...(razorpayOriginalPayment?.razorpayPaymentId ? { razorpayPaymentId: razorpayOriginalPayment.razorpayPaymentId } : {}),
         ...(razorpayRefundId ? { razorpayRefundId } : {}),
       });
 
@@ -740,9 +900,32 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/restaurant-bills/:id/payment-request", requireAuth, async (req, res) => {
+  app.post("/api/restaurant-bills/:id/payment-request", requireAuth, requireFreshSession, async (req, res) => {
+    // PR-001: Idempotency for payment-request — prevent duplicate payment link creation
+    const reqIdemKey = req.headers["x-idempotency-key"] as string | undefined;
+    let reqIdemClaimed = false;
+    let reqIdemStored = false;
     try {
       const user = req.user as any;
+      // Idempotency claim before any processing
+      if (reqIdemKey) {
+        const { rows: claimRows } = await pool.query(
+          `INSERT INTO idempotency_keys (key, tenant_id, endpoint, response_code)
+           VALUES ($1, $2, 'POST /api/payment-request', 200)
+           ON CONFLICT (key, tenant_id) DO NOTHING
+           RETURNING key`,
+          [reqIdemKey, user.tenantId]
+        );
+        if (claimRows.length === 0) {
+          const { rows: replayRows } = await pool.query(
+            `SELECT response_body FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'POST /api/payment-request' AND created_at > NOW() - INTERVAL '60 seconds'`,
+            [reqIdemKey, user.tenantId]
+          );
+          if (replayRows[0]?.response_body) return res.json(replayRows[0].response_body);
+          return res.status(202).json({ code: "PROCESSING", message: "Payment request in progress" });
+        }
+        reqIdemClaimed = true;
+      }
       const bill = await storage.getBill(req.params.id);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
@@ -781,8 +964,64 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       await storage.updateBill(bill.id, user.tenantId, { razorpayOrderId: link.id });
 
-      return res.json({ paymentLinkId: link.id, shortUrl: link.short_url, status: link.status });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+      const reqResult = { paymentLinkId: link.id, shortUrl: link.short_url, status: link.status };
+      reqIdemStored = true;
+      if (reqIdemKey && reqIdemClaimed) {
+        pool.query(
+          `UPDATE idempotency_keys SET response_body = $1 WHERE key = $2 AND tenant_id = $3 AND endpoint = 'POST /api/payment-request'`,
+          [JSON.stringify(reqResult), reqIdemKey, user.tenantId]
+        ).catch(() => {});
+      }
+      return res.json(reqResult);
+    } catch (err: any) {
+      if (err instanceof GatewayDownError) {
+        const errUser = req.user as any;
+        auditLogImport({ tenantId: errUser?.tenantId, userId: errUser?.id, userName: errUser?.name, action: "GATEWAY_FAILURE", entityType: "bill", entityId: req.params.id, metadata: { operation: "create_payment_link", error: err.message }, req }).catch(() => {});
+        return res.status(503).json({ code: "GATEWAY_DOWN", message: err.message });
+      }
+      res.status(500).json({ message: err.message });
+    } finally {
+      if (reqIdemKey && reqIdemClaimed && !reqIdemStored) {
+        const tenantId = (req as any).user?.tenantId;
+        if (tenantId) {
+          pool.query(
+            `DELETE FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'POST /api/payment-request' AND response_body IS NULL`,
+            [reqIdemKey, tenantId]
+          ).catch(() => {});
+        }
+      }
+    }
+  });
+
+  // PR-001: Manual gateway-pending payment — records a payment with gatewayStatus='gateway_down' when Razorpay is unreachable
+  app.post("/api/restaurant-bills/:id/payments/manual-pending", requireRole("owner", "manager", "cashier", "waiter", "supervisor", "outlet_manager"), requireFreshSession, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const bill = await storage.getBill(req.params.id);
+      if (!bill) return res.status(404).json({ message: "Bill not found" });
+      if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
+      if (bill.paymentStatus === "paid") return res.status(400).json({ message: "Bill already paid" });
+      const { amount, paymentMethod, referenceNo } = req.body;
+      if (!amount || Number(amount) <= 0) return res.status(400).json({ message: "Valid amount required" });
+      const liveBillTotal = Number(bill.totalAmount);
+      if (Math.abs(Number(amount) - liveBillTotal) > 1.01) {
+        return res.status(400).json({ message: `Pending payment amount (${Number(amount).toFixed(2)}) does not match bill total (${liveBillTotal.toFixed(2)})` });
+      }
+      const payment = await storage.createBillPayment({
+        tenantId: user.tenantId,
+        billId: bill.id,
+        paymentMethod: paymentMethod || "manual_pending",
+        amount: String(Number(amount).toFixed(2)),
+        collectedBy: user.id,
+        referenceNo: referenceNo || undefined,
+        gatewayStatus: "gateway_down",
+      });
+      await storage.updateBill(bill.id, user.tenantId, { paymentStatus: "pending_gateway_reconciliation" });
+      auditLogImport({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "GATEWAY_FAILURE", entityType: "bill", entityId: bill.id, metadata: { amount: Number(amount), paymentMethod: paymentMethod || "manual_pending", referenceNo }, req }).catch(() => {});
+      res.json({ ...payment, billPaymentStatus: "pending_gateway_reconciliation" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.get("/api/restaurant-bills/:id/payment-status", requireAuth, async (req, res) => {
@@ -821,7 +1060,10 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       }
 
       return res.json({ status: link.status === "cancelled" || link.status === "expired" ? "cancelled" : "pending" });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+    } catch (err: any) {
+      if (err instanceof GatewayDownError) return res.status(503).json({ code: "GATEWAY_DOWN", message: err.message });
+      res.status(500).json({ message: err.message });
+    }
   });
 
   // Email receipt to customer

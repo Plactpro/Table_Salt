@@ -239,3 +239,33 @@ export function requireSuperAdmin(req: any, res: any, next: any) {
   }
   next();
 }
+
+/**
+ * PR-001: Concurrent session detection middleware.
+ * Only applied to sensitive routes (payments, voids, refunds, role changes, settings, admin).
+ * Checks that the session's stored token matches the user's current DB token.
+ * If tokens mismatch (another login occurred), returns 401 SESSION_CONFLICT.
+ */
+export async function requireFreshSession(req: any, res: any, next: any): Promise<void> {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: "Not authenticated" });
+  }
+  try {
+    const sessionToken = (req.session as Record<string, unknown>).sessionToken as string | undefined;
+    // If no session token stored (legacy session), allow through — best effort for pre-PR-001 sessions
+    if (!sessionToken) return next();
+
+    const { rows } = await pool.query(
+      `SELECT session_token FROM users WHERE id = $1 LIMIT 1`,
+      [req.user.id]
+    );
+    const dbToken = rows[0]?.session_token;
+    if (dbToken && sessionToken !== dbToken) {
+      return res.status(401).json({ code: "SESSION_CONFLICT", message: "Your account was signed in elsewhere. Please log in again." });
+    }
+    return next();
+  } catch (err) {
+    console.error("[requireFreshSession] Token verification error — failing closed:", err);
+    return res.status(500).json({ message: "Session verification failed. Please log in again." });
+  }
+}

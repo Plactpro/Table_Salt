@@ -165,6 +165,27 @@ export function registerCoordinationRoutes(app: Express): void {
       const { status } = req.body;
       if (!status) return res.status(400).json({ message: "Status required" });
 
+      // PR-001: Idempotency — prevent duplicate KOT/coordination status updates (e.g. double-tap)
+      const coordIdemKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (coordIdemKey) {
+        const { rows: claimRows } = await pool.query(
+          `INSERT INTO idempotency_keys (key, tenant_id, endpoint, response_code)
+           VALUES ($1, $2, 'PATCH /api/coordination-status', 200)
+           ON CONFLICT (key, tenant_id) DO NOTHING
+           RETURNING key`,
+          [coordIdemKey, user.tenantId]
+        );
+        if (claimRows.length === 0) {
+          // Duplicate — return the winner's stored response if available
+          const { rows: replayRows } = await pool.query(
+            `SELECT response_body FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'PATCH /api/coordination-status' AND created_at > NOW() - INTERVAL '60 seconds'`,
+            [coordIdemKey, user.tenantId]
+          );
+          if (replayRows[0]?.response_body) return res.json(replayRows[0].response_body);
+          return res.status(202).json({ code: "PROCESSING", message: "Status update in progress" });
+        }
+      }
+
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
 
@@ -176,8 +197,22 @@ export function registerCoordinationRoutes(app: Express): void {
         emitToTenant(user.tenantId, "coordination:item_ready", { orderId: order.id });
       }
 
-      res.json({ success: true });
+      const coordResponse = { success: true };
+      if (coordIdemKey) {
+        pool.query(
+          `UPDATE idempotency_keys SET response_body = $1 WHERE key = $2 AND tenant_id = $3 AND endpoint = 'PATCH /api/coordination-status'`,
+          [JSON.stringify(coordResponse), coordIdemKey, user.tenantId]
+        ).catch(() => {});
+      }
+      res.json(coordResponse);
     } catch (err: any) {
+      const coordIdemKey = req.headers["x-idempotency-key"] as string | undefined;
+      if (coordIdemKey) {
+        pool.query(
+          `DELETE FROM idempotency_keys WHERE key = $1 AND tenant_id = $2 AND endpoint = 'PATCH /api/coordination-status' AND response_body IS NULL`,
+          [coordIdemKey, (req.user as any)?.tenantId]
+        ).catch(() => {});
+      }
       res.status(500).json({ message: err.message });
     }
   });

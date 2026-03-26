@@ -156,6 +156,8 @@ class SyncManager implements SyncService, ConfigCache {
         const csrfHeaders: Record<string, string> = { "Content-Type": "application/json" };
         const csrfTok = getCsrfToken();
         if (csrfTok) csrfHeaders["x-csrf-token"] = csrfTok;
+        // PR-001: idempotency key for order creation — same as clientOrderId so replays are deterministic
+        csrfHeaders["x-idempotency-key"] = orderId;
         const res = await fetch("/api/orders", {
           method: "POST",
           headers: csrfHeaders,

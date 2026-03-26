@@ -5,7 +5,7 @@ import { db } from "../db";
 import { pool } from "../db";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../middleware";
-import { requireSuperAdmin } from "../auth";
+import { requireSuperAdmin, requireFreshSession } from "../auth";
 import { auditLogFromReq } from "../audit";
 import { securityAlerts } from "@shared/schema";
 import { isValidCidr } from "../security";
@@ -51,7 +51,7 @@ export function registerComplianceRoutes(app: Express): void {
     } catch (err: any) { res.json({ count: 0 }); }
   });
 
-  app.patch("/api/security-alerts/:id/acknowledge", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), async (req, res) => {
+  app.patch("/api/security-alerts/:id/acknowledge", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const [alert] = await db.select().from(securityAlerts).where(and(eq(securityAlerts.id, req.params.id), eq(securityAlerts.tenantId, user.tenantId)));
@@ -65,7 +65,7 @@ export function registerComplianceRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/security-alerts/acknowledge-all", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), async (req, res) => {
+  app.patch("/api/security-alerts/acknowledge-all", requireAuth, requireRole("owner", "hq_admin", "franchise_owner"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       await db.update(securityAlerts)
@@ -387,7 +387,7 @@ export function registerComplianceRoutes(app: Express): void {
 
   // ─── Feature 1: Breach Incidents ────────────────────────────────────────────
 
-  app.post("/api/admin/breach-incidents", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/breach-incidents", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const { title, description, severity, tenantId, affectedRecords, affectedDataTypes, rootCause, requiresDpaNotification, notificationRationale, detectedAt: detectedAtRaw } = req.body;
@@ -458,7 +458,7 @@ export function registerComplianceRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.patch("/api/admin/breach-incidents/:id", requireSuperAdmin, async (req, res) => {
+  app.patch("/api/admin/breach-incidents/:id", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const { rows: [existing] } = await pool.query(`SELECT * FROM breach_incidents WHERE id = $1`, [req.params.id]);
       if (!existing) return res.status(404).json({ message: "Incident not found" });
@@ -938,7 +938,7 @@ export function registerComplianceRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/admin/pci/saq-log", requireSuperAdmin, async (req, res) => {
+  app.post("/api/admin/pci/saq-log", requireSuperAdmin, requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
       const { saqType, completionDate, validUntil, scopeDescription, qsaName, paymentGateways, notes, documentReference } = req.body;
@@ -1007,7 +1007,7 @@ export function registerComplianceRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/gdpr/lift-restriction/:userId", requireAuth, requireRole("owner", "hq_admin"), async (req, res) => {
+  app.post("/api/gdpr/lift-restriction/:userId", requireAuth, requireRole("owner", "hq_admin"), requireFreshSession, async (req, res) => {
     try {
       const admin = req.user as any;
       const { userId } = req.params;

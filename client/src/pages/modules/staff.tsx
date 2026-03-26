@@ -1,4 +1,5 @@
 import { PageTitle } from "@/lib/accessibility";
+import { pinValidationError } from "@shared/pin-utils";
 import { useOutletTimezone, formatLocal, formatLocalDate, formatLocalTime } from "@/hooks/use-outlet-timezone";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -19,7 +20,7 @@ import {
   Plus, UserCog, Search, Edit, ChevronLeft, ChevronRight,
   Crown, ShieldCheck, ConciergeBell, ChefHat, Calculator, Users,
   Calendar, Clock, CheckCircle, XCircle, AlertCircle, Trash2,
-  LayoutGrid, CalendarDays, ClipboardCheck, LogIn, LogOut, Timer, Lock,
+  LayoutGrid, CalendarDays, ClipboardCheck, LogIn, LogOut, Timer, Lock, KeyRound, Loader2,
 } from "lucide-react";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant", "delivery_agent", "cleaning_staff"] as const;
@@ -120,6 +121,50 @@ export default function StaffPage() {
     userId: "", date: "", startTime: "09:00", endTime: "17:00", role: "", outletId: "",
   });
 
+  // PR-001: PIN management state
+  const PIN_ELIGIBLE_ROLES = ["waiter", "cashier", "kitchen", "delivery_agent", "cleaning_staff"];
+  const [pinDialogStaff, setPinDialogStaff] = useState<StaffMember | null>(null);
+  const [pinValue, setPinValue] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [pinError, setPinError] = useState<string | null>(null);
+
+  const setPinMutation = useMutation({
+    mutationFn: async ({ staffId, pin }: { staffId: string; pin: string }) => {
+      const res = await apiRequest("POST", `/api/auth/staff/${staffId}/set-pin`, { pin });
+      if (!res.ok) { const d = await res.json(); throw new Error(d.message || "Failed to set PIN"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "PIN set successfully", description: `${pinDialogStaff?.name} can now log in with their PIN.` });
+      setPinDialogStaff(null);
+      setPinValue(""); setPinConfirm(""); setPinError(null);
+    },
+    onError: (err: Error) => { setPinError(err.message); },
+  });
+
+  const clearPinMutation = useMutation({
+    mutationFn: async (staffId: string) => {
+      const res = await apiRequest("DELETE", `/api/auth/staff/${staffId}/pin`);
+      if (!res.ok) { const d = await res.json(); throw new Error(d.message || "Failed to clear PIN"); }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "PIN cleared", description: `${pinDialogStaff?.name}'s PIN login has been disabled.` });
+      setPinDialogStaff(null);
+      setPinValue(""); setPinConfirm(""); setPinError(null);
+    },
+    onError: (err: Error) => { toast({ title: "Failed to clear PIN", description: err.message, variant: "destructive" }); },
+  });
+
+  const handleSetPin = () => {
+    if (!pinDialogStaff) return;
+    const validationErr = pinValidationError(pinValue, pinDialogStaff.id?.slice(-4));
+    if (validationErr) { setPinError(validationErr); return; }
+    if (pinValue !== pinConfirm) { setPinError("PINs do not match"); return; }
+    setPinError(null);
+    setPinMutation.mutate({ staffId: pinDialogStaff.id, pin: pinValue });
+  };
+
   const { data: staffList = [], isLoading } = useQuery<StaffMember[]>({
     queryKey: ["/api/users"],
   });
@@ -154,10 +199,11 @@ export default function StaffPage() {
   const { data: attendanceLogs = [] } = useQuery<any[]>({
     queryKey: ["/api/attendance", attendanceDateFrom, attendanceDateTo],
     queryFn: async () => {
+      // PR-001: Use apiRequest (not raw fetch) to get operation-aware timeout + api-timeout event dispatch
       const params = new URLSearchParams();
       if (attendanceDateFrom) params.set("from", attendanceDateFrom);
       if (attendanceDateTo) { const to = new Date(attendanceDateTo); to.setDate(to.getDate() + 1); params.set("to", to.toISOString().split("T")[0]); }
-      const res = await fetch(`/api/attendance?${params}`, { credentials: "include" });
+      const res = await apiRequest("GET", `/api/attendance?${params}`);
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     },
@@ -167,10 +213,11 @@ export default function StaffPage() {
   const { data: attendanceSummary = [] } = useQuery<any[]>({
     queryKey: ["/api/attendance/summary", attendanceDateFrom, attendanceDateTo],
     queryFn: async () => {
+      // PR-001: Use apiRequest (not raw fetch) to get operation-aware timeout + api-timeout event dispatch
       const params = new URLSearchParams();
       if (attendanceDateFrom) params.set("from", attendanceDateFrom);
       if (attendanceDateTo) { const to = new Date(attendanceDateTo); to.setDate(to.getDate() + 1); params.set("to", to.toISOString().split("T")[0]); }
-      const res = await fetch(`/api/attendance/summary?${params}`, { credentials: "include" });
+      const res = await apiRequest("GET", `/api/attendance/summary?${params}`);
       const data = await res.json();
       return Array.isArray(data) ? data : [];
     },
@@ -545,9 +592,23 @@ export default function StaffPage() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Button variant="ghost" size="sm" onClick={() => openEdit(staff)} data-testid={`button-edit-staff-${staff.id}`} className="hover:scale-110 transition-transform">
-                              <Edit className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button variant="ghost" size="sm" onClick={() => openEdit(staff)} data-testid={`button-edit-staff-${staff.id}`} className="hover:scale-110 transition-transform">
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              {PIN_ELIGIBLE_ROLES.includes(staff.role) && (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => { setPinDialogStaff(staff); setPinValue(""); setPinConfirm(""); setPinError(null); }}
+                                  data-testid={`button-manage-pin-${staff.id}`}
+                                  className="hover:scale-110 transition-transform text-muted-foreground hover:text-primary"
+                                  title="Manage PIN login"
+                                >
+                                  <KeyRound className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
                           </TableCell>
                         </motion.tr>
                       );
@@ -1031,6 +1092,76 @@ export default function StaffPage() {
         onStay={() => setConfirmLeave(false)}
         onLeave={() => { setConfirmLeave(false); setFormDirty(false); setDialogOpen(false); }}
       />
+
+      {/* PR-001: PIN management dialog */}
+      <Dialog open={!!pinDialogStaff} onOpenChange={(open) => { if (!open) { setPinDialogStaff(null); setPinValue(""); setPinConfirm(""); setPinError(null); } }}>
+        <DialogContent data-testid="dialog-pin-management">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <KeyRound className="h-5 w-5 text-primary" />
+              PIN Login — {pinDialogStaff?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Set a 4-digit PIN so this staff member can log in quickly on shared devices. PINs expire after 90 days.
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="pin-new">New PIN <span className="text-red-500">*</span></Label>
+              <Input
+                id="pin-new"
+                type="password"
+                inputMode="numeric"
+                pattern="\d{4}"
+                maxLength={4}
+                placeholder="4 digits"
+                value={pinValue}
+                onChange={(e) => { setPinValue(e.target.value.replace(/\D/g, "").slice(0, 4)); setPinError(null); }}
+                data-testid="input-pin-new"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="pin-confirm">Confirm PIN <span className="text-red-500">*</span></Label>
+              <Input
+                id="pin-confirm"
+                type="password"
+                inputMode="numeric"
+                pattern="\d{4}"
+                maxLength={4}
+                placeholder="Repeat PIN"
+                value={pinConfirm}
+                onChange={(e) => { setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4)); setPinError(null); }}
+                data-testid="input-pin-confirm"
+              />
+            </div>
+            {pinError && (
+              <p className="text-sm text-red-600 flex items-center gap-1" data-testid="text-pin-error">
+                <AlertCircle className="h-4 w-4 shrink-0" /> {pinError}
+              </p>
+            )}
+          </div>
+          <DialogFooter className="flex gap-2 flex-col sm:flex-row">
+            <Button
+              variant="outline"
+              className="text-red-600 hover:text-red-700 hover:bg-red-50 border-red-200"
+              onClick={() => pinDialogStaff && clearPinMutation.mutate(pinDialogStaff.id)}
+              disabled={clearPinMutation.isPending || setPinMutation.isPending}
+              data-testid="button-clear-pin"
+            >
+              {clearPinMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
+              Clear PIN
+            </Button>
+            <Button
+              onClick={handleSetPin}
+              disabled={setPinMutation.isPending || !pinValue || !pinConfirm}
+              data-testid="button-save-pin"
+            >
+              {setPinMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Lock className="h-4 w-4 mr-1" />}
+              Set PIN
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </motion.div>
   );
 }

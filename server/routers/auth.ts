@@ -3,16 +3,18 @@ import passport from "passport";
 import { TOTP, Secret } from "otpauth";
 import QRCode from "qrcode";
 import { randomBytes, createHash } from "crypto";
+import bcrypt from "bcrypt";
 import { storage } from "../storage";
 import { db, pool } from "../db";
 import { eq } from "drizzle-orm";
-import { requireAuth, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY } from "../auth";
+import { requireAuth, requireFreshSession, hashPassword, comparePasswords, validatePasswordPolicy, checkPasswordHistory, DEFAULT_PASSWORD_POLICY, isAccountLocked, recordFailedLogin, clearLoginFailures } from "../auth";
 import { sendWelcomeEmail } from "../services/email-service";
 import { users } from "@shared/schema";
 import { auditLog, auditLogFromReq } from "../audit";
 import { checkFailedLoginAlert, checkNewIpLoginAlert, alertPasswordChanged, alert2FADisabled, checkMultiAccountSameIp, checkCrossAccountFailedLogins } from "../security-alerts";
 import { trialEndsAtDate, isStripeConfigured, getUncachableStripeClient } from "../stripe";
 import { sendPasswordResetEmail } from "../email";
+import { isWeakPin, pinValidationError } from "@shared/pin-utils";
 
 export function registerAuthRoutes(app: Express): void {
   app.post("/api/auth/register", async (req, res) => {
@@ -166,6 +168,11 @@ export function registerAuthRoutes(app: Express): void {
         const sessionData = req.session as Record<string, unknown>;
         sessionData.lastActivity = Date.now();
         sessionData.idleTimeoutMinutes = Number(mc.idleTimeoutMinutes ?? 30);
+
+        // PR-001: Generate and store session token for concurrent session detection
+        const newSessionToken = randomBytes(18).toString("hex");
+        sessionData.sessionToken = newSessionToken;
+        await pool.query(`UPDATE users SET session_token = $1 WHERE id = $2`, [newSessionToken, user.id]).catch(() => {});
 
         const maxSessions = Number(mc.maxConcurrentSessions ?? 5);
         try {
@@ -491,5 +498,282 @@ export function registerAuthRoutes(app: Express): void {
     const user = req.user as any;
     const freshUser = await storage.getUser(user.id);
     res.json({ enabled: !!(freshUser?.totpEnabled) });
+  });
+
+  // PR-001: Session logout-all endpoint (rotate session_token to invalidate all other sessions)
+  app.post("/api/auth/sessions/logout-all", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const newToken = randomBytes(18).toString("hex");
+      await pool.query(`UPDATE users SET session_token = $1 WHERE id = $2`, [newToken, user.id]);
+      // PR-001 fix: also update the current session's token so requireFreshSession continues to work
+      (req.session as Record<string, unknown>).sessionToken = newToken;
+      await pool.query(
+        `DELETE FROM session WHERE user_id = $1 AND sid != $2`,
+        [user.id, req.sessionID]
+      );
+      auditLogFromReq(req, { action: "logout_all_sessions", entityType: "user", entityId: user.id, entityName: user.name });
+      return res.json({ message: "All other sessions have been signed out" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-001: PIN login endpoint
+  app.post("/api/auth/pin-login", async (req, res) => {
+    try {
+      const { username, pin } = req.body;
+      if (!username || !pin) {
+        return res.status(400).json({ message: "Username and PIN are required" });
+      }
+      if (!/^\d{4}$/.test(pin)) {
+        return res.status(400).json({ message: "PIN must be 4 digits" });
+      }
+
+      const pinKey = `pin:${username.trim().toLowerCase()}`;
+      if (isAccountLocked(pinKey)) {
+        return res.status(423).json({ message: "Account temporarily locked due to too many failed PIN attempts. Try again in 15 minutes." });
+      }
+
+      const user = await storage.getUserByUsername(username);
+      if (!user) {
+        recordFailedLogin(pinKey);
+        return res.status(401).json({ message: "Invalid credentials" });
+      }
+      if (user.active === false) {
+        return res.status(401).json({ message: "Account is deactivated" });
+      }
+
+      const allowedPinRoles = ["waiter", "cashier", "kitchen", "delivery_agent", "cleaning_staff"];
+      if (!allowedPinRoles.includes(user.role)) {
+        return res.status(403).json({ message: "PIN login is only available for staff roles" });
+      }
+
+      const { rows: [pinRow] } = await pool.query(
+        `SELECT pin_hash, pin_expires_at FROM users WHERE id = $1`,
+        [user.id]
+      );
+      if (!pinRow?.pin_hash) {
+        return res.status(401).json({ message: "No PIN is set for this account. Ask your manager to set one." });
+      }
+
+      const pinValid = await bcrypt.compare(pin, pinRow.pin_hash);
+      if (!pinValid) {
+        const locked = recordFailedLogin(pinKey);
+        auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "pin_login_failed", entityType: "user", entityId: user.id, entityName: user.name, req });
+        if (locked) {
+          return res.status(423).json({ message: "Account temporarily locked due to too many failed PIN attempts. Try again in 15 minutes." });
+        }
+        return res.status(401).json({ message: "Invalid PIN" });
+      }
+
+      // Check expiry
+      if (pinRow.pin_expires_at && new Date(pinRow.pin_expires_at) < new Date()) {
+        auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "pin_login_expired", entityType: "user", entityId: user.id, entityName: user.name, req });
+        return res.status(401).json({ code: "PIN_EXPIRED", message: "PIN has expired. Ask your manager to reset it, or use your password to log in." });
+      }
+
+      clearLoginFailures(pinKey);
+
+      req.login(user, async (loginErr) => {
+        if (loginErr) return res.status(500).json({ message: "Login failed" });
+
+        const tenant = await storage.getTenant(user.tenantId);
+        const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
+        const sessionData = req.session as Record<string, unknown>;
+        sessionData.lastActivity = Date.now();
+        sessionData.idleTimeoutMinutes = Number(mc.idleTimeoutMinutes ?? 30);
+
+        // PR-001 fix: rotate session token so requireFreshSession works for PIN-logged sessions
+        const newSessionToken = randomBytes(18).toString("hex");
+        await pool.query(`UPDATE users SET session_token = $1 WHERE id = $2`, [newSessionToken, user.id]);
+        sessionData.sessionToken = newSessionToken;
+
+        pool.query(
+          `UPDATE session SET user_id = $1, ip_address = $2, user_agent = $3, last_active = now() WHERE sid = $4`,
+          [user.id, req.ip || null, req.headers["user-agent"] || null, req.sessionID]
+        ).catch(() => {});
+
+        auditLog({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "PIN_LOGIN", entityType: "user", entityId: user.id, entityName: user.name, req });
+
+        const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = user;
+        return res.json({ ...safeUser });
+      });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-001: Set PIN for a staff user (manager/owner sets PIN for another user)
+  app.post("/api/auth/set-pin", requireAuth, requireFreshSession, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      const { userId, pin } = req.body;
+      if (!userId || !pin) {
+        return res.status(400).json({ message: "userId and pin are required" });
+      }
+      if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Only managers and owners can set PINs" });
+      }
+
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const userIdLastFour = targetUser.id.replace(/-/g, "").slice(-4);
+      const validationError = pinValidationError(pin, userIdLastFour);
+      if (validationError) {
+        return res.status(400).json({ message: validationError });
+      }
+
+      const pinHash = await bcrypt.hash(pin, 10);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+
+      await pool.query(
+        `UPDATE users SET pin_hash = $1, pin_set_at = $2, pin_expires_at = $3 WHERE id = $4`,
+        [pinHash, now, expiresAt, userId]
+      );
+      auditLogFromReq(req, { action: "pin_set", entityType: "user", entityId: userId, entityName: targetUser.name, metadata: { setBy: currentUser.id } });
+      return res.json({ message: "PIN set successfully. Expires in 90 days." });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-001: PIN change — requires current PIN (user identity) + manager approval (manager credentials)
+  // Implements the "PIN change requires current PIN plus manager approval" security requirement.
+  app.post("/api/auth/change-pin", requireAuth, requireFreshSession, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      const { currentPin, newPin, managerUsername, managerPassword } = req.body;
+      if (!currentPin || !newPin) {
+        return res.status(400).json({ message: "currentPin and newPin are required" });
+      }
+      if (!managerUsername || !managerPassword) {
+        return res.status(400).json({ message: "Manager credentials (managerUsername, managerPassword) are required for PIN changes" });
+      }
+      // Verify user's current PIN
+      const user = await storage.getUser(currentUser.id);
+      if (!user) return res.status(404).json({ message: "User not found" });
+      if (!user.pinHash) {
+        return res.status(400).json({ message: "No PIN is set. Ask a manager to set your PIN first." });
+      }
+      const currentPinValid = await bcrypt.compare(String(currentPin), user.pinHash);
+      if (!currentPinValid) {
+        auditLogFromReq(req, { action: "pin_change_failed", entityType: "user", entityId: user.id, metadata: { reason: "wrong_current_pin" } });
+        return res.status(401).json({ message: "Current PIN is incorrect" });
+      }
+      // Verify manager credentials and role within same tenant
+      const manager = await storage.getUserByUsername(managerUsername);
+      if (!manager || manager.tenantId !== currentUser.tenantId) {
+        auditLogFromReq(req, { action: "pin_change_failed", entityType: "user", entityId: user.id, metadata: { reason: "manager_not_found" } });
+        return res.status(403).json({ message: "Manager not found or not in this organisation" });
+      }
+      if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(manager.role)) {
+        auditLogFromReq(req, { action: "pin_change_failed", entityType: "user", entityId: user.id, metadata: { reason: "approver_not_manager", approverId: manager.id } });
+        return res.status(403).json({ message: "Approver must be a manager or owner" });
+      }
+      const managerPwValid = await comparePasswords(String(managerPassword), manager.password);
+      if (!managerPwValid) {
+        auditLogFromReq(req, { action: "pin_change_failed", entityType: "user", entityId: user.id, metadata: { reason: "wrong_manager_password", approverId: manager.id } });
+        return res.status(403).json({ message: "Manager password is incorrect" });
+      }
+      // Validate new PIN
+      const userIdLastFour = user.id.replace(/-/g, "").slice(-4);
+      const validationError = pinValidationError(String(newPin), userIdLastFour);
+      if (validationError) {
+        return res.status(400).json({ message: validationError });
+      }
+      // Apply new PIN
+      const newHash = await bcrypt.hash(String(newPin), 10);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+      await pool.query(
+        `UPDATE users SET pin_hash = $1, pin_set_at = $2, pin_expires_at = $3 WHERE id = $4`,
+        [newHash, now, expiresAt, user.id]
+      );
+      auditLogFromReq(req, { action: "pin_changed", entityType: "user", entityId: user.id, metadata: { approvedBy: manager.id, approverRole: manager.role } });
+      return res.json({ message: "PIN changed successfully. Expires in 90 days." });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-001: Clear/reset PIN for a staff user
+  app.delete("/api/auth/pin/:userId", requireAuth, requireFreshSession, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Only managers and owners can reset PINs" });
+      }
+      const targetUser = await storage.getUser(req.params.userId);
+      if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      await pool.query(
+        `UPDATE users SET pin_hash = NULL, pin_set_at = NULL, pin_expires_at = NULL WHERE id = $1`,
+        [req.params.userId]
+      );
+      auditLogFromReq(req, { action: "pin_reset", entityType: "user", entityId: req.params.userId, entityName: targetUser.name });
+      return res.json({ message: "PIN has been reset" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-001: RESTful aliases for staff PIN management (used by staff.tsx UI)
+  app.post("/api/auth/staff/:staffId/set-pin", requireAuth, requireFreshSession, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Only managers and owners can set PINs" });
+      }
+      const targetUser = await storage.getUser(req.params.staffId);
+      if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const { pin } = req.body;
+      if (!pin) return res.status(400).json({ message: "pin is required" });
+
+      const userIdLastFour = targetUser.id.replace(/-/g, "").slice(-4);
+      const validationError = pinValidationError(pin, userIdLastFour);
+      if (validationError) return res.status(400).json({ message: validationError });
+
+      const pinHash = await bcrypt.hash(pin, 10);
+      const now = new Date();
+      const expiresAt = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+      await pool.query(
+        `UPDATE users SET pin_hash = $1, pin_set_at = $2, pin_expires_at = $3 WHERE id = $4`,
+        [pinHash, now, expiresAt, req.params.staffId]
+      );
+      auditLogFromReq(req, { action: "pin_set", entityType: "user", entityId: req.params.staffId, entityName: targetUser.name, metadata: { setBy: currentUser.id } });
+      return res.json({ message: "PIN set successfully. Expires in 90 days." });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.delete("/api/auth/staff/:staffId/pin", requireAuth, requireFreshSession, async (req, res) => {
+    try {
+      const currentUser = req.user as any;
+      if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(currentUser.role)) {
+        return res.status(403).json({ message: "Only managers and owners can reset PINs" });
+      }
+      const targetUser = await storage.getUser(req.params.staffId);
+      if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      await pool.query(
+        `UPDATE users SET pin_hash = NULL, pin_set_at = NULL, pin_expires_at = NULL WHERE id = $1`,
+        [req.params.staffId]
+      );
+      auditLogFromReq(req, { action: "pin_reset", entityType: "user", entityId: req.params.staffId, entityName: targetUser.name });
+      return res.json({ message: "PIN has been cleared" });
+    } catch (err: any) {
+      return res.status(500).json({ message: err.message });
+    }
   });
 }
