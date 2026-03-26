@@ -86,17 +86,17 @@
   --input: 170 14% 85%;
   --ring: 174 65% 32%;
 
-  --sidebar: 185 45% 12%;
-  --sidebar-foreground: 170 20% 94%;
-  --sidebar-border: 185 30% 18%;
-  --sidebar-primary: 36 90% 58%;
-  --sidebar-primary-foreground: 185 45% 10%;
-  --sidebar-accent: 185 30% 18%;
-  --sidebar-accent-foreground: 170 20% 94%;
-  --sidebar-ring: 36 90% 58%;
-  --sidebar-water-start: 185 55% 55%;
-  --sidebar-water-mid: 176 50% 48%;
-  --sidebar-sand: 36 55% 72%;
+  --sidebar: 222 28% 13%;
+  --sidebar-foreground: 38 25% 92%;
+  --sidebar-border: 222 20% 22%;
+  --sidebar-primary: 38 90% 60%;
+  --sidebar-primary-foreground: 222 28% 10%;
+  --sidebar-accent: 222 20% 22%;
+  --sidebar-accent-foreground: 38 25% 92%;
+  --sidebar-ring: 38 90% 60%;
+  --sidebar-slate-top: 222 30% 17%;
+  --sidebar-slate-mid: 220 26% 12%;
+  --sidebar-ember: 32 85% 52%;
 
   --chart-1: 174 65% 35%;
   --chart-2: 12 75% 58%;
@@ -107,7 +107,7 @@
   --radius: 0.75rem;
 }
 
-/* DARK MODE — Tropical Paradise */
+/* DARK MODE — Slate & Ember */
 .dark {
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
@@ -145,17 +145,17 @@
   --input: 185 10% 15%;
   --ring: 174 50% 50%;
 
-  --sidebar: 185 30% 7%;
-  --sidebar-foreground: 170 15% 93%;
-  --sidebar-border: 185 20% 12%;
-  --sidebar-primary: 36 80% 55%;
-  --sidebar-primary-foreground: 185 30% 7%;
-  --sidebar-accent: 185 20% 12%;
-  --sidebar-accent-foreground: 170 15% 93%;
-  --sidebar-ring: 36 70% 55%;
-  --sidebar-water-start: 185 40% 35%;
-  --sidebar-water-mid: 176 35% 30%;
-  --sidebar-sand: 36 40% 45%;
+  --sidebar: 222 28% 9%;
+  --sidebar-foreground: 38 20% 90%;
+  --sidebar-border: 222 20% 16%;
+  --sidebar-primary: 38 85% 57%;
+  --sidebar-primary-foreground: 222 28% 8%;
+  --sidebar-accent: 222 20% 16%;
+  --sidebar-accent-foreground: 38 20% 90%;
+  --sidebar-ring: 38 85% 57%;
+  --sidebar-slate-top: 222 28% 12%;
+  --sidebar-slate-mid: 220 24% 8%;
+  --sidebar-ember: 32 75% 42%;
 
   --chart-1: 174 60% 40%;
   --chart-2: 12 70% 55%;
