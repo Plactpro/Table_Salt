@@ -13,6 +13,19 @@ interface GuestSocketMeta {
 }
 const guestSocketMeta = new WeakMap<WebSocket, GuestSocketMeta>();
 
+// PR-009: Track last-pong time per connection for the global sweep interval.
+// `lastPongTime` is updated when the client responds to a server ping.
+const lastPongTime = new WeakMap<WebSocket, number>();
+// PR-009: Track when we last sent a ping to each socket.
+// Used to enforce a strict "pong must arrive within PONG_TIMEOUT_MS after ping" protocol.
+const lastPingTime = new WeakMap<WebSocket, number>();
+// PR-009: Per-socket pong deadline timer.
+// A timer is set when we ping a socket; if cleared by a pong it is cancelled,
+// otherwise the socket is terminated exactly PONG_TIMEOUT_MS after the ping.
+const pongDeadlineTimer = new WeakMap<WebSocket, ReturnType<typeof setTimeout>>();
+// PR-009: Track user role per socket for server-side role-filtered event delivery.
+const socketUserRole = new WeakMap<WebSocket, string>();
+
 function addSocket(tenantId: string, ws: WebSocket) {
   if (!tenantSockets.has(tenantId)) tenantSockets.set(tenantId, new Set());
   tenantSockets.get(tenantId)!.add(ws);
@@ -55,7 +68,7 @@ export function emitToTenant(tenantId: string, event: string, payload: unknown) 
   }
 }
 
-async function getTenantFromRequest(req: IncomingMessage): Promise<string | null> {
+async function getTenantFromRequest(req: IncomingMessage): Promise<{ tenantId: string; role?: string } | null> {
   try {
     const rawCookie = req.headers.cookie;
     if (!rawCookie) return null;
@@ -84,9 +97,35 @@ async function getTenantFromRequest(req: IncomingMessage): Promise<string | null
     if (!userId) return null;
 
     const user = await storage.getUser(userId);
-    return user?.tenantId ?? null;
+    if (!user?.tenantId) return null;
+    return { tenantId: user.tenantId, role: user.role };
   } catch {
     return null;
+  }
+}
+
+/**
+ * PR-009: Emit event only to sockets belonging to manager/owner roles (server-side filtering).
+ * Prevents sensitive account-sharing alerts from leaking to non-privileged staff sockets.
+ * deviceInfo (IP) is stripped from the payload before sending.
+ */
+export function emitToTenantManagers(tenantId: string, event: string, payload: unknown): void {
+  const managerRoles = new Set(["owner", "franchise_owner", "hq_admin", "super_admin", "manager"]);
+  const clients = tenantSockets.get(tenantId);
+  if (!clients || clients.size === 0) return;
+  // Sanitize payload: keep user-agent (helpful for identifying device) but strip IP address.
+  const rawPayload = payload as Record<string, unknown>;
+  const safePayload: Record<string, unknown> = { ...rawPayload };
+  if (typeof safePayload.deviceInfo === "string") {
+    // Keep only the first part (user-agent) before the " — IP:" separator
+    safePayload.deviceInfo = safePayload.deviceInfo.split(" — IP:")[0].trim();
+  }
+  const msg = JSON.stringify({ event, payload: safePayload });
+  for (const ws of clients) {
+    if (ws.readyState !== WebSocket.OPEN) continue;
+    const role = socketUserRole.get(ws);
+    if (!role || !managerRoles.has(role)) continue; // Skip non-manager sockets
+    try { ws.send(msg); } catch (_) {}
   }
 }
 
@@ -115,7 +154,9 @@ export function setupWebSocket(httpServer: HttpServer) {
   );
 
   wss.on("connection", async (ws: WebSocket, req: IncomingMessage) => {
-    let resolvedTenantId = await getTenantFromRequest(req);
+    const authResult = await getTenantFromRequest(req);
+    let resolvedTenantId: string | null = authResult?.tenantId ?? null;
+    let resolvedRole: string | undefined = authResult?.role;
     let isGuest = false;
     let guestTableId: string | null = null;
 
@@ -157,7 +198,13 @@ export function setupWebSocket(httpServer: HttpServer) {
       guestSocketMeta.set(ws, { tableId: "" });
     }
 
+    // PR-009: Track user role per socket for server-side role-filtered event delivery
+    if (resolvedRole) {
+      socketUserRole.set(ws, resolvedRole);
+    }
+
     addSocket(tenantId, ws);
+    lastPongTime.set(ws, Date.now()); // Initialize with connection time
 
     try {
       ws.send(JSON.stringify({ event: "connected", payload: { ok: true } }));
@@ -166,40 +213,84 @@ export function setupWebSocket(httpServer: HttpServer) {
     ws.on("message", (data) => {
       try {
         const msg = JSON.parse(data.toString()) as { event?: string };
-        if (msg.event === "ping") {
-          ws.send(JSON.stringify({ event: "pong" }));
+        if (msg.event === "pong") {
+          // PR-009: Client responded to server ping — cancel the 10s deadline timer.
+          lastPongTime.set(ws, Date.now());
+          const timer = pongDeadlineTimer.get(ws);
+          if (timer) { clearTimeout(timer); pongDeadlineTimer.delete(ws); }
+        } else if (msg.event === "ping") {
+          // Legacy client-initiated keepalive ping — echo pong for backward compat.
+          lastPongTime.set(ws, Date.now());
+          const timer = pongDeadlineTimer.get(ws);
+          if (timer) { clearTimeout(timer); pongDeadlineTimer.delete(ws); }
+          try { ws.send(JSON.stringify({ event: "pong" })); } catch (_) {}
         }
       } catch (_) {}
     });
 
+    // PR-009: Single authoritative heartbeat via global sweep (every 30s).
+    // Per-socket native ping removed to avoid dual-heartbeat complexity.
     ws.on("close", () => removeSocket(tenantId, ws));
     ws.on("error", () => removeSocket(tenantId, ws));
-
-    let pongTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const clearPongTimeout = () => {
-      if (pongTimeout) { clearTimeout(pongTimeout); pongTimeout = null; }
-    };
-
-    ws.on("pong", clearPongTimeout);
-
-    const ping = setInterval(() => {
-      if (ws.readyState !== WebSocket.OPEN) {
-        clearInterval(ping);
-        clearPongTimeout();
-        return;
-      }
-      try { ws.ping(); } catch (_) { return; }
-      pongTimeout = setTimeout(() => {
-        removeSocket(tenantId, ws);
-        try { ws.terminate(); } catch (_) {}
-        clearInterval(ping);
-      }, 10000);
-    }, 25000);
-
-    ws.on("close", () => { clearInterval(ping); clearPongTimeout(); });
   });
 
   console.log("[WS] WebSocket server listening on /ws");
+
+  // PR-009: Global heartbeat sweep — every 30 seconds.
+  // Strict protocol: server sends JSON { event: "ping" }, client must respond with
+  // { event: "pong" } within PONG_TIMEOUT_MS. A per-socket deadline timer enforces
+  // eviction exactly 10s after ping (not at the next 30s sweep).
+  const SWEEP_INTERVAL_MS = 30_000;
+  const PONG_TIMEOUT_MS = 10_000;
+  setInterval(() => {
+    const now = Date.now();
+    for (const [, socketSet] of tenantSockets) {
+      for (const ws of socketSet) {
+        if (ws.readyState !== WebSocket.OPEN) {
+          socketSet.delete(ws);
+          continue;
+        }
+        // Cancel any lingering deadline from previous sweep (pong already cleared it).
+        const existing = pongDeadlineTimer.get(ws);
+        if (existing) { clearTimeout(existing); pongDeadlineTimer.delete(ws); }
+
+        // Send JSON ping and record when we sent it.
+        try {
+          ws.send(JSON.stringify({ event: "ping" }));
+          lastPingTime.set(ws, now);
+        } catch {
+          socketSet.delete(ws);
+          try { ws.terminate(); } catch {}
+          continue;
+        }
+
+        // Schedule per-socket 10s pong deadline — fires if client does not pong in time.
+        const deadline = setTimeout(() => {
+          pongDeadlineTimer.delete(ws);
+          const lastPong = lastPongTime.get(ws);
+          const lastPing = lastPingTime.get(ws) ?? now;
+          // Only terminate if no pong arrived after this ping.
+          if (lastPong === undefined || lastPong < lastPing) {
+            socketSet.delete(ws);
+            try { ws.terminate(); } catch {}
+            console.log("[WS] Cleanup: terminated 1 stale connection (missed pong within 10s)");
+          }
+        }, PONG_TIMEOUT_MS);
+        pongDeadlineTimer.set(ws, deadline);
+      }
+    }
+  }, SWEEP_INTERVAL_MS);
+
+  // PR-009: Log active connection count every 5 minutes for leak detection.
+  setInterval(() => {
+    let total = 0;
+    for (const [, socketSet] of tenantSockets) {
+      for (const ws of socketSet) {
+        if (ws.readyState === WebSocket.OPEN) total++;
+      }
+    }
+    console.log(`[WS] Active connections: ${total}`);
+  }, 5 * 60_000);
+
   return wss;
 }

@@ -931,6 +931,18 @@ export default function KitchenDashboard() {
     else localStorage.removeItem("kds_station");
   }, [selectedStation]);
 
+  // PR-009: KDS 4-hour background refresh to clear any stale ticket data.
+  const [kdsRefreshing, setKdsRefreshing] = useState(false);
+  useEffect(() => {
+    const FOUR_HOURS = 4 * 60 * 60 * 1000;
+    const id = setInterval(() => {
+      setKdsRefreshing(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
+      setTimeout(() => setKdsRefreshing(false), 2000);
+    }, FOUR_HOURS);
+    return () => clearInterval(id);
+  }, [queryClient]);
+
   const ticketsUrl = selectedStation ? `/api/kds/tickets?station=${encodeURIComponent(selectedStation)}` : "/api/kds/tickets";
   const { data: tickets = [], isLoading } = useQuery<KDSTicket[]>({
     queryKey: ["/api/kds/tickets", selectedStation],
@@ -1392,6 +1404,36 @@ export default function KitchenDashboard() {
         </motion.div>
 
         <div className="flex items-center gap-2">
+          {/* PR-009: Station selector dropdown in header for fast switching */}
+          {stations.filter(s => s.active).length > 0 && (
+            <Select
+              value={selectedStation ?? "all"}
+              onValueChange={(v) => setSelectedStation(v === "all" ? null : v)}
+            >
+              <SelectTrigger
+                className="h-8 w-40 text-xs shrink-0"
+                data-testid="select-kds-station-dropdown"
+              >
+                <SelectValue placeholder="All Stations" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" data-testid="option-station-all">All Stations</SelectItem>
+                {stations.filter(s => s.active).map(station => (
+                  <SelectItem
+                    key={station.id}
+                    value={station.name}
+                    data-testid={`option-station-${station.name}`}
+                  >
+                    {station.displayName}
+                    {(stationCounts[station.name] ?? 0) > 0 && ` (${stationCounts[station.name]})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+          {kdsRefreshing && (
+            <span className="text-xs text-muted-foreground animate-pulse" data-testid="text-kds-refreshing">Refreshing…</span>
+          )}
           <KitchenClockCard />
           {(user?.role === "owner" || user?.role === "manager") && (
             <Button

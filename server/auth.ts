@@ -170,6 +170,47 @@ export function setupAuth(app: Express) {
   passport.deserializeUser(async (id: string, done) => {
     try {
       const user = await storage.getUser(id);
+      if (user) {
+        // PR-009: Attach tenant subscription grace status to the user object at deserialization.
+        // Grace eligibility = subscription expired within 24h AND (open orders OR active shift exists).
+        // This satisfies the spec: "a subscription that expires while there are open orders or an
+        // active shift NEVER immediately locks out the system."
+        try {
+          const { rows } = await pool.query(
+            `SELECT subscription_status, trial_ends_at, subscription_expires_at FROM tenants WHERE id = $1 LIMIT 1`,
+            [user.tenantId]
+          );
+          if (rows[0]) {
+            const t = rows[0];
+            // PR-009: Use timestamp-first approach — trialing status may lag actual expiry.
+            // Grace = expired within 24h (by timestamp) AND operational activity present.
+            const expiresAt = t.subscription_expires_at
+              ? new Date(t.subscription_expires_at)
+              : t.trial_ends_at ? new Date(t.trial_ends_at) : null;
+            const msSince = expiresAt ? Date.now() - expiresAt.getTime() : -1;
+            // Include trialing with expired timestamp (status lags the scheduled update)
+            const GRACE_MS = 24 * 60 * 60 * 1000;
+            const inTimeWindow = msSince > 0 && msSince <= GRACE_MS;
+            if (inTimeWindow) {
+              // Check for open orders or active shift (operational continuity condition per spec)
+              const { rows: openOrders } = await pool.query(
+                `SELECT 1 FROM orders WHERE tenant_id = $1 AND status NOT IN ('completed','cancelled','paid','voided') LIMIT 1`,
+                [user.tenantId]
+              );
+              const { rows: activeShifts } = await pool.query(
+                `SELECT 1 FROM shifts WHERE tenant_id = $1 AND ended_at IS NULL LIMIT 1`,
+                [user.tenantId]
+              ).catch(() => ({ rows: [] }));
+              const hasOperationalActivity = openOrders.length > 0 || activeShifts.length > 0;
+              (user as any)._subscriptionWarning = hasOperationalActivity ? "expired_grace" : null;
+            } else {
+              (user as any)._subscriptionWarning = null;
+            }
+          }
+        } catch (_ignored) {
+          (user as any)._subscriptionWarning = null;
+        }
+      }
       done(null, user || null);
     } catch (err) {
       done(err);
@@ -207,12 +248,27 @@ export function requireAuth(req: any, res: any, next: any) {
 
   const tenantId: string | undefined = req.user?.tenantId;
   if (tenantId) {
-    import("./db").then(({ pool }) => {
-      pool.query(
-        `UPDATE tenants SET subscription_status = 'canceled', plan = 'basic' WHERE id = $1 AND subscription_status = 'trialing' AND trial_ends_at IS NOT NULL AND trial_ends_at < now()`,
-        [tenantId]
-      ).catch(() => {});
-    }).catch(() => {});
+    // Only promote trialing → canceled after the full 24-hour grace window has passed.
+    pool.query(
+      `UPDATE tenants SET subscription_status = 'canceled', plan = 'basic' WHERE id = $1 AND subscription_status = 'trialing' AND trial_ends_at IS NOT NULL AND trial_ends_at < now() - INTERVAL '24 hours'`,
+      [tenantId]
+    ).catch(() => {});
+  }
+
+  // PR-009: Subscription grace warning — inject subscriptionWarning field into every
+  // authenticated JSON response body AND set the response header.
+  // The field is set synchronously from data attached at deserialization time.
+  if (req.user?._subscriptionWarning) {
+    const warning = req.user._subscriptionWarning as string;
+    res.setHeader("X-Subscription-Warning", warning);
+    // Intercept res.json to inject the subscriptionWarning field
+    const origJson = res.json.bind(res);
+    res.json = (body: any) => {
+      if (body !== null && typeof body === "object" && !Array.isArray(body)) {
+        return origJson({ ...body, subscriptionWarning: warning });
+      }
+      return origJson(body);
+    };
   }
 
   next();
@@ -240,11 +296,15 @@ export function requireSuperAdmin(req: any, res: any, next: any) {
   next();
 }
 
+/** PR-009: Throttle map so account_sharing_alert fires at most once per user per 5 minutes. */
+const sessionAlertThrottle = new Map<string, number>();
+const SESSION_ALERT_COOLDOWN_MS = 5 * 60 * 1000;
+
 /**
- * PR-001: Concurrent session detection middleware.
+ * PR-001 / PR-009: Concurrent session detection middleware.
  * Only applied to sensitive routes (payments, voids, refunds, role changes, settings, admin).
- * Checks that the session's stored token matches the user's current DB token.
- * If tokens mismatch (another login occurred), returns 401 SESSION_CONFLICT.
+ * PR-009: On token mismatch, fires an account_sharing_alert notification (throttled) and continues.
+ *         Alert-only — does not block either session (spec: "do not forcibly kick out either session").
  */
 export async function requireFreshSession(req: any, res: any, next: any): Promise<void> {
   if (!req.isAuthenticated()) {
@@ -256,15 +316,35 @@ export async function requireFreshSession(req: any, res: any, next: any): Promis
     if (!sessionToken) return next();
 
     const { rows } = await pool.query(
-      `SELECT session_token FROM users WHERE id = $1 LIMIT 1`,
+      `SELECT session_token, name FROM users WHERE id = $1 LIMIT 1`,
       [req.user.id]
     );
     const dbToken = rows[0]?.session_token;
     if (dbToken && sessionToken !== dbToken) {
-      return res.status(401).json({ code: "SESSION_CONFLICT", message: "Your account was signed in elsewhere. Please log in again." });
+      // PR-009: Fire throttled alert to manager/owner channels — at most once per user per 5 min.
+      // Account sharing is surfaced to management without interrupting the user's flow.
+      const alertKey = `${req.user.tenantId}:${req.user.id}`;
+      const lastAlerted = sessionAlertThrottle.get(alertKey) ?? 0;
+      if (Date.now() - lastAlerted > SESSION_ALERT_COOLDOWN_MS) {
+        sessionAlertThrottle.set(alertKey, Date.now());
+        setImmediate(async () => {
+          try {
+            const staffName = rows[0]?.name || req.user.name || "Unknown";
+            const deviceInfo = (req.headers["user-agent"] ?? "Unknown device").slice(0, 100);
+            // PR-009: Persistent alert via alert engine (durable bell/alert-center entry).
+            const { alertEngine } = await import("./services/alert-engine");
+            await alertEngine.trigger("ALERT-13", {
+              tenantId: req.user.tenantId,
+              message: `Account sharing detected: ${staffName} logged in from another session. Device: ${deviceInfo}`,
+            }).catch(() => {});
+          } catch (_ignored) {}
+        });
+      }
+      // Allow request to continue — alert-only behavior per PR-009
     }
     return next();
   } catch (err) {
+    // Fail closed on verification errors to protect sensitive routes
     console.error("[requireFreshSession] Token verification error — failing closed:", err);
     return res.status(500).json({ message: "Session verification failed. Please log in again." });
   }

@@ -4,6 +4,7 @@ import { requireAuth } from "../auth";
 import { isStripeConfigured, getUncachableStripeClient, STRIPE_PRICE_IDS, planFromPriceId } from "../stripe";
 import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 import { returnResourcesFromTable } from "../services/resource-service";
+import { pool } from "../db";
 
 export function registerBillingRoutes(app: Express): void {
   app.get("/api/onboarding/status", requireAuth, async (req, res) => {
@@ -71,6 +72,46 @@ export function registerBillingRoutes(app: Express): void {
     }
   }
 
+  /**
+   * PR-009: Compute subscription grace period status, timestamp-first with operational gating.
+   * Grace = expired within 24h AND (open orders OR active shift) — consistent with requireAuth.
+   */
+  async function getGraceStatus(
+    tenant: { subscriptionStatus?: string | null; trialEndsAt?: string | null; subscriptionExpiresAt?: string | null },
+    tenantId: string
+  ): Promise<"active" | "expired_grace" | "expired"> {
+    const expiresAt = tenant.subscriptionExpiresAt
+      ? new Date(tenant.subscriptionExpiresAt as string)
+      : tenant.trialEndsAt ? new Date(tenant.trialEndsAt as string) : null;
+
+    if (!expiresAt) {
+      // No expiry timestamp — unlimited trial or active subscription
+      const status = tenant.subscriptionStatus ?? "trialing";
+      return (status === "active" || status === "trialing") ? "active" : "expired";
+    }
+
+    const msSinceExpiry = Date.now() - expiresAt.getTime();
+    if (msSinceExpiry <= 0) return "active"; // Not yet expired
+    if (msSinceExpiry > 24 * 60 * 60 * 1000) return "expired"; // Past grace window
+
+    // Within 24h grace window — check operational activity (consistent with requireAuth)
+    try {
+      const { rows: openOrders } = await pool.query(
+        `SELECT 1 FROM orders WHERE tenant_id = $1 AND status NOT IN ('completed','cancelled','paid','voided') LIMIT 1`,
+        [tenantId]
+      );
+      const { rows: activeShifts } = await pool.query(
+        `SELECT 1 FROM shifts WHERE tenant_id = $1 AND ended_at IS NULL LIMIT 1`,
+        [tenantId]
+      ).catch(() => ({ rows: [] }));
+      const hasActivity = openOrders.length > 0 || activeShifts.length > 0;
+      return hasActivity ? "expired_grace" : "expired";
+    } catch {
+      // On DB error, grant grace conservatively to avoid disrupting live service
+      return "expired_grace";
+    }
+  }
+
   app.get("/api/billing/status", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -79,6 +120,7 @@ export function registerBillingRoutes(app: Express): void {
       if (!tenant) return res.status(404).json({ message: "Tenant not found" });
       const trialEnd = tenant.trialEndsAt ? new Date(tenant.trialEndsAt) : null;
       const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / (24 * 60 * 60 * 1000))) : 0;
+      const graceStatus = await getGraceStatus(tenant, user.tenantId);
       res.json({
         plan: tenant.plan,
         subscriptionStatus: tenant.subscriptionStatus,
@@ -86,6 +128,7 @@ export function registerBillingRoutes(app: Express): void {
         trialDaysLeft: daysLeft,
         stripeCustomerId: tenant.stripeCustomerId,
         stripeConfigured: await isStripeConfigured(),
+        graceStatus,
       });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

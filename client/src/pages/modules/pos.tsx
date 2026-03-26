@@ -530,6 +530,7 @@ export default function POSPage() {
   const [closeTabConfirm, setCloseTabConfirm] = useState<string | null>(null);
   const [showDeliveryQueue, setShowDeliveryQueue] = useState(false);
   const [showTablePicker, setShowTablePicker] = useState(false);
+  const [pendingTableId, setPendingTableId] = useState<string | null>(null); // PR-009: wrong-table confirmation
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [tenderedAmount, setTenderedAmount] = useState("");
   const [discountPreset, setDiscountPreset] = useState<"none" | "5" | "10" | "15" | "20" | "custom">("none");
@@ -2217,7 +2218,17 @@ export default function POSPage() {
                         key={t.id}
                         data-testid={`button-table-${t.id}`}
                         disabled={!canSelect}
-                        onClick={() => { updateActiveTab({ selectedTable: t.id }); setShowTablePicker(false); }}
+                        onClick={() => {
+                          const alreadySent = (activeTab?.sentCartKeys?.length ?? 0) > 0;
+                          if (alreadySent && t.id !== selectedTable) {
+                            // PR-009: Wrong-table confirmation for sent orders
+                            setPendingTableId(t.id);
+                            setShowTablePicker(false);
+                          } else {
+                            updateActiveTab({ selectedTable: t.id });
+                            setShowTablePicker(false);
+                          }
+                        }}
                         className={`relative flex flex-col items-center justify-center h-16 rounded-lg border-2 transition-all text-sm font-semibold
                           ${isSelected ? "border-primary bg-primary text-primary-foreground shadow-lg" :
                             isFree ? "border-green-400 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 hover:border-green-500 hover:scale-[1.03] cursor-pointer" :
@@ -2640,6 +2651,54 @@ export default function POSPage() {
           <div className="flex gap-2 justify-end mt-2">
             <Button variant="outline" onClick={() => setCloseTabConfirm(null)} data-testid="button-cancel-close-tab">Cancel</Button>
             <Button variant="destructive" onClick={() => { if (closeTabConfirm) { closeTab(closeTabConfirm); setCloseTabConfirm(null); } }} data-testid="button-confirm-close-tab">Close Tab</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* PR-009: Wrong-table confirmation dialog */}
+      <Dialog open={!!pendingTableId} onOpenChange={() => setPendingTableId(null)}>
+        <DialogContent className="max-w-xs" data-testid="dialog-wrong-table-confirm">
+          <DialogHeader>
+            <DialogTitle>Change table?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Items have already been sent to the kitchen for this order. Moving to{" "}
+            <strong>Table {tables.find(t => t.id === pendingTableId)?.number}</strong>{" "}
+            will change where the order is assigned. Kitchen staff will not be automatically notified.
+          </p>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => setPendingTableId(null)} data-testid="button-cancel-wrong-table">Cancel</Button>
+            <Button
+              variant="destructive"
+              data-testid="button-confirm-wrong-table"
+              onClick={() => {
+                if (pendingTableId) {
+                  updateActiveTab({ selectedTable: pendingTableId });
+                  // PR-009: If this tab has a server order, PATCH it to update tableId
+                  // so the TABLE_CHANGED audit event is logged server-side.
+                  if (activeTab?.heldOrderId && activeTab.heldOrderVersion != null) {
+                    const orderId = activeTab.heldOrderId;
+                    const version = activeTab.heldOrderVersion;
+                    apiRequest("PATCH", `/api/orders/${orderId}`, {
+                      tableId: pendingTableId,
+                      version,
+                    }).then(async (res) => {
+                      try {
+                        const updated = await res.json();
+                        if (updated?.version != null) {
+                          updateActiveTab({ heldOrderVersion: updated.version });
+                        }
+                      } catch {}
+                    }).catch(() => {
+                      toast({ title: "Table update failed", description: "Could not update the order's table on the server. Please try again.", variant: "destructive" });
+                    });
+                  }
+                  setPendingTableId(null);
+                }
+              }}
+            >
+              Move Order
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

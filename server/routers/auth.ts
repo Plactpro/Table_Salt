@@ -160,6 +160,49 @@ export function registerAuthRoutes(app: Express): void {
         }
       }
 
+      // PR-009: Subscription grace period enforcement at login time.
+      // Policy (timestamp-based, not status-based — status may lag actual expiry):
+      //   - Active/trialing with expiry in future: no restriction.
+      //   - Expired within last 24h (grace window): all logins allowed, warning header set.
+      //   - Expired >24h ago (past grace): non-owner NEW logins are blocked.
+      //   - Owners/admins always allowed so they can renew the subscription.
+      const ownerRoles = ["owner", "franchise_owner", "hq_admin", "super_admin"];
+      if (!ownerRoles.includes(user.role)) {
+        try {
+          const { rows: tenantRows } = await pool.query(
+            `SELECT subscription_status, trial_ends_at, subscription_expires_at FROM tenants WHERE id = $1 LIMIT 1`,
+            [user.tenantId]
+          );
+          const t = tenantRows[0];
+          if (t) {
+            const GRACE_MS = 24 * 60 * 60 * 1000;
+            // Determine expiry timestamp (prefer subscription_expires_at, fall back to trial_ends_at)
+            const expiresAt = t.subscription_expires_at
+              ? new Date(t.subscription_expires_at)
+              : t.trial_ends_at ? new Date(t.trial_ends_at) : null;
+
+            if (expiresAt) {
+              const msSinceExpiry = Date.now() - expiresAt.getTime();
+              // Strictly timestamp-driven — ignore subscription_status which may lag due to
+              // webhook delays or status update scheduling. Timestamps are authoritative.
+              if (msSinceExpiry > GRACE_MS) {
+                // Past 24h grace — block new non-owner logins regardless of status
+                return res.status(402).json({
+                  code: "SUBSCRIPTION_EXPIRED",
+                  message: "Subscription has expired. Please contact the account owner to renew.",
+                });
+              } else if (msSinceExpiry > 0) {
+                // Within 24h grace window — allow, warn
+                res.setHeader("X-Subscription-Warning", "expired_grace");
+              }
+              // msSinceExpiry <= 0 = not yet expired — no restriction
+            }
+          }
+        } catch (graceErr) {
+          console.error("[Auth] Grace period check failed (non-fatal):", graceErr);
+        }
+      }
+
       req.login(user, async (loginErr) => {
         if (loginErr) return next(loginErr);
 
@@ -168,6 +211,35 @@ export function registerAuthRoutes(app: Express): void {
         const sessionData = req.session as Record<string, unknown>;
         sessionData.lastActivity = Date.now();
         sessionData.idleTimeoutMinutes = Number(mc.idleTimeoutMinutes ?? 30);
+
+        // PR-009: Account sharing detection — check for live concurrent sessions.
+        // We verify there is an actual active session in the session table for this user
+        // (not just a stale session_token left over from a previous logout).
+        // Alert fires only when a genuinely concurrent session is detected.
+        try {
+          const { rows: liveSessions } = await pool.query(
+            `SELECT COUNT(*) AS cnt FROM "session" WHERE sess->>'passport' LIKE $1 AND expire > now()`,
+            [`%"user":"${user.id}"%`]
+          );
+          const liveCount = parseInt(liveSessions[0]?.cnt || "0", 10);
+          if (liveCount > 0) {
+            // Another session for this user is currently active — fire alert (non-blocking)
+            const deviceInfo = `${req.headers["user-agent"]?.slice(0, 100) || "Unknown device"} — IP: ${(req.headers["x-forwarded-for"] as string || req.ip || "unknown").split(",")[0].trim()}`;
+            setImmediate(async () => {
+              try {
+                const safeDevice = deviceInfo.split(" — IP:")[0].trim().slice(0, 100);
+                // PR-009: Persistent alert via alert engine (durable bell/alert-center entry).
+                // ALERT-13 target_roles = manager/owner/franchise_owner/hq_admin/super_admin.
+                const { alertEngine } = await import("../services/alert-engine");
+                await alertEngine.trigger("ALERT-13", {
+                  tenantId: user.tenantId,
+                  referenceId: user.id,
+                  message: `Account sharing detected: ${user.name || user.username} logged in from another session. Device: ${safeDevice}`,
+                }).catch(() => {});
+              } catch (_) {}
+            });
+          }
+        } catch (_) { /* non-fatal */ }
 
         // PR-001: Generate and store session token for concurrent session detection
         const newSessionToken = randomBytes(18).toString("hex");
