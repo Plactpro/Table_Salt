@@ -1,5 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ interface Props {
 }
 
 export function ResourceAvailabilityWidget({ outletId, compact = false }: Props) {
+  const { i18n } = useTranslation();
   const queryClient = useQueryClient();
 
   const { data: availability = [], isLoading } = useQuery<ResourceAvailability[]>({
@@ -177,7 +179,7 @@ export function ResourceAvailabilityWidget({ outletId, compact = false }: Props)
                 <div key={need.reservationId} className="flex items-center gap-2 text-xs">
                   <Clock className="h-3 w-3 text-muted-foreground shrink-0" />
                   <span className="text-muted-foreground">
-                    {new Date(need.dateTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                    {new Date(need.dateTime).toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit" })}
                   </span>
                   {need.tableNumber && (
                     <>

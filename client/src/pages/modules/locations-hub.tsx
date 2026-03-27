@@ -5,23 +5,25 @@ import { Store, Building2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import OutletsPage from "./outlets";
 import HQConsolePage from "./hq-console";
+import { useTranslation } from "react-i18next";
 
 export default function LocationsHub() {
   const { user } = useAuth();
   const canAccessHQ = ["owner", "franchise_owner", "hq_admin"].includes(user?.role || "");
   const [tab, setTab] = useState("outlets");
+  const { t } = useTranslation("modules");
 
   return (
     <div className="space-y-6" data-testid="locations-hub">
-      <PageTitle title="Locations" />
+      <PageTitle title={t("locations")} />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="locations-tabs">
           <TabsTrigger value="outlets" data-testid="tab-outlets">
-            <Store className="h-4 w-4 mr-1.5" />Outlets
+            <Store className="h-4 w-4 mr-1.5" />{t("outlets")}
           </TabsTrigger>
           {canAccessHQ && (
             <TabsTrigger value="hq" data-testid="tab-hq-console">
-              <Building2 className="h-4 w-4 mr-1.5" />HQ Console
+              <Building2 className="h-4 w-4 mr-1.5" />{t("hqConsole")}
             </TabsTrigger>
           )}
         </TabsList>

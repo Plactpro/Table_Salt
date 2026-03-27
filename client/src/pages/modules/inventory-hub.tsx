@@ -22,6 +22,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
+import { useTranslation } from "react-i18next";
 
 type RecipeWithIngredients = Recipe & { ingredients: RecipeIngredient[] };
 
@@ -52,6 +53,7 @@ class TabErrorBoundary extends Component<{ children: ReactNode; label: string },
 
 function RecipesTab() {
   const { user } = useAuth();
+  const { t } = useTranslation("modules");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -108,16 +110,16 @@ function RecipesTab() {
   return (
     <div className="space-y-6" data-testid="recipes-tab">
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <StatCard title="Total Recipes" value={allRecipes.length} icon={ChefHat} iconColor="text-purple-600" iconBg="bg-purple-100" testId="stat-total-recipes" />
-        <StatCard title="Linked to Menu" value={linkedCount} icon={BookOpen} iconColor="text-blue-600" iconBg="bg-blue-100" testId="stat-linked-recipes" />
-        <StatCard title="Avg Food Cost %" value={`${avgFoodCostPct.toFixed(1)}%`} icon={Percent} iconColor="text-amber-600" iconBg="bg-amber-100" testId="stat-avg-food-cost" />
+        <StatCard title={t("totalRecipes")} value={allRecipes.length} icon={ChefHat} iconColor="text-purple-600" iconBg="bg-purple-100" testId="stat-total-recipes" />
+        <StatCard title={t("linkedToMenu")} value={linkedCount} icon={BookOpen} iconColor="text-blue-600" iconBg="bg-blue-100" testId="stat-linked-recipes" />
+        <StatCard title={t("avgFoodCostPct")} value={`${avgFoodCostPct.toFixed(1)}%`} icon={Percent} iconColor="text-amber-600" iconBg="bg-amber-100" testId="stat-avg-food-cost" />
       </div>
 
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg flex items-center gap-2">
-              <ChefHat className="h-4 w-4 text-muted-foreground" /> Recipes
+              <ChefHat className="h-4 w-4 text-muted-foreground" /> {t("recipes")}
             </CardTitle>
             {canEdit && (
               <Button onClick={() => navigate("/recipes/new")} data-testid="button-add-recipe">
@@ -130,7 +132,7 @@ function RecipesTab() {
           {allRecipes.length === 0 ? (
             <div className="text-center py-10 text-muted-foreground" data-testid="text-no-recipes">
               <ChefHat className="h-10 w-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No recipes yet.</p>
+              <p className="text-sm">{t("noRecipesYet")}</p>
               {canEdit && (
                 <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate("/recipes/new")} data-testid="button-add-recipe-empty">
                   <Plus className="h-3.5 w-3.5 mr-1" /> Create First Recipe
@@ -141,14 +143,14 @@ function RecipesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Recipe</TableHead>
-                  <TableHead>Linked Menu Item</TableHead>
-                  <TableHead>Ingredients</TableHead>
-                  <TableHead>Plate Cost</TableHead>
-                  <TableHead>Selling Price</TableHead>
-                  <TableHead>Food Cost %</TableHead>
-                  <TableHead>Margin</TableHead>
-                  {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                  <TableHead>{t("recipe")}</TableHead>
+                  <TableHead>{t("linkedMenuItem")}</TableHead>
+                  <TableHead>{t("ingredients")}</TableHead>
+                  <TableHead>{t("plateCost")}</TableHead>
+                  <TableHead>{t("sellingPrice")}</TableHead>
+                  <TableHead>{t("foodCostPct")}</TableHead>
+                  <TableHead>{t("margin")}</TableHead>
+                  {canEdit && <TableHead className="text-right">{t("actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -161,7 +163,7 @@ function RecipesTab() {
                   return (
                     <TableRow key={recipe.id} data-testid={`row-recipe-${recipe.id}`}>
                       <TableCell className="font-medium">{recipe.name}</TableCell>
-                      <TableCell>{mi?.name || <span className="text-muted-foreground text-xs">Not linked</span>}</TableCell>
+                      <TableCell>{mi?.name || <span className="text-muted-foreground text-xs">{t("notLinked")}</span>}</TableCell>
                       <TableCell><Badge variant="secondary">{recipe.ingredients?.length || 0}</Badge></TableCell>
                       <TableCell className="font-medium">{fmt(pc)}</TableCell>
                       <TableCell>{sp > 0 ? fmt(sp) : <span className="text-muted-foreground text-xs">—</span>}</TableCell>
@@ -208,6 +210,7 @@ function RecipesTab() {
 }
 
 export default function InventoryHub() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const canManage = MANAGEMENT_ROLES.includes(user?.role || "");
 
@@ -224,58 +227,58 @@ export default function InventoryHub() {
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="inventory-tabs">
           <TabsTrigger value="stock" data-testid="tab-stock">
-            <Package2 className="h-4 w-4 mr-1.5" />Stock & Items
+            <Package2 className="h-4 w-4 mr-1.5" />{t("stockAndItems")}
           </TabsTrigger>
           {canManage && (
             <TabsTrigger value="movements" data-testid="tab-movements">
-              <ArrowDownUp className="h-4 w-4 mr-1.5" />Movements
+              <ArrowDownUp className="h-4 w-4 mr-1.5" />{t("movements")}
             </TabsTrigger>
           )}
           {canManage && (
             <TabsTrigger value="recipes" data-testid="tab-recipes">
-              <ChefHat className="h-4 w-4 mr-1.5" />Recipes
+              <ChefHat className="h-4 w-4 mr-1.5" />{t("recipes")}
             </TabsTrigger>
           )}
           {canManage && (
             <TabsTrigger value="suppliers" data-testid="tab-suppliers">
-              <BookOpen className="h-4 w-4 mr-1.5" />Suppliers
+              <BookOpen className="h-4 w-4 mr-1.5" />{t("suppliers")}
             </TabsTrigger>
           )}
           {canManage && (
             <TabsTrigger value="procurement" data-testid="tab-procurement">
-              <ShoppingCart className="h-4 w-4 mr-1.5" />Procurement
+              <ShoppingCart className="h-4 w-4 mr-1.5" />{t("procurement")}
             </TabsTrigger>
           )}
         </TabsList>
         <TabsContent value="stock" className="mt-4" forceMount>
-          <TabErrorBoundary label="Stock & Items">
+          <TabErrorBoundary label={t("stockAndItems")}>
             <InventoryPage />
           </TabErrorBoundary>
         </TabsContent>
         {canManage && (
           <TabsContent value="movements" className="mt-4" forceMount>
-            <TabErrorBoundary label="Movements">
+            <TabErrorBoundary label={t("movements")}>
               <StockMovementLog initialIngredientId={urlIngredientId || undefined} />
             </TabErrorBoundary>
           </TabsContent>
         )}
         {canManage && (
           <TabsContent value="recipes" className="mt-4" forceMount>
-            <TabErrorBoundary label="Recipes">
+            <TabErrorBoundary label={t("recipes")}>
               <RecipesTab />
             </TabErrorBoundary>
           </TabsContent>
         )}
         {canManage && (
           <TabsContent value="suppliers" className="mt-4" forceMount>
-            <TabErrorBoundary label="Suppliers">
+            <TabErrorBoundary label={t("suppliers")}>
               <SuppliersPage />
             </TabErrorBoundary>
           </TabsContent>
         )}
         {canManage && (
           <TabsContent value="procurement" className="mt-4" forceMount>
-            <TabErrorBoundary label="Procurement">
+            <TabErrorBoundary label={t("procurement")}>
               <ProcurementPage />
             </TabErrorBoundary>
           </TabsContent>

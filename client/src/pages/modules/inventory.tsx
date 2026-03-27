@@ -40,6 +40,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { StatCard } from "@/components/widgets/stat-card";
 import { Textarea } from "@/components/ui/textarea";
+import { useTranslation } from "react-i18next";
 
 const ITEM_CATEGORIES = ["INGREDIENT", "CROCKERY", "CUTLERY", "GLASSWARE"] as const;
 type ItemCategory = typeof ITEM_CATEGORIES[number];
@@ -84,6 +85,7 @@ interface ParCheckItem {
 function ParLevelStatusPanel({ outletId }: { outletId?: string }) {
   const [open, setOpen] = useState(true);
   const { user } = useAuth();
+  const { t } = useTranslation("modules");
 
   const id = outletId || user?.outletId || "";
   const { data: parItems = [], isLoading, isError } = useQuery<ParCheckItem[]>({
@@ -120,7 +122,7 @@ function ParLevelStatusPanel({ outletId }: { outletId?: string }) {
                   <TableHead>Item</TableHead>
                   <TableHead className="text-right">Current</TableHead>
                   <TableHead className="text-right">Par/Shift</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("status")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -194,6 +196,8 @@ const TEST_IDS: Record<string, string> = {
 };
 
 function InventoryTab() {
+  const { t } = useTranslation("inventory");
+  const { t: tc } = useTranslation("common");
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -243,21 +247,21 @@ function InventoryTab() {
 
   const createMutation = useMutation({
     mutationFn: async (data: InventoryItemPayload) => { const res = await apiRequest("POST", "/api/inventory", data); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); resetForm(); toast({ title: "Item added" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); resetForm(); toast({ title: t("itemAdded") }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: InventoryItemPayload }) => { const res = await apiRequest("PATCH", `/api/inventory/${id}`, data); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); setEditingItem(null); resetForm(); toast({ title: "Item updated" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setItemDialogOpen(false); setEditingItem(null); resetForm(); toast({ title: t("itemUpdated") }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/inventory/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); toast({ title: "Deleted" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); toast({ title: tc("delete") }); },
     onError: (err: Error) => {
       const cleanMsg = err.message.replace(/^\d+:\s*/, "");
       const isInUse = cleanMsg.toLowerCase().includes("cannot delete") || cleanMsg.toLowerCase().includes("in use");
-      toast({ title: isInUse ? "Cannot delete item" : "Error", description: cleanMsg, variant: "destructive" });
+      toast({ title: isInUse ? t("cannotDeleteItem") : tc("error"), description: cleanMsg, variant: "destructive" });
     },
   });
   const pendingAdjustRef = { current: null as { id: string; data: { type: string; quantity: string; reason: string } } | null };
@@ -280,14 +284,14 @@ function InventoryTab() {
       pendingAdjustRef.current = null;
       return res.json();
     },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setAdjustDialogOpen(false); setAdjustingItem(null); setAdjustData({ type: "in", quantity: "", reason: "" }); toast({ title: "Stock adjusted" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); setAdjustDialogOpen(false); setAdjustingItem(null); setAdjustData({ type: "in", quantity: "", reason: "" }); toast({ title: t("stockAdjusted") }); },
     onError: (err: Error) => {
       if (err.message.startsWith("__SUPERVISOR_REQUIRED__:") && pendingAdjustRef.current) {
         const action = err.message.split(":")[1];
         setSupervisorDialog({ open: true, action: action || "large_stock_adjustment", actionLabel: "Large Stock Adjustment", pendingData: pendingAdjustRef.current });
         return;
       }
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -456,15 +460,15 @@ function InventoryTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Category</TableHead>
+                  <TableHead>{t("name")}</TableHead>
+                  <TableHead>{t("category")}</TableHead>
                   <TableHead>Current Stock</TableHead>
                   {isCrockeryTab && <TableHead className="text-right">Par/Shift</TableHead>}
                   {!isCrockeryTab && <><TableHead>Stock Level</TableHead><TableHead>Reorder</TableHead><TableHead>Unit</TableHead></>}
                   <TableHead>Cost</TableHead>
                   {!isCrockeryTab && <TableHead>Supplier</TableHead>}
                   <TableHead>Status</TableHead>
-                  {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                  {canEdit && <TableHead className="text-right">{t("actions")}</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody style={useVirtualRows ? { height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" } : undefined}>
@@ -764,6 +768,8 @@ function InventoryTab() {
 type RecipeWithIngredients = Recipe & { ingredients: RecipeIngredient[] };
 
 function RecipesTab() {
+  const { t } = useTranslation("inventory");
+  const { t: tc } = useTranslation("common");
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -792,18 +798,18 @@ function RecipesTab() {
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => { const res = await apiRequest("POST", "/api/recipes", data); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/recipes"] }); setDialogOpen(false); toast({ title: "Recipe created" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/recipes"] }); setDialogOpen(false); toast({ title: t("recipeCreated") }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
   const updateMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: any }) => { const res = await apiRequest("PATCH", `/api/recipes/${id}`, data); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/recipes"] }); setDialogOpen(false); setEditingRecipe(null); toast({ title: "Recipe updated" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/recipes"] }); setDialogOpen(false); setEditingRecipe(null); toast({ title: t("recipeUpdated") }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/recipes/${id}`); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/recipes"] }); toast({ title: "Recipe deleted" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/recipes"] }); toast({ title: t("recipeDeleted") }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
 
   function calcPlateCost(ings: typeof ingredients) {
@@ -889,7 +895,7 @@ function RecipesTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Recipe</TableHead><TableHead>Menu Item</TableHead><TableHead>Ingredients</TableHead><TableHead>Plate Cost</TableHead><TableHead>Selling Price</TableHead><TableHead>Food Cost %</TableHead><TableHead>Margin</TableHead>
+                  <TableHead>{t("recipe")}</TableHead><TableHead>Menu Item</TableHead><TableHead>Ingredients</TableHead><TableHead>Plate Cost</TableHead><TableHead>Selling Price</TableHead><TableHead>Food Cost %</TableHead><TableHead>Margin</TableHead>
                   {canEdit && <TableHead className="text-right">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
@@ -1012,6 +1018,8 @@ function RecipesTab() {
 }
 
 function StockTakesTab() {
+  const { t } = useTranslation("inventory");
+  const { t: tc } = useTranslation("common");
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1035,8 +1043,8 @@ function StockTakesTab() {
       const res = await apiRequest("POST", "/api/stock-takes", { items });
       return res.json();
     },
-    onSuccess: (data: any) => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); setSelectedTakeId(data.id); toast({ title: "Stock take created" }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onSuccess: (data: any) => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); setSelectedTakeId(data.id); toast({ title: t("stockTakeCreated") }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
   const updateLineMutation = useMutation({
     mutationFn: async ({ takeId, lineId, countedQty }: { takeId: string; lineId: string; countedQty: number }) => {
@@ -1044,12 +1052,12 @@ function StockTakesTab() {
       return res.json();
     },
     onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes", selectedTakeId] }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
   const approveMutation = useMutation({
     mutationFn: async (takeId: string) => { const res = await apiRequest("POST", `/api/stock-takes/${takeId}/approve`); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); toast({ title: "Stock take approved. Inventory adjusted." }); },
-    onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/stock-takes"] }); queryClient.invalidateQueries({ queryKey: ["/api/inventory"] }); toast({ title: t("stockTakeApproved") }); },
+    onError: (err: Error) => { toast({ title: tc("error"), description: err.message, variant: "destructive" }); },
   });
 
   const lines = takeDetail?.lines || [];
@@ -1237,6 +1245,7 @@ function UpcomingEventsSidebar() {
 function StockMovementsTab() {
   const [filters, setFilters] = useState({ from: "", to: "", type: "", ingredientId: "" });
   const [applied, setApplied] = useState({ from: "", to: "", type: "", ingredientId: "" });
+  const { t } = useTranslation("modules");
 
   const { data: inventoryRes } = useQuery<{ data: Array<{ id: string; name: string }>; total: number }>({ queryKey: ["/api/inventory"] });
   const ingredientList = inventoryRes?.data ?? [];
@@ -1313,9 +1322,9 @@ function StockMovementsTab() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Date</TableHead>
+                  <TableHead>{t("date")}</TableHead>
                   <TableHead>Ingredient</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>{t("type")}</TableHead>
                   <TableHead className="text-right">Quantity</TableHead>
                   <TableHead>Reason</TableHead>
                 </TableRow>
@@ -1548,6 +1557,8 @@ const INVENTORY_TABS = [
 type InventoryTabValue = typeof INVENTORY_TABS[number]["value"];
 
 export default function InventoryPage() {
+  const { t } = useTranslation("inventory");
+  const { t: tc } = useTranslation("common");
   const [location, navigate] = useLocation();
 
   const getTabFromUrl = (): InventoryTabValue => {
@@ -1566,12 +1577,12 @@ export default function InventoryPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-inventory">
-      <PageTitle title="Stock & Inventory" />
+      <PageTitle title={t("title")} />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10"><Warehouse className="h-6 w-6 text-primary" /></div>
         <div>
-          <h1 className="text-2xl font-bold font-heading" data-testid="text-inventory-title">Inventory</h1>
-          <p className="text-muted-foreground">Manage stock, movements, wastage, procurement & more</p>
+          <h1 className="text-2xl font-bold font-heading" data-testid="text-inventory-title">{t("title")}</h1>
+          <p className="text-muted-foreground">{t("manageStock")}</p>
         </div>
       </div>
 

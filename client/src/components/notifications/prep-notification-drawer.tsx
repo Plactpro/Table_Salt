@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useLocation } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -100,6 +101,7 @@ interface ReadinessSummaryCardProps {
 }
 
 function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryCardProps) {
+  const { t } = useTranslation("modules");
   const [, navigate] = useLocation();
   const isUnread = !n.readAt;
 
@@ -123,7 +125,7 @@ function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryC
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <BarChart2 className="h-4 w-4 text-blue-600" />
-          <span className="text-sm font-semibold text-foreground">Readiness Summary</span>
+          <span className="text-sm font-semibold text-foreground">{t("readinessSummaryTitle")}</span>
           {isUnread && <span className="h-1.5 w-1.5 rounded-full bg-blue-500 shrink-0" />}
         </div>
         <span className="text-[10px] text-muted-foreground">
@@ -139,24 +141,24 @@ function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryC
         <div className="bg-green-50 dark:bg-green-950/30 rounded-lg p-2 text-center">
           <CheckCircle2 className="h-4 w-4 text-green-600 mx-auto mb-0.5" />
           <p className="text-lg font-bold text-green-700">{verified}</p>
-          <p className="text-[10px] text-green-600">Verified</p>
+          <p className="text-[10px] text-green-600">{t("verified")}</p>
         </div>
         <div className="bg-amber-50 dark:bg-amber-950/30 rounded-lg p-2 text-center">
           <Clock className="h-4 w-4 text-amber-600 mx-auto mb-0.5" />
           <p className="text-lg font-bold text-amber-700">{inProgress}</p>
-          <p className="text-[10px] text-amber-600">In Progress</p>
+          <p className="text-[10px] text-amber-600">{t("inProgress")}</p>
         </div>
         <div className="bg-red-50 dark:bg-red-950/30 rounded-lg p-2 text-center">
           <AlertTriangle className="h-4 w-4 text-red-600 mx-auto mb-0.5" />
           <p className="text-lg font-bold text-red-700">{overdue}</p>
-          <p className="text-[10px] text-red-600">Overdue</p>
+          <p className="text-[10px] text-red-600">{t("overdue")}</p>
         </div>
       </div>
 
       {total > 0 && (
         <div className="mb-2">
           <div className="flex justify-between text-[10px] text-muted-foreground mb-1">
-            <span>Overall completion</span>
+            <span>{t("overallCompletion")}</span>
             <span className="font-semibold">{completionPct}% ({verified}/{total})</span>
           </div>
           <div className="h-1.5 rounded-full bg-muted overflow-hidden">
@@ -172,12 +174,12 @@ function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryC
         <div className="flex items-center gap-3 mb-2 text-xs">
           {dishesReady > 0 && (
             <span className="flex items-center gap-1 text-green-700">
-              <TrendingUp className="h-3 w-3" />{dishesReady} dishes ready
+              {t("dishesReady", { count: dishesReady })}
             </span>
           )}
           {dishesAtRisk > 0 && (
             <span className="flex items-center gap-1 text-red-600">
-              <TrendingDown className="h-3 w-3" />{dishesAtRisk} at risk
+              {t("dishesAtRisk", { count: dishesAtRisk })}
             </span>
           )}
         </div>
@@ -191,7 +193,7 @@ function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryC
           onClick={() => { onMarkRead(n.id); navigate("/kitchen-board"); }}
           data-testid={`button-summary-board-${n.id.slice(-4)}`}
         >
-          View Full Board <ChevronRight className="h-3 w-3 ml-0.5" />
+          {t("viewFullBoard")} <ChevronRight className="h-3 w-3 ml-0.5" />
         </Button>
         <Button
           size="sm"
@@ -200,7 +202,7 @@ function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryC
           onClick={() => { onMarkRead(n.id); navigate("/kitchen-board?tab=pending"); }}
           data-testid={`button-summary-assign-${n.id.slice(-4)}`}
         >
-          Assign Pending
+          {t("assignPending")}
         </Button>
         {isUnread && (
           <button
@@ -208,7 +210,7 @@ function ReadinessSummaryCard({ notification: n, onMarkRead }: ReadinessSummaryC
             onClick={() => onMarkRead(n.id)}
             data-testid={`button-mark-read-summary-${n.id.slice(-4)}`}
           >
-            Mark read
+            {t("markRead")}
           </button>
         )}
       </div>
@@ -229,6 +231,7 @@ interface ReassignPopoverProps {
 }
 
 function ReassignPopover({ taskId, onSuccess }: ReassignPopoverProps) {
+  const { t } = useTranslation("modules");
   const [open, setOpen] = useState(false);
   const [selectedChefId, setSelectedChefId] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -249,11 +252,11 @@ function ReassignPopover({ taskId, onSuccess }: ReassignPopoverProps) {
         chefId: selectedChefId,
         chefName: displayName,
       });
-      toast({ title: `Task reassigned to ${displayName}` });
+      toast({ title: t("taskReassignedTo", { name: displayName }) });
       onSuccess(displayName);
       setOpen(false);
     } catch {
-      toast({ title: "Failed to reassign task", variant: "destructive" });
+      toast({ title: t("failedToReassignTask"), variant: "destructive" });
     } finally {
       setLoading(false);
     }
@@ -269,18 +272,18 @@ function ReassignPopover({ taskId, onSuccess }: ReassignPopoverProps) {
           data-testid={`button-reassign-${taskId.slice(-4)}`}
         >
           <RefreshCw className="h-3 w-3 mr-1" />
-          REASSIGN
+          {t("reassign")}
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-56 p-3" align="start">
-        <p className="text-xs font-semibold mb-2">Reassign to:</p>
+        <p className="text-xs font-semibold mb-2">{t("reassignTo")}</p>
         <Select value={selectedChefId} onValueChange={setSelectedChefId}>
           <SelectTrigger className="h-7 text-xs mb-2" data-testid={`select-reassign-chef-${taskId.slice(-4)}`}>
-            <SelectValue placeholder="Select staff..." />
+            <SelectValue placeholder={t("selectStaff")} />
           </SelectTrigger>
           <SelectContent>
             {kitchenStaff.length === 0 && (
-              <SelectItem value="__none__" disabled>No kitchen staff found</SelectItem>
+              <SelectItem value="__none__" disabled>{t("noKitchenStaff")}</SelectItem>
             )}
             {kitchenStaff.map(u => (
               <SelectItem key={u.id} value={String(u.id)}>
@@ -296,7 +299,7 @@ function ReassignPopover({ taskId, onSuccess }: ReassignPopoverProps) {
           onClick={handleReassign}
           data-testid={`button-confirm-reassign-${taskId.slice(-4)}`}
         >
-          {loading ? "Reassigning..." : "Confirm Reassign"}
+          {loading ? t("reassigning") : t("confirmReassign")}
         </Button>
       </PopoverContent>
     </Popover>
@@ -309,6 +312,7 @@ interface NotificationCardProps {
 }
 
 function LowReadinessAlertCard({ notification: n, onMarkRead }: NotificationCardProps) {
+  const { t } = useTranslation("modules");
   const [, navigate] = useLocation();
   const isUnread = !n.readAt;
 
@@ -320,7 +324,7 @@ function LowReadinessAlertCard({ notification: n, onMarkRead }: NotificationCard
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <AlertTriangle className="h-4 w-4 text-red-600" />
-          <span className="text-sm font-bold text-red-700 dark:text-red-400">LOW READINESS ALERT</span>
+          <span className="text-sm font-bold text-red-700 dark:text-red-400">{t("lowReadinessAlertTitle")}</span>
           {isUnread && <span className="h-1.5 w-1.5 rounded-full bg-red-500 shrink-0" />}
         </div>
         <span className="text-[10px] text-muted-foreground">
@@ -336,7 +340,7 @@ function LowReadinessAlertCard({ notification: n, onMarkRead }: NotificationCard
           onClick={() => { onMarkRead(n.id); navigate(n.actionUrl ?? "/kitchen-board"); }}
           data-testid={`button-low-readiness-assign-${n.id.slice(-4)}`}
         >
-          ASSIGN ALL PENDING NOW
+          {t("assignAllPendingNow")}
         </Button>
         {isUnread && (
           <button
@@ -344,7 +348,7 @@ function LowReadinessAlertCard({ notification: n, onMarkRead }: NotificationCard
             onClick={() => onMarkRead(n.id)}
             data-testid={`button-mark-read-low-readiness-${n.id.slice(-4)}`}
           >
-            Dismiss
+            {t("dismiss")}
           </button>
         )}
       </div>
@@ -353,6 +357,7 @@ function LowReadinessAlertCard({ notification: n, onMarkRead }: NotificationCard
 }
 
 function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps) {
+  const { t } = useTranslation("modules");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [reminding, setReminding] = useState(false);
@@ -383,9 +388,9 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
     setReminding(true);
     try {
       await apiRequest("POST", `/api/prep-assignments/${taskId}/remind`, {});
-      toast({ title: `Reminder sent to ${assigneeName}` });
+      toast({ title: t("reminderSentTo", { name: assigneeName }) });
     } catch {
-      toast({ title: "Failed to send reminder", variant: "destructive" });
+      toast({ title: t("failedToSendReminder"), variant: "destructive" });
     } finally {
       setReminding(false);
     }
@@ -420,7 +425,7 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
               onClick={() => onMarkRead(n.id)}
               data-testid={`button-mark-read-${n.id.slice(-4)}`}
             >
-              Mark read
+              {t("markRead")}
             </button>
           )}
         </div>
@@ -435,7 +440,7 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
                 onClick={() => { onMarkRead(n.id); navigate(n.actionUrl!); }}
                 data-testid={`button-notif-action-${n.id.slice(-4)}`}
               >
-                {n.actionLabel ?? "View"} <ChevronRight className="h-3 w-3 ml-0.5" />
+                {n.actionLabel ?? t("view")} <ChevronRight className="h-3 w-3 ml-0.5" />
               </Button>
             )}
             {n.action2Url && (
@@ -446,7 +451,7 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
                 onClick={() => { onMarkRead(n.id); navigate(n.action2Url!); }}
                 data-testid={`button-notif-action2-${n.id.slice(-4)}`}
               >
-                {n.action2Label ?? "More"}
+                {n.action2Label ?? t("more")}
               </Button>
             )}
 
@@ -461,7 +466,7 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
                   data-testid={`button-remind-${n.id.slice(-4)}`}
                 >
                   <Bell className="h-3 w-3 mr-1" />
-                  {reminding ? "Sending..." : `REMIND ${assigneeName.toUpperCase().replace(/[^A-Z0-9 ]/g, "")}`}
+                  {reminding ? t("sendingReminder") : t("remindAssignee", { name: assigneeName.toUpperCase().replace(/[^A-Z0-9 ]/g, "") })}
                 </Button>
                 <ReassignPopover
                   taskId={taskId}
@@ -479,7 +484,7 @@ function NotificationCard({ notification: n, onMarkRead }: NotificationCardProps
                 data-testid={`button-raise-po-${n.id.slice(-4)}`}
               >
                 <ShoppingCart className="h-3 w-3 mr-1" />
-                RAISE PO
+                {t("raisePO")}
               </Button>
             )}
           </div>
@@ -541,16 +546,16 @@ const DEFAULT_PREFS: NotifPrefs = {
   low_readiness_alert: { enabled: true, sound: "beep" },
 };
 
-const PREF_LABELS: Record<keyof NotifPrefs, string> = {
-  task_assigned: "Task Assigned",
-  task_completed: "Task Completed",
-  task_overdue: "Task Overdue",
-  task_issue: "Issue Reported",
-  task_help: "Help Requested",
-  readiness_summary: "Readiness Summary",
-  all_complete: "All Prep Complete",
-  task_progress: "50% Progress Milestone",
-  low_readiness_alert: "Low Readiness Alert",
+const PREF_LABEL_KEYS: Record<keyof NotifPrefs, string> = {
+  task_assigned: "notifTaskAssigned",
+  task_completed: "notifTaskCompleted",
+  task_overdue: "notifTaskOverdue",
+  task_issue: "notifTaskIssue",
+  task_help: "notifTaskHelp",
+  readiness_summary: "notifReadinessSummary",
+  all_complete: "notifAllComplete",
+  task_progress: "notifTaskProgress",
+  low_readiness_alert: "notifLowReadinessAlert",
 };
 
 function loadPrefs(userId: string): NotifPrefs {
@@ -591,6 +596,7 @@ function saveEmailDigestPref(userId: string, enabled: boolean) {
 }
 
 function NotificationPreferencesPanel({ userId, onBack }: NotificationPreferencesPanelProps) {
+  const { t } = useTranslation("modules");
   const [prefs, setPrefs] = useState<NotifPrefs>(() => loadPrefs(userId));
   const [emailDigest, setEmailDigest] = useState(() => loadEmailDigestPref(userId));
   const push = usePushNotifications();
@@ -632,15 +638,15 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
-        <h2 className="text-sm font-semibold">Notification Preferences</h2>
+        <h2 className="text-sm font-semibold">{t("notifPrefTitle")}</h2>
       </div>
       <ScrollArea className="flex-1 px-4 py-3">
         <p className="text-xs text-muted-foreground mb-4">
-          Choose which events to receive alerts for, and the sound to play for each.
+          {t("notifPrefDescription")}
         </p>
 
         <div className="mb-5 space-y-2">
-          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Delivery Channels</p>
+          <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t("deliveryChannels")}</p>
 
           {push.isSupported && (
             <div
@@ -650,13 +656,13 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
               <div className="flex items-center gap-3">
                 <Bell className="h-4 w-4 text-muted-foreground" />
                 <div>
-                  <Label className="text-sm font-medium">Push notifications</Label>
+                  <Label className="text-sm font-medium">{t("pushNotifications")}</Label>
                   <p className="text-[10px] text-muted-foreground">
                     {push.permission === "denied"
-                      ? "Blocked by browser — enable in browser settings"
+                      ? t("pushNotificationsBlockedHint")
                       : push.isSubscribed
-                      ? "OS-level alerts even when tab is in background"
-                      : "Get alerted even when the tab is minimized"}
+                      ? t("pushNotificationsBackgroundHint")
+                      : t("pushNotificationsMinimizedHint")}
                   </p>
                 </div>
               </div>
@@ -676,9 +682,9 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
             <div className="flex items-center gap-3">
               <Mail className="h-4 w-4 text-muted-foreground" />
               <div>
-                <Label className="text-sm font-medium">Email shift digest</Label>
+                <Label className="text-sm font-medium">{t("emailShiftDigest")}</Label>
                 <p className="text-[10px] text-muted-foreground">
-                  End-of-shift summary: tasks, issues &amp; top performer
+                  {t("emailShiftDigestHint")}
                 </p>
               </div>
             </div>
@@ -690,7 +696,7 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
           </div>
         </div>
 
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">Alert Sounds</p>
+        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-2">{t("alertSounds")}</p>
         <div className="space-y-1">
           {(Object.keys(prefs) as Array<keyof NotifPrefs>).map(key => (
             <div
@@ -705,7 +711,7 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
                   data-testid={`toggle-pref-${key}`}
                 />
                 <Label className="text-sm cursor-pointer" htmlFor={`pref-${key}`}>
-                  {PREF_LABELS[key]}
+                  {t(PREF_LABEL_KEYS[key])}
                 </Label>
               </div>
               <Select
@@ -720,16 +726,16 @@ function NotificationPreferencesPanel({ userId, onBack }: NotificationPreference
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="chime">Chime</SelectItem>
-                  <SelectItem value="beep">Beep</SelectItem>
-                  <SelectItem value="silent">Silent</SelectItem>
+                  <SelectItem value="chime">{t("soundChime")}</SelectItem>
+                  <SelectItem value="beep">{t("soundBeep")}</SelectItem>
+                  <SelectItem value="silent">{t("soundSilent")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           ))}
         </div>
         <p className="text-[10px] text-muted-foreground mt-4">
-          Preferences are saved locally on this device.
+          {t("prefsLocalHint")}
         </p>
       </ScrollArea>
     </div>
@@ -753,6 +759,7 @@ export default function PrepNotificationDrawer({
   onMarkRead,
   onMarkAllRead,
 }: PrepNotificationDrawerProps) {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const [showPrefs, setShowPrefs] = useState(false);
   const { action, info, complete } = groupNotifications(notifications);
@@ -771,7 +778,7 @@ export default function PrepNotificationDrawer({
               <div className="flex items-center justify-between">
                 <SheetTitle className="flex items-center gap-2 text-base">
                   <ChefHat className="h-5 w-5 text-orange-500" />
-                  Kitchen Notifications
+                  {t("kitchenNotifications")}
                   {unreadCount > 0 && (
                     <span className="bg-red-500 text-white text-xs font-bold px-1.5 py-0.5 rounded-full" data-testid="badge-prep-notif-count">
                       {unreadCount}
@@ -787,7 +794,7 @@ export default function PrepNotificationDrawer({
                       onClick={onMarkAllRead}
                       data-testid="button-mark-all-read"
                     >
-                      Mark all read
+                      {t("markAllRead")}
                     </Button>
                   )}
                   <button
@@ -806,20 +813,20 @@ export default function PrepNotificationDrawer({
               {notifications.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
                   <BellOff className="h-10 w-10 opacity-30" />
-                  <p className="text-sm">No notifications yet</p>
-                  <p className="text-xs">You'll see prep task updates here in real time</p>
+                  <p className="text-sm">{t("noNotificationsYet")}</p>
+                  <p className="text-xs">{t("noNotificationsHint")}</p>
                 </div>
               ) : (
                 <div>
-                  <GroupSection title="Needs Action" items={action} onMarkRead={onMarkRead} />
-                  <GroupSection title="In Progress" items={info} onMarkRead={onMarkRead} />
-                  <GroupSection title="Completed" items={complete} onMarkRead={onMarkRead} />
+                  <GroupSection title={t("needsAction")} items={action} onMarkRead={onMarkRead} />
+                  <GroupSection title={t("inProgress")} items={info} onMarkRead={onMarkRead} />
+                  <GroupSection title={t("completed")} items={complete} onMarkRead={onMarkRead} />
                 </div>
               )}
             </ScrollArea>
 
             <div className="border-t px-4 py-2 text-[11px] text-muted-foreground text-center shrink-0">
-              Showing {notifications.length} notification{notifications.length !== 1 ? "s" : ""} · Live updates enabled
+              {t("showingNotifications", { count: notifications.length })} · {t("liveUpdatesEnabled")}
             </div>
           </>
         )}

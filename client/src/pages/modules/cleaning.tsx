@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 import {
   ClipboardCheck, Plus, Trash2, CheckCircle2, Clock, AlertTriangle,
   ChefHat, Building, Sparkles, ShieldCheck, Calendar, User,
@@ -73,6 +74,7 @@ async function fetchJson(url: string) {
 }
 
 export default function CleaningPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -623,7 +625,7 @@ export default function CleaningPage() {
 
   return (
     <div className="space-y-6" data-testid="cleaning-page">
-      <PageTitle title="Cleaning" />
+      <PageTitle title={t("cleaning")} />
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

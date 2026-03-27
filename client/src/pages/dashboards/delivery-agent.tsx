@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -53,10 +54,10 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 
-function formatDate(dateStr: string) {
+function formatDate(dateStr: string, locale = "en-US") {
   const d = new Date(dateStr);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
-    " " + d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleDateString(locale, { month: "short", day: "numeric" }) +
+    " " + d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
 }
 
 function isActive(status: string) {
@@ -68,6 +69,7 @@ function isHistory(status: string) {
 }
 
 export default function DeliveryAgentDashboard() {
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -294,7 +296,7 @@ export default function DeliveryAgentDashboard() {
                           </p>
                           <div className="flex items-center gap-1 text-xs text-muted-foreground">
                             <Clock className="h-3 w-3" />
-                            {formatDate(order.createdAt)}
+                            {formatDate(order.createdAt, i18n.language)}
                           </div>
                         </div>
                         <div className="flex items-center gap-3">

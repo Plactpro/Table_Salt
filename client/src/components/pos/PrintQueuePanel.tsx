@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { Printer, RefreshCw, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { useState, useCallback } from "react";
 import { renderKotHtml, renderBillHtml, dispatchPrint } from "@/lib/print-utils";
+import { useAuth } from "@/lib/auth";
+import { useTranslation } from "react-i18next";
 
 interface PrintJob {
   id: string;
@@ -33,6 +35,9 @@ interface PrintQueuePanelProps {
 export default function PrintQueuePanel({ restaurantName = "Restaurant" }: PrintQueuePanelProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { tenant } = useAuth();
+  const { t: tc, i18n } = useTranslation("common");
+  const printLanguage = tenant?.defaultLanguage || i18n.language || "en";
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
   const { data: jobs = [], isLoading, refetch } = useQuery<PrintJob[]>({
@@ -60,7 +65,7 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
       queryClient.invalidateQueries({ queryKey: ["/api/print-jobs"] });
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -88,6 +93,7 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
           station: job.payload?.station,
           sentAt: job.payload?.sentAt || job.createdAt,
           items: job.payload?.items || [],
+          language: printLanguage,
         });
       } else if (job.type === "bill" || job.type === "receipt") {
         const p = job.payload || {};
@@ -116,9 +122,10 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
           customerGstin: p.customerGstin,
           loyaltyPointsEarned: p.loyaltyPointsEarned,
           digitalReceiptUrl: p.digitalReceiptUrl || null,
+          language: printLanguage,
         });
       } else {
-        toast({ title: "Unknown print type", description: `Cannot print type: ${job.type}`, variant: "destructive" });
+        toast({ title: tc("unknownPrintType"), description: `Cannot print type: ${job.type}`, variant: "destructive" });
         return;
       }
 
@@ -129,7 +136,7 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
         onFailure: () => { updateStatusMutation.mutate({ id: job.id, status: "failed" }); },
       });
     },
-    [restaurantName, getStationPrinterUrl, updateStatusMutation, toast]
+    [restaurantName, getStationPrinterUrl, updateStatusMutation, toast, tc, printLanguage]
   );
 
   const statusColor: Record<string, string> = {
@@ -145,21 +152,21 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
   };
 
   const formatTime = (dt: string) =>
-    new Date(dt).toLocaleString("en-IN", {
+    new Intl.DateTimeFormat(i18n.language, {
       day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true,
-    });
+    }).format(new Date(dt));
 
   const getJobLabel = (job: PrintJob) => {
     const p = job.payload || {};
     if (job.type === "kot") {
-      if (p.orderType === "dine_in" && p.tableNumber) return `Table #${p.tableNumber}`;
-      if (p.orderType === "takeaway") return "Takeaway";
-      if (p.orderType === "delivery") return "Delivery";
-      return "Kitchen Order";
+      if (p.orderType === "dine_in" && p.tableNumber) return tc("printQueue.tableLabel", { n: p.tableNumber });
+      if (p.orderType === "takeaway") return tc("takeaway");
+      if (p.orderType === "delivery") return tc("delivery");
+      return tc("kitchenOrder");
     }
     if (job.type === "bill" || job.type === "receipt") {
       const bn = p.billNumber || job.referenceId.slice(-6).toUpperCase();
-      return `Bill #${bn}`;
+      return tc("printQueue.billLabel", { n: bn });
     }
     return `Ref: ${job.referenceId.slice(-6).toUpperCase()}`;
   };
@@ -173,8 +180,8 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
               <Printer className="h-5 w-5 text-violet-700 dark:text-violet-300" />
             </div>
             <div>
-              <CardTitle>Print Queue</CardTitle>
-              <CardDescription>KOT and bill print jobs</CardDescription>
+              <CardTitle>{tc("printQueue.title")}</CardTitle>
+              <CardDescription>{tc("printQueue.desc")}</CardDescription>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -183,10 +190,10 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="queued">Queued</SelectItem>
-                <SelectItem value="printed">Printed</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
+                <SelectItem value="all">{tc("printQueue.all")}</SelectItem>
+                <SelectItem value="queued">{tc("printQueue.queued")}</SelectItem>
+                <SelectItem value="printed">{tc("printQueue.printed")}</SelectItem>
+                <SelectItem value="failed">{tc("printQueue.failed")}</SelectItem>
               </SelectContent>
             </Select>
             <Button
@@ -202,10 +209,12 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
       </CardHeader>
       <CardContent>
         {isLoading ? (
-          <div className="text-center text-muted-foreground py-6 text-sm">Loading print jobs…</div>
+          <div className="text-center text-muted-foreground py-6 text-sm">{tc("printQueue.loading")}</div>
         ) : jobs.length === 0 ? (
           <div className="text-center text-muted-foreground py-6 text-sm" data-testid="text-no-print-jobs">
-            No print jobs{statusFilter !== "all" ? ` with status "${statusFilter}"` : ""}
+            {statusFilter !== "all"
+              ? tc("printQueue.noJobsStatus", { status: statusFilter })
+              : tc("printQueue.noJobs")}
           </div>
         ) : (
           <div className="space-y-2">
@@ -245,7 +254,7 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
                     data-testid={`button-print-job-${job.id}`}
                   >
                     <Printer className="h-3 w-3 mr-1" />
-                    {job.status === "failed" ? "Retry" : "Print"}
+                    {job.status === "failed" ? tc("retry") : tc("print")}
                   </Button>
                   {job.status !== "printed" && (
                     <Button
@@ -255,7 +264,7 @@ export default function PrintQueuePanel({ restaurantName = "Restaurant" }: Print
                       onClick={() => updateStatusMutation.mutate({ id: job.id, status: "failed" })}
                       data-testid={`button-skip-job-${job.id}`}
                     >
-                      Skip
+                      {tc("skip")}
                     </Button>
                   )}
                 </div>

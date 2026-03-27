@@ -23,6 +23,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 interface PerformanceLog {
   id: string;
@@ -108,6 +109,7 @@ function parseHoursFromTimeRange(start: string, end: string): number {
 }
 
 export default function PerformancePage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -273,7 +275,7 @@ export default function PerformancePage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <PageTitle title="Performance" />
+      <PageTitle title={t("performance")} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">

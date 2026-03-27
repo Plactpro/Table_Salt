@@ -28,6 +28,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 interface CustomerData {
   id: string;
@@ -143,6 +144,7 @@ export default function CrmPage() {
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useTranslation("common");
   const currency = user?.tenant?.currency || "USD";
   const currencyOpts: FormatCurrencyOptions = { position: (user?.tenant?.currencyPosition || "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 };
   const fmt = (val: string | number) => formatCurrency(val, currency, currencyOpts);
@@ -246,10 +248,10 @@ export default function CrmPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setShowAddDialog(false);
-      toast({ title: "Customer added" });
+      toast({ title: t("customerAdded") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -261,10 +263,10 @@ export default function CrmPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setShowEditDialog(false);
-      toast({ title: "Customer updated" });
+      toast({ title: t("customerUpdated") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -277,10 +279,10 @@ export default function CrmPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/feedback"] });
       setShowFeedbackDialog(false);
       setFeedbackForm({ customerId: "", orderId: "", rating: "5", comment: "" });
-      toast({ title: "Feedback recorded" });
+      toast({ title: t("feedbackRecorded") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -292,10 +294,10 @@ export default function CrmPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/customers"] });
       setShowProfileDialog(false);
       setSelectedCustomer(null);
-      toast({ title: "Customer deleted" });
+      toast({ title: t("customerDeleted") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -407,7 +409,7 @@ export default function CrmPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <PageTitle title="CRM" />
+      <PageTitle title={t("customers")} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
@@ -415,9 +417,9 @@ export default function CrmPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold font-heading" data-testid="text-crm-title">
-              Customer Relations
+              {t("customers")}
             </h1>
-            <p className="text-muted-foreground text-sm">Manage customers, loyalty, and engagement</p>
+            <p className="text-muted-foreground text-sm">{t("customers")}</p>
           </div>
         </div>
         <Button data-testid="button-add-customer" onClick={openAdd}>
@@ -469,7 +471,7 @@ export default function CrmPage() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search customers..."
+            placeholder={t("searchCustomers")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-10"
@@ -479,14 +481,14 @@ export default function CrmPage() {
         <Select value={filterTier} onValueChange={setFilterTier}>
           <SelectTrigger className="w-[140px]" data-testid="select-filter-tier">
             <Filter className="w-3 h-3 mr-1" />
-            <SelectValue placeholder="Tier" />
+            <SelectValue placeholder={t("tier")} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All Tiers</SelectItem>
-            <SelectItem value="bronze">Bronze</SelectItem>
-            <SelectItem value="silver">Silver</SelectItem>
-            <SelectItem value="gold">Gold</SelectItem>
-            <SelectItem value="platinum">Platinum</SelectItem>
+            <SelectItem value="all">{t("allTiers")}</SelectItem>
+            <SelectItem value="bronze">{t("tierBronze")}</SelectItem>
+            <SelectItem value="silver">{t("tierSilver")}</SelectItem>
+            <SelectItem value="gold">{t("tierGold")}</SelectItem>
+            <SelectItem value="platinum">{t("tierPlatinum")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -651,7 +653,7 @@ export default function CrmPage() {
       <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Customer Profile</DialogTitle>
+            <DialogTitle>{t("customerProfile")}</DialogTitle>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-4">
@@ -674,13 +676,13 @@ export default function CrmPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Total Spent</p>
+                  <p className="text-xs text-muted-foreground">{t("totalSpent")}</p>
                   <p className="font-bold" data-testid="text-profile-spent">
                     {fmt(Number(selectedCustomer.totalSpent || 0))}
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-muted/50">
-                  <p className="text-xs text-muted-foreground">Avg Spend</p>
+                  <p className="text-xs text-muted-foreground">{t("avgSpend")}</p>
                   <p className="font-bold" data-testid="text-profile-avg">
                     {fmt(Number(selectedCustomer.averageSpend || 0))}
                   </p>
@@ -832,67 +834,67 @@ export default function CrmPage() {
       <Dialog open={showAddDialog} onOpenChange={(open) => { if (!open) setCrmFormDirty(false); setShowAddDialog(open); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add New Customer</DialogTitle>
+            <DialogTitle>{t("addNewCustomer")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4" onChange={() => setCrmFormDirty(true)}>
             <div>
-              <Label>Name *</Label>
+              <Label>{t("name")} *</Label>
               <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-customer-name" />
               {crmFormErrors.name && <p className="text-red-500 text-xs mt-1">{crmFormErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Phone</Label>
+                <Label>{t("phone")}</Label>
                 <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} data-testid="input-customer-phone" />
               </div>
               <div>
-                <Label>Email</Label>
+                <Label>{t("email")}</Label>
                 <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} data-testid="input-customer-email" />
               </div>
             </div>
             <div>
-              <Label>Loyalty Tier</Label>
+              <Label>{t("loyaltyTier")}</Label>
               <Select value={formData.loyaltyTier} onValueChange={(v) => setFormData({ ...formData, loyaltyTier: v })}>
                 <SelectTrigger data-testid="select-customer-tier">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="bronze">Bronze</SelectItem>
-                  <SelectItem value="silver">Silver</SelectItem>
-                  <SelectItem value="gold">Gold</SelectItem>
-                  <SelectItem value="platinum">Platinum</SelectItem>
+                  <SelectItem value="bronze">{t("tierBronze")}</SelectItem>
+                  <SelectItem value="silver">{t("tierSilver")}</SelectItem>
+                  <SelectItem value="gold">{t("tierGold")}</SelectItem>
+                  <SelectItem value="platinum">{t("tierPlatinum")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Tags (comma-separated)</Label>
+              <Label>{t("tagsCommaSeparated")}</Label>
               <Input value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} placeholder="vip, regular, birthday" data-testid="input-customer-tags" />
             </div>
             <div>
-              <Label>Notes</Label>
+              <Label>{t("notes")}</Label>
               <CharCountTextarea maxLength={500} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-customer-notes" />
             </div>
             {currency === "INR" && (
               <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">
                 <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">GST Details</p>
                 <div>
-                  <Label>Customer GSTIN (optional)</Label>
+                  <Label>{t("customerGstin")}</Label>
                   <Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" maxLength={15} data-testid="input-customer-gstin" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label>Birthday</Label>
+                    <Label>{t("birthday")}</Label>
                     <Input type="date" value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} data-testid="input-customer-birthday" />
                   </div>
                   <div>
-                    <Label>Anniversary</Label>
+                    <Label>{t("anniversary")}</Label>
                     <Input type="date" value={formData.anniversary} onChange={(e) => setFormData({ ...formData, anniversary: e.target.value })} data-testid="input-customer-anniversary" />
                   </div>
                 </div>
               </div>
             )}
             <Button className="w-full" onClick={handleSubmitAdd} disabled={!formData.name || createMutation.isPending} data-testid="button-submit-customer">
-              Add Customer
+              {t("addNewCustomer")}
             </Button>
           </div>
         </DialogContent>
@@ -901,67 +903,67 @@ export default function CrmPage() {
       <Dialog open={showEditDialog} onOpenChange={(open) => { if (!open) setCrmFormDirty(false); setShowEditDialog(open); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Customer</DialogTitle>
+            <DialogTitle>{t("editCustomer")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4" onChange={() => setCrmFormDirty(true)}>
             <div>
-              <Label>Name *</Label>
+              <Label>{t("name")} *</Label>
               <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-edit-customer-name" />
               {crmFormErrors.name && <p className="text-red-500 text-xs mt-1">{crmFormErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Phone</Label>
+                <Label>{t("phone")}</Label>
                 <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} data-testid="input-edit-customer-phone" />
               </div>
               <div>
-                <Label>Email</Label>
+                <Label>{t("email")}</Label>
                 <Input type="email" value={formData.email} onChange={(e) => setFormData({ ...formData, email: e.target.value })} data-testid="input-edit-customer-email" />
               </div>
             </div>
             <div>
-              <Label>Loyalty Tier</Label>
+              <Label>{t("loyaltyTier")}</Label>
               <Select value={formData.loyaltyTier} onValueChange={(v) => setFormData({ ...formData, loyaltyTier: v })}>
                 <SelectTrigger data-testid="select-edit-customer-tier">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="bronze">Bronze</SelectItem>
-                  <SelectItem value="silver">Silver</SelectItem>
-                  <SelectItem value="gold">Gold</SelectItem>
-                  <SelectItem value="platinum">Platinum</SelectItem>
+                  <SelectItem value="bronze">{t("tierBronze")}</SelectItem>
+                  <SelectItem value="silver">{t("tierSilver")}</SelectItem>
+                  <SelectItem value="gold">{t("tierGold")}</SelectItem>
+                  <SelectItem value="platinum">{t("tierPlatinum")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div>
-              <Label>Tags (comma-separated)</Label>
+              <Label>{t("tagsCommaSeparated")}</Label>
               <Input value={formData.tags} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} data-testid="input-edit-customer-tags" />
             </div>
             <div>
-              <Label>Notes</Label>
+              <Label>{t("notes")}</Label>
               <CharCountTextarea maxLength={500} value={formData.notes} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} data-testid="input-edit-customer-notes" />
             </div>
             {currency === "INR" && (
               <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">
                 <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">GST Details</p>
                 <div>
-                  <Label>Customer GSTIN (optional)</Label>
+                  <Label>{t("customerGstin")}</Label>
                   <Input value={formData.gstin} onChange={(e) => setFormData({ ...formData, gstin: e.target.value.toUpperCase() })} placeholder="22AAAAA0000A1Z5" maxLength={15} data-testid="input-edit-customer-gstin" />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label>Birthday</Label>
+                    <Label>{t("birthday")}</Label>
                     <Input type="date" value={formData.birthday} onChange={(e) => setFormData({ ...formData, birthday: e.target.value })} data-testid="input-edit-customer-birthday" />
                   </div>
                   <div>
-                    <Label>Anniversary</Label>
+                    <Label>{t("anniversary")}</Label>
                     <Input type="date" value={formData.anniversary} onChange={(e) => setFormData({ ...formData, anniversary: e.target.value })} data-testid="input-edit-customer-anniversary" />
                   </div>
                 </div>
               </div>
             )}
             <Button className="w-full" onClick={handleSubmitEdit} disabled={!formData.name || updateMutation.isPending} data-testid="button-update-customer">
-              Update Customer
+              {t("editCustomer")}
             </Button>
           </div>
         </DialogContent>
@@ -970,16 +972,16 @@ export default function CrmPage() {
       <Dialog open={showFeedbackDialog} onOpenChange={setShowFeedbackDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Record Customer Feedback</DialogTitle>
+            <DialogTitle>{t("recordCustomerFeedback")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Customer</Label>
+              <Label>{t("customers")}</Label>
               <Select value={feedbackForm.customerId} onValueChange={(v) => {
                 setFeedbackForm({ ...feedbackForm, customerId: v, orderId: "" });
               }}>
                 <SelectTrigger data-testid="select-feedback-customer">
-                  <SelectValue placeholder="Select customer" />
+                  <SelectValue placeholder={t("selectCustomer")} />
                 </SelectTrigger>
                 <SelectContent>
                   {customers.map((c) => (
@@ -990,13 +992,13 @@ export default function CrmPage() {
             </div>
             {feedbackForm.customerId && (
               <div>
-                <Label>Linked Order</Label>
+                <Label>{t("linkedOrder")}</Label>
                 <Select value={feedbackForm.orderId || "no_order"} onValueChange={(v) => setFeedbackForm({ ...feedbackForm, orderId: v === "no_order" ? "" : v })}>
                   <SelectTrigger data-testid="select-feedback-order">
-                    <SelectValue placeholder="Select order (optional)" />
+                    <SelectValue placeholder={t("selectOrder")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="no_order">No specific order</SelectItem>
+                    <SelectItem value="no_order">{t("noSpecificOrder")}</SelectItem>
                     {orders
                       .filter((o) => o.customerId === feedbackForm.customerId && o.status === "paid")
                       .slice(0, 10)
@@ -1010,7 +1012,7 @@ export default function CrmPage() {
               </div>
             )}
             <div>
-              <Label>Rating</Label>
+              <Label>{t("rating")}</Label>
               <div className="flex items-center gap-1 mt-1">
                 {[1, 2, 3, 4, 5].map((star) => (
                   <button
@@ -1027,11 +1029,11 @@ export default function CrmPage() {
               </div>
             </div>
             <div>
-              <Label>Comment</Label>
+              <Label>{t("comment")}</Label>
               <Textarea
                 value={feedbackForm.comment}
                 onChange={(e) => setFeedbackForm({ ...feedbackForm, comment: e.target.value })}
-                placeholder="Customer feedback or comments..."
+                placeholder={t("feedbackPlaceholder")}
                 data-testid="input-feedback-comment"
               />
             </div>
@@ -1039,7 +1041,7 @@ export default function CrmPage() {
               className="w-full"
               onClick={() => {
                 if (!feedbackForm.customerId) {
-                  toast({ title: "Please select a customer", variant: "destructive" });
+                  toast({ title: t("pleaseSelectCustomer"), variant: "destructive" });
                   return;
                 }
                 feedbackMutation.mutate({

@@ -153,10 +153,10 @@ export function getTimezoneLabel(iana: string): string {
   return tz ? `${tz.flag} ${tz.label} (${tz.offset})` : iana;
 }
 
-export function formatTimeInZone(iana: string, format: "12hr" | "24hr" = "12hr"): string {
+export function formatTimeInZone(iana: string, format: "12hr" | "24hr" = "12hr", locale = "en-US"): string {
   try {
     const now = new Date();
-    return now.toLocaleTimeString("en-US", {
+    return now.toLocaleTimeString(locale, {
       timeZone: iana,
       hour: "2-digit",
       minute: "2-digit",
@@ -168,10 +168,10 @@ export function formatTimeInZone(iana: string, format: "12hr" | "24hr" = "12hr")
   }
 }
 
-export function formatDateInZone(iana: string): string {
+export function formatDateInZone(iana: string, locale = "en-US"): string {
   try {
     const now = new Date();
-    return now.toLocaleDateString("en-US", {
+    return now.toLocaleDateString(locale, {
       timeZone: iana,
       weekday: "long",
       year: "numeric",

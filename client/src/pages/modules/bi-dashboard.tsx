@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { LucideIcon } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   BarChart3, TrendingUp, DollarSign, Users, PieChart as PieIcon,
   Activity, Clock, ShoppingBag, Target, Star, Award, Percent,
@@ -171,6 +172,7 @@ function HeatmapChart({ data }: { data: { day: string; hour: number; value: numb
 }
 
 export default function BIDashboard() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const [dateRange, setDateRange] = useState({
     from: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],

@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, X, ChevronRight } from "lucide-react";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface Supplier { id: string; name: string; }
 interface InventoryItem { id: string; name: string; unit: string | null; costPrice: string | null; }
@@ -52,6 +53,7 @@ interface ReturnItemForm { inventoryItemId: string; returnQty: string; unitPrice
 const EMPTY_ITEM: ReturnItemForm = { inventoryItemId: "", returnQty: "1", unitPrice: "", reason: "", condition: "damaged" };
 
 export default function ReturnsTab() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -151,11 +153,11 @@ export default function ReturnsTab() {
                 <TableRow>
                   <TableHead>Return #</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead>Type</TableHead>
+                  <TableHead>{t("type")}</TableHead>
                   <TableHead>Total Value</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("status")}</TableHead>
                   <TableHead>Debit Note</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -320,7 +322,7 @@ export default function ReturnsTab() {
                     <TableHead>Item</TableHead>
                     <TableHead>Qty</TableHead>
                     <TableHead>Unit Price</TableHead>
-                    <TableHead>Total</TableHead>
+                    <TableHead>{t("total")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

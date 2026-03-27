@@ -52,6 +52,7 @@ import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 type IngredientBreakdown = {
@@ -466,6 +467,7 @@ function AcknowledgeModal({ open, onClose, reportId }: {
 function ReportDetail({ reportId }: { reportId: string }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation("modules");
   const [filter, setFilter] = useState<string>("ALL");
   const [showAck, setShowAck] = useState(false);
   const [search, setSearch] = useState("");
@@ -666,10 +668,10 @@ function ReportDetail({ reportId }: { reportId: string }) {
                     <TableRow className="bg-muted/30 hover:bg-muted/30">
                       <TableHead className="w-8 pl-3" />
                       <TableHead>Dish</TableHead>
-                      <TableHead>Category</TableHead>
+                      <TableHead>{t("category")}</TableHead>
                       <TableHead className="text-center">Planned Qty</TableHead>
                       <TableHead className="text-center">Can Make</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>{t("status")}</TableHead>
                       <TableHead>Bottleneck</TableHead>
                       <TableHead className="text-right">Shortfall</TableHead>
                     </TableRow>
@@ -860,6 +862,7 @@ function LivePreviewTab() {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function StockReportsPage() {
+  const { t } = useTranslation("modules");
   const qc = useQueryClient();
   const { toast } = useToast();
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
@@ -897,7 +900,7 @@ export default function StockReportsPage() {
 
   return (
     <div className="p-6 space-y-6 min-h-full" data-testid="stock-reports-page">
-      <PageTitle title="Stock Reports" />
+      <PageTitle title={t("stockReports")} />
       {/* Page header */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-3">

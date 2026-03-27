@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Loader2, Package } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface BreakageItem {
   itemId: string;
@@ -61,6 +62,7 @@ const MONTHS = [
 ];
 
 export default function CrockeryBreakageReport() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const now = new Date();
   const [month, setMonth] = useState(String(now.getMonth() + 1));
@@ -152,7 +154,7 @@ export default function CrockeryBreakageReport() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Item</TableHead>
-                      <TableHead>Category</TableHead>
+                      <TableHead>{t("category")}</TableHead>
                       <TableHead className="text-right">Breakage</TableHead>
                       <TableHead className="text-right">Value</TableHead>
                       <TableHead className="text-right">% of Stock</TableHead>

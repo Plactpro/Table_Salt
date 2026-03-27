@@ -70,6 +70,14 @@ The system employs a modern web architecture with a React-based frontend and an 
 - **QR Parking Status Card**: QR page shows a vehicle status card (masked plate, vehicle type, ticket number, status) when a valet ticket is linked to the table.
 - **valet_staff Role**: Added `valet_staff` to `UserRole` type with attendant-specific access.
 
+### Internationalization (i18n)
+- **Library**: react-i18next with i18next.
+- **Languages**: English (`en`), Spanish (`es`), Arabic (`ar`), French (`fr`).
+- **Namespaces**: 9 namespaces — `common`, `auth`, `nav`, `pos`, `kitchen`, `menu`, `staff`, `reports`, `settings`. Locale JSON files at `client/src/i18n/locales/{lang}/{namespace}.json`.
+- **RTL Support**: `dir="rtl"` set on `<html>` element when Arabic is active (handled in `auth.tsx` and `header.tsx`). Sidebar active-indicator flips position for RTL.
+- **Language Preference**: Stored per-user in `users.language` DB column. Loaded on login via `/api/auth/me`, saved via `PATCH /api/users/:id/language`. Language selector available in profile header dropdown.
+- **Print Locale**: `renderKotHtml()` and `renderBillHtml()` in `print-utils.ts` accept a `language` parameter to produce locale-aware KOT/bill receipts. All callers pass `i18n.language`.
+
 ## External Dependencies
 - **PostgreSQL**: Primary database.
 - **Drizzle ORM**: Database interaction.

@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
 import { useToast } from "@/hooks/use-toast";
 import { Lock, Volume2, Play, RotateCcw, CheckCircle2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface AlertDefinition {
   alertCode: string;
@@ -58,6 +59,7 @@ function buildDefaults(): SettingsMap {
 }
 
 export default function AlertSettingsPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();

@@ -18,6 +18,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ShoppingCart, Plus, FileText, Package, CheckCircle, Send, TrendingUp, AlertTriangle, BarChart3, DollarSign, ClipboardCheck } from "lucide-react";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface Supplier { id: string; name: string; }
 interface InventoryItem { id: string; name: string; sku: string | null; unit: string | null; currentStock: string | null; reorderLevel: string | null; parLevel: string | null; costPrice: string | null; }
@@ -29,6 +30,7 @@ interface Analytics { totalSpend: string; totalPOs: number; closedPOs: number; a
 interface PODetail extends PurchaseOrder { items: POItem[]; grns: GRN[]; approvals: Array<{ action: string; performedBy: string; performedAt: string; notes: string | null }>; }
 
 export default function ProcurementPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -163,7 +165,7 @@ export default function ProcurementPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="procurement-page">
-      <PageTitle title="Procurement" />
+      <PageTitle title={t("procurement")} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <ShoppingCart className="h-7 w-7 text-primary" />
@@ -312,10 +314,10 @@ export default function ProcurementPage() {
                 <TableRow>
                   <TableHead>PO #</TableHead>
                   <TableHead>Supplier</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("status")}</TableHead>
                   <TableHead className="text-right">Amount</TableHead>
                   <TableHead>Expected</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>{t("date")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

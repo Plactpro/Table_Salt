@@ -21,6 +21,7 @@ import { DollarSign, ShoppingCart, TrendingUp, Percent, Download, BarChart3, Fil
 import { exportToPdf } from "@/lib/pdf-export";
 import { format, subDays } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
+import { useTranslation } from "react-i18next";
 
 const WATERFALL_COLORS = ["#3b82f6", "#14b8a6", "#f97316", "#ef4444", "#a855f7", "#22c55e"];
 const WATERFALL_KEYS = ["waiterResponse", "kitchenPickup", "idleWait", "cooking", "passWait", "service"];
@@ -43,6 +44,7 @@ function Stars({ count }: { count: number }) {
 }
 
 function KitchenTimeTab() {
+  const { t } = useTranslation("modules");
   const today = format(new Date(), "yyyy-MM-dd");
   const [dateMode, setDateMode] = useState<"today" | "7d" | "30d" | "custom">("today");
   const [customFrom, setCustomFrom] = useState(format(subDays(new Date(), 7), "yyyy-MM-dd"));
@@ -323,7 +325,7 @@ function KitchenTimeTab() {
                 <TableHead className="text-right">Orders</TableHead>
                 <TableHead className="text-right">Avg Time</TableHead>
                 <TableHead className="text-right">On-Time %</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>{t("status")}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -782,6 +784,8 @@ function AsyncReportPanel() {
 }
 
 export default function ReportsPage() {
+  const { t } = useTranslation("reports");
+  const { t: tc } = useTranslation("common");
   const { user } = useAuth();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -840,14 +844,14 @@ export default function ReportsPage() {
       className="p-6 space-y-6"
     >
       <div className="flex items-center justify-between">
-        <PageTitle title="Sales Reports" />
+        <PageTitle title={t("title")} />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <BarChart3 className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold font-heading" data-testid="text-reports-title">Reports</h1>
-            <p className="text-muted-foreground">Sales analytics and performance insights</p>
+            <h1 className="text-2xl font-bold font-heading" data-testid="text-reports-title">{t("title")}</h1>
+            <p className="text-muted-foreground">{t("salesAnalytics")}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -1164,7 +1168,7 @@ export default function ReportsPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Date</TableHead>
+                    <TableHead>{t("date")}</TableHead>
                     <TableHead className="text-right">Gross Revenue</TableHead>
                     <TableHead className="text-right text-red-600">Refunds</TableHead>
                     <TableHead className="text-right text-teal-700">Net Revenue</TableHead>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useLocation } from "wouter";
+import { useTranslation } from "react-i18next";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Utensils, Flame, CheckCircle2, Clock, ChefHat, User, LayoutGrid,
@@ -72,15 +73,16 @@ function mapItemCookingStatus(item: KDSWallItem): string {
 }
 
 function ItemStatusBadge({ itemId, status }: { itemId: string; status: string }) {
+  const { t: tk } = useTranslation("kitchen");
   const cfg: Record<string, { label: string; cls: string }> = {
-    queued: { label: "Queued", cls: "bg-gray-700 text-gray-300" },
-    hold: { label: "On Hold", cls: "bg-purple-900 text-purple-200 animate-pulse" },
-    ready_to_start: { label: "START NOW", cls: "bg-amber-800 text-amber-100 animate-pulse" },
-    started: { label: "Cooking", cls: "bg-blue-900 text-blue-100" },
-    almost_ready: { label: "Almost Ready", cls: "bg-teal-900 text-teal-100" },
-    ready: { label: "Ready ✓", cls: "bg-green-900 text-green-100" },
-    held_warm: { label: "Kept Warm", cls: "bg-orange-900 text-orange-100" },
-    served: { label: "Served", cls: "bg-gray-800 text-gray-500" },
+    queued: { label: tk("statusQueued"), cls: "bg-gray-700 text-gray-300" },
+    hold: { label: tk("statusOnHold"), cls: "bg-purple-900 text-purple-200 animate-pulse" },
+    ready_to_start: { label: tk("statusStartNow"), cls: "bg-amber-800 text-amber-100 animate-pulse" },
+    started: { label: tk("statusCooking"), cls: "bg-blue-900 text-blue-100" },
+    almost_ready: { label: tk("statusAlmostReady"), cls: "bg-teal-900 text-teal-100" },
+    ready: { label: tk("statusReadyCheck"), cls: "bg-green-900 text-green-100" },
+    held_warm: { label: tk("statusKeptWarm"), cls: "bg-orange-900 text-orange-100" },
+    served: { label: tk("served"), cls: "bg-gray-800 text-gray-500" },
   };
   const c = cfg[status] ?? { label: status, cls: "bg-gray-700 text-gray-400" };
   return (
@@ -118,6 +120,7 @@ function CountdownTimer({ estimatedReadyAt, itemId }: { estimatedReadyAt: string
 }
 
 function ItemTimerCell({ item, itemId }: { item: KDSWallItem; itemId: string }) {
+  const { t: tk } = useTranslation("kitchen");
   const cs = mapItemCookingStatus(item);
   const elapsedSec = useTimer(item.startedAt);
   const estimatedSec = (item.prepTimeMinutes ?? 0) * 60;
@@ -126,19 +129,19 @@ function ItemTimerCell({ item, itemId }: { item: KDSWallItem; itemId: string }) 
     const status = getTimingStatus(elapsedSec, estimatedSec);
     const remainingSec = Math.max(0, estimatedSec - elapsedSec);
     const chipConfig = {
-      fast: { label: "Fast", cls: "bg-green-900 text-green-300" },
-      approaching: { label: "Approaching", cls: "bg-amber-900 text-amber-300" },
-      over: { label: "Over time", cls: "bg-red-900 text-red-300" },
-      very_late: { label: "VERY LATE", cls: "bg-red-900 text-red-300 animate-pulse" },
+      fast: { label: tk("timingFast"), cls: "bg-green-900 text-green-300" },
+      approaching: { label: tk("timingApproaching"), cls: "bg-amber-900 text-amber-300" },
+      over: { label: tk("timingOverTime"), cls: "bg-red-900 text-red-300" },
+      very_late: { label: tk("timingVeryLate"), cls: "bg-red-900 text-red-300 animate-pulse" },
     };
     const chip = chipConfig[status];
     return (
       <div className="space-y-0.5" data-testid={`time-cell-${itemId}`}>
         <div className="text-sm font-mono tabular-nums text-white">
-          ⏱️ {formatMMSS(remainingSec)} left
+          ⏱️ {formatMMSS(remainingSec)} {tk("left")}
         </div>
         {item.prepTimeMinutes && (
-          <div className="text-xs text-gray-500">Est: {item.prepTimeMinutes} min</div>
+          <div className="text-xs text-gray-500">{tk("est")}: {item.prepTimeMinutes} {tk("minUnit")}</div>
         )}
         <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${chip.cls}`}>{chip.label}</span>
       </div>
@@ -150,10 +153,10 @@ function ItemTimerCell({ item, itemId }: { item: KDSWallItem; itemId: string }) 
     return (
       <div data-testid={`time-cell-${itemId}`}>
         {isOverdue ? (
-          <span className="text-amber-400 text-xs font-bold animate-pulse">START NOW</span>
+          <span className="text-amber-400 text-xs font-bold animate-pulse">{tk("statusStartNow")}</span>
         ) : (
           <span className="text-gray-500 text-xs">
-            {item.prepTimeMinutes ? `~${item.prepTimeMinutes} min` : "queued"}
+            {item.prepTimeMinutes ? `~${item.prepTimeMinutes} ${tk("minUnit")}` : tk("statusQueued")}
           </span>
         )}
       </div>
@@ -166,7 +169,7 @@ function ItemTimerCell({ item, itemId }: { item: KDSWallItem; itemId: string }) 
         <div className="text-green-400 text-sm font-mono">✅ {formatMMSS(elapsedSec)}</div>
         {estimatedSec > 0 && (
           <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${elapsedSec <= estimatedSec ? "bg-green-900 text-green-300" : "bg-gray-800 text-gray-400"}`}>
-            {elapsedSec <= estimatedSec ? "⚡ Fast" : "✓ On time"}
+            {elapsedSec <= estimatedSec ? tk("timingFastShort") : tk("timingOnTime")}
           </span>
         )}
       </div>
@@ -177,6 +180,7 @@ function ItemTimerCell({ item, itemId }: { item: KDSWallItem; itemId: string }) 
 }
 
 function OrderAgeTimer({ createdAt, ticketId }: { createdAt: string | null; ticketId: string }) {
+  const { t: tk } = useTranslation("kitchen");
   const elapsed = useOrderAgeTimer(createdAt);
   const mins = Math.floor(elapsed / 60);
   const secs = elapsed % 60;
@@ -188,7 +192,7 @@ function OrderAgeTimer({ createdAt, ticketId }: { createdAt: string | null; tick
       className={`text-xs font-mono tabular-nums font-semibold ${colorCls}`}
       data-testid={`order-age-${ticketId}`}
     >
-      Order age: {mins}:{secs.toString().padStart(2, "0")}
+      {tk("orderAge2", { mins, secs: secs.toString().padStart(2, "0") })}
     </span>
   );
 }
@@ -252,6 +256,7 @@ function HoldDialog({
   siblingItems: KDSWallItem[];
   onHeld: () => void;
 }) {
+  const { t: tk } = useTranslation("kitchen");
   const [holdType, setHoldType] = useState<"manual" | "item" | "minutes">("manual");
   const [holdItemId, setHoldItemId] = useState("");
   const [holdMinutes, setHoldMinutes] = useState(5);
@@ -279,7 +284,7 @@ function HoldDialog({
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent data-testid="dialog-hold">
         <DialogHeader>
-          <DialogTitle>HOLD ITEM</DialogTitle>
+          <DialogTitle>{tk("holdItem")}</DialogTitle>
         </DialogHeader>
         {item && (
           <div className="space-y-4">
@@ -287,11 +292,11 @@ function HoldDialog({
               {item.name} — {ticketId.slice(-4).toUpperCase()}
             </p>
             <div className="space-y-2">
-              <Label>Hold until:</Label>
+              <Label>{tk("holdUntil")}:</Label>
               {([
-                { value: "manual" as const, label: "I manually start it" },
-                { value: "item" as const, label: "Another item from same order is ready" },
-                { value: "minutes" as const, label: `In [N] minutes` },
+                { value: "manual" as const, label: tk("holdManual") },
+                { value: "item" as const, label: tk("holdUntilItemReady") },
+                { value: "minutes" as const, label: tk("holdInNMinutes") },
               ] satisfies { value: "manual" | "item" | "minutes"; label: string }[]).map(opt => (
                 <div
                   key={opt.value}
@@ -307,10 +312,10 @@ function HoldDialog({
             </div>
             {holdType === "item" && (
               <div>
-                <Label>Wait for item:</Label>
+                <Label>{tk("waitForItem")}:</Label>
                 <Select value={holdItemId} onValueChange={setHoldItemId}>
                   <SelectTrigger data-testid="select-hold-until-item">
-                    <SelectValue placeholder="Select item" />
+                    <SelectValue placeholder={tk("selectIngredient")} />
                   </SelectTrigger>
                   <SelectContent>
                     {siblingItems.filter(i => i.id !== item.id).map(i => (
@@ -322,7 +327,7 @@ function HoldDialog({
             )}
             {holdType === "minutes" && (
               <div>
-                <Label>Hold for (minutes):</Label>
+                <Label>{tk("holdForMinutes")}:</Label>
                 <Input
                   type="number"
                   min={1}
@@ -334,20 +339,20 @@ function HoldDialog({
               </div>
             )}
             <div>
-              <Label>Reason (optional):</Label>
+              <Label>{tk("reasonOptional")}:</Label>
               <Input
                 value={holdReason}
                 onChange={e => setHoldReason(e.target.value)}
-                placeholder="Why is this on hold?"
+                placeholder={tk("holdReasonPlaceholder")}
                 data-testid="input-hold-reason"
               />
             </div>
           </div>
         )}
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={onClose}>{tk("cancel")}</Button>
           <Button onClick={submit} disabled={loading || (holdType === "item" && !holdItemId)}>
-            HOLD ITEM
+            {tk("holdItem")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -364,6 +369,7 @@ function RushDialog({
   requiresPin: boolean;
   onRushed: () => void;
 }) {
+  const { t: tk } = useTranslation("kitchen");
   const [pin, setPin] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -398,35 +404,35 @@ function RushDialog({
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-destructive" />
-            ⚡ RUSH ORDER
+            {tk("rushOrder")}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            This will immediately start all remaining items on{" "}
-            Table {ticket?.tableNumber ?? ticket?.id.slice(-4).toUpperCase()}.
-            All timing suggestions will be ignored.
+            {tk("rushDesc", {
+              ref: ticket?.tableNumber ? tk("tableRef", { n: ticket.tableNumber }) : `#${ticket?.id.slice(-4).toUpperCase()}`,
+            })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {requiresPin && (
           <div className="py-2">
-            <Label>Manager PIN:</Label>
+            <Label>{tk("managerPin")}:</Label>
             <Input
               type="password"
               value={pin}
               onChange={e => setPin(e.target.value)}
-              placeholder="Enter PIN"
+              placeholder={tk("enterPin")}
               data-testid="input-rush-pin"
             />
           </div>
         )}
         <AlertDialogFooter>
-          <AlertDialogCancel onClick={onClose}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel onClick={onClose}>{tk("cancel")}</AlertDialogCancel>
           <AlertDialogAction
             onClick={submit}
             disabled={loading || (requiresPin && !pin)}
             className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             data-testid="button-confirm-rush"
           >
-            <Zap className="h-4 w-4 mr-1" />RUSH ALL ITEMS
+            <Zap className="h-4 w-4 mr-1" />{tk("rushAllItems")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -444,6 +450,7 @@ function ItemRow({
   onRefresh: () => void;
   courseLocked?: boolean;
 }) {
+  const { t: tk } = useTranslation("kitchen");
   const [startLoading, setStartLoading] = useState(false);
   const [readyLoading, setReadyLoading] = useState(false);
   const [startTooltip, setStartTooltip] = useState<string | null>(null);
@@ -463,12 +470,12 @@ function ItemRow({
       const res = await fetch(`/api/kds/items/${item.id}/start`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
       if (!res.ok) {
         await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) });
-        setStartTooltip("Started");
+        setStartTooltip(tk("started"));
       } else {
         const data = await res.json();
-        if (data.earlyMinutes > 0) setStartTooltip(`Started ${data.earlyMinutes} min early`);
-        else if (data.earlyMinutes < 0) setStartTooltip(`⚠️ Started ${Math.abs(data.earlyMinutes)} min late`);
-        else setStartTooltip("Started");
+        if (data.earlyMinutes > 0) setStartTooltip(tk("startedEarly", { n: data.earlyMinutes }));
+        else if (data.earlyMinutes < 0) setStartTooltip(tk("startedLate", { n: Math.abs(data.earlyMinutes) }));
+        else setStartTooltip(tk("started"));
       }
       setTimeout(() => setStartTooltip(null), 3000);
     } catch (_) {
@@ -511,9 +518,9 @@ function ItemRow({
           {isCooking && item.estimatedReadyAt ? (
             <CountdownTimer estimatedReadyAt={item.estimatedReadyAt} itemId={item.id} />
           ) : cs === "ready_to_start" ? (
-            <span className="text-amber-400 text-sm font-medium animate-pulse">▶ overdue</span>
+            <span className="text-amber-400 text-sm font-medium animate-pulse">▶ {tk("overdueBadge")}</span>
           ) : cs === "queued" && item.prepTimeMinutes ? (
-            <span className="text-gray-500 text-xs">suggested</span>
+            <span className="text-gray-500 text-xs">{tk("suggested")}</span>
           ) : (
             <span className="text-gray-600 text-xs">—</span>
           )}
@@ -530,7 +537,7 @@ function ItemRow({
             )}
             {courseLocked && (
               <span className="flex items-center gap-1 text-yellow-500 text-xs">
-                <Lock className="h-3 w-3" /> Locked
+                <Lock className="h-3 w-3" /> {tk("locked")}
               </span>
             )}
             {!courseLocked && isStartable && !isTerminal && (
@@ -542,7 +549,7 @@ function ItemRow({
                 disabled={startLoading}
                 data-testid={`button-start-${item.id}`}
               >
-                <Play className="h-3 w-3 mr-1" />START
+                <Play className="h-3 w-3 mr-1" />{tk("start").toUpperCase()}
               </Button>
             )}
             {!courseLocked && (isStartable || cs === "queued") && !isTerminal && (
@@ -553,7 +560,7 @@ function ItemRow({
                 onClick={() => setShowHold(true)}
                 data-testid={`button-hold-${item.id}`}
               >
-                <Pause className="h-3 w-3 mr-1" />HOLD
+                <Pause className="h-3 w-3 mr-1" />{tk("holdItem")}
               </Button>
             )}
             {!courseLocked && (isCooking || isReady) && !isTerminal && (
@@ -565,7 +572,7 @@ function ItemRow({
                 disabled={readyLoading}
                 data-testid={`button-ready-${item.id}`}
               >
-                <CheckCircle2 className="h-3 w-3 mr-1" />READY
+                <CheckCircle2 className="h-3 w-3 mr-1" />{tk("markReady").toUpperCase()}
               </Button>
             )}
           </div>
@@ -590,6 +597,7 @@ function SelectiveTicketCard({
   settings: KitchenSettings;
   onRefresh: () => void;
 }) {
+  const { t: tk } = useTranslation("kitchen");
   const mins = useElapsedMinutes(ticket.createdAt);
   const timeColor = getTimeColor(mins);
   const [showRush, setShowRush] = useState(false);
@@ -602,9 +610,9 @@ function SelectiveTicketCard({
   const allReady = allItems.length > 0 && readyItems.length === allItems.length;
 
   const label = ticket.tableNumber
-    ? `Table ${ticket.tableNumber}`
+    ? tk("tableRef", { n: ticket.tableNumber })
     : ticket.orderType === "takeaway"
-    ? "Takeaway"
+    ? tk("takeaway")
     : `#${ticket.id.slice(-4).toUpperCase()}`;
 
   const byCourse = ticket.items.filter(i => !i.is_voided).reduce<Record<string | number, KDSWallItem[]>>((acc, item) => {
@@ -649,7 +657,7 @@ function SelectiveTicketCard({
               onClick={() => setShowRush(true)}
               data-testid={`button-rush-${ticket.id}`}
             >
-              <Zap className="h-3 w-3 mr-1" />RUSH
+              <Zap className="h-3 w-3 mr-1" />{tk("rush")}
             </Button>
           )}
         </div>
@@ -744,13 +752,14 @@ function SelectiveTicketCard({
 }
 
 function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
+  const { t: tk } = useTranslation("kitchen");
   const mins = useElapsedMinutes(ticket.createdAt);
   const timeColor = getTimeColor(mins);
   const cardBg = getTimeBg(mins);
   const label = ticket.tableNumber
-    ? `Table ${ticket.tableNumber}`
+    ? tk("tableRef", { n: ticket.tableNumber })
     : ticket.orderType === "takeaway"
-    ? "Takeaway"
+    ? tk("takeaway")
     : `#${ticket.id.slice(-4).toUpperCase()}`;
 
   const isUnassigned = !ticket.assignedChefName || ticket.assignmentStatus === "unassigned";
@@ -783,7 +792,7 @@ function WallTicketCard({ ticket }: { ticket: KDSWallTicket }) {
       ) : (
         <div className="flex items-center gap-1.5" data-testid={`wall-unassigned-${ticket.id.slice(-4)}`}>
           <div className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-          <span className="text-xs text-amber-400 font-medium">Unassigned</span>
+          <span className="text-xs text-amber-400 font-medium">{tk("unassigned")}</span>
         </div>
       )}
 
@@ -892,12 +901,12 @@ function useWallWebSocket(wsUrl: string, onEvent: (event: string, payload?: unkn
   }, [wsUrl]);
 }
 
-function groupByCounter(tickets: KDSWallTicket[]): { counterId: string | null; counterName: string; tickets: KDSWallTicket[] }[] {
+function groupByCounter(tickets: KDSWallTicket[], unassignedLabel = "Unassigned"): { counterId: string | null; counterName: string; tickets: KDSWallTicket[] }[] {
   const map = new Map<string, { counterId: string | null; counterName: string; tickets: KDSWallTicket[] }>();
   for (const t of tickets) {
     const key = t.counterId ?? "__unassigned__";
     if (!map.has(key)) {
-      map.set(key, { counterId: t.counterId ?? null, counterName: t.counterName ?? "Unassigned", tickets: [] });
+      map.set(key, { counterId: t.counterId ?? null, counterName: t.counterName ?? unassignedLabel, tickets: [] });
     }
     map.get(key)!.tickets.push(t);
   }
@@ -926,6 +935,7 @@ function ChefAlertsPanel({
   onDismiss: (id: string) => void;
   allOnTrack?: boolean;
 }) {
+  const { t: tk } = useTranslation("kitchen");
   function scrollToTicket(ticketId?: string) {
     if (!ticketId) return;
     const shortId = ticketId.slice(-4);
@@ -946,7 +956,7 @@ function ChefAlertsPanel({
         data-testid="chef-alert-all-on-track"
       >
         <CheckCircle2 className="h-4 w-4 shrink-0" />
-        All items on track
+        {tk("allOnTrack")}
       </div>
     );
   }
@@ -986,6 +996,7 @@ function ChefAlertsPanel({
 }
 
 export default function KdsWallScreen() {
+  const { t: tk } = useTranslation("kitchen");
   const [location] = useLocation();
   const qsRaw = location.includes("?") ? location.split("?")[1] : window.location.search.slice(1);
   const qp = new URLSearchParams(qsRaw);
@@ -1077,7 +1088,7 @@ export default function KdsWallScreen() {
     if (event === "kds:item_overdue" && rawPayload) {
       const payload = rawPayload as { itemId?: string; itemName?: string; overdueMinutes?: number; orderId?: string };
       const alertId = `overdue-${payload.itemId ?? ""}-${Date.now()}`;
-      const msg = `Start ${payload.itemName ?? "item"} NOW — ${payload.overdueMinutes ?? 1} min overdue 🔴`;
+      const msg = tk("alertOverdue", { name: payload.itemName ?? tk("item"), mins: payload.overdueMinutes ?? 1 });
       setAlerts(prev => [...prev.filter(a => a.id !== alertId), {
         id: alertId, type: "overdue", message: msg,
         itemId: payload.itemId, ticketId: payload.orderId,
@@ -1089,14 +1100,14 @@ export default function KdsWallScreen() {
       const alertId = `hold-${payload.itemId ?? ""}-${Date.now()}`;
       setAlerts(prev => [...prev, {
         id: alertId, type: "hold_released",
-        message: `${payload.holdItemName ?? "Item"} is ready — start ${payload.itemName ?? "next item"} now`,
+        message: tk("alertHoldReleased", { ready: payload.holdItemName ?? tk("item"), next: payload.itemName ?? tk("nextItem") }),
         itemId: payload.itemId, expiresAt: Date.now() + 10000,
       }]);
     } else if (event === "kds:manager_alert" && rawPayload) {
       const payload = rawPayload as { message?: string };
       const alertId = `manager-${Date.now()}`;
       setAlerts(prev => [...prev, {
-        id: alertId, type: "overdue", message: payload.message ?? "Manager alert",
+        id: alertId, type: "overdue", message: payload.message ?? tk("managerAlert"),
         expiresAt: Date.now() + 15000,
       }]);
     } else if (event === "kds:refire_ticket" && rawPayload) {
@@ -1104,7 +1115,7 @@ export default function KdsWallScreen() {
       const alertId = `refire-${Date.now()}`;
       setAlerts(prev => [...prev, {
         id: alertId, type: "overdue",
-        message: `🔥🔥 REFIRE — ${payload.itemName ?? "Item"} (Order #${payload.orderNumber ?? ""}) — HIGH PRIORITY`,
+        message: tk("alertRefire", { name: payload.itemName ?? tk("item"), order: payload.orderNumber ?? "" }),
         expiresAt: Date.now() + 20000,
       }]);
       if (payload.orderId) {
@@ -1162,7 +1173,7 @@ export default function KdsWallScreen() {
             setAlerts(prev => [...prev.filter(a => a.id !== alertId), {
               id: alertId,
               type: "upcoming",
-              message: `Start ${item.name} in ~${mins} min`,
+              message: tk("alertUpcoming", { name: item.name, mins }),
               itemId: item.id,
               ticketId: ticket.id,
               expiresAt: nowMs + upcomingMs,
@@ -1180,18 +1191,18 @@ export default function KdsWallScreen() {
   if (!hasAccess) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white text-2xl" data-testid="kds-wall-screen">
-        Missing tenantId parameter
+        {tk("missingTenantId")}
       </div>
     );
   }
 
   const statusColumns = [
-    { key: "new", title: "NEW", tickets: newTickets, icon: Utensils, headerColor: "text-teal-400", borderColor: "border-t-teal-500", badgeClass: "bg-teal-900 text-teal-300" },
-    { key: "cooking", title: "COOKING", tickets: cookingTickets, icon: Flame, headerColor: "text-orange-400", borderColor: "border-t-orange-500", badgeClass: "bg-orange-900 text-orange-300" },
-    { key: "ready", title: "READY", tickets: readyTickets, icon: CheckCircle2, headerColor: "text-green-400", borderColor: "border-t-green-500", badgeClass: "bg-green-900 text-green-300" },
+    { key: "new", title: tk("colNew"), tickets: newTickets, icon: Utensils, headerColor: "text-teal-400", borderColor: "border-t-teal-500", badgeClass: "bg-teal-900 text-teal-300" },
+    { key: "cooking", title: tk("colCooking"), tickets: cookingTickets, icon: Flame, headerColor: "text-orange-400", borderColor: "border-t-orange-500", badgeClass: "bg-orange-900 text-orange-300" },
+    { key: "ready", title: tk("colReady"), tickets: readyTickets, icon: CheckCircle2, headerColor: "text-green-400", borderColor: "border-t-green-500", badgeClass: "bg-green-900 text-green-300" },
   ];
 
-  const counterGroups = showCounters ? groupByCounter(tickets.filter(t => t.status !== "ready")) : [];
+  const counterGroups = showCounters ? groupByCounter(tickets.filter(t => t.status !== "ready"), tk("unassigned")) : [];
   const colCount = showCounters ? Math.max(counterGroups.length, 1) : 3;
 
   return (
@@ -1209,31 +1220,31 @@ export default function KdsWallScreen() {
           <div className="p-2 rounded-xl bg-primary/20">
             <ChefHat className="h-7 w-7 text-primary" />
           </div>
-          <span className="text-2xl font-black tracking-tight">Kitchen Display</span>
+          <span className="text-2xl font-black tracking-tight">{tk("kitchenDisplay")}</span>
           {showCounters && (
             <Badge className="bg-primary/20 text-primary border-primary/40 text-xs">
-              <LayoutGrid className="h-3 w-3 mr-1" />Counter Mode
+              <LayoutGrid className="h-3 w-3 mr-1" />{tk("counterMode")}
             </Badge>
           )}
           {isSelectiveMode && (
             <Badge className="bg-blue-900 text-blue-300 border-blue-700 text-xs">
-              Item Control Mode
+              {tk("itemControlMode")}
             </Badge>
           )}
           <span
             className={`ml-3 text-xs px-2 py-0.5 rounded-full font-medium ${wsConnected ? "bg-green-900 text-green-300" : "bg-gray-700 text-gray-400"}`}
             data-testid="ws-status"
-            title={wsConnected ? "Live WebSocket" : "Polling every 8s"}
+            title={wsConnected ? tk("liveWebSocket") : tk("pollingEvery8s")}
           >
-            {wsConnected ? "LIVE" : "POLLING"}
+            {wsConnected ? tk("live") : tk("polling")}
           </span>
         </div>
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3 text-sm text-gray-400">
-            <span data-testid="wall-total-count"><span className="text-white font-bold text-lg">{tickets.length}</span> tickets</span>
+            <span data-testid="wall-total-count"><span className="text-white font-bold text-lg">{tickets.length}</span> {tk("ticketsLabel")}</span>
             <span>|</span>
             <span data-testid="wall-unassigned-count">
-              <span className="text-amber-400 font-bold">{tickets.filter(t => !t.assignedChefName || t.assignmentStatus === "unassigned").length}</span> unassigned
+              <span className="text-amber-400 font-bold">{tickets.filter(t => !t.assignedChefName || t.assignmentStatus === "unassigned").length}</span> {tk("unassigned").toLowerCase()}
             </span>
           </div>
           <div className="text-right">
@@ -1253,7 +1264,7 @@ export default function KdsWallScreen() {
         >
           {counterGroups.length === 0 ? (
             <div className="col-span-full flex items-center justify-center text-gray-600 text-xl py-24">
-              No active tickets
+              {tk("noActiveTickets")}
             </div>
           ) : (
             counterGroups.map((grp) => (
@@ -1271,15 +1282,15 @@ export default function KdsWallScreen() {
                   <AnimatePresence mode="popLayout">
                     {grp.tickets.length === 0 ? (
                       <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center text-gray-600 text-base py-10">
-                        No tickets
+                        {tk("noTickets")}
                       </motion.div>
                     ) : (
                       grp.tickets.map(ticket => (
                         <div key={ticket.id} className="space-y-1">
                           {refireTicketIds.has(ticket.id) && (
                             <div className="flex items-center gap-2 px-2 py-1 rounded-t-lg bg-orange-700 text-white font-black text-xs uppercase tracking-widest">
-                              🔥🔥 REFIRE
-                              <span className="ml-auto px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">HIGH PRIORITY</span>
+                              🔥🔥 {tk("refire")}
+                              <span className="ml-auto px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">{tk("highPriority")}</span>
                             </div>
                           )}
                           {isSelectiveMode ? (
@@ -1323,15 +1334,15 @@ export default function KdsWallScreen() {
                         animate={{ opacity: 1 }}
                         className="text-center text-gray-600 text-lg py-16"
                       >
-                        No tickets
+                        {tk("noTickets")}
                       </motion.div>
                     ) : (
                       col.tickets.map(ticket => (
                         <div key={ticket.id} className="space-y-1">
                           {refireTicketIds.has(ticket.id) && (
                             <div className="flex items-center gap-2 px-2 py-1 rounded-t-lg bg-orange-700 text-white font-black text-xs uppercase tracking-widest">
-                              🔥🔥 REFIRE
-                              <span className="ml-auto px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">HIGH PRIORITY</span>
+                              🔥🔥 {tk("refire")}
+                              <span className="ml-auto px-1.5 py-0.5 rounded bg-red-600 text-white text-[10px] font-bold">{tk("highPriority")}</span>
                             </div>
                           )}
                           {isSelectiveMode ? (

@@ -13,6 +13,7 @@ import { FileCheck, RefreshCw, Download, Shield, Lock, FileText, BarChart2, Eye,
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { getJurisdictionByCurrency } from "@shared/jurisdictions";
+import { useTranslation } from "react-i18next";
 
 interface ComplianceReport {
   generatedAt: string;
@@ -272,6 +273,7 @@ function JurisdictionSummaryCard() {
 }
 
 export default function ComplianceReport() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const allowedRoles = ["owner", "hq_admin", "franchise_owner"];
   const hasAccess = user && allowedRoles.includes(user.role);
@@ -329,7 +331,7 @@ export default function ComplianceReport() {
 
   return (
     <div className="space-y-6" data-testid="compliance-report">
-      <PageTitle title="Compliance Report" />
+      <PageTitle title={t("complianceReport")} />
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <div className="flex items-center gap-2 mb-1">

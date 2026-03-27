@@ -15,6 +15,7 @@ import GdprRightsPage from "./gdpr-rights";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { PageTitle } from "@/lib/accessibility";
+import { useTranslation } from "react-i18next";
 
 const BASE_TABS = ["general", "shifts", "security", "subscription", "qr-settings"] as const;
 type BaseTab = typeof BASE_TABS[number];
@@ -34,6 +35,7 @@ export default function SettingsHub() {
   const [tab, setTab] = useState<ValidTab>(getInitialTab);
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const { t } = useTranslation("settings");
 
   const { data: prefs } = useQuery<{ showAccessLog: boolean }>({
     queryKey: ["/api/tenant/access-preferences"],
@@ -72,41 +74,41 @@ export default function SettingsHub() {
 
   return (
     <div className="space-y-6" data-testid="settings-hub">
-      <PageTitle title="Settings" />
+      <PageTitle title={t("title")} />
       <Tabs value={tab} onValueChange={handleTabChange}>
         <TabsList data-testid="settings-tabs">
           <TabsTrigger value="general" data-testid="tab-general-settings">
-            <Settings className="h-4 w-4 mr-1.5" />General
+            <Settings className="h-4 w-4 mr-1.5" />{t("general")}
           </TabsTrigger>
           <TabsTrigger value="shifts" data-testid="tab-shifts">
-            <Clock className="h-4 w-4 mr-1.5" />Shifts
+            <Clock className="h-4 w-4 mr-1.5" />{t("shifts")}
           </TabsTrigger>
           <TabsTrigger value="security" data-testid="tab-security">
-            <Shield className="h-4 w-4 mr-1.5" />Security
+            <Shield className="h-4 w-4 mr-1.5" />{t("security")}
           </TabsTrigger>
           <TabsTrigger value="subscription" data-testid="tab-subscription">
-            <CreditCard className="h-4 w-4 mr-1.5" />Subscription
+            <CreditCard className="h-4 w-4 mr-1.5" />{t("subscription")}
           </TabsTrigger>
           <TabsTrigger value="qr-settings" data-testid="tab-qr-settings">
-            <QrCode className="h-4 w-4 mr-1.5" />QR Requests
+            <QrCode className="h-4 w-4 mr-1.5" />{t("qrRequests")}
           </TabsTrigger>
           {showAccessLog && (
             <TabsTrigger value="access-log" data-testid="tab-access-log">
-              <Shield className="h-4 w-4 mr-1.5" />Account Access
+              <Shield className="h-4 w-4 mr-1.5" />{t("accountAccess")}
             </TabsTrigger>
           )}
           {showCompliance && (
             <TabsTrigger value="compliance" data-testid="tab-compliance">
-              <FileCheck className="h-4 w-4 mr-1.5" />Compliance
+              <FileCheck className="h-4 w-4 mr-1.5" />{t("compliance")}
             </TabsTrigger>
           )}
           {showPciDss && (
             <TabsTrigger value="pci-dss" data-testid="tab-pci-dss">
-              <Lock className="h-4 w-4 mr-1.5" />PCI DSS
+              <Lock className="h-4 w-4 mr-1.5" />{t("pciDss")}
             </TabsTrigger>
           )}
           <TabsTrigger value="privacy" data-testid="tab-privacy">
-            <ShieldCheck className="h-4 w-4 mr-1.5" />Privacy & Data
+            <ShieldCheck className="h-4 w-4 mr-1.5" />{t("privacyData")}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="general" className="mt-4">

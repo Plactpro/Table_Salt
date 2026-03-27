@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useState, useEffect } from "react";
 import { useAuth, Role } from "@/lib/auth";
+import { useTranslation } from "react-i18next";
 import { useSubscription } from "@/lib/auth";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ import {
   Megaphone,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   type LucideIcon,
 } from "lucide-react";
 import { FeatureKey, getMinimumTierForFeature, tierPricing, businessConfig } from "@/lib/subscription";
@@ -69,6 +71,7 @@ type GroupKey =
 interface NavItem {
   id: string;
   name: string;
+  nameKey: string;
   icon: LucideIcon;
   path: string;
   roles: Role[];
@@ -95,58 +98,58 @@ const NAV_GROUPS: NavGroup[] = [
 ];
 
 const navItems: NavItem[] = [
-  { id: "m-1",  name: "Dashboard",           icon: LayoutDashboard,  path: "/",                  group: "none",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"] },
-  { id: "m-2",  name: "My Shift",            icon: Clock,            path: "/",                  group: "none",       roles: ["waiter", "cashier"] },
-  { id: "m-3",  name: "KDS",                 icon: ChefHat,          path: "/",                  group: "none",       roles: ["kitchen"] },
-  { id: "m-41", name: "Log Wastage",         icon: Trash2,           path: "/wastage-log",       group: "none",       roles: ["kitchen"] },
-  { id: "m-51", name: "Dashboard",           icon: LayoutDashboard,  path: "/",                  group: "none",       roles: ["delivery_agent"] },
-  { id: "m-52", name: "My Deliveries",       icon: Truck,            path: "/",                  group: "none",       roles: ["delivery_agent"] },
-  { id: "m-53", name: "Delivery History",    icon: History,          path: "/",                  group: "none",       roles: ["delivery_agent"] },
+  { id: "m-1",  name: "Dashboard",             nameKey: "nav.items.dashboard",        icon: LayoutDashboard,  path: "/",                  group: "none",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"] },
+  { id: "m-2",  name: "My Shift",              nameKey: "nav.items.myShift",          icon: Clock,            path: "/",                  group: "none",       roles: ["waiter", "cashier"] },
+  { id: "m-3",  name: "KDS",                   nameKey: "nav.items.kds",              icon: ChefHat,          path: "/",                  group: "none",       roles: ["kitchen"] },
+  { id: "m-41", name: "Log Wastage",           nameKey: "nav.items.logWastage",       icon: Trash2,           path: "/wastage-log",       group: "none",       roles: ["kitchen"] },
+  { id: "m-51", name: "Dashboard",             nameKey: "nav.items.dashboard",        icon: LayoutDashboard,  path: "/",                  group: "none",       roles: ["delivery_agent"] },
+  { id: "m-52", name: "My Deliveries",         nameKey: "nav.items.myDeliveries",     icon: Truck,            path: "/",                  group: "none",       roles: ["delivery_agent"] },
+  { id: "m-53", name: "Delivery History",      nameKey: "nav.items.deliveryHistory",  icon: History,          path: "/",                  group: "none",       roles: ["delivery_agent"] },
 
-  { id: "m-4",  name: "POS",                 icon: MonitorSmartphone, path: "/pos",              group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "pos" },
-  { id: "m-6",  name: "Tables",              icon: Utensils,         path: "/tables",            group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
-  { id: "m-33", name: "Live Requests",       icon: Bell,             path: "/live-requests",     group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
-  { id: "m-35", name: "Kitchen Board",       icon: LayoutGrid,       path: "/kitchen-board",     group: "operations", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
-  { id: "m-5",  name: "Online Orders",       icon: Receipt,          path: "/orders",            group: "operations", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen"], featureKey: "orders" },
-  { id: "m-38", name: "Phone Orders",        icon: Phone,            path: "/phone-order",       group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "orders" },
-  { id: "m-47", name: "Cash Machine",        icon: Banknote,         path: "/cash",              group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
-  { id: "m-49", name: "Parking",             icon: BarChart3,        path: "/parking",           group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
+  { id: "m-4",  name: "POS",                   nameKey: "nav.items.pos",              icon: MonitorSmartphone, path: "/pos",              group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "pos" },
+  { id: "m-6",  name: "Tables",                nameKey: "nav.items.tables",           icon: Utensils,         path: "/tables",            group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
+  { id: "m-33", name: "Live Requests",         nameKey: "nav.items.liveRequests",     icon: Bell,             path: "/live-requests",     group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "tables" },
+  { id: "m-35", name: "Kitchen Board",         nameKey: "nav.items.kitchenBoard",     icon: LayoutGrid,       path: "/kitchen-board",     group: "operations", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
+  { id: "m-5",  name: "Online Orders",         nameKey: "nav.items.onlineOrders",     icon: Receipt,          path: "/orders",            group: "operations", roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen"], featureKey: "orders" },
+  { id: "m-38", name: "Phone Orders",          nameKey: "nav.items.phoneOrders",      icon: Phone,            path: "/phone-order",       group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"], featureKey: "orders" },
+  { id: "m-47", name: "Cash Machine",          nameKey: "nav.items.cashMachine",      icon: Banknote,         path: "/cash",              group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "cashier"], featureKey: "pos" },
+  { id: "m-49", name: "Parking",               nameKey: "nav.items.parking",          icon: BarChart3,        path: "/parking",           group: "operations", roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor", "cashier", "waiter"] },
 
-  { id: "m-7",  name: "Menu",                icon: MenuSquare,       path: "/menu",              group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "menu" },
-  { id: "m-40", name: "Menu Pricing",        icon: Tag,              path: "/menu-pricing",      group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "menu" },
-  { id: "m-12", name: "Promotions",          icon: Zap,              path: "/promotions",        group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
-  { id: "m-32", name: "Events & Special Days", icon: CalendarDays,   path: "/events",            group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor"], featureKey: "staff" },
-  { id: "m-30", name: "Kiosk",               icon: MonitorSmartphone, path: "/kiosk-management", group: "menu",      roles: ["owner", "manager"] },
-  { id: "m-50", name: "Advertisements",      icon: Megaphone,        path: "/advertisements",    group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "advertisement_management" as FeatureKey },
+  { id: "m-7",  name: "Menu",                  nameKey: "nav.items.menu",             icon: MenuSquare,       path: "/menu",              group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "menu" },
+  { id: "m-40", name: "Menu Pricing",          nameKey: "nav.items.menuPricing",      icon: Tag,              path: "/menu-pricing",      group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "menu" },
+  { id: "m-12", name: "Promotions",            nameKey: "nav.items.promotions",       icon: Zap,              path: "/promotions",        group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "offers" },
+  { id: "m-32", name: "Events & Special Days", nameKey: "nav.items.eventsSpecialDays",icon: CalendarDays,     path: "/events",            group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "kitchen", "accountant", "auditor"], featureKey: "staff" },
+  { id: "m-30", name: "Kiosk",                 nameKey: "nav.items.kiosk",            icon: MonitorSmartphone, path: "/kiosk-management", group: "menu",      roles: ["owner", "manager"] },
+  { id: "m-50", name: "Advertisements",        nameKey: "nav.items.advertisements",   icon: Megaphone,        path: "/advertisements",    group: "menu",       roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "advertisement_management" as FeatureKey },
 
-  { id: "m-13", name: "CRM",                 icon: Heart,            path: "/crm",               group: "customers",  roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "crm" },
-  { id: "m-31", name: "Omnichannel",         icon: Layers,           path: "/omnichannel",       group: "customers",  roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
-  { id: "m-45", name: "Ticket History",      icon: History,          path: "/tickets",           group: "customers",  roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
+  { id: "m-13", name: "CRM",                   nameKey: "nav.items.crm",              icon: Heart,            path: "/crm",               group: "customers",  roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "crm" },
+  { id: "m-31", name: "Omnichannel",           nameKey: "nav.items.omnichannel",      icon: Layers,           path: "/omnichannel",       group: "customers",  roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "reports" },
+  { id: "m-45", name: "Ticket History",        nameKey: "nav.items.ticketHistory",    icon: History,          path: "/tickets",           group: "customers",  roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor", "cashier", "waiter", "accountant", "auditor"], featureKey: "orders" },
 
-  { id: "m-36", name: "Kitchen Settings",    icon: ChefHat,          path: "/kitchen-settings",  group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
-  { id: "m-8",  name: "Inventory",           icon: Package2,         path: "/inventory",         group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "inventory" },
-  { id: "m-37", name: "Stock Capacity",      icon: ClipboardList,    path: "/stock-reports",     group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
-  { id: "m-44", name: "Procurement",         icon: ShoppingBag,      path: "/procurement",       group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
-  { id: "m-43", name: "Wastage Control",     icon: Trash2,           path: "/wastage",           group: "kitchen",    roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
-  { id: "m-19", name: "Cleaning",            icon: ClipboardCheck,   path: "/cleaning",          group: "kitchen",    roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "cleaning" },
+  { id: "m-36", name: "Kitchen Settings",      nameKey: "nav.items.kitchenSettings",  icon: ChefHat,          path: "/kitchen-settings",  group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "orders" },
+  { id: "m-8",  name: "Inventory",             nameKey: "nav.items.inventory",        icon: Package2,         path: "/inventory",         group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "supervisor"], featureKey: "inventory" },
+  { id: "m-37", name: "Stock Capacity",        nameKey: "nav.items.stockCapacity",    icon: ClipboardList,    path: "/stock-reports",     group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
+  { id: "m-44", name: "Procurement",           nameKey: "nav.items.procurement",      icon: ShoppingBag,      path: "/procurement",       group: "kitchen",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "inventory" },
+  { id: "m-43", name: "Wastage Control",       nameKey: "nav.items.wastageControl",   icon: Trash2,           path: "/wastage",           group: "kitchen",    roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  { id: "m-19", name: "Cleaning",              nameKey: "nav.items.cleaning",         icon: ClipboardCheck,   path: "/cleaning",          group: "kitchen",    roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "cleaning" },
 
-  { id: "m-9",  name: "Staff & Workforce",   icon: Users,            path: "/staff",             group: "team",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
-  { id: "m-20", name: "Internal Audits",     icon: ShieldCheck,      path: "/audits",            group: "team",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "auditor"], featureKey: "internal_audits" },
+  { id: "m-9",  name: "Staff & Workforce",     nameKey: "nav.items.staffWorkforce",   icon: Users,            path: "/staff",             group: "team",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "staff" },
+  { id: "m-20", name: "Internal Audits",       nameKey: "nav.items.internalAudits",   icon: ShieldCheck,      path: "/audits",            group: "team",       roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "auditor"], featureKey: "internal_audits" },
 
-  { id: "m-15", name: "Delivery & Online",   icon: Truck,            path: "/delivery",          group: "delivery",   roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
-  { id: "m-39", name: "Service Hub",         icon: Workflow,         path: "/service-hub",       group: "delivery",   roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "orders" },
+  { id: "m-15", name: "Delivery & Online",     nameKey: "nav.items.deliveryOnline",   icon: Truck,            path: "/delivery",          group: "delivery",   roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "delivery_management" },
+  { id: "m-39", name: "Service Hub",           nameKey: "nav.items.serviceHub",       icon: Workflow,         path: "/service-hub",       group: "delivery",   roles: ["owner", "franchise_owner", "manager", "outlet_manager", "supervisor"], featureKey: "orders" },
 
-  { id: "m-10", name: "Reports & Analytics", icon: BarChart3,        path: "/reports",           group: "reports",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
-  { id: "m-48", name: "Tip Report",          icon: DollarSign,       path: "/tips/report",       group: "reports",    roles: ["manager", "owner"] },
+  { id: "m-10", name: "Reports & Analytics",   nameKey: "nav.items.reportsAnalytics", icon: BarChart3,        path: "/reports",           group: "reports",    roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager", "accountant", "auditor"], featureKey: "reports" },
+  { id: "m-48", name: "Tip Report",            nameKey: "nav.items.tipReport",        icon: DollarSign,       path: "/tips/report",       group: "reports",    roles: ["manager", "owner"] },
 
-  { id: "m-11", name: "Locations",           icon: Store,            path: "/outlets",           group: "admin",      roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "outlets" },
-  { id: "m-16", name: "Integrations",        icon: Puzzle,           path: "/integrations",      group: "admin",      roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "integrations" },
-  { id: "m-17", name: "Billing",             icon: CreditCard,       path: "/billing",           group: "admin",      roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "billing" },
-  { id: "m-18", name: "Settings",            icon: Settings,         path: "/settings",          group: "admin",      roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
-  { id: "m-34", name: "QR Settings",         icon: ScanQrCode,       path: "/qr-settings",       group: "admin",      roles: ["manager", "outlet_manager"], featureKey: "tables" },
-  { id: "m-42", name: "Printer Setup",       icon: Printer,          path: "/settings/printers", group: "admin",      roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
-  { id: "m-46", name: "Alert Sounds",        icon: Bell,             path: "/settings/alerts",   group: "admin",      roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
-  { id: "m-51", name: "Recycle Bin",         icon: Trash2,           path: "/recycle-bin",        group: "admin",      roles: ["owner", "manager"] },
+  { id: "m-11", name: "Locations",             nameKey: "nav.items.locations",        icon: Store,            path: "/outlets",           group: "admin",      roles: ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"], featureKey: "outlets" },
+  { id: "m-16", name: "Integrations",          nameKey: "nav.items.integrations",     icon: Puzzle,           path: "/integrations",      group: "admin",      roles: ["owner", "franchise_owner", "hq_admin", "manager"], featureKey: "integrations" },
+  { id: "m-17", name: "Billing",               nameKey: "nav.items.billing",          icon: CreditCard,       path: "/billing",           group: "admin",      roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "billing" },
+  { id: "m-18", name: "Settings",              nameKey: "nav.items.settings",         icon: Settings,         path: "/settings",          group: "admin",      roles: ["owner", "franchise_owner", "hq_admin"], featureKey: "settings" },
+  { id: "m-34", name: "QR Settings",           nameKey: "nav.items.qrSettings",       icon: ScanQrCode,       path: "/qr-settings",       group: "admin",      roles: ["manager", "outlet_manager"], featureKey: "tables" },
+  { id: "m-42", name: "Printer Setup",         nameKey: "nav.items.printerSetup",     icon: Printer,          path: "/settings/printers", group: "admin",      roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  { id: "m-46", name: "Alert Sounds",          nameKey: "nav.items.alertSounds",      icon: Bell,             path: "/settings/alerts",   group: "admin",      roles: ["owner", "franchise_owner", "manager", "outlet_manager"] },
+  { id: "m-51", name: "Recycle Bin",           nameKey: "nav.items.recycleBin",       icon: Trash2,           path: "/recycle-bin",       group: "admin",      roles: ["owner", "manager"] },
 ];
 
 const STORAGE_KEY = "sidebar_group_state_v2";
@@ -237,9 +240,11 @@ function SlateShimmer() {
 
 export default function Sidebar() {
   const { user } = useAuth();
+  const { i18n, t } = useTranslation("common");
   const { tier, badges, hasFeatureAccess, businessType } = useSubscription();
   const [location, navigate] = useLocation();
   const queryClient = useQueryClient();
+  const isRTL = i18n.language === "ar";
 
   const role = user?.role ?? "owner";
 
@@ -399,7 +404,7 @@ export default function Sidebar() {
               {isActive && !isLocked && (
                 <motion.div
                   layoutId="sidebar-active-indicator"
-                  className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full"
+                  className={`absolute ${isRTL ? "right-0 rounded-l-full" : "left-0 rounded-r-full"} top-1/2 -translate-y-1/2 w-[3px] h-5`}
                   style={{
                     background: "#F5F0E8",
                     boxShadow: "0 0 8px 3px rgba(245,240,232,0.45)",
@@ -434,13 +439,13 @@ export default function Sidebar() {
                   }}
                 />
               </motion.div>
-              <span className="relative z-10 flex-1 text-left leading-tight">{item.name}</span>
+              <span className="relative z-10 flex-1 text-start leading-tight">{t(item.nameKey, item.name)}</span>
               {item.id === "m-33" && pendingRequests > 0 && (
                 <span
                   className="relative z-10 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white"
                   style={{ background: "hsl(0, 72%, 51%)" }}
                   data-testid="badge-live-requests"
-                  aria-label={`${pendingRequests} pending requests`}
+                  aria-label={t("pendingRequestsAriaLabel", { count: pendingRequests })}
                 >
                   {pendingRequests > 99 ? "99+" : pendingRequests}
                 </span>
@@ -450,7 +455,7 @@ export default function Sidebar() {
                   className="relative z-10 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold text-white"
                   style={{ background: "hsl(0, 72%, 51%)" }}
                   data-testid="badge-security-alerts"
-                  aria-label={`${unreadAlerts} security alerts`}
+                  aria-label={t("securityAlertsAriaLabel", { count: unreadAlerts })}
                 >
                   {unreadAlerts > 99 ? "99+" : unreadAlerts}
                 </span>
@@ -467,8 +472,8 @@ export default function Sidebar() {
           </TooltipTrigger>
           <TooltipContent side="right">
             {isLocked && upgradeTierLabel
-              ? `Upgrade to ${upgradeTierLabel} to access`
-              : item.name}
+              ? t("upgradeToAccess", { tier: upgradeTierLabel })
+              : t(item.nameKey, item.name)}
           </TooltipContent>
         </Tooltip>
       </motion.li>
@@ -506,7 +511,7 @@ export default function Sidebar() {
         </span>
       </div>
 
-      <nav className="flex-1 overflow-y-auto py-3 px-3 relative z-10 space-y-0.5" aria-label="Main navigation">
+      <nav className="flex-1 overflow-y-auto py-3 px-3 relative z-10 space-y-0.5" aria-label={t("mainNavigation")}>
         <TooltipProvider delayDuration={300}>
           {NAV_GROUPS.map((group) => {
             const groupItems = itemsByGroup[group.key] ?? [];
@@ -545,9 +550,11 @@ export default function Sidebar() {
                 >
                   {isOpen
                     ? <ChevronDown aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" />
-                    : <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" />
+                    : isRTL
+                      ? <ChevronLeft aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" />
+                      : <ChevronRight aria-hidden="true" className="h-3 w-3 shrink-0 opacity-60" />
                   }
-                  <span className="flex-1 text-left">{group.label}</span>
+                  <span className="flex-1 text-start">{group.key !== "none" ? t(`nav.groups.${group.key}`, group.label) : ""}</span>
                   {!isOpen && hasActive && (
                     <span
                       className="inline-flex h-1.5 w-1.5 rounded-full shrink-0"
@@ -555,7 +562,7 @@ export default function Sidebar() {
                         background: "#81B89A",
                         boxShadow: "0 0 5px 2px rgba(129,184,154,0.5)",
                       }}
-                      aria-label="Contains active page"
+                      aria-label={t("containsActivePage")}
                     />
                   )}
                 </button>

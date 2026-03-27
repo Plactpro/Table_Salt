@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import type { Order, OrderItem, Outlet, MenuItem } from "@shared/schema";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -112,6 +113,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function OrdersHub() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const { dispatchKotForOrder } = useKotAutoDispatch();
@@ -258,7 +260,7 @@ export default function OrdersHub() {
 
   return (
     <div className="p-6 space-y-6" data-testid="orders-hub-page">
-      <PageTitle title="Orders" />
+      <PageTitle title={t("orders")} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">

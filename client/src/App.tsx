@@ -1,3 +1,24 @@
+/**
+ * i18n usage guide — for any component in this app:
+ *   import { useTranslation } from 'react-i18next';
+ *
+ *   const { t } = useTranslation('common');      // shared strings (buttons, labels, nav)
+ *   const { t } = useTranslation('kitchen');     // kitchen / KDS strings
+ *   const { t } = useTranslation('pos');         // POS strings
+ *   const { t } = useTranslation('orders');      // orders page strings
+ *   const { t } = useTranslation('settings');    // settings page strings
+ *   const { t } = useTranslation('staff');       // staff / shift strings
+ *   const { t } = useTranslation('inventory');   // inventory strings
+ *   const { t } = useTranslation('reports');     // reports strings
+ *   const { t } = useTranslation('billing');     // billing strings
+ *   const { t } = useTranslation('account');     // account / profile strings
+ *   const { t } = useTranslation('layout');      // layout / nav chrome strings
+ *
+ * Locale files live at: client/src/i18n/locales/{en,es,ar,fr}/{namespace}.json
+ * Language preference is persisted per-user (preferred_language DB column) and
+ * per-tenant (default_language). Detected order: localStorage → DB preference (on login).
+ * RTL is applied automatically when the active language is Arabic ('ar').
+ */
 import { Switch, Route, useLocation, Redirect } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -8,6 +29,9 @@ import { ImpersonationProvider } from "@/lib/impersonation-context";
 import { useIdleTimer } from "@/hooks/use-idle-timer";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { I18nextProvider } from "react-i18next";
+import i18n from "@/i18n/index";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { FeatureKey } from "@/lib/subscription";
 import AppLayout from "@/components/layout/app-layout";
@@ -163,6 +187,7 @@ const routeAccessMap: Record<string, RouteGuardConfig> = {
 };
 
 function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
+  const { t } = useTranslation("common");
   return (
     <div className="flex items-center justify-center min-h-[60vh]" data-testid="access-denied">
       <Card className="max-w-md w-full">
@@ -170,14 +195,12 @@ function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
           <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center mx-auto">
             <ShieldAlert className="w-8 h-8 text-red-600" />
           </div>
-          <h2 className="text-xl font-bold">Access Restricted</h2>
+          <h2 className="text-xl font-bold">{t("accessRestricted")}</h2>
           <p className="text-muted-foreground text-sm">
-            {reason === "role"
-              ? "You don't have the required role to access this page. Please contact your administrator."
-              : "This feature is not available on your current subscription plan. Please upgrade to access this module."}
+            {reason === "role" ? t("roleAccessDenied") : t("subscriptionAccessDenied")}
           </p>
           <Button variant="outline" onClick={() => window.history.back()} data-testid="button-go-back">
-            Go Back
+            {t("goBack")}
           </Button>
         </CardContent>
       </Card>
@@ -214,6 +237,7 @@ function GuardedRoute({ path, component: Component }: { path: string; component:
 
 function IdleLogoutDialog() {
   const { user, logout } = useAuth();
+  const { t } = useTranslation("common");
   const [location] = useLocation();
 
   const isPublicOrKiosk = location === "/login" || location === "/register" || location === "/kiosk" || location.startsWith("/guest/") || location.startsWith("/table/") || location.startsWith("/kds/wall") || location.startsWith("/admin");
@@ -260,19 +284,17 @@ function IdleLogoutDialog() {
     <AlertDialog open={warningVisible} data-testid="dialog-idle-logout">
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>You're about to be logged out</AlertDialogTitle>
+          <AlertDialogTitle>{t("youreAboutToBeLoggedOut")}</AlertDialogTitle>
           <AlertDialogDescription data-testid="text-idle-countdown">
-            You've been inactive for a while. You'll be logged out in{" "}
-            <strong>{secondsLeft} second{secondsLeft !== 1 ? "s" : ""}</strong>.
-            Click "Stay logged in" to continue your session.
+            {t("idleWarning", { seconds: secondsLeft, plural: secondsLeft !== 1 ? "s" : "" })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={resetTimer} data-testid="button-stay-logged-in">
-            Stay logged in
+            {t("stayLoggedIn")}
           </AlertDialogCancel>
           <AlertDialogAction onClick={handleTimeout} data-testid="button-logout-now">
-            Log out now
+            {t("logoutNow")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -282,6 +304,7 @@ function IdleLogoutDialog() {
 
 function PendingOrdersNotice() {
   const [, navigate] = useLocation();
+  const { t } = useTranslation("common");
   const [pendingCount, setPendingCount] = useState(0);
   const [open, setOpen] = useState(false);
 
@@ -304,22 +327,20 @@ function PendingOrdersNotice() {
     <AlertDialog open={open} data-testid="dialog-pending-orders">
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Session timed out — unsaved orders</AlertDialogTitle>
+          <AlertDialogTitle>{t("sessionTimedOut")}</AlertDialogTitle>
           <AlertDialogDescription data-testid="text-pending-orders-count">
-            You were logged out due to inactivity. You had{" "}
-            <strong>{pendingCount} unsaved order draft{pendingCount !== 1 ? "s" : ""}</strong>{" "}
-            that may need attention. Review your open orders to restore any incomplete work.
+            {t("pendingOrders", { count: pendingCount, plural: pendingCount !== 1 ? "s" : "" })}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel onClick={() => setOpen(false)} data-testid="button-pending-orders-dismiss">
-            Dismiss
+            {t("dismiss")}
           </AlertDialogCancel>
           <AlertDialogAction
             onClick={() => { setOpen(false); navigate("/orders"); }}
             data-testid="button-review-orders"
           >
-            Review Open Orders
+            {t("reviewOpenOrders")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -352,6 +373,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
 }
 
 function WelcomeModal({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
+  const { t } = useTranslation("common");
   const pendingKey = `welcome_pending_${tenantId}`;
   const [open, setOpen] = useState(() => {
     try {
@@ -374,14 +396,14 @@ function WelcomeModal({ tenantId, tenantName }: { tenantId: string; tenantName: 
         <div className="text-center space-y-4 py-2">
           <div className="text-5xl">🎊</div>
           <div>
-            <h2 className="text-xl font-bold font-heading">Welcome to Table Salt!</h2>
+            <h2 className="text-xl font-bold font-heading">{t("welcomeToTableSalt")}</h2>
             <p className="text-muted-foreground text-sm mt-1">{tenantName}</p>
           </div>
           <p className="text-sm text-muted-foreground">
-            Your restaurant is set up and ready. Here's what to do next:
+            {t("restaurantSetup")}
           </p>
           <div className="text-left space-y-2 bg-muted/40 rounded-lg p-4">
-            {["Add your menu items", "Set up your tables", "Add your staff", "Take your first order"].map((step, i) => (
+            {[t("addMenuItems"), t("setupTables"), t("addStaff"), t("takeFirstOrder")].map((step, i) => (
               <div key={i} className="flex items-center gap-2 text-sm">
                 <span className="w-5 h-5 rounded-full bg-primary/10 text-primary text-xs flex items-center justify-center font-bold shrink-0">{i + 1}</span>
                 <span>{step}</span>
@@ -389,7 +411,7 @@ function WelcomeModal({ tenantId, tenantName }: { tenantId: string; tenantName: 
             ))}
           </div>
           <Button className="w-full gap-2" onClick={handleClose} data-testid="button-lets-go">
-            Let's Go! →
+            {t("letsGo")}
           </Button>
         </div>
       </DialogContent>
@@ -671,16 +693,24 @@ function Router() {
   );
 }
 
+function SkipToMainContent() {
+  const { t } = useTranslation("common");
+  return (
+    <a href="#main-content" className="skip-link">
+      {t("skipToMainContent")}
+    </a>
+  );
+}
+
 function App() {
   return (
+    <I18nextProvider i18n={i18n}>
     <GlobalErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <AuthProvider>
             <ImpersonationProvider>
-              <a href="#main-content" className="skip-link">
-                Skip to main content
-              </a>
+              <SkipToMainContent />
               <div
                 id="aria-announcer"
                 aria-live="polite"
@@ -696,6 +726,7 @@ function App() {
         </TooltipProvider>
       </QueryClientProvider>
     </GlobalErrorBoundary>
+    </I18nextProvider>
   );
 }
 

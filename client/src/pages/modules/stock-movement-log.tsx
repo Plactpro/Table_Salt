@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatCard } from "@/components/widgets/stat-card";
+import { useTranslation } from "react-i18next";
 import {
   ArrowDownCircle, ArrowUpCircle, RotateCcw, Package, Trash2,
   Filter, ChefHat, AlertTriangle, TrendingDown, Users,
@@ -55,6 +56,7 @@ function TypeBadge({ type }: { type: string }) {
 }
 
 export default function StockMovementLog({ initialIngredientId }: { initialIngredientId?: string } = {}) {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const [showFilters, setShowFilters] = useState(true);
   const [filters, setFilters] = useState({
@@ -135,7 +137,7 @@ export default function StockMovementLog({ initialIngredientId }: { initialIngre
 
   return (
     <div className="space-y-6" data-testid="stock-movement-log">
-      <PageTitle title="Stock Movements" />
+      <PageTitle title={t("stockMovements")} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <StatCard title="Consumed Today" value={fmt(totalConsumedToday)} icon={ArrowDownCircle} iconColor="text-orange-600" iconBg="bg-orange-100" testId="stat-consumed-today" />
         <StatCard title="Wastage Today" value={fmt(totalWastageToday)} icon={Trash2} iconColor="text-red-600" iconBg="bg-red-100" testId="stat-wastage-today" />
@@ -258,7 +260,7 @@ export default function StockMovementLog({ initialIngredientId }: { initialIngre
                     <TableHead>Time</TableHead>
                     <TableHead>Ingredient</TableHead>
                     <TableHead className="text-right">Change</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{t("type")}</TableHead>
                     <TableHead>Order</TableHead>
                     <TableHead>Chef</TableHead>
                     <TableHead>Station</TableHead>

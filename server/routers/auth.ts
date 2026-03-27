@@ -326,12 +326,13 @@ export function registerAuthRoutes(app: Express): void {
     const { password: _, totpSecret: _ts, recoveryCodes: _rc, passwordHistory: _ph, ...safeUser } = req.user as any;
     const tenant = await storage.getTenant(safeUser.tenantId);
     const { rows: [userRow] } = await pool.query(
-      `SELECT theme_preference, processing_restricted, restriction_requested_at, restriction_reason FROM users WHERE id = $1`,
+      `SELECT theme_preference, processing_restricted, restriction_requested_at, restriction_reason, preferred_language FROM users WHERE id = $1`,
       [safeUser.id]
     );
     res.json({
       ...safeUser,
       themePreference: userRow?.theme_preference ?? "system",
+      preferredLanguage: userRow?.preferred_language ?? "en",
       processingRestricted: userRow?.processing_restricted ?? false,
       restrictionRequestedAt: userRow?.restriction_requested_at ?? null,
       restrictionReason: userRow?.restriction_reason ?? null,
@@ -346,8 +347,65 @@ export function registerAuthRoutes(app: Express): void {
         gstin: tenant.gstin, cgstRate: tenant.cgstRate, sgstRate: tenant.sgstRate,
         invoicePrefix: tenant.invoicePrefix, razorpayEnabled: tenant.razorpayEnabled,
         razorpayKeyId: tenant.razorpayKeyId,
+        defaultLanguage: tenant.defaultLanguage ?? "en",
       } : null,
     });
+  });
+
+  // PR-013: Language preference endpoint
+  app.put("/api/users/me/language", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { language } = req.body;
+      const supportedLanguages = ["en", "es", "ar", "fr"];
+      if (!language || !supportedLanguages.includes(language)) {
+        return res.status(400).json({ message: "Invalid language. Supported: en, es, ar, fr" });
+      }
+      await pool.query(`UPDATE users SET preferred_language = $1 WHERE id = $2`, [language, user.id]);
+      res.json({ message: "Language preference updated", language });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-013: Tenant default language endpoint (owner/hq_admin/franchise_owner only)
+  app.get("/api/tenant/default-language", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allowedRoles = ["owner", "franchise_owner", "hq_admin"];
+      if (!allowedRoles.includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const result = await pool.query(
+        `SELECT default_language FROM tenants WHERE id = $1`,
+        [user.tenantId]
+      );
+      res.json({ defaultLanguage: result.rows[0]?.default_language ?? "en" });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.put("/api/tenant/default-language", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const allowedRoles = ["owner", "franchise_owner", "hq_admin"];
+      if (!allowedRoles.includes(user.role)) {
+        return res.status(403).json({ message: "Insufficient permissions" });
+      }
+      const { language } = req.body;
+      const supportedLanguages = ["en", "es", "ar", "fr"];
+      if (!language || !supportedLanguages.includes(language)) {
+        return res.status(400).json({ message: "Invalid language. Supported: en, es, ar, fr" });
+      }
+      await pool.query(
+        `UPDATE tenants SET default_language = $1 WHERE id = $2`,
+        [language, user.tenantId]
+      );
+      res.json({ message: "Default language updated", defaultLanguage: language });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
   });
 
   app.patch("/api/users/preferences", requireAuth, async (req, res) => {

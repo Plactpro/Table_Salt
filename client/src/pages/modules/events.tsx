@@ -34,6 +34,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useTranslation } from "react-i18next";
 
 type ViewType = "month" | "week" | "day" | "list";
 
@@ -407,6 +408,7 @@ function NotificationBanners({ events }: { events: CalEvent[] }) {
 }
 
 export default function EventsPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -633,7 +635,7 @@ export default function EventsPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="events-page">
-      <PageTitle title="Events" />
+      <PageTitle title={t("events")} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <CalendarIcon className="h-7 w-7 text-primary" />
@@ -787,7 +789,7 @@ export default function EventsPage() {
                     <TableHead>Time</TableHead>
                     <TableHead>Outlets</TableHead>
                     <TableHead>Created By</TableHead>
-                    {canEdit && <TableHead className="text-right">Actions</TableHead>}
+                    {canEdit && <TableHead className="text-right">{t("actions")}</TableHead>}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -917,11 +919,11 @@ export default function EventsPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Start Date</Label>
+                <Label>{t("startDate")}</Label>
                 <Input type="datetime-local" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} data-testid="input-event-start" />
               </div>
               <div>
-                <Label>End Date</Label>
+                <Label>{t("endDate")}</Label>
                 <Input type="datetime-local" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} data-testid="input-event-end" />
               </div>
             </div>

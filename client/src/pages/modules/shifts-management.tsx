@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Plus, Edit2, Trash2, Clock, Sun, Sunset, Moon } from "lucide-react";
 import type { Shift } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 const SHIFT_PRESETS = [
   { name: "Morning", startTime: "06:00", endTime: "14:00", icon: Sun, color: "text-amber-500" },
@@ -46,6 +47,7 @@ interface ShiftFormData {
 const EMPTY_FORM: ShiftFormData = { name: "", startTime: "", endTime: "", active: true };
 
 export default function ShiftsManagement() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -140,7 +142,7 @@ export default function ShiftsManagement() {
 
   return (
     <div className="space-y-6" data-testid="shifts-management">
-      <PageTitle title="Shifts" />
+      <PageTitle title={t("shifts")} />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-xl font-semibold">Shift Management</h2>

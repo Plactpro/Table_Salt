@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/lib/auth";
+import { useTranslation } from "react-i18next";
 
 type SoundTone = "chime" | "beep" | "bell" | "ding" | "ping";
 
@@ -68,6 +69,7 @@ export default function QrRequestSettings() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useTranslation("common");
   const [selectedOutletId, setSelectedOutletId] = useState<string>("");
   const [settings, setSettings] = useState<QrRequestSettings>(DEFAULT_SETTINGS);
 
@@ -113,11 +115,11 @@ export default function QrRequestSettings() {
 
   return (
     <div className="space-y-6" data-testid="qr-request-settings">
-      <PageTitle title="QR Settings" />
+      <PageTitle title={t("settings")} />
       <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h2 className="text-xl font-bold flex items-center gap-2">
-            <QrCode className="h-5 w-5 text-primary" />QR Request Settings
+            <QrCode className="h-5 w-5 text-primary" />{t("settings")}
           </h2>
           <p className="text-sm text-muted-foreground">Configure customer request options per outlet</p>
         </div>

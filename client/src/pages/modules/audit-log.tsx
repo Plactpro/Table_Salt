@@ -1,5 +1,6 @@
 import { PageTitle } from "@/lib/accessibility";
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -76,6 +77,8 @@ const ENTITY_TYPES = [
 const PAGE_SIZE = 25;
 
 export default function AuditLogPage() {
+  const { t } = useTranslation("modules");
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const [page, setPage] = useState(0);
   const [actionFilter, setActionFilter] = useState("none");
@@ -177,8 +180,8 @@ export default function AuditLogPage() {
 
   const formatDate = (dateStr: string) => {
     const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) + " " +
-      d.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return d.toLocaleDateString(i18n.language, { month: "short", day: "numeric", year: "numeric" }) + " " +
+      d.toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   };
 
   const getActionBadge = (action: string) => {
@@ -188,7 +191,7 @@ export default function AuditLogPage() {
 
   return (
     <div className="space-y-6" data-testid="audit-log-page">
-      <PageTitle title="Audit Log" />
+      <PageTitle title={t("auditLog")} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-audit-log-title">

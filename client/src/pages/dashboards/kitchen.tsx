@@ -10,6 +10,8 @@ import {
 } from "lucide-react";
 import { useWakeLock } from "@/hooks/use-wake-lock";
 import { renderKotHtml, dispatchPrint } from "@/lib/print-utils";
+import i18n from "@/i18n/index";
+import { useTranslation } from "react-i18next";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -156,6 +158,7 @@ function getTimeBg(mins: number): string {
 function KitchenClockCard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t: tk } = useTranslation("kitchen");
   const [elapsed, setElapsed] = useState("");
 
   const { data: attendanceStatus, isLoading } = useQuery<any>({
@@ -181,14 +184,14 @@ function KitchenClockCard() {
 
   const clockInMutation = useMutation({
     mutationFn: async () => { const res = await apiRequest("POST", "/api/attendance/clock-in", {}); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/attendance/status"] }); toast({ title: "Clocked In" }); },
-    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/attendance/status"] }); toast({ title: tk("toastClockedIn") }); },
+    onError: (e: Error) => { toast({ title: tk("toastError"), description: e.message, variant: "destructive" }); },
   });
 
   const clockOutMutation = useMutation({
     mutationFn: async () => { const res = await apiRequest("POST", "/api/attendance/clock-out", {}); return res.json(); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/attendance/status"] }); toast({ title: "Clocked Out" }); },
-    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/attendance/status"] }); toast({ title: tk("toastClockedOut") }); },
+    onError: (e: Error) => { toast({ title: tk("toastError"), description: e.message, variant: "destructive" }); },
   });
 
   if (isLoading) return null;
@@ -197,18 +200,18 @@ function KitchenClockCard() {
     <div data-testid="card-clock-in-out" className={`flex items-center gap-3 px-4 py-2 rounded-lg border ${isClockedIn ? "border-green-300 dark:border-green-800 bg-green-50/50 dark:bg-green-950/20" : "border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20"}`}>
       {isClockedIn ? <CheckCircle className="h-4 w-4 text-green-600" /> : <Clock className="h-4 w-4 text-orange-600" />}
       <span className="text-sm font-medium" data-testid="text-attendance-status">
-        {isClockedIn ? "Clocked In" : isClockedOut ? "Shift Complete" : "Not Clocked In"}
+        {isClockedIn ? tk("clockedIn") : isClockedOut ? tk("clockedOut") : tk("notClockedIn")}
       </span>
       {isClockedIn && elapsed && <span className="text-xs text-muted-foreground">({elapsed})</span>}
-      {isClockedIn && attendanceStatus.status === "late" && <Badge className="bg-amber-100 text-amber-700 text-xs"><AlertCircle className="h-3 w-3 mr-1" />Late</Badge>}
+      {isClockedIn && attendanceStatus.status === "late" && <Badge className="bg-amber-100 text-amber-700 text-xs"><AlertCircle className="h-3 w-3 mr-1" />{tk("late")}</Badge>}
       {!isClockedIn && !isClockedOut && (
         <Button size="sm" onClick={() => clockInMutation.mutate()} disabled={clockInMutation.isPending} className="bg-green-600 hover:bg-green-700 gap-1 h-7 text-xs" data-testid="button-clock-in">
-          <LogIn className="h-3 w-3" /> Clock In
+          <LogIn className="h-3 w-3" /> {tk("clockIn")}
         </Button>
       )}
       {isClockedIn && (
         <Button size="sm" variant="outline" onClick={() => clockOutMutation.mutate()} disabled={clockOutMutation.isPending} className="border-red-300 text-red-600 gap-1 h-7 text-xs" data-testid="button-clock-out">
-          <LogOut className="h-3 w-3" /> Clock Out
+          <LogOut className="h-3 w-3" /> {tk("clockOut")}
         </Button>
       )}
     </div>
@@ -224,6 +227,7 @@ function RecipeCheckDrawer({
   station: string | null;
   onConfirm: (force: boolean) => void;
 }) {
+  const { t: tk } = useTranslation("kitchen");
   const url = station
     ? `/api/kds/recipe-check/${orderId}?station=${encodeURIComponent(station)}`
     : `/api/kds/recipe-check/${orderId}`;
@@ -259,10 +263,10 @@ function RecipeCheckDrawer({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ChefHat className="h-5 w-5 text-primary" />
-            Recipe Check — Start Cooking
+            {tk("recipeCheckTitle")}
           </DialogTitle>
           <DialogDescription>
-            Review ingredients and stock levels before confirming.
+            {tk("recipeCheckDesc")}
           </DialogDescription>
         </DialogHeader>
 
@@ -273,7 +277,7 @@ function RecipeCheckDrawer({
         ) : recipeItems.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <Package className="h-10 w-10 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No recipes linked. Chef can proceed directly.</p>
+            <p className="text-sm">{tk("noRecipesLinked")}</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -281,12 +285,12 @@ function RecipeCheckDrawer({
               <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800" data-testid="warning-insufficient-stock">
                 <AlertTriangle className="h-4 w-4 text-red-600 shrink-0 mt-0.5" />
                 <div className="text-sm text-red-700 dark:text-red-300">
-                  <p className="font-medium">Insufficient stock detected</p>
+                  <p className="font-medium">{tk("insufficientStockDetected")}</p>
                   {outIngredients.length > 0 && (
-                    <p className="text-xs mt-1">Out of stock: {outIngredients.map(i => i.name).join(", ")}</p>
+                    <p className="text-xs mt-1">{tk("outOfStock", { items: outIngredients.map(i => i.name).join(", ") })}</p>
                   )}
                   {lowIngredients.length > 0 && (
-                    <p className="text-xs mt-1">Low stock: {lowIngredients.map(i => `${i.name} (${i.available}${i.unit} of ${i.required}${i.unit} needed)`).join(", ")}</p>
+                    <p className="text-xs mt-1">{tk("lowStock", { items: lowIngredients.map(i => `${i.name} (${i.available}${i.unit} of ${i.required}${i.unit} needed)`).join(", ") })}</p>
                   )}
                 </div>
               </div>
@@ -294,12 +298,12 @@ function RecipeCheckDrawer({
 
             {unlinkedItems.length > 0 && (
               <div className="space-y-1.5" data-testid="warning-no-recipe">
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">No recipe — stock not tracked</p>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide">{tk("noRecipeNoStock")}</p>
                 {unlinkedItems.map(u => (
                   <div key={u.orderItemId} className="flex items-center justify-between px-3 py-2 rounded-md border bg-slate-50 dark:bg-slate-900/40 border-slate-200 dark:border-slate-700 text-sm">
                     <span className="text-slate-700 dark:text-slate-300">{u.quantity}× {u.menuItemName}</span>
                     <Badge variant="outline" className="text-xs text-slate-500 border-slate-300 gap-1" data-testid={`badge-no-recipe-${u.menuItemId}`}>
-                      <AlertTriangle className="h-2.5 w-2.5" /> No Recipe
+                      <AlertTriangle className="h-2.5 w-2.5" /> {tk("noRecipeBadge")}
                     </Badge>
                   </div>
                 ))}
@@ -320,9 +324,9 @@ function RecipeCheckDrawer({
                         <span>{ing.name}</span>
                       </div>
                       <div className="flex items-center gap-3 text-xs font-mono tabular-nums">
-                        <span className="text-muted-foreground">Need: <span className="font-semibold text-foreground">{ing.required}{ing.unit}</span></span>
+                        <span className="text-muted-foreground">{tk("need")} <span className="font-semibold text-foreground">{ing.required}{ing.unit}</span></span>
                         <span className={`font-semibold ${stockColor(ing.status)}`}>
-                          Stock: {ing.available}{ing.unit} {ing.status === "ok" ? "✅" : ing.status === "low" ? "⚠️" : "❌"}
+                          {tk("stock")} {ing.available}{ing.unit} {ing.status === "ok" ? "✅" : ing.status === "low" ? "⚠️" : "❌"}
                         </span>
                       </div>
                     </div>
@@ -341,10 +345,10 @@ function RecipeCheckDrawer({
                 onClick={() => onConfirm(true)}
                 data-testid="button-proceed-anyway"
               >
-                <AlertTriangle className="h-4 w-4" /> Proceed Anyway
+                <AlertTriangle className="h-4 w-4" /> {tk("proceedAnyway")}
               </Button>
               <Button variant="outline" className="w-full" onClick={onClose} data-testid="button-cancel-start">
-                <X className="h-4 w-4 mr-2" /> Cancel
+                <X className="h-4 w-4 mr-2" /> {tk("cancel")}
               </Button>
             </>
           ) : (
@@ -355,10 +359,10 @@ function RecipeCheckDrawer({
                 data-testid="button-confirm-start"
               >
                 <Flame className="h-4 w-4" />
-                {linkedItems.length === 0 ? "Start Cooking (No Stock Check)" : "Confirm & Start Cooking"}
+                {linkedItems.length === 0 ? tk("startCookingNoCheck") : tk("confirmStartCooking")}
               </Button>
               <Button variant="ghost" className="w-full" onClick={onClose} data-testid="button-cancel-start">
-                Cancel
+                {tk("cancel")}
               </Button>
             </>
           )}
@@ -370,6 +374,7 @@ function RecipeCheckDrawer({
 
 function WastageModal({ open, onClose, station }: { open: boolean; onClose: () => void; station: string | null }) {
   const { toast } = useToast();
+  const { t: tk } = useTranslation("kitchen");
   const [inventoryItemId, setInventoryItemId] = useState("");
   const [quantity, setQuantity] = useState("");
   const [reason, setReason] = useState("");
@@ -387,11 +392,11 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Wastage reported", description: "Stock deducted and logged." });
+      toast({ title: tk("toastWastageReported"), description: tk("toastWastageDesc") });
       setInventoryItemId(""); setQuantity(""); setReason("");
       onClose();
     },
-    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+    onError: (e: Error) => { toast({ title: tk("toastError"), description: e.message, variant: "destructive" }); },
   });
 
   return (
@@ -399,28 +404,28 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
       <DialogContent className="max-w-md" data-testid="dialog-wastage">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-4 w-4 text-destructive" /> Report Wastage
+            <Trash2 className="h-4 w-4 text-destructive" /> {tk("reportWastage")}
           </DialogTitle>
-          <DialogDescription>Log wasted or spoiled ingredients. Stock will be deducted.</DialogDescription>
+          <DialogDescription>{tk("reportWastageDesc")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="wastage-ingredient">Ingredient</Label>
+            <Label htmlFor="wastage-ingredient">{tk("ingredient")}</Label>
             <Select value={inventoryItemId} onValueChange={setInventoryItemId}>
               <SelectTrigger id="wastage-ingredient" data-testid="select-wastage-ingredient">
-                <SelectValue placeholder="Select ingredient..." />
+                <SelectValue placeholder={tk("selectIngredient")} />
               </SelectTrigger>
               <SelectContent>
                 {inventory.map(item => (
                   <SelectItem key={item.id} value={item.id}>
-                    {item.name} ({item.unit}) — Stock: {item.currentStock}
+                    {item.name} ({item.unit}) — {tk("stock")} {item.currentStock}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="wastage-qty">Quantity Wasted</Label>
+            <Label htmlFor="wastage-qty">{tk("quantityWasted")}</Label>
             <Input
               id="wastage-qty"
               type="number"
@@ -433,12 +438,12 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="wastage-reason">Reason (optional)</Label>
+            <Label htmlFor="wastage-reason">{tk("reasonOptional")}</Label>
             <Textarea
               id="wastage-reason"
               value={reason}
               onChange={e => setReason(e.target.value)}
-              placeholder="e.g. Spoilage, Overcooked, Dropped..."
+              placeholder={tk("reasonPlaceholder")}
               rows={2}
               data-testid="input-wastage-reason"
             />
@@ -451,9 +456,9 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
             disabled={!inventoryItemId || !quantity || wastageMutation.isPending}
             data-testid="button-submit-wastage"
           >
-            <Trash2 className="h-4 w-4" /> Report Wastage
+            <Trash2 className="h-4 w-4" /> {tk("reportWastage")}
           </Button>
-          <Button variant="outline" onClick={onClose} data-testid="button-cancel-wastage">Cancel</Button>
+          <Button variant="outline" onClick={onClose} data-testid="button-cancel-wastage">{tk("cancel")}</Button>
         </div>
       </DialogContent>
     </Dialog>
@@ -478,6 +483,9 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
   const timeBorder = isStale ? "border-l-gray-400" : getTimeBorder(mins);
   const timeBg = isStale ? "bg-gray-50 dark:bg-gray-900/20" : getTimeBg(mins);
   const isNew = ticket.status === "new" || ticket.status === "sent_to_kitchen";
+  const { tenant: cardTenant } = useAuth();
+  const { t: tk } = useTranslation("kitchen");
+  const printLanguage = cardTenant?.defaultLanguage || i18n.language || "en";
   const isLate = !isStale && mins >= 15;
   const [confirmReady, setConfirmReady] = useState<string | null>(null);
   const [acknowledgedAllergyItems, setAcknowledgedAllergyItems] = useState<Set<string>>(new Set());
@@ -543,6 +551,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
       station: stationFilter,
       sentAt: ticket.createdAt || new Date().toISOString(),
       items: printItems,
+      language: printLanguage,
     });
 
     await dispatchPrint(html, stationPrinterUrl, {
@@ -613,19 +622,19 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
             )}
             {isStale && (
               <Badge className="text-xs bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 border border-gray-300 dark:border-gray-600" data-testid={`badge-stale-${ticket.id.slice(-4)}`}>
-                Stale — check status
+                {tk("staleCheckStatus")}
               </Badge>
             )}
             {hasPrintQueued && (
               <Badge className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700 gap-1" data-testid={`badge-print-queued-${ticket.id.slice(-4)}`}>
                 <Printer className="h-2.5 w-2.5" />
-                Print queued
+                {tk("printQueued")}
               </Badge>
             )}
           </div>
           <div className={`flex items-center gap-1 text-xs font-mono tabular-nums font-semibold ${timeColor}`}>
             <Clock className="h-3 w-3" />
-            {isStale ? "Stale" : formatElapsed(mins)}
+            {isStale ? tk("stale") : formatElapsed(mins)}
           </div>
         </CardHeader>
         <CardContent className="p-3 pt-1 space-y-2">
@@ -715,29 +724,29 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
             {allPending && (
               hasRecipe ? (
                 <Button size="sm" className="h-7 text-xs gap-1 bg-orange-500 hover:bg-orange-600" onClick={() => onStartWithRecipeCheck(ticket.id, stationFilter)} data-testid={`btn-start-all-${ticket.id.slice(-4)}`}>
-                  <Flame className="h-3 w-3" /> Start All
+                  <Flame className="h-3 w-3" /> {tk("startAll")}
                 </Button>
               ) : (
                 <Button size="sm" className="h-7 text-xs gap-1 bg-orange-500 hover:bg-orange-600" onClick={() => onBulkStatus(ticket.id, "cooking", stationFilter || undefined)} data-testid={`btn-start-all-${ticket.id.slice(-4)}`}>
-                  <Flame className="h-3 w-3" /> Start All
+                  <Flame className="h-3 w-3" /> {tk("startAll")}
                 </Button>
               )
             )}
             {allCooking && (
               <>
                 <Button size="sm" className="h-7 text-xs gap-1 bg-green-600 hover:bg-green-700" onClick={() => setConfirmReady(stationFilter || "__all")} data-testid={`btn-ready-all-${ticket.id.slice(-4)}`}>
-                  <CheckCircle2 className="h-3 w-3" /> All Ready
+                  <CheckCircle2 className="h-3 w-3" /> {tk("allReady")}
                 </Button>
                 <AlertDialog open={!!confirmReady} onOpenChange={(open) => !open && setConfirmReady(null)}>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Mark all as ready?</AlertDialogTitle>
+                      <AlertDialogTitle>{tk("markAllReadyTitle")}</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Confirm that all items for {ticket.tableNumber ? `Table ${ticket.tableNumber}` : `Order ${ticket.id.slice(-6).toUpperCase()}`} are ready to serve.
+                        {tk("markAllReadyDesc", { ref: ticket.tableNumber ? tk("tableRef", { n: ticket.tableNumber }) : tk("orderRef", { n: ticket.id.slice(-6).toUpperCase() }) })}
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                      <AlertDialogCancel data-testid="button-cancel-ready">Cancel</AlertDialogCancel>
+                      <AlertDialogCancel data-testid="button-cancel-ready">{tk("cancel")}</AlertDialogCancel>
                       <AlertDialogAction
                         className="bg-green-600 hover:bg-green-700"
                         data-testid="button-confirm-ready"
@@ -746,7 +755,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
                           setConfirmReady(null);
                         }}
                       >
-                        Yes, Mark Ready
+                        {tk("yesMarkReady")}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
@@ -754,11 +763,11 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
               </>
             )}
             {someReady && !allReady && !allCooking && !allPending && (
-              <Badge variant="outline" className="text-xs text-orange-600">Partial</Badge>
+              <Badge variant="outline" className="text-xs text-orange-600">{tk("partial")}</Badge>
             )}
             {allReady && (
               <Button size="sm" className="h-7 text-xs gap-1 bg-blue-600 hover:bg-blue-700" onClick={() => onBulkStatus(ticket.id, "served", stationFilter || undefined)} data-testid={`btn-served-all-${ticket.id.slice(-4)}`}>
-                <Utensils className="h-3 w-3" /> Served
+                <Utensils className="h-3 w-3" /> {tk("served")}
               </Button>
             )}
             </div>
@@ -951,6 +960,8 @@ export default function KitchenDashboard() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { user, tenant } = useAuth();
+  const { t: tk } = useTranslation("kitchen");
+  const printLanguage = tenant?.defaultLanguage || i18n.language || "en";
   const [, navigate] = useLocation();
   const [selectedStation, setSelectedStation] = useState<string | null>(() => {
     return localStorage.getItem("kds_station") || null;
@@ -1049,7 +1060,7 @@ export default function KitchenDashboard() {
 
   const checkInMut = useMutation({
     mutationFn: () => apiRequest("POST", "/api/chef-availability/check-in", { chefId: user?.id }).then(r => r.json()),
-    onSuccess: () => toast({ title: "Checked in for shift" }),
+    onSuccess: () => toast({ title: tk("toastCheckedInShift") }),
   });
 
   const myActiveAssignments = myAssignments.filter((a: any) => a.chefId === user?.id && a.status !== "completed");
@@ -1127,10 +1138,10 @@ export default function KitchenDashboard() {
     playAllergyAlert();
     queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
     toast({
-      title: "🚨 ALLERGY ALERT",
+      title: tk("allergyAlertTitle"),
       description: p?.itemName
         ? `${p.itemName}${p?.allergies?.length ? ` — ${p.allergies.join(", ")}` : ""}`
-        : "An order has allergy flags. Check kitchen tickets immediately.",
+        : tk("allergyAlertDesc"),
       variant: "destructive",
       duration: 8000,
     });
@@ -1195,7 +1206,7 @@ export default function KitchenDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
     },
-    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+    onError: (e: Error) => { toast({ title: tk("toastError"), description: e.message, variant: "destructive" }); },
   });
 
   const startWithDeductionMutation = useMutation({
@@ -1212,7 +1223,7 @@ export default function KitchenDashboard() {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
       setRecipeCheckState(null);
-      toast({ title: "Cooking started", description: "Stock deducted and KOT logged." });
+      toast({ title: tk("toastCookingStarted"), description: tk("toastCookingStartedDesc") });
 
       try {
         const res = await fetch(
@@ -1240,6 +1251,7 @@ export default function KitchenDashboard() {
               station: p.station || job.station,
               sentAt: p.sentAt || new Date().toISOString(),
               items: p.items || [],
+              language: printLanguage,
             });
             const result = await dispatchPrint(html, stationPrinterUrl, {
               onNetworkSuccess: () => {
@@ -1257,11 +1269,11 @@ export default function KitchenDashboard() {
           }
           if (kotJobs.length > 0) {
             if (failedCount > 0 && printedCount === 0) {
-              toast({ title: "KOT Print Failed", description: "Could not print. Open your print queue to retry.", variant: "destructive" });
+              toast({ title: tk("toastKotPrintFailed"), description: tk("toastKotPrintFailedDesc"), variant: "destructive" });
             } else if (failedCount > 0) {
-              toast({ title: `KOT Partially Printed`, description: `${printedCount} sent, ${failedCount} failed. Check print queue.`, variant: "destructive" });
+              toast({ title: tk("toastKotPartiallyPrinted"), description: tk("toastKotPartiallyPrintedDesc", { printed: printedCount, failed: failedCount }), variant: "destructive" });
             } else {
-              toast({ title: "KOT Printed", description: `${printedCount} ticket${printedCount > 1 ? "s" : ""} sent to ${usedNetworkPrinter ? "network printer" : "browser print dialog"}.` });
+              toast({ title: tk("toastKotPrinted"), description: tk("toastKotPrintedDesc", { count: printedCount, dest: usedNetworkPrinter ? tk("networkPrinter") : tk("browserPrintDialog") }) });
             }
           }
         }
@@ -1270,9 +1282,9 @@ export default function KitchenDashboard() {
     onError: (e: Error) => {
       const err = e as any;
       if (err.status === 409) {
-        toast({ title: "Stock Warning", description: "Some ingredients are insufficient. Check the recipe drawer.", variant: "destructive" });
+        toast({ title: tk("toastStockWarning"), description: tk("toastStockWarningDesc"), variant: "destructive" });
       } else {
-        toast({ title: "Error", description: e.message, variant: "destructive" });
+        toast({ title: tk("toastError"), description: e.message, variant: "destructive" });
       }
     },
   });
@@ -1284,9 +1296,9 @@ export default function KitchenDashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/kds/wall-token"] });
       refetchWallToken();
-      toast({ title: "Wall screen link regenerated", description: "Share the new link. The old link is now invalid." });
+      toast({ title: tk("toastWallLinkRegenerated"), description: tk("toastWallLinkRegeneratedDesc") });
     },
-    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+    onError: (e: Error) => { toast({ title: tk("toastError"), description: e.message, variant: "destructive" }); },
   });
 
   const updateStationMutation = useMutation({
@@ -1296,9 +1308,9 @@ export default function KitchenDashboard() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/kitchen-stations"] });
-      toast({ title: "Station updated", description: "Printer URL saved." });
+      toast({ title: tk("toastStationUpdated"), description: tk("toastStationUpdatedDesc") });
     },
-    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+    onError: (e: Error) => { toast({ title: tk("toastError"), description: e.message, variant: "destructive" }); },
   });
 
   const wallScreenUrl = wallTokenData?.token
@@ -1308,7 +1320,7 @@ export default function KitchenDashboard() {
   const copyWallLink = useCallback(() => {
     if (wallScreenUrl) {
       navigator.clipboard.writeText(wallScreenUrl);
-      toast({ title: "Link copied!", description: "Share it with kitchen staff to view the wall screen." });
+      toast({ title: tk("toastLinkCopied"), description: tk("toastLinkCopiedDesc") });
     }
   }, [wallScreenUrl, toast]);
 
@@ -1377,9 +1389,9 @@ export default function KitchenDashboard() {
   }
 
   const columns = [
-    { key: "new", title: "NEW", tickets: newTickets, icon: Utensils, color: "teal" },
-    { key: "cooking", title: "COOKING", tickets: inProgressTickets, icon: Flame, color: "orange" },
-    { key: "ready", title: "READY", tickets: readyTickets, icon: CheckCircle2, color: "green" },
+    { key: "new", title: tk("colNew"), tickets: newTickets, icon: Utensils, color: "teal" },
+    { key: "cooking", title: tk("colCooking"), tickets: inProgressTickets, icon: Flame, color: "orange" },
+    { key: "ready", title: tk("colReady"), tickets: readyTickets, icon: CheckCircle2, color: "green" },
   ];
 
   return (
@@ -1398,15 +1410,15 @@ export default function KitchenDashboard() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Printer className="h-5 w-5 text-violet-600" />
-              Station Printer Settings
+              {tk("stationPrinterSettings")}
             </DialogTitle>
             <DialogDescription>
-              Configure printer URL for each kitchen station. Leave blank to skip network printing.
+              {tk("stationPrinterSettingsDesc")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 pt-2 max-h-[60vh] overflow-y-auto">
             {stations.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">No stations configured.</p>
+              <p className="text-sm text-muted-foreground text-center py-4">{tk("noStationsConfigured")}</p>
             ) : (
               stations.map(station => (
                 <div key={station.id} className="space-y-1.5">
@@ -1439,7 +1451,7 @@ export default function KitchenDashboard() {
                       }
                       data-testid={`button-save-printer-url-${station.name}`}
                     >
-                      Save
+                      {tk("save")}
                     </Button>
                   </div>
                 </div>
@@ -1454,17 +1466,17 @@ export default function KitchenDashboard() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Monitor className="h-5 w-5 text-blue-600" />
-              Wall Screen Sharing
+              {tk("wallScreenSharing")}
             </DialogTitle>
             <DialogDescription>
-              Share this secure link with kitchen staff to view the live order display. The link works without login.
+              {tk("wallScreenSharingDesc")}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 pt-2">
             {wallScreenUrl ? (
               <>
                 <div>
-                  <Label className="text-xs text-muted-foreground mb-1.5 block">Shareable Link</Label>
+                  <Label className="text-xs text-muted-foreground mb-1.5 block">{tk("shareableLink")}</Label>
                   <div className="flex gap-2">
                     <Input
                       readOnly
@@ -1475,7 +1487,7 @@ export default function KitchenDashboard() {
                     />
                     <Button variant="outline" size="sm" className="shrink-0 gap-1" onClick={copyWallLink} data-testid="button-copy-wall-link">
                       <Copy className="h-4 w-4" />
-                      Copy
+                      {tk("copy")}
                     </Button>
                   </div>
                 </div>
@@ -1488,7 +1500,7 @@ export default function KitchenDashboard() {
                     data-testid="button-open-wall"
                   >
                     <ExternalLink className="h-4 w-4" />
-                    Open Wall Screen
+                    {tk("openWallScreen")}
                   </Button>
                   <Button
                     variant="outline"
@@ -1497,18 +1509,18 @@ export default function KitchenDashboard() {
                     onClick={() => regenerateWallTokenMutation.mutate()}
                     disabled={regenerateWallTokenMutation.isPending}
                     data-testid="button-regenerate-wall-token"
-                    title="Revoke old link and generate a new one"
+                    title={tk("regenerateLinkTitle")}
                   >
                     <RefreshCw className={`h-4 w-4 ${regenerateWallTokenMutation.isPending ? "animate-spin" : ""}`} />
-                    Regenerate Link
+                    {tk("regenerateLink")}
                   </Button>
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Regenerating creates a new link and immediately invalidates the old one.
+                  {tk("regenerateLinkNote")}
                 </p>
               </>
             ) : (
-              <div className="text-sm text-muted-foreground text-center py-4">Loading link…</div>
+              <div className="text-sm text-muted-foreground text-center py-4">{tk("loadingLink")}</div>
             )}
           </div>
         </DialogContent>
@@ -1524,9 +1536,9 @@ export default function KitchenDashboard() {
             <ChefHat className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-heading font-bold" data-testid="text-dashboard-title">Kitchen Display System</h1>
+            <h1 className="text-xl font-heading font-bold" data-testid="text-dashboard-title">{tk("pageTitle")}</h1>
             <p className="text-muted-foreground text-sm">
-              {filteredTickets.length} active ticket{filteredTickets.length !== 1 ? "s" : ""}
+              {tk("activeTickets", { count: filteredTickets.length })}
               {selectedStation && ` · ${stations.find(s => s.name === selectedStation)?.displayName || selectedStation}`}
             </p>
           </div>
@@ -1543,10 +1555,10 @@ export default function KitchenDashboard() {
                 className="h-8 w-40 text-xs shrink-0"
                 data-testid="select-kds-station-dropdown"
               >
-                <SelectValue placeholder="All Stations" />
+                <SelectValue placeholder={tk("allStations")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" data-testid="option-station-all">All Stations</SelectItem>
+                <SelectItem value="all" data-testid="option-station-all">{tk("allStations")}</SelectItem>
                 {stations.filter(s => s.active).map(station => (
                   <SelectItem
                     key={station.id}
@@ -1561,15 +1573,15 @@ export default function KitchenDashboard() {
             </Select>
           )}
           {kdsRefreshing && (
-            <span className="text-xs text-muted-foreground animate-pulse" data-testid="text-kds-refreshing">Refreshing…</span>
+            <span className="text-xs text-muted-foreground animate-pulse" data-testid="text-kds-refreshing">{tk("refreshing")}</span>
           )}
           <span
             className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${wakeLockStatus === "active" ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800" : "bg-muted text-muted-foreground border-border"}`}
-            title={wakeLockStatus === "active" ? "Screen wake lock is active — the display will not sleep" : wakeLockStatus === "unavailable" ? "Wake lock not supported on this device" : "Screen may sleep while idle"}
+            title={wakeLockStatus === "active" ? tk("wakeLockActiveTitle") : wakeLockStatus === "unavailable" ? tk("wakeLockUnavailableTitle") : tk("wakeLockInactiveTitle")}
             data-testid="badge-wake-lock-status"
           >
             {wakeLockStatus === "active" ? <Sun className="h-3 w-3" /> : <Moon className="h-3 w-3" />}
-            {wakeLockStatus === "active" ? "Screen Awake" : "Screen may sleep"}
+            {wakeLockStatus === "active" ? tk("screenAwake") : tk("screenMaySleep")}
           </span>
           <KitchenClockCard />
           {(user?.role === "owner" || user?.role === "manager") && (
@@ -1579,9 +1591,9 @@ export default function KitchenDashboard() {
               onClick={() => setStationSettingsOpen(true)}
               className="h-8 gap-1 border-violet-200 text-violet-600 hover:bg-violet-50"
               data-testid="button-station-settings"
-              title="Station Printer Settings"
+              title={tk("stationPrinterSettings")}
             >
-              <Printer className="h-3.5 w-3.5" /> Printers
+              <Printer className="h-3.5 w-3.5" /> {tk("printers")}
             </Button>
           )}
           <Button
@@ -1591,7 +1603,7 @@ export default function KitchenDashboard() {
             className="h-8 gap-1 border-red-200 text-red-600 hover:bg-red-50"
             data-testid="button-report-wastage"
           >
-            <Trash2 className="h-3.5 w-3.5" /> Wastage
+            <Trash2 className="h-3.5 w-3.5" /> {tk("wastage")}
           </Button>
           <Button
             size="sm"
@@ -1600,11 +1612,11 @@ export default function KitchenDashboard() {
             className="h-8 gap-1 border-orange-200 text-orange-600 hover:bg-orange-50"
             data-testid="button-full-wastage-log"
           >
-            <FileText className="h-3.5 w-3.5" /> Full Log
+            <FileText className="h-3.5 w-3.5" /> {tk("fullLog")}
           </Button>
           <Button size="sm" variant="outline" onClick={toggleFullscreen} className="h-8 gap-1" data-testid="button-fullscreen">
             {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-            {isFullscreen ? "Exit" : "Full"}
+            {isFullscreen ? tk("exit") : tk("full")}
           </Button>
           {tenant?.id && (
             <>
@@ -1615,7 +1627,7 @@ export default function KitchenDashboard() {
                 className="h-8 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
                 data-testid="button-wall-screen"
               >
-                <ExternalLink className="h-3.5 w-3.5" /> Wall Screen
+                <ExternalLink className="h-3.5 w-3.5" /> {tk("wallScreen")}
               </Button>
               {(user?.role === "owner" || user?.role === "manager") && (
                 <Button
@@ -1624,9 +1636,9 @@ export default function KitchenDashboard() {
                   onClick={() => setWallPopoverOpen(true)}
                   className="h-8 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
                   data-testid="button-wall-share"
-                  title="Share wall screen link"
+                  title={tk("shareWallScreenLink")}
                 >
-                  <Monitor className="h-3.5 w-3.5" /> Share Link
+                  <Monitor className="h-3.5 w-3.5" /> {tk("shareLink")}
                 </Button>
               )}
             </>
@@ -1647,7 +1659,7 @@ export default function KitchenDashboard() {
               data-testid="button-toggle-assignments"
             >
               <UserCheck className="h-3.5 w-3.5" />
-              My Tickets
+              {tk("myTickets")}
               {myActiveCount > 0 && (
                 <Badge className="ml-1 h-4 min-w-4 px-1 text-[10px] bg-primary text-white">{myActiveCount}</Badge>
               )}
@@ -1662,7 +1674,7 @@ export default function KitchenDashboard() {
               data-testid="button-chef-checkin"
             >
               <CircleDot className="h-3.5 w-3.5 text-green-500" />
-              Check In
+              {tk("checkIn")}
             </Button>
           </div>
 
@@ -1677,17 +1689,17 @@ export default function KitchenDashboard() {
               >
                 <div className="bg-muted/40 rounded-xl p-3 space-y-3">
                   <div>
-                    <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">My Active Tickets</div>
+                    <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">{tk("myActiveTickets")}</div>
                     {myActiveAssignments.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">No tickets assigned to you right now.</p>
+                      <p className="text-xs text-muted-foreground">{tk("noTicketsAssigned")}</p>
                     ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {myActiveAssignments.map((a: any) => (
                           <div key={a.id} className={`rounded-lg border p-2.5 text-xs space-y-1.5 ${
                             a.status === "in_progress" ? "bg-blue-50 border-blue-200" : "bg-yellow-50 border-yellow-200"
                           }`} data-testid={`my-ticket-${a.id}`}>
-                            <div className="font-medium">{a.menuItemName ?? "Ticket"}</div>
-                            {a.tableNumber && <div className="text-muted-foreground">Table {a.tableNumber}</div>}
+                            <div className="font-medium">{a.menuItemName ?? tk("ticket")}</div>
+                            {a.tableNumber && <div className="text-muted-foreground">{tk("tableRef", { n: a.tableNumber })}</div>}
                             <div className="flex items-center gap-1 text-muted-foreground">
                               <Clock className="h-3 w-3" />
                               {a.counterName ?? "—"}
@@ -1696,12 +1708,12 @@ export default function KitchenDashboard() {
                             <div className="flex gap-1">
                               {a.status === "assigned" && (
                                 <Button size="sm" className="h-6 text-[10px] px-2" variant="outline" onClick={() => startMut.mutate(a.id)} data-testid={`button-start-${a.id}`}>
-                                  Start
+                                  {tk("start")}
                                 </Button>
                               )}
                               {(a.status === "assigned" || a.status === "in_progress") && (
                                 <Button size="sm" className="h-6 text-[10px] px-2" variant="outline" onClick={() => completeMut.mutate(a.id)} data-testid={`button-done-${a.id}`}>
-                                  <CheckCircle2 className="h-3 w-3 mr-0.5" /> Done
+                                  <CheckCircle2 className="h-3 w-3 mr-0.5" /> {tk("done")}
                                 </Button>
                               )}
                             </div>
@@ -1713,15 +1725,15 @@ export default function KitchenDashboard() {
 
                   {(assignmentPool as any[]).length > 0 && (
                     <div>
-                      <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">Available Pool</div>
+                      <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide">{tk("availablePool")}</div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                         {(assignmentPool as any[]).slice(0, 6).map((a: any) => (
                           <div key={a.id} className="rounded-lg border border-red-200 bg-red-50 p-2.5 text-xs space-y-1.5" data-testid={`pool-ticket-${a.id}`}>
-                            <div className="font-medium">{a.menuItemName ?? "Ticket"}</div>
-                            {a.tableNumber && <div className="text-muted-foreground">Table {a.tableNumber}</div>}
+                            <div className="font-medium">{a.menuItemName ?? tk("ticket")}</div>
+                            {a.tableNumber && <div className="text-muted-foreground">{tk("tableRef", { n: a.tableNumber })}</div>}
                             <div className="text-muted-foreground">{a.counterName ?? "—"}</div>
                             <Button size="sm" className="h-6 text-[10px] px-2" variant="outline" onClick={() => selfAssignMut.mutate(a.id)} data-testid={`button-selfassign-${a.id}`}>
-                              <ArrowRightLeft className="h-3 w-3 mr-0.5" /> Take
+                              <ArrowRightLeft className="h-3 w-3 mr-0.5" /> {tk("take")}
                             </Button>
                           </div>
                         ))}
@@ -1744,7 +1756,7 @@ export default function KitchenDashboard() {
           data-testid="btn-station-all"
         >
           <Filter className="h-3 w-3" />
-          All Stations
+          {tk("allStations")}
           <Badge variant="secondary" className="ml-1 text-[10px] h-4 min-w-4 px-1">{tickets.filter(t => t.status !== "ready").length}</Badge>
         </Button>
         {stations.filter(s => s.active).map(station => {
@@ -1805,7 +1817,7 @@ export default function KitchenDashboard() {
                       animate={{ opacity: 1 }}
                       className="text-sm text-muted-foreground text-center py-8"
                     >
-                      No tickets
+                      {tk("noTickets")}
                     </motion.p>
                   ) : (
                     col.tickets.map(ticket => (

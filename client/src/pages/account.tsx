@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -17,11 +18,10 @@ interface ActiveSession {
 }
 
 function ActiveSessionsCard() {
+  const { t } = useTranslation("account");
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  // PR-001: No custom queryFn — inherits the default getQueryFn which has fast/standard/heavy
-  // timeout enforcement and dispatches the api-timeout event on abort.
   const { data: sessions, isLoading } = useQuery<ActiveSession[]>({
     queryKey: ["/api/auth/sessions"],
   });
@@ -33,15 +33,13 @@ function ActiveSessionsCard() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/auth/sessions"] });
-      toast({ title: "Session signed out" });
+      toast({ title: t("sessionSignedOut") });
     },
     onError: (err: Error) => {
-      toast({ title: "Failed to revoke session", description: err.message, variant: "destructive" });
+      toast({ title: t("failedRevokeSession"), description: err.message, variant: "destructive" });
     },
   });
 
-  // PR-001: Use POST /api/auth/sessions/logout-all which rotates session_token to invalidate
-  // all other sessions (concurrent session detection contract)
   const revokeAll = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/auth/sessions/logout-all");
@@ -49,10 +47,10 @@ function ActiveSessionsCard() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/auth/sessions"] });
-      toast({ title: "All other sessions signed out" });
+      toast({ title: t("allOtherSessionsSignedOut") });
     },
     onError: (err: Error) => {
-      toast({ title: "Failed to sign out sessions", description: err.message, variant: "destructive" });
+      toast({ title: t("failedSignOutSessions"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -66,18 +64,18 @@ function ActiveSessionsCard() {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Monitor className="h-5 w-5" />
-              Active Sessions
+              {t("activeSessions")}
               {sessionCount > 0 && (
                 <Badge variant="secondary" data-testid="badge-session-count">
-                  {sessionCount} device{sessionCount !== 1 ? "s" : ""}
+                  {t("deviceCount", { count: sessionCount })}
                 </Badge>
               )}
             </CardTitle>
             <CardDescription>
-              Devices currently signed in to your account.
+              {t("devicesSignedIn")}
               {otherSessions.length > 0 && (
                 <span className="text-amber-600 dark:text-amber-400 font-medium ml-1">
-                  You are signed in on {sessionCount} device{sessionCount !== 1 ? "s" : ""}.
+                  {t("signedInOnDevices", { count: sessionCount })}
                 </span>
               )}
             </CardDescription>
@@ -94,7 +92,7 @@ function ActiveSessionsCard() {
               {revokeAll.isPending
                 ? <Loader2 className="h-4 w-4 animate-spin mr-1" />
                 : <LogOut className="h-4 w-4 mr-1" />}
-              Log out all other sessions
+              {t("logoutAllOtherSessions")}
             </Button>
           )}
         </div>
@@ -106,7 +104,7 @@ function ActiveSessionsCard() {
           </div>
         ) : !sessions || sessions.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4" data-testid="text-no-sessions">
-            No active sessions found
+            {t("noActiveSessionsFound")}
           </p>
         ) : (
           <div className="space-y-3" data-testid="list-sessions">
@@ -129,7 +127,7 @@ function ActiveSessionsCard() {
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-sm font-medium" data-testid={`text-device-${session.sessionId}`}>
-                        {session.userAgent || "Unknown device"}
+                        {session.userAgent || t("unknownDevice")}
                       </span>
                       {session.isCurrent && (
                         <Badge
@@ -137,7 +135,7 @@ function ActiveSessionsCard() {
                           className="text-green-700 border-green-300 text-xs"
                           data-testid={`badge-current-${session.sessionId}`}
                         >
-                          This device
+                          {t("thisDevice")}
                         </Badge>
                       )}
                     </div>
@@ -150,7 +148,7 @@ function ActiveSessionsCard() {
                       )}
                       {session.lastActive && (
                         <span className="text-xs text-muted-foreground">
-                          Last active: {new Date(session.lastActive).toLocaleString()}
+                          {t("lastActive")}: {new Date(session.lastActive).toLocaleString()}
                         </span>
                       )}
                     </div>
@@ -166,7 +164,7 @@ function ActiveSessionsCard() {
                     data-testid={`button-revoke-session-${session.sessionId}`}
                   >
                     <LogOut className="h-4 w-4 mr-1" />
-                    Sign out
+                    {t("signOut")}
                   </Button>
                 )}
               </div>
@@ -179,33 +177,34 @@ function ActiveSessionsCard() {
 }
 
 export default function AccountPage() {
+  const { t } = useTranslation("account");
   const { user } = useAuth();
 
   return (
     <div className="max-w-2xl mx-auto space-y-6 p-6">
       <div>
-        <h1 className="text-2xl font-bold" data-testid="heading-account">My Account</h1>
-        <p className="text-muted-foreground text-sm">Manage your profile and active sessions</p>
+        <h1 className="text-2xl font-bold" data-testid="heading-account">{t("myAccount")}</h1>
+        <p className="text-muted-foreground text-sm">{t("manageProfileSessions")}</p>
       </div>
 
       <Card data-testid="card-profile">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <User className="h-5 w-5" />
-            Profile
+            {t("profile")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Name</span>
+            <span className="text-muted-foreground">{t("name")}</span>
             <span className="font-medium" data-testid="text-profile-name">{user?.name || "—"}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Username</span>
+            <span className="text-muted-foreground">{t("username")}</span>
             <span className="font-medium" data-testid="text-profile-username">@{user?.username || "—"}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Role</span>
+            <span className="text-muted-foreground">{t("role")}</span>
             <Badge variant="secondary" data-testid="badge-profile-role">{user?.role || "—"}</Badge>
           </div>
         </CardContent>
@@ -217,14 +216,14 @@ export default function AccountPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
             <ShieldCheck className="h-5 w-5 text-green-600" />
-            Security Tips
+            {t("securityTips")}
           </CardTitle>
         </CardHeader>
         <CardContent>
           <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-            <li>If you see an unfamiliar session, sign it out immediately.</li>
-            <li>Never share your password or PIN with anyone.</li>
-            <li>Use a unique password and change it regularly.</li>
+            <li>{t("securityTip1")}</li>
+            <li>{t("securityTip2")}</li>
+            <li>{t("securityTip3")}</li>
           </ul>
         </CardContent>
       </Card>

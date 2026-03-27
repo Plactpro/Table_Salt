@@ -6,6 +6,7 @@ import { Users, HardHat, TrendingUp, AlertCircle } from "lucide-react";
 import StaffPage from "./staff";
 import WorkforcePage from "./workforce";
 import PerformancePage from "./performance";
+import { useTranslation } from "react-i18next";
 
 class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -32,34 +33,35 @@ class TabErrorBoundary extends Component<{ children: ReactNode; label: string },
 
 export default function StaffHub() {
   const [tab, setTab] = useState("schedule");
+  const { t } = useTranslation("modules");
 
   return (
     <div className="space-y-6" data-testid="staff-hub">
-      <PageTitle title="Staff" />
+      <PageTitle title={t("staff")} />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="staff-tabs">
           <TabsTrigger value="schedule" data-testid="tab-schedule">
-            <Users className="h-4 w-4 mr-1.5" />Schedule & Staff
+            <Users className="h-4 w-4 mr-1.5" />{t("scheduleAndStaff")}
           </TabsTrigger>
           <TabsTrigger value="workforce" data-testid="tab-workforce">
-            <HardHat className="h-4 w-4 mr-1.5" />Workforce
+            <HardHat className="h-4 w-4 mr-1.5" />{t("workforce")}
           </TabsTrigger>
           <TabsTrigger value="performance" data-testid="tab-performance">
-            <TrendingUp className="h-4 w-4 mr-1.5" />Performance
+            <TrendingUp className="h-4 w-4 mr-1.5" />{t("performance")}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="schedule" className="mt-4">
-          <TabErrorBoundary label="Schedule & Staff">
+          <TabErrorBoundary label={t("scheduleAndStaff")}>
             <StaffPage />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="workforce" className="mt-4">
-          <TabErrorBoundary label="Workforce">
+          <TabErrorBoundary label={t("workforce")}>
             <WorkforcePage />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="performance" className="mt-4">
-          <TabErrorBoundary label="Performance">
+          <TabErrorBoundary label={t("performance")}>
             <PerformancePage />
           </TabErrorBoundary>
         </TabsContent>

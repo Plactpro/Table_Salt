@@ -3,6 +3,7 @@ import { PageTitle } from "@/lib/accessibility";
 import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag, UtensilsCrossed, DollarSign } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import ReportsPage from "./reports";
 import BIDashboard from "./bi-dashboard";
 import AuditLogPage from "./audit-log";
@@ -39,90 +40,91 @@ class TabErrorBoundary extends Component<{ children: ReactNode; label: string },
 
 export default function ReportsHub() {
   const [tab, setTab] = useState("reports");
+  const { t } = useTranslation("modules");
 
   return (
     <div className="space-y-6" data-testid="reports-hub">
-      <PageTitle title="Reports" />
+      <PageTitle title={t("reports")} />
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList data-testid="reports-tabs" className="flex-wrap h-auto">
           <TabsTrigger value="reports" data-testid="tab-reports">
-            <BarChart3 className="h-4 w-4 mr-1.5" />Sales Reports
+            <BarChart3 className="h-4 w-4 mr-1.5" />{t("salesReports")}
           </TabsTrigger>
           <TabsTrigger value="food-cost" data-testid="tab-food-cost">
-            <ChefHat className="h-4 w-4 mr-1.5" />Food Cost
+            <ChefHat className="h-4 w-4 mr-1.5" />{t("foodCost")}
           </TabsTrigger>
           <TabsTrigger value="chef-report" data-testid="tab-chef-report">
-            <ChefHat className="h-4 w-4 mr-1.5" />Chef Report
+            <ChefHat className="h-4 w-4 mr-1.5" />{t("chefReport")}
           </TabsTrigger>
           <TabsTrigger value="bi" data-testid="tab-bi-forecasting">
-            <Activity className="h-4 w-4 mr-1.5" />BI & Forecasting
+            <Activity className="h-4 w-4 mr-1.5" />{t("biForecasting")}
           </TabsTrigger>
           <TabsTrigger value="shift-report" data-testid="tab-shift-report">
-            <Clock className="h-4 w-4 mr-1.5" />Shift Report
+            <Clock className="h-4 w-4 mr-1.5" />{t("shiftReport")}
           </TabsTrigger>
           <TabsTrigger value="customer-requests" data-testid="tab-customer-requests">
-            <Bell className="h-4 w-4 mr-1.5" />Customer Requests
+            <Bell className="h-4 w-4 mr-1.5" />{t("customerRequests")}
           </TabsTrigger>
           <TabsTrigger value="price-analysis" data-testid="tab-price-analysis">
-            <Tag className="h-4 w-4 mr-1.5" />Price Analysis
+            <Tag className="h-4 w-4 mr-1.5" />{t("priceAnalysis")}
           </TabsTrigger>
           <TabsTrigger value="crockery-breakage" data-testid="tab-crockery-breakage">
-            <UtensilsCrossed className="h-4 w-4 mr-1.5" />Crockery Breakage
+            <UtensilsCrossed className="h-4 w-4 mr-1.5" />{t("crockeryBreakage")}
           </TabsTrigger>
           <TabsTrigger value="cash-drawer-log" data-testid="tab-cash-drawer-log">
-            <DollarSign className="h-4 w-4 mr-1.5" />Cash Drawer Log
+            <DollarSign className="h-4 w-4 mr-1.5" />{t("cashDrawerLog")}
           </TabsTrigger>
           <TabsTrigger value="audit-log" data-testid="tab-audit-log">
-            <ScrollText className="h-4 w-4 mr-1.5" />Audit Log
+            <ScrollText className="h-4 w-4 mr-1.5" />{t("auditLog")}
           </TabsTrigger>
         </TabsList>
         <TabsContent value="reports" className="mt-4" forceMount>
-          <TabErrorBoundary label="Sales Reports">
+          <TabErrorBoundary label={t("salesReports")}>
             <ReportsPage />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="food-cost" className="mt-4" forceMount>
-          <TabErrorBoundary label="Food Cost">
+          <TabErrorBoundary label={t("foodCost")}>
             <FoodCostReports />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="chef-report" className="mt-4" forceMount>
-          <TabErrorBoundary label="Chef Report">
+          <TabErrorBoundary label={t("chefReport")}>
             <ChefReport />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="bi" className="mt-4" forceMount>
-          <TabErrorBoundary label="BI & Forecasting">
+          <TabErrorBoundary label={t("biForecasting")}>
             <BIDashboard />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="shift-report" className="mt-4" forceMount>
-          <TabErrorBoundary label="Shift Report">
+          <TabErrorBoundary label={t("shiftReport")}>
             <ShiftReconciliation />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="customer-requests" className="mt-4">
-          <TabErrorBoundary label="Customer Requests">
+          <TabErrorBoundary label={t("customerRequests")}>
             <CustomerRequestsAnalytics />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="price-analysis" className="mt-4">
-          <TabErrorBoundary label="Price Analysis">
+          <TabErrorBoundary label={t("priceAnalysis")}>
             <PriceAnalysis />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="crockery-breakage" className="mt-4">
-          <TabErrorBoundary label="Crockery Breakage">
+          <TabErrorBoundary label={t("crockeryBreakage")}>
             <CrockeryBreakageReport />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="cash-drawer-log" className="mt-4">
-          <TabErrorBoundary label="Cash Drawer Log">
+          <TabErrorBoundary label={t("cashDrawerLog")}>
             <CashDrawerLog />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="audit-log" className="mt-4" forceMount>
-          <TabErrorBoundary label="Audit Log">
+          <TabErrorBoundary label={t("auditLog")}>
             <AuditLogPage />
           </TabErrorBoundary>
         </TabsContent>

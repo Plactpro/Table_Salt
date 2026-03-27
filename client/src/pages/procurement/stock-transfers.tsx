@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Table, TableBody, TableCell, TableRow, TableHead, TableHeader } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, X, Truck, ArrowRight, AlertTriangle } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface InventoryItem { id: string; name: string; unit: string | null; currentStock: string | null; }
 interface Outlet { id: string; name: string; }
@@ -45,6 +46,7 @@ const STATUS_TRANSITIONS: Record<string, string> = {
 interface TransferItemForm { inventoryItemId: string; requestedQty: string; }
 
 export default function StockTransfersTab() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -163,11 +165,11 @@ export default function StockTransfersTab() {
                 <TableRow>
                   <TableHead>Transfer #</TableHead>
                   <TableHead>Route</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("status")}</TableHead>
                   <TableHead>Items</TableHead>
                   <TableHead>Driver</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

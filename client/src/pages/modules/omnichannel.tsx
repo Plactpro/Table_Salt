@@ -13,6 +13,7 @@ import {
   CheckCircle, AlertCircle, Circle,
 } from "lucide-react";
 import type { Order, OrderItem } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 const CHANNEL_META: Record<string, { label: string; icon: typeof MonitorSmartphone; color: string; bgColor: string }> = {
   pos: { label: "POS (In-store)", icon: MonitorSmartphone, color: "text-blue-600", bgColor: "bg-blue-50" },
@@ -110,6 +111,7 @@ function getPeakHour(hourly: { hour: number; count: number }[]): string {
 }
 
 export default function OmnichannelPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
@@ -160,7 +162,7 @@ export default function OmnichannelPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="omnichannel-page">
-      <PageTitle title="Omnichannel" />
+      <PageTitle title={t("omnichannel")} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-heading font-bold" data-testid="text-page-title">Omnichannel Dashboard</h1>

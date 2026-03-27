@@ -27,6 +27,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 interface DeliveryOrder {
   id: string;
@@ -139,6 +140,7 @@ export default function DeliveryPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useTranslation("common");
   const currency = user?.tenant?.currency || "USD";
   const currencyOpts: FormatCurrencyOptions = {
     position: (user?.tenant?.currencyPosition || "before") as "before" | "after",
@@ -213,7 +215,7 @@ export default function DeliveryPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -242,10 +244,10 @@ export default function DeliveryPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
-      toast({ title: "Delivery updated" });
+      toast({ title: t("deliveryUpdated") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -264,10 +266,10 @@ export default function DeliveryPage() {
       setShowAgentDialog(false);
       setSelectedAgent("");
       setAssigningDelivery(null);
-      toast({ title: "Agent assigned successfully" });
+      toast({ title: t("agentAssigned") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -381,7 +383,7 @@ export default function DeliveryPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <PageTitle title="Delivery" />
+      <PageTitle title={t("delivery")} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
@@ -389,9 +391,9 @@ export default function DeliveryPage() {
           </div>
           <div>
             <h1 className="text-2xl font-bold font-heading" data-testid="text-delivery-title">
-              Delivery Coordination
+              {t("delivery")}
             </h1>
-            <p className="text-muted-foreground text-sm">Manage delivery agents and track orders</p>
+            <p className="text-muted-foreground text-sm">{t("delivery")}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -731,7 +733,7 @@ export default function DeliveryPage() {
       <Dialog open={showAgentDialog} onOpenChange={(open) => { setShowAgentDialog(open); if (!open) { setSelectedAgent(""); setAssigningDelivery(null); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Assign Delivery Agent</DialogTitle>
+            <DialogTitle>{t("assignDeliveryAgent")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
@@ -793,7 +795,7 @@ export default function DeliveryPage() {
       <Dialog open={showDetailDialog} onOpenChange={setShowDetailDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delivery Details</DialogTitle>
+            <DialogTitle>{t("deliveryDetails")}</DialogTitle>
           </DialogHeader>
           {selectedDelivery && (() => {
             const status = (selectedDelivery.status || "pending") as DeliveryStatus;

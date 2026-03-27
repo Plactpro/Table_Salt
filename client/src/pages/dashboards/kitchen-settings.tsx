@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,7 @@ function CountersTab() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation("kitchen");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Counter | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -94,17 +96,17 @@ function CountersTab() {
 
   const createMut = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/counters", { ...data, outletId: selectedOutletId }).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/counters"] }); setOpen(false); toast({ title: "Counter created" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/counters"] }); setOpen(false); toast({ title: t("counterCreated") }); },
   });
 
   const updateMut = useMutation({
     mutationFn: ({ id, data }: { id: string; data: any }) => apiRequest("PUT", `/api/counters/${id}`, data).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/counters"] }); setOpen(false); setEditing(null); toast({ title: "Counter updated" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/counters"] }); setOpen(false); setEditing(null); toast({ title: t("counterUpdated") }); },
   });
 
   const deleteMut = useMutation({
     mutationFn: (id: string) => apiRequest("DELETE", `/api/counters/${id}`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/counters"] }); toast({ title: "Counter deleted" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/counters"] }); toast({ title: t("counterDeleted") }); },
   });
 
   const toggleMut = useMutation({
@@ -157,7 +159,7 @@ function CountersTab() {
           )}
         </div>
         <Button onClick={openNew} data-testid="button-add-counter">
-          <Plus className="h-4 w-4 mr-2" /> Add Counter
+          <Plus className="h-4 w-4 mr-2" /> {t("addCounter")}
         </Button>
       </div>
 
@@ -169,9 +171,9 @@ function CountersTab() {
         <Card>
           <CardContent className="py-16 text-center">
             <Utensils className="h-12 w-12 mx-auto mb-4 text-muted-foreground opacity-40" />
-            <p className="text-muted-foreground">No counters yet. Add your first kitchen counter.</p>
+            <p className="text-muted-foreground">{t("noCountersYet")}</p>
             <Button className="mt-4" onClick={openNew} data-testid="button-add-first-counter">
-              <Plus className="h-4 w-4 mr-2" /> Add Counter
+              <Plus className="h-4 w-4 mr-2" /> {t("addCounter")}
             </Button>
           </CardContent>
         </Card>
@@ -201,7 +203,7 @@ function CountersTab() {
                   )}
                   <Badge variant="outline">
                     <Users className="h-3 w-3 mr-1" />
-                    Max {c.maxCapacity ?? 3} chefs
+                    {t("maxChefsLabel", { n: c.maxCapacity ?? 3 })}
                   </Badge>
                 </div>
                 <div className="flex gap-2 pt-1">
@@ -221,18 +223,18 @@ function CountersTab() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editing ? "Edit Counter" : "Add Kitchen Counter"}</DialogTitle>
+            <DialogTitle>{editing ? t("editCounter") : t("addKitchenCounter")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Counter Name *</Label>
-              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Hot Kitchen, Grill Station" data-testid="input-counter-name" />
+              <Label>{t("counterName")} *</Label>
+              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder={t("counterNamePlaceholder")} data-testid="input-counter-name" />
             </div>
             <div>
-              <Label>Station Type</Label>
+              <Label>{t("stationType")}</Label>
               <Select value={form.counterCode} onValueChange={v => setForm(f => ({ ...f, counterCode: v }))}>
                 <SelectTrigger data-testid="select-counter-station">
-                  <SelectValue placeholder="Select station type" />
+                  <SelectValue placeholder={t("selectStationType")} />
                 </SelectTrigger>
                 <SelectContent>
                   {["Hot", "Cold", "Grill", "Bakery", "Dessert", "Bar", "Prep", "Other"].map(s => (
@@ -242,14 +244,14 @@ function CountersTab() {
               </Select>
             </div>
             <div>
-              <Label>Max Chefs per Shift</Label>
+              <Label>{t("maxChefsPerShift")}</Label>
               <Input type="number" min={1} max={20} value={form.maxCapacity} onChange={e => setForm(f => ({ ...f, maxCapacity: +e.target.value }))} data-testid="input-counter-maxchefs" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>{t("cancel")}</Button>
             <Button onClick={submit} disabled={!form.name || createMut.isPending || updateMut.isPending} data-testid="button-save-counter">
-              {editing ? "Save Changes" : "Create Counter"}
+              {editing ? t("saveChanges") : t("createCounter")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -258,12 +260,12 @@ function CountersTab() {
       <AlertDialog open={!!deleteId} onOpenChange={v => !v && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Counter?</AlertDialogTitle>
-            <AlertDialogDescription>This will remove the counter and all its roster entries. Active assignments won't be deleted.</AlertDialogDescription>
+            <AlertDialogTitle>{t("deleteCounterTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("deleteCounterDesc")}</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={() => { if (deleteId) { deleteMut.mutate(deleteId); setDeleteId(null); } }} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+            <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { if (deleteId) { deleteMut.mutate(deleteId); setDeleteId(null); } }} className="bg-destructive text-destructive-foreground">{t("delete")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -275,6 +277,7 @@ function RosterTab() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation("kitchen");
   const [weekStart, setWeekStart] = useState(() => {
     const d = startOfWeek(new Date(), { weekStartsOn: 1 });
     return format(d, "yyyy-MM-dd");
@@ -311,7 +314,7 @@ function RosterTab() {
 
   const saveMut = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/roster", data).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/roster/week"] }); setOpen(false); toast({ title: "Roster saved" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/roster/week"] }); setOpen(false); toast({ title: t("rosterSaved") }); },
   });
 
   const deleteMut = useMutation({
@@ -321,7 +324,7 @@ function RosterTab() {
 
   const copyWeekMut = useMutation({
     mutationFn: () => apiRequest("POST", "/api/roster/copy-week", { outletId: selectedOutletId, weekStart }).then(r => r.json()),
-    onSuccess: (data) => { qc.invalidateQueries({ queryKey: ["/api/roster/week"] }); toast({ title: `Copied ${data?.length ?? 0} entries from last week` }); },
+    onSuccess: (data) => { qc.invalidateQueries({ queryKey: ["/api/roster/week"] }); toast({ title: t("copiedEntries", { n: data?.length ?? 0 }) }); },
   });
 
   function openNew(date: string) {
@@ -376,14 +379,14 @@ function RosterTab() {
             </Select>
           )}
           <Button variant="outline" size="sm" onClick={() => copyWeekMut.mutate()} disabled={copyWeekMut.isPending} data-testid="button-copy-week">
-            <Copy className="h-4 w-4 mr-1" /> Copy Last Week
+            <Copy className="h-4 w-4 mr-1" /> {t("copyLastWeek")}
           </Button>
         </div>
       </div>
 
       <div className="overflow-x-auto">
         <div className="grid min-w-[700px]" style={{ gridTemplateColumns: "120px repeat(7, 1fr)" }}>
-          <div className="p-2 font-medium text-sm text-muted-foreground border-b">Counter</div>
+          <div className="p-2 font-medium text-sm text-muted-foreground border-b">{t("counter")}</div>
           {weekDates.map((d, i) => (
             <div key={i} className="p-2 text-center border-b border-l">
               <div className="font-medium text-sm">{DAYS_OF_WEEK[i]}</div>
@@ -417,7 +420,7 @@ function RosterTab() {
                       onClick={() => openNew(dateStr)}
                       className="w-full border border-dashed rounded p-1 text-xs text-muted-foreground hover:text-primary hover:border-primary transition-colors"
                       data-testid={`button-add-roster-${counter.id}-${di}`}
-                    >+ Add</button>
+                    >+ {t("add")}</button>
                   </div>
                 );
               })}
@@ -429,18 +432,18 @@ function RosterTab() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{editEntry ? "Edit Roster Entry" : "Add Roster Entry"}</DialogTitle>
+            <DialogTitle>{editEntry ? t("editRosterEntry") : t("addRosterEntry")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <Label>Date</Label>
+              <Label>{t("date")}</Label>
               <Input type="date" value={form.shiftDate} onChange={e => setForm(f => ({ ...f, shiftDate: e.target.value }))} data-testid="input-roster-date" />
             </div>
             <div>
-              <Label>Chef / Staff</Label>
+              <Label>{t("chefStaff")}</Label>
               {chefs.length > 0 ? (
                 <Select value={form.chefId} onValueChange={v => setForm(f => ({ ...f, chefId: v }))}>
-                  <SelectTrigger data-testid="select-roster-chef"><SelectValue placeholder="Select chef" /></SelectTrigger>
+                  <SelectTrigger data-testid="select-roster-chef"><SelectValue placeholder={t("selectChef")} /></SelectTrigger>
                   <SelectContent>
                     {chefs.map((c: any) => (
                       <SelectItem key={c.id} value={c.id}>
@@ -450,13 +453,13 @@ function RosterTab() {
                   </SelectContent>
                 </Select>
               ) : (
-                <Input value={form.chefId} onChange={e => setForm(f => ({ ...f, chefId: e.target.value }))} placeholder="Chef ID or name" data-testid="input-roster-chef-id" />
+                <Input value={form.chefId} onChange={e => setForm(f => ({ ...f, chefId: e.target.value }))} placeholder={t("chefIdOrName")} data-testid="input-roster-chef-id" />
               )}
             </div>
             <div>
-              <Label>Counter</Label>
+              <Label>{t("counter")}</Label>
               <Select value={form.counterId} onValueChange={v => setForm(f => ({ ...f, counterId: v }))}>
-                <SelectTrigger data-testid="select-roster-counter"><SelectValue placeholder="Select counter" /></SelectTrigger>
+                <SelectTrigger data-testid="select-roster-counter"><SelectValue placeholder={t("selectCounter")} /></SelectTrigger>
                 <SelectContent>
                   {counters.filter(c => c.isActive).map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
                 </SelectContent>
@@ -464,16 +467,16 @@ function RosterTab() {
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <Label>Shift Start</Label>
+                <Label>{t("shiftStart")}</Label>
                 <Input type="time" value={form.shiftStart} onChange={e => setForm(f => ({ ...f, shiftStart: e.target.value }))} data-testid="input-roster-start" />
               </div>
               <div>
-                <Label>Shift End</Label>
+                <Label>{t("shiftEnd")}</Label>
                 <Input type="time" value={form.shiftEnd} onChange={e => setForm(f => ({ ...f, shiftEnd: e.target.value }))} data-testid="input-roster-end" />
               </div>
             </div>
             <div>
-              <Label>Role</Label>
+              <Label>{t("role")}</Label>
               <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
                 <SelectTrigger data-testid="select-roster-role"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -483,8 +486,8 @@ function RosterTab() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={submit} disabled={!form.shiftDate || saveMut.isPending} data-testid="button-save-roster">Save Entry</Button>
+            <Button variant="ghost" onClick={() => setOpen(false)}>{t("cancel")}</Button>
+            <Button onClick={submit} disabled={!form.shiftDate || saveMut.isPending} data-testid="button-save-roster">{t("saveEntry")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -496,6 +499,7 @@ function AssignmentRulesTab() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation("kitchen");
 
   const { data: outlets = [] } = useQuery<any[]>({ queryKey: ["/api/outlets"] });
   const [outletId, setOutletId] = useState<string>("");
@@ -513,7 +517,7 @@ function AssignmentRulesTab() {
 
   const saveMut = useMutation({
     mutationFn: (data: AssignmentSettings) => apiRequest("PUT", `/api/outlets/${selectedOutletId}/assignment-settings`, data).then(r => r.json()),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/outlets", selectedOutletId, "assignment-settings"] }); toast({ title: "Assignment rules saved" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/outlets", selectedOutletId, "assignment-settings"] }); toast({ title: t("assignmentRulesSaved") }); },
   });
 
   const s = form ?? settings;
@@ -533,15 +537,15 @@ function AssignmentRulesTab() {
         <>
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><Settings2 className="h-4 w-4" />Assignment Mode</CardTitle>
-              <CardDescription>How tickets are assigned to chefs</CardDescription>
+              <CardTitle className="text-base flex items-center gap-2"><Settings2 className="h-4 w-4" />{t("assignmentMode")}</CardTitle>
+              <CardDescription>{t("assignmentModeDesc")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {[
-                { value: "full_auto", label: "Full Auto", desc: "System assigns all tickets automatically" },
-                { value: "hybrid", label: "Hybrid", desc: "Auto-assign with chef self-assign fallback" },
-                { value: "self_assign", label: "Self Assign", desc: "Chefs pick their own tickets" },
-                { value: "manual", label: "Manual", desc: "Managers assign all tickets manually" },
+                { value: "full_auto", label: t("modeFullAuto"), desc: t("modeFullAutoDesc") },
+                { value: "hybrid", label: t("modeHybrid"), desc: t("modeHybridDesc") },
+                { value: "self_assign", label: t("modeSelfAssign"), desc: t("modeSelfAssignDesc") },
+                { value: "manual", label: t("modeManual"), desc: t("modeManualDesc") },
               ].map(opt => (
                 <div
                   key={opt.value}
@@ -563,23 +567,23 @@ function AssignmentRulesTab() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" />Thresholds</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2"><Clock className="h-4 w-4" />{t("thresholds")}</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <Label>Max tickets per chef</Label>
+                <Label>{t("maxTicketsPerChef")}</Label>
                 <Input type="number" min={1} max={20} value={s.maxTicketsPerChef}
                   onChange={e => setForm(f => f ? { ...f, maxTicketsPerChef: +e.target.value } : null)}
                   data-testid="input-max-tickets" />
               </div>
               <div>
-                <Label>Unassigned timeout (min)</Label>
+                <Label>{t("unassignedTimeout")}</Label>
                 <Input type="number" min={1} max={30} value={s.unassignedTimeoutMin}
                   onChange={e => setForm(f => f ? { ...f, unassignedTimeoutMin: +e.target.value } : null)}
                   data-testid="input-unassigned-timeout" />
               </div>
               <div>
-                <Label>Auto-reassign idle (min)</Label>
+                <Label>{t("autoReassignIdle")}</Label>
                 <Input type="number" min={1} max={60} value={s.autoReassignIdleMin}
                   onChange={e => setForm(f => f ? { ...f, autoReassignIdleMin: +e.target.value } : null)}
                   data-testid="input-auto-reassign" />
@@ -589,16 +593,16 @@ function AssignmentRulesTab() {
 
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />Scoring Factors</CardTitle>
+              <CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="h-4 w-4" />{t("scoringFactors")}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               {[
-                { key: "considerRoster", label: "Prioritize rostered chefs", desc: "Prefer chefs scheduled for this counter today" },
-                { key: "considerWorkload", label: "Balance workload", desc: "Assign to chef with fewest active tickets" },
-                { key: "considerExperience", label: "Consider experience", desc: "Weight senior chefs for complex items" },
-                { key: "allowSelfAssign", label: "Allow self-assignment", desc: "Chefs can grab unassigned tickets" },
-                { key: "allowChefReassign", label: "Allow chef reassignment", desc: "Chefs can reassign their own tickets" },
-                { key: "requireReassignReason", label: "Require reassign reason", desc: "Chefs must provide reason when reassigning" },
+                { key: "considerRoster", label: t("considerRoster"), desc: t("considerRosterDesc") },
+                { key: "considerWorkload", label: t("considerWorkload"), desc: t("considerWorkloadDesc") },
+                { key: "considerExperience", label: t("considerExperience"), desc: t("considerExperienceDesc") },
+                { key: "allowSelfAssign", label: t("allowSelfAssign"), desc: t("allowSelfAssignDesc") },
+                { key: "allowChefReassign", label: t("allowChefReassign"), desc: t("allowChefReassignDesc") },
+                { key: "requireReassignReason", label: t("requireReassignReason"), desc: t("requireReassignReasonDesc") },
               ].map(item => (
                 <div key={item.key} className="flex items-center justify-between">
                   <div>
@@ -616,7 +620,7 @@ function AssignmentRulesTab() {
           </Card>
 
           <Button onClick={() => form && saveMut.mutate(form)} disabled={saveMut.isPending} data-testid="button-save-rules">
-            Save Assignment Rules
+            {t("saveAssignmentRules")}
           </Button>
         </>
       )}
@@ -645,6 +649,7 @@ const DEFAULT_COOKING_SETTINGS: CookingControlSettings = {
 function CookingControlTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation("kitchen");
 
   const { data: settings } = useQuery<CookingControlSettings>({
     queryKey: ["/api/kitchen-settings"],
@@ -672,9 +677,9 @@ function CookingControlTab() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/kitchen-settings"] });
-      toast({ title: "Cooking control settings saved" });
+      toast({ title: t("cookingSettingsSaved") });
     },
-    onError: () => toast({ title: "Settings saved locally (backend not yet configured)", variant: "default" }),
+    onError: () => toast({ title: t("settingsSavedLocally"), variant: "default" }),
   });
 
   const s = form;
@@ -684,15 +689,15 @@ function CookingControlTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <Zap className="h-4 w-4" />Item Cooking Control Mode
+            <Zap className="h-4 w-4" />{t("cookingControlMode")}
           </CardTitle>
-          <CardDescription>How items are started in the kitchen</CardDescription>
+          <CardDescription>{t("cookingControlModeDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           {[
-            { value: "auto_start", label: "Auto-start all", desc: "All items start cooking immediately when order is sent to kitchen" },
-            { value: "selective", label: "Selective start", desc: "Chefs manually start each item with timing suggestions" },
-            { value: "course_only", label: "Course-only", desc: "Items are grouped by courses, fired by waiter" },
+            { value: "auto_start", label: t("modeAutoStart"), desc: t("modeAutoStartDesc") },
+            { value: "selective", label: t("modeSelective"), desc: t("modeSelectiveDesc") },
+            { value: "course_only", label: t("modeCourseOnly"), desc: t("modeCourseOnlyDesc") },
           ].map(opt => (
             <div
               key={opt.value}
@@ -715,14 +720,14 @@ function CookingControlTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <Settings2 className="h-4 w-4" />Timing & Alerts
+            <Settings2 className="h-4 w-4" />{t("timingAndAlerts")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium">Show timing suggestions</div>
-              <div className="text-xs text-muted-foreground">Display suggested start times based on prep time</div>
+              <div className="text-sm font-medium">{t("showTimingSuggestions")}</div>
+              <div className="text-xs text-muted-foreground">{t("showTimingSuggestionsDesc")}</div>
             </div>
             <Switch
               checked={!!s.show_timing_suggestions}
@@ -732,7 +737,7 @@ function CookingControlTab() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Alert when overdue by (minutes)</Label>
+              <Label>{t("alertOverdueBy")}</Label>
               <Input
                 type="number"
                 min={1}
@@ -749,14 +754,14 @@ function CookingControlTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" />Rush Override
+            <AlertTriangle className="h-4 w-4" />{t("rushOverride")}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium">Allow RUSH override</div>
-              <div className="text-xs text-muted-foreground">Managers can rush all items in an order immediately</div>
+              <div className="text-sm font-medium">{t("allowRushOverride")}</div>
+              <div className="text-xs text-muted-foreground">{t("allowRushOverrideDesc")}</div>
             </div>
             <Switch
               checked={!!s.allow_rush_override}
@@ -767,8 +772,8 @@ function CookingControlTab() {
           {s.allow_rush_override && (
             <div className="flex items-center justify-between pl-4 border-l-2 border-muted">
               <div>
-                <div className="text-sm font-medium">Requires manager PIN</div>
-                <div className="text-xs text-muted-foreground">Show PIN prompt before rushing an order</div>
+                <div className="text-sm font-medium">{t("requiresManagerPin")}</div>
+                <div className="text-xs text-muted-foreground">{t("requiresManagerPinDesc")}</div>
               </div>
               <Switch
                 checked={!!s.rush_requires_manager_pin}
@@ -779,8 +784,8 @@ function CookingControlTab() {
           )}
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-sm font-medium">Auto-hold bar items</div>
-              <div className="text-xs text-muted-foreground">Bar items start when food items are ready</div>
+              <div className="text-sm font-medium">{t("autoHoldBarItems")}</div>
+              <div className="text-xs text-muted-foreground">{t("autoHoldBarItemsDesc")}</div>
             </div>
             <Switch
               checked={!!s.auto_hold_bar_items}
@@ -796,7 +801,7 @@ function CookingControlTab() {
         disabled={saveMut.isPending}
         data-testid="button-save-cooking-control"
       >
-        Save Cooking Control Settings
+        {t("saveCookingControlSettings")}
       </Button>
     </div>
   );
@@ -823,6 +828,7 @@ const DEFAULT_TIME_TARGETS: TimeTargets = {
 function TimeTargetsTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation("kitchen");
   const { data: outlets = [] } = useQuery<any[]>({ queryKey: ["/api/outlets"] });
   const [outletId, setOutletId] = useState<string>("");
   const selectedOutletId = outletId || outlets[0]?.id;
@@ -858,9 +864,9 @@ function TimeTargetsTab() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/time-targets"] });
-      toast({ title: "Time targets saved" });
+      toast({ title: t("timeTargetsSaved") });
     },
-    onError: () => toast({ title: "Saved locally (backend may need setup)", variant: "default" }),
+    onError: () => toast({ title: t("savedLocally"), variant: "default" }),
   });
 
   function field(label: string, key: keyof TimeTargets, unit: string, testId: string) {
@@ -890,30 +896,30 @@ function TimeTargetsTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <Timer className="h-4 w-4" />Time Performance Targets
+            <Timer className="h-4 w-4" />{t("timePerformanceTargets")}
           </CardTitle>
-          <CardDescription>Set KPI targets for kitchen time tracking and alerts</CardDescription>
+          <CardDescription>{t("timePerformanceTargetsDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-1">
           <div className="pb-3 flex items-center gap-3">
-            <Label className="text-sm font-medium whitespace-nowrap">For:</Label>
+            <Label className="text-sm font-medium whitespace-nowrap">{t("for")}:</Label>
             <Select value={form.orderType} onValueChange={v => setForm(f => ({ ...f, orderType: v }))}>
               <SelectTrigger className="w-44 h-8 text-sm">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Order Types</SelectItem>
-                <SelectItem value="dine_in">Dine-In</SelectItem>
-                <SelectItem value="takeaway">Takeaway</SelectItem>
-                <SelectItem value="delivery">Delivery</SelectItem>
+                <SelectItem value="all">{t("allOrderTypes")}</SelectItem>
+                <SelectItem value="dine_in">{t("dineIn")}</SelectItem>
+                <SelectItem value="takeaway">{t("takeaway")}</SelectItem>
+                <SelectItem value="delivery">{t("delivery")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
-          {field("Waiter response target", "waiterResponseTarget", "minutes", "input-waiter-response-target")}
-          {field("Kitchen pickup target", "kitchenPickupTarget", "minute", "input-kitchen-pickup-target")}
-          {field("Total kitchen time target", "totalKitchenTarget", "minutes", "input-total-kitchen-target")}
-          {field("Total cycle time target", "totalCycleTarget", "minutes", "input-total-cycle-target")}
-          {field("Alert when % of target reached", "alertAtPercent", "%", "input-alert-at-percent")}
+          {field(t("waiterResponseTarget"), "waiterResponseTarget", t("minutes"), "input-waiter-response-target")}
+          {field(t("kitchenPickupTarget"), "kitchenPickupTarget", t("minute"), "input-kitchen-pickup-target")}
+          {field(t("totalKitchenTarget"), "totalKitchenTarget", t("minutes"), "input-total-kitchen-target")}
+          {field(t("totalCycleTarget"), "totalCycleTarget", t("minutes"), "input-total-cycle-target")}
+          {field(t("alertAtPercent"), "alertAtPercent", "%", "input-alert-at-percent")}
         </CardContent>
       </Card>
       <Button
@@ -921,7 +927,7 @@ function TimeTargetsTab() {
         disabled={saveMut.isPending}
         data-testid="button-save-targets"
       >
-        Save Targets
+        {t("saveTargets")}
       </Button>
     </div>
   );
@@ -929,6 +935,7 @@ function TimeTargetsTab() {
 
 function RecipeCalibrationTab() {
   const { toast } = useToast();
+  const { t } = useTranslation("kitchen");
   const [calibResult, setCalibResult] = useState<any>(null);
   const [showModal, setShowModal] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -957,10 +964,10 @@ function RecipeCalibrationTab() {
         setCalibResult(data);
         setShowModal(true);
       } else {
-        toast({ title: "Calibration complete (no changes needed)", variant: "default" });
+        toast({ title: t("calibrationComplete"), variant: "default" });
       }
     } catch (_) {
-      toast({ title: "Calibration run (backend may need setup)", variant: "default" });
+      toast({ title: t("calibrationRunLocal"), variant: "default" });
     }
     setLoading(false);
   }
@@ -970,20 +977,20 @@ function RecipeCalibrationTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
-            <RefreshCw className="h-4 w-4" />Auto-Calibrate Recipe Times
+            <RefreshCw className="h-4 w-4" />{t("autoCalibrateTitle")}
           </CardTitle>
           <CardDescription>
-            Based on real cooking data (min. 20 orders per dish), the system can automatically update recipe prep time estimates.
+            {t("autoCalibrateDesc")}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {calibStatus && (
             <div className="text-sm text-muted-foreground">
-              Last run:{" "}
+              {t("lastRun")}:{" "}
               {calibStatus.lastRunAt
                 ? new Date(calibStatus.lastRunAt).toLocaleDateString()
-                : "Never"}
-              {calibStatus.dishesUpdated != null && ` | ${calibStatus.dishesUpdated} dishes updated`}
+                : t("never")}
+              {calibStatus.dishesUpdated != null && ` | ${calibStatus.dishesUpdated} ${t("dishesUpdated")}`}
             </div>
           )}
           <Button
@@ -993,11 +1000,11 @@ function RecipeCalibrationTab() {
           >
             {loading ? (
               <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />Running...
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />{t("running")}
               </>
             ) : (
               <>
-                <RefreshCw className="h-4 w-4 mr-2" />Run Calibration Now
+                <RefreshCw className="h-4 w-4 mr-2" />{t("runCalibrationNow")}
               </>
             )}
           </Button>
@@ -1007,37 +1014,37 @@ function RecipeCalibrationTab() {
       <Dialog open={showModal} onOpenChange={v => !v && setShowModal(false)}>
         <DialogContent data-testid="modal-calibration-results">
           <DialogHeader>
-            <DialogTitle>Calibration Results</DialogTitle>
+            <DialogTitle>{t("calibrationResults")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             {calibResult?.dishes?.length > 0 ? (
               <>
-                <p className="text-sm text-muted-foreground">{calibResult.dishes.length} dish(es) updated:</p>
+                <p className="text-sm text-muted-foreground">{t("dishesUpdatedCount", { n: calibResult.dishes.length })}</p>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="text-xs text-muted-foreground border-b">
-                      <th className="text-left pb-1">Dish</th>
-                      <th className="text-right pb-1">Old</th>
-                      <th className="text-right pb-1">New</th>
+                      <th className="text-left pb-1">{t("dish")}</th>
+                      <th className="text-right pb-1">{t("old")}</th>
+                      <th className="text-right pb-1">{t("new")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {calibResult.dishes.map((d: any, i: number) => (
                       <tr key={i} className="border-b last:border-0">
                         <td className="py-1">{d.name}</td>
-                        <td className="text-right py-1 text-muted-foreground">{d.oldMin} min</td>
-                        <td className="text-right py-1 font-medium text-primary">{d.newMin} min</td>
+                        <td className="text-right py-1 text-muted-foreground">{d.oldMin} {t("minUnit")}</td>
+                        <td className="text-right py-1 font-medium text-primary">{d.newMin} {t("minUnit")}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </>
             ) : (
-              <p className="text-sm text-muted-foreground">No dishes needed calibration (insufficient data or all within tolerance).</p>
+              <p className="text-sm text-muted-foreground">{t("noCalibrationNeeded")}</p>
             )}
           </div>
           <DialogFooter>
-            <Button onClick={() => setShowModal(false)}>Close</Button>
+            <Button onClick={() => setShowModal(false)}>{t("close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1046,6 +1053,7 @@ function RecipeCalibrationTab() {
 }
 
 export default function KitchenSettingsPage() {
+  const { t } = useTranslation("kitchen");
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
@@ -1053,30 +1061,30 @@ export default function KitchenSettingsPage() {
           <ChefHat className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold" data-testid="heading-kitchen-settings">Kitchen Settings</h1>
-          <p className="text-sm text-muted-foreground">Configure counters, weekly roster, assignment rules, and cooking control</p>
+          <h1 className="text-2xl font-bold" data-testid="heading-kitchen-settings">{t("kitchenSettings")}</h1>
+          <p className="text-sm text-muted-foreground">{t("kitchenSettingsDesc")}</p>
         </div>
       </div>
 
       <Tabs defaultValue="counters">
         <TabsList data-testid="tabs-kitchen-settings">
           <TabsTrigger value="counters" data-testid="tab-counters">
-            <Utensils className="h-4 w-4 mr-2" />Counters
+            <Utensils className="h-4 w-4 mr-2" />{t("counters")}
           </TabsTrigger>
           <TabsTrigger value="roster" data-testid="tab-roster">
-            <CalendarDays className="h-4 w-4 mr-2" />Roster
+            <CalendarDays className="h-4 w-4 mr-2" />{t("roster")}
           </TabsTrigger>
           <TabsTrigger value="rules" data-testid="tab-rules">
-            <Settings2 className="h-4 w-4 mr-2" />Assignment Rules
+            <Settings2 className="h-4 w-4 mr-2" />{t("assignmentRules")}
           </TabsTrigger>
           <TabsTrigger value="cooking-control" data-testid="tab-cooking-control">
-            <Zap className="h-4 w-4 mr-2" />Cooking Control
+            <Zap className="h-4 w-4 mr-2" />{t("cookingControl")}
           </TabsTrigger>
           <TabsTrigger value="time-targets" data-testid="tab-time-targets">
-            <Timer className="h-4 w-4 mr-2" />Time Targets
+            <Timer className="h-4 w-4 mr-2" />{t("timeTargets")}
           </TabsTrigger>
           <TabsTrigger value="calibration" data-testid="tab-calibration">
-            <RefreshCw className="h-4 w-4 mr-2" />Calibration
+            <RefreshCw className="h-4 w-4 mr-2" />{t("calibration")}
           </TabsTrigger>
         </TabsList>
 

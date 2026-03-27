@@ -12,13 +12,250 @@ function esc(str: string | null | undefined): string {
     .replace(/'/g, "&#x27;");
 }
 
-function formatInTimezone(date: Date, timezone: string, dateOpts: Intl.DateTimeFormatOptions): string {
+const LOCALE_MAP: Record<string, string> = {
+  en: "en-US",
+  es: "es-ES",
+  ar: "ar-SA",
+  fr: "fr-FR",
+};
+
+function formatInTimezone(date: Date, timezone: string, dateOpts: Intl.DateTimeFormatOptions, language = "en"): string {
+  const locale = LOCALE_MAP[language] ?? "en-US";
   try {
-    return new Intl.DateTimeFormat("en-US", { ...dateOpts, timeZone: timezone }).format(date);
+    return new Intl.DateTimeFormat(locale, { ...dateOpts, timeZone: timezone }).format(date);
   } catch {
-    return new Intl.DateTimeFormat("en-US", dateOpts).format(date);
+    return new Intl.DateTimeFormat(locale, dateOpts).format(date);
   }
 }
+
+const KOT_LABELS: Record<string, {
+  kitchenOrderTicket: string;
+  station: string;
+  table: string;
+  takeaway: string;
+  delivery: string;
+  order: string;
+  ref: string;
+  totalItems: string;
+  endOfKot: string;
+  kotPrefix: string;
+  htmlTitle: string;
+  mainCourse: string;
+}> = {
+  en: {
+    kitchenOrderTicket: "*** KITCHEN ORDER TICKET ***",
+    station: "STATION",
+    table: "Table",
+    takeaway: "Takeaway",
+    delivery: "Delivery",
+    order: "Order",
+    ref: "Ref",
+    totalItems: "Total Items",
+    endOfKot: "*** END OF KOT ***",
+    kotPrefix: "KOT #",
+    htmlTitle: "KOT",
+    mainCourse: "Main",
+  },
+  es: {
+    kitchenOrderTicket: "*** COMANDA DE COCINA ***",
+    station: "ESTACIÓN",
+    table: "Mesa",
+    takeaway: "Para Llevar",
+    delivery: "Entrega",
+    order: "Pedido",
+    ref: "Ref",
+    totalItems: "Total Artículos",
+    endOfKot: "*** FIN DE COMANDA ***",
+    kotPrefix: "COMANDA #",
+    htmlTitle: "Comanda",
+    mainCourse: "Principal",
+  },
+  ar: {
+    kitchenOrderTicket: "*** تذكرة طلب المطبخ ***",
+    station: "المحطة",
+    table: "طاولة",
+    takeaway: "طلب خارجي",
+    delivery: "توصيل",
+    order: "طلب",
+    ref: "مرجع",
+    totalItems: "إجمالي الأصناف",
+    endOfKot: "*** نهاية أمر الطبخ ***",
+    kotPrefix: "أمر مطبخ #",
+    htmlTitle: "أمر مطبخ",
+    mainCourse: "رئيسي",
+  },
+  fr: {
+    kitchenOrderTicket: "*** BON DE COMMANDE CUISINE ***",
+    station: "STATION",
+    table: "Table",
+    takeaway: "À Emporter",
+    delivery: "Livraison",
+    order: "Commande",
+    ref: "Réf",
+    totalItems: "Total Articles",
+    endOfKot: "*** FIN DU BON DE COMMANDE ***",
+    kotPrefix: "BON #",
+    htmlTitle: "Bon de Commande",
+    mainCourse: "Plat Principal",
+  },
+};
+
+const BILL_LABELS: Record<string, {
+  table: string;
+  takeaway: string;
+  delivery: string;
+  order: string;
+  servedBy: string;
+  customer: string;
+  custGstin: string;
+  item: string;
+  qty: string;
+  rate: string;
+  amt: string;
+  subtotal: string;
+  discount: string;
+  serviceCharge: string;
+  tips: string;
+  total: string;
+  paidVia: string;
+  loyaltyPoints: string;
+  thankYou: string;
+  endOfBill: string;
+  invoice: string;
+  bill: string;
+  taxVat: string;
+  hsnPrefix: string;
+  gstinPrefix: string;
+  cgst: string;
+  sgst: string;
+  scanQrMsg: string;
+  htmlTitle: string;
+}> = {
+  en: {
+    table: "Table",
+    takeaway: "Takeaway",
+    delivery: "Delivery",
+    order: "Order",
+    servedBy: "Served by",
+    customer: "Customer",
+    custGstin: "Cust. GSTIN",
+    item: "Item",
+    qty: "Qty",
+    rate: "Rate",
+    amt: "Amt",
+    subtotal: "Subtotal",
+    discount: "Discount",
+    serviceCharge: "Service Charge",
+    tips: "Tips",
+    total: "TOTAL",
+    paidVia: "Paid via",
+    loyaltyPoints: "Loyalty Points Earned",
+    thankYou: "Thank you for dining with us!",
+    endOfBill: "*** END OF BILL ***",
+    invoice: "Invoice",
+    bill: "Bill",
+    taxVat: "Tax",
+    hsnPrefix: "HSN: ",
+    gstinPrefix: "GSTIN: ",
+    cgst: "CGST",
+    sgst: "SGST",
+    scanQrMsg: "Scan QR for digital receipt:",
+    htmlTitle: "Bill",
+  },
+  es: {
+    table: "Mesa",
+    takeaway: "Para Llevar",
+    delivery: "Entrega",
+    order: "Pedido",
+    servedBy: "Servido por",
+    customer: "Cliente",
+    custGstin: "GSTIN Cliente",
+    item: "Artículo",
+    qty: "Cant.",
+    rate: "Precio",
+    amt: "Importe",
+    subtotal: "Subtotal",
+    discount: "Descuento",
+    serviceCharge: "Cargo Servicio",
+    tips: "Propina",
+    total: "TOTAL",
+    paidVia: "Pagado con",
+    loyaltyPoints: "Puntos de Fidelidad Ganados",
+    thankYou: "¡Gracias por su visita!",
+    endOfBill: "*** FIN DE CUENTA ***",
+    invoice: "Factura",
+    bill: "Cuenta",
+    taxVat: "IVA",
+    hsnPrefix: "HSN: ",
+    gstinPrefix: "GSTIN: ",
+    cgst: "CGST",
+    sgst: "SGST",
+    scanQrMsg: "Escanea el QR para el recibo digital:",
+    htmlTitle: "Cuenta",
+  },
+  ar: {
+    table: "طاولة",
+    takeaway: "طلب خارجي",
+    delivery: "توصيل",
+    order: "طلب",
+    servedBy: "قدّمه",
+    customer: "العميل",
+    custGstin: "رقم ضريبي",
+    item: "الصنف",
+    qty: "الكمية",
+    rate: "السعر",
+    amt: "المبلغ",
+    subtotal: "المجموع الجزئي",
+    discount: "الخصم",
+    serviceCharge: "رسوم الخدمة",
+    tips: "البقشيش",
+    total: "الإجمالي",
+    paidVia: "الدفع عبر",
+    loyaltyPoints: "نقاط الولاء المكتسبة",
+    thankYou: "شكراً لزيارتكم!",
+    endOfBill: "*** نهاية الفاتورة ***",
+    invoice: "فاتورة رسمية",
+    bill: "الفاتورة",
+    taxVat: "ضريبة",
+    hsnPrefix: "رمز HSN: ",
+    gstinPrefix: "GSTIN: ",
+    cgst: "CGST",
+    sgst: "SGST",
+    scanQrMsg: "امسح رمز QR للإيصال الرقمي:",
+    htmlTitle: "الفاتورة",
+  },
+  fr: {
+    table: "Table",
+    takeaway: "À Emporter",
+    delivery: "Livraison",
+    order: "Commande",
+    servedBy: "Servi par",
+    customer: "Client",
+    custGstin: "GSTIN Client",
+    item: "Article",
+    qty: "Qté",
+    rate: "Prix",
+    amt: "Montant",
+    subtotal: "Sous-total",
+    discount: "Remise",
+    serviceCharge: "Frais de Service",
+    tips: "Pourboire",
+    total: "TOTAL",
+    paidVia: "Payé par",
+    loyaltyPoints: "Points de Fidélité Gagnés",
+    thankYou: "Merci de votre visite !",
+    endOfBill: "*** FIN DE L'ADDITION ***",
+    invoice: "Facture",
+    bill: "Addition",
+    taxVat: "TVA",
+    hsnPrefix: "HSN : ",
+    gstinPrefix: "GSTIN : ",
+    cgst: "CGST",
+    sgst: "SGST",
+    scanQrMsg: "Scannez le QR pour le reçu numérique :",
+    htmlTitle: "Addition",
+  },
+};
 
 export interface KotPrintOptions {
   restaurantName: string;
@@ -29,6 +266,7 @@ export interface KotPrintOptions {
   station?: string | null;
   sentAt: string;
   timezone?: string;
+  language?: string;
   items: Array<{
     name: string;
     quantity: number;
@@ -38,16 +276,17 @@ export interface KotPrintOptions {
 }
 
 export function renderKotHtml(opts: KotPrintOptions): string {
-  const { restaurantName, kotNumber, orderId, orderType, tableNumber, station, sentAt, items, timezone = "UTC" } = opts;
+  const { restaurantName, kotNumber, orderId, orderType, tableNumber, station, sentAt, items, timezone = "UTC", language = "en" } = opts;
+  const labels = KOT_LABELS[language] ?? KOT_LABELS.en;
   const date = new Date(sentAt);
-  const dateStr = formatInTimezone(date, timezone, { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = formatInTimezone(date, timezone, { hour: "2-digit", minute: "2-digit", hour12: true });
+  const dateStr = formatInTimezone(date, timezone, { day: "2-digit", month: "short", year: "numeric" }, language);
+  const timeStr = formatInTimezone(date, timezone, { hour: "2-digit", minute: "2-digit", hour12: true }, language);
   const orderRef = esc(orderId.slice(-6).toUpperCase());
 
   const courseOrder = ["starter", "Starter", "main", "Main", "dessert", "Dessert", "beverage", "Beverage"];
   const groupedByCourse: Record<string, typeof items> = {};
   for (const item of items) {
-    const course = item.course || "Main";
+    const course = item.course || labels.mainCourse;
     if (!groupedByCourse[course]) groupedByCourse[course] = [];
     groupedByCourse[course].push(item);
   }
@@ -59,12 +298,12 @@ export function renderKotHtml(opts: KotPrintOptions): string {
 
   const orderLabel =
     orderType === "dine_in" && tableNumber
-      ? `Table #${tableNumber}`
+      ? `${labels.table} #${tableNumber}`
       : orderType === "takeaway"
-      ? "Takeaway"
+      ? labels.takeaway
       : orderType === "delivery"
-      ? "Delivery"
-      : "Order";
+      ? labels.delivery
+      : labels.order;
 
   const itemsHtml = sortedCourses
     .map((course) => {
@@ -95,7 +334,7 @@ export function renderKotHtml(opts: KotPrintOptions): string {
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>KOT</title>
+<title>${esc(labels.htmlTitle)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -117,26 +356,26 @@ export function renderKotHtml(opts: KotPrintOptions): string {
 <body>
   <div style="text-align:center;border-bottom:2px dashed #000;padding-bottom:6px;margin-bottom:6px;">
     <div style="font-weight:bold;font-size:16px;letter-spacing:1px;">${esc(restaurantName).toUpperCase()}</div>
-    <div style="font-size:11px;margin-top:2px;">*** KITCHEN ORDER TICKET ***</div>
-    ${station ? `<div style="font-size:11px;font-weight:bold;">STATION: ${esc(station).toUpperCase()}</div>` : ""}
+    <div style="font-size:11px;margin-top:2px;">${labels.kitchenOrderTicket}</div>
+    ${station ? `<div style="font-size:11px;font-weight:bold;">${labels.station}: ${esc(station).toUpperCase()}</div>` : ""}
   </div>
   <div style="border-bottom:1px dashed #000;padding-bottom:6px;margin-bottom:6px;">
     <div style="display:flex;justify-content:space-between;">
-      <span style="font-weight:bold;">KOT #${kotNumber ? esc(kotNumber) : orderRef}</span>
+      <span style="font-weight:bold;">${esc(labels.kotPrefix)}${kotNumber ? esc(kotNumber) : orderRef}</span>
       <span>${esc(dateStr)}</span>
     </div>
     <div style="display:flex;justify-content:space-between;">
       <span style="font-weight:bold;">${esc(orderLabel)}</span>
       <span>${esc(timeStr)}</span>
     </div>
-    <div style="font-size:11px;">Ref: #${orderRef}</div>
+    <div style="font-size:11px;">${labels.ref}: #${orderRef}</div>
   </div>
   <div style="margin-bottom:6px;">
     ${itemsHtml}
   </div>
   <div style="border-top:2px dashed #000;padding-top:6px;text-align:center;font-size:11px;">
-    <div>Total Items: <strong>${totalItems}</strong></div>
-    <div style="margin-top:4px;">*** END OF KOT ***</div>
+    <div>${labels.totalItems}: <strong>${totalItems}</strong></div>
+    <div style="margin-top:4px;">${labels.endOfKot}</div>
   </div>
 </body>
 </html>`;
@@ -179,6 +418,7 @@ export interface BillPrintOptions {
   customerGstin?: string | null;
   loyaltyPointsEarned?: number;
   digitalReceiptUrl?: string | null;
+  language?: string;
 }
 
 export function renderBillHtml(opts: BillPrintOptions): string {
@@ -190,28 +430,29 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     cgstAmount, sgstAmount, tips = 0, totalAmount,
     currency = "₹", paymentMethod, paidAt,
     customerName, customerGstin, loyaltyPointsEarned, digitalReceiptUrl,
-    timezone = "UTC",
+    timezone = "UTC", language = "en",
   } = opts;
 
+  const labels = BILL_LABELS[language] ?? BILL_LABELS.en;
   const now = paidAt ? new Date(paidAt) : new Date();
-  const dateStr = formatInTimezone(now, timezone, { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = formatInTimezone(now, timezone, { hour: "2-digit", minute: "2-digit", hour12: true });
+  const dateStr = formatInTimezone(now, timezone, { day: "2-digit", month: "short", year: "numeric" }, language);
+  const timeStr = formatInTimezone(now, timezone, { hour: "2-digit", minute: "2-digit", hour12: true }, language);
   const fmt = (n: number) => `${currency}${n.toFixed(2)}`;
 
   const orderLabel =
     orderType === "dine_in" && tableNumber
-      ? `Table #${tableNumber}`
+      ? `${labels.table} #${tableNumber}`
       : orderType === "takeaway"
-      ? "Takeaway"
+      ? labels.takeaway
       : orderType === "delivery"
-      ? "Delivery"
-      : "Order";
+      ? labels.delivery
+      : labels.order;
 
   const itemsHtml = items
     .map(
       (item) => `
         <tr>
-          <td style="padding:2px 0;">${esc(item.name)}${item.notes ? ` <small><em>(${esc(item.notes)})</em></small>` : ""}${item.hsnCode ? `<br/><small style="color:#666;">HSN: ${esc(item.hsnCode)}</small>` : ""}</td>
+          <td style="padding:2px 0;">${esc(item.name)}${item.notes ? ` <small><em>(${esc(item.notes)})</em></small>` : ""}${item.hsnCode ? `<br/><small style="color:#666;">${esc(labels.hsnPrefix)}${esc(item.hsnCode)}</small>` : ""}</td>
           <td style="text-align:center;padding:2px 4px;">${item.quantity}</td>
           <td style="text-align:right;padding:2px 0;">${esc(fmt(item.price))}</td>
           <td style="text-align:right;padding:2px 0;">${esc(fmt(item.price * item.quantity))}</td>
@@ -224,18 +465,18 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     taxType === "gst" && (cgstAmount != null || sgstAmount != null)
       ? `
         <tr>
-          <td colspan="3">CGST${taxRate ? ` (${(taxRate / 2).toFixed(1)}%)` : ""}</td>
+          <td colspan="3">${esc(labels.cgst)}${taxRate ? ` (${(taxRate / 2).toFixed(1)}%)` : ""}</td>
           <td style="text-align:right;">${fmt(cgstAmount || 0)}</td>
         </tr>
         <tr>
-          <td colspan="3">SGST${taxRate ? ` (${(taxRate / 2).toFixed(1)}%)` : ""}</td>
+          <td colspan="3">${esc(labels.sgst)}${taxRate ? ` (${(taxRate / 2).toFixed(1)}%)` : ""}</td>
           <td style="text-align:right;">${fmt(sgstAmount || 0)}</td>
         </tr>
       `
       : taxAmount > 0
       ? `
         <tr>
-          <td colspan="3">${esc(taxType?.toUpperCase() || "Tax")}${taxRate ? ` (${taxRate}%)` : ""}</td>
+          <td colspan="3">${esc(taxType?.toUpperCase() || labels.taxVat)}${taxRate ? ` (${taxRate}%)` : ""}</td>
           <td style="text-align:right;">${fmt(taxAmount)}</td>
         </tr>
       `
@@ -246,7 +487,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     : null;
   const digitalReceiptSection = digitalReceiptUrl
     ? `<div style="text-align:center;margin-top:6px;font-size:10px;">
-        <div style="margin-bottom:4px;">Scan QR for digital receipt:</div>
+        <div style="margin-bottom:4px;">${esc(labels.scanQrMsg)}</div>
         ${qrApiUrl ? `<img src="${qrApiUrl}" alt="QR Code" width="80" height="80" style="display:block;margin:0 auto 4px;" onerror="this.style.display='none'" />` : ""}
         <div style="font-family:monospace;font-size:9px;word-break:break-all;">${esc(digitalReceiptUrl)}</div>
       </div>`
@@ -256,7 +497,7 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>Bill</title>
+<title>${esc(labels.htmlTitle)}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -283,27 +524,27 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     ${restaurantLogo ? `<img src="${esc(restaurantLogo)}" alt="${esc(restaurantName)}" height="48" style="display:block;margin:0 auto 4px;max-height:48px;object-fit:contain;" onerror="this.style.display='none'" />` : ""}
     <div style="font-weight:bold;font-size:16px;letter-spacing:1px;">${esc(restaurantName).toUpperCase()}</div>
     ${restaurantAddress ? `<div style="font-size:10px;">${esc(restaurantAddress)}</div>` : ""}
-    ${restaurantGstin ? `<div style="font-size:10px;">GSTIN: ${esc(restaurantGstin)}</div>` : ""}
+    ${restaurantGstin ? `<div style="font-size:10px;">${esc(labels.gstinPrefix)}${esc(restaurantGstin)}</div>` : ""}
     <div style="font-size:11px;">${esc(dateStr)} &nbsp; ${esc(timeStr)}</div>
   </div>
 
   <div style="margin-bottom:6px;font-size:11px;">
     <div style="display:flex;justify-content:space-between;">
-      <span><strong>Bill: ${esc(billNumber)}</strong></span>
+      <span><strong>${labels.bill}: ${esc(billNumber)}</strong></span>
       <span>${esc(orderLabel)}</span>
     </div>
-    ${invoiceNumber ? `<div>Invoice: ${esc(invoiceNumber)}</div>` : ""}
-    ${waiterName ? `<div>Served by: ${esc(waiterName)}</div>` : ""}
-    ${customerName ? `<div>Customer: ${esc(customerName)}</div>` : ""}
-    ${customerGstin ? `<div>Cust. GSTIN: ${esc(customerGstin)}</div>` : ""}
+    ${invoiceNumber ? `<div>${labels.invoice}: ${esc(invoiceNumber)}</div>` : ""}
+    ${waiterName ? `<div>${labels.servedBy}: ${esc(waiterName)}</div>` : ""}
+    ${customerName ? `<div>${labels.customer}: ${esc(customerName)}</div>` : ""}
+    ${customerGstin ? `<div>${labels.custGstin}: ${esc(customerGstin)}</div>` : ""}
   </div>
 
   <table>
     <tr>
-      <th style="text-align:left;">Item</th>
-      <th style="text-align:center;">Qty</th>
-      <th style="text-align:right;">Rate</th>
-      <th style="text-align:right;">Amt</th>
+      <th style="text-align:left;">${labels.item}</th>
+      <th style="text-align:center;">${labels.qty}</th>
+      <th style="text-align:right;">${labels.rate}</th>
+      <th style="text-align:right;">${labels.amt}</th>
     </tr>
     ${itemsHtml}
   </table>
@@ -312,25 +553,25 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 
   <table>
     <tr>
-      <td colspan="3">Subtotal</td>
+      <td colspan="3">${labels.subtotal}</td>
       <td style="text-align:right;">${fmt(subtotal)}</td>
     </tr>
     ${discountAmount > 0 ? `
     <tr>
-      <td colspan="3">Discount${discountReason ? ` (${esc(discountReason)})` : ""}</td>
+      <td colspan="3">${labels.discount}${discountReason ? ` (${esc(discountReason)})` : ""}</td>
       <td style="text-align:right;">-${fmt(discountAmount)}</td>
     </tr>
     ` : ""}
     ${serviceCharge > 0 ? `
     <tr>
-      <td colspan="3">Service Charge</td>
+      <td colspan="3">${labels.serviceCharge}</td>
       <td style="text-align:right;">${fmt(serviceCharge)}</td>
     </tr>
     ` : ""}
     ${taxRows}
     ${tips > 0 ? `
     <tr>
-      <td colspan="3">Tips</td>
+      <td colspan="3">${labels.tips}</td>
       <td style="text-align:right;">${fmt(tips)}</td>
     </tr>
     ` : ""}
@@ -340,25 +581,25 @@ export function renderBillHtml(opts: BillPrintOptions): string {
 
   <table>
     <tr>
-      <td colspan="3" style="font-weight:bold;font-size:14px;">TOTAL</td>
+      <td colspan="3" style="font-weight:bold;font-size:14px;">${labels.total}</td>
       <td style="text-align:right;font-weight:bold;font-size:14px;">${fmt(totalAmount)}</td>
     </tr>
     ${paymentMethod ? `
     <tr>
-      <td colspan="3">Paid via</td>
+      <td colspan="3">${labels.paidVia}</td>
       <td style="text-align:right;">${esc(paymentMethod)}</td>
     </tr>
     ` : ""}
   </table>
 
-  ${loyaltyPointsEarned ? `<div class="dashed"></div><div style="text-align:center;font-size:11px;">Loyalty Points Earned: +${loyaltyPointsEarned}</div>` : ""}
+  ${loyaltyPointsEarned ? `<div class="dashed"></div><div style="text-align:center;font-size:11px;">${labels.loyaltyPoints}: +${loyaltyPointsEarned}</div>` : ""}
 
   ${digitalReceiptSection}
 
   <div class="dashed"></div>
   <div style="text-align:center;font-size:11px;">
-    <div>Thank you for dining with us!</div>
-    <div>*** END OF BILL ***</div>
+    <div>${labels.thankYou}</div>
+    <div>${labels.endOfBill}</div>
   </div>
 </body>
 </html>`;

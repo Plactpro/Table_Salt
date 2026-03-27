@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -111,6 +112,7 @@ interface Props {
 }
 
 export default function OpenCashSessionModal({ open, onClose, onSessionOpened, existingSession }: Props) {
+  const { t, i18n } = useTranslation("pos");
   const { user } = useAuth();
   const { toast } = useToast();
 
@@ -123,7 +125,7 @@ export default function OpenCashSessionModal({ open, onClose, onSessionOpened, e
   const allDenoms = [...denoms.notes.map(d => ({ ...d, type: "note" })), ...denoms.coins.map(d => ({ ...d, type: "coin" }))];
 
   const [quantities, setQuantities] = useState<Record<string, string>>({});
-  const [shiftName, setShiftName] = useState("Morning Shift");
+  const [shiftName, setShiftName] = useState(t("defaultShiftName"));
 
   const breakdown = useMemo(() => {
     const result: Record<string, number> = {};
@@ -151,32 +153,32 @@ export default function OpenCashSessionModal({ open, onClose, onSessionOpened, e
       return res.json();
     },
     onSuccess: (data) => {
-      toast({ title: "Cash session opened", description: `Opening float: ${symbol}${total.toFixed(2)}` });
+      toast({ title: t("cashSessionOpened"), description: `${t("openingFloat")}: ${symbol}${total.toFixed(2)}` });
       onSessionOpened(data);
       onClose();
     },
     onError: (err: Error) => {
-      toast({ title: "Failed to open session", description: err.message, variant: "destructive" });
+      toast({ title: t("failedToOpenSession"), description: err.message, variant: "destructive" });
     },
   });
 
-  const today = new Date().toLocaleDateString("en-US", { day: "numeric", month: "long", year: "numeric" });
-  const outletName = (user as any)?.outlet?.name || "Main Branch";
+  const today = new Date().toLocaleDateString(i18n.language, { day: "numeric", month: "long", year: "numeric" });
+  const outletName = (user as any)?.outlet?.name || t("mainBranch");
 
   if (existingSession) {
     return (
       <Dialog open={open} onOpenChange={onClose}>
         <DialogContent className="max-w-md" data-testid="modal-open-session">
           <DialogHeader>
-            <DialogTitle>💰 Active Cash Session</DialogTitle>
+            <DialogTitle>💰 {t("activeCashSession")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-4">
             <div className="rounded-lg bg-green-50 border border-green-200 p-4 text-center">
-              <p className="text-green-800 font-medium">A cash session is already active</p>
-              <p className="text-green-600 text-sm mt-1">Session: {existingSession.sessionNumber || existingSession.id?.slice(0, 8)}</p>
-              <p className="text-green-600 text-sm">Opening Float: {symbol}{Number(existingSession.openingFloat || 0).toFixed(2)}</p>
+              <p className="text-green-800 font-medium">{t("sessionAlreadyActive")}</p>
+              <p className="text-green-600 text-sm mt-1">{t("session")}: {existingSession.sessionNumber || existingSession.id?.slice(0, 8)}</p>
+              <p className="text-green-600 text-sm">{t("openingFloat")}: {symbol}{Number(existingSession.openingFloat || 0).toFixed(2)}</p>
             </div>
-            <Button className="w-full" onClick={onClose}>Resume Existing Session</Button>
+            <Button className="w-full" onClick={onClose}>{t("resumeExistingSession")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -187,33 +189,33 @@ export default function OpenCashSessionModal({ open, onClose, onSessionOpened, e
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="modal-open-session">
         <DialogHeader>
-          <DialogTitle>💰 Open Cash Session</DialogTitle>
+          <DialogTitle>💰 {t("openCashSession")}</DialogTitle>
           <p className="text-sm text-muted-foreground">{today} | {outletName}</p>
-          <p className="text-sm text-muted-foreground">Cashier: {user?.name || user?.username}</p>
+          <p className="text-sm text-muted-foreground">{t("cashier")}: {user?.name || user?.username}</p>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="rounded-lg border bg-muted/30 p-3">
-            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-1">Currency</p>
+            <p className="text-xs text-muted-foreground uppercase tracking-wide font-medium mb-1">{t("currency")}</p>
             <p className="font-medium" data-testid="text-currency-label">{symbol} {currencyName} ({currencyCode})</p>
           </div>
 
           <div>
-            <label className="text-sm font-medium">Shift Name</label>
+            <label className="text-sm font-medium">{t("shiftName")}</label>
             <Input
               value={shiftName}
               onChange={e => setShiftName(e.target.value)}
               className="mt-1"
-              placeholder="e.g. Morning Shift"
+              placeholder={t("shiftNamePlaceholder")}
             />
           </div>
 
           <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Count Your Opening Float:</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t("countOpeningFloat")}:</p>
 
             {denoms.notes.length > 0 && (
               <>
-                <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">Notes</p>
+                <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">{t("notes")}</p>
                 <div className="space-y-2 mb-4">
                   {denoms.notes.map((d) => {
                     const qty = parseInt(quantities[String(d.value)] || "0") || 0;
@@ -242,7 +244,7 @@ export default function OpenCashSessionModal({ open, onClose, onSessionOpened, e
 
             {denoms.coins.length > 0 && (
               <>
-                <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">Coins</p>
+                <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">{t("coins")}</p>
                 <div className="space-y-2">
                   {denoms.coins.map((d) => {
                     const qty = parseInt(quantities[String(d.value)] || "0") || 0;
@@ -273,9 +275,9 @@ export default function OpenCashSessionModal({ open, onClose, onSessionOpened, e
           <Separator />
 
           <div className="flex items-center justify-between bg-muted/40 rounded-lg p-3">
-            <span className="font-semibold">Opening Float Total:</span>
+            <span className="font-semibold">{t("openingFloatTotal")}:</span>
             <span className="text-xl font-bold text-green-700" data-testid="text-opening-total">
-              {symbol}{total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {symbol}{total.toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
           </div>
 
@@ -287,9 +289,9 @@ export default function OpenCashSessionModal({ open, onClose, onSessionOpened, e
             data-testid="button-open-session"
           >
             {openSessionMutation.isPending ? (
-              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Opening Session...</>
+              <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t("openingSession")}</>
             ) : (
-              "✅ Open Cash Session"
+              `✅ ${t("openCashSession")}`
             )}
           </Button>
         </div>

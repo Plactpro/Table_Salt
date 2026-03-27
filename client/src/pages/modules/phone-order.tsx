@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface MenuItem {
   id: string;
@@ -61,6 +62,7 @@ const ORDER_TYPE_LABELS: Record<OrderType, string> = {
 };
 
 export default function PhoneOrderPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -302,7 +304,7 @@ export default function PhoneOrderPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-6">
-      <PageTitle title="Phone Order" />
+      <PageTitle title={t("phoneOrder")} />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10">
           <Phone className="h-6 w-6 text-primary" />

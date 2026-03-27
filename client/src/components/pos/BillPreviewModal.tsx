@@ -1,7 +1,9 @@
 import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import CourseManagementPanel from "@/components/pos/CourseManagementPanel";
 import CashPaymentModal from "@/components/cash/CashPaymentModal";
 import { renderBillHtml, dispatchPrint } from "@/lib/print-utils";
+import i18n from "@/i18n/index";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -23,6 +25,7 @@ import {
   Loader2, ExternalLink, QrCode, User, Cake, Heart, Star, StickyNote, Package, ChevronDown, ChevronRight,
 } from "lucide-react";
 import { PackingBreakdownPopover, type PackingChargeResult } from "@/components/packing/PackingBreakdownPopover";
+import { Numeric } from "@/components/ui/numeric";
 import QRCode from "qrcode";
 
 interface CartItem {
@@ -80,22 +83,22 @@ interface CreatedBill {
   customerGstin?: string | null;
 }
 
-const VOID_REASONS = [
-  "Customer Cancelled",
-  "Incorrect Order",
-  "System Error",
-  "Manager Override",
-  "Other",
-];
+const VOID_REASON_KEYS = [
+  "voidReasonCustomerCancelled",
+  "voidReasonIncorrectOrder",
+  "voidReasonSystemError",
+  "voidReasonManagerOverride",
+  "voidReasonOther",
+] as const;
 
-const REFUND_REASONS = [
-  "Overcharge",
-  "Wrong Item Served",
-  "Customer Dissatisfied",
-  "Duplicate Payment",
-  "Manager Override",
-  "Other",
-];
+const REFUND_REASON_KEYS = [
+  "refundReasonOvercharge",
+  "refundReasonWrongItem",
+  "refundReasonCustomerDissatisfied",
+  "refundReasonDuplicatePayment",
+  "refundReasonManagerOverride",
+  "refundReasonOther",
+] as const;
 
 function numWords(n: number): string {
   const ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
@@ -118,7 +121,8 @@ export default function BillPreviewModal({
   open, onClose, cart, subtotal, discountAmount, serviceChargeAmount, taxAmount, total,
   orderType, tableId, tableNumber, orderId, posSessionId, onPaymentComplete, fullPage = false,
 }: BillPreviewProps) {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
+  const { t: tp } = useTranslation("pos");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const printRef = useRef<HTMLDivElement>(null);
@@ -190,7 +194,7 @@ export default function BillPreviewModal({
   useRealtimeEvent("bill:updated", (payload: any) => {
     if (payload?.orderId === orderId) {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
-      toast({ title: "Bill updated", description: "A void was applied — bill totals have been updated." });
+      toast({ title: tp("billUpdated"), description: tp("billUpdatedDesc") });
     }
   });
   const [showCashPaymentModal, setShowCashPaymentModal] = useState(false);
@@ -472,7 +476,7 @@ export default function BillPreviewModal({
           setStep("receipt");
         } else if (data.status === "cancelled") {
           setRzpPolling(false);
-          toast({ title: "Payment cancelled", description: "The payment link expired or was cancelled", variant: "destructive" });
+          toast({ title: tp("paymentCancelledTitle"), description: tp("paymentLinkExpired"), variant: "destructive" });
         }
       } catch (_) {}
     }, 3000);
@@ -495,7 +499,7 @@ export default function BillPreviewModal({
       setRzpShortUrl(data.shortUrl);
       setRzpPolling(true);
     } catch (err: any) {
-      toast({ title: "Could not initiate payment", description: err.message, variant: "destructive" });
+      toast({ title: tp("couldNotInitiatePayment"), description: err.message, variant: "destructive" });
     } finally {
       setRzpInitiating(false);
     }
@@ -542,7 +546,7 @@ export default function BillPreviewModal({
         setStep("payment");
       }
     },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: tp("error"), description: err.message, variant: "destructive" }),
   });
 
   const payBillMutation = useMutation({
@@ -601,11 +605,11 @@ export default function BillPreviewModal({
         }, 1000);
         toast({
           variant: "destructive",
-          title: "Payment gateway unavailable",
-          description: "The payment gateway is currently unreachable. You can record a manual payment to continue.",
+          title: tp("paymentGatewayUnavailable"),
+          description: tp("gatewayUnreachableManual"),
         });
       } else {
-        toast({ title: "Payment failed", description: err.message, variant: "destructive" });
+        toast({ title: tp("paymentFailed"), description: err.message, variant: "destructive" });
       }
     },
   });
@@ -622,11 +626,11 @@ export default function BillPreviewModal({
     },
     onSuccess: () => {
       setGatewayDown(false);
-      toast({ title: "Manual payment recorded", description: "Payment recorded as pending gateway reconciliation." });
+      toast({ title: tp("manualPaymentRecorded"), description: tp("manualPaymentDesc") });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
       setStep("receipt");
     },
-    onError: (err: Error) => toast({ title: "Failed to record manual payment", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: tp("failedToRecordManual"), description: err.message, variant: "destructive" }),
   });
 
   const voidBillMutation = useMutation({
@@ -643,10 +647,10 @@ export default function BillPreviewModal({
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
       queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
-      toast({ title: "Bill voided", description: "Stock reversals have been applied" });
+      toast({ title: tp("billVoided"), description: tp("billVoidedDesc") });
       handleClose();
     },
-    onError: (err: Error) => toast({ title: "Void failed", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: tp("voidFailed"), description: err.message, variant: "destructive" }),
   });
 
   const refundBillMutation = useMutation({
@@ -670,7 +674,7 @@ export default function BillPreviewModal({
       setRefundReason("");
       setRefundedItemIds([]);
       queryClient.invalidateQueries({ queryKey: ["/api/restaurant-bills"] });
-      toast({ title: "Refund recorded", description: `${fmt(parseFloat(refundAmount))} refunded` });
+      toast({ title: tp("refundRecorded"), description: `${fmt(parseFloat(refundAmount))} ${tp("paidOut")}` });
       if (createdBill?.id) {
         fetch(`/api/print/refund-receipt/${createdBill.id}`, {
           method: "POST",
@@ -685,18 +689,18 @@ export default function BillPreviewModal({
       if (cause?.code === "GATEWAY_DOWN") {
         toast({
           variant: "destructive",
-          title: "Payment gateway unavailable",
-          description: "The gateway is unreachable. Record a cash refund manually or retry shortly.",
+          title: tp("paymentGatewayUnavailable"),
+          description: tp("gatewayUnreachableRefund"),
         });
       } else {
-        toast({ title: "Refund failed", description: err.message, variant: "destructive" });
+        toast({ title: tp("refundFailed"), description: err.message, variant: "destructive" });
       }
     },
   });
 
   const handleProceedToPayment = () => {
     if (!orderId) {
-      toast({ title: "Order not placed yet", description: "Please place the order first", variant: "destructive" });
+      toast({ title: tp("orderNotPlacedYet"), description: tp("placeOrderFirst"), variant: "destructive" });
       return;
     }
     createBillMutation.mutate();
@@ -766,6 +770,7 @@ export default function BillPreviewModal({
       customerGstin: billPayload.customerGstin,
       loyaltyPointsEarned: billPayload.loyaltyPointsEarned,
       digitalReceiptUrl: billPayload.digitalReceiptUrl,
+      language: tenant?.defaultLanguage || i18n.language || "en",
     });
 
     const refId = createdBill?.id || orderId || "";
@@ -803,7 +808,7 @@ export default function BillPreviewModal({
   ]);
 
   const handleWhatsApp = () => {
-    const text = `*${tenantName}*\nBill No: ${billNumber}\nTable: ${tableNumber || "Takeaway"}\nTotal: ${fmt(grandTotal)}\nThank you!`;
+    const text = `*${tenantName}*\n${tp("billNo")}: ${billNumber}\n${tp("table")}: ${tableNumber || tp("takeaway")}\n${tp("total")}: ${fmt(grandTotal)}\n${tp("thankYou")}!`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
   };
 
@@ -916,10 +921,10 @@ export default function BillPreviewModal({
       if (match) {
         setCustomerFromMatch(match);
       } else {
-        toast({ title: "Customer not found", description: "No customer with that phone number", variant: "destructive" });
+        toast({ title: tp("customerNotFound"), description: tp("noCustomerWithPhone"), variant: "destructive" });
       }
     } catch {
-      toast({ title: "Lookup failed", description: "Could not search customers", variant: "destructive" });
+      toast({ title: tp("lookupFailed"), description: tp("couldNotSearchCustomers"), variant: "destructive" });
     } finally {
       setLoyaltySearching(false);
     }
@@ -931,7 +936,7 @@ export default function BillPreviewModal({
     try {
       const res = await apiRequest("GET", `/api/customers/lookup?phone=${encodeURIComponent(crmPhone.trim())}`);
       if (!res.ok) {
-        toast({ title: "Customer not found", description: "No CRM profile for that number", variant: "destructive" });
+        toast({ title: tp("customerNotFound"), description: tp("noProfileForPhone"), variant: "destructive" });
         return;
       }
       const match: CrmCustomerMatch = await res.json();
@@ -939,7 +944,7 @@ export default function BillPreviewModal({
       setLoyaltySearchPhone(crmPhone.trim());
       setTierDiscountAmount(0);
     } catch {
-      toast({ title: "Lookup failed", description: "Could not search customers", variant: "destructive" });
+      toast({ title: tp("lookupFailed"), description: tp("couldNotSearchCustomers"), variant: "destructive" });
     } finally {
       setCrmSearching(false);
     }
@@ -953,30 +958,30 @@ export default function BillPreviewModal({
       const updatedCustomer = await updated.json();
       setLookedUpCustomer(prev => prev ? { ...prev, notes: updatedCustomer.notes } : prev);
       setCrmQuickNote("");
-      toast({ title: "Note saved", description: "Visit note appended to customer record" });
+      toast({ title: tp("noteSaved"), description: tp("visitNoteAppended") });
     } catch {
-      toast({ title: "Save failed", description: "Could not save note", variant: "destructive" });
+      toast({ title: tp("saveFailed"), description: tp("couldNotSaveNote"), variant: "destructive" });
     } finally {
       setCrmNoteSaving(false);
     }
   }, [lookedUpCustomer, crmQuickNote, toast]);
   const handleEmailReceipt = () => {
-    const subject = encodeURIComponent(`Receipt from ${tenantName} — ${billNumber}`);
+    const subject = encodeURIComponent(`${tp("receiptFrom")} ${tenantName} — ${billNumber}`);
     const body = encodeURIComponent(
-      `${tenantName}\nBill No: ${billNumber}\nTable: ${tableNumber || "Takeaway"}\nDate: ${dateStr} ${timeStr}\n\nTotal: ${fmt(grandTotal)}\n\nThank you for dining with us!`
+      `${tenantName}\n${tp("billNo")}: ${billNumber}\n${tp("table")}: ${tableNumber || tp("takeaway")}\n${tp("date")}: ${dateStr} ${timeStr}\n\n${tp("total")}: ${fmt(grandTotal)}\n\n${tp("thankYouForDining")}!`
     );
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   };
 
   const now = new Date();
-  const dateStr = now.toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+  const dateStr = now.toLocaleDateString(i18n.language, { day: "2-digit", month: "short", year: "numeric" });
+  const timeStr = now.toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit" });
 
   const BillWrapper = fullPage ? DialogPageContent : DialogContent;
   const billWrapperClass = fullPage
     ? "min-h-screen flex flex-col"
     : "w-full max-w-lg max-h-[100dvh] sm:max-h-[90vh] overflow-y-auto rounded-none sm:rounded-lg";
-  const stepLabel = step === "preview" ? "Bill Preview" : step === "payment" ? "Payment" : step === "void" ? "Void Bill" : step === "refund" ? "Issue Refund" : "Receipt";
+  const stepLabel = step === "preview" ? tp("stepBillPreview") : step === "payment" ? tp("stepPayment") : step === "void" ? tp("stepVoidBill") : step === "refund" ? tp("stepIssueRefund") : tp("stepReceipt");
   const goBack = () => {
     if (step === "payment") setStep("preview");
     else if (step === "void" || step === "refund") {
@@ -1009,30 +1014,30 @@ export default function BillPreviewModal({
             )}
             {outletJurisdiction?.savedFields?.tradeLicenseNumber && (
               <div style={{ fontSize: 9 }}>
-                Trade Lic: {outletJurisdiction.savedFields.tradeLicenseNumber}
+                {tp("tradeLic")}: {outletJurisdiction.savedFields.tradeLicenseNumber}
                 {outletJurisdiction.savedFields.tradeLicenseAuthority ? ` (${outletJurisdiction.savedFields.tradeLicenseAuthority})` : ""}
               </div>
             )}
             <div style={{ fontSize: 10, marginTop: 4 }}>
               {isGSTTenant && createdBill?.invoiceNumber
-                ? <>Invoice: {createdBill.invoiceNumber} | {dateStr} {timeStr}</>
-                : <>Bill No: {billNumber || "PREVIEW"} | {dateStr} {timeStr}</>
+                ? <>{tp("invoice")}: {createdBill.invoiceNumber} | {dateStr} {timeStr}</>
+                : <>{tp("billNo")}: {billNumber || tp("preview")} | {dateStr} {timeStr}</>
               }
             </div>
-            {tableNumber && <div>Table: {tableNumber}</div>}
-            <div>Waiter: {user?.name || user?.username}</div>
+            {tableNumber && <div>{tp("table")}: {tableNumber}</div>}
+            <div>{tp("waiter")}: {user?.name || user?.username}</div>
             {isGSTTenant && createdBill?.customerGstin && (
-              <div style={{ fontSize: 10 }}>Cust. {jurisdiction.taxRegLabel}: {createdBill.customerGstin}</div>
+              <div style={{ fontSize: 10 }}>{tp("cust")}. {jurisdiction.taxRegLabel}: {createdBill.customerGstin}</div>
             )}
           </div>
           <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
             <thead>
               <tr>
-                <th style={{ textAlign: "left" }}>Item</th>
-                <th style={{ textAlign: "right" }}>Qty</th>
-                <th style={{ textAlign: "right" }}>Rate</th>
-                <th style={{ textAlign: "right" }}>Amt</th>
+                <th style={{ textAlign: "left" }}>{tp("item")}</th>
+                <th style={{ textAlign: "right" }}>{tp("qty")}</th>
+                <th style={{ textAlign: "right" }}>{tp("rate")}</th>
+                <th style={{ textAlign: "right" }}>{tp("amt")}</th>
               </tr>
             </thead>
             <tbody>
@@ -1052,9 +1057,9 @@ export default function BillPreviewModal({
             </tbody>
           </table>
           <div style={{ borderTop: "1px dashed #000", margin: "4px 0" }} />
-          <div style={{ display: "flex", justifyContent: "space-between" }}><span>Subtotal</span><span>{fmt(subtotal)}</span></div>
-          {discountAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Discount</span><span>-{fmt(discountAmount)}</span></div>}
-          {serviceChargeAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Service Charge</span><span>{fmt(serviceChargeAmount)}</span></div>}
+          <div style={{ display: "flex", justifyContent: "space-between" }}><span>{tp("subtotal")}</span><span>{fmt(subtotal)}</span></div>
+          {discountAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{tp("discount")}</span><span>-{fmt(discountAmount)}</span></div>}
+          {serviceChargeAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{tp("serviceCharge")}</span><span>{fmt(serviceChargeAmount)}</span></div>}
           {taxAmount > 0 && (
             jurisdiction.splitTaxLabels ? (
               <>
@@ -1071,20 +1076,20 @@ export default function BillPreviewModal({
               <div style={{ display: "flex", justifyContent: "space-between" }}><span>{jurisdiction.taxLabel} ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>
             )
           )}
-          {tipAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>Tips</span><span>{fmt(tipAmount)}</span></div>}
+          {tipAmount > 0 && <div style={{ display: "flex", justifyContent: "space-between" }}><span>{tp("tips")}</span><span>{fmt(tipAmount)}</span></div>}
           <div style={{ borderTop: "1px solid #000", margin: "4px 0" }} />
           <div style={{ display: "flex", justifyContent: "space-between", fontWeight: "bold", fontSize: 13 }}>
-            <span>TOTAL</span><span>{fmt(applyJurisdictionRounding(grandTotal, jurisdiction.roundingRule))}</span>
+            <span>{tp("total").toUpperCase()}</span><span>{fmt(applyJurisdictionRounding(grandTotal, jurisdiction.roundingRule))}</span>
           </div>
           <div style={{ fontSize: 9, marginTop: 4, fontStyle: "italic" }}>{numWords(applyJurisdictionRounding(grandTotal, jurisdiction.roundingRule))}</div>
           <div style={{ borderTop: "1px dashed #000", margin: "8px 0" }} />
-          <div style={{ textAlign: "center", fontSize: 10 }}>Thank you for dining with us!</div>
+          <div style={{ textAlign: "center", fontSize: 10 }}>{tp("thankYouForDining")}!</div>
           {jurisdiction.requireTaxRegOnInvoice && (
-            <div style={{ textAlign: "center", fontSize: 9, marginTop: 4 }}>This is a computer-generated {jurisdiction.taxInvoiceLabel.toLowerCase()}.</div>
+            <div style={{ textAlign: "center", fontSize: 9, marginTop: 4 }}>{tp("computerGenerated")} {jurisdiction.taxInvoiceLabel.toLowerCase()}.</div>
           )}
           {jurisdiction.ccpaApplicable && (
             <div style={{ fontSize: 8, textAlign: "center", color: "#666", marginTop: 4 }}>
-              Do Not Sell My Personal Information: see privacy policy
+              {tp("doNotSellInfo")}
             </div>
           )}
         </div>
@@ -1132,14 +1137,14 @@ export default function BillPreviewModal({
                 <Badge variant="outline" className="mt-1.5 text-xs font-mono tracking-wide" data-testid="text-invoice-preview-number">
                   {billNumber || "PENDING"}
                 </Badge>
-                {tableNumber && <p className="text-sm mt-1">Table: <strong>{tableNumber}</strong></p>}
-                <p className="text-sm">Waiter: <strong>{user?.name || user?.username}</strong></p>
+                {tableNumber && <p className="text-sm mt-1">{tp("table")}: <strong>{tableNumber}</strong></p>}
+                <p className="text-sm">{tp("waiter")}: <strong>{user?.name || user?.username}</strong></p>
               </div>
 
               <div className="space-y-1">
                 <div className="flex justify-between text-xs text-muted-foreground font-medium px-1">
-                  <span>ITEM</span>
-                  <div className="flex gap-8"><span>QTY</span><span>AMOUNT</span></div>
+                  <span>{tp("item").toUpperCase()}</span>
+                  <div className="flex gap-8"><span>{tp("qty").toUpperCase()}</span><span>{tp("amount").toUpperCase()}</span></div>
                 </div>
                 <Separator />
                 {cart.map((item, i) => {
@@ -1183,21 +1188,21 @@ export default function BillPreviewModal({
                       </div>
                       <div className={`flex gap-8 text-right ${isVoided ? "line-through text-muted-foreground" : ""}`}>
                         <span className="w-8 text-center">{item.quantity}</span>
-                        <span className="w-20">{fmt(item.price * item.quantity)}</span>
+                        <Numeric className="w-20">{fmt(item.price * item.quantity)}</Numeric>
                       </div>
                     </div>
                   );
                 })}
                 <Separator />
                 <div className="space-y-1 text-sm pt-1">
-                  <div className="flex justify-between"><span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span></div>
-                  {discountAmount > 0 && <div className="flex justify-between text-green-600"><span>Discount</span><span>−{fmt(discountAmount)}</span></div>}
-                  {tierDiscountAmount > 0 && <div className="flex justify-between text-green-600 text-xs" data-testid="preview-tier-discount-row"><span>Loyalty Tier Discount</span><span>−{fmt(tierDiscountAmount)}</span></div>}
-                  {serviceChargeAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Service Charge</span><span>{fmt(serviceChargeAmount)}</span></div>}
-                  {taxAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">Tax ({taxRate}%)</span><span>{fmt(taxAmount)}</span></div>}
+                  <div className="flex justify-between"><span className="text-muted-foreground">{tp("subtotal")}</span><Numeric>{fmt(subtotal)}</Numeric></div>
+                  {discountAmount > 0 && <div className="flex justify-between text-green-600"><span>{tp("discount")}</span><Numeric>−{fmt(discountAmount)}</Numeric></div>}
+                  {tierDiscountAmount > 0 && <div className="flex justify-between text-green-600 text-xs" data-testid="preview-tier-discount-row"><span>{tp("loyaltyTierDiscount")}</span><Numeric>−{fmt(tierDiscountAmount)}</Numeric></div>}
+                  {serviceChargeAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{tp("serviceCharge")}</span><Numeric>{fmt(serviceChargeAmount)}</Numeric></div>}
+                  {taxAmount > 0 && <div className="flex justify-between"><span className="text-muted-foreground">{tp("tax")} (<Numeric>{taxRate}%</Numeric>)</span><Numeric>{fmt(taxAmount)}</Numeric></div>}
                   {packingLoading && isTakeawayOrDelivery && (
                     <div className="flex justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1"><Package className="h-3.5 w-3.5" /> Packing Charge</span>
+                      <span className="flex items-center gap-1"><Package className="h-3.5 w-3.5" /> {tp("packingCharge")}</span>
                       <span className="animate-pulse">—</span>
                     </div>
                   )}
@@ -1210,12 +1215,12 @@ export default function BillPreviewModal({
                           <PackingBreakdownPopover result={packingResult} />
                         )}
                       </span>
-                      <span>{fmt(packingResult.total)}</span>
+                      <Numeric>{fmt(packingResult.total)}</Numeric>
                     </div>
                   )}
                   {parkingChargeLoading && (
                     <div className="flex justify-between text-muted-foreground">
-                      <span className="flex items-center gap-1">🅿️ Parking Charge</span>
+                      <span className="flex items-center gap-1">🅿️ {tp("parkingCharge")}</span>
                       <span className="animate-pulse">—</span>
                     </div>
                   )}
@@ -1227,40 +1232,40 @@ export default function BillPreviewModal({
                         data-testid="button-toggle-parking-breakdown"
                       >
                         <span className="flex items-center gap-1">
-                          🅿️ Parking
+                          🅿️ {tp("parking")}
                           {parkingChargeExpanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
                         </span>
-                        <span data-testid="parking-total-summary">{fmt(parkingCharge.total)}</span>
+                        <Numeric data-testid="parking-total-summary">{fmt(parkingCharge.total)}</Numeric>
                       </button>
                       {parkingChargeExpanded && (
                         <div className="space-y-0.5 pl-2 border-l-2 border-muted ml-1">
                           {parkingCharge.duration && (
                             <div className="flex justify-between text-xs text-muted-foreground" data-testid="parking-duration">
-                              <span>Duration</span><span>{parkingCharge.duration}</span>
+                              <span>{tp("duration")}</span><span>{parkingCharge.duration}</span>
                             </div>
                           )}
                           {parkingCharge.freeMinutes != null && parkingCharge.freeMinutes > 0 && (
                             <div className="flex justify-between text-xs text-green-600" data-testid="parking-free-period">
-                              <span>Free Period</span><span>−{parkingCharge.freeMinutes} min</span>
+                              <span>{tp("freePeriod")}</span><span>−{parkingCharge.freeMinutes} min</span>
                             </div>
                           )}
                           {parkingCharge.grossCharge != null && (
                             <div className="flex justify-between text-xs text-muted-foreground" data-testid="parking-gross-charge">
-                              <span>Gross Charge</span><span>{fmt(parkingCharge.grossCharge)}</span>
+                              <span>{tp("grossCharge")}</span><Numeric>{fmt(parkingCharge.grossCharge)}</Numeric>
                             </div>
                           )}
                           {parkingCharge.validationDiscount != null && parkingCharge.validationDiscount > 0 && (
                             <div className="flex justify-between text-xs text-green-600" data-testid="parking-validation-discount">
-                              <span>Validation Discount</span><span>−{fmt(parkingCharge.validationDiscount)}</span>
+                              <span>{tp("validationDiscount")}</span><Numeric>−{fmt(parkingCharge.validationDiscount)}</Numeric>
                             </div>
                           )}
                           {parkingCharge.tax != null && parkingCharge.tax > 0 && (
                             <div className="flex justify-between text-xs text-muted-foreground" data-testid="parking-tax">
-                              <span>Tax</span><span>{fmt(parkingCharge.tax)}</span>
+                              <span>{tp("tax")}</span><Numeric>{fmt(parkingCharge.tax)}</Numeric>
                             </div>
                           )}
                           <div className="flex justify-between text-xs font-medium" data-testid="parking-final-charge">
-                            <span>Parking Total</span><span>{fmt(parkingCharge.total)}</span>
+                            <span>{tp("parkingTotal")}</span><Numeric>{fmt(parkingCharge.total)}</Numeric>
                           </div>
                         </div>
                       )}
@@ -1268,8 +1273,8 @@ export default function BillPreviewModal({
                   )}
                   <Separator />
                   <div className="flex justify-between font-bold text-base" data-testid="text-grand-total-with-packing">
-                    <span>TOTAL</span>
-                    <span>{fmt(grandTotal)}</span>
+                    <span>{tp("grandTotal").toUpperCase()}</span>
+                    <Numeric>{fmt(grandTotal)}</Numeric>
                   </div>
                   <p className="text-xs text-muted-foreground italic">{numWords(grandTotal)}</p>
                 </div>
@@ -1285,15 +1290,15 @@ export default function BillPreviewModal({
                   <p className="text-[8px] text-muted-foreground">QR</p>
                 </div>
                 <div className="text-xs text-muted-foreground">
-                  <p className="font-medium text-foreground">Quick Pay via UPI</p>
-                  <p>Customer can scan QR on payment step</p>
+                  <p className="font-medium text-foreground">{tp("quickPayViaUpi")}</p>
+                  <p>{tp("customerScanQr")}</p>
                 </div>
               </div>
 
               <div className="rounded-lg border bg-card p-3 space-y-2 no-print" data-testid="crm-customer-section">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                   <User className="h-3.5 w-3.5" />
-                  Customer Profile (CRM)
+                  {tp("customerProfile")}
                 </div>
                 {lookedUpCustomer ? (
                   <div className="space-y-2">
@@ -1319,8 +1324,8 @@ export default function BillPreviewModal({
                       if (!isBirthday && !isAnniversary) return null;
                       const icon = isBirthday ? <Cake className="h-3.5 w-3.5 shrink-0 text-amber-500" /> : <Heart className="h-3.5 w-3.5 shrink-0 text-rose-500" />;
                       const label = isBirthday
-                        ? bdDays === 0 ? "Today is this customer's birthday!" : `Birthday in ${bdDays} day${bdDays > 1 ? "s" : ""}!`
-                        : annDays === 0 ? "Today is this customer's anniversary!" : `Anniversary in ${annDays! > 1 ? `${annDays} days` : "1 day"}!`;
+                        ? bdDays === 0 ? tp("todayBirthday") : tp("birthdayInDays", { count: bdDays })
+                        : annDays === 0 ? tp("todayAnniversary") : tp("anniversaryInDays", { count: annDays });
                       const activeOffers = lookedUpCustomer.activeOffers ?? [];
                       const birthdayActiveOffer = activeOffers.find(o => /birthday/i.test(o.name)) ?? birthdayOffer;
                       const anniversaryActiveOffer = activeOffers.find(o => /anniversary/i.test(o.name)) ?? anniversaryOffer;
@@ -1340,7 +1345,7 @@ export default function BillPreviewModal({
                           {applicableOffer ? (
                             <div className="flex items-center justify-between gap-2">
                               <span className="text-[10px] text-amber-700 dark:text-amber-400 truncate">
-                                Offer: {applicableOffer.name} ({applicableOffer.type === "percentage" ? `${applicableOffer.value}% off` : fmt(Number(applicableOffer.value))} off)
+                                {tp("offer")}: {applicableOffer.name} ({applicableOffer.type === "percentage" ? `${applicableOffer.value}% ${tp("off")}` : fmt(Number(applicableOffer.value))} {tp("off")})
                               </span>
                               <Button
                                 size="sm"
@@ -1348,15 +1353,15 @@ export default function BillPreviewModal({
                                 className="h-5 text-[10px] px-2 shrink-0 bg-amber-500 hover:bg-amber-600 text-white border-0"
                                 onClick={() => {
                                   setTierDiscountAmount(occasionOfferApplied ? 0 : offerDiscount);
-                                  toast({ title: occasionOfferApplied ? "Offer removed" : isBirthday ? "Birthday offer applied" : "Anniversary offer applied", description: occasionOfferApplied ? "Discount removed" : `"${applicableOffer.name}" applied to this bill` });
+                                  toast({ title: occasionOfferApplied ? tp("offerRemoved") : isBirthday ? tp("birthdayOfferApplied") : tp("anniversaryOfferApplied"), description: occasionOfferApplied ? tp("discountRemoved") : `"${applicableOffer.name}" ${tp("appliedToThisBill")}` });
                                 }}
                                 data-testid="button-crm-apply-occasion-offer"
                               >
-                                {occasionOfferApplied ? "Remove" : "Apply Offer"}
+                                {occasionOfferApplied ? tp("remove") : tp("applyOffer")}
                               </Button>
                             </div>
                           ) : (
-                            <span className="text-[10px] text-amber-600 dark:text-amber-500">No birthday/anniversary offer configured — consider applying a manual discount</span>
+                            <span className="text-[10px] text-amber-600 dark:text-amber-500">{tp("noOccasionOffer")}</span>
                           )}
                         </div>
                       );
@@ -1372,14 +1377,10 @@ export default function BillPreviewModal({
                             </Badge>
                           )}
                           <span className="text-[10px] text-muted-foreground" data-testid="crm-visit-count">
-                            {(() => {
-                              const n = (lookedUpCustomer.visitCount ?? 0) + 1;
-                              const sfx = n === 11 || n === 12 || n === 13 ? "th" : n % 10 === 1 ? "st" : n % 10 === 2 ? "nd" : n % 10 === 3 ? "rd" : "th";
-                              return `${n}${sfx} visit`;
-                            })()}
+                            {tp("visitNumber", { n: (lookedUpCustomer.visitCount ?? 0) + 1 })}
                           </span>
                           <span className="text-[10px] text-muted-foreground" data-testid="crm-total-spent">
-                            {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0"))} lifetime
+                            {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0"))} {tp("lifetime").toLowerCase()}
                           </span>
                         </div>
                         {lookedUpCustomer.loyaltyTier && (() => {
@@ -1397,7 +1398,7 @@ export default function BillPreviewModal({
                           return (
                             <div className="flex items-center gap-2 mt-0.5" data-testid="crm-tier-benefit-row">
                               <p className="text-[10px] text-primary/70 flex-1" data-testid="crm-tier-benefit">
-                                {tierLabel} — {pct}% loyalty discount applicable ({fmt(discountValue)} off)
+                                {tierLabel} — {pct}% {tp("loyaltyDiscountApplicable")} ({fmt(discountValue)} {tp("off")})
                               </p>
                               <Button
                                 size="sm"
@@ -1405,11 +1406,11 @@ export default function BillPreviewModal({
                                 className="h-5 text-[10px] px-2 shrink-0"
                                 onClick={() => {
                                   setTierDiscountAmount(alreadyApplied ? 0 : discountValue);
-                                  toast({ title: alreadyApplied ? "Tier discount removed" : "Tier discount applied", description: alreadyApplied ? "Discount removed from bill" : `${pct}% ${tierLabel} discount applied` });
+                                  toast({ title: alreadyApplied ? tp("tierDiscountRemoved") : tp("tierDiscountApplied"), description: alreadyApplied ? tp("discountRemoved") : `${pct}% ${tierLabel} ${tp("discountApplied").toLowerCase()}` });
                                 }}
                                 data-testid="button-crm-apply-tier-offer"
                               >
-                                {alreadyApplied ? "Remove" : "Apply Offer"}
+                                {alreadyApplied ? tp("remove") : tp("applyOffer")}
                               </Button>
                             </div>
                           );
@@ -1423,7 +1424,7 @@ export default function BillPreviewModal({
                         )}
                       </div>
                       <Button size="sm" variant="ghost" className="h-6 text-xs shrink-0" onClick={() => { setLookedUpCustomer(null); setCrmPhone(""); setCrmQuickNote(""); setTierDiscountAmount(0); }}>
-                        Change
+                        {tp("change")}
                       </Button>
                     </div>
                     {lookedUpCustomer.notes && (
@@ -1433,11 +1434,11 @@ export default function BillPreviewModal({
                     )}
                     <div className="space-y-1" data-testid="crm-quick-note-section">
                       <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-                        <StickyNote className="h-3 w-3" /> Add Visit Note
+                        <StickyNote className="h-3 w-3" /> {tp("addVisitNote")}
                       </p>
                       <div className="flex gap-1.5">
                         <Textarea
-                          placeholder="Note about this visit (appended with timestamp)..."
+                          placeholder={tp("visitNotePlaceholder")}
                           value={crmQuickNote}
                           onChange={e => setCrmQuickNote(e.target.value)}
                           rows={2}
@@ -1445,7 +1446,7 @@ export default function BillPreviewModal({
                           data-testid="input-crm-quick-note"
                         />
                         <Button size="sm" variant="outline" className="text-xs h-auto self-stretch px-2" onClick={handleCrmSaveNote} disabled={crmNoteSaving || !crmQuickNote.trim()} data-testid="button-crm-save-note">
-                          {crmNoteSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : "Save"}
+                          {crmNoteSaving ? <Loader2 className="h-3 w-3 animate-spin" /> : tp("save")}
                         </Button>
                       </div>
                     </div>
@@ -1453,7 +1454,7 @@ export default function BillPreviewModal({
                 ) : (
                   <div className="flex gap-1.5" data-testid="crm-search-area">
                     <Input
-                      placeholder="Phone number to link customer"
+                      placeholder={tp("phoneNumberToLink")}
                       value={crmPhone}
                       onChange={e => setCrmPhone(e.target.value)}
                       onKeyDown={e => e.key === "Enter" && handleCrmSearch()}
@@ -1461,7 +1462,7 @@ export default function BillPreviewModal({
                       data-testid="input-crm-phone"
                     />
                     <Button size="sm" className="h-8 text-xs" onClick={handleCrmSearch} disabled={crmSearching} data-testid="button-crm-search">
-                      {crmSearching ? <Loader2 className="h-3 w-3 animate-spin" /> : "Find"}
+                      {crmSearching ? <Loader2 className="h-3 w-3 animate-spin" /> : tp("find")}
                     </Button>
                   </div>
                 )}
@@ -1469,7 +1470,7 @@ export default function BillPreviewModal({
 
               {isGSTTenant && (
                 <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/20 p-3 no-print">
-                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 mb-2">Customer GSTIN (B2B Invoice)</p>
+                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 mb-2">{tp("customerGstinB2b")}</p>
                   <Input
                     placeholder="22AAAAA0000A1Z5 (optional)"
                     value={customerGstinInput}
@@ -1483,16 +1484,16 @@ export default function BillPreviewModal({
 
               <div className="flex gap-2 no-print">
                 <Button variant="outline" size="sm" onClick={handlePrint} className="flex-1">
-                  <Printer className="h-4 w-4 mr-1" /> Print Preview
+                  <Printer className="h-4 w-4 mr-1" /> {tp("printPreview")}
                 </Button>
                 <Button onClick={handleProceedToPayment} disabled={createBillMutation.isPending} className="flex-1" data-testid="button-proceed-payment">
-                  {createBillMutation.isPending ? "Creating bill..." : "Proceed to Payment →"}
+                  {createBillMutation.isPending ? tp("creatingBill") : tp("proceedToPayment")}
                 </Button>
               </div>
               {isManagerOrOwner && createdBill && (
                 <Button variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/40 hover:bg-destructive/10 no-print"
                   onClick={() => setStep("void")} data-testid="button-void-bill-preview">
-                  <AlertTriangle className="h-3 w-3 mr-1" /> Void Bill
+                  <AlertTriangle className="h-3 w-3 mr-1" /> {tp("voidBill")}
                 </Button>
               )}
             </div>
@@ -1501,14 +1502,14 @@ export default function BillPreviewModal({
           {step === "payment" && (
             <div className="space-y-4">
               <div className="text-center bg-primary/5 rounded-lg p-3 border border-primary/20">
-                <p className="text-sm text-muted-foreground">Amount Due</p>
-                <p className="text-3xl font-bold text-primary" data-testid="text-amount-due">{fmt(grandTotal)}</p>
+                <p className="text-sm text-muted-foreground">{tp("amountDue")}</p>
+                <Numeric className="block text-3xl font-bold text-primary" data-testid="text-amount-due">{fmt(grandTotal)}</Numeric>
                 {billNumber && <Badge variant="outline" className="mt-1 text-xs">{billNumber}</Badge>}
               </div>
 
               {tipConfig && tipConfig.tipsEnabled && tipConfig.showOnPos && tipConfig.promptStyle !== "NONE" && (
                 <div className="space-y-2" data-testid="section-tip">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Add Tip? (Optional)</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tp("addTipOptional")}</p>
                   <div className="flex gap-1.5 flex-wrap">
                     {tipConfig.promptStyle === "BUTTONS" && (
                       <>
@@ -1520,7 +1521,7 @@ export default function BillPreviewModal({
                           onClick={() => { setTipPct(0); setCustomTip(""); }}
                           data-testid="button-no-tip"
                         >
-                          No Tip
+                          {tp("noTip")}
                         </Button>
                         {(tipConfig.suggestedPercentages || [5, 10, 15]).map(pct => (
                           <Button
@@ -1531,7 +1532,7 @@ export default function BillPreviewModal({
                             onClick={() => { setTipPct(pct); setCustomTip(""); }}
                             data-testid={`button-tip-pct-${pct}`}
                           >
-                            {pct}% +{fmt(tipBasis * pct / 100)}
+                            <Numeric>{pct}% +{fmt(tipBasis * pct / 100)}</Numeric>
                           </Button>
                         ))}
                         {tipConfig.allowCustom && (
@@ -1542,7 +1543,7 @@ export default function BillPreviewModal({
                             onClick={() => { setTipPct(0); }}
                             data-testid="button-tip-custom"
                           >
-                            Custom
+                            {tp("tipCustom")}
                           </Button>
                         )}
                       </>
@@ -1556,13 +1557,13 @@ export default function BillPreviewModal({
                         onClick={() => { setTipPct(0); setCustomTip(""); }}
                         data-testid="button-no-tip"
                       >
-                        No Tip
+                        {tp("noTip")}
                       </Button>
                     )}
                   </div>
                   {(tipConfig.allowCustom || tipConfig.promptStyle === "INPUT") && (
                     <Input
-                      placeholder="Custom tip amount"
+                      placeholder={tp("tipCustom")}
                       type="number"
                       value={customTip}
                       onChange={e => { setCustomTip(e.target.value); setTipPct(0); }}
@@ -1574,7 +1575,7 @@ export default function BillPreviewModal({
                   )}
                   {tipAmount > 0 && (
                     <p className="text-xs text-muted-foreground" data-testid="text-tip-amount">
-                      Tip ({tipPct ? `${tipPct}%` : "custom"}): {fmt(tipAmount)} · <span data-testid="text-grand-total-with-tip">Grand total: {fmt(grandTotal)}</span>
+                      {tp("tipAmount")} ({tipPct ? `${tipPct}%` : tp("tipCustom").toLowerCase()}): {fmt(tipAmount)} · <span data-testid="text-grand-total-with-tip">{tp("grandTotal")}: {fmt(grandTotal)}</span>
                     </p>
                   )}
                 </div>
@@ -1586,20 +1587,20 @@ export default function BillPreviewModal({
                     {[0, 5, 10, 15].map(pct => (
                       <Button key={pct} size="sm" variant={tipPct === pct && !customTip ? "default" : "outline"}
                         className="flex-1 text-xs" onClick={() => { setTipPct(pct); setCustomTip(""); }}>
-                        {pct === 0 ? "None" : `${pct}%`}
+                        {pct === 0 ? tp("none") : `${pct}%`}
                       </Button>
                     ))}
-                    <Input placeholder="Custom" type="number" value={customTip} onChange={e => { setCustomTip(e.target.value); setTipPct(0); }}
+                    <Input placeholder={tp("custom")} type="number" value={customTip} onChange={e => { setCustomTip(e.target.value); setTipPct(0); }}
                       className="w-24 text-xs h-8" min="0" step="0.01" />
                   </div>
-                  {tipAmount > 0 && <p className="text-xs text-muted-foreground">Tips: {fmt(tipAmount)} · Grand total: {fmt(grandTotal)}</p>}
+                  {tipAmount > 0 && <p className="text-xs text-muted-foreground">{tp("tips")}: {fmt(tipAmount)} · {tp("grandTotal")}: {fmt(grandTotal)}</p>}
                 </div>
               )}
 
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Payment Method</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{tp("paymentMethod")}</p>
                 <Button variant={isSplit ? "default" : "outline"} size="sm" className="text-xs" onClick={() => { setIsSplit(!isSplit); if (!isSplit && splitRows.length === 0) { setSplitRows([{ id: "1", method: "CASH", amount: "", referenceNo: "" }, { id: "2", method: "CARD", amount: "", referenceNo: "" }]); } }}>
-                  <Plus className="h-3 w-3 mr-1" /> Split Payment
+                  <Plus className="h-3 w-3 mr-1" /> {tp("splitPayment")}
                 </Button>
               </div>
 
@@ -1624,7 +1625,7 @@ export default function BillPreviewModal({
                         type="number" value={cashTendered} onChange={e => setCashTendered(e.target.value)} min="0" step="0.01" />
                       {cashTendered && parseFloat(cashTendered) >= grandTotal && (
                         <div className="flex justify-between bg-green-50 dark:bg-green-950/30 rounded p-2 text-sm">
-                          <span className="text-green-700 dark:text-green-300 font-medium">Change due:</span>
+                          <span className="text-green-700 dark:text-green-300 font-medium">{tp("changeDue")}</span>
                           <span className="text-green-700 dark:text-green-300 font-bold" data-testid="text-change-due">
                             {fmt(parseFloat(cashTendered) - grandTotal)}
                           </span>
@@ -1638,8 +1639,8 @@ export default function BillPreviewModal({
                         <div className="rounded-lg border bg-blue-50/50 dark:bg-blue-950/20 border-blue-200 dark:border-blue-800 p-3 space-y-3" data-testid="razorpay-card-section">
                           {!rzpLinkId ? (
                             <div className="text-center space-y-2">
-                              <p className="text-sm font-medium text-blue-700 dark:text-blue-300">Gateway Payment — {fmt(grandTotal)}</p>
-                              <p className="text-xs text-muted-foreground">Create a Razorpay payment link for the customer to pay online</p>
+                              <p className="text-sm font-medium text-blue-700 dark:text-blue-300">{tp("gatewayPayment")} — {fmt(grandTotal)}</p>
+                              <p className="text-xs text-muted-foreground">{tp("createGatewayLink")}</p>
                               <Button
                                 size="sm"
                                 className="text-xs"
@@ -1648,7 +1649,7 @@ export default function BillPreviewModal({
                                 data-testid="button-razorpay-initiate-card"
                               >
                                 {rzpInitiating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <QrCode className="h-3 w-3 mr-1" />}
-                                {rzpInitiating ? "Generating…" : "Generate Payment Link"}
+                                {rzpInitiating ? tp("generating") : tp("generatePaymentLink")}
                               </Button>
                             </div>
                           ) : (
@@ -1662,13 +1663,13 @@ export default function BillPreviewModal({
                               )}
                               <div className="flex items-center justify-center gap-1.5">
                                 <Loader2 className="h-3 w-3 animate-spin text-blue-600" />
-                                <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">Waiting for payment…</p>
+                                <p className="text-xs text-blue-600 dark:text-blue-400 font-medium">{tp("waitingForPayment")}</p>
                               </div>
                               <a href={rzpShortUrl!} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline flex items-center justify-center gap-1" data-testid="razorpay-payment-link">
-                                <ExternalLink className="h-3 w-3" /> Open payment link
+                                <ExternalLink className="h-3 w-3" /> {tp("openPaymentLink")}
                               </a>
                               <Button size="sm" variant="ghost" className="text-xs text-muted-foreground" onClick={() => { setRzpLinkId(null); setRzpShortUrl(null); setRzpPolling(false); }}>
-                                Cancel link
+                                {tp("cancelLink")}
                               </Button>
                             </div>
                           )}
@@ -1676,8 +1677,8 @@ export default function BillPreviewModal({
                       )}
                       {(!razorpayAvailableForPOS || (rzpAttempted && !rzpLinkId)) && (
                         <div className="grid grid-cols-2 gap-2">
-                          <Input placeholder="Last 4 digits" maxLength={4} value={cardLast4} onChange={e => setCardLast4(e.target.value)} data-testid="input-card-last4" />
-                          <Input placeholder="Reference / Approval code" value={cardRef} onChange={e => setCardRef(e.target.value)} data-testid="input-card-ref" />
+                          <Input placeholder={tp("last4Digits")} maxLength={4} value={cardLast4} onChange={e => setCardLast4(e.target.value)} data-testid="input-card-last4" />
+                          <Input placeholder={tp("referenceApprovalCode")} value={cardRef} onChange={e => setCardRef(e.target.value)} data-testid="input-card-ref" />
                         </div>
                       )}
                     </div>
@@ -1692,7 +1693,7 @@ export default function BillPreviewModal({
                                 <QrCode className="h-8 w-8 text-primary/40" />
                                 <p className="text-[9px] text-muted-foreground mt-0.5">QR Code</p>
                               </div>
-                              <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
+                              <p className="text-sm font-medium">{tp("upiPayment")} — {fmt(grandTotal)}</p>
                               <Button
                                 size="sm"
                                 className="text-xs"
@@ -1701,7 +1702,7 @@ export default function BillPreviewModal({
                                 data-testid="button-razorpay-initiate-upi"
                               >
                                 {rzpInitiating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <QrCode className="h-3 w-3 mr-1" />}
-                                {rzpInitiating ? "Generating QR…" : "Generate UPI QR"}
+                                {rzpInitiating ? tp("generatingQr") : tp("generateUpiQr")}
                               </Button>
                             </>
                           ) : (
@@ -1713,25 +1714,25 @@ export default function BillPreviewModal({
                                   <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                                 </div>
                               )}
-                              <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
+                              <p className="text-sm font-medium">{tp("upiPayment")} — {fmt(grandTotal)}</p>
                               <div className="flex items-center justify-center gap-1.5">
                                 <Loader2 className="h-3 w-3 animate-spin text-primary" />
-                                <p className="text-xs text-primary font-medium">Waiting for payment…</p>
+                                <p className="text-xs text-primary font-medium">{tp("waitingForPayment")}</p>
                               </div>
                               <a href={rzpShortUrl!} target="_blank" rel="noreferrer" className="text-xs text-blue-600 underline flex items-center justify-center gap-1" data-testid="razorpay-upi-link">
-                                <ExternalLink className="h-3 w-3" /> Open payment link
+                                <ExternalLink className="h-3 w-3" /> {tp("openPaymentLink")}
                               </a>
                               <Button size="sm" variant="ghost" className="text-xs text-muted-foreground" onClick={() => { setRzpLinkId(null); setRzpShortUrl(null); setRzpPolling(false); }}>
-                                Cancel link
+                                {tp("cancelLink")}
                               </Button>
                             </>
                           )}
                           {rzpAttempted && !rzpLinkId && (
                             <div className="pt-1 border-t">
-                              <p className="text-xs text-muted-foreground mb-2">Gateway link cancelled — fallback:</p>
+                              <p className="text-xs text-muted-foreground mb-2">{tp("gatewayLinkCancelled")}</p>
                               <div className="flex gap-2 justify-center">
                                 <Button size="sm" variant={upiMarkedPaid ? "secondary" : "outline"} className="text-xs" onClick={() => setUpiMarkedPaid(!upiMarkedPaid)} data-testid="button-upi-mark-paid">
-                                  {upiMarkedPaid ? "✓ UPI Received" : "Mark as Paid"}
+                                  {upiMarkedPaid ? tp("upiReceived") : tp("markAsPaid")}
                                 </Button>
                               </div>
                             </div>
@@ -1748,14 +1749,14 @@ export default function BillPreviewModal({
                             <p className="text-[9px] text-muted-foreground mt-0.5">QR Code</p>
                           </div>
                           <Smartphone className="h-5 w-5 mx-auto text-primary" />
-                          <p className="text-sm font-medium">UPI Payment — {fmt(grandTotal)}</p>
-                          <p className="text-xs text-muted-foreground">Show the QR code above or share payment link with the customer, then confirm once received.</p>
+                          <p className="text-sm font-medium">{tp("upiPayment")} — {fmt(grandTotal)}</p>
+                          <p className="text-xs text-muted-foreground">{tp("upiShowQr")}</p>
                           <div className="flex gap-2 justify-center">
                             <Button size="sm" variant={upiMarkedPaid ? "secondary" : "default"} className="text-xs" onClick={() => setUpiMarkedPaid(true)} data-testid="button-upi-mark-paid">
-                              {upiMarkedPaid ? "✓ UPI Received" : "Mark as Paid"}
+                              {upiMarkedPaid ? tp("upiReceived") : tp("markAsPaid")}
                             </Button>
                             {upiMarkedPaid && (
-                              <Button size="sm" variant="ghost" className="text-xs" onClick={() => setUpiMarkedPaid(false)}>Undo</Button>
+                              <Button size="sm" variant="ghost" className="text-xs" onClick={() => setUpiMarkedPaid(false)}>{tp("undo")}</Button>
                             )}
                           </div>
                         </>
@@ -1766,19 +1767,19 @@ export default function BillPreviewModal({
                     <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 space-y-3">
                       <div className="flex items-center gap-2">
                         <Gift className="h-4 w-4 text-amber-600" />
-                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Customer Loyalty Lookup</p>
+                        <p className="text-sm font-medium text-amber-700 dark:text-amber-300">{tp("customerLoyaltyLookup")}</p>
                       </div>
                       {lookedUpCustomer ? (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between bg-white dark:bg-amber-900/40 rounded p-2 border border-amber-200 dark:border-amber-700">
                             <div>
                               <p className="text-sm font-semibold">{lookedUpCustomer.name}</p>
-                              <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts available · {fmt(lookedUpCustomer.loyaltyPoints * 0.01)} max redeemable</p>
+                              <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts {tp("available")} · {fmt(lookedUpCustomer.loyaltyPoints * 0.01)} max</p>
                             </div>
-                            <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setLookedUpCustomer(null); setLoyaltyPointsToRedeem(0); }}>Change</Button>
+                            <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setLookedUpCustomer(null); setLoyaltyPointsToRedeem(0); }}>{tp("change")}</Button>
                           </div>
                           <div className="space-y-1">
-                            <p className="text-xs font-medium">Points to Redeem (100 pts = 1 {currency})</p>
+                            <p className="text-xs font-medium">{tp("pointsToRedeem", { currency })}</p>
                             <div className="flex gap-2">
                               <Input
                                 type="number"
@@ -1792,22 +1793,22 @@ export default function BillPreviewModal({
                               />
                               <Button size="sm" variant="outline" className="text-xs h-8 whitespace-nowrap"
                                 onClick={() => setLoyaltyPointsToRedeem(Math.min(lookedUpCustomer.loyaltyPoints, Math.floor(Math.max(0, total - tierDiscountAmount + tipAmount) * 100)))}>
-                                Use All
+                                {tp("useAll")}
                               </Button>
-                              <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => setLoyaltyPointsToRedeem(0)}>Clear</Button>
+                              <Button size="sm" variant="ghost" className="text-xs h-8" onClick={() => setLoyaltyPointsToRedeem(0)}>{tp("clear")}</Button>
                             </div>
                             {loyaltyPointsToRedeem > 0 && (
                               <p className="text-xs text-green-700 dark:text-green-400 font-medium">
-                                -{fmt(loyaltyRedemptionValue)} discount applied · New total: {fmt(grandTotal)}
+                                -{fmt(loyaltyRedemptionValue)} {tp("discountRemoved").toLowerCase()} · {tp("grandTotal")}: {fmt(grandTotal)}
                               </p>
                             )}
                           </div>
-                          <p className="text-xs text-amber-600 dark:text-amber-400">Points earned this visit: +{Math.floor((total + tipAmount) / 10)} pts (1 pt per 10 {currency} spent).</p>
+                          <p className="text-xs text-amber-600 dark:text-amber-400">{tp("pointsEarned", { pts: Math.floor((total + tipAmount) / 10), currency })}</p>
                         </div>
                       ) : (
                         <div className="flex gap-1.5">
                           <Input
-                            placeholder="Customer phone number"
+                            placeholder={tp("customerPhoneNumber")}
                             value={loyaltySearchPhone}
                             onChange={e => setLoyaltySearchPhone(e.target.value)}
                             onKeyDown={e => e.key === "Enter" && handleLoyaltySearch()}
@@ -1815,7 +1816,7 @@ export default function BillPreviewModal({
                             data-testid="input-loyalty-phone"
                           />
                           <Button size="sm" className="h-8 text-xs" onClick={handleLoyaltySearch} disabled={loyaltySearching} data-testid="button-loyalty-search">
-                            {loyaltySearching ? "..." : "Find"}
+                            {loyaltySearching ? "..." : tp("find")}
                           </Button>
                         </div>
                       )}
@@ -1824,19 +1825,19 @@ export default function BillPreviewModal({
                   {activeMethod === "LOYALTY" && !lookedUpCustomer && (
                     <div className="flex items-center gap-1.5 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:text-amber-400" data-testid="loyalty-no-customer-warning">
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                      Search and link a customer above before confirming a Loyalty payment.
+                      {tp("linkCustomerForLoyalty")}
                     </div>
                   )}
                   {activeMethod === "LOYALTY" && !!lookedUpCustomer && loyaltyPointsToRedeem === 0 && grandTotal > 0.01 && (
                     <div className="flex items-center gap-1.5 rounded bg-amber-50 dark:bg-amber-950/30 border border-amber-200 px-3 py-2 text-xs text-amber-700 dark:text-amber-400" data-testid="loyalty-points-not-set-warning">
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                      Set the number of points to redeem above, or use Split payment for mixed methods.
+                      {tp("setPointsToRedeem")}
                     </div>
                   )}
                   {activeMethod === "LOYALTY" && !!lookedUpCustomer && loyaltyPointsToRedeem > 0 && grandTotal > 0.01 && (
                     <div className="flex items-center gap-1.5 rounded bg-red-50 dark:bg-red-950/30 border border-red-200 px-3 py-2 text-xs text-red-700 dark:text-red-400" data-testid="loyalty-insufficient-points-warning">
                       <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-                      Loyalty covers {fmt(loyaltyRedemptionValue)} ({loyaltyPointsToRedeem} pts) but cannot fully cover the remaining {fmt(grandTotal)}. Use Split payment for mixed-method settlement.
+                      {tp("loyaltyInsufficientCoverage", { value: fmt(loyaltyRedemptionValue), pts: loyaltyPointsToRedeem, remaining: fmt(grandTotal) })}
                     </div>
                   )}
                 </div>
@@ -1850,10 +1851,10 @@ export default function BillPreviewModal({
                           {["CASH", "CARD", "UPI", "LOYALTY"].map(m => <SelectItem key={m} value={m} className="text-xs">{m}</SelectItem>)}
                         </SelectContent>
                       </Select>
-                      <Input placeholder="Amount" type="number" value={row.amount}
+                      <Input placeholder={tp("amount")} type="number" value={row.amount}
                         onChange={e => updateSplitRow(row.id, "amount", e.target.value)} className="h-8 text-xs" min="0" step="0.01" />
                       {row.method === "CARD" && (
-                        <Input placeholder="Ref" value={row.referenceNo}
+                        <Input placeholder={tp("ref")} value={row.referenceNo}
                           onChange={e => updateSplitRow(row.id, "referenceNo", e.target.value)} className="h-8 text-xs w-20" />
                       )}
                       <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeSplitRow(row.id)} aria-label="Remove payment row">
@@ -1862,10 +1863,10 @@ export default function BillPreviewModal({
                     </div>
                   ))}
                   <Button variant="outline" size="sm" className="w-full text-xs" onClick={addSplitRow}>
-                    <Plus className="h-3 w-3 mr-1" /> Add Payment Method
+                    <Plus className="h-3 w-3 mr-1" /> {tp("addPaymentMethod")}
                   </Button>
                   <div className={`flex justify-between text-sm font-medium ${splitRemaining > 0.01 ? "text-amber-600" : "text-green-600"}`}>
-                    <span>{splitRemaining > 0.01 ? "Remaining:" : "Balance:"}</span>
+                    <span>{splitRemaining > 0.01 ? tp("remaining") : tp("balance")}:</span>
                     <span>{fmt(Math.abs(splitRemaining))}{splitRemaining > 0.01 ? "" : " ✓"}</span>
                   </div>
                 </div>
@@ -1875,21 +1876,21 @@ export default function BillPreviewModal({
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800 space-y-2" data-testid="split-loyalty-customer-section">
                   <div className="flex items-center gap-2">
                     <Gift className="h-4 w-4 text-amber-600" />
-                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">Loyalty Customer</p>
+                    <p className="text-sm font-medium text-amber-700 dark:text-amber-300">{tp("loyaltyCustomer")}</p>
                   </div>
                   {lookedUpCustomer ? (
                     <div className="flex items-center justify-between bg-white dark:bg-amber-900/40 rounded p-2 border border-amber-200 dark:border-amber-700">
                       <div>
                         <p className="text-sm font-semibold">{lookedUpCustomer.name}</p>
-                        <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts available · {fmt(lookedUpCustomer.loyaltyPoints * 0.01)} max</p>
+                        <p className="text-xs text-muted-foreground">{lookedUpCustomer.loyaltyPoints} pts {tp("available")} · {fmt(lookedUpCustomer.loyaltyPoints * 0.01)} max</p>
                       </div>
-                      <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setLookedUpCustomer(null); setLoyaltyPointsToRedeem(0); }}>Change</Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-xs" onClick={() => { setLookedUpCustomer(null); setLoyaltyPointsToRedeem(0); }}>{tp("change")}</Button>
                     </div>
                   ) : (
                     <div className="space-y-1.5">
                       <div className="flex gap-1.5">
                         <Input
-                          placeholder="Customer phone number"
+                          placeholder={tp("customerPhoneNumber")}
                           value={loyaltySearchPhone}
                           onChange={e => setLoyaltySearchPhone(e.target.value)}
                           onKeyDown={e => e.key === "Enter" && handleLoyaltySearch()}
@@ -1897,11 +1898,11 @@ export default function BillPreviewModal({
                           data-testid="input-split-loyalty-phone"
                         />
                         <Button size="sm" className="h-8 text-xs" onClick={handleLoyaltySearch} disabled={loyaltySearching} data-testid="button-split-loyalty-search">
-                          {loyaltySearching ? "..." : "Find"}
+                          {loyaltySearching ? "..." : tp("find")}
                         </Button>
                       </div>
                       <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="split-loyalty-no-customer-warning">
-                        Link a customer to process the Loyalty payment row.
+                        {tp("linkCustomerForLoyalty")}
                       </p>
                     </div>
                   )}
@@ -1910,28 +1911,28 @@ export default function BillPreviewModal({
 
               {billVoided ? (
                 <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-center text-sm text-destructive font-medium">
-                  <AlertTriangle className="h-4 w-4 inline mr-1" /> Bill has been voided
+                  <AlertTriangle className="h-4 w-4 inline mr-1" /> {tp("billHasBeenVoided")}
                 </div>
               ) : (
                 <div className="space-y-2">
                   {/* PR-001/PR-011: Gateway-down fallback — offer manual pending record when payment gateway is unreachable */}
                   {gatewayDown && createdBill && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm space-y-2">
-                      <p className="font-medium text-amber-800">Payment system temporarily unavailable</p>
-                      <p className="text-amber-700 text-xs">Please record this as a manual payment and process it later. The gateway failure has been logged for admin review.</p>
+                      <p className="font-medium text-amber-800">{tp("paymentSystemUnavailable")}</p>
+                      <p className="text-amber-700 text-xs">{tp("recordManualPaymentHint")}</p>
                       <Button size="sm" variant="outline" className="w-full border-amber-400 text-amber-800 hover:bg-amber-100" data-testid="button-record-manual-payment"
                         disabled={recordManualPendingMutation.isPending}
                         onClick={() => recordManualPendingMutation.mutate()}>
-                        {recordManualPendingMutation.isPending ? "Recording…" : "Record as Manual Payment (Gateway Pending)"}
+                        {recordManualPendingMutation.isPending ? tp("recording") : tp("recordAsManualPayment")}
                       </Button>
                       {gatewayRetryCountdown !== null ? (
                         <Button size="sm" variant="ghost" className="w-full text-xs text-amber-700" disabled data-testid="button-retry-payment-countdown">
-                          Retry available in {gatewayRetryCountdown}s
+                          {tp("retryAvailableIn", { seconds: gatewayRetryCountdown })}
                         </Button>
                       ) : (
                         <Button size="sm" variant="ghost" className="w-full text-xs text-amber-700 hover:text-amber-900" data-testid="button-retry-payment"
                           onClick={() => { setGatewayDown(false); payBillMutation.mutate(); }}>
-                          Retry payment
+                          {tp("retryPayment")}
                         </Button>
                       )}
                     </div>
@@ -1955,17 +1956,17 @@ export default function BillPreviewModal({
                     }
                     onClick={() => payBillMutation.mutate()}>
                     {payBillMutation.isPending
-                      ? "Processing..."
+                      ? tp("processing")
                       : rzpPolling
-                      ? "Awaiting payment verification…"
+                      ? tp("awaitingPaymentVerification")
                       : !isSplit && (activeMethod === "CARD" || activeMethod === "UPI") && !!razorpayAvailableForPOS && !rzpAttempted
-                      ? "Initiate Gateway Payment First"
-                      : `Confirm Payment · ${fmt(grandTotal)}`}
+                      ? tp("initiateGatewayFirst")
+                      : `${tp("confirmPayment")} · ${fmt(grandTotal)}`}
                   </Button>
                   {isManagerOrOwner && createdBill && (
                     <Button variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/40 hover:bg-destructive/10"
                       onClick={() => setStep("void")} data-testid="button-void-bill">
-                      <AlertTriangle className="h-3 w-3 mr-1" /> Void Bill
+                      <AlertTriangle className="h-3 w-3 mr-1" /> {tp("voidBill")}
                     </Button>
                   )}
                 </div>
@@ -1977,7 +1978,7 @@ export default function BillPreviewModal({
             <div className="space-y-4">
               <div className="text-center">
                 <CheckCircle2 className="h-12 w-12 text-green-500 mx-auto mb-2" />
-                <h3 className="font-bold text-lg">Payment Successful!</h3>
+                <h3 className="font-bold text-lg">{tp("paymentSuccessful")}</h3>
                 <p className="text-muted-foreground text-sm">{billNumber}</p>
                 {isGSTTenant && createdBill?.invoiceNumber && (
                   <p className="text-xs font-mono text-orange-700 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/30 rounded px-2 py-0.5 inline-block mt-1">
@@ -1987,12 +1988,12 @@ export default function BillPreviewModal({
                 <p className="font-bold text-xl text-primary mt-1">{fmt(grandTotal)}</p>
                 {createdBill?.paymentStatus === "partially_refunded" && (
                   <Badge variant="outline" className="mt-1 text-orange-600 border-orange-400 bg-orange-50 dark:bg-orange-950/30" data-testid="badge-partially-refunded">
-                    Partially Refunded
+                    {tp("partiallyRefunded")}
                   </Badge>
                 )}
                 {createdBill?.paymentStatus === "refunded" && (
                   <Badge variant="outline" className="mt-1 text-red-600 border-red-400 bg-red-50 dark:bg-red-950/30" data-testid="badge-refunded">
-                    Fully Refunded
+                    {tp("fullyRefunded")}
                   </Badge>
                 )}
               </div>
@@ -2009,25 +2010,25 @@ export default function BillPreviewModal({
                     )}
                   </div>
                   <p className="text-xs text-muted-foreground" data-testid="crm-receipt-points-earned">
-                    +{Math.floor(grandTotal / 10)} loyalty points earned this visit
+                    +{Math.floor(grandTotal / 10)} {tp("loyaltyPointsEarned")}
                   </p>
                   <p className="text-xs text-muted-foreground" data-testid="crm-receipt-visit">
-                    Visit #{(lookedUpCustomer.visitCount ?? 0) + 1} · Lifetime: {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0") + grandTotal)}
+                    {tp("visitNumber", { n: (lookedUpCustomer.visitCount ?? 0) + 1 })} · {tp("lifetime")}: {fmt(parseFloat(lookedUpCustomer.totalSpent ?? "0") + grandTotal)}
                   </p>
                 </div>
               )}
 
               {isGSTTenant && createdBill && taxAmount > 0 && (
                 <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/40 dark:bg-orange-950/20 p-3 text-sm space-y-1">
-                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide mb-2">Tax Summary</p>
+                  <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide mb-2">{tp("taxSummary")}</p>
                   {outletTaxRegNumber && (
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Restaurant {jurisdiction.taxRegLabel}</span><span className="font-mono">{outletTaxRegNumber}</span>
+                      <span>{tp("restaurant")} {jurisdiction.taxRegLabel}</span><span className="font-mono">{outletTaxRegNumber}</span>
                     </div>
                   )}
                   {createdBill.customerGstin && (
                     <div className="flex justify-between text-xs text-muted-foreground">
-                      <span>Customer GSTIN</span><span className="font-mono">{createdBill.customerGstin}</span>
+                      <span>{tp("customerGstin")}</span><span className="font-mono">{createdBill.customerGstin}</span>
                     </div>
                   )}
                   <div className="flex justify-between">
@@ -2057,7 +2058,7 @@ export default function BillPreviewModal({
                   }
                   handlePrint();
                 }} data-testid="button-print-receipt">
-                  <Printer className="h-4 w-4 mr-2" /> Print
+                  <Printer className="h-4 w-4 mr-2" /> {tp("print")}
                 </Button>
                 <Button variant="outline" onClick={async () => {
                   if (createdBill?.id) {
@@ -2074,29 +2075,29 @@ export default function BillPreviewModal({
                   }
                   document.title = `Receipt-${billNumber}`; handlePrint();
                 }} data-testid="button-download-pdf">
-                  <FileDown className="h-4 w-4 mr-2" /> Download PDF
+                  <FileDown className="h-4 w-4 mr-2" /> {tp("downloadPdf")}
                 </Button>
                 <Button variant="outline" onClick={handleWhatsApp} data-testid="button-whatsapp-receipt">
                   <Share2 className="h-4 w-4 mr-2" /> WhatsApp
                 </Button>
                 <Button variant="outline" onClick={handleEmailReceipt} data-testid="button-email-receipt">
-                  <Mail className="h-4 w-4 mr-2" /> Email
+                  <Mail className="h-4 w-4 mr-2" /> {tp("email")}
                 </Button>
                 {isManagerOrOwner && createdBill && (
                   <Button variant="outline" onClick={() => { setStep("refund"); setRefundStep(true); }}
                     className="text-orange-600 border-orange-300 hover:bg-orange-50 col-span-2" data-testid="button-refund">
-                    <RotateCcw className="h-4 w-4 mr-2" /> Issue Refund
+                    <RotateCcw className="h-4 w-4 mr-2" /> {tp("issueRefund")}
                   </Button>
                 )}
               </div>
               {isManagerOrOwner && createdBill && (
                 <Button variant="outline" size="sm" className="w-full text-xs text-destructive border-destructive/40 hover:bg-destructive/10 no-print"
                   onClick={() => setStep("void")} data-testid="button-void-paid-bill">
-                  <AlertTriangle className="h-3 w-3 mr-1" /> Void Paid Bill
+                  <AlertTriangle className="h-3 w-3 mr-1" /> {tp("voidPaidBill")}
                 </Button>
               )}
               <Button className="w-full" size="lg" onClick={handleClose} data-testid="button-new-order">
-                New Order
+                {tp("newOrder")}
               </Button>
             </div>
           )}
@@ -2105,27 +2106,27 @@ export default function BillPreviewModal({
             <div className="space-y-4">
               <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3">
                 <p className="text-sm font-medium text-destructive flex items-center gap-1.5">
-                  <AlertTriangle className="h-4 w-4" /> Warning — Irreversible Action
+                  <AlertTriangle className="h-4 w-4" /> {tp("warningIrreversible")}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  This will void bill <strong>{billNumber}</strong>, reverse any stock deductions, and free the table.
+                  {tp("voidBillWarning", { billNumber })}
                 </p>
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-medium">Reason <span className="text-destructive">*</span></p>
+                <p className="text-xs font-medium">{tp("reason")} <span className="text-destructive">*</span></p>
                 <Select value={voidReason} onValueChange={setVoidReason}>
                   <SelectTrigger data-testid="select-void-reason">
-                    <SelectValue placeholder="Select a reason..." />
+                    <SelectValue placeholder={tp("selectReason")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {VOID_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    {VOID_REASON_KEYS.map(r => <SelectItem key={r} value={r}>{tp(r)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-medium">Additional notes (optional)</p>
+                <p className="text-xs font-medium">{tp("additionalNotes")}</p>
                 <Textarea
-                  placeholder="Describe what happened..."
+                  placeholder={tp("describeWhatHappened")}
                   value={voidNotes}
                   onChange={e => setVoidNotes(e.target.value)}
                   rows={2}
@@ -2134,11 +2135,11 @@ export default function BillPreviewModal({
               </div>
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => setStep(createdBill?.paymentStatus === "paid" ? "receipt" : "payment")}>
-                  Cancel
+                  {tp("cancel")}
                 </Button>
                 <Button variant="destructive" className="flex-1" disabled={!voidReason || voidBillMutation.isPending}
                   onClick={() => voidBillMutation.mutate()} data-testid="button-confirm-void">
-                  {voidBillMutation.isPending ? "Voiding..." : "Confirm Void"}
+                  {voidBillMutation.isPending ? tp("voiding") : tp("confirmVoid")}
                 </Button>
               </div>
             </div>
@@ -2147,7 +2148,7 @@ export default function BillPreviewModal({
           {step === "refund" && (
             <div className="space-y-4">
               <div className="text-sm text-muted-foreground bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-800 rounded-lg p-3">
-                Refund for bill <strong>{billNumber}</strong> · Total paid: {fmt(grandTotal)}
+                {tp("refundForBill", { billNumber })} · {tp("totalPaid")}: {fmt(grandTotal)}
               </div>
 
               {/* Mode toggle */}
@@ -2155,21 +2156,21 @@ export default function BillPreviewModal({
                 <Button size="sm" variant={refundMode === "items" ? "default" : "outline"}
                   className="flex-1 text-xs" onClick={() => setRefundMode("items")}
                   data-testid="button-refund-mode-items">
-                  Select Items
+                  {tp("selectItems")}
                 </Button>
                 <Button size="sm" variant={refundMode === "manual" ? "default" : "outline"}
                   className="flex-1 text-xs" onClick={() => {
                     setRefundMode("manual");
                     setRefundedItemIds([]);
                   }} data-testid="button-refund-mode-manual">
-                  Manual Amount
+                  {tp("manualAmount")}
                 </Button>
               </div>
 
               {refundMode === "items" && refundItems.length > 0 && (
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium">Select items to refund</p>
+                    <p className="text-xs font-medium">{tp("selectItemsToRefund")}</p>
                     <Button size="sm" variant="ghost" className="text-xs h-6 px-2"
                       data-testid="button-refund-select-all"
                       onClick={() => {
@@ -2183,7 +2184,7 @@ export default function BillPreviewModal({
                           setRefundAmount(total.toFixed(2));
                         }
                       }}>
-                      {refundedItemIds.length === refundItems.length ? "Deselect All" : "Select All"}
+                      {refundedItemIds.length === refundItems.length ? tp("deselectAll") : tp("selectAll")}
                     </Button>
                   </div>
                   <div className="border rounded-lg divide-y max-h-48 overflow-y-auto">
@@ -2220,7 +2221,7 @@ export default function BillPreviewModal({
                   {refundedItemIds.length > 0 && (
                     <div className="text-xs text-muted-foreground space-y-0.5" data-testid="text-refund-items-subtotal">
                       <p>
-                        {refundedItemIds.length} item(s) selected · Subtotal: {fmt(parseFloat(refundAmount || "0"))}
+                        {tp("itemsSelected", { count: refundedItemIds.length })} · {tp("subtotal")}: {fmt(parseFloat(refundAmount || "0"))}
                       </p>
                       <p className="italic truncate">
                         {refundItems.filter(item => refundedItemIds.includes(item.id)).map(item => `${item.quantity}× ${item.name}`).join(", ")}
@@ -2231,7 +2232,7 @@ export default function BillPreviewModal({
               )}
 
               <div className="space-y-1">
-                <p className="text-xs font-medium">Refund Amount <span className="text-destructive">*</span></p>
+                <p className="text-xs font-medium">{tp("refundAmount")} <span className="text-destructive">*</span></p>
                 <div className="flex gap-2">
                   <Input
                     type="number"
@@ -2249,27 +2250,27 @@ export default function BillPreviewModal({
                       setRefundAmount(grandTotal.toFixed(2));
                       setRefundedItemIds(refundItems.map(item => item.id));
                     }}>
-                    Full ({fmt(grandTotal)})
+                    {tp("full")} ({fmt(grandTotal)})
                   </Button>
                 </div>
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-medium">Reason <span className="text-destructive">*</span></p>
+                <p className="text-xs font-medium">{tp("reason")} <span className="text-destructive">*</span></p>
                 <Select value={refundReason} onValueChange={setRefundReason}>
                   <SelectTrigger data-testid="select-refund-reason">
-                    <SelectValue placeholder="Select a reason..." />
+                    <SelectValue placeholder={tp("selectReason")} />
                   </SelectTrigger>
                   <SelectContent>
-                    {REFUND_REASONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                    {REFUND_REASON_KEYS.map(r => <SelectItem key={r} value={r}>{tp(r)}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" className="flex-1" onClick={() => { setRefundStep(false); setStep("receipt"); }}>Cancel</Button>
+                <Button variant="outline" className="flex-1" onClick={() => { setRefundStep(false); setStep("receipt"); }}>{tp("cancel")}</Button>
                 <Button className="flex-1 bg-orange-600 hover:bg-orange-700"
                   disabled={!refundAmount || !refundReason || refundBillMutation.isPending}
                   onClick={() => refundBillMutation.mutate()} data-testid="button-confirm-refund">
-                  {refundBillMutation.isPending ? "Refunding..." : `Refund ${refundAmount ? fmt(parseFloat(refundAmount)) : ""}`}
+                  {refundBillMutation.isPending ? tp("refunding") : `${tp("refund")} ${refundAmount ? fmt(parseFloat(refundAmount)) : ""}`}
                 </Button>
               </div>
             </div>

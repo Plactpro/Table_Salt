@@ -1,5 +1,6 @@
 import { useState, Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { useBackgroundReport } from "@/hooks/use-background-report";
 import { StatCard } from "@/components/widgets/stat-card";
@@ -50,6 +51,7 @@ const fadeUp = {
 };
 
 export default function AccountantDashboard() {
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date();
@@ -85,7 +87,7 @@ export default function AccountantDashboard() {
   const orderCount = Number(totals.orderCount || 0);
 
   const chartData = (salesReport?.salesByDay || []).map((d: any) => ({
-    date: new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+    date: new Date(d.date).toLocaleDateString(i18n.language, { month: "short", day: "numeric" }),
     revenue: Number(d.revenue || 0),
   }));
 

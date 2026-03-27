@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Shield, Download, Trash2, FileText, Database, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { useAuth } from "@/lib/auth";
+import { useTranslation } from "react-i18next";
 
 interface ConsentStatus {
   tos: { version: string; acceptedAt: string } | null;
@@ -191,6 +192,7 @@ function DeleteAccountDialog({ onClose }: { onClose: () => void }) {
 }
 
 export default function GdprRightsPage() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const { user } = useAuth();
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);

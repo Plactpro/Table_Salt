@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -25,6 +26,7 @@ interface CloseShiftDialogProps {
 }
 
 export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps) {
+  const { t, i18n } = useTranslation("pos");
   const { user } = useAuth();
   const { toast } = useToast();
   const [openingFloat, setOpeningFloat] = useState("0");
@@ -36,7 +38,7 @@ export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps
 
   const now = new Date();
   const hour = now.getHours();
-  const autoShift = hour < 12 ? "Morning" : hour < 17 ? "Afternoon" : hour < 21 ? "Evening" : "Night";
+  const autoShift = hour < 12 ? t("shiftMorning") : hour < 17 ? t("shiftAfternoon") : hour < 21 ? t("shiftEvening") : t("shiftNight");
 
   const openMutation = useMutation({
     mutationFn: async () => {
@@ -44,14 +46,14 @@ export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps
         openingFloat: parseFloat(openingFloat) || 0,
         shiftName: autoShift,
       });
-      if (!res.ok) throw new Error((await res.json()).message || "Failed to open session");
+      if (!res.ok) throw new Error((await res.json()).message || t("failedToOpenSession"));
       return res.json();
     },
     onSuccess: (session) => {
-      toast({ title: `${autoShift} shift started!` });
+      toast({ title: `${autoShift} ${t("shiftStarted")}` });
       onSessionStarted(session.id);
     },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: t("error"), description: err.message, variant: "destructive" }),
   });
 
   return (
@@ -59,17 +61,17 @@ export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps
       <DialogContent className="max-w-sm" onPointerDownOutside={e => e.preventDefault()}>
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-primary" /> Start Your Shift
+            <Clock className="h-5 w-5 text-primary" /> {t("startYourShift")}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4">
           <div className="bg-primary/5 rounded-lg p-3 text-center border border-primary/20">
-            <p className="text-sm text-muted-foreground">Current shift</p>
-            <p className="font-bold text-lg">{autoShift} Shift</p>
-            <p className="text-xs text-muted-foreground">{now.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}</p>
+            <p className="text-sm text-muted-foreground">{t("currentShift")}</p>
+            <p className="font-bold text-lg">{autoShift} {t("shift")}</p>
+            <p className="text-xs text-muted-foreground">{now.toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit" })}</p>
           </div>
           <div className="space-y-1">
-            <label className="text-sm font-medium">Opening Cash Float</label>
+            <label className="text-sm font-medium">{t("openingCashFloat")}</label>
             <Input
               type="number"
               placeholder="0.00"
@@ -79,10 +81,10 @@ export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps
               step="0.01"
               data-testid="input-opening-float"
             />
-            <p className="text-xs text-muted-foreground">Enter the cash amount in the drawer at shift start</p>
+            <p className="text-xs text-muted-foreground">{t("openingFloatHint")}</p>
           </div>
           <Button className="w-full" size="lg" onClick={() => openMutation.mutate()} disabled={openMutation.isPending} data-testid="button-open-shift">
-            {openMutation.isPending ? "Opening shift..." : "Open Shift"}
+            {openMutation.isPending ? t("openingShift") : t("openShift")}
           </Button>
         </div>
       </DialogContent>
@@ -93,6 +95,7 @@ export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps
 interface SupervisorCredentials { username: string; password: string; otpApprovalToken?: string; }
 
 export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseShiftDialogProps) {
+  const { t, i18n } = useTranslation("pos");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -119,16 +122,16 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
       const body: Record<string, unknown> = { closingCashCount: cashCount ? parseFloat(cashCount) : null };
       if (supervisorOverride) body.supervisorOverride = supervisorOverride;
       const res = await apiRequest("POST", "/api/pos/session/close", body);
-      if (!res.ok) throw new Error((await res.json()).message || "Failed to close session");
+      if (!res.ok) throw new Error((await res.json()).message || t("failedToCloseSession"));
       return res.json();
     },
     onSuccess: (data) => {
       setReportData(data.report ?? data);
-      toast({ title: "Shift closed successfully!" });
+      toast({ title: t("shiftClosedSuccess") });
       queryClient.invalidateQueries({ queryKey: ["/api/pos/session"] });
       onClosed();
     },
-    onError: (err: Error) => toast({ title: "Error", description: err.message, variant: "destructive" }),
+    onError: (err: Error) => toast({ title: t("error"), description: err.message, variant: "destructive" }),
   });
 
   const isManagerOrOwner = user?.role === "owner" || user?.role === "manager";
@@ -148,24 +151,24 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
     ).join("");
     const win = window.open("", "_blank");
     if (!win) return;
-    win.document.write(`<!DOCTYPE html><html><head><title>Shift Report</title>
+    win.document.write(`<!DOCTYPE html><html><head><title>${t("shiftReport")}</title>
       <style>body{font-family:sans-serif;padding:2rem;max-width:480px;margin:auto}h1{font-size:1.2rem;margin-bottom:.5rem}table{width:100%;border-collapse:collapse;margin-bottom:1rem}td{padding:.3rem .5rem;border-bottom:1px solid #eee}td:last-child{text-align:right}.var-neg{color:red}.var-pos{color:green}.summary{display:flex;gap:2rem;margin-bottom:1rem}.stat{text-align:center}.stat-val{font-size:1.8rem;font-weight:bold}.stat-lbl{font-size:.75rem;color:#666}</style>
     </head><body>
-      <h1>Shift Report — ${source.session ? (source.session as {shiftName?: string}).shiftName ?? "Shift" : "Shift"}</h1>
-      <p style="color:#666;font-size:.85rem">Printed: ${new Date().toLocaleString()}</p>
+      <h1>${t("shiftReport")} — ${source.session ? (source.session as {shiftName?: string}).shiftName ?? t("shift") : t("shift")}</h1>
+      <p style="color:#666;font-size:.85rem">${t("printed")}: ${new Date().toLocaleString(i18n.language)}</p>
       <div class="summary">
-        <div class="stat"><div class="stat-val">${source.billCount ?? 0}</div><div class="stat-lbl">Orders</div></div>
-        <div class="stat"><div class="stat-val">${fmt(source.totalRevenue ?? 0)}</div><div class="stat-lbl">Revenue</div></div>
+        <div class="stat"><div class="stat-val">${source.billCount ?? 0}</div><div class="stat-lbl">${t("orders")}</div></div>
+        <div class="stat"><div class="stat-val">${fmt(source.totalRevenue ?? 0)}</div><div class="stat-lbl">${t("revenue")}</div></div>
       </div>
-      <h2 style="font-size:.9rem">Revenue by Method</h2>
+      <h2 style="font-size:.9rem">${t("revenueByMethod")}</h2>
       <table>${methodRows}</table>
-      <h2 style="font-size:.9rem">Cash Reconciliation</h2>
+      <h2 style="font-size:.9rem">${t("cashReconciliation")}</h2>
       <table>
-        <tr><td>Opening Float</td><td>${fmt(source.session?.openingFloat ?? 0)}</td></tr>
-        <tr><td>Cash Sales</td><td>${fmt(source.revenueByMethod?.CASH ?? 0)}</td></tr>
-        <tr><td><strong>Expected Cash</strong></td><td><strong>${fmt(expCash)}</strong></td></tr>
-        ${cashCount ? `<tr><td>Counted Cash</td><td>${fmt(actCash)}</td></tr>
-        <tr><td><strong>Variance</strong></td><td class="${varianceVal! < 0 ? "var-neg" : "var-pos"}"><strong>${varianceVal! >= 0 ? "+" : ""}${fmt(varianceVal!)}</strong></td></tr>` : ""}
+        <tr><td>${t("openingFloat")}</td><td>${fmt(source.session?.openingFloat ?? 0)}</td></tr>
+        <tr><td>${t("cashSales")}</td><td>${fmt(source.revenueByMethod?.CASH ?? 0)}</td></tr>
+        <tr><td><strong>${t("expectedCash")}</strong></td><td><strong>${fmt(expCash)}</strong></td></tr>
+        ${cashCount ? `<tr><td>${t("countedCash")}</td><td>${fmt(actCash)}</td></tr>
+        <tr><td><strong>${t("variance")}</strong></td><td class="${varianceVal! < 0 ? "var-neg" : "var-pos"}"><strong>${varianceVal! >= 0 ? "+" : ""}${fmt(varianceVal!)}</strong></td></tr>` : ""}
       </table>
     </body></html>`);
     win.document.close();
@@ -186,7 +189,7 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <LogOut className="h-5 w-5 text-primary" /> Close Shift
+              <LogOut className="h-5 w-5 text-primary" /> {t("closeShift")}
             </DialogTitle>
           </DialogHeader>
           {report && (
@@ -195,18 +198,18 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
                 <div className="bg-muted/50 rounded-lg p-3 text-center border">
                   <ShoppingBag className="h-5 w-5 mx-auto mb-1 text-primary" />
                   <p className="text-2xl font-bold">{report.billCount}</p>
-                  <p className="text-xs text-muted-foreground">Orders</p>
+                  <p className="text-xs text-muted-foreground">{t("orders")}</p>
                 </div>
                 <div className="bg-muted/50 rounded-lg p-3 text-center border">
                   <TrendingUp className="h-5 w-5 mx-auto mb-1 text-green-600" />
                   <p className="text-2xl font-bold text-green-600">{fmt(report.totalRevenue)}</p>
-                  <p className="text-xs text-muted-foreground">Revenue</p>
+                  <p className="text-xs text-muted-foreground">{t("revenue")}</p>
                 </div>
               </div>
 
               {Object.entries(report.revenueByMethod || {}).length > 0 && (
                 <div className="space-y-1.5">
-                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Revenue by Method</p>
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("revenueByMethod")}</p>
                   {Object.entries(report.revenueByMethod || {}).map(([method, amount]: [string, any]) => (
                     <div key={method} className="flex justify-between text-sm">
                       <span className="text-muted-foreground">{method}</span>
@@ -218,22 +221,22 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
 
               <Separator />
               <div className="space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Cash Reconciliation</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("cashReconciliation")}</p>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Opening Float</span>
+                  <span className="text-muted-foreground">{t("openingFloat")}</span>
                   <span>{fmt(report.session?.openingFloat ?? 0)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Cash Sales</span>
+                  <span className="text-muted-foreground">{t("cashSales")}</span>
                   <span>{fmt(report.revenueByMethod?.CASH ?? 0)}</span>
                 </div>
                 <div className="flex justify-between text-sm font-medium">
-                  <span>Expected Cash</span>
+                  <span>{t("expectedCash")}</span>
                   <span>{fmt(expectedCash)}</span>
                 </div>
                 <Input
                   type="number"
-                  placeholder="Enter actual cash count"
+                  placeholder={t("enterActualCashCount")}
                   value={cashCount}
                   onChange={e => setCashCount(e.target.value)}
                   min="0"
@@ -244,7 +247,7 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
                   <div className={`flex justify-between text-sm font-medium rounded p-2 ${Math.abs(variance) < 0.01 ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-300" : variance < 0 ? "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300" : "bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-300"}`}>
                     <span className="flex items-center gap-1">
                       {Math.abs(variance) > 0.01 && <AlertTriangle className="h-3.5 w-3.5" />}
-                      Variance
+                      {t("variance")}
                     </span>
                     <span>{variance >= 0 ? "+" : ""}{fmt(variance)}</span>
                   </div>
@@ -253,17 +256,17 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
 
               <div className="flex gap-2">
                 <Button variant="outline" size="sm" onClick={handlePrintReport} className="flex-1">
-                  <Printer className="h-4 w-4 mr-1" /> Print Report
+                  <Printer className="h-4 w-4 mr-1" /> {t("printReport")}
                 </Button>
                 <Button size="sm" className="flex-1" onClick={handleCloseShift} disabled={closeMutation.isPending} data-testid="button-close-shift">
-                  {closeMutation.isPending ? "Closing..." : "Close Shift"}
+                  {closeMutation.isPending ? t("closing") : t("closeShift")}
                 </Button>
               </div>
             </div>
           )}
           {!report && (
             <div className="flex items-center justify-center h-32 text-muted-foreground">
-              Loading session data...
+              {t("loadingSessionData")}
             </div>
           )}
         </DialogContent>
@@ -273,7 +276,7 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
           open={showSupervisor}
           onOpenChange={(o) => { if (!o) setShowSupervisor(false); }}
           action="close_shift"
-          actionLabel="Close Shift"
+          actionLabel={t("closeShift")}
           onApproved={(_supervisorId, credentials) => { setShowSupervisor(false); closeMutation.mutate(credentials); }}
         />
       )}

@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -35,26 +36,17 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 
-const ETA_OPTIONS = [
-  { label: "15 min", value: 15 },
-  { label: "20 min", value: 20 },
-  { label: "25 min", value: 25 },
-  { label: "30 min", value: 30 },
-  { label: "40 min", value: 40 },
-  { label: "45 min", value: 45 },
-  { label: "60 min", value: 60 },
-  { label: "90 min", value: 90 },
-];
+const ETA_OPTION_VALUES = [15, 20, 25, 30, 40, 45, 60, 90];
 
-const REJECTION_REASONS = [
-  "Out of stock items",
-  "Kitchen at full capacity",
-  "Too far from delivery zone",
-  "Delivery partner unavailable",
-  "Restaurant closing soon",
-  "Invalid order details",
-  "Other",
-];
+const REJECTION_REASON_KEYS = [
+  "outOfStockItems",
+  "kitchenAtFullCapacity",
+  "tooFarFromDeliveryZone",
+  "deliveryPartnerUnavailable",
+  "restaurantClosingSoon",
+  "invalidOrderDetails",
+  "other",
+] as const;
 
 interface DeliveryOrderItem {
   id: string;
@@ -93,9 +85,11 @@ const CHANNEL_STYLES: Record<string, { label: string; bg: string; text: string }
   aggregator: { label: "Aggregator", bg: "bg-purple-100", text: "text-purple-700" },
 };
 
-function getChannelStyle(channel: string | null) {
-  return CHANNEL_STYLES[channel ?? ""] ?? { label: channel || "Delivery", bg: "bg-slate-100", text: "text-slate-700" };
+function getChannelStyle(channel: string | null, deliveryFallback: string) {
+  return CHANNEL_STYLES[channel ?? ""] ?? { label: channel || deliveryFallback, bg: "bg-slate-100", text: "text-slate-700" };
 }
+
+const COUNTDOWN_READY_SENTINEL = "__READY__";
 
 function useCountdown(target: string | null): string {
   const [display, setDisplay] = useState("");
@@ -104,28 +98,29 @@ function useCountdown(target: string | null): string {
     if (!target) { setDisplay(""); return; }
     const update = () => {
       const ms = new Date(target).getTime() - Date.now();
-      if (ms <= 0) { setDisplay("Ready"); return; }
+      if (ms <= 0) { setDisplay(COUNTDOWN_READY_SENTINEL); return; }
       const totalSec = Math.floor(ms / 1000);
       const mins = Math.floor(totalSec / 60);
       const secs = totalSec % 60;
       setDisplay(`${mins}:${secs.toString().padStart(2, "0")}`);
     };
     update();
-    const t = setInterval(update, 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(update, 1000);
+    return () => clearInterval(timer);
   }, [target]);
 
   return display;
 }
 
 function CountdownBadge({ estimatedReadyAt }: { estimatedReadyAt: string | null }) {
+  const { t } = useTranslation("pos");
   const display = useCountdown(estimatedReadyAt);
   if (!display) return null;
-  const isReady = display === "Ready";
+  const isReady = display === COUNTDOWN_READY_SENTINEL;
   return (
     <Badge className={`gap-1 text-xs ${isReady ? "bg-green-600 text-white" : "bg-amber-100 text-amber-800"}`} data-testid="badge-delivery-countdown">
       <Clock className="h-3 w-3" />
-      {display}
+      {isReady ? t("ready") : display}
     </Badge>
   );
 }
@@ -138,11 +133,13 @@ interface DeliveryQueuePanelProps {
 export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanelProps) {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useTranslation("pos");
   const queryClient = useQueryClient();
   const [acceptingOrderId, setAcceptingOrderId] = useState<string | null>(null);
   const [etaMinutes, setEtaMinutes] = useState("30");
   const [rejectingOrderId, setRejectingOrderId] = useState<string | null>(null);
-  const [rejectionReason, setRejectionReason] = useState(REJECTION_REASONS[0]);
+  const REJECTION_REASONS = REJECTION_REASON_KEYS.map(k => ({ key: k, label: t(k) }));
+  const [rejectionReason, setRejectionReason] = useState<string>(REJECTION_REASON_KEYS[0]);
   const [expandedOrders, setExpandedOrders] = useState<Set<string>>(new Set());
 
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
@@ -183,9 +180,9 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
       setAcceptingOrderId(null);
       refetch();
       queryClient.invalidateQueries({ queryKey: ["/api/orders/delivery-queue"] });
-      toast({ title: "Order accepted", description: `ETA set to ${etaMinutes} minutes` });
+      toast({ title: t("orderAccepted"), description: t("etaSetTo", { minutes: etaMinutes }) });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("error", { ns: "common" }), description: e.message, variant: "destructive" }),
   });
 
   const rejectMutation = useMutation({
@@ -201,9 +198,9 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
     onSuccess: () => {
       setRejectingOrderId(null);
       refetch();
-      toast({ title: "Order rejected", variant: "destructive" });
+      toast({ title: t("orderRejected"), variant: "destructive" });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("error", { ns: "common" }), description: e.message, variant: "destructive" }),
   });
 
   const dispatchMutation = useMutation({
@@ -218,9 +215,9 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
     },
     onSuccess: () => {
       refetch();
-      toast({ title: "Order dispatched" });
+      toast({ title: t("orderDispatched") });
     },
-    onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("error", { ns: "common" }), description: e.message, variant: "destructive" }),
   });
 
   const toggleExpanded = useCallback((orderId: string) => {
@@ -238,11 +235,11 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
   };
 
   const OrderCard = useCallback(({ order }: { order: DeliveryQueueOrder }) => {
-    const customerName = order.channelData?.customerName || "Customer";
+    const customerName = order.channelData?.customerName || t("customer", { ns: "pos" });
     const channelId = order.channelOrderId || order.id.slice(-6).toUpperCase();
     const isPending = order.queueType === "pending";
     const isReady = order.status === "ready";
-    const channelStyle = getChannelStyle(order.channel);
+    const channelStyle = getChannelStyle(order.channel, t("channelDeliveryFallback"));
     const isExpanded = expandedOrders.has(order.id);
     const visibleItems = isExpanded ? order.items : order.items.slice(0, 3);
     const hasMore = order.items.length > 3;
@@ -286,9 +283,9 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
                 data-testid={`button-toggle-items-${order.id}`}
               >
                 {isExpanded ? (
-                  <><ChevronUp className="h-3 w-3" />Show less</>
+                  <><ChevronUp className="h-3 w-3" />{t("showLess")}</>
                 ) : (
-                  <><ChevronDown className="h-3 w-3" />+{order.items.length - 3} more items</>
+                  <><ChevronDown className="h-3 w-3" />{t("moreItems", { count: order.items.length - 3 })}</>
                 )}
               </button>
             )}
@@ -303,17 +300,17 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
                 data-testid={`button-accept-${order.id}`}
               >
                 <CheckCircle2 className="h-3.5 w-3.5" />
-                Accept
+                {t("accept")}
               </Button>
               <Button
                 size="sm"
                 variant="destructive"
                 className="flex-1 h-8 gap-1 text-xs"
-                onClick={() => { setRejectingOrderId(order.id); setRejectionReason(REJECTION_REASONS[0]); }}
+                onClick={() => { setRejectingOrderId(order.id); setRejectionReason(REJECTION_REASON_KEYS[0]); }}
                 data-testid={`button-reject-${order.id}`}
               >
                 <XCircle className="h-3.5 w-3.5" />
-                Reject
+                {t("reject")}
               </Button>
             </div>
           ) : (
@@ -326,7 +323,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
               data-testid={`button-dispatch-${order.id}`}
             >
               <Send className="h-3.5 w-3.5" />
-              Mark Dispatched
+              {t("markDispatched")}
             </Button>
           )}
         </CardContent>
@@ -345,10 +342,10 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
             <div className="flex items-center justify-between">
               <SheetTitle className="flex items-center gap-2" data-testid="delivery-queue-title">
                 <Truck className="h-5 w-5 text-orange-500" />
-                Delivery Queue
+                {t("deliveryQueueTitle")}
                 {pendingOrders.length > 0 && (
                   <Badge className="bg-orange-500 text-white text-xs animate-bounce" data-testid="badge-pending-count">
-                    {pendingOrders.length} new
+                    {pendingOrders.length} {t("newBadge")}
                   </Badge>
                 )}
               </SheetTitle>
@@ -363,14 +360,14 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
               <TabsList className="mx-4 mt-3 mb-2">
                 <TabsTrigger value="pending" className="flex-1 gap-1" data-testid="tab-pending-orders">
                   <Package className="h-3.5 w-3.5" />
-                  Pending
+                  {t("pending", { ns: "common" })}
                   {pendingOrders.length > 0 && (
                     <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-0.5">{pendingOrders.length}</Badge>
                   )}
                 </TabsTrigger>
                 <TabsTrigger value="active" className="flex-1 gap-1" data-testid="tab-active-orders">
                   <Truck className="h-3.5 w-3.5" />
-                  Active
+                  {t("active", { ns: "common" })}
                   {activeOrders.length > 0 && (
                     <Badge variant="secondary" className="h-4 px-1 text-[10px] ml-0.5">{activeOrders.length}</Badge>
                   )}
@@ -381,8 +378,8 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
                 {pendingOrders.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-muted-foreground" data-testid="empty-pending-queue">
                     <Layers className="h-10 w-10 mb-3 opacity-30" />
-                    <p className="text-sm font-medium">No pending orders</p>
-                    <p className="text-xs mt-1">New delivery orders will appear here</p>
+                    <p className="text-sm font-medium">{t("noPendingOrders")}</p>
+                    <p className="text-xs mt-1">{t("newDeliveryOrdersHint")}</p>
                   </div>
                 ) : (
                   pendingOrders.map(order => <OrderCard key={order.id} order={order} />)
@@ -393,8 +390,8 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
                 {activeOrders.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-16 text-muted-foreground" data-testid="empty-active-queue">
                     <Truck className="h-10 w-10 mb-3 opacity-30" />
-                    <p className="text-sm font-medium">No active deliveries</p>
-                    <p className="text-xs mt-1">Accepted orders in preparation will appear here</p>
+                    <p className="text-sm font-medium">{t("noActiveDeliveries")}</p>
+                    <p className="text-xs mt-1">{t("acceptedOrdersHint")}</p>
                   </div>
                 ) : (
                   activeOrders.map(order => <OrderCard key={order.id} order={order} />)
@@ -410,26 +407,26 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-green-600" />
-              Accept Order
+              {t("acceptOrder")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Set estimated ready time for{" "}
+              {t("setEstimatedReadyTimeFor")}{" "}
               <span className="font-medium text-foreground">
                 #{acceptingOrder?.channelOrderId || acceptingOrder?.id.slice(-6).toUpperCase()}
               </span>
             </p>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">ETA (minutes)</label>
+              <label className="text-xs font-medium">{t("etaMinutes")}</label>
               <Select value={etaMinutes} onValueChange={setEtaMinutes} data-testid="select-eta">
                 <SelectTrigger data-testid="select-trigger-eta">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {ETA_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={String(opt.value)} data-testid={`eta-option-${opt.value}`}>
-                      {opt.label}
+                  {ETA_OPTION_VALUES.map(val => (
+                    <SelectItem key={val} value={String(val)} data-testid={`eta-option-${val}`}>
+                      {val} {t("etaMinSuffix")}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -438,7 +435,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setAcceptingOrderId(null)} data-testid="button-cancel-accept">
-              Cancel
+              {t("cancel", { ns: "common" })}
             </Button>
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"
@@ -446,7 +443,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
               onClick={() => acceptingOrderId && acceptMutation.mutate({ orderId: acceptingOrderId, etaMin: parseInt(etaMinutes), version: acceptingOrder?.version ?? 1 })}
               data-testid="button-confirm-accept"
             >
-              {acceptMutation.isPending ? "Accepting..." : "Confirm Accept"}
+              {acceptMutation.isPending ? t("acceptingOrder") : t("confirmAccept")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -457,26 +454,26 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-destructive">
               <XCircle className="h-5 w-5" />
-              Reject Order
+              {t("rejectOrder")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <p className="text-sm text-muted-foreground">
-              Rejecting order{" "}
+              {t("rejectingOrder")}{" "}
               <span className="font-medium text-foreground">
                 #{rejectingOrder?.channelOrderId || rejectingOrder?.id.slice(-6).toUpperCase()}
               </span>
             </p>
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">Rejection Reason</label>
+              <label className="text-xs font-medium">{t("rejectionReasonLabel")}</label>
               <Select value={rejectionReason} onValueChange={setRejectionReason} data-testid="select-rejection-reason">
                 <SelectTrigger data-testid="select-trigger-rejection-reason">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {REJECTION_REASONS.map(reason => (
-                    <SelectItem key={reason} value={reason} data-testid={`rejection-reason-${reason.replace(/\s+/g, "-").toLowerCase()}`}>
-                      {reason}
+                    <SelectItem key={reason.key} value={reason.key} data-testid={`rejection-reason-${reason.key}`}>
+                      {reason.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -485,7 +482,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setRejectingOrderId(null)} data-testid="button-cancel-reject">
-              Cancel
+              {t("cancel", { ns: "common" })}
             </Button>
             <Button
               variant="destructive"
@@ -493,7 +490,7 @@ export default function DeliveryQueuePanel({ open, onClose }: DeliveryQueuePanel
               onClick={() => rejectingOrderId && rejectMutation.mutate({ orderId: rejectingOrderId, reason: rejectionReason, version: rejectingOrder?.version ?? 1 })}
               data-testid="button-confirm-reject"
             >
-              {rejectMutation.isPending ? "Rejecting..." : "Confirm Reject"}
+              {rejectMutation.isPending ? t("rejectingOrder") : t("confirmReject")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -508,6 +505,7 @@ interface ChannelConfig {
 }
 
 export function DeliveryQueueButton({ onClick }: { onClick: () => void }) {
+  const { t } = useTranslation("pos");
   const { data: channelConfigs = [] } = useQuery<ChannelConfig[]>({
     queryKey: ["/api/channel-configs"],
     queryFn: async () => {
@@ -540,7 +538,7 @@ export function DeliveryQueueButton({ onClick }: { onClick: () => void }) {
       data-testid="button-delivery-queue"
     >
       <Truck className="h-3.5 w-3.5 text-orange-500" />
-      <span className="hidden sm:inline text-muted-foreground">Delivery</span>
+      <span className="hidden sm:inline text-muted-foreground">{t("deliveryTabLabel")}</span>
       {pendingCount > 0 && (
         <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-orange-500 text-[9px] font-bold text-white animate-bounce"
           data-testid="badge-delivery-pending-count">

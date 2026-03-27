@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { useTranslation } from "react-i18next";
 
 interface ShiftItem {
   id: string;
@@ -33,6 +34,7 @@ interface InventoryItem {
 }
 
 export default function WastageShiftPage() {
+  const { t } = useTranslation("modules");
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [items, setItems] = useState<ShiftItem[]>([]);

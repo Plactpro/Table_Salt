@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, ChevronRight, CheckCircle, Send, Package, AlertTriangle, FileText, X, ClipboardCheck } from "lucide-react";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface Supplier { id: string; name: string; }
 interface InventoryItem {
@@ -86,6 +87,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function PurchaseOrdersTab() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -404,11 +406,11 @@ export default function PurchaseOrdersTab() {
                     <TableRow>
                       <TableHead>PO #</TableHead>
                       <TableHead>Supplier</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>{t("status")}</TableHead>
                       <TableHead className="text-right">Amount</TableHead>
                       <TableHead>Expected Delivery</TableHead>
                       <TableHead>Created</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead>{t("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>

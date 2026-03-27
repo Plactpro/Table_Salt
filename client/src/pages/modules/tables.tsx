@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, Component, startTransition } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -402,6 +403,7 @@ function QrCodeCanvas({ token }: { token: string }) {
 }
 
 function TablesPageContent() {
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1192,7 +1194,7 @@ function TablesPageContent() {
                 <ChevronLeft className="w-4 h-4" aria-hidden="true" />
               </Button>
               <span className="text-sm font-medium min-w-[200px] text-center">
-                {calendarWeekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – {weekDays[6]?.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                {calendarWeekStart.toLocaleDateString(i18n.language, { month: "short", day: "numeric" })} – {weekDays[6]?.toLocaleDateString(i18n.language, { month: "short", day: "numeric", year: "numeric" })}
               </span>
               <Button variant="outline" size="icon" onClick={() => setCalendarWeekStart(d => { const n = new Date(d); n.setDate(n.getDate() + 7); return n; })} data-testid="button-next-week" aria-label="Next week">
                 <ChevronRight className="w-4 h-4" aria-hidden="true" />
@@ -1222,7 +1224,7 @@ function TablesPageContent() {
               return (
                 <div key={day.toISOString()} className={`border rounded-lg p-2 min-h-[120px] ${isToday ? "border-primary bg-primary/5" : ""}`}>
                   <div className={`text-xs font-medium mb-2 ${isToday ? "text-primary" : "text-muted-foreground"}`}>
-                    {day.toLocaleDateString("en-US", { weekday: "short", day: "numeric" })}
+                    {day.toLocaleDateString(i18n.language, { weekday: "short", day: "numeric" })}
                   </div>
                   <div className="space-y-1">
                     {dayReservations.map(r => {
@@ -1238,7 +1240,7 @@ function TablesPageContent() {
                           </div>
                           <div className="flex items-center gap-1 text-[10px] opacity-80">
                             <Clock className="w-2.5 h-2.5" />
-                            {new Date(r.dateTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                            {new Date(r.dateTime).toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit" })}
                             <span className="mx-0.5">·</span>
                             <Users className="w-2.5 h-2.5" />{r.guests}
                           </div>
@@ -1810,7 +1812,7 @@ function TablesPageContent() {
                       available: c.available,
                       requested: c.requested,
                       inUseAtTable: inUseEntry ? tables.find(t => t.id === inUseEntry[0])?.number?.toString() : undefined,
-                      sinceTime: inUseAssignment?.assignedAt ? new Date(inUseAssignment.assignedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : undefined,
+                      sinceTime: inUseAssignment?.assignedAt ? new Date(inUseAssignment.assignedAt).toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit" }) : undefined,
                     };
                   }));
                   setShowResourceUnavailableDialog(true);
@@ -2135,6 +2137,7 @@ function TablesPageContent() {
 }
 
 export default function TablesPage() {
+  const { t } = useTranslation("modules");
   return (
     <TablesErrorBoundary>
       <TablesPageContent />

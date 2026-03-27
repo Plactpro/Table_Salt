@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -81,6 +82,7 @@ const tableStatusConfig: Record<string, { icon: any; color: string; bg: string; 
 };
 
 function ClockInOutCard() {
+  const { i18n } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [elapsed, setElapsed] = useState("");
@@ -137,7 +139,7 @@ function ClockInOutCard() {
                 {isClockedIn && (
                   <div className="flex items-center gap-3 mt-1">
                     <span className="text-xs text-muted-foreground">
-                      Since {new Date(attendanceStatus.clockIn).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}
+                      Since {new Date(attendanceStatus.clockIn).toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit" })}
                     </span>
                     {elapsed && <Badge variant="secondary" className="text-xs" data-testid="text-elapsed-time">{elapsed}</Badge>}
                     {attendanceStatus.status === "late" && <Badge className="bg-amber-100 text-amber-700 text-xs"><AlertCircle className="h-3 w-3 mr-1" />Late ({attendanceStatus.lateMinutes}m)</Badge>}

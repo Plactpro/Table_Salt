@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useTranslation } from "react-i18next";
 import {
   Select,
   SelectContent,
@@ -204,6 +205,7 @@ function SessionCard({ session }: { session: AccessSession }) {
 }
 
 export default function AccessLogPage() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [dateRange, setDateRange] = useState<DateRange>("month");
@@ -261,7 +263,7 @@ export default function AccessLogPage() {
 
   return (
     <div className="space-y-6" data-testid="access-log-page">
-      <PageTitle title="Access Log" />
+      <PageTitle title={t("accessLog")} />
       {/* Header */}
       <Card data-testid="card-access-log-header">
         <CardContent className="p-5">

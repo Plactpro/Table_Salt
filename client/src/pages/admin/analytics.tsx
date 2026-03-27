@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { PageTitle } from "@/lib/accessibility";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,15 +28,15 @@ interface AnalyticsData {
   platformHealth: { dbOk: boolean; uptimeSeconds: number };
 }
 
-function formatMonth(m: string): string {
+function formatMonth(m: string, locale = "en-US"): string {
   const [year, month] = m.split("-");
   const date = new Date(Number(year), Number(month) - 1, 1);
-  return date.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+  return date.toLocaleDateString(locale, { month: "short", year: "2-digit" });
 }
 
-function formatWeek(w: string): string {
+function formatWeek(w: string, locale = "en-US"): string {
   const d = new Date(w);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
 const PLAN_COLORS: Record<string, string> = {
@@ -46,6 +47,7 @@ const PLAN_COLORS: Record<string, string> = {
 };
 
 export default function AnalyticsPage() {
+  const { i18n } = useTranslation();
   const { data, isLoading, error } = useQuery<AnalyticsData>({
     queryKey: ["/api/admin/analytics"],
     queryFn: async () => {
@@ -59,17 +61,17 @@ export default function AnalyticsPage() {
   // Fill months for tenant growth
   const tenantGrowthData = data?.tenantGrowth.map((d) => ({
     ...d,
-    label: formatMonth(d.month),
+    label: formatMonth(d.month, i18n.language),
   })) ?? [];
 
   const userRegData = data?.userRegistrations.map((d) => ({
     ...d,
-    label: formatMonth(d.month),
+    label: formatMonth(d.month, i18n.language),
   })) ?? [];
 
   const weeklyData = data?.weeklyOrderVolume.map((d) => ({
     ...d,
-    label: formatWeek(d.week),
+    label: formatWeek(d.week, i18n.language),
   })) ?? [];
 
   return (

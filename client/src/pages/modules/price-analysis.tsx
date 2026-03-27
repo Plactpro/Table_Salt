@@ -6,6 +6,7 @@ import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, TrendingUp, AlertTriangle, Tag } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface ComparisonData {
   outlets: { id: string; name: string }[];
@@ -22,6 +23,7 @@ interface ComparisonData {
 }
 
 export default function PriceAnalysis() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -67,7 +69,7 @@ export default function PriceAnalysis() {
 
   return (
     <div className="space-y-6" data-testid="price-analysis-page">
-      <PageTitle title="Price Analysis" />
+      <PageTitle title={t("priceAnalysis")} />
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-semibold flex items-center gap-2">

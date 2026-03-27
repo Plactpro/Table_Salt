@@ -25,6 +25,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
+import { useTranslation } from "react-i18next";
 
 type RecipeWithIngredients = Recipe & { ingredients: RecipeIngredient[] };
 
@@ -39,6 +40,7 @@ interface IngredientRow {
 const UNITS = ["kg", "g", "ltr", "ml", "pcs", "bottles", "bunches", "cups", "tbsp", "tsp"];
 
 export default function RecipeEditorPage() {
+  const { t } = useTranslation("modules");
   const { id } = useParams<{ id?: string }>();
   const [, navigate] = useLocation();
   const { toast } = useToast();
@@ -314,7 +316,7 @@ export default function RecipeEditorPage() {
     <>
     <Dialog open={showLeaveDialog} onOpenChange={cancelLeave}>
       <DialogContent data-testid="dialog-leave-confirm">
-        <PageTitle title="Recipe Editor" />
+        <PageTitle title={t("recipeEditor")} />
         <DialogHeader>
           <DialogTitle>Unsaved Changes</DialogTitle>
         </DialogHeader>

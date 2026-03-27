@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { MenuCategory } from "@shared/schema";
 import { exportToPdf } from "@/lib/pdf-export";
+import { useTranslation } from "react-i18next";
 
 interface FoodCostRecipe {
   recipeId: string;
@@ -93,6 +94,7 @@ function varianceRowBg(absPct: number): string {
 }
 
 export default function FoodCostReports() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState("profitability");
@@ -164,7 +166,7 @@ export default function FoodCostReports() {
 
   return (
     <div className="space-y-6" data-testid="food-cost-reports">
-      <PageTitle title="Food Cost Reports" />
+      <PageTitle title={t("foodCostReports")} />
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
           { label: "Avg Food Cost %", value: `${summary.avgFoodCostPct.toFixed(1)}%`, sub: "per recipe (unweighted)", icon: DollarSign, color: "text-amber-600" },
@@ -322,7 +324,7 @@ export default function FoodCostReports() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Recipe</TableHead>
+                      <TableHead>{t("recipe")}</TableHead>
                       <TableHead>Menu Item</TableHead>
                       <TableHead className="cursor-pointer hover:text-foreground" onClick={() => toggleSort("plateCost")}>
                         Plate Cost {sortBy === "plateCost" ? (sortDir === "desc" ? "↓" : "↑") : ""}

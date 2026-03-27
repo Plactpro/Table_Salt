@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -10,14 +11,6 @@ import { Label } from "@/components/ui/label";
 import { Loader2 } from "lucide-react";
 import { currencyMap } from "@shared/currency";
 
-const PAYOUT_TYPES = [
-  { value: "petty_cash", label: "Petty Cash" },
-  { value: "supplier_payment", label: "Supplier Payment" },
-  { value: "staff_advance", label: "Staff Advance" },
-  { value: "expense", label: "Expense" },
-  { value: "other", label: "Other" },
-];
-
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -28,6 +21,7 @@ interface Props {
 }
 
 export default function CashPayoutModal({ open, onClose, sessionId, sessionNumber, runningBalance, onPayoutRecorded }: Props) {
+  const { t, i18n } = useTranslation("pos");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -39,6 +33,14 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
   const [amount, setAmount] = useState("");
   const [recipient, setRecipient] = useState("");
   const [reason, setReason] = useState("");
+
+  const payoutTypes = [
+    { value: "petty_cash", label: t("payoutTypePettyCash") },
+    { value: "supplier_payment", label: t("payoutTypeSupplierPayment") },
+    { value: "staff_advance", label: t("payoutTypeStaffAdvance") },
+    { value: "expense", label: t("payoutTypeExpense") },
+    { value: "other", label: t("payoutTypeOther") },
+  ];
 
   const amountNum = parseFloat(amount) || 0;
   const isInvalid = amountNum <= 0 || amountNum > runningBalance || !reason.trim();
@@ -54,7 +56,7 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Payout recorded", description: `${symbol}${amountNum.toFixed(2)} paid out` });
+      toast({ title: t("payoutRecorded"), description: `${symbol}${amountNum.toFixed(2)} ${t("paidOut")}` });
       queryClient.invalidateQueries({ queryKey: ["/api/cash-sessions/active"] });
       queryClient.invalidateQueries({ queryKey: [`/api/cash-sessions/${sessionId}/events`] });
       setAmount("");
@@ -65,7 +67,7 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
       onClose();
     },
     onError: (err: Error) => {
-      toast({ title: "Payout failed", description: err.message, variant: "destructive" });
+      toast({ title: t("payoutFailed"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -73,16 +75,16 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md" data-testid="modal-cash-payout">
         <DialogHeader>
-          <DialogTitle>💸 Cash Payout</DialogTitle>
-          {sessionNumber && <p className="text-sm text-muted-foreground">Session {sessionNumber}</p>}
-          <p className="text-sm text-muted-foreground">Available: {symbol}{runningBalance.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          <DialogTitle>💸 {t("cashPayout")}</DialogTitle>
+          {sessionNumber && <p className="text-sm text-muted-foreground">{t("session")} {sessionNumber}</p>}
+          <p className="text-sm text-muted-foreground">{t("available")}: {symbol}{runningBalance.toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label className="text-sm font-medium">Payout Type</Label>
+            <Label className="text-sm font-medium">{t("payoutType")}</Label>
             <div className="mt-2 space-y-2">
-              {PAYOUT_TYPES.map((type) => (
+              {payoutTypes.map((type) => (
                 <label key={type.value} className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="radio"
@@ -100,7 +102,7 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
           </div>
 
           <div>
-            <Label>Amount ({currencyCode})</Label>
+            <Label>{t("amount")} ({currencyCode})</Label>
             <div className="relative mt-1">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{symbol}</span>
               <Input
@@ -116,34 +118,34 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
               />
             </div>
             {amountNum > runningBalance && (
-              <p className="text-xs text-red-600 mt-1">Amount exceeds available balance</p>
+              <p className="text-xs text-red-600 mt-1">{t("amountExceedsBalance")}</p>
             )}
           </div>
 
           <div>
-            <Label>Recipient (Optional)</Label>
+            <Label>{t("recipientOptional")}</Label>
             <Input
               value={recipient}
               onChange={e => setRecipient(e.target.value)}
               className="mt-1"
-              placeholder="Name / Company"
+              placeholder={t("recipientPlaceholder")}
               data-testid="input-payout-recipient"
             />
           </div>
 
           <div>
-            <Label>Reason <span className="text-red-500">*</span></Label>
+            <Label>{t("reason")} <span className="text-red-500">*</span></Label>
             <Input
               value={reason}
               onChange={e => setReason(e.target.value)}
               className="mt-1"
-              placeholder="e.g. Cleaning supplies"
+              placeholder={t("reasonPlaceholder")}
               data-testid="input-payout-reason"
             />
           </div>
 
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" className="flex-1" onClick={onClose}>Cancel</Button>
+            <Button variant="outline" className="flex-1" onClick={onClose}>{t("cancel")}</Button>
             <Button
               className="flex-1"
               disabled={isInvalid || payoutMutation.isPending}
@@ -151,8 +153,8 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
               data-testid="button-submit-payout"
             >
               {payoutMutation.isPending ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Processing...</>
-              ) : "Submit Payout"}
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("processing")}</>
+              ) : t("submitPayout")}
             </Button>
           </div>
         </div>

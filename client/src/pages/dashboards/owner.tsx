@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { useBackgroundReport } from "@/hooks/use-background-report";
 import { StatCard } from "@/components/widgets/stat-card";
 import { ChartWidget } from "@/components/widgets/chart-widget";
@@ -209,6 +210,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any, fmt: (v
 }
 
 export default function OwnerDashboard() {
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const { tier, businessType, hasFeatureAccess } = useSubscription();
 
@@ -227,14 +229,14 @@ export default function OwnerDashboard() {
   }
 
   const chartData = (salesReport?.salesByDay || []).map((d: any) => ({
-    date: new Date(d.date).toLocaleDateString("en-US", { weekday: "short" }),
+    date: new Date(d.date).toLocaleDateString(i18n.language, { weekday: "short" }),
     revenue: Number(d.revenue || 0),
     orders: Number(d.orderCount || 0),
   }));
 
   const now = new Date();
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
-  const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const dateStr = now.toLocaleDateString(i18n.language, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
   const BusinessIcon = businessTypeIcons[businessType] || UtensilsCrossed;
   const config = businessConfig[businessType];

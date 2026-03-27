@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 
 interface Integration {
   id: string;
@@ -129,6 +130,7 @@ const categories = [
 ];
 
 export default function IntegrationsPage() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const [integrations, setIntegrations] = useState(initialIntegrations);
   const [activeCategory, setActiveCategory] = useState("all");
@@ -163,7 +165,7 @@ export default function IntegrationsPage() {
       data-testid="page-integrations"
     >
       <div className="flex items-center justify-between flex-wrap gap-4">
-        <PageTitle title="Integrations" />
+        <PageTitle title={t("integrations")} />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <Plug className="h-6 w-6 text-primary" />

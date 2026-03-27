@@ -21,6 +21,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LogIn } from "lucide-react";
 import { OfflineBanner } from "@/components/sync-status-indicator";
+import { useTranslation } from "react-i18next";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -29,20 +30,13 @@ interface AppLayoutProps {
 /**
  * PR-001: Global security event listeners — always mounted for any authenticated user
  * regardless of impersonation state.
- * - Session conflict: shows a persistent, dismissible banner (not just a toast) so the
- *   user cannot miss it and can take deliberate action (go to login or dismiss if resolved).
- * - API timeout: shows a toast with a Retry action.
  */
 function GlobalSecurityListeners() {
+  const { t } = useTranslation("layout");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [conflictBannerVisible, setConflictBannerVisible] = useState(false);
-  const { user } = useAuth();
 
-  // PR-009: Account sharing alerts are handled via the alert engine (ALERT-13 / alert:trigger),
-  // which persists in alert_events and is displayed by AlertListener + AlertNotificationBell.
-
-  // Session conflict: another login invalidated this session
   useEffect(() => {
     const handler = () => {
       setConflictBannerVisible(true);
@@ -51,30 +45,29 @@ function GlobalSecurityListeners() {
     return () => window.removeEventListener("session-conflict", handler);
   }, []);
 
-  // Operation-aware timeout: global "tap to retry" toast
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ message?: string; retryFn?: () => void }>).detail;
       toast({
         variant: "destructive",
-        title: "Request timed out",
-        description: "The server took too long to respond — tap Retry to try again.",
+        title: t("requestTimedOut"),
+        description: t("serverTookTooLong"),
         action: (
-          <ToastAction altText="Retry" onClick={() => {
+          <ToastAction altText={t("retry")} onClick={() => {
             if (typeof detail?.retryFn === "function") {
               detail.retryFn();
             } else {
               queryClient.invalidateQueries();
             }
           }}>
-            Retry
+            {t("retry")}
           </ToastAction>
         ),
       });
     };
     window.addEventListener("api-timeout", handler);
     return () => window.removeEventListener("api-timeout", handler);
-  }, [toast, queryClient]);
+  }, [toast, queryClient, t]);
 
   if (!conflictBannerVisible) return null;
 
@@ -84,20 +77,20 @@ function GlobalSecurityListeners() {
         <div className="flex items-center gap-3">
           <LogIn className="h-5 w-5 text-red-600 flex-shrink-0" />
           <AlertDescription className="text-red-800 dark:text-red-200 font-medium">
-            <strong>Signed in on another device.</strong> Your session may have been taken over. Please{" "}
+            <strong>{t("signedInOnAnotherDevice")}</strong> {t("sessionTakenOver")}{" "}
             <a href="/login" className="underline font-semibold hover:no-underline">
-              log in again
+              {t("logInAgain")}
             </a>{" "}
-            to secure your account.
+            {t("toSecureAccount")}
           </AlertDescription>
         </div>
         <Button
           variant="ghost"
           size="sm"
-          className="ml-4 flex-shrink-0 text-red-700 hover:text-red-900 hover:bg-red-100 dark:text-red-300"
+          className="ms-4 flex-shrink-0 text-red-700 hover:text-red-900 hover:bg-red-100 dark:text-red-300"
           onClick={() => setConflictBannerVisible(false)}
           data-testid="button-dismiss-session-conflict"
-          aria-label="Dismiss session conflict warning"
+          aria-label={t("dismissSessionConflictWarning")}
         >
           <X className="h-4 w-4" />
         </Button>
@@ -107,6 +100,7 @@ function GlobalSecurityListeners() {
 }
 
 function ImpersonationBanner() {
+  const { t } = useTranslation("layout");
   const {
     isImpersonating,
     tenantName,
@@ -123,7 +117,6 @@ function ImpersonationBanner() {
   const [timeLeft, setTimeLeft] = useState("");
   const [showUnlock, setShowUnlock] = useState(false);
 
-  // Countdown timer
   useEffect(() => {
     if (!startedAt || !timeoutMinutes) return;
     const expiresAt = startedAt + timeoutMinutes * 60 * 1000;
@@ -142,24 +135,23 @@ function ImpersonationBanner() {
     return () => clearInterval(id);
   }, [startedAt, timeoutMinutes]);
 
-  // Listen for read-only blocked events
   const unlockRef = useRef<(() => void) | null>(null);
   unlockRef.current = () => setShowUnlock(true);
   useEffect(() => {
     const handler = () => {
       toast({
-        title: "Read-Only Session",
-        description: "You're in a read-only support session. Unlock edit mode to make changes.",
+        title: t("readOnlySession"),
+        description: t("readOnlySessionDesc"),
         action: (
-          <ToastAction altText="Unlock Edit Mode" onClick={() => unlockRef.current?.()}>
-            Unlock Edit
+          <ToastAction altText={t("unlockEdit")} onClick={() => unlockRef.current?.()}>
+            {t("unlockEdit")}
           </ToastAction>
         ),
       });
     };
     window.addEventListener("read-only-session-blocked", handler);
     return () => window.removeEventListener("read-only-session-blocked", handler);
-  }, [toast]);
+  }, [toast, t]);
 
 
   if (!isImpersonating) return null;
@@ -179,47 +171,47 @@ function ImpersonationBanner() {
             <div className="flex items-center gap-2 text-sm font-medium">
               <ShieldAlert className="h-4 w-4 shrink-0" />
               <span>
-                {isEdit ? "SUPPORT SESSION — EDIT ENABLED" : "SUPPORT SESSION"}
+                {isEdit ? t("supportSessionEdit") : t("supportSession")}
               </span>
               {tenantName && (
                 <>
                   <span className="opacity-60">·</span>
-                  <span>Tenant: <strong>{tenantName}</strong></span>
+                  <span>{t("tenant")}: <strong>{tenantName}</strong></span>
                 </>
               )}
               {originalAdmin && (
                 <>
                   <span className="opacity-60">·</span>
-                  <span>Admin: {originalAdmin.userName}</span>
+                  <span>{t("admin")}: {originalAdmin.userName}</span>
                 </>
               )}
               {!isEdit && (
                 <>
                   <span className="opacity-60">·</span>
                   <span className="flex items-center gap-1">
-                    <Lock className="h-3 w-3" /> READ ONLY
+                    <Lock className="h-3 w-3" /> {t("readOnly")}
                   </span>
                 </>
               )}
               {isEdit && (
                 <>
                   <span className="opacity-60">·</span>
-                  <span>Every change is logged</span>
+                  <span>{t("everyChangeLogged")}</span>
                 </>
               )}
               {timeLeft && !isEdit && (
                 <>
                   <span className="opacity-60">·</span>
-                  <span>⏱ {timeLeft} left</span>
+                  <span>⏱ {timeLeft} {t("left")}</span>
                 </>
               )}
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-xs">
               {reason && (
-                <span className="opacity-75 hidden sm:inline">Reason: {reason}</span>
+                <span className="opacity-75 hidden sm:inline">{t("reason")}: {reason}</span>
               )}
               {ticketId && (
-                <span className="opacity-75 hidden sm:inline">· Ticket: {ticketId}</span>
+                <span className="opacity-75 hidden sm:inline">· {t("ticket")}: {ticketId}</span>
               )}
               {!isEdit && (
                 <Button
@@ -230,7 +222,7 @@ function ImpersonationBanner() {
                   data-testid="button-unlock-edit"
                 >
                   <Pencil className="h-3 w-3 mr-1" />
-                  Unlock Edit
+                  {t("unlockEdit")}
                 </Button>
               )}
               {isEdit && (
@@ -242,7 +234,7 @@ function ImpersonationBanner() {
                   data-testid="button-return-readonly"
                 >
                   <Lock className="h-3 w-3 mr-1" />
-                  Return to Read Only
+                  {t("returnToReadOnly")}
                 </Button>
               )}
               <Button
@@ -253,7 +245,7 @@ function ImpersonationBanner() {
                 data-testid="button-end-impersonation-app"
               >
                 <X className="h-3 w-3 mr-1" />
-                End Session
+                {t("endSession")}
               </Button>
             </div>
           </div>
@@ -265,6 +257,7 @@ function ImpersonationBanner() {
 }
 
 function RestrictionBanner() {
+  const { t } = useTranslation("layout");
   const { user } = useAuth();
   if (!user?.processingRestricted) return null;
 
@@ -275,17 +268,17 @@ function RestrictionBanner() {
     >
       <div className="max-w-7xl mx-auto flex items-center gap-2 text-sm">
         <AlertTriangle className="h-4 w-4 shrink-0 text-amber-700" />
-        <span className="font-semibold">DATA PROCESSING RESTRICTION ACTIVE</span>
+        <span className="font-semibold">{t("dataRestrictionActive")}</span>
         <span className="opacity-70">·</span>
         <span>
-          Your account has a data processing restriction in place
+          {t("dataRestrictionDesc")}
           {user.restrictionRequestedAt && (
-            <> since {new Date(user.restrictionRequestedAt).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}</>
+            <> {t("dataRestrictionSince")} {new Date(user.restrictionRequestedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}</>
           )}
-          . Some actions are paused.
+          {t("someActionsPaused")}
         </span>
         <span className="opacity-70">·</span>
-        <span>Contact your manager or administrator to lift this.</span>
+        <span>{t("contactManagerToLift")}</span>
       </div>
     </div>
   );
@@ -298,6 +291,7 @@ interface ConsentStatus {
 }
 
 function ConsentUpdateModal() {
+  const { t } = useTranslation("layout");
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [accepted, setAccepted] = useState(false);
@@ -358,10 +352,10 @@ function ConsentUpdateModal() {
         <DialogHeader>
           <div className="flex items-center gap-2 mb-1">
             <FileText className="h-5 w-5 text-primary" />
-            <DialogTitle>Updated Terms of Service</DialogTitle>
+            <DialogTitle>{t("updatedTermsOfService")}</DialogTitle>
           </div>
           <DialogDescription>
-            We've updated our Terms of Service{tosVersion ? ` (v${tosVersion})` : ""} and Privacy Policy. Please review and accept to continue using Table Salt.
+            {t("termsUpdatedDesc", { version: tosVersion ? ` (v${tosVersion})` : "" })}
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -374,7 +368,7 @@ function ConsentUpdateModal() {
               data-testid="link-view-terms"
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              View Terms of Service
+              {t("viewTermsOfService")}
             </a>
             <a
               href={privacyUrl}
@@ -384,7 +378,7 @@ function ConsentUpdateModal() {
               data-testid="link-view-privacy"
             >
               <ExternalLink className="h-3.5 w-3.5" />
-              View Privacy Policy
+              {t("viewPrivacyPolicy")}
             </a>
           </div>
           <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
@@ -396,7 +390,7 @@ function ConsentUpdateModal() {
               className="mt-0.5"
             />
             <Label htmlFor="consent-accept" className="text-sm leading-relaxed cursor-pointer">
-              I have read and accept the updated terms
+              {t("haveReadAndAccept")}
             </Label>
           </div>
           <Button
@@ -405,7 +399,7 @@ function ConsentUpdateModal() {
             onClick={handleAccept}
             data-testid="button-accept-consent"
           >
-            {submitting ? "Saving..." : "Accept & Continue"}
+            {submitting ? t("saving") : t("acceptAndContinue")}
           </Button>
         </div>
       </DialogContent>
@@ -414,6 +408,7 @@ function ConsentUpdateModal() {
 }
 
 export default function AppLayout({ children }: AppLayoutProps) {
+  const { t } = useTranslation("layout");
   const [location, setLocation] = useLocation();
   const [showContactSupport, setShowContactSupport] = useState(false);
 
@@ -449,7 +444,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
       <OfflineBanner onViewQueue={() => { if (location !== "/pos") setLocation("/pos"); }} />
       <ConsentUpdateModal />
 
-      <div className="flex flex-1 min-h-0">
+      <div className="flex flex-1 min-h-0 rtl:flex-row-reverse">
         <Sidebar />
         <div className="flex-1 flex flex-col min-w-0 min-h-screen">
           <Header
@@ -477,7 +472,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               rel="noopener noreferrer"
               className="hover:text-foreground transition-colors"
               data-testid="link-footer-privacy"
-            >Privacy Policy</a>
+            >{t("privacyPolicy")}</a>
             <span className="opacity-40">·</span>
             <a
               href={platformSettings?.tosUrl || "/legal/terms"}
@@ -485,7 +480,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               rel="noopener noreferrer"
               className="hover:text-foreground transition-colors"
               data-testid="link-footer-terms"
-            >Terms of Service</a>
+            >{t("termsOfService")}</a>
           </footer>
         </div>
       </div>
@@ -497,8 +492,8 @@ export default function AppLayout({ children }: AppLayoutProps) {
           whileHover={{ scale: 1.1 }}
           whileTap={{ scale: 0.9 }}
           onClick={() => setShowContactSupport(true)}
-          className="fixed z-[999] w-12 h-12 rounded-full bg-cyan-600 hover:bg-cyan-700 text-white shadow-lg hover:shadow-xl flex items-center justify-center transition-colors sm:hidden bottom-[30px] right-[30px]"
-          aria-label="Contact Support"
+          className="fixed z-[999] w-12 h-12 rounded-full bg-cyan-600 hover:bg-cyan-700 text-white shadow-lg hover:shadow-xl flex items-center justify-center transition-colors sm:hidden bottom-[30px] rtl:left-[30px] ltr:right-[30px]"
+          aria-label={t("contactSupport")}
           data-testid="button-contact-support-float"
         >
           <Headset className="h-5 w-5" aria-hidden="true" />

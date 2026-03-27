@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -56,10 +57,10 @@ function formatCurrency(amount: string | null): string {
   return `₹${n.toFixed(2)}`;
 }
 
-function formatDate(dateStr: string): string {
+function formatDate(dateStr: string, locale: string): string {
   try {
     const d = new Date(dateStr);
-    return d.toLocaleString("en-IN", {
+    return d.toLocaleString(locale, {
       day: "2-digit", month: "short", year: "numeric",
       hour: "2-digit", minute: "2-digit", hour12: true,
     });
@@ -71,6 +72,8 @@ function formatDate(dateStr: string): string {
 const PAGE_SIZE = 20;
 
 export default function CashDrawerLog() {
+  const { t } = useTranslation("modules");
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const [page, setPage] = useState(0);
   const [outletId, setOutletId] = useState<string>("");
@@ -234,7 +237,7 @@ export default function CashDrawerLog() {
                       </div>
                     </div>
                     <div className="text-xs text-muted-foreground shrink-0 whitespace-nowrap" data-testid={`text-date-${event.id}`}>
-                      {formatDate(event.created_at)}
+                      {formatDate(event.created_at, i18n.language)}
                     </div>
                   </div>
                 );

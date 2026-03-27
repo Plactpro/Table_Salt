@@ -21,6 +21,7 @@ import {
 import type { Outlet, MenuItem, MenuCategory } from "@shared/schema";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useTranslation } from "react-i18next";
 
 interface KioskDevice {
   id: string;
@@ -46,9 +47,10 @@ interface UpsellRule {
 }
 
 export default function KioskManagementPage() {
+  const { t } = useTranslation("modules");
   return (
     <div className="space-y-6 p-6" data-testid="kiosk-management-page">
-      <PageTitle title="Kiosk Management" />
+      <PageTitle title={t("kioskManagement")} />
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2">
           <Monitor className="h-6 w-6 text-primary" /> Kiosk Management
