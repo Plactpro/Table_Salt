@@ -607,6 +607,11 @@ export function registerRestaurantBillingRoutes(app: Express): void {
             auditLogFn({ tenantId: failUser.tenantId, userId: failUser.id, userName: failUser.name, action: "GATEWAY_FAILURE", entityType: "bill", entityId: req.params.id, metadata: { operation: "payment_submission", error: err.message }, req }).catch(() => {});
           }
         }
+        // PR-011: Log gateway failures to system_events (not PAYMENT_FAILURE — keeps metrics clean)
+        pool.query(
+          `INSERT INTO system_events (event_type, name, message, created_at) VALUES ($1, $2, $3, NOW())`,
+          ["GATEWAY_FAILURE", "payment-gateway", `Payment gateway failure during payment_submission: ${err.message}`]
+        ).catch(() => {});
         return res.status(503).json({ code: "GATEWAY_DOWN", message: "Payment gateway is unreachable. Use manual/cash payment or try again shortly." });
       }
       res.status(500).json({ message: err.message });
@@ -977,6 +982,11 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (err instanceof GatewayDownError) {
         const errUser = req.user as any;
         auditLogImport({ tenantId: errUser?.tenantId, userId: errUser?.id, userName: errUser?.name, action: "GATEWAY_FAILURE", entityType: "bill", entityId: req.params.id, metadata: { operation: "create_payment_link", error: err.message }, req }).catch(() => {});
+        // PR-011: Log to system_events as GATEWAY_FAILURE (not PAYMENT_FAILURE)
+        pool.query(
+          `INSERT INTO system_events (event_type, name, message, created_at) VALUES ($1, $2, $3, NOW())`,
+          ["GATEWAY_FAILURE", "payment-gateway", `Payment gateway failure during create_payment_link: ${err.message}`]
+        ).catch(() => {});
         return res.status(503).json({ code: "GATEWAY_DOWN", message: err.message });
       }
       res.status(500).json({ message: err.message });

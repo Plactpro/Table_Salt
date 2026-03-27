@@ -7,6 +7,7 @@ import { setupAuth, requireAuth } from "./auth";
 import { registerAdminRoutes } from "./admin-routes";
 import { setupCsrf, setupIpAllowlistMiddleware } from "./security";
 import { uploadFile } from "./services/file-storage";
+import { withCircuitBreaker } from "./lib/circuit-breaker";
 
 import { registerAuthRoutes } from "./routers/auth";
 import { registerRecycleBinRoutes } from "./routers/recycle-bin";
@@ -95,6 +96,54 @@ export async function registerRoutes(
 
   const { blockIfRestricted } = await import("./middleware/check-restriction");
   app.use(blockIfRestricted);
+
+  // PR-011: Circuit breaker middleware — applied to high-impact route groups by path prefix.
+  // Auth, health, menu GET, and inventory GET are excluded (must always be available for POS).
+  // Orders mutations — all order creation/modification endpoints
+  app.use("/api/orders", (req, res, next) => {
+    if (req.method === "GET") return next();
+    return withCircuitBreaker("orders")(req, res, next);
+  });
+  app.use("/api/order-items", (req, res, next) => {
+    if (req.method === "GET") return next();
+    return withCircuitBreaker("orders")(req, res, next);
+  });
+
+  // Billing/payment endpoints
+  app.use("/api/billing", withCircuitBreaker("billing"));
+  app.use("/api/restaurant-billing", withCircuitBreaker("billing"));
+  app.use("/api/cash-machine", withCircuitBreaker("billing"));
+
+  // Kitchen KOT send endpoints
+  app.use("/api/kitchen", (req, res, next) => {
+    if (req.method === "GET") return next();
+    return withCircuitBreaker("kitchen")(req, res, next);
+  });
+  app.use("/api/kds", (req, res, next) => {
+    if (req.method === "GET") return next();
+    return withCircuitBreaker("kitchen")(req, res, next);
+  });
+
+  // Reports / analytics generation
+  app.use("/api/reports", withCircuitBreaker("reports"));
+
+  // Inventory mutations only — GET reads must stay available
+  app.use("/api/inventory", (req, res, next) => {
+    if (req.method !== "GET") return withCircuitBreaker("inventory-mutations")(req, res, next);
+    return next();
+  });
+  app.use("/api/stock-adjustments", (req, res, next) => {
+    if (req.method !== "GET") return withCircuitBreaker("inventory-mutations")(req, res, next);
+    return next();
+  });
+  app.use("/api/stock-counts", (req, res, next) => {
+    if (req.method !== "GET") return withCircuitBreaker("inventory-mutations")(req, res, next);
+    return next();
+  });
+  app.use("/api/wastage", (req, res, next) => {
+    if (req.method !== "GET") return withCircuitBreaker("inventory-mutations")(req, res, next);
+    return next();
+  });
 
   registerAdminRoutes(app);
 

@@ -3733,3 +3733,33 @@ export async function runTask108Migrations(): Promise<void> {
     ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS auto_acknowledged BOOLEAN DEFAULT false
   `);
 }
+
+export async function runTask191Migrations(): Promise<void> {
+  // PR-011: system_events table for circuit breaker and gateway failure logging
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS system_events (
+      id SERIAL PRIMARY KEY,
+      event_type TEXT NOT NULL,
+      name TEXT NOT NULL,
+      message TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_system_events_created_at ON system_events (created_at DESC)
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_system_events_event_type ON system_events (event_type)
+  `);
+
+  // PR-011: last_webhook_at and webhook_alert_threshold_minutes on order_channels
+  await pool.query(`
+    ALTER TABLE order_channels ADD COLUMN IF NOT EXISTS last_webhook_at TIMESTAMPTZ
+  `);
+
+  await pool.query(`
+    ALTER TABLE order_channels ADD COLUMN IF NOT EXISTS webhook_alert_threshold_minutes INTEGER DEFAULT 120
+  `);
+}

@@ -60,6 +60,8 @@ interface OrderChannel {
   icon: string | null;
   active: boolean | null;
   commissionPct: string | null;
+  lastWebhookAt: string | null;
+  webhookAlertThresholdMinutes: number;
 }
 
 interface ChannelConfig {
@@ -417,6 +419,25 @@ export default function OrdersHub() {
                       <Badge variant="outline" className={colorCls}><Icon className="h-3 w-3 mr-1" />{ch.name}</Badge>
                       <span className="text-xs text-muted-foreground ml-auto">{ch.commissionPct}% commission</span>
                     </CardTitle>
+                    {ch.lastWebhookAt && (
+                      <p className="text-xs text-muted-foreground mt-0.5" data-testid={`text-last-webhook-${ch.slug}`}>
+                        <span className="font-medium">Last received:</span>{" "}
+                        {(() => {
+                          const ageMs = Date.now() - new Date(ch.lastWebhookAt).getTime();
+                          const mins = Math.floor(ageMs / 60000);
+                          if (mins < 60) return `${mins}m ago`;
+                          const hrs = Math.floor(mins / 60);
+                          if (hrs < 24) return `${hrs}h ago`;
+                          return `${Math.floor(hrs / 24)}d ago`;
+                        })()}
+                        {ch.webhookAlertThresholdMinutes && (
+                          <span className="ml-2 text-muted-foreground/70">(threshold: {ch.webhookAlertThresholdMinutes}m)</span>
+                        )}
+                      </p>
+                    )}
+                    {!ch.lastWebhookAt && (
+                      <p className="text-xs text-muted-foreground mt-0.5" data-testid={`text-last-webhook-${ch.slug}`}>Last received: never</p>
+                    )}
                   </CardHeader>
                   <CardContent className="space-y-2">
                     {chConfigs.length === 0 && <p className="text-xs text-muted-foreground">No outlet configs yet</p>}

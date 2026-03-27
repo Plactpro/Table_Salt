@@ -124,24 +124,84 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-// Health check — public, no auth, used by AWS ALB target group health checks
+// Health check cache — 5-second TTL to prevent overloading the DB
+let healthCache: { data: Record<string, unknown>; statusCode: number; expiresAt: number } | null = null;
+
+// Health check — public, no auth, used by AWS ALB target group health checks and super admin dashboard
 app.get("/api/health", async (_req: Request, res: Response) => {
+  const now = Date.now();
+  if (healthCache && healthCache.expiresAt > now) {
+    return res.status(healthCache.statusCode).json(healthCache.data);
+  }
+
   try {
+    const dbStart = Date.now();
     await pool.query("SELECT 1");
-    res.json({
-      status: "ok",
-      uptime: Math.floor(process.uptime()),
+    const dbResponseMs = Date.now() - dbStart;
+
+    const poolTotal = pool.totalCount;
+    const poolIdle = pool.idleCount;
+    const poolUsed = poolTotal - poolIdle;
+    const poolMax = 20; // matches pool config in db.ts
+
+    const memUsed = Math.round(process.memoryUsage().heapUsed / 1024 / 1024);
+
+    let tenantCount = 0;
+    try {
+      const { rows } = await pool.query(`SELECT COUNT(*) FROM tenants WHERE slug != 'platform'`);
+      tenantCount = parseInt(rows[0]?.count || "0", 10);
+    } catch {}
+
+    // Count active WebSocket connections
+    let activeWebsockets = 0;
+    try {
+      const { getWssClientCount } = await import("./realtime");
+      activeWebsockets = getWssClientCount();
+    } catch {}
+
+    const poolUsedPct = poolMax > 0 ? poolUsed / poolMax : 0;
+    let status: "ok" | "degraded" | "down" = "ok";
+    if (dbResponseMs > 500 || poolUsedPct > 0.8) status = "degraded";
+
+    const { circuitBreakerRegistry } = await import("./lib/circuit-breaker");
+    const circuitBreakers: Record<string, string> = {};
+    for (const [name, breaker] of circuitBreakerRegistry.getAll()) {
+      circuitBreakers[name] = breaker.getState();
+    }
+
+    const data: Record<string, unknown> = {
+      status,
+      db_response_ms: dbResponseMs,
+      db_pool_used: poolUsed,
+      db_pool_max: poolMax,
+      active_websockets: activeWebsockets,
+      memory_used_mb: memUsed,
+      uptime_seconds: Math.floor(process.uptime()),
+      tenant_count: tenantCount,
+      circuit_breakers: circuitBreakers,
       timestamp: new Date().toISOString(),
       version: process.env.npm_package_version || "1.0.0",
       environment: process.env.NODE_ENV || "development",
-      database: "connected",
-    });
+    };
+
+    const httpStatus = status === "down" ? 503 : 200;
+    healthCache = { data, statusCode: httpStatus, expiresAt: now + 5_000 };
+    return res.status(httpStatus).json(data);
   } catch {
-    res.status(503).json({
-      status: "error",
+    const data = {
+      status: "down",
+      db_response_ms: null,
+      db_pool_used: null,
+      db_pool_max: 20,
+      active_websockets: 0,
+      memory_used_mb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024),
+      uptime_seconds: Math.floor(process.uptime()),
+      tenant_count: 0,
+      circuit_breakers: {},
       timestamp: new Date().toISOString(),
-      database: "disconnected",
-    });
+    };
+    healthCache = { data, statusCode: 503, expiresAt: now + 5_000 };
+    return res.status(503).json(data);
   }
 });
 
@@ -203,6 +263,110 @@ app.use((req, res, next) => {
   next();
 });
 
+// PR-011: Webhook "no orders" monitoring with false-positive prevention
+function startWebhookMonitor() {
+  const CHECK_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+
+  async function runWebhookCheck() {
+    try {
+      // Get all active order channels with last_webhook_at set
+      const { rows: channels } = await pool.query(`
+        SELECT oc.id, oc.name, oc.slug, oc.tenant_id,
+               oc.last_webhook_at,
+               COALESCE(oc.webhook_alert_threshold_minutes, 120) AS threshold_minutes
+        FROM order_channels oc
+        WHERE oc.active = true AND oc.last_webhook_at IS NOT NULL
+      `);
+
+      for (const ch of channels) {
+        try {
+          const thresholdMs = (ch.threshold_minutes || 120) * 60 * 1000;
+          const lastWebhookAt = new Date(ch.last_webhook_at).getTime();
+          const ageMs = Date.now() - lastWebhookAt;
+
+          if (ageMs < thresholdMs) continue; // Within threshold — OK
+
+          // Check if outlet is open using opening_hours text field (format: "HH:MM-HH:MM")
+          // If opening_hours is null/unset we assume 24h operation (always open).
+          // On any query error we err on the side of alerting (don't swallow the check).
+          let outletOpen = true;
+          try {
+            const { rows: outletRows } = await pool.query(`
+              SELECT opening_hours FROM outlets
+              WHERE tenant_id = $1 AND opening_hours IS NOT NULL
+              LIMIT 1
+            `, [ch.tenant_id]);
+            if (outletRows.length > 0 && outletRows[0].opening_hours) {
+              const parts = (outletRows[0].opening_hours as string).split("-");
+              if (parts.length === 2) {
+                const [openH, openM] = (parts[0] || "").split(":").map(Number);
+                const [closeH, closeM] = (parts[1] || "").split(":").map(Number);
+                const now = new Date();
+                const nowMins = now.getHours() * 60 + now.getMinutes();
+                const openMins = (openH || 0) * 60 + (openM || 0);
+                const closeMins = (closeH || 0) * 60 + (closeM || 0);
+                // Handle overnight hours (e.g. 22:00-02:00)
+                if (closeMins < openMins) {
+                  outletOpen = nowMins >= openMins || nowMins < closeMins;
+                } else {
+                  outletOpen = nowMins >= openMins && nowMins < closeMins;
+                }
+              }
+            }
+          } catch (hoursErr) {
+            console.warn(`[WebhookMonitor] Could not check outlet hours for tenant ${ch.tenant_id}:`, hoursErr);
+            // If we can't check hours, skip alerting to avoid false positives
+            outletOpen = false;
+          }
+
+          if (!outletOpen) continue; // Outlet not open — skip
+
+          // False-positive prevention: verify the restaurant is currently operational (previous_hour_order_count > 0).
+          // Since webhook-sourced orders stop when the integration is down, we check POS/walk-in orders
+          // (channel = 'pos') as the proxy for "restaurant is operational" — POS always works independently.
+          // Additionally verify the channel was historically active (last 24h) to exclude dormant integrations.
+          const { rows: activeCheck } = await pool.query(`
+            SELECT
+              (SELECT COUNT(*) FROM orders WHERE tenant_id = $1 AND channel = 'pos' AND created_at > NOW() - INTERVAL '1 hour') AS pos_hour_count,
+              (SELECT COUNT(*) FROM orders WHERE tenant_id = $1 AND channel = $2 AND created_at > NOW() - INTERVAL '24 hours') AS channel_day_count
+          `, [ch.tenant_id, ch.slug]);
+
+          const posHourCount = parseInt(activeCheck[0]?.pos_hour_count || "0", 10);
+          const channelDayCount = parseInt(activeCheck[0]?.channel_day_count || "0", 10);
+
+          // Skip if restaurant has no POS activity this hour (quiet period) OR channel was never active
+          if (posHourCount === 0 || channelDayCount === 0) continue;
+
+          // Fire in-app alert to managers
+          await pool.query(`
+            INSERT INTO alert_events (tenant_id, outlet_id, alert_code, severity, message, created_at)
+            SELECT $1, o.id, 'WEBHOOK_NO_ORDERS', 'warning',
+                   $2, NOW()
+            FROM outlets o
+            WHERE o.tenant_id = $1
+            LIMIT 1
+            ON CONFLICT DO NOTHING
+          `, [
+            ch.tenant_id,
+            `No ${ch.name || ch.slug} orders received in ${Math.round(ageMs / 60000)} minutes — check your integration.`
+          ]).catch(() => {}); // Non-fatal
+
+          console.log(`[WebhookMonitor] Alert fired for channel '${ch.slug}' tenant ${ch.tenant_id}: ${Math.round(ageMs / 60000)} min since last webhook`);
+        } catch (chErr) {
+          console.error(`[WebhookMonitor] Error checking channel ${ch.id}:`, chErr);
+        }
+      }
+    } catch (err) {
+      console.error("[WebhookMonitor] Check failed:", err);
+    }
+  }
+
+  setInterval(runWebhookCheck, CHECK_INTERVAL_MS);
+  // Also run once after a 2-minute startup delay to let migrations complete
+  setTimeout(runWebhookCheck, 2 * 60 * 1000);
+  console.log("[WebhookMonitor] Started — checking every 30 minutes");
+}
+
 (async () => {
   try {
     const { runAdminMigrations } = await import("./admin-migrations");
@@ -216,6 +380,13 @@ app.use((req, res, next) => {
     await runTask108Migrations();
   } catch (e) {
     console.error("Task 108 migrations error:", e);
+  }
+
+  try {
+    const { runTask191Migrations } = await import("./admin-migrations");
+    await runTask191Migrations();
+  } catch (e) {
+    console.error("Task 191 migrations error:", e);
   }
 
   try {
@@ -413,6 +584,13 @@ app.use((req, res, next) => {
     startTrialWarningScheduler();
   } catch (e) {
     console.error("Trial warning scheduler init error:", e);
+  }
+
+  // PR-011: Webhook "no orders" monitoring — runs every 30 minutes during outlet hours
+  try {
+    startWebhookMonitor();
+  } catch (e) {
+    console.error("Webhook monitor init error:", e);
   }
 
   app.use((err: any, req: Request, res: Response, next: NextFunction) => {
