@@ -3777,4 +3777,45 @@ export async function runTask191Migrations(): Promise<void> {
   await pool.query(`
     ALTER TABLE order_channels ADD COLUMN IF NOT EXISTS webhook_alert_threshold_minutes INTEGER DEFAULT 120
   `);
+
+  // PR-012: table_qr_sessions — multi-customer table ordering sessions
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS table_qr_sessions (
+      id SERIAL PRIMARY KEY,
+      table_id VARCHAR(36) NOT NULL REFERENCES tables(id),
+      tenant_id VARCHAR(36) NOT NULL,
+      outlet_id VARCHAR(36),
+      session_token VARCHAR(36) NOT NULL UNIQUE DEFAULT gen_random_uuid()::text,
+      order_ids TEXT[] DEFAULT '{}',
+      started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ,
+      is_active BOOLEAN NOT NULL DEFAULT true
+    )
+  `);
+
+  // PR-012: ensure order_ids column is TEXT[] (fix from earlier INTEGER[] migration)
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'table_qr_sessions'
+          AND column_name = 'order_ids'
+          AND udt_name = '_int4'
+      ) THEN
+        ALTER TABLE table_qr_sessions ALTER COLUMN order_ids TYPE TEXT[] USING order_ids::text[];
+      END IF;
+    END $$
+  `).catch(() => {});
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_table_qr_sessions_table_active
+    ON table_qr_sessions (table_id, is_active)
+  `);
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_table_qr_sessions_active
+    ON table_qr_sessions (table_id)
+    WHERE is_active = true
+  `);
 }

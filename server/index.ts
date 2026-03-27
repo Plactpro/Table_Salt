@@ -531,8 +531,9 @@ function startWebhookMonitor() {
   }
 
   try {
-    const { startEscalationJob } = await import("./routers/table-requests");
+    const { startEscalationJob, cleanupExpiredQrSessions } = await import("./routers/table-requests");
     startEscalationJob();
+    cleanupExpiredQrSessions();
   } catch (e) {
     console.error("Escalation job init error:", e);
   }
