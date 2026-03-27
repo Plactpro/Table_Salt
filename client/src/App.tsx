@@ -5,6 +5,10 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider, useAuth, useSubscription } from "@/lib/auth";
 import { ImpersonationProvider } from "@/lib/impersonation-context";
+import { useIdleTimer } from "@/hooks/use-idle-timer";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { FeatureKey } from "@/lib/subscription";
 import AppLayout from "@/components/layout/app-layout";
 import AdminLayout from "@/components/admin/admin-layout";
@@ -99,7 +103,7 @@ import CookieConsentBanner from "@/components/CookieConsentBanner";
 import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
 import { ActiveAlertsProvider } from "@/lib/active-alerts-context";
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Loader2, ShieldAlert } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -208,6 +212,121 @@ function GuardedRoute({ path, component: Component }: { path: string; component:
   return <Component />;
 }
 
+function IdleLogoutDialog() {
+  const { user, logout } = useAuth();
+  const [location] = useLocation();
+
+  const isPublicOrKiosk = location === "/login" || location === "/register" || location === "/kiosk" || location.startsWith("/guest/") || location.startsWith("/table/") || location.startsWith("/kds/wall") || location.startsWith("/admin");
+
+  const outletId = user?.outletId;
+
+  const { data: outletTimeout } = useQuery<{ idleTimeoutMinutes: number }>({
+    queryKey: ["/api/outlets", outletId, "idle-timeout"],
+    queryFn: () => fetch(`/api/outlets/${outletId}/idle-timeout`, { credentials: "include" }).then(r => r.ok ? r.json() : null),
+    enabled: !!user && !isPublicOrKiosk && !!outletId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: securitySettings } = useQuery<{ idleTimeoutMinutes: number }>({
+    queryKey: ["/api/security/settings"],
+    queryFn: () => fetch("/api/security/settings", { credentials: "include" }).then(r => r.ok ? r.json() : { idleTimeoutMinutes: 30 }),
+    enabled: !!user && !isPublicOrKiosk && !outletId,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const timeoutMinutes = outletTimeout?.idleTimeoutMinutes ?? securitySettings?.idleTimeoutMinutes ?? 30;
+  const enabled = !!user && !isPublicOrKiosk && timeoutMinutes > 0;
+
+  const handleTimeout = async () => {
+    try {
+      const pendingOrderIds = Object.keys(sessionStorage).filter(k => k.startsWith("order_draft_"));
+      if (pendingOrderIds.length > 0) {
+        sessionStorage.setItem("pending_order_ids", JSON.stringify(pendingOrderIds));
+      }
+    } catch {}
+    await logout();
+  };
+
+  const { warningVisible, secondsLeft, resetTimer } = useIdleTimer({
+    timeoutMinutes,
+    enabled,
+    onTimeout: handleTimeout,
+    warningWindowSeconds: 60,
+  });
+
+  if (!warningVisible) return null;
+
+  return (
+    <AlertDialog open={warningVisible} data-testid="dialog-idle-logout">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>You're about to be logged out</AlertDialogTitle>
+          <AlertDialogDescription data-testid="text-idle-countdown">
+            You've been inactive for a while. You'll be logged out in{" "}
+            <strong>{secondsLeft} second{secondsLeft !== 1 ? "s" : ""}</strong>.
+            Click "Stay logged in" to continue your session.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={resetTimer} data-testid="button-stay-logged-in">
+            Stay logged in
+          </AlertDialogCancel>
+          <AlertDialogAction onClick={handleTimeout} data-testid="button-logout-now">
+            Log out now
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
+function PendingOrdersNotice() {
+  const [, navigate] = useLocation();
+  const [pendingCount, setPendingCount] = useState(0);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem("pending_order_ids");
+      if (!raw) return;
+      const ids: string[] = JSON.parse(raw);
+      sessionStorage.removeItem("pending_order_ids");
+      if (ids.length > 0) {
+        setPendingCount(ids.length);
+        setOpen(true);
+      }
+    } catch {}
+  }, []);
+
+  if (!open) return null;
+
+  return (
+    <AlertDialog open={open} data-testid="dialog-pending-orders">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Session timed out — unsaved orders</AlertDialogTitle>
+          <AlertDialogDescription data-testid="text-pending-orders-count">
+            You were logged out due to inactivity. You had{" "}
+            <strong>{pendingCount} unsaved order draft{pendingCount !== 1 ? "s" : ""}</strong>{" "}
+            that may need attention. Review your open orders to restore any incomplete work.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setOpen(false)} data-testid="button-pending-orders-dismiss">
+            Dismiss
+          </AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => { setOpen(false); navigate("/orders"); }}
+            data-testid="button-review-orders"
+          >
+            Review Open Orders
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 function ProtectedRoute({ children }: { children: ReactNode }) {
   const { user, isLoading } = useAuth();
 
@@ -226,6 +345,7 @@ function ProtectedRoute({ children }: { children: ReactNode }) {
   return (
     <ActiveAlertsProvider>
       <AlertListener />
+      <PendingOrdersNotice />
       {children}
     </ActiveAlertsProvider>
   );
@@ -569,6 +689,7 @@ function App() {
               />
               <Toaster />
               <CookieConsentBanner />
+              <IdleLogoutDialog />
               <Router />
             </ImpersonationProvider>
           </AuthProvider>

@@ -227,11 +227,11 @@ export async function routeAndPrint(params: {
   isReprint?: boolean;
   reprintReason?: string;
   payload?: Record<string, unknown>;
-}): Promise<{ jobIds: string[]; htmlFallback?: string }> {
+}): Promise<{ jobIds: string[]; htmlFallback?: string; queued?: boolean }> {
   const { jobType, referenceId, outletId, tenantId, triggeredByName, isReprint, reprintReason, payload: inputPayload } = params;
 
   const printers = await getPrintersByOutlet(tenantId, outletId);
-  const results: { jobIds: string[]; htmlFallback?: string } = { jobIds: [] };
+  const results: { jobIds: string[]; htmlFallback?: string; queued?: boolean } = { jobIds: [] };
 
   if (jobType === "kot" || jobType === "reprint_kot") {
     const { rows: orderRows } = await pool.query(
@@ -322,9 +322,15 @@ export async function routeAndPrint(params: {
       jobCreated = true;
 
       if (escposData) {
-        sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
-          console.error(`[PrinterService] KOT print failed for job ${jobId}:`, err);
-        });
+        const printerUnreachable = targetPrinter.status === "offline" || targetPrinter.status === "error";
+        if (printerUnreachable) {
+          // Printer is down — keep job queued; retryFailedJobs will pick it up when printer recovers
+          results.queued = true;
+        } else {
+          sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
+            console.error(`[PrinterService] KOT print failed for job ${jobId}:`, err);
+          });
+        }
       }
     }
 
@@ -499,9 +505,14 @@ export async function routeAndPrint(params: {
     results.jobIds.push(jobId);
 
     if (escposData && targetPrinter) {
-      sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
-        console.error(`[PrinterService] Bill print failed for job ${jobId}:`, err);
-      });
+      const printerUnreachable = targetPrinter.status === "offline" || targetPrinter.status === "error";
+      if (printerUnreachable) {
+        results.queued = true;
+      } else {
+        sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
+          console.error(`[PrinterService] Bill print failed for job ${jobId}:`, err);
+        });
+      }
     }
   } else if (jobType === "refund_receipt") {
     // referenceId is the bill ID; inputPayload.refundPaymentId narrows to the specific refund to print
@@ -594,9 +605,14 @@ export async function routeAndPrint(params: {
     results.jobIds.push(jobId);
 
     if (escposData && targetPrinter) {
-      sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
-        console.error(`[PrinterService] Refund receipt print failed for job ${jobId}:`, err);
-      });
+      const printerUnreachable = targetPrinter.status === "offline" || targetPrinter.status === "error";
+      if (printerUnreachable) {
+        results.queued = true;
+      } else {
+        sendToPrinter(targetPrinter, escposData, jobId).catch(err => {
+          console.error(`[PrinterService] Refund receipt print failed for job ${jobId}:`, err);
+        });
+      }
     }
   } else if (jobType === "label") {
     const { rows: orderRows } = await pool.query(`SELECT * FROM orders WHERE id = $1`, [referenceId]);
@@ -657,38 +673,88 @@ export async function routeAndPrint(params: {
   return results;
 }
 
+/** Rebuild ESC/POS bytes from a stored print job's structured payload. */
+async function rebuildEscposFromJob(job: Record<string, unknown>): Promise<Buffer | null> {
+  try {
+    const payload = typeof job.payload === "string" ? JSON.parse(job.payload) : (job.payload ?? {});
+    const jobType = job.type as string;
+
+    if (jobType === "kot" || jobType === "reprint_kot") {
+      const { order, items } = payload as { order: KOTOrder; items: KOTItem[] };
+      if (order && items) return buildKOT(order, items);
+    } else if (jobType === "bill" || jobType === "receipt" || jobType === "reprint_bill") {
+      const { bill, order, items } = payload as { bill: Parameters<typeof buildBill>[0]; order: Parameters<typeof buildBill>[1]; items: Parameters<typeof buildBill>[2] };
+      if (bill && order && items) return buildBill(bill, order, items);
+    } else if (jobType === "refund_receipt") {
+      const { refundData } = payload as { refundData: Parameters<typeof buildRefundReceipt>[0] };
+      if (refundData) return buildRefundReceipt(refundData);
+    } else if (jobType === "label") {
+      const { order, items } = payload as { order: KOTOrder; items: KOTItem[] };
+      if (order && items) return buildLabel(order, items);
+    }
+  } catch (_) {}
+  return null;
+}
+
 export async function retryFailedJobs(outletId: string, tenantId: string): Promise<number> {
+  // Fetch all queued/failed jobs in FIFO order — guaranteed deterministic replay
   const { rows: failedJobs } = await pool.query(
-    `SELECT pj.*, p.ip_address, p.port, p.connection_type, p.printer_name, p.printer_type
+    `SELECT pj.*, p.ip_address, p.port, p.connection_type, p.printer_name, p.printer_type, p.status AS printer_status
      FROM print_jobs pj
      LEFT JOIN printers p ON p.id = pj.printer_id
      WHERE pj.tenant_id = $1
        AND (pj.outlet_id = $2 OR pj.outlet_id IS NULL)
        AND pj.status IN ('queued', 'failed')
-       AND pj.attempts < pj.max_attempts`,
+       AND pj.attempts < pj.max_attempts
+     ORDER BY pj.created_at ASC`,
     [tenantId, outletId]
   );
 
   let retried = 0;
   for (const job of failedJobs) {
     try {
-      if (job.connection_type === "NETWORK_IP" && job.ip_address) {
-        const printer: Printer = {
-          id: job.printer_id,
-          tenantId,
-          outletId,
-          printerName: job.printer_name,
-          printerType: job.printer_type,
-          connectionType: job.connection_type,
-          ipAddress: job.ip_address,
-          port: job.port,
-        };
-        const data = job.content ? Buffer.from(job.content) : Buffer.from("");
-        await sendToPrinter(printer, data, job.id);
-        retried++;
+      if (job.connection_type !== "NETWORK_IP" || !job.ip_address) continue;
+
+      // Gate: only attempt if printer is currently reachable — avoids burning max_attempts while offline
+      const liveStatus = await pingPrinter({
+        id: job.printer_id as string,
+        tenantId,
+        printerName: job.printer_name as string,
+        printerType: job.printer_type as PrinterType,
+        connectionType: "NETWORK_IP",
+        ipAddress: job.ip_address as string,
+        port: job.port as number | null,
+      } as Printer);
+      if (liveStatus === "offline" || liveStatus === "error") continue;
+
+      const printer: Printer = {
+        id: job.printer_id as string,
+        tenantId,
+        outletId,
+        printerName: job.printer_name as string,
+        printerType: job.printer_type as PrinterType,
+        connectionType: "NETWORK_IP",
+        ipAddress: job.ip_address as string,
+        port: job.port as number | null,
+        status: liveStatus,
+      };
+
+      // Use stored content if available; otherwise rebuild ESC/POS bytes from structured payload
+      let data: Buffer;
+      if (job.content) {
+        data = Buffer.from(job.content as string);
+      } else {
+        const rebuilt = await rebuildEscposFromJob(job as Record<string, unknown>);
+        if (!rebuilt || rebuilt.length === 0) {
+          console.warn(`[PrinterService] Cannot rebuild payload for job ${job.id as string} (type: ${job.type as string}), skipping`);
+          continue;
+        }
+        data = rebuilt;
       }
-    } catch (_) {
-    }
+
+      await sendToPrinter(printer, data, job.id as string);
+      retried++;
+    } catch (_) {}
   }
   return retried;
 }

@@ -218,6 +218,95 @@ interface TipSettings {
   kitchenSharePct: number;
 }
 
+const IDLE_TIMEOUT_OPTIONS = [
+  { value: "0", label: "Never (disabled)" },
+  { value: "10", label: "10 minutes" },
+  { value: "15", label: "15 minutes" },
+  { value: "30", label: "30 minutes" },
+  { value: "45", label: "45 minutes" },
+  { value: "60", label: "60 minutes" },
+];
+
+function IdleTimeoutPanel({ outlet }: { outlet: Outlet }) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const { data, isLoading } = useQuery<{ idleTimeoutMinutes: number }>({
+    queryKey: ["/api/outlets", outlet.id, "idle-timeout"],
+    queryFn: () => fetch(`/api/outlets/${outlet.id}/idle-timeout`, { credentials: "include" }).then(r => r.json()),
+    enabled: !!outlet.id,
+  });
+
+  const [value, setValue] = useState<string>("30");
+
+  useEffect(() => {
+    if (data !== undefined) {
+      setValue(String(data.idleTimeoutMinutes ?? 30));
+    }
+  }, [data]);
+
+  const mutation = useMutation({
+    mutationFn: (idleTimeoutMinutes: number) =>
+      fetch(`/api/outlets/${outlet.id}/idle-timeout`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ idleTimeoutMinutes }),
+      }).then(r => r.json()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/outlets", outlet.id, "idle-timeout"] });
+      toast({ title: "Idle timeout updated", description: "Staff will be auto-logged out after the configured period of inactivity." });
+    },
+    onError: (e: Error) => {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) return <div className="py-6 text-center text-muted-foreground text-sm">Loading…</div>;
+
+  return (
+    <div className="py-4 space-y-4">
+      <div className="space-y-1">
+        <h3 className="text-sm font-semibold flex items-center gap-2">
+          <Shield className="h-4 w-4 text-primary" />
+          Session Security
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          Automatically log out staff if they are inactive for this long. A 60-second warning countdown is shown before logout.
+        </p>
+      </div>
+      <div className="space-y-2">
+        <Label htmlFor={`idle-timeout-${outlet.id}`}>Idle Timeout</Label>
+        <Select
+          value={value}
+          onValueChange={setValue}
+        >
+          <SelectTrigger id={`idle-timeout-${outlet.id}`} data-testid="select-idle-timeout">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {IDLE_TIMEOUT_OPTIONS.map(opt => (
+              <SelectItem key={opt.value} value={opt.value} data-testid={`option-idle-timeout-${opt.value}`}>
+                {opt.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Button
+        size="sm"
+        className="gap-1"
+        disabled={mutation.isPending}
+        onClick={() => mutation.mutate(Number(value))}
+        data-testid="button-save-idle-timeout"
+      >
+        <Save className="h-3.5 w-3.5" />
+        {mutation.isPending ? "Saving…" : "Save Timeout"}
+      </Button>
+    </div>
+  );
+}
+
 function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -2259,6 +2348,9 @@ export default function OutletsPage() {
                 <TabsTrigger value="tips" className="flex-1" data-testid="tab-tip-settings">
                   <DollarSign className="h-3.5 w-3.5 mr-1.5" /> Tips
                 </TabsTrigger>
+                <TabsTrigger value="security" className="flex-1" data-testid="tab-outlet-security">
+                  <Shield className="h-3.5 w-3.5 mr-1.5" /> Security
+                </TabsTrigger>
               </TabsList>
               <TabsContent value="details">
                 <div className="grid gap-4 py-2">
@@ -2328,6 +2420,9 @@ export default function OutletsPage() {
               </TabsContent>
               <TabsContent value="tips">
                 <TipSettingsPanel outlet={editingOutlet} />
+              </TabsContent>
+              <TabsContent value="security">
+                <IdleTimeoutPanel outlet={editingOutlet} />
               </TabsContent>
             </Tabs>
           ) : (

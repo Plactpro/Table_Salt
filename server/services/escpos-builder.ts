@@ -1,3 +1,5 @@
+import net from "net";
+
 const ESC = 0x1b;
 const GS = 0x1d;
 
@@ -735,4 +737,24 @@ ${data.tableNumber ? `<div>Table: ${data.tableNumber}</div>` : ""}
 <script>window.onload = function() { window.print(); setTimeout(window.close, 500); };</script>
 </body>
 </html>`;
+}
+
+// ESC/POS: Open cash drawer on pin 2 (standard)
+const DRAWER_OPEN_BYTES = Buffer.from([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+
+/**
+ * Send ESC/POS cash drawer open command over TCP to a network printer.
+ * Resolves when complete or on error/timeout (best-effort, never rejects).
+ */
+export function openCashDrawerViaPrinter(ip: string, port = 9100): Promise<void> {
+  return new Promise((resolve) => {
+    const socket = new net.Socket();
+    const cleanup = () => { try { socket.destroy(); } catch {} resolve(); };
+    socket.setTimeout(3000);
+    socket.on("error", cleanup);
+    socket.on("timeout", cleanup);
+    socket.connect(port, ip, () => {
+      socket.write(DRAWER_OPEN_BYTES, () => cleanup());
+    });
+  });
 }

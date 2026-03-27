@@ -18,6 +18,25 @@ export async function getNextKotSequence(tenantId: string, orderId: string): Pro
 }
 
 export function registerPrintJobRoutes(app: Express): void {
+  // PR-004: per-printer pending queue endpoint used by KDS badge polling
+  app.get("/api/print-jobs/pending/:printerId", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { printerId } = req.params;
+      const { rows } = await pool.query(
+        `SELECT id, printer_id, reference_id, type, status, attempts, max_attempts, created_at
+         FROM print_jobs
+         WHERE tenant_id = $1 AND printer_id = $2 AND status IN ('queued', 'failed')
+         ORDER BY created_at ASC`,
+        [user.tenantId, printerId]
+      );
+      res.json(rows);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ message });
+    }
+  });
+
   app.get("/api/print-jobs", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
@@ -88,6 +107,27 @@ export function registerPrintJobRoutes(app: Express): void {
       res.json(job);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-004: generic PATCH endpoint for print job status updates
+  app.patch("/api/print-jobs/:id", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { status } = req.body as { status?: string };
+      if (!status || !(VALID_PRINT_JOB_STATUSES as readonly string[]).includes(status)) {
+        return res.status(400).json({ message: "Invalid or missing status" });
+      }
+      const { rows } = await pool.query(
+        `UPDATE print_jobs SET status = $1, completed_at = CASE WHEN $1 IN ('printed','completed','failed','cancelled') THEN now() ELSE completed_at END
+         WHERE id = $2 AND tenant_id = $3 RETURNING *`,
+        [status, req.params.id, user.tenantId]
+      );
+      if (rows.length === 0) return res.status(404).json({ message: "Print job not found" });
+      res.json(rows[0]);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ message });
     }
   });
 
@@ -176,9 +216,11 @@ export function registerPrintJobRoutes(app: Express): void {
         triggeredByName: user.name || user.username,
       });
 
+      const firstJobId = result.jobIds[0] ?? null;
       res.json({
         success: true,
         jobIds: result.jobIds,
+        ...(result.queued ? { queued: true, jobId: firstJobId } : {}),
         ...(result.htmlFallback ? { htmlFallback: result.htmlFallback } : {}),
       });
     } catch (err: any) {
@@ -203,9 +245,11 @@ export function registerPrintJobRoutes(app: Express): void {
         triggeredByName: user.name || user.username,
       });
 
+      const firstJobId = result.jobIds[0] ?? null;
       res.json({
         success: true,
         jobIds: result.jobIds,
+        ...(result.queued ? { queued: true, jobId: firstJobId } : {}),
         ...(result.htmlFallback ? { htmlFallback: result.htmlFallback } : {}),
       });
     } catch (err: any) {
@@ -259,9 +303,11 @@ export function registerPrintJobRoutes(app: Express): void {
         triggeredByName: user.name || user.username,
       });
 
+      const firstJobId = result.jobIds[0] ?? null;
       res.json({
         success: true,
         jobIds: result.jobIds,
+        ...(result.queued ? { queued: true, jobId: firstJobId } : {}),
         ...(jurisdictionLabels ? { jurisdictionLabels } : {}),
         ...(result.htmlFallback ? { htmlFallback: result.htmlFallback } : {}),
       });

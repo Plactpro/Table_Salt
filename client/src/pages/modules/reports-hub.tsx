@@ -2,7 +2,7 @@ import { useState, Component } from "react";
 import { PageTitle } from "@/lib/accessibility";
 import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag, UtensilsCrossed } from "lucide-react";
+import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag, UtensilsCrossed, DollarSign } from "lucide-react";
 import ReportsPage from "./reports";
 import BIDashboard from "./bi-dashboard";
 import AuditLogPage from "./audit-log";
@@ -12,6 +12,7 @@ import ShiftReconciliation from "./shift-reconciliation";
 import CustomerRequestsAnalytics from "./customer-requests-analytics";
 import PriceAnalysis from "./price-analysis";
 import CrockeryBreakageReport from "./crockery-breakage-report";
+import CashDrawerLog from "./cash-drawer-log";
 
 class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -68,6 +69,9 @@ export default function ReportsHub() {
           <TabsTrigger value="crockery-breakage" data-testid="tab-crockery-breakage">
             <UtensilsCrossed className="h-4 w-4 mr-1.5" />Crockery Breakage
           </TabsTrigger>
+          <TabsTrigger value="cash-drawer-log" data-testid="tab-cash-drawer-log">
+            <DollarSign className="h-4 w-4 mr-1.5" />Cash Drawer Log
+          </TabsTrigger>
           <TabsTrigger value="audit-log" data-testid="tab-audit-log">
             <ScrollText className="h-4 w-4 mr-1.5" />Audit Log
           </TabsTrigger>
@@ -110,6 +114,11 @@ export default function ReportsHub() {
         <TabsContent value="crockery-breakage" className="mt-4">
           <TabErrorBoundary label="Crockery Breakage">
             <CrockeryBreakageReport />
+          </TabErrorBoundary>
+        </TabsContent>
+        <TabsContent value="cash-drawer-log" className="mt-4">
+          <TabErrorBoundary label="Cash Drawer Log">
+            <CashDrawerLog />
           </TabErrorBoundary>
         </TabsContent>
         <TabsContent value="audit-log" className="mt-4" forceMount>

@@ -3734,6 +3734,21 @@ export async function runTask108Migrations(): Promise<void> {
   `);
 }
 
+export async function runTask184Migrations(): Promise<void> {
+  // PR-004: idle_timeout_minutes per outlet (owner/manager can configure per-outlet idle logout)
+  await pool.query(`ALTER TABLE outlets ADD COLUMN IF NOT EXISTS idle_timeout_minutes INTEGER DEFAULT 30`);
+
+  // PR-004: Enhanced print_jobs table — add outlet_id, attempts, last_attempted_at, error_message if not exist
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS last_attempted_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS error_message TEXT`);
+  await pool.query(`ALTER TABLE print_jobs ADD COLUMN IF NOT EXISTS printer_id VARCHAR(36)`);
+
+  // PR-004: Index on (tenant_id, status, printer_id) for print job queue polling
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_print_jobs_tenant_status_printer ON print_jobs (tenant_id, status, printer_id)`);
+}
+
 export async function runTask191Migrations(): Promise<void> {
   // PR-011: system_events table for circuit breaker and gateway failure logging
   await pool.query(`
