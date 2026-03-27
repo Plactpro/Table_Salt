@@ -905,7 +905,9 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
       queryClient.invalidateQueries({ queryKey: ["/api/parking/tickets", outletId] });
       queryClient.invalidateQueries({ queryKey: ["/api/parking/stats", outletId] });
       toast({ title: ticket.isOvernight ? "Overnight removed" : "Marked as overnight" });
-    },  const reportIncidentMutation = useMutation({
+    },
+  });
+  const reportIncidentMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/parking/incidents", {
         outletId,
@@ -1119,7 +1121,12 @@ function ActiveTicketCard({ ticket, outletId }: { ticket: any; outletId: string 
                 >
                   Save Notes Only
                 </Button>
-              )}        {/* Incident Confirmation */}
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Incident Confirmation */}
         {incidentConfirm && (
           <div className="mt-2 p-2 bg-orange-50 border border-orange-200 rounded-lg text-xs text-orange-700 flex items-center justify-between" data-testid={`incident-confirm-${ticket.id}`}>
             <span>Incident <strong>{incidentConfirm}</strong> filed</span>
@@ -2051,7 +2058,14 @@ function DashboardTab({
   const { data: activeShift } = useQuery<any>({
     queryKey: ["/api/parking/shifts", outletId, "active"],
     queryFn: async () => {
-      const res = await fetch(`/api/parking/shifts/${outletId}/active`, { credentials: "include" });  const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
+      const res = await fetch(`/api/parking/shifts/${outletId}/active`, { credentials: "include" });
+      if (!res.ok) return null;
+      return res.json();
+    },
+    enabled: !!outletId,
+    staleTime: 30000,
+    refetchInterval: 60000,
+  });
 
   const { data: incidentSummary } = useQuery<any>({
     queryKey: ["/api/parking/incidents/summary", outletId],

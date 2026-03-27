@@ -7,7 +7,7 @@ import {
   Bell, Receipt, Droplets, Sparkles, Utensils, ShoppingCart, Star,
   MessageSquare, ChevronLeft, Check, Loader2, AlertCircle, X,
   Plus, Minus, Baby, ThermometerSun, Music, HelpCircle, Scissors,
-  Package, Accessibility, UtensilsCrossed, Leaf, ChefHat,
+  Package, Accessibility, UtensilsCrossed, Leaf, ChefHat, Users,
 } from "lucide-react";
 
 const TRANSLATIONS = {
@@ -281,6 +281,19 @@ type Flow = "home" | "food-order" | "feedback" | "special-request" | "status-tra
 
 const PRIMARY = "hsl(174, 65%, 32%)";
 
+// WebP image URL transformation for reduced payload
+function toWebPUrl(src: string | null | undefined, width = 400): string | undefined {
+  if (!src) return undefined;
+  try {
+    const url = new URL(src, window.location.href);
+    if (!url.protocol.startsWith("http")) return src;
+    if (url.searchParams.has("format") || url.searchParams.has("w")) return src;
+    url.searchParams.set("format", "webp");
+    url.searchParams.set("w", String(width));
+    return url.toString();
+  } catch { return src; }
+}
+
 function formatPrice(amount: number, currency: string): string {
   try {
     return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount);
@@ -480,6 +493,33 @@ function StarRating({ value, onChange }: { value: number; onChange: (v: number) 
   );
 }
 
+function WaiterCallButton({ token }: { token: string }) {
+  const [sent, setSent] = useState(false);
+  const [alerting, setAlerting] = useState(false);
+  return (
+    <button
+      disabled={alerting || sent}
+      onClick={async () => {
+        setAlerting(true);
+        try {
+          await fetch("/api/table-requests", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token, requestType: "call_server" }),
+          });
+          setSent(true);
+        } catch {
+          setSent(false);
+        } finally { setAlerting(false); }
+      }}
+      className="bg-white border border-teal-600 text-teal-700 rounded-lg py-2.5 text-sm font-semibold"
+      data-testid="button-alert-waiter-menu-error"
+    >
+      {sent ? "Waiter Alerted" : alerting ? "Alerting…" : "Alert a Waiter"}
+    </button>
+  );
+}
+
 function FoodOrderFlow({
   ctx, t, token, onBack, onOrderPlaced,
 }: {
@@ -492,6 +532,9 @@ function FoodOrderFlow({
   const [menuData, setMenuData] = useState<{ categories: Category[]; items: MenuItem[]; currency: string } | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [menuLoading, setMenuLoading] = useState(true);
+  const [menuLoadError, setMenuLoadError] = useState<string | null>(null);
+  const [kitchenClosedInfo, setKitchenClosedInfo] = useState<{ nextOpenTime: string } | null>(null);
+  const [tableUnavailableError, setTableUnavailableError] = useState<string | null>(null);
   const [selCat, setSelCat] = useState<string | null>(null);
   const [cart, setCart] = useState<LocalCartItem[]>([]);
   const [showCart, setShowCart] = useState(false);
@@ -500,39 +543,150 @@ function FoodOrderFlow({
 
   const [resolvedPriceMap, setResolvedPriceMap] = useState<Map<string, { resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean; validTo?: string | null }>>(new Map());
 
+  // join/separate dialog for multi-customer ordering
+  const [showJoinDialogQr, setShowJoinDialogQr] = useState(false);
+  const [tableSessionInfoQr, setTableSessionInfoQr] = useState<{
+    sessionExists: boolean; sessionToken: string | null; orderCount: number; canJoin: boolean;
+  } | null>(null);
+  const [qrSessionJoining, setQrSessionJoining] = useState(false);
+
+  // shared table session items (items placed by other customers at the same table)
+  interface SharedSessionItem { id: number; order_id: number; menu_item_id: string; name: string; quantity: number; price: string; notes: string | null; guest_name: string | null; }
+  const [sharedSessionItems, setSharedSessionItems] = useState<SharedSessionItem[]>([]);
+  const sessionChoice = sessionStorage.getItem(`qr_session_choice_${token}`);
+
+  // Fetch shared items when user is in join mode
+  const refreshSharedItems = useCallback(() => {
+    const choice = sessionStorage.getItem(`qr_session_choice_${token}`);
+    if (choice !== "join") return;
+    fetch(`/api/qr/table/${encodeURIComponent(token)}/session/items`)
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(data => setSharedSessionItems(data.items ?? []))
+      .catch(() => {});
+  }, [token]);
+
+  // Wire join/separate choice to session API
+  const handleJoinTableOrder = useCallback(async () => {
+    setQrSessionJoining(true);
+    try {
+      const res = await fetch(`/api/qr/table/${encodeURIComponent(token)}/session/start`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        sessionStorage.setItem(`qr_session_choice_${token}`, "join");
+        sessionStorage.setItem(`qr_session_token_${token}`, data.session?.session_token ?? "");
+      }
+    } catch {}
+    setQrSessionJoining(false);
+    setShowJoinDialogQr(false);
+    // Immediately load other items from the shared session
+    setTimeout(refreshSharedItems, 200);
+  }, [token, refreshSharedItems]);
+
+  const handleSeparateOrder = useCallback(() => {
+    sessionStorage.setItem(`qr_session_choice_${token}`, "separate");
+    setShowJoinDialogQr(false);
+  }, [token]);
+
+  // progressive menu loading — categories first, then items for selected category
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoryItemsMap, setCategoryItemsMap] = useState<Record<string, MenuItem[]>>({});
+  const [catItemsLoading, setCatItemsLoading] = useState(false);
+
   useEffect(() => {
     if (!ctx.outletId) return;
+
+    const savedChoice = sessionStorage.getItem(`qr_session_choice_${token}`);
+
+    // progressive loading — fetch categories first (fast, small payload)
+    // then load guest session in parallel; items fetched per-category on demand
     Promise.all([
-      fetch(`/api/guest/menu/${ctx.outletId}`).then(r => r.json()),
+      fetch(`/api/guest/menu/${ctx.outletId}/categories`).then(r => r.json()),
       fetch(`/api/guest/${ctx.outletId}/${token}`).then(r => r.json()),
-    ]).then(([menu, guestData]) => {
-      setMenuData(menu);
-      if (menu.categories?.length) setSelCat(menu.categories[0]?.id ?? null);
+    ]).then(([catData, guestData]) => {
+      setMenuData({ categories: catData.categories, items: [], currency: catData.currency });
+      if (catData.categories?.length) {
+        setCategories(catData.categories.filter((c: Category) => c.active !== false));
+        setSelCat(catData.categories[0]?.id ?? null);
+      }
       if (guestData.session?.id) setSessionId(guestData.session.id);
 
-      if (menu.items?.length && ctx.outletId) {
-        fetch("/api/guest/pricing/resolve/batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            items: menu.items.map((m: MenuItem) => ({ menuItemId: m.id })),
-            outletId: ctx.outletId,
-            orderType: "dine_in",
-            orderTime: new Date().toISOString(),
-          }),
-        })
-          .then(r => r.ok ? r.json() : [])
-          .then((resolved: { menuItemId: string; resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean }[]) => {
-            const map = new Map<string, { resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean }>();
-            for (const r of resolved) map.set(r.menuItemId, r);
-            setResolvedPriceMap(map);
+      // session lifecycle — check for active QR session and handle join/first-diner flows
+      if (!savedChoice) {
+        fetch(`/api/qr/table/${encodeURIComponent(token)}/session`)
+          .then(r => r.ok ? r.json() : null)
+          .then(info => {
+            if (!info) return;
+            // Kitchen-closed check: outlet is not open for service
+            if (info.outletHours && !info.outletHours.isOpen) {
+              setKitchenClosedInfo({ nextOpenTime: info.outletHours.nextOpenTime || "soon" });
+              return;
+            }
+            if (info.sessionExists && info.canJoin) {
+              // Subsequent diner — show join/separate dialog
+              setTableSessionInfoQr(info);
+              setShowJoinDialogQr(true);
+            } else if (info.sessionExists && !info.canJoin) {
+              // table is occupied by another party with all orders paid
+              setTableUnavailableError("This table is currently occupied by another party and is not accepting new orders.");
+            } else if (!info.sessionExists) {
+              // First diner — auto-create a session so subsequent diners can join
+              fetch(`/api/qr/table/${encodeURIComponent(token)}/session/start`, { method: "POST" })
+                .then(r => r.ok ? r.json() : null)
+                .then(data => {
+                  if (data?.session) {
+                    sessionStorage.setItem(`qr_session_choice_${token}`, "separate");
+                    sessionStorage.setItem(`qr_session_token_${token}`, data.session.session_token ?? "");
+                  }
+                })
+                .catch(() => {});
+            }
           })
           .catch(() => {});
       }
+    }).catch(() => {
+      setMenuLoadError("Could not load menu. Check your connection.");
     }).finally(() => setMenuLoading(false));
   }, [ctx.outletId, token]);
 
-  const filteredItems = menuData?.items.filter(i => !selCat || i.categoryId === selCat) ?? [];
+  // load items for selected category on demand
+  useEffect(() => {
+    if (!selCat || !ctx.outletId) return;
+    if (categoryItemsMap[selCat]) return; // already loaded
+    setCatItemsLoading(true);
+    fetch(`/api/guest/menu/${ctx.outletId}/categories/${selCat}/items`)
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(data => {
+        const items: MenuItem[] = data.items ?? [];
+        setCategoryItemsMap(prev => ({ ...prev, [selCat]: items }));
+        // Resolve pricing for newly loaded items
+        if (items.length && ctx.outletId) {
+          fetch("/api/guest/pricing/resolve/batch", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              items: items.map(m => ({ menuItemId: m.id })),
+              outletId: ctx.outletId,
+              orderType: "dine_in",
+              orderTime: new Date().toISOString(),
+            }),
+          })
+            .then(r => r.ok ? r.json() : [])
+            .then((resolved: { menuItemId: string; resolvedPrice: number; basePrice: number; ruleReason: string | null; hasRule: boolean }[]) => {
+              setResolvedPriceMap(prev => {
+                const next = new Map(prev);
+                for (const r of resolved) next.set(r.menuItemId, r);
+                return next;
+              });
+            })
+            .catch(() => {});
+        }
+      })
+      .catch(() => {})
+      .finally(() => setCatItemsLoading(false));
+  }, [selCat, ctx.outletId, categoryItemsMap]);
+
+  // items come from per-category map (progressive loading)
+  const filteredItems = selCat ? (categoryItemsMap[selCat] ?? []) : [];
 
   function addToCart(item: MenuItem, note = "") {
     setCart(prev => {
@@ -565,6 +719,68 @@ function FoodOrderFlow({
     if (cart.length === 0 || !sessionId) return;
     setPlacing(true);
     try {
+      const sessionChoice = sessionStorage.getItem(`qr_session_choice_${token}`);
+
+      // true join semantics — if customer chose "Join Table's Order",
+      // add items directly to the existing shared order (same KOT/orderId) instead of creating a new order
+      if (sessionChoice === "join") {
+        // Get the shared order ID from the active session
+        const sharedOrderRes = await fetch(`/api/qr/table/${encodeURIComponent(token)}/session/shared-order`);
+        const sharedOrderData = sharedOrderRes.ok ? await sharedOrderRes.json() : {};
+        const sharedOrderId = sharedOrderData.sharedOrderId;
+
+        if (sharedOrderId) {
+          // Push cart items to server-side guest cart first, then add to shared order
+          for (const cartItem of cart) {
+            const fm = cartItem.foodModification;
+            const hasActiveMod = fm && (fm.spiceLevel || fm.saltLevel || fm.removedIngredients.length > 0 || fm.allergies.length > 0 || fm.allergyNote?.trim() || fm.specialInstruction?.trim());
+            await fetch(`/api/guest/session/${sessionId}/cart`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                menuItemId: cartItem.menuItemId,
+                quantity: cartItem.quantity,
+                notes: cartItem.note || undefined,
+                metadata: hasActiveMod ? { foodModification: fm } : undefined,
+              }),
+            });
+          }
+          // Add all guest cart items to the shared order directly
+          const addRes = await fetch(`/api/qr/table/${encodeURIComponent(token)}/session/add-to-shared-order`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ guestSessionId: sessionId, sharedOrderId }),
+          });
+          if (!addRes.ok) throw new Error("Failed to add items to table order. Please try again.");
+          // Notify staff about the new items added to the shared order
+          const guestNote = cart.map(c => c.note ? `${c.quantity}x ${c.name} (${c.note})` : `${c.quantity}x ${c.name}`).join(", ");
+          const notifyRes = await fetch("/api/table-requests", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              token,
+              requestType: "order_food",
+              priority: "medium",
+              guestNote,
+              details: {
+                items: cart.map(c => ({ menuItemId: c.menuItemId, name: c.name, quantity: c.quantity, unitPrice: c.price, note: c.note || null })),
+                totalAmount: cartTotal,
+                currency: menuData?.currency ?? ctx.currency,
+                sessionId,
+                orderId: sharedOrderId,
+                joinedSharedOrder: true,
+              },
+            }),
+          });
+          const notifyData = await notifyRes.json();
+          setCart([]);
+          onOrderPlaced(notifyData.id ?? sharedOrderId);
+          return;
+        }
+        // If no shared order found (e.g., first customer's order hasn't been submitted yet), fall through to create own
+      }
+
+      // Default path (separate order or join with no existing shared order)
       for (const cartItem of cart) {
         const fm = cartItem.foodModification;
         const hasActiveMod = fm && (fm.spiceLevel || fm.saltLevel || fm.removedIngredients.length > 0 || fm.allergies.length > 0 || fm.allergyNote?.trim() || fm.specialInstruction?.trim());
@@ -585,8 +801,18 @@ function FoodOrderFlow({
         body: JSON.stringify({}),
       });
       if (!orderRes.ok) throw new Error("Failed to submit order. Please try again.");
-      const orderData: { orderId?: string; id?: string } = await orderRes.json();
-      const orderId = orderData.orderId ?? orderData.id ?? null;
+      const orderData: { orderId?: string; id?: string; order?: { id?: string } } = await orderRes.json();
+      const orderId = orderData.orderId ?? orderData.id ?? orderData.order?.id ?? null;
+
+      // Link this new order to the shared session (for subsequent joiners)
+      if (orderId) {
+        fetch(`/api/qr/table/${encodeURIComponent(token)}/session/join`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId }),
+        }).catch(() => {});
+      }
+
       const orderItems = cart.map(c => ({
         menuItemId: c.menuItemId,
         name: c.name,
@@ -623,7 +849,116 @@ function FoodOrderFlow({
     return <div className="flex items-center justify-center py-24"><Loader2 className="w-8 h-8 animate-spin text-teal-600" /></div>;
   }
 
+  if (kitchenClosedInfo) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4" data-testid="kitchen-closed-screen">
+        <div className="w-16 h-16 bg-amber-50 rounded-full flex items-center justify-center">
+          <Clock className="w-8 h-8 text-amber-500" />
+        </div>
+        <h2 className="text-xl font-bold text-gray-900">Kitchen is Closed</h2>
+        <p className="text-sm text-gray-500">
+          We are not taking orders right now. We will reopen{" "}
+          <span className="font-semibold text-gray-700">{kitchenClosedInfo.nextOpenTime}</span>.
+        </p>
+        <button
+          onClick={onBack}
+          className="mt-2 text-sm text-teal-600 underline"
+          data-testid="button-kitchen-closed-back"
+        >
+          Go back
+        </button>
+      </div>
+    );
+  }
+
+  if (tableUnavailableError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4" data-testid="table-unavailable-screen-food">
+        <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
+          <AlertCircle className="w-8 h-8 text-amber-500" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-amber-800" data-testid="text-table-unavailable-food">Table Unavailable</h2>
+          <p className="text-sm text-amber-700">{tableUnavailableError}</p>
+          <p className="text-xs text-gray-400">Please speak with our staff for assistance.</p>
+        </div>
+        <WaiterCallButton token={token} />
+      </div>
+    );
+  }
+
+  if (menuLoadError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-6 text-center gap-4" data-testid="menu-load-error-screen">
+        <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center">
+          <AlertCircle className="w-8 h-8 text-red-400" />
+        </div>
+        <h2 className="text-lg font-bold text-gray-900">Menu Unavailable</h2>
+        <p className="text-sm text-gray-500">{menuLoadError}</p>
+        <div className="flex flex-col gap-2 w-full max-w-xs">
+          <button
+            onClick={() => { setMenuLoadError(null); setMenuLoading(true); window.location.reload(); }}
+            className="bg-teal-600 text-white rounded-lg py-2.5 text-sm font-semibold"
+            data-testid="button-retry-menu"
+          >
+            Retry
+          </button>
+          {token && (
+            <WaiterCallButton token={token} />
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (showJoinDialogQr && tableSessionInfoQr?.sessionExists) {
+    return (
+      <div className="flex flex-col items-center justify-center py-8 px-4 gap-5 text-center" data-testid="dialog-join-or-separate-qr">
+        <div className="w-14 h-14 bg-teal-50 rounded-full flex items-center justify-center">
+          <Users className="h-7 w-7 text-teal-600" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-gray-900">Table Already Has an Open Order</h2>
+          <p className="text-sm text-gray-500">
+            Your table already has{" "}
+            {tableSessionInfoQr.orderCount > 0
+              ? `${tableSessionInfoQr.orderCount} active order${tableSessionInfoQr.orderCount > 1 ? "s" : ""}`
+              : "an active order"}
+            . Would you like to add to it or start a separate order?
+          </p>
+        </div>
+        <div className="flex flex-col gap-3 w-full max-w-sm">
+          <button
+            className="w-full flex items-center gap-3 bg-teal-600 text-white px-4 py-3 rounded-xl font-medium hover:bg-teal-700 transition-colors disabled:opacity-60"
+            onClick={handleJoinTableOrder}
+            disabled={qrSessionJoining}
+            data-testid="button-join-table-order-qr"
+          >
+            <span className="text-xl">👥</span>
+            <div className="text-left">
+              <div className="font-semibold text-sm">Add to Table's Order</div>
+              <div className="text-xs text-teal-100">Your items join the shared order</div>
+            </div>
+          </button>
+          <button
+            className="w-full flex items-center gap-3 border border-gray-200 text-gray-700 px-4 py-3 rounded-xl font-medium hover:bg-gray-50 transition-colors"
+            onClick={handleSeparateOrder}
+            data-testid="button-start-separate-order-qr"
+          >
+            <span className="text-xl">📋</span>
+            <div className="text-left">
+              <div className="font-semibold text-sm">Start My Own Order</div>
+              <div className="text-xs text-gray-400">A separate order (waiter can merge at billing)</div>
+            </div>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (showCart) {
+    // Refresh shared items when cart is opened
+    const isJoinMode = sessionStorage.getItem(`qr_session_choice_${token}`) === "join";
     return (
       <div className="flex flex-col gap-4">
         <div className="flex items-center gap-3 mb-2">
@@ -631,7 +966,35 @@ function FoodOrderFlow({
             <ChevronLeft className="w-5 h-5" />
           </button>
           <h2 className="text-lg font-bold">{t.cart}</h2>
+          {isJoinMode && (
+            <span className="ml-auto text-xs bg-teal-50 text-teal-700 border border-teal-200 rounded-full px-2 py-0.5" data-testid="badge-join-mode">
+              Shared Table
+            </span>
+          )}
         </div>
+
+        {/* Shared session items — "Others at your table" */}
+        {isJoinMode && sharedSessionItems.length > 0 && (
+          <div className="bg-teal-50 rounded-xl p-3 border border-teal-100" data-testid="section-shared-items">
+            <p className="text-xs font-semibold text-teal-700 mb-2 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5" /> Others at your table
+            </p>
+            <div className="flex flex-col gap-1.5">
+              {sharedSessionItems.map(si => (
+                <div key={si.id} data-testid={`shared-item-${si.id}`} className="flex items-center justify-between text-sm">
+                  <span className="text-gray-700 flex-1 min-w-0 truncate">{si.name} <span className="text-gray-400">×{si.quantity}</span></span>
+                  <span className="text-gray-500 text-xs ml-2 shrink-0">{formatPrice(Number(si.price) * si.quantity, menuData?.currency ?? "USD")}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-teal-600 mt-2 italic">These items were added by others — you can only remove your own items below.</p>
+          </div>
+        )}
+
+        {isJoinMode && sharedSessionItems.length > 0 && cart.length > 0 && (
+          <p className="text-xs font-semibold text-gray-500 px-1" data-testid="label-my-items">Your items</p>
+        )}
+
         {cart.length === 0 ? (
           <p className="text-center text-gray-400 py-12">{t.emptyCart}</p>
         ) : (
@@ -708,7 +1071,7 @@ function FoodOrderFlow({
         </button>
         <h2 className="text-lg font-bold">{t.orderFood}</h2>
         {cartCount > 0 && (
-          <button data-testid="button-view-cart" onClick={() => setShowCart(true)} className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full text-white text-sm font-semibold" style={{ backgroundColor: PRIMARY }}>
+          <button data-testid="button-view-cart" onClick={() => { setShowCart(true); refreshSharedItems(); }} className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full text-white text-sm font-semibold" style={{ backgroundColor: PRIMARY }}>
             <ShoppingCart className="w-4 h-4" />
             {cartCount}
           </button>
@@ -716,7 +1079,7 @@ function FoodOrderFlow({
       </div>
 
       <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" data-testid="category-tabs">
-        {menuData?.categories.map(cat => (
+        {categories.map(cat => (
           <button
             key={cat.id}
             data-testid={`tab-cat-${cat.id}`}
@@ -729,7 +1092,12 @@ function FoodOrderFlow({
         ))}
       </div>
 
-      {filteredItems.length === 0 && <p className="text-center text-gray-400 py-8">{t.noItems}</p>}
+      {catItemsLoading && (
+        <div className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin text-teal-600" />
+        </div>
+      )}
+      {!catItemsLoading && filteredItems.length === 0 && <p className="text-center text-gray-400 py-8">{t.noItems}</p>}
 
       <div className="flex flex-col gap-3">
         {filteredItems.map(item => {
@@ -740,7 +1108,18 @@ function FoodOrderFlow({
           return (
             <div key={item.id} data-testid={`card-item-${item.id}`} className="bg-white rounded-xl p-3 border border-gray-100 flex gap-3">
               {item.image ? (
-                <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover flex-shrink-0" loading="lazy" />
+                <img
+                  src={toWebPUrl(item.image, 128)}
+                  alt={item.name}
+                  width={64}
+                  height={64}
+                  className="w-16 h-16 rounded-lg object-cover flex-shrink-0"
+                  loading="lazy"
+                  onError={e => {
+                    const el = e.target as HTMLImageElement;
+                    if (el.src !== item.image) el.src = item.image;
+                  }}
+                />
               ) : (
                 <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center flex-shrink-0">
                   <ChefHat className="w-7 h-7 text-gray-400" />
@@ -1076,6 +1455,23 @@ export default function TableQrPage() {
   const [flow, setFlow] = useState<Flow>("home");
   const [submittedRequest, setSubmittedRequest] = useState<SubmittedRequest | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  // table-unavailable state when canJoin=false
+  const [tableUnavailableError, setTableUnavailableError] = useState<string | null>(null);
+
+  // restaurant info for error state fallback
+  const [qrRestaurantInfo, setQrRestaurantInfo] = useState<{ restaurantName: string | null; phone: string | null; logoUrl: string | null } | null>(null);
+  useEffect(() => {
+    if (!token) return;
+    // Pass outletId from ctx (resolved from token) or URL params as a fallback for invalid/unknown tokens
+    const outletIdParam = ctx?.outletId || routeParams?.outletId || null;
+    const url = outletIdParam
+      ? `/api/qr/restaurant-info?token=${encodeURIComponent(token)}&outletId=${encodeURIComponent(outletIdParam)}`
+      : `/api/qr/restaurant-info?token=${encodeURIComponent(token)}`;
+    fetch(url)
+      .then(r => r.ok ? r.json() : null)
+      .then(info => { if (info) setQrRestaurantInfo(info); })
+      .catch(() => {});
+  }, [token, ctx?.outletId, routeParams?.outletId]);
 
   const [parkingAvailable, setParkingAvailable] = useState(false);
   const [vehicleRetrievalRequested, setVehicleRetrievalRequested] = useState(false);
@@ -1220,14 +1616,142 @@ export default function TableQrPage() {
     );
   }
 
-  if (error || !ctx) {
+  // table-unavailable screen when canJoin=false
+  if (tableUnavailableError) {
+    const isVerified = !!qrRestaurantInfo?.restaurantName;
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center gap-4" data-testid="error-screen">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-amber-50 to-orange-50 px-6 text-center gap-5" data-testid="table-unavailable-screen">
+        {qrRestaurantInfo?.logoUrl && (
+          <img
+            src={qrRestaurantInfo.logoUrl}
+            alt={qrRestaurantInfo.restaurantName || "Restaurant"}
+            width={80}
+            height={80}
+            loading="lazy"
+            className="h-16 w-auto object-contain"
+          />
+        )}
+        <div className="w-16 h-16 rounded-full bg-amber-100 flex items-center justify-center">
+          <AlertCircle className="w-8 h-8 text-amber-500" />
+        </div>
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-amber-800" data-testid="text-table-unavailable">Table Unavailable</h2>
+          <p className="text-sm text-amber-700">{tableUnavailableError}</p>
+          <p className="text-xs text-gray-400">Please speak with our staff for assistance.</p>
+        </div>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          {isVerified && token && (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/table-requests", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      token,
+                      requestType: "call_server",
+                      priority: "high",
+                      guestNote: "Guest needs help — table may be turning over.",
+                    }),
+                  });
+                  if (res.ok) alert("A staff member has been notified.");
+                } catch (e) {
+                  console.error("Failed to alert waiter:", e);
+                }
+              }}
+              className="inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-5 py-3 rounded-xl font-medium hover:bg-teal-700"
+              data-testid="button-call-waiter-unavailable"
+            >
+              <Bell className="w-4 h-4" />
+              {t.callWaiter}
+            </button>
+          )}
+          {qrRestaurantInfo?.phone && (
+            <a
+              href={`tel:${qrRestaurantInfo.phone}`}
+              className="inline-flex items-center justify-center gap-2 border border-teal-300 text-teal-700 px-5 py-2.5 rounded-xl font-medium hover:bg-teal-50"
+              data-testid="link-call-restaurant-unavailable"
+            >
+              <span>📞</span>
+              Call {qrRestaurantInfo.restaurantName || "Restaurant"}
+            </a>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !ctx) {
+    // Show waiter-alert ONLY when the token is verified to map to a real restaurant/table
+    // (qrRestaurantInfo resolved means the token exists in DB, so staff can be notified)
+    // For truly invalid/unknown tokens, show phone fallback or generic help message instead
+    const isTokenVerified = !!qrRestaurantInfo?.restaurantName;
+
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center gap-5" data-testid="error-screen">
+        {qrRestaurantInfo?.logoUrl && (
+          <img
+            src={qrRestaurantInfo.logoUrl}
+            alt={qrRestaurantInfo.restaurantName || "Restaurant"}
+            width={80}
+            height={80}
+            loading="lazy"
+            className="h-16 w-auto object-contain"
+          />
+        )}
         <div className="w-16 h-16 rounded-full bg-red-100 flex items-center justify-center">
           <AlertCircle className="w-8 h-8 text-red-500" />
         </div>
-        <h2 className="text-lg font-bold text-gray-800" data-testid="text-qr-error">{t.invalidQr}</h2>
-        <p className="text-sm text-gray-500">{error}</p>
+        <div className="space-y-2">
+          <h2 className="text-lg font-bold text-gray-800" data-testid="text-qr-error">{t.invalidQr}</h2>
+          <p className="text-sm text-gray-500">
+            This QR code is no longer valid. Please ask your server for a new one.
+          </p>
+          {error && <p className="text-xs text-gray-400">{error}</p>}
+        </div>
+        <div className="flex flex-col gap-3 w-full max-w-xs">
+          {isTokenVerified && (
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch("/api/table-requests", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      token,
+                      requestType: "call_server",
+                      priority: "high",
+                      guestNote: "Guest needs help — QR code is no longer working.",
+                    }),
+                  });
+                  if (res.ok) {
+                    alert("A staff member has been notified. They will come to your table shortly.");
+                  }
+                } catch (alertErr) {
+                  console.error("Failed to alert waiter:", alertErr);
+                }
+              }}
+              className="inline-flex items-center justify-center gap-2 bg-teal-600 text-white px-5 py-3 rounded-xl font-medium hover:bg-teal-700"
+              data-testid="button-call-waiter-error"
+            >
+              <Bell className="w-4 h-4" />
+              {t.callWaiter}
+            </button>
+          )}
+          {qrRestaurantInfo?.phone && (
+            <a
+              href={`tel:${qrRestaurantInfo.phone}`}
+              className="inline-flex items-center justify-center gap-2 border border-teal-300 text-teal-700 px-5 py-2.5 rounded-xl font-medium hover:bg-teal-50"
+              data-testid="link-call-restaurant-qr"
+            >
+              <span>📞</span>
+              Call {qrRestaurantInfo.restaurantName || "Restaurant"}
+            </a>
+          )}
+          {!isTokenVerified && !qrRestaurantInfo?.phone && (
+            <p className="text-sm text-gray-400">Please ask your server for help.</p>
+          )}
+        </div>
       </div>
     );
   }

@@ -17,6 +17,46 @@ async function getPlatformGatewaySettings(): Promise<{ activeGateway: string; ra
 }
 
 export function registerGuestRoutes(app: Express): void {
+  // lightweight endpoint returning only categories (no items) for progressive loading
+  app.get("/api/guest/menu/:outletId/categories", async (req, res) => {
+    try {
+      const { outletId } = req.params;
+      const outlet = await storage.getOutlet(outletId);
+      if (!outlet) return res.status(404).json({ message: "Outlet not found" });
+      const tenant = await storage.getTenant(outlet.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Restaurant not found" });
+      const categories = await storage.getCategoriesByTenant(tenant.id);
+      res.json({
+        categories: categories.filter(c => c.active !== false),
+        currency: tenant.currency,
+        currencyPosition: (tenant as any).currencyPosition || "before",
+        currencyDecimals: (tenant as any).currencyDecimals ?? 2,
+        taxRate: tenant.taxRate,
+        restaurantName: tenant.name,
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // items-per-category endpoint for progressive loading
+  app.get("/api/guest/menu/:outletId/categories/:categoryId/items", async (req, res) => {
+    try {
+      const { outletId, categoryId } = req.params;
+      const outlet = await storage.getOutlet(outletId);
+      if (!outlet) return res.status(404).json({ message: "Outlet not found" });
+      const tenant = await storage.getTenant(outlet.tenantId);
+      if (!tenant) return res.status(404).json({ message: "Restaurant not found" });
+      const allItems = await storage.getMenuItemsForOutlet(tenant.id, outletId);
+      const items = allItems
+        .filter((i: any) => i.categoryId === categoryId && i.available !== false)
+        .map((i: any) => ({
+          id: i.id, name: i.name, description: i.description, price: i.price,
+          categoryId: i.categoryId, image: i.image, isVeg: i.isVeg,
+          spicyLevel: i.spicyLevel, allergens: i.allergens || null, tags: i.tags || null,
+        }));
+      res.json({ items });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/guest/menu/:outletId", async (req, res) => {
     try {
       const { outletId } = req.params;
@@ -73,8 +113,9 @@ export function registerGuestRoutes(app: Express): void {
         });
       }
 
+      // lightweight initial response — omit full menu items; categories + session + cart returned
+      // Items are fetched on-demand per-category via GET /api/guest/menu/:outletId/categories/:categoryId/items
       const categories = await storage.getCategoriesByTenant(tenant.id);
-      const items = await storage.getMenuItemsForOutlet(tenant.id, outletId);
       const cartItems = await storage.getGuestCartItems(session.id);
 
       const existingOrders = await storage.getOrdersByTenant(tenant.id);
@@ -98,7 +139,7 @@ export function registerGuestRoutes(app: Express): void {
         },
         outlet: { id: outlet.id, name: outlet.name },
         categories: categories.filter(c => c.active !== false),
-        items: items.filter((i: any) => i.available !== false),
+        // items intentionally omitted — use GET /api/guest/menu/:outletId/categories/:categoryId/items
         cart: cartItems, runningBill,
       });
     } catch (err: any) { res.status(500).json({ message: err.message }); }

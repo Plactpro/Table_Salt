@@ -109,6 +109,21 @@ export function registerServiceCoordinationRoutes(app: Express): void {
 
       if (!rows[0]) return res.status(404).json({ message: "Order not found" });
 
+      // PR-012: schedule table_qr_sessions expiry 30 minutes after payment (grace period for staff)
+      // A background cleanup process should deactivate sessions where expires_at < NOW();
+      // here we stamp the expiry time so the session naturally ages out.
+      if (status === "paid" && rows[0].table_id) {
+        try {
+          await pool.query(
+            `UPDATE table_qr_sessions
+             SET expires_at = NOW() + INTERVAL '30 minutes'
+             WHERE table_id = $1 AND is_active = true
+               AND ($2 = ANY(order_ids) OR order_ids = '{}' OR order_ids IS NULL)`,
+            [rows[0].table_id, rows[0].id]
+          );
+        } catch {}
+      }
+
       emitToTenant(user.tenantId, "coordination:order_updated", {
         orderId: rows[0].id,
         status,

@@ -15,6 +15,407 @@ const ESCALATION_MINUTES: Record<string, number> = {
 };
 
 export function registerTableRequestRoutes(app: Express): void {
+  // IMPORTANT — specific QR sub-paths must be registered BEFORE the generic /api/qr/:token
+  // to prevent the /:token wildcard from capturing "restaurant-info", "table", "generate", "tokens", "bulk-download"
+
+  // restaurant-info endpoint (no auth required — invalid token fallback)
+  app.get("/api/qr/restaurant-info", async (req, res) => {
+    try {
+      const { token, outletId } = req.query as { token?: string; outletId?: string };
+
+      // Helper: given a tenantId, return restaurant info
+      const fetchByTenantId = async (tenantId: string) => {
+        const { rows } = await pool.query(
+          `SELECT t.id, t.name, t.phone, rs.logo_url
+           FROM tenants t
+           LEFT JOIN receipt_settings rs ON rs.tenant_id = t.id AND rs.is_active = true
+           WHERE t.id = $1 LIMIT 1`,
+          [tenantId]
+        );
+        return rows[0] ?? null;
+      };
+
+      if (token) {
+        // Look up tenant even for inactive/expired tokens so invalid-token error state
+        // can show the restaurant phone number for a better customer experience
+        const qrToken = await storage.getQrTokenByValue(token);
+        if (qrToken) {
+          const tenant = await fetchByTenantId(qrToken.tenantId);
+          if (tenant) {
+            return res.json({
+              restaurantName: tenant.name,
+              phone: tenant.phone ?? null,
+              logoUrl: tenant.logo_url ?? null,
+            });
+          }
+        }
+      }
+
+      // fallback for truly invalid/unknown tokens — resolve by outletId if provided
+      // This ensures the invalid-token screen always has a callable contact path
+      if (outletId) {
+        const { rows: outletRows } = await pool.query(
+          `SELECT o.tenant_id FROM outlets o WHERE o.id = $1 LIMIT 1`,
+          [outletId]
+        );
+        const tenantId = outletRows[0]?.tenant_id;
+        if (tenantId) {
+          const tenant = await fetchByTenantId(tenantId);
+          if (tenant) {
+            return res.json({
+              restaurantName: tenant.name,
+              phone: tenant.phone ?? null,
+              logoUrl: tenant.logo_url ?? null,
+            });
+          }
+        }
+      }
+
+      res.json({ restaurantName: null, phone: null, logoUrl: null });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET session info for table QR token
+  app.get("/api/qr/table/:token/session", async (req, res) => {
+    try {
+      const qrToken = await storage.getQrTokenByValue(req.params.token);
+      if (!qrToken || !qrToken.active) {
+        return res.status(404).json({ message: "QR code not found or inactive", errorCode: "INVALID_TOKEN" });
+      }
+
+      const table = await storage.getTable(qrToken.tableId);
+      if (!table) {
+        return res.status(404).json({ message: "Table not found", errorCode: "TABLE_NOT_FOUND" });
+      }
+
+      // Check outlet hours
+      let outletHours = { open: "09:00", close: "22:00", isOpen: true, nextOpenTime: null as string | null };
+      if (qrToken.outletId) {
+        try {
+          const { rows: outletRows } = await pool.query(
+            `SELECT operating_hours FROM outlets WHERE id = $1 LIMIT 1`,
+            [qrToken.outletId]
+          );
+          const oh = outletRows[0]?.operating_hours;
+          if (oh && typeof oh === "object") {
+            const now = new Date();
+            const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+            const todayKey = dayNames[now.getDay()];
+            const todayHours = oh[todayKey];
+            if (todayHours && todayHours.open && todayHours.close) {
+              outletHours.open = todayHours.open;
+              outletHours.close = todayHours.close;
+              const [openH, openM] = todayHours.open.split(":").map(Number);
+              const [closeH, closeM] = todayHours.close.split(":").map(Number);
+              const currentMinutes = now.getHours() * 60 + now.getMinutes();
+              const openMinutes = openH * 60 + openM;
+              const closeMinutes = closeH * 60 + closeM;
+              outletHours.isOpen = currentMinutes >= openMinutes && currentMinutes < closeMinutes;
+              if (!outletHours.isOpen) {
+                // Determine next open time: check today (if before open) then scan forward up to 7 days
+                if (currentMinutes < openMinutes) {
+                  outletHours.nextOpenTime = todayHours.open;
+                } else {
+                  // Scan next 7 days to find the next day with open hours
+                  for (let offset = 1; offset <= 7; offset++) {
+                    const nextKey = dayNames[(now.getDay() + offset) % 7];
+                    const nextDayHours = oh[nextKey];
+                    if (nextDayHours?.open) {
+                      const dayLabel = offset === 1 ? "Tomorrow" : dayNames[(now.getDay() + offset) % 7].charAt(0).toUpperCase() + dayNames[(now.getDay() + offset) % 7].slice(1);
+                      outletHours.nextOpenTime = `${dayLabel} at ${nextDayHours.open}`;
+                      break;
+                    }
+                  }
+                  if (!outletHours.nextOpenTime) outletHours.nextOpenTime = "soon";
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Operating hours parsing failed; use defaults (isOpen=true)
+        }
+      }
+
+      // Deactivate sessions that have passed their scheduled expiry
+      await pool.query(
+        `UPDATE table_qr_sessions SET is_active = false
+         WHERE table_id = $1 AND is_active = true AND expires_at IS NOT NULL AND expires_at < NOW()`,
+        [qrToken.tableId]
+      );
+
+      // Look for active QR session for this table (only not-yet-expired ones)
+      const { rows: sessionRows } = await pool.query(
+        `SELECT id, session_token, order_ids, started_at, expires_at
+         FROM table_qr_sessions
+         WHERE table_id = $1 AND is_active = true
+           AND (expires_at IS NULL OR expires_at > NOW())
+         LIMIT 1`,
+        [qrToken.tableId]
+      );
+
+      const session = sessionRows[0] ?? null;
+      const orderCount = session ? (session.order_ids?.length ?? 0) : 0;
+
+      // canJoin: session exists AND at least one active (unpaid) order is present for joining
+      // If all orders in the session are paid, the table is effectively "available" for a new party
+      let canJoin = false;
+      let hasUnpaidOrders = false;
+      if (session && session.order_ids?.length > 0) {
+        const { rows: unpaidRows } = await pool.query(
+          `SELECT id FROM orders
+           WHERE id = ANY($1::text[]) AND status != 'paid' AND payment_status != 'paid'
+           LIMIT 1`,
+          [session.order_ids]
+        );
+        hasUnpaidOrders = unpaidRows.length > 0;
+        canJoin = hasUnpaidOrders;
+      } else if (session && session.order_ids?.length === 0) {
+        // Session exists but no orders submitted yet — first diner is browsing; joining is possible
+        canJoin = true;
+      }
+
+      res.json({
+        sessionExists: !!session,
+        sessionToken: session?.session_token ?? null,
+        orderCount,
+        canJoin,
+        tableNumber: table.number,
+        tableZone: table.zone ?? null,
+        outletHours,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Start a new QR table session (race-condition safe via partial unique index)
+  app.post("/api/qr/table/:token/session/start", async (req, res) => {
+    try {
+      const qrToken = await storage.getQrTokenByValue(req.params.token);
+      if (!qrToken || !qrToken.active) {
+        return res.status(404).json({ message: "QR code not found or inactive", errorCode: "INVALID_TOKEN" });
+      }
+
+      const crypto = await import("crypto");
+      const newToken = crypto.randomUUID();
+
+      // INSERT ... ON CONFLICT DO NOTHING — if another insert wins the race, we fall through to SELECT
+      // Uses the partial unique index on (table_id) WHERE is_active = true
+      const { rows: insertRows } = await pool.query(
+        `INSERT INTO table_qr_sessions (table_id, tenant_id, outlet_id, session_token)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (table_id) WHERE is_active = true DO NOTHING
+         RETURNING *`,
+        [qrToken.tableId, qrToken.tenantId, qrToken.outletId ?? null, newToken]
+      );
+
+      if (insertRows.length > 0) {
+        return res.status(201).json({ session: insertRows[0], created: true });
+      }
+
+      // Race condition: another insert won — return the existing session
+      const { rows: existingRows } = await pool.query(
+        `SELECT * FROM table_qr_sessions WHERE table_id = $1 AND is_active = true LIMIT 1`,
+        [qrToken.tableId]
+      );
+
+      res.json({ session: existingRows[0], created: false });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET shared session items across all orders in the session (for join mode shared cart view)
+  app.get("/api/qr/table/:token/session/items", async (req, res) => {
+    try {
+      const qrToken = await storage.getQrTokenByValue(req.params.token);
+      if (!qrToken || !qrToken.active) {
+        return res.status(404).json({ message: "QR code not found or inactive", errorCode: "INVALID_TOKEN" });
+      }
+
+      const { rows: sessionRows } = await pool.query(
+        `SELECT order_ids FROM table_qr_sessions WHERE table_id = $1 AND is_active = true AND (expires_at IS NULL OR expires_at > NOW()) LIMIT 1`,
+        [qrToken.tableId]
+      );
+
+      if (!sessionRows[0] || !sessionRows[0].order_ids?.length) {
+        return res.json({ items: [] });
+      }
+
+      const orderIds: string[] = sessionRows[0].order_ids;
+      const { rows: itemRows } = await pool.query(
+        `SELECT oi.id, oi.order_id, oi.menu_item_id, oi.name, oi.quantity, oi.price, oi.notes,
+                o.guest_name
+         FROM order_items oi
+         JOIN orders o ON o.id = oi.order_id
+         WHERE oi.order_id = ANY($1::text[])
+           AND o.tenant_id = $2
+           AND o.table_id = $3
+         ORDER BY oi.order_id, oi.id`,
+        [orderIds, qrToken.tenantId, qrToken.tableId]
+      );
+
+      res.json({ items: itemRows });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Join an existing QR table session — append orderId to session and return shared orderId
+  app.post("/api/qr/table/:token/session/join", async (req, res) => {
+    try {
+      const qrToken = await storage.getQrTokenByValue(req.params.token);
+      if (!qrToken || !qrToken.active) {
+        return res.status(404).json({ message: "QR code not found or inactive", errorCode: "INVALID_TOKEN" });
+      }
+
+      const { orderId } = req.body;
+      if (!orderId) return res.status(400).json({ message: "orderId is required" });
+
+      // Validate order belongs to same tenant and table before linking into session
+      const { rows: orderCheck } = await pool.query(
+        `SELECT id FROM orders WHERE id = $1 AND tenant_id = $2 AND table_id = $3 LIMIT 1`,
+        [orderId, qrToken.tenantId, qrToken.tableId]
+      );
+      if (orderCheck.length === 0) {
+        return res.status(403).json({ message: "Order does not belong to this table" });
+      }
+
+      const { rows } = await pool.query(
+        `UPDATE table_qr_sessions
+         SET order_ids = order_ids || ARRAY[$1::text]
+         WHERE table_id = $2 AND is_active = true
+         RETURNING *`,
+        [orderId, qrToken.tableId]
+      );
+
+      if (rows.length === 0) {
+        return res.status(404).json({ message: "No active session found for this table" });
+      }
+
+      res.json({ session: rows[0] });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET shared order ID for joining customers — returns the first active order in the session
+  // Joining customers use this to add their cart items directly to the shared order instead of creating a new one
+  app.get("/api/qr/table/:token/session/shared-order", async (req, res) => {
+    try {
+      const qrToken = await storage.getQrTokenByValue(req.params.token);
+      if (!qrToken || !qrToken.active) {
+        return res.status(404).json({ message: "QR code not found or inactive", errorCode: "INVALID_TOKEN" });
+      }
+
+      const { rows } = await pool.query(
+        `SELECT order_ids FROM table_qr_sessions
+         WHERE table_id = $1 AND is_active = true AND (expires_at IS NULL OR expires_at > NOW())
+         LIMIT 1`,
+        [qrToken.tableId]
+      );
+
+      const orderIds: string[] = rows[0]?.order_ids ?? [];
+      // Return the first linked order ID (the "shared" order joining customers merge into)
+      const sharedOrderId = orderIds.length > 0 ? orderIds[0] : null;
+
+      if (!sharedOrderId) {
+        return res.json({ sharedOrderId: null });
+      }
+
+      // Verify the order is still active (not paid)
+      const { rows: orderRows } = await pool.query(
+        `SELECT id, status, payment_status FROM orders WHERE id = $1 LIMIT 1`,
+        [sharedOrderId]
+      );
+      const order = orderRows[0];
+      const isActive = order && order.status !== "paid" && order.payment_status !== "paid";
+
+      res.json({ sharedOrderId: isActive ? sharedOrderId : null });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // Add cart items from a guest session directly to an existing shared order
+  // Used when a customer chooses "Join Table's Order" — merges items into the shared order's KOT
+  app.post("/api/qr/table/:token/session/add-to-shared-order", async (req, res) => {
+    try {
+      const qrToken = await storage.getQrTokenByValue(req.params.token);
+      if (!qrToken || !qrToken.active) {
+        return res.status(404).json({ message: "QR code not found or inactive", errorCode: "INVALID_TOKEN" });
+      }
+
+      const { guestSessionId, sharedOrderId } = req.body;
+      if (!guestSessionId || !sharedOrderId) {
+        return res.status(400).json({ message: "guestSessionId and sharedOrderId are required" });
+      }
+
+      // Security: validate the guest session belongs to the same table/tenant as the QR token
+      // This prevents cross-session cart manipulation if session IDs are discovered
+      const guestSession = await storage.getTableSession(guestSessionId);
+      if (!guestSession) {
+        return res.status(404).json({ message: "Guest session not found" });
+      }
+      if (guestSession.tableId !== qrToken.tableId || guestSession.tenantId !== qrToken.tenantId) {
+        return res.status(403).json({ message: "Guest session does not belong to this table" });
+      }
+      if (guestSession.status !== "active") {
+        return res.status(409).json({ message: "Guest session is no longer active" });
+      }
+
+      // Verify order belongs to same tenant and table, and is still active
+      const { rows: orderRows } = await pool.query(
+        `SELECT id, tenant_id, table_id, status, payment_status FROM orders
+         WHERE id = $1 AND tenant_id = $2 AND table_id = $3 LIMIT 1`,
+        [sharedOrderId, qrToken.tenantId, qrToken.tableId]
+      );
+      const order = orderRows[0];
+      if (!order) return res.status(404).json({ message: "Shared order not found for this table" });
+      if (order.payment_status === "paid" || order.status === "paid") {
+        return res.status(409).json({ message: "Shared order has already been paid" });
+      }
+
+      // Get cart items from the guest session
+      const cartItems = await storage.getGuestCartItems(guestSessionId);
+      if (cartItems.length === 0) {
+        return res.status(400).json({ message: "No items in cart to add" });
+      }
+
+      // Add each cart item directly to the shared order
+      const addedItems = [];
+      for (const ci of cartItems) {
+        const item = await storage.createOrderItem({
+          orderId: sharedOrderId,
+          menuItemId: ci.menuItemId,
+          name: ci.name,
+          quantity: ci.quantity,
+          price: ci.price,
+          notes: ci.notes,
+          itemPrepMinutes: null,
+        });
+        addedItems.push(item);
+      }
+
+      // Clear this customer's guest cart
+      await storage.clearGuestCart(guestSessionId);
+
+      // Emit real-time update to kitchen/staff
+      const { emitToTenant } = await import("../realtime");
+      emitToTenant(qrToken.tenantId, "coordination:order_updated", {
+        orderId: sharedOrderId,
+        status: order.status,
+        source: "qr_dinein",
+      });
+
+      res.json({ orderId: sharedOrderId, addedItems, itemCount: addedItems.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   app.get("/api/qr/:token", async (req, res) => {
     try {
       const qrToken = await storage.getQrTokenByValue(req.params.token);
@@ -419,4 +820,16 @@ export function startEscalationJob(): void {
       console.error("[EscalationJob] Error:", err);
     }
   }, 60 * 1000);
+}
+
+// Cleanup job for expired QR table sessions — runs on server start
+export async function cleanupExpiredQrSessions(): Promise<void> {
+  try {
+    await pool.query(
+      `UPDATE table_qr_sessions SET is_active = false
+       WHERE is_active = true AND expires_at IS NOT NULL AND expires_at < NOW()`
+    );
+  } catch (err) {
+    console.error("[QrSessionCleanup] Error:", err);
+  }
 }
