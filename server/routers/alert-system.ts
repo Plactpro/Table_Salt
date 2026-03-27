@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { requireAuth, requireRole, requireFreshSession } from "../auth";
 import { storage } from "../storage";
 import { alertEngine } from "../services/alert-engine";
+import { pool } from "../db";
 import { z } from "zod";
 
 export function registerAlertSystemRoutes(app: Express): void {
@@ -99,6 +100,23 @@ export function registerAlertSystemRoutes(app: Express): void {
       const outletId = req.query.outletId as string | undefined;
       const events = await storage.getUnresolvedAlertEvents(user.tenantId, outletId);
       res.json({ count: events.length, events });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // PR-010: Clear all acknowledged (non-critical) notifications for the current tenant
+  app.post("/api/notifications/clear-acknowledged", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as any;
+      const { rowCount } = await pool.query(
+        `DELETE FROM alert_events
+         WHERE tenant_id = $1
+           AND is_resolved = true
+           AND urgency NOT IN ('critical', 'high')`,
+        [user.tenantId]
+      );
+      res.json({ success: true, deleted: rowCount ?? 0 });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

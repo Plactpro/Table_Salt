@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Bell, BellRing, VolumeX, Volume2, CheckCircle } from "lucide-react";
+import { Bell, BellRing, VolumeX, Volume2, CheckCircle, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useActiveAlerts, ActiveAlert } from "@/lib/active-alerts-context";
 import { apiRequest } from "@/lib/queryClient";
@@ -104,10 +104,14 @@ function AlertRow({ alert, onAck, onToggleMute, isMuted }: AlertRowProps) {
   );
 }
 
+type TabType = "critical" | "info";
+
 export default function AlertNotificationBell() {
-  const { activeAlerts, removeAlert } = useActiveAlerts();
+  const { activeAlerts, removeAlert, clearAll } = useActiveAlerts();
   const [open, setOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>("critical");
   const [, forceRender] = useState(0);
+  const [clearingAll, setClearingAll] = useState(false);
 
   const isMuted = (alertCode: string) =>
     localStorage.getItem(`alert_mute_${alertCode}`) === "true";
@@ -129,9 +133,33 @@ export default function AlertNotificationBell() {
     removeAlert(eventId);
   };
 
-  const count = activeAlerts.length;
-  const hasCritical = activeAlerts.some(a => a.urgency === "critical");
-  const visible = activeAlerts.slice(0, 10);
+  // Split alerts into Critical and Info tabs
+  const criticalAlerts = activeAlerts.filter(
+    a => (a.urgency === "critical" || a.urgency === "high")
+  );
+  const infoAlerts = activeAlerts.filter(
+    a => a.urgency !== "critical" && a.urgency !== "high"
+  );
+
+  const handleClearAllAcknowledged = async () => {
+    setClearingAll(true);
+    try {
+      // Deletes server-side acknowledged (resolved) non-critical notifications.
+      // Local state only contains unresolved active alerts, so no local state change is needed.
+      await apiRequest("POST", "/api/notifications/clear-acknowledged", {});
+    } catch (_) {}
+    setClearingAll(false);
+  };
+
+  const criticalCount = criticalAlerts.length;
+  const infoCount = infoAlerts.length;
+  const hasCritical = criticalCount > 0;
+
+  const infoCountLabel = infoCount > 99 ? "99+" : String(infoCount);
+
+  const visibleAlerts = activeTab === "critical"
+    ? criticalAlerts.slice(0, 10)
+    : infoAlerts.slice(0, 10);
 
   return (
     <div className="relative">
@@ -154,12 +182,29 @@ export default function AlertNotificationBell() {
           ) : (
             <Bell className="h-4 w-4" aria-hidden="true" />
           )}
-          {count > 0 && (
+
+          {/* Badge: show critical (red) and info (grey) counts */}
+          {(criticalCount > 0 || infoCount > 0) && (
             <span
-              className="absolute top-1 right-1 min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-card"
+              className="absolute -top-0.5 -right-0.5 flex items-center gap-0.5"
               data-testid="badge-alert-count"
             >
-              {count > 9 ? "9+" : count}
+              {criticalCount > 0 && (
+                <span
+                  className="min-w-[16px] h-4 px-0.5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center ring-1 ring-card"
+                  data-testid="badge-critical-count"
+                >
+                  {criticalCount > 9 ? "9+" : criticalCount}
+                </span>
+              )}
+              {infoCount > 0 && (
+                <span
+                  className="min-w-[16px] h-4 px-0.5 rounded-full bg-muted-foreground/60 text-white text-[10px] font-bold flex items-center justify-center ring-1 ring-card"
+                  data-testid="badge-info-count"
+                >
+                  {infoCountLabel}
+                </span>
+              )}
             </span>
           )}
         </Button>
@@ -180,26 +225,78 @@ export default function AlertNotificationBell() {
               className="absolute right-0 top-11 z-50 w-80 bg-card border border-border rounded-xl shadow-xl overflow-hidden"
               data-testid="panel-active-alerts"
             >
+              {/* Header */}
               <div className="flex items-center justify-between px-3 py-2.5 border-b border-border bg-muted/30">
                 <div className="flex items-center gap-2">
                   <Bell className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm font-semibold">Active Alerts</span>
-                  {count > 0 && (
-                    <span className="bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 text-xs font-bold px-1.5 py-0.5 rounded-full">
-                      {count}
-                    </span>
-                  )}
+                  <span className="text-sm font-semibold">Alerts</span>
                 </div>
               </div>
 
-              <div className="overflow-y-auto max-h-80 divide-y divide-border/50">
-                {visible.length === 0 ? (
+              {/* Tabs */}
+              <div className="flex border-b border-border">
+                <button
+                  className={cn(
+                    "flex-1 px-3 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors",
+                    activeTab === "critical"
+                      ? "border-b-2 border-red-500 text-red-600 dark:text-red-400 bg-red-50/50 dark:bg-red-950/30"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => setActiveTab("critical")}
+                  data-testid="tab-critical"
+                >
+                  Critical
+                  {criticalCount > 0 && (
+                    <span className="bg-red-500 text-white text-[10px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center">
+                      {criticalCount}
+                    </span>
+                  )}
+                </button>
+                <button
+                  className={cn(
+                    "flex-1 px-3 py-2 text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors",
+                    activeTab === "info"
+                      ? "border-b-2 border-blue-500 text-blue-600 dark:text-blue-400"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                  onClick={() => setActiveTab("info")}
+                  data-testid="tab-info"
+                >
+                  Info
+                  {infoCount > 0 && (
+                    <span className="bg-muted-foreground/60 text-white text-[10px] font-bold px-1 py-0.5 rounded-full min-w-[16px] text-center">
+                      {infoCountLabel}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Clear all acknowledged button — Info tab only */}
+              {activeTab === "info" && (
+                <div className="px-3 py-1.5 border-b border-border/50 bg-muted/20 flex justify-end">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 px-2 text-[11px] text-muted-foreground hover:text-destructive"
+                    onClick={handleClearAllAcknowledged}
+                    disabled={clearingAll}
+                    data-testid="button-clear-acknowledged"
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Clear all acknowledged
+                  </Button>
+                </div>
+              )}
+
+              {/* Alert list */}
+              <div className="overflow-y-auto max-h-72 divide-y divide-border/50">
+                {visibleAlerts.length === 0 ? (
                   <div className="py-8 text-center text-sm text-muted-foreground">
                     <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                    No active alerts
+                    {activeTab === "critical" ? "No critical alerts" : "No info alerts"}
                   </div>
                 ) : (
-                  visible.map(alert => (
+                  visibleAlerts.map(alert => (
                     <AlertRow
                       key={alert.eventId}
                       alert={alert}

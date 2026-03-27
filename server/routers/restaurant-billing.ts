@@ -1164,4 +1164,48 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       res.status(500).json({ message: err.message });
     }
   });
+
+  // PR-010: Manual-pending payments panel — return unresolved offline payments for manager review
+  app.get("/api/billing/manual-pending", requireAuth, requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const outletId = req.query.outletId as string | undefined;
+
+      const params: unknown[] = [user.tenantId];
+      let outletFilter = "";
+      if (outletId) {
+        params.push(outletId);
+        outletFilter = `AND b.outlet_id = $${params.length}`;
+      }
+
+      const { rows } = await pool.query(
+        `SELECT
+          bp.id AS payment_id,
+          bp.amount,
+          bp.created_at AS payment_created_at,
+          bp.gateway_status,
+          b.id AS bill_id,
+          b.bill_number,
+          b.total_amount,
+          b.payment_status,
+          b.outlet_id,
+          b.created_at AS bill_created_at
+         FROM bill_payments bp
+         JOIN bills b ON b.id = bp.bill_id
+         WHERE bp.tenant_id = $1
+           AND bp.payment_method = 'manual_pending'
+           AND bp.gateway_status = 'gateway_down'
+           AND bp.is_refund = false
+           AND b.payment_status != 'paid'
+           ${outletFilter}
+         ORDER BY bp.created_at DESC
+         LIMIT 200`,
+        params
+      );
+
+      res.json({ data: rows, count: rows.length });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
 }

@@ -3696,4 +3696,40 @@ export async function runTask108Migrations(): Promise<void> {
     CREATE INDEX IF NOT EXISTS idx_report_cache_tenant_type_status
     ON report_cache(tenant_id, report_type, status)
   `);
+
+  // PR-010: audit_events_archive table — identical schema to audit_events plus archived_at
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS audit_events_archive (
+      id VARCHAR(36) PRIMARY KEY,
+      tenant_id VARCHAR(36),
+      user_id VARCHAR(36),
+      user_name TEXT,
+      action TEXT NOT NULL,
+      entity_type TEXT,
+      entity_id VARCHAR(36),
+      entity_name TEXT,
+      outlet_id VARCHAR(36),
+      before JSONB,
+      after JSONB,
+      metadata JSONB,
+      ip_address TEXT,
+      user_agent TEXT,
+      supervisor_id VARCHAR(36),
+      created_at TIMESTAMPTZ,
+      archived_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_audit_events_archive_tenant_created
+    ON audit_events_archive (tenant_id, created_at)
+  `);
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_audit_events_archive_archived_at
+    ON audit_events_archive (archived_at)
+  `);
+
+  // PR-010: auto_acknowledged column on alert_events
+  await pool.query(`
+    ALTER TABLE alert_events ADD COLUMN IF NOT EXISTS auto_acknowledged BOOLEAN DEFAULT false
+  `);
 }
