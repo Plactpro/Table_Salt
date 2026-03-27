@@ -1,0 +1,206 @@
+Here is the complete prompt. Paste directly into Replit AI.
+
+***
+
+### Theme Update — Deep Forest Green + Warm Cream Sidebar
+
+This is a continuation of the existing restaurant SaaS project in Replit. Do not add any new features or change any functionality. This is a visual theme update only.
+
+Update the sidebar navigation and application theme using a deep forest green and warm cream color palette. Apply carefully — do not break any existing functionality, do not restructure any components, do not modify any business logic files.
+
+***
+
+#### 1. Exact colors to apply
+
+```
+SIDEBAR:
+  Background:           #1B4332  (deep forest green)
+  Nav item text:        #F5F0E8  (warm cream)
+  Active item bg:       #2D6A4F  (medium green)
+  Active item text:     #FFFFFF  (pure white)
+  Hover item bg:        #245741  (hover green)
+  Section label text:   #81B89A  (muted sage green)
+  Right border:         #2D6A4F  (subtle separator)
+  Logo / brand text:    #F5F0E8  (cream)
+  Scrollbar (if any):   #245741
+
+MAIN CONTENT AREA (subtle warm shift):
+  Page background:      #FAFAF7  (near-white warm cream)
+  Card background:      #FFFFFF  (pure white)
+  Card border:          #E8E3D8  (warm grey)
+
+PRIMARY BUTTONS:
+  Background:           #1B4332  (dark green)
+  Text:                 #F5F0E8  (cream)
+  Hover background:     #2D6A4F  (lighter green)
+  Border:               none
+
+SECONDARY BUTTONS:
+  Background:           transparent
+  Border:               #1B4332
+  Text:                 #1B4332
+  Hover background:     #F0F5F0  (very light green tint)
+```
+
+***
+
+#### 2. Sidebar font and spacing improvements
+
+```
+NAV ITEM LABELS:
+  Font size:            15px  (text-[15px])
+  Font weight:          500   (font-medium)
+  Letter spacing:       normal
+
+SECTION GROUP LABELS
+(OPERATIONS, MENU & SALES, KITCHEN & STOCK etc.):
+  Font size:            11px  (text-[11px])
+  Font weight:          600   (font-semibold)
+  Letter spacing:       0.08em (tracking-widest or manual)
+  Opacity:              0.75
+  Text transform:       uppercase (keep existing)
+
+ICON SIZE:
+  Width:                18px  (w-[18px] h-[18px])
+  Color:                inherit from text color
+
+NAV ITEM PADDING:
+  Vertical:             py-2.5  (increase from current)
+  Horizontal:           px-3
+  Gap (icon to label):  gap-3
+
+SIDEBAR WIDTH:
+  Do not change — keep existing width
+```
+
+***
+
+#### 3. Tailwind implementation guide
+
+If the project uses Tailwind CSS, apply these changes using Tailwind utilities and CSS variables:
+
+```css
+/* Add to index.css or globals.css */
+
+:root {
+  --sidebar-bg:           #1B4332;
+  --sidebar-text:         #F5F0E8;
+  --sidebar-active-bg:    #2D6A4F;
+  --sidebar-active-text:  #FFFFFF;
+  --sidebar-hover-bg:     #245741;
+  --sidebar-label:        #81B89A;
+  --sidebar-border:       #2D6A4F;
+
+  --page-bg:              #FAFAF7;
+  --card-bg:              #FFFFFF;
+  --card-border:          #E8E3D8;
+
+  --primary:              #1B4332;
+  --primary-text:         #F5F0E8;
+  --primary-hover:        #2D6A4F;
+}
+```
+
+***
+
+#### 4. Files to update
+
+```
+MUST UPDATE:
+  client/src/components/layout/sidebar.tsx
+    OR
+  client/src/components/layout/app-layout.tsx
+  (whichever file contains the sidebar navigation)
+
+  client/src/index.css
+  (add CSS variables above)
+
+  tailwind.config.ts
+  (add custom colors if not using CSS variables)
+
+OPTIONALLY UPDATE:
+  client/src/components/ui/button.tsx
+  (update primary button variant colors)
+
+DO NOT TOUCH:
+  Any server files
+  Any routing files
+  Any data/API files
+  Any chart or reporting components
+  Any modal or dialog components
+  Alert color badges (red, amber, green — keep as-is)
+  Form input styles
+  Table styles
+```
+
+***
+
+#### 5. What to preserve exactly as-is
+
+```
+DO NOT CHANGE ANY OF THESE:
+
+→ Red alert badges and error colors
+→ Amber/orange warning colors
+→ Green success indicators (orders, status)
+→ All chart and graph colors
+→ KDS ticket card colors (red/amber timers)
+→ Allergy alert red styling
+→ All form inputs, dropdowns, selects
+→ All modal and dialog styling
+→ All table header and row styles
+→ Navigation routing and active state logic
+   (only change the visual color, not the logic)
+→ Any functionality whatsoever
+```
+
+***
+
+#### 6. Verification checklist after applying
+
+After making the changes, verify these screens look correct:
+
+```
+□ Sidebar shows deep green background
+□ Menu item text is cream colored and readable
+□ Active menu item (Dashboard) shows medium green bg
+□ Section labels (OPERATIONS etc.) are sage green
+  and slightly muted — visible but not harsh
+□ Hover state shows slightly lighter green
+□ Font size is noticeably larger than before
+□ Icons are properly sized and colored
+□ Main content area has warm off-white background
+□ Cards have clean white background with warm border
+□ Primary buttons are dark green with cream text
+□ Alert badges (red, amber) are unchanged
+□ No white text on white background anywhere
+□ No dark text invisible on dark background
+□ RTL layout (if Arabic selected) still works
+□ Dark mode (if enabled) is not broken
+```
+
+***
+
+#### 7. Dark mode consideration
+
+```
+If the app has a dark mode toggle:
+
+In dark mode, the sidebar should remain
+very similar (already dark green) but:
+  → Main content area: #1A1F1C (dark warm)
+  → Card background:   #222B25 (dark card)
+  → Card border:       #2D3B31 (dark border)
+  → Text primary:      #F5F0E8 (cream — same as sidebar)
+
+This creates a cohesive dark theme that
+matches the sidebar color family.
+
+If dark mode implementation is complex,
+apply only the light mode changes and
+add a TODO comment for dark mode.
+```
+
+***
+
+Apply these visual changes only. The result should be a sidebar with a rich deep forest green background, warm cream text that is clearly readable, properly sized fonts that staff can read on tablets, and a main content area with a subtle warm cream tint that feels cohesive with the sidebar. No features, no logic, no routing — visual only.
