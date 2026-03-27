@@ -9,6 +9,10 @@ import {
 } from "../services/printer-service";
 import { alertEngine } from "../services/alert-engine";
 
+// Tracks which printers have already had an offline alert dispatched this process
+// to prevent alert spam on each 120-second status poll. Clears when printer comes back online.
+const offlineAlertedPrinters = new Set<string>();
+
 function rowToPrinter(row: Record<string, unknown>): Printer {
   return {
     id: row.id as string,
@@ -345,6 +349,53 @@ export function registerPrinterRoutes(app: Express): void {
       res.json(results);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  app.get("/api/printers/status", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const outletId = req.query.outletId as string | undefined;
+      let query = `SELECT id, printer_name, printer_type, status, last_ping_at, outlet_id FROM printers WHERE tenant_id = $1 AND is_active = true`;
+      const params: unknown[] = [user.tenantId];
+      if (outletId) { query += ` AND (outlet_id = $2 OR outlet_id IS NULL)`; params.push(outletId); }
+      query += ` ORDER BY is_default DESC, printer_name ASC`;
+      const { rows } = await pool.query(query, params);
+
+      // Emit manager alert on offline transition (once per printer until it recovers)
+      for (const r of rows) {
+        const printerId = r.id as string;
+        const currentStatus: string = r.status ?? "unknown";
+        const isOffline = currentStatus === "offline" || currentStatus === "error";
+
+        if (isOffline && !offlineAlertedPrinters.has(printerId)) {
+          // Transition: printer just went offline — alert once
+          offlineAlertedPrinters.add(printerId);
+          const printerType = (r.printer_type as string ?? "").toLowerCase();
+          const alertCode = printerType === "kitchen" ? "ALERT-07" : "ALERT-08";
+          alertEngine.trigger(alertCode, {
+            tenantId: user.tenantId,
+            outletId: r.outlet_id as string ?? undefined,
+            referenceId: printerId,
+            message: `${printerType || "receipt"} printer offline: ${r.printer_name as string}`,
+          }).catch(() => {});
+        } else if (!isOffline && offlineAlertedPrinters.has(printerId)) {
+          // Printer recovered — clear alert state so next offline triggers a fresh alert
+          offlineAlertedPrinters.delete(printerId);
+        }
+      }
+
+      res.json(rows.map(r => ({
+        id: r.id,
+        name: r.printer_name,
+        type: r.printer_type,
+        status: r.status ?? "unknown",
+        lastPingAt: r.last_ping_at,
+        outletId: r.outlet_id,
+      })));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      res.status(500).json({ message });
     }
   });
 

@@ -8,6 +8,7 @@ import { sql, eq } from "drizzle-orm";
 import { tenants as tenantsTable, type InsertCustomer } from "@shared/schema";
 import { createPaymentLink, getPaymentLink, refundRazorpayPayment, GatewayDownError } from "../razorpay";
 import { routeAndPrint } from "../services/printer-service";
+import { logCashDrawerEvent } from "./cash-drawer-log";
 import { recordAndDistributeTip } from "../services/tip-service";
 import { calculatePackingCharge } from "../services/packing-charge-service";
 import { applyParkingChargeToBill } from "../services/parking-charge-service";
@@ -455,7 +456,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         });
         createdPayments.push(payment);
 
-        // Task #118: Fire-and-forget cash session update for CASH payments
+        // PR-004: Fire-and-forget cash session update + drawer open for CASH payments
         if (p.paymentMethod === "CASH") {
           setImmediate(async () => {
             try {
@@ -474,20 +475,15 @@ export function registerRestaurantBillingRoutes(app: Express): void {
                    WHERE id = $2`,
                   [Number(p.amount), sessionId]
                 );
-                const sessionRes = await billingPool.query(
-                  `SELECT opening_float, total_cash_sales, total_cash_refunds, total_cash_payouts FROM cash_sessions WHERE id = $1`,
-                  [sessionId]
-                );
-                const s = sessionRes.rows[0];
-                const runningBalance = Number(s.opening_float) + Number(s.total_cash_sales) - Number(s.total_cash_refunds) - Number(s.total_cash_payouts);
-                await billingPool.query(
-                  `INSERT INTO cash_drawer_events (
-                     tenant_id, outlet_id, session_id, event_type, bill_id, amount, running_balance, performed_by, performed_by_name, is_manual
-                   )
-                   SELECT $1, outlet_id, $2, 'SALE', $3, $4, $5, $6, $7, false
-                   FROM cash_sessions WHERE id = $2`,
-                  [user.tenantId, sessionId, bill.id, Number(p.amount), runningBalance, user.id, user.name || user.username]
-                );
+                await logCashDrawerEvent({
+                  tenantId: user.tenantId,
+                  cashierId: user.id,
+                  cashierName: user.name || user.username,
+                  eventType: "SALE",
+                  billId: bill.id,
+                  amount: Number(p.amount),
+                  sessionId,
+                });
               }
             } catch (err) {
               console.error("[billing] Cash session update failed:", err);
@@ -696,6 +692,23 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         } catch (_) {}
       }
       emitToTenant(user.tenantId, "order:updated", { orderId: bill.orderId, status: "voided" });
+
+      // PR-004: Open cash drawer + log VOID event if bill was paid with CASH
+      const cashPayments = (await storage.getBillPayments(bill.id)).filter(p => !p.isRefund && p.paymentMethod === "CASH");
+      if (cashPayments.length > 0) {
+        const totalCash = cashPayments.reduce((s, p) => s + Number(p.amount), 0);
+        setImmediate(() => {
+          logCashDrawerEvent({
+            tenantId: user.tenantId,
+            cashierId: user.id,
+            cashierName: user.name || user.username,
+            eventType: "VOID",
+            billId: bill.id,
+            amount: totalCash,
+          }).catch(e => console.error("[billing] VOID cash drawer error:", e));
+        });
+      }
+
       res.json({ ...updated, reversalsCreated: consumptionMovements.length });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -819,6 +832,20 @@ export function registerRestaurantBillingRoutes(app: Express): void {
             }
           }
         } catch (_) {}
+      }
+
+      // PR-004: Open cash drawer + log REFUND event for CASH payment method
+      if ((paymentMethod || "CASH") === "CASH") {
+        setImmediate(() => {
+          logCashDrawerEvent({
+            tenantId: user.tenantId,
+            cashierId: user.id,
+            cashierName: user.name || user.username,
+            eventType: "REFUND",
+            billId: bill.id,
+            amount: -Number(amount),
+          }).catch(e => console.error("[billing] REFUND cash drawer error:", e));
+        });
       }
 
       res.json({ ...refund, billPaymentStatus: newPaymentStatus, refundPaymentId: refund.id });

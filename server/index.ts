@@ -383,6 +383,13 @@ function startWebhookMonitor() {
   }
 
   try {
+    const { runTask184Migrations } = await import("./admin-migrations");
+    await runTask184Migrations();
+  } catch (e) {
+    console.error("Task 184 migrations error:", e);
+  }
+
+  try {
     const { runTask191Migrations } = await import("./admin-migrations");
     await runTask191Migrations();
   } catch (e) {
@@ -591,6 +598,21 @@ function startWebhookMonitor() {
     startWebhookMonitor();
   } catch (e) {
     console.error("Webhook monitor init error:", e);
+  }
+
+  // PR-004: Start printer health monitors (ping + auto-retry) for all active outlets
+  try {
+    const { pool: monitorPool } = await import("./db");
+    const { startPrinterMonitor } = await import("./services/printer-service");
+    const { rows: outlets } = await monitorPool.query(
+      `SELECT id, tenant_id FROM outlets WHERE active = true OR active IS NULL LIMIT 200`
+    );
+    for (const outlet of outlets) {
+      startPrinterMonitor(outlet.tenant_id as string, outlet.id as string);
+    }
+    console.log(`[PrinterMonitor] Started monitors for ${outlets.length} outlets`);
+  } catch (e) {
+    console.error("[PrinterMonitor] Init error:", e);
   }
 
   app.use((err: any, req: Request, res: Response, next: NextFunction) => {

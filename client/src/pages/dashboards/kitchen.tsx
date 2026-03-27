@@ -6,15 +6,16 @@ import {
   ChefHat, Flame, CheckCircle2, Utensils, Clock, LogIn, LogOut, CheckCircle, AlertCircle,
   Maximize2, Minimize2, RotateCcw, Coffee, IceCream, Beef, CookingPot, Filter,
   AlertTriangle, X, Package, Trash2, CheckSquare, Monitor, Copy, RefreshCw, ExternalLink,
-  Printer, UserCheck, ArrowRightLeft, CircleDot, ChevronDown, ChevronUp, FileText,
+  Printer, UserCheck, ArrowRightLeft, CircleDot, ChevronDown, ChevronUp, FileText, WifiOff, Sun, Moon,
 } from "lucide-react";
+import { useWakeLock } from "@/hooks/use-wake-lock";
 import { renderKotHtml, dispatchPrint } from "@/lib/print-utils";
 import type { LucideIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { useAuth } from "@/lib/auth";
 import {
@@ -461,7 +462,7 @@ function WastageModal({ open, onClose, station }: { open: boolean; onClose: () =
 
 const KDS_STALE_THRESHOLD_HOURS = 8;
 
-function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck, restaurantName, stationPrinterUrl }: {
+function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onStartWithRecipeCheck, restaurantName, stationPrinterUrl, hasPrintQueued }: {
   ticket: KDSTicket;
   stationFilter: string | null;
   onItemStatus: (itemId: string, status: string) => void;
@@ -469,6 +470,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
   onStartWithRecipeCheck: (orderId: string, station: string | null) => void;
   restaurantName?: string;
   stationPrinterUrl?: string | null;
+  hasPrintQueued?: boolean;
 }) {
   const mins = useElapsedMinutes(ticket.createdAt);
   const isStale = mins >= KDS_STALE_THRESHOLD_HOURS * 60;
@@ -612,6 +614,12 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
             {isStale && (
               <Badge className="text-xs bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 border border-gray-300 dark:border-gray-600" data-testid={`badge-stale-${ticket.id.slice(-4)}`}>
                 Stale — check status
+              </Badge>
+            )}
+            {hasPrintQueued && (
+              <Badge className="text-xs bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700 gap-1" data-testid={`badge-print-queued-${ticket.id.slice(-4)}`}>
+                <Printer className="h-2.5 w-2.5" />
+                Print queued
               </Badge>
             )}
           </div>
@@ -790,8 +798,16 @@ function PrinterStatusMiniBar() {
     refetchInterval: 30000,
   });
 
+  const { data: printerHealth = [] } = useQuery<PrinterDevice[]>({
+    queryKey: ["/api/printers/status"],
+    queryFn: () => fetch("/api/printers/status", { credentials: "include" }).then(r => r.json()).catch(() => []),
+    refetchInterval: 120000,
+    staleTime: 60000,
+  });
+
   useRealtimeEvent("printer:status_changed", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/printers/status"] });
   }, [queryClient]));
 
   if (printers.length === 0) return null;
@@ -801,16 +817,35 @@ function PrinterStatusMiniBar() {
     offline: "bg-gray-400",
     error: "bg-red-500 animate-pulse",
     unknown: "bg-yellow-400",
+    low_paper: "bg-amber-400 animate-pulse",
+    low_ink: "bg-amber-400",
+    paper_jam: "bg-red-500 animate-pulse",
   };
   const statusLabel: Record<string, string> = {
     online: "Online",
     offline: "Offline",
     error: "Error",
     unknown: "Unknown",
+    low_paper: "Low Paper",
+    low_ink: "Low Ink",
+    paper_jam: "Paper Jam",
   };
+
+  const isWarningStatus = (status: string) => status === "low_paper" || status === "low_ink";
+  const isErrorStatus = (status: string) => status === "error" || status === "offline" || status === "paper_jam";
 
   const onlineCount = printers.filter(p => p.status === "online").length;
   const errorCount = printers.filter(p => p.status === "error").length;
+
+  const healthMap = new Map(printerHealth.map(p => [p.id, p]));
+  const offlinePrinters = printers.filter(p => {
+    const hp = healthMap.get(p.id);
+    return isErrorStatus(hp?.status ?? p.status);
+  });
+  const warningPrinters = printers.filter(p => {
+    const hp = healthMap.get(p.id);
+    return isWarningStatus(hp?.status ?? p.status);
+  });
 
   const handleReconnect = async (p: PrinterDevice) => {
     setReconnecting(prev => ({ ...prev, [p.id]: true }));
@@ -821,6 +856,7 @@ function PrinterStatusMiniBar() {
       }
       await apiRequest("PATCH", `/api/printers/${p.id}/reconnect`, {}).catch(() => {});
       queryClient.invalidateQueries({ queryKey: ["/api/printers"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/printers/status"] });
       toast({ title: "Reconnecting", description: `Attempting to reconnect ${p.name}...` });
     } catch (_) {
       toast({ title: "Reconnect failed", description: `Could not reach ${p.name}. Check network.`, variant: "destructive" });
@@ -830,43 +866,83 @@ function PrinterStatusMiniBar() {
   };
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border text-xs overflow-x-auto" data-testid="printer-status-minibar">
-      <Printer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-      <span className="text-muted-foreground shrink-0">Printers:</span>
-      {printers.map(p => {
-        const isError = p.status === "error" || p.status === "offline";
-        const printerUrl = p.ipAddress ? `http://${p.ipAddress}:${p.port || 9100}` : null;
-        const tooltipText = isError && printerUrl
-          ? `Cannot reach printer at ${printerUrl}. Check network connection or update printer settings.`
-          : isError
-          ? `Printer is ${p.status}. Check network connection or update printer settings.`
-          : undefined;
-        return (
-          <div key={p.id} className="flex items-center gap-1 shrink-0" data-testid={`printer-status-${p.id}`}>
-            <span className={`inline-block w-2 h-2 rounded-full ${statusColor[p.status] || "bg-gray-400"}`} />
-            <span className="font-medium" title={tooltipText}>{p.name}</span>
-            <span className="text-muted-foreground">({statusLabel[p.status] || p.status})</span>
-            {isError && (
-              <button
-                className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 hover:bg-red-200 border border-red-300 flex items-center gap-0.5 disabled:opacity-50"
-                onClick={() => handleReconnect(p)}
-                disabled={reconnecting[p.id]}
-                title={tooltipText}
-                data-testid={`button-reconnect-printer-${p.id}`}
-              >
-                <RefreshCw className={`h-2.5 w-2.5 ${reconnecting[p.id] ? "animate-spin" : ""}`} />
-                {reconnecting[p.id] ? "..." : "Reconnect"}
-              </button>
-            )}
+    <div className="space-y-1.5" data-testid="printer-status-section">
+      {offlinePrinters.map(p => (
+        <div
+          key={`banner-${p.id}`}
+          className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-red-50 dark:bg-red-950/30 border border-red-300 dark:border-red-800 text-xs text-red-700 dark:text-red-300"
+          data-testid={`banner-printer-offline-${p.id}`}
+        >
+          <div className="flex items-center gap-2">
+            <WifiOff className="h-3.5 w-3.5 shrink-0" />
+            <span className="font-medium">Printer &ldquo;{p.name}&rdquo; is offline — KOTs are queued</span>
           </div>
-        );
-      })}
-      {errorCount > 0 && (
-        <span className="ml-auto shrink-0 text-red-600 font-medium">{errorCount} error{errorCount > 1 ? "s" : ""}</span>
-      )}
-      {errorCount === 0 && (
-        <span className="ml-auto shrink-0 text-green-600">{onlineCount}/{printers.length} online</span>
-      )}
+          <button
+            className="px-2 py-0.5 rounded text-[11px] font-medium bg-red-100 hover:bg-red-200 dark:bg-red-900 dark:hover:bg-red-800 border border-red-300 dark:border-red-700 flex items-center gap-1 disabled:opacity-50"
+            onClick={() => handleReconnect(p)}
+            disabled={reconnecting[p.id]}
+            data-testid={`button-banner-reconnect-${p.id}`}
+          >
+            <RefreshCw className={`h-3 w-3 ${reconnecting[p.id] ? "animate-spin" : ""}`} />
+            {reconnecting[p.id] ? "Reconnecting..." : "Reconnect"}
+          </button>
+        </div>
+      ))}
+      {warningPrinters.map(p => (
+        <div
+          key={`banner-warn-${p.id}`}
+          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 text-xs text-amber-700 dark:text-amber-300"
+          data-testid={`banner-printer-warning-${p.id}`}
+        >
+          <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+          <span className="font-medium">Printer &ldquo;{p.name}&rdquo; — {statusLabel[p.status] ?? p.status}. Please refill soon.</span>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 border text-xs overflow-x-auto" data-testid="printer-status-minibar">
+        <Printer className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="text-muted-foreground shrink-0">Printers:</span>
+        {printers.map(p => {
+          const effectiveStatus = healthMap.get(p.id)?.status ?? p.status;
+          const isErr = isErrorStatus(effectiveStatus);
+          const isWarn = isWarningStatus(effectiveStatus);
+          const printerUrl = p.ipAddress ? `http://${p.ipAddress}:${p.port || 9100}` : null;
+          const tooltipText = isErr && printerUrl
+            ? `Cannot reach printer at ${printerUrl}. Check network connection or update printer settings.`
+            : isErr
+            ? `Printer is ${effectiveStatus}. Check network connection or update printer settings.`
+            : isWarn
+            ? `${statusLabel[effectiveStatus] ?? effectiveStatus} — please refill soon.`
+            : undefined;
+          return (
+            <div key={p.id} className="flex items-center gap-1 shrink-0" data-testid={`printer-status-${p.id}`}>
+              <span className={`inline-block w-2 h-2 rounded-full ${statusColor[effectiveStatus] || "bg-gray-400"}`} />
+              <span className="font-medium" title={tooltipText}>{p.name}</span>
+              <span className={`${isWarn ? "text-amber-600 font-medium" : "text-muted-foreground"}`}>({statusLabel[effectiveStatus] || effectiveStatus})</span>
+              {isErr && (
+                <button
+                  className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-100 text-red-700 hover:bg-red-200 border border-red-300 flex items-center gap-0.5 disabled:opacity-50"
+                  onClick={() => handleReconnect(p)}
+                  disabled={reconnecting[p.id]}
+                  title={tooltipText}
+                  data-testid={`button-reconnect-printer-${p.id}`}
+                >
+                  <RefreshCw className={`h-2.5 w-2.5 ${reconnecting[p.id] ? "animate-spin" : ""}`} />
+                  {reconnecting[p.id] ? "..." : "Reconnect"}
+                </button>
+              )}
+            </div>
+          );
+        })}
+        {offlinePrinters.length > 0 && (
+          <span className="ml-auto shrink-0 text-red-600 font-medium">{offlinePrinters.length} offline</span>
+        )}
+        {offlinePrinters.length === 0 && warningPrinters.length > 0 && (
+          <span className="ml-auto shrink-0 text-amber-600 font-medium">{warningPrinters.length} warning</span>
+        )}
+        {offlinePrinters.length === 0 && warningPrinters.length === 0 && (
+          <span className="ml-auto shrink-0 text-green-600">{onlineCount}/{printers.length} online</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -885,6 +961,59 @@ export default function KitchenDashboard() {
   const [stationSettingsOpen, setStationSettingsOpen] = useState(false);
   const [editingPrinterUrl, setEditingPrinterUrl] = useState<Record<string, string>>({});
   const [showAssignments, setShowAssignments] = useState(false);
+
+  const { status: wakeLockStatus } = useWakeLock(true);
+
+  const { data: kitchenPrinters = [] } = useQuery<Array<{ id: string; type: string; isDefault: boolean }>>({
+    queryKey: ["/api/printers"],
+    queryFn: () => fetch("/api/printers", { credentials: "include" }).then(r => r.ok ? r.json() : []).catch(() => []),
+    staleTime: 5 * 60000,
+    refetchInterval: 5 * 60000,
+  });
+  const kitchenPrinterId = useMemo(() => {
+    const kitchen = kitchenPrinters.find(p => p.type === "kitchen");
+    return kitchen?.id ?? kitchenPrinters[0]?.id ?? null;
+  }, [kitchenPrinters]);
+
+  const { data: pendingPrinterJobs = [] } = useQuery<Array<{ id: string; reference_id: string | null; status: string }>>({
+    queryKey: ["/api/print-jobs/pending", kitchenPrinterId],
+    queryFn: () => fetch(`/api/print-jobs/pending/${kitchenPrinterId}`, { credentials: "include" }).then(r => r.ok ? r.json() : []).catch(() => []),
+    enabled: !!kitchenPrinterId,
+    refetchInterval: 90000,
+    staleTime: 30000,
+  });
+
+  const { data: queuedPrintJobs = [] } = useQuery<Array<{ id: string; referenceId: string | null; status: string }>>({
+    queryKey: ["/api/print-jobs", "queued"],
+    queryFn: () => fetch("/api/print-jobs?status=queued", { credentials: "include" }).then(r => r.ok ? r.json() : []).catch(() => []),
+    refetchInterval: 90000,
+    staleTime: 30000,
+  });
+
+  const queuedOrderIds = useMemo(() => {
+    const fromQueue = queuedPrintJobs.map(j => j.referenceId).filter(Boolean) as string[];
+    const fromPrinter = pendingPrinterJobs.map(j => j.reference_id).filter(Boolean) as string[];
+    return new Set([...fromQueue, ...fromPrinter]);
+  }, [queuedPrintJobs, pendingPrinterJobs]);
+
+  const { data: completedJobs = [] } = useQuery<Array<{ id: string; reference_id: string | null; status: string }>>({
+    queryKey: ["/api/print/jobs", "completed"],
+    queryFn: () => fetch("/api/print/jobs?status=completed&limit=100", { credentials: "include" }).then(r => r.ok ? r.json() : []).catch(() => []),
+    refetchInterval: 90000,
+    staleTime: 30000,
+  });
+  const prevCompletedCountRef = useRef<number | null>(null);
+  useEffect(() => {
+    const current = completedJobs.length;
+    if (prevCompletedCountRef.current !== null && current > prevCompletedCountRef.current) {
+      const newlyCompleted = current - prevCompletedCountRef.current;
+      toast({
+        title: `KOT Printed ✓`,
+        description: `${newlyCompleted} print job${newlyCompleted > 1 ? "s" : ""} completed successfully.`,
+      });
+    }
+    prevCompletedCountRef.current = current;
+  }, [completedJobs.length, toast]);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -1434,6 +1563,14 @@ export default function KitchenDashboard() {
           {kdsRefreshing && (
             <span className="text-xs text-muted-foreground animate-pulse" data-testid="text-kds-refreshing">Refreshing…</span>
           )}
+          <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${wakeLockStatus === "active" ? "bg-green-50 text-green-700 border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800" : "bg-muted text-muted-foreground border-border"}`}
+            title={wakeLockStatus === "active" ? "Screen wake lock is active — the display will not sleep" : wakeLockStatus === "unavailable" ? "Wake lock not supported on this device" : "Screen may sleep while idle"}
+            data-testid="badge-wake-lock-status"
+          >
+            {wakeLockStatus === "active" ? <Sun className="h-3 w-3" /> : <Moon className="h-3 w-3" />}
+            {wakeLockStatus === "active" ? "Screen Awake" : "Screen may sleep"}
+          </span>
           <KitchenClockCard />
           {(user?.role === "owner" || user?.role === "manager") && (
             <Button
@@ -1681,6 +1818,7 @@ export default function KitchenDashboard() {
                         onStartWithRecipeCheck={handleStartWithRecipeCheck}
                         restaurantName={tenant?.name || "Restaurant"}
                         stationPrinterUrl={selectedStation ? stations.find(s => s.name === selectedStation)?.printerUrl : null}
+                        hasPrintQueued={queuedOrderIds.has(ticket.id)}
                       />
                     ))
                   )}

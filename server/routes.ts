@@ -61,6 +61,7 @@ import { registerResourceRoutes } from "./routers/resources";
 import { registerParkingRoutes } from "./routers/parking";
 import { registerAdsRoutes } from "./routers/ads";
 import { registerReportsRoutes } from "./routers/reports";
+import { registerCashDrawerLogRoutes } from "./routers/cash-drawer-log";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -248,6 +249,7 @@ export async function registerRoutes(
   registerParkingRoutes(app);
   registerAdsRoutes(app);
   registerReportsRoutes(app);
+  registerCashDrawerLogRoutes(app);
 
   app.post("/api/errors/client", (req: any, res: any) => {
     const { message, stack, pathname, userAgent } = req.body || {};
