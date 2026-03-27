@@ -2245,4 +2245,47 @@ export function registerAdminRoutes(app: Express) {
       res.json({ success: true });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
+
+  // PR-010: Audit archive query endpoint — compliance queries against the archive table
+  app.get("/api/admin/audit-archive", requireSuperAdmin, requireFreshSession, async (req, res) => {
+    try {
+      const { tenantId, userId, action, from, to, limit: limitStr, offset: offsetStr } = req.query as Record<string, string>;
+      const limitNum = Math.min(parseInt(limitStr || "50"), 200);
+      const offsetNum = Math.max(parseInt(offsetStr || "0"), 0);
+
+      const conditions: string[] = ["1=1"];
+      const params: unknown[] = [];
+
+      if (tenantId) { params.push(tenantId); conditions.push(`tenant_id = $${params.length}`); }
+      if (userId) { params.push(userId); conditions.push(`user_id = $${params.length}`); }
+      if (action) { params.push(action); conditions.push(`action = $${params.length}`); }
+      if (from) { params.push(new Date(from)); conditions.push(`created_at >= $${params.length}`); }
+      if (to) { params.push(new Date(to)); conditions.push(`created_at <= $${params.length}`); }
+
+      const whereClause = conditions.join(" AND ");
+      params.push(limitNum);
+      params.push(offsetNum);
+
+      const [{ rows: data }, { rows: countRows }] = await Promise.all([
+        pool.query(
+          `SELECT id, tenant_id, user_id, user_name, action, entity_type, entity_id, entity_name,
+                  ip_address, metadata, before, after, created_at, archived_at
+           FROM audit_events_archive
+           WHERE ${whereClause}
+           ORDER BY created_at DESC
+           LIMIT $${params.length - 1} OFFSET $${params.length}`,
+          params
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS total FROM audit_events_archive WHERE ${whereClause}`,
+          params.slice(0, params.length - 2)
+        ),
+      ]);
+
+      return res.json({ data, total: Number(countRows[0]?.total || 0), limit: limitNum, offset: offsetNum });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
 }
