@@ -169,24 +169,24 @@ function EmberGlow() {
       <div style={{
         position: "absolute", bottom: 0, left: "50%", transform: "translateX(-50%)",
         width: "180%", height: "100%",
-        background: "radial-gradient(ellipse at 50% 100%, hsl(32 85% 52% / 0.28) 0%, hsl(28 80% 40% / 0.14) 40%, transparent 72%)",
+        background: "radial-gradient(ellipse at 50% 100%, rgba(45,106,79,0.22) 0%, rgba(27,67,50,0.12) 40%, transparent 72%)",
       }} />
       <div style={{
         position: "absolute", bottom: 0, left: "10%",
         width: "55%", height: "65%",
-        background: "radial-gradient(ellipse at 40% 100%, hsl(38 90% 60% / 0.14) 0%, transparent 60%)",
+        background: "radial-gradient(ellipse at 40% 100%, rgba(45,106,79,0.10) 0%, transparent 60%)",
       }} />
       <div style={{
         position: "absolute", bottom: 0, right: "5%",
         width: "50%", height: "50%",
-        background: "radial-gradient(ellipse at 60% 100%, hsl(24 80% 48% / 0.10) 0%, transparent 55%)",
+        background: "radial-gradient(ellipse at 60% 100%, rgba(45,106,79,0.07) 0%, transparent 55%)",
       }} />
       <motion.div
         style={{
           position: "absolute", bottom: "14%", left: "18%",
           width: "5px", height: "5px", borderRadius: "50%",
-          background: "hsl(38 90% 68%)",
-          boxShadow: "0 0 8px 3px hsl(38 90% 60% / 0.45)",
+          background: "#81B89A",
+          boxShadow: "0 0 8px 3px rgba(129,184,154,0.35)",
         }}
         animate={{ opacity: [0.6, 1, 0.6], y: [0, -3, 0] }}
         transition={{ duration: 3.2, repeat: Infinity, ease: "easeInOut" }}
@@ -195,8 +195,8 @@ function EmberGlow() {
         style={{
           position: "absolute", bottom: "22%", left: "74%",
           width: "3px", height: "3px", borderRadius: "50%",
-          background: "hsl(30 85% 65%)",
-          boxShadow: "0 0 6px 2px hsl(30 85% 60% / 0.35)",
+          background: "#81B89A",
+          boxShadow: "0 0 6px 2px rgba(129,184,154,0.25)",
         }}
         animate={{ opacity: [0.4, 0.85, 0.4], y: [0, -4, 0] }}
         transition={{ duration: 4.5, repeat: Infinity, ease: "easeInOut", delay: 1.2 }}
@@ -205,8 +205,8 @@ function EmberGlow() {
         style={{
           position: "absolute", bottom: "8%", left: "52%",
           width: "2px", height: "2px", borderRadius: "50%",
-          background: "hsl(42 95% 72%)",
-          boxShadow: "0 0 5px 2px hsl(42 90% 68% / 0.30)",
+          background: "#A8D5B5",
+          boxShadow: "0 0 5px 2px rgba(168,213,181,0.20)",
         }}
         animate={{ opacity: [0.3, 0.7, 0.3], y: [0, -2, 0] }}
         transition={{ duration: 2.8, repeat: Infinity, ease: "easeInOut", delay: 0.6 }}
@@ -369,7 +369,7 @@ export default function Sidebar() {
               aria-label={item.name}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "group relative flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                "group relative flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-[15px] font-medium transition-all duration-200",
                 isLocked
                   ? "opacity-40 cursor-not-allowed"
                   : isActive
@@ -380,8 +380,8 @@ export default function Sidebar() {
                 color: isLocked
                   ? "hsl(220 10% 52%)"
                   : isActive
-                    ? "hsl(38 35% 96%)"
-                    : "hsl(220 15% 72%)",
+                    ? "#FFFFFF"
+                    : "#F5F0E8",
               }}
             >
               {isActive && !isLocked && (
@@ -389,9 +389,9 @@ export default function Sidebar() {
                   layoutId="sidebar-active-bg"
                   className="absolute inset-0 rounded-xl"
                   style={{
-                    background: "linear-gradient(135deg, rgba(255,196,80,0.20), rgba(255,175,50,0.12))",
-                    border: "1px solid rgba(255,200,90,0.22)",
-                    boxShadow: "0 2px 14px rgba(0,0,0,0.35), inset 0 1px 1px rgba(255,220,120,0.12)",
+                    background: "#2D6A4F",
+                    border: "1px solid rgba(129,184,154,0.30)",
+                    boxShadow: "0 2px 14px rgba(0,0,0,0.40), inset 0 1px 1px rgba(245,240,232,0.08)",
                   }}
                   transition={{ type: "spring", stiffness: 350, damping: 30 }}
                 />
@@ -401,8 +401,8 @@ export default function Sidebar() {
                   layoutId="sidebar-active-indicator"
                   className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full"
                   style={{
-                    background: "hsl(38 90% 60%)",
-                    boxShadow: "0 0 8px 3px hsl(38 90% 60% / 0.45)",
+                    background: "#F5F0E8",
+                    boxShadow: "0 0 8px 3px rgba(245,240,232,0.45)",
                   }}
                   transition={{ type: "spring", stiffness: 350, damping: 30 }}
                 />
@@ -411,8 +411,8 @@ export default function Sidebar() {
                 <div
                   className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                   style={{
-                    background: "rgba(255,255,255,0.07)",
-                    border: "1px solid rgba(255,255,255,0.07)",
+                    background: "#245741",
+                    border: "1px solid rgba(245,240,232,0.08)",
                   }}
                 />
               )}
@@ -424,13 +424,13 @@ export default function Sidebar() {
               >
                 <Icon
                   aria-hidden="true"
-                  className="h-4 w-4 transition-colors duration-200"
+                  className="h-[18px] w-[18px] transition-colors duration-200"
                   style={{
                     color: isLocked
                       ? "hsl(220 10% 42%)"
                       : isActive
-                        ? "hsl(38 82% 65%)"
-                        : "hsl(220 12% 56%)",
+                        ? "#F5F0E8"
+                        : "rgba(245,240,232,0.70)",
                   }}
                 />
               </motion.div>
@@ -481,11 +481,7 @@ export default function Sidebar() {
     <aside
       className="hidden md:flex flex-col w-64 shrink-0 h-screen sticky top-0 overflow-hidden z-30"
       style={{
-        background: `linear-gradient(180deg,
-          hsl(185 60% 28%) 0%,
-          hsl(188 55% 22%) 40%,
-          hsl(192 50% 16%) 75%,
-          hsl(196 45% 12%) 100%)`,
+        background: "#1B4332",
       }}
       data-testid="sidebar"
     >
@@ -493,7 +489,7 @@ export default function Sidebar() {
 
       <div
         className="relative flex items-center justify-center px-6 py-5 overflow-hidden shrink-0"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.09)" }}
+        style={{ borderBottom: "1px solid #2D6A4F" }}
       >
         <div
           className="absolute inset-0"
@@ -502,8 +498,8 @@ export default function Sidebar() {
           }}
         />
         <span
-          className="relative font-heading text-white text-[32px] font-semibold text-center"
-          style={{ textShadow: "0 1px 2px rgba(0,0,0,0.35)", WebkitFontSmoothing: "antialiased" }}
+          className="relative font-heading text-[32px] font-semibold text-center"
+          style={{ color: "#F5F0E8", textShadow: "0 1px 2px rgba(0,0,0,0.35)", WebkitFontSmoothing: "antialiased" }}
           data-testid="logo-table-salt"
         >
           Table Salt
@@ -538,13 +534,13 @@ export default function Sidebar() {
                   aria-expanded={isOpen}
                   aria-controls={`nav-group-${group.key}`}
                   data-testid={`nav-group-toggle-${group.key}`}
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all duration-150 select-none"
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-semibold uppercase tracking-widest transition-all duration-150 select-none"
                   style={{
                     color: hasActive
-                      ? "hsl(38 80% 65%)"
-                      : "hsl(220 10% 52%)",
+                      ? "#F5F0E8"
+                      : "#81B89A",
                   }}
-                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.06)"; }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "rgba(245,240,232,0.07)"; }}
                   onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
                 >
                   {isOpen
@@ -556,8 +552,8 @@ export default function Sidebar() {
                     <span
                       className="inline-flex h-1.5 w-1.5 rounded-full shrink-0"
                       style={{
-                        background: "hsl(38 90% 60%)",
-                        boxShadow: "0 0 5px 2px hsl(38 90% 60% / 0.5)",
+                        background: "#81B89A",
+                        boxShadow: "0 0 5px 2px rgba(129,184,154,0.5)",
                       }}
                       aria-label="Contains active page"
                     />
