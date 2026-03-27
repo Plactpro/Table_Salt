@@ -3818,4 +3818,10 @@ export async function runTask191Migrations(): Promise<void> {
     ON table_qr_sessions (table_id)
     WHERE is_active = true
   `);
+
+  // PR-013: User language preference for i18n
+  await pool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(10) DEFAULT 'en'`);
+
+  // PR-013: Tenant default language for new staff
+  await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS default_language VARCHAR(10) DEFAULT 'en'`);
 }

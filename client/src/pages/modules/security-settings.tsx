@@ -35,6 +35,7 @@ interface PermissionsData {
 }
 
 import { actionLabels, rolePermissions, allRoles, roleLabels } from "@shared/permissions-config";
+import { useTranslation } from "react-i18next";
 
 const PERMISSION_LABELS: Record<string, string> = actionLabels;
 
@@ -62,6 +63,7 @@ function getRoleColor(role: string): string {
 }
 
 export default function SecuritySettingsPage() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -174,7 +176,7 @@ export default function SecuritySettingsPage() {
 
   return (
     <div className="space-y-6" data-testid="security-settings-page">
-      <PageTitle title="Security Settings" />
+      <PageTitle title={t("securitySettings")} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-security-title">

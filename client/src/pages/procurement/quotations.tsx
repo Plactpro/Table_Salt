@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, X, AlertTriangle, Send, FileText, GitCompare, CheckCircle2 } from "lucide-react";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface Supplier { id: string; name: string; active: boolean | null; }
 interface InventoryItem { id: string; name: string; unit: string | null; }
@@ -57,6 +58,7 @@ const STATUS_COLORS: Record<string, string> = {
 const PAYMENT_TERMS = ["IMMEDIATE", "NET_7", "NET_15", "NET_30", "NET_60"];
 
 export default function QuotationsTab() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -208,12 +210,12 @@ export default function QuotationsTab() {
               <TableHeader>
                 <TableRow>
                   <TableHead>RFQ #</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>{t("date")}</TableHead>
                   <TableHead>Required By</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("status")}</TableHead>
                   <TableHead>Suppliers</TableHead>
                   <TableHead>Items</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

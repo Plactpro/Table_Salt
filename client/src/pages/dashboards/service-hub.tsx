@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -86,6 +87,7 @@ function getPeakHour(hour: number): { label: string; color: string; emoji: strin
 }
 
 export default function ServiceHubPage() {
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -152,8 +154,8 @@ export default function ServiceHubPage() {
   });
 
   const now = new Date();
-  const dayName = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  const timeStr = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
+  const dayName = now.toLocaleDateString(i18n.language, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const timeStr = now.toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit", hour12: true });
   const peakInfo = data ? getPeakHour(data.summary.hour) : getPeakHour(now.getHours());
 
   const summary = data?.summary;

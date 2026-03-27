@@ -4,6 +4,7 @@ import { apiRequest } from "./queryClient";
 import { SubscriptionTier, BusinessType, hasFeatureAccess, getBusinessBadges, FeatureKey } from "./subscription";
 import { applyTheme, type ThemePreference } from "@/hooks/use-theme";
 import type { UserRole as Role } from "@shared/permissions-config";
+import i18n, { isRTL } from "@/i18n/index";
 
 export type { UserRole as Role } from "@shared/permissions-config";
 
@@ -38,6 +39,7 @@ export interface TenantInfo {
   razorpayEnabled?: boolean | null;
   razorpayKeyId?: string | null;
   defaultOutletId?: string | null;
+  defaultLanguage?: string | null;
 }
 
 export interface AuthUser {
@@ -52,6 +54,7 @@ export interface AuthUser {
   outletId?: string | null;
   tenant?: TenantInfo;
   themePreference?: ThemePreference;
+  preferredLanguage?: string;
   processingRestricted?: boolean;
   restrictionRequestedAt?: string | null;
   restrictionReason?: string | null;
@@ -127,6 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           cgstRate: data.cgstRate ?? null,
           sgstRate: data.sgstRate ?? null,
           invoicePrefix: data.invoicePrefix ?? null,
+          defaultLanguage: data.defaultLanguage ?? "en",
         };
       } catch {
         return null;
@@ -142,6 +146,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       applyTheme(user.themePreference);
     }
   }, [user?.themePreference]);
+
+  useEffect(() => {
+    if (user?.preferredLanguage && user.preferredLanguage !== i18n.language) {
+      i18n.changeLanguage(user.preferredLanguage);
+    }
+    const lang = user?.preferredLanguage ?? i18n.language ?? "en";
+    document.documentElement.setAttribute("dir", isRTL(lang) ? "rtl" : "ltr");
+    document.documentElement.setAttribute("lang", lang);
+  }, [user?.preferredLanguage]);
 
   const loginMutation = useMutation({
     mutationFn: async ({ username, password, totpCode }: { username: string; password: string; totpCode?: string }) => {

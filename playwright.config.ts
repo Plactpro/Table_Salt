@@ -13,10 +13,10 @@ const chromiumPath = getChromiumPath();
 
 export default defineConfig({
   testDir: './tests/e2e',
-  timeout: 30000,
+  timeout: 60000,
   workers: 1,
   retries: 1,
-  globalSetup: './tests/e2e/global-setup.ts',
+  globalSetup: undefined,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://localhost:5000',

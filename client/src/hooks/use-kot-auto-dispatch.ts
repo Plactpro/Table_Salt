@@ -3,6 +3,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { renderKotHtml, dispatchPrint, printHtmlWithIframe } from "@/lib/print-utils";
 import { apiRequest } from "@/lib/queryClient";
+import i18n from "@/i18n/index";
+import { useAuth } from "@/lib/auth";
 
 interface KitchenStation {
   id: string;
@@ -18,6 +20,8 @@ interface KitchenStation {
 export function useKotAutoDispatch() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
+  const { tenant } = useAuth();
+  const printLanguage = tenant?.defaultLanguage || i18n.language || "en";
 
   const dispatchKotForOrder = useCallback(
     async (orderId: string, restaurantName: string) => {
@@ -70,6 +74,7 @@ export function useKotAutoDispatch() {
             station: p.station || job.station,
             sentAt: p.sentAt || new Date().toISOString(),
             items: p.items || [],
+            language: printLanguage,
           });
 
           const entry: JobWithPrinter = { job, stationPrinterUrl, html };

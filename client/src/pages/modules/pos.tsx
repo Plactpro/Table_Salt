@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { useOutletTimezone, formatLocalTime } from "@/hooks/use-outlet-timezone";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useState, useMemo, useCallback, useEffect, useRef, Component } from "react";
@@ -308,6 +309,13 @@ class PageErrorBoundary extends Component<{ children: ReactNode; label: string }
 }
 
 export default function POSPage() {
+  const { t: tc } = useTranslation("common");
+  const { t: tp } = useTranslation("pos");
+  const defaultModifierLabelMap: Record<string, string> = {
+    "Half": tp("sizeHalf"), "Regular": tp("sizeRegular"), "Large": tp("sizeLarge"), "XL": tp("sizeXL"),
+    "Mild": tp("spiceMild"), "Medium": tp("spiceMedium"), "Spicy": tp("spiceSpicy"), "Extra Spicy": tp("spiceExtraSpicy"),
+  };
+  const getModifierLabel = (label: string) => defaultModifierLabelMap[label] ?? label;
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
@@ -1000,7 +1008,7 @@ export default function POSPage() {
   const holdCurrentTab = useCallback(() => {
     const hasPlacedOrder = !!activeTab?.heldOrderId;
     if (cart.length === 0 && !hasPlacedOrder) {
-      toast({ title: "Cart is empty", description: "Nothing to hold.", variant: "destructive" });
+      toast({ title: tp("cartIsEmpty"), description: tp("nothingToHold"), variant: "destructive" });
       return;
     }
     holdOrderMutation.mutate();
@@ -1021,7 +1029,7 @@ export default function POSPage() {
       apiRequest("PATCH", `/api/orders/${held.tab.heldOrderId}`, { status: "in_progress", version: held.tab.heldOrderVersion }).catch(() => {});
     }
     setShowRecall(false);
-    toast({ title: "Order recalled", description: `${held.label} restored to cart.` });
+    toast({ title: tp("orderRecalled"), description: tp("restoredToCart", { label: held.label }) });
   };
 
   const deleteHeldTab = (held: HeldTab) => {
@@ -1188,11 +1196,11 @@ export default function POSPage() {
       offlinePaymentPendingRef.current = false;
       if (data?.queued) {
         const ticket = data.localTicket || `LOCAL-${data.id?.slice(-6)?.toUpperCase() || "QUEUE"}`;
-        toast({ title: `Order queued [${ticket}]`, description: "Will sync when connection is restored" });
+        toast({ title: tp("orderQueued", { ticket }), description: tp("willSyncWhenOnline") });
         announceToScreenReader(`Order queued as ${ticket}. Will sync when connection is restored.`);
       } else {
         const isAddonKot = (activeTab?.sentCartKeys.length ?? 0) > 0 && isDineIn;
-        const msg = isAddonKot ? "Add-on KOT sent!" : isDineIn ? "Order sent to kitchen!" : "Order placed!";
+        const msg = isAddonKot ? tp("addonKotSent") : isDineIn ? tp("orderSentToKitchen") : tp("orderPlacedSuccess");
         toast({ title: msg });
         announceToScreenReader(msg);
         if (isDineIn && data?.id) {
@@ -1234,10 +1242,10 @@ export default function POSPage() {
       offlinePaymentPendingRef.current = false;
       if (err.message.startsWith("__SUPERVISOR_REQUIRED__:")) {
         const action = err.message.split(":")[1];
-        setSupervisorDialog({ open: true, action: action || "apply_large_discount", actionLabel: "Apply Large Discount" });
+        setSupervisorDialog({ open: true, action: action || "apply_large_discount", actionLabel: tp("applyLargeDiscount") });
         return;
       }
-      toast({ title: "Failed to place order", description: err.message, variant: "destructive" });
+      toast({ title: tp("failedToPlaceOrder"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -1259,14 +1267,14 @@ export default function POSPage() {
 
   const handlePlaceOrder = () => {
     if (!hasUnsentItems) {
-      toast({ title: "No new items to send", description: "Add items to the cart before sending another KOT", variant: "destructive" });
+      toast({ title: tp("noNewItemsToSend"), description: tp("addItemsBeforeKot"), variant: "destructive" });
       return;
     }
     if (isDineIn && !selectedTable) {
       if (tables.length === 0) {
-        toast({ title: "No tables are set up yet", description: "Configure your floor plan in the Tables module before placing dine-in orders.", variant: "destructive" });
+        toast({ title: tp("noTablesSetUp"), description: tp("configureTablesFirst"), variant: "destructive" });
       } else {
-        toast({ title: "Select a table", description: "Choose a table for dine-in orders", variant: "destructive" });
+        toast({ title: tp("selectATable"), description: tp("chooseTableForDineIn"), variant: "destructive" });
       }
       return;
     }
@@ -1306,7 +1314,7 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
     },
     onError: (err: Error) => {
-      toast({ title: "Payment link failed", description: err.message, variant: "destructive" });
+      toast({ title: tp("paymentLinkFailed"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -1326,7 +1334,7 @@ export default function POSPage() {
       return { orders: results, groups: nonEmpty };
     },
     onSuccess: ({ orders, groups }) => {
-      toast({ title: "Orders split!", description: `${orders.length} separate orders created.` });
+      toast({ title: tp("ordersSplit"), description: tp("separateOrdersCreated", { count: orders.length }) });
       const currentActiveTab = activeTab!;
       const splitTabs: OrderTab[] = groups.map((group, i) => {
         const allCartKeys = group.map(c => c.cartKey);
@@ -1353,7 +1361,7 @@ export default function POSPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
     },
     onError: (err: Error) => {
-      toast({ title: "Split failed", description: err.message, variant: "destructive" });
+      toast({ title: tp("splitFailed"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -1363,7 +1371,7 @@ export default function POSPage() {
     );
     const hasEmptyGroup = groups.some(g => g.length === 0);
     if (hasEmptyGroup) {
-      toast({ title: "Invalid split", description: "Every group must have at least one item.", variant: "destructive" });
+      toast({ title: tp("invalidSplit"), description: tp("everyGroupNeedsItem"), variant: "destructive" });
       return;
     }
     splitOrderMutation.mutate(groups);
@@ -1446,23 +1454,23 @@ export default function POSPage() {
   }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder, showBillModal, showKbdHelp, showMobileCart, cart.length]);
 
   return (
-    <PageErrorBoundary label="POS"><><PageTitle title="Point of Sale" /><div className="flex h-full gap-0 relative" data-testid="pos-page">
+    <PageErrorBoundary label="POS"><><PageTitle title={tc("pos")} /><div className="flex h-full gap-0 relative" data-testid="pos-page">
       {showKbdHelp && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none" aria-live="polite">
           <div className="bg-popover border border-border rounded-xl shadow-xl p-4 w-72 pointer-events-auto" data-testid="kbd-shortcut-overlay">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="font-semibold text-sm" data-testid="kbd-shortcut-help">Keyboard Shortcuts</h3>
-              <button onClick={() => setShowKbdHelp(false)} className="text-muted-foreground hover:text-foreground" aria-label="Close keyboard shortcuts help"><X className="h-4 w-4" /></button>
+              <h3 className="font-semibold text-sm" data-testid="kbd-shortcut-help">{tp("keyboardShortcuts")}</h3>
+              <button onClick={() => setShowKbdHelp(false)} className="text-muted-foreground hover:text-foreground" aria-label={tp("closeKbdHelp")}><X className="h-4 w-4" /></button>
             </div>
             <table className="w-full text-xs">
               <tbody className="space-y-1">
                 {[
-                  ["/  or  f", "Focus search"],
-                  ["n", "New order tab"],
-                  ["b", "Open bill (if items in cart)"],
-                  ["1–9", "Focus menu item 1–9"],
-                  ["?", "Toggle this help"],
-                  ["Esc", "Close modal"],
+                  ["/  or  f", tp("focusSearch")],
+                  ["n", tp("newOrderTab")],
+                  ["b", tp("openBill")],
+                  ["1–9", tp("focusMenuItem")],
+                  ["?", tp("toggleHelp")],
+                  ["Esc", tp("closeModal")],
                 ].map(([key, action]) => (
                   <tr key={key} className="border-b border-border/50 last:border-0">
                     <td className="py-1.5 pr-3"><kbd className="bg-muted px-1.5 py-0.5 rounded text-[10px] font-mono">{key}</kbd></td>
@@ -1480,7 +1488,7 @@ export default function POSPage() {
           <div className="flex gap-2 items-center">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input ref={searchInputRef} data-testid="input-search-menu" placeholder="Search menu items... (/ to focus)" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" aria-label="Search menu items" />
+              <Input ref={searchInputRef} data-testid="input-search-menu" placeholder={tp("searchMenuPlaceholder")} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="pl-9" aria-label={tp("searchMenuPlaceholder")} />
             </div>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1491,16 +1499,16 @@ export default function POSPage() {
                   onClick={handleMenuRefresh}
                   disabled={isOffline || menuRefreshing}
                   data-testid="button-refresh-menu"
-                  aria-label="Refresh menu"
+                  aria-label={tp("refreshMenu")}
                 >
                   <RefreshCw className={menuRefreshing ? "h-4 w-4 animate-spin" : "h-4 w-4"} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="bottom">
                 <p className="text-xs">
-                  {isOffline ? "Cannot refresh while offline" : menuCacheNotice?.cachedAt
-                    ? `Menu: updated ${Math.round((Date.now() - menuCacheNotice.cachedAt) / 60000)} min ago`
-                    : "Refresh menu"}
+                  {isOffline ? tp("cannotRefreshOffline") : menuCacheNotice?.cachedAt
+                    ? tp("menuUpdatedMinAgo", { n: Math.round((Date.now() - menuCacheNotice.cachedAt) / 60000) })
+                    : tp("refreshMenu")}
                 </p>
               </TooltipContent>
             </Tooltip>
@@ -1508,7 +1516,7 @@ export default function POSPage() {
           {menuCacheNotice?.fromCache && (
             <div className="flex items-center gap-1.5 text-xs text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 rounded-md px-2.5 py-1.5" data-testid="notice-menu-cache">
               <WifiOff className="h-3.5 w-3.5 shrink-0" />
-              <span>Using cached menu (last updated {Math.round((Date.now() - menuCacheNotice.cachedAt) / 60000)} min ago)</span>
+              <span>{tp("usingCachedMenu", { n: Math.round((Date.now() - menuCacheNotice.cachedAt) / 60000) })}</span>
             </div>
           )}
           <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
@@ -1517,11 +1525,11 @@ export default function POSPage() {
             ) : (
               <>
                 <Button data-testid="button-category-all" variant={selectedCategory === null && !showCombos ? "default" : "outline"} size="sm" onClick={() => { setSelectedCategory(null); setShowCombos(false); }}>
-                  <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> All
+                  <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> {tp("all")}
                 </Button>
                 {activeCombos.length > 0 && (
                   <Button data-testid="button-category-combos" variant={showCombos ? "default" : "outline"} size="sm" onClick={() => { setShowCombos(true); setSelectedCategory(null); }} className="whitespace-nowrap">
-                    <Package className="h-3.5 w-3.5 mr-1" /> Combos
+                    <Package className="h-3.5 w-3.5 mr-1" /> {tp("combos")}
                     <Badge variant="secondary" className="ml-1 text-xs h-4 px-1">{activeCombos.length}</Badge>
                   </Button>
                 )}
@@ -1542,7 +1550,7 @@ export default function POSPage() {
           {showCombos ? (
             activeCombos.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                <Package className="h-12 w-12 mb-2" /><p>No active combos</p>
+                <Package className="h-12 w-12 mb-2" /><p>{tp("noActiveCombos")}</p>
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
@@ -1862,9 +1870,9 @@ export default function POSPage() {
                     credentials: "include",
                     body: JSON.stringify({ orderId: lastPlacedOrder.orderId, type: "kot", isReprint: true, reason: "Manual reprint from POS" }),
                   });
-                  toast({ title: "Reprint KOT queued" });
+                  toast({ title: tc("printQueue.queued") });
                 } catch (e: any) {
-                  toast({ title: "Reprint failed", description: e.message, variant: "destructive" });
+                  toast({ title: tp("reprintFailed"), description: e.message, variant: "destructive" });
                 }
               }} data-testid="button-reprint-kot">
                 <Printer className="h-3 w-3" /> KOT
@@ -1873,7 +1881,7 @@ export default function POSPage() {
                 if (user?.role === "manager" || user?.role === "owner") {
                   setReprintManagerDialog({ open: true, orderId: lastPlacedOrder.orderId });
                 } else {
-                  toast({ title: "Manager approval required", description: "Only managers can reprint bills", variant: "destructive" });
+                  toast({ title: tp("managerApprovalRequired"), description: tp("reprintWillBeLogged"), variant: "destructive" });
                 }
               }} data-testid="button-reprint-bill">
                 <Printer className="h-3 w-3" /> Bill
@@ -2039,7 +2047,7 @@ export default function POSPage() {
                           </Button>
                         </div>
                       </div>
-                      {item.notes && !item.isCombo && <p className="text-xs text-muted-foreground italic pl-1">Note: {item.notes}</p>}
+                      {item.notes && !item.isCombo && <p className="text-xs text-muted-foreground italic pl-1">{tp("noteLabel", { text: item.notes })}</p>}
                       {item.isCombo && item.comboItems && (
                         <div className="text-xs text-muted-foreground pl-1 flex flex-wrap gap-1">
                           {item.comboItems.map((ci, i) => <span key={i} className="bg-muted px-1.5 py-0.5 rounded">{ci.name}</span>)}
@@ -2057,7 +2065,7 @@ export default function POSPage() {
           {applicableOffers.length > 0 && (
             <div className="space-y-1.5" data-testid="offers-section">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                <Tag className="h-3 w-3" /> Available Offers
+                <Tag className="h-3 w-3" /> {tp("availableOffers")}
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {applicableOffers.map((offer) => {
@@ -2112,28 +2120,28 @@ export default function POSPage() {
                 )}
               </div>
               {discountPreset === "custom" && (
-                <Input data-testid="input-discount" type="number" placeholder="Enter discount amount" value={discount} onChange={(e) => updateActiveTab({ discount: e.target.value })} min="0" step="0.01" className="mt-1.5 text-sm" />
+                <Input data-testid="input-discount" type="number" placeholder={tp("applyDiscount")} value={discount} onChange={(e) => updateActiveTab({ discount: e.target.value })} min="0" step="0.01" className="mt-1.5 text-sm" />
               )}
               {discountPreset !== "none" && discountPreset !== "custom" && manualDiscount > 0 && (
                 <p className="text-xs text-green-600 dark:text-green-400 mt-1">−{fmt(manualDiscount)} off</p>
               )}
             </div>
-            <Textarea data-testid="input-order-notes" placeholder="Order notes…" value={orderNotes} onChange={(e) => updateActiveTab({ orderNotes: e.target.value })} rows={2} className="resize-none text-sm" />
+            <Textarea data-testid="input-order-notes" placeholder={tp("orderNotesPlaceholder")} value={orderNotes} onChange={(e) => updateActiveTab({ orderNotes: e.target.value })} rows={2} className="resize-none text-sm" />
           </div>
 
           {isDineIn && (
             <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 flex items-center gap-2" data-testid="text-dine-in-info">
               <Users className="h-3.5 w-3.5 shrink-0" />
-              Payment collected at the end — table stays open until billing.
+              {tp("dineInPaymentInfo")}
             </div>
           )}
 
           <Separator />
 
           <div className="space-y-1 text-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">Totals</p>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{tp("totals")}</p>
             <div className="flex justify-between" data-testid="text-subtotal">
-              <span className="text-muted-foreground">Subtotal</span><span>{fmt(subtotal)}</span>
+              <span className="text-muted-foreground">{tp("subtotal")}</span><span>{fmt(subtotal)}</span>
             </div>
             {offerDiscount > 0 && (
               <div className="flex justify-between text-green-600" data-testid="text-offer-discount">
@@ -2155,40 +2163,40 @@ export default function POSPage() {
             ))}
             {manualDiscount > 0 && (
               <div className="flex justify-between text-green-600" data-testid="text-discount">
-                <span>Manual Discount</span><span>-{fmt(manualDiscount)}</span>
+                <span>{tp("manualDiscount")}</span><span>-{fmt(manualDiscount)}</span>
               </div>
             )}
             {serviceChargeAmount > 0 && (
               <div className="flex justify-between" data-testid="text-service-charge">
-                <span className="text-muted-foreground">Service Charge ({(tenantServiceChargePct * 100).toFixed(1)}%)</span>
+                <span className="text-muted-foreground">{tp("serviceChargeLabel", { pct: (tenantServiceChargePct * 100).toFixed(1) })}</span>
                 <span>{fmt(serviceChargeAmount)}</span>
               </div>
             )}
             {taxRate > 0 && (
               <div className="flex justify-between" data-testid="text-tax">
-                <span className="text-muted-foreground">Tax ({(taxRate * 100).toFixed(1)}%)</span>
+                <span className="text-muted-foreground">{tp("taxLabel", { pct: (taxRate * 100).toFixed(1) })}</span>
                 <span>{fmt(taxAmount)}</span>
               </div>
             )}
             <Separator />
             <div className="flex justify-between font-semibold text-base" data-testid="text-total" aria-live="polite" aria-atomic="true">
-              <span>Total</span><span>{fmt(total)}</span>
+              <span>{tp("total")}</span><span>{fmt(total)}</span>
             </div>
           </div>
 
           <SyncErrorPanel className="mt-1" />
 
           <div className="flex gap-1.5">
-            <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={holdCurrentTab} disabled={cart.length === 0 && !activeTab?.heldOrderId} title="Hold order">
-              <Pause className="h-3.5 w-3.5" /> Hold
+            <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={holdCurrentTab} disabled={cart.length === 0 && !activeTab?.heldOrderId} title={tp("holdOrder")}>
+              <Pause className="h-3.5 w-3.5" /> {tp("hold")}
             </Button>
             {cart.length >= 2 && (
-              <Button data-testid="button-split-bill" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={() => { setSplitAssignment({}); setShowSplitDialog(true); }} title="Split bill">
-                <Scissors className="h-3.5 w-3.5" /> Split
+              <Button data-testid="button-split-bill" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={() => { setSplitAssignment({}); setShowSplitDialog(true); }} title={tp("splitBillTitle")}>
+                <Scissors className="h-3.5 w-3.5" /> {tp("split")}
               </Button>
             )}
             <Button data-testid="button-place-order" className="flex-1 h-10 font-semibold text-sm transition-all duration-200 hover:scale-[1.01] shadow-sm" onClick={handlePlaceOrder} disabled={!hasUnsentItems || placeOrderMutation.isPending}>
-              {placeOrderMutation.isPending ? "Sending…" : isAddonKotMode ? "Send Add-on KOT" : isDineIn ? "Send to Kitchen" : (isOffline && !isDineIn) ? `Queue Order (Offline) — ${fmt(total)}` : `Pay — ${fmt(total)}`}
+              {placeOrderMutation.isPending ? tp("sending") : isAddonKotMode ? tp("sendAddonKot") : isDineIn ? tp("sendToKitchen") : (isOffline && !isDineIn) ? tp("queueOrderOffline", { total: fmt(total) }) : tp("pay", { total: fmt(total) })}
             </Button>
           </div>
         </div>
@@ -2199,7 +2207,7 @@ export default function POSPage() {
         <DialogContent className="max-w-xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <MapPin className="h-5 w-5 text-primary" /> Select Table
+              <MapPin className="h-5 w-5 text-primary" /> {tp("selectTableTitle")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
@@ -2237,7 +2245,7 @@ export default function POSPage() {
                             "border-muted-foreground/30 bg-muted/30 text-muted-foreground cursor-not-allowed opacity-60"}`}
                       >
                         <span className="text-base leading-none">{t.number}</span>
-                        <span className="text-[10px] mt-1 font-normal opacity-75">{isFree ? `${t.capacity}p` : isOccupied ? "Occupied" : isReserved ? "Reserved" : t.status}</span>
+                        <span className="text-[10px] mt-1 font-normal opacity-75">{isFree ? `${t.capacity}p` : isOccupied ? tp("occupied") : isReserved ? tp("reserved") : t.status}</span>
                         {isSelected && <CheckCircle2 className="absolute top-1 right-1 h-3.5 w-3.5" />}
                       </button>
                     );
@@ -2248,22 +2256,22 @@ export default function POSPage() {
             {tables.length === 0 && (
               <div className="text-center py-10 text-muted-foreground" data-testid="text-no-tables-configured">
                 <MapPin className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                <p className="text-sm font-medium">No tables found</p>
-                <p className="text-xs mt-1 mb-3">Configure your floor plan in the Tables module first.</p>
+                <p className="text-sm font-medium">{tp("noTablesFound")}</p>
+                <p className="text-xs mt-1 mb-3">{tp("configureFloorPlan")}</p>
                 <button
                   className="text-xs underline text-primary"
                   onClick={() => { setShowTablePicker(false); navigate("/tables"); }}
                   data-testid="link-go-to-tables"
                 >
-                  Go to Tables &rarr;
+                  {tp("goToTables")}
                 </button>
               </div>
             )}
           </div>
           <div className="flex items-center gap-3 pt-2 text-xs text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-400 inline-block" />Free</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-400 inline-block" />Occupied</span>
-            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-300 inline-block" />Reserved</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-green-400 inline-block" />{tp("available")}</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-amber-400 inline-block" />{tp("occupied")}</span>
+            <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-red-300 inline-block" />{tp("reserved")}</span>
           </div>
         </DialogContent>
       </Dialog>
@@ -2273,17 +2281,17 @@ export default function POSPage() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <CreditCard className="h-5 w-5 text-primary" /> Collect Payment
+              <CreditCard className="h-5 w-5 text-primary" /> {tp("collectPayment")}
             </DialogTitle>
-            <DialogDescription>Select payment method and confirm the transaction.</DialogDescription>
+            <DialogDescription>{tp("selectPaymentMethodDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-lg bg-muted/50 px-4 py-3 flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total Due</span>
+              <span className="text-sm text-muted-foreground">{tp("totalDue")}</span>
               <span className="text-2xl font-bold text-primary" data-testid="text-payment-total">{fmt(total)}</span>
             </div>
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-2">Payment Method</p>
+              <p className="text-xs font-medium text-muted-foreground mb-2">{tp("paymentMethod")}</p>
               <div className="grid grid-cols-3 gap-2">
                 {([["cash", Banknote, "Cash"], ["card", CreditCard, "Card"], ["upi", Wallet, "UPI"]] as const).map(([method, Icon, label]) => (
                   <button key={method} data-testid={`button-pay-${method}`}
@@ -2299,7 +2307,7 @@ export default function POSPage() {
             {paymentMethod === "cash" && (
               <div className="space-y-2">
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1">Cash Tendered</p>
+                  <p className="text-xs font-medium text-muted-foreground mb-1">{tp("cashTendered")}</p>
                   <Input data-testid="input-tendered-amount" type="number" placeholder={`Enter amount ≥ ${fmt(total)}`} value={tenderedAmount} onChange={e => setTenderedAmount(e.target.value)} className="text-lg font-semibold" autoFocus />
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
@@ -2312,42 +2320,42 @@ export default function POSPage() {
                   ))}
                   <button data-testid="button-tender-exact" onClick={() => setTenderedAmount(parseFloat(total.toFixed(2)).toFixed(2))}
                     className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors text-primary font-medium">
-                    Exact
+                    {tp("exact")}
                   </button>
                 </div>
                 {tenderedAmount && parseFloat(Number(tenderedAmount).toFixed(2)) >= parseFloat(total.toFixed(2)) && (
                   <div className="rounded-lg bg-green-50 dark:bg-green-950/30 px-3 py-2 flex items-center justify-between text-sm" data-testid="text-change-due">
-                    <span className="text-muted-foreground">Change Due</span>
+                    <span className="text-muted-foreground">{tp("changeDue")}</span>
                     <span className="font-bold text-green-700 dark:text-green-400">{fmt(parseFloat((Number(tenderedAmount) - total).toFixed(2)))}</span>
                   </div>
                 )}
                 {tenderedAmount && parseFloat(Number(tenderedAmount).toFixed(2)) < parseFloat(total.toFixed(2)) && (
-                  <p className="text-xs text-red-500 text-center">Amount is less than total</p>
+                  <p className="text-xs text-red-500 text-center">{tp("amountLessThanTotal")}</p>
                 )}
               </div>
             )}
             {paymentMethod === "card" && (
               <div className="space-y-2">
                 <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 px-3 py-2 text-xs text-blue-700 dark:text-blue-300 text-center">
-                  Process card payment on your POS terminal
+                  {tp("processCardTerminal")}
                 </div>
                 <Button variant="outline" className="w-full text-xs" data-testid="button-send-payment-link-modal"
                   onClick={() => { setShowPaymentModal(false); sendPaymentLinkMutation.mutate(); }} disabled={cart.length === 0 || sendPaymentLinkMutation.isPending}>
-                  <QrCode className="h-3.5 w-3.5 mr-1.5" /> Send Stripe Payment Link instead
+                  <QrCode className="h-3.5 w-3.5 mr-1.5" /> {tp("sendStripePaymentLink")}
                 </Button>
               </div>
             )}
             {paymentMethod === "upi" && (
               <div className="rounded-lg bg-purple-50 dark:bg-purple-950/30 px-3 py-2 text-xs text-purple-700 dark:text-purple-300 text-center">
-                Show UPI QR on your terminal screen
+                {tp("showUpiQr")}
               </div>
             )}
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowPaymentModal(false)} data-testid="button-payment-cancel">Cancel</Button>
+            <Button variant="outline" onClick={() => setShowPaymentModal(false)} data-testid="button-payment-cancel">{tc("cancel")}</Button>
             <Button onClick={confirmPaymentAndPlace} data-testid="button-confirm-payment"
               disabled={paymentMethod === "cash" && (tenderedAmount === "" || parseFloat(Number(tenderedAmount).toFixed(2)) < parseFloat(total.toFixed(2)))}>
-              Confirm &amp; Place Order
+              {tp("confirmPlaceOrder")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2355,9 +2363,9 @@ export default function POSPage() {
 
       <Dialog open={!!paymentLinkModal?.open} onOpenChange={(o) => !o && setPaymentLinkModal(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><QrCode className="h-5 w-5 text-teal-600" /> Payment Link Ready</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><QrCode className="h-5 w-5 text-teal-600" /> {tp("paymentLinkReady")}</DialogTitle></DialogHeader>
           <div className="text-center space-y-4">
-            <p className="text-sm text-muted-foreground">Share this QR code or link with the customer to collect payment via Stripe.</p>
+            <p className="text-sm text-muted-foreground">{tp("shareQrOrLink")}</p>
             {paymentLinkModal?.qrDataUrl && (
               <div className="flex justify-center">
                 <img src={paymentLinkModal.qrDataUrl} alt="Payment QR code" className="w-48 h-48 rounded-lg border" data-testid="img-payment-qr" />
@@ -2388,11 +2396,11 @@ export default function POSPage() {
 
       <Dialog open={noteDialogItem !== null} onOpenChange={() => setNoteDialogItem(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Item Notes</DialogTitle></DialogHeader>
-          <Textarea data-testid="input-item-note" placeholder="Add special instructions..." value={itemNoteText} onChange={(e) => setItemNoteText(e.target.value)} rows={3} />
+          <DialogHeader><DialogTitle>{tp("itemNotes")}</DialogTitle></DialogHeader>
+          <Textarea data-testid="input-item-note" placeholder={tp("addSpecialInstructions")} value={itemNoteText} onChange={(e) => setItemNoteText(e.target.value)} rows={3} />
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setNoteDialogItem(null)} data-testid="button-cancel-note">Cancel</Button>
-            <Button onClick={saveItemNote} data-testid="button-save-note">Save Note</Button>
+            <Button variant="outline" onClick={() => setNoteDialogItem(null)} data-testid="button-cancel-note">{tc("cancel")}</Button>
+            <Button onClick={saveItemNote} data-testid="button-save-note">{tp("saveNote")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -2402,12 +2410,12 @@ export default function POSPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Flame className="h-4 w-4 text-primary" />
-              {modifierItem?.name} — Modifiers
+              {tp("modifiersFor", { name: modifierItem?.name })}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">{sizeGroup?.name ?? "Size"}</Label>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">{sizeGroup?.name ?? tp("sizeLabel")}</Label>
               <div className="grid grid-cols-4 gap-1.5">
                 {(sizeGroup?.options ?? SIZE_MODIFIERS).map(s => (
                   <button key={s.label}
@@ -2415,14 +2423,14 @@ export default function POSPage() {
                     onClick={() => setModifierSize(s.label)}
                     data-testid={`modifier-size-${s.label.toLowerCase()}`}
                   >
-                    {s.label}
+                    {getModifierLabel(s.label)}
                     {s.priceAdjust !== 0 && <span className="block text-[9px] opacity-70">{s.priceAdjust > 0 ? `+${(s.priceAdjust * 100).toFixed(0)}%` : `${(s.priceAdjust * 100).toFixed(0)}%`}</span>}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">{spiceGroup?.name ?? "Spice Level"}</Label>
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 block">{spiceGroup?.name ?? tp("spiceLevelLabel")}</Label>
               <div className="grid grid-cols-4 gap-1.5">
                 {(spiceGroup?.options ?? SPICE_MODIFIERS).map(s => (
                   <button key={s.label}
@@ -2430,28 +2438,28 @@ export default function POSPage() {
                     onClick={() => setModifierSpice(s.label)}
                     data-testid={`modifier-spice-${s.label.toLowerCase().replace(" ", "-")}`}
                   >
-                    {s.label}
+                    {getModifierLabel(s.label)}
                   </button>
                 ))}
               </div>
             </div>
             <div>
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">Extras / Add-ons</Label>
-              <Input placeholder="e.g. Extra cheese, No onions" value={modifierExtras} onChange={e => setModifierExtras(e.target.value)} className="text-sm" data-testid="input-modifier-extras" />
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">{tp("extrasAddons")}</Label>
+              <Input placeholder={tp("extrasPlaceholder")} value={modifierExtras} onChange={e => setModifierExtras(e.target.value)} className="text-sm" data-testid="input-modifier-extras" />
             </div>
             <div>
-              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">Special Instructions</Label>
-              <Textarea placeholder="Any special prep instructions..." value={modifierNote} onChange={e => setModifierNote(e.target.value)} rows={2} className="resize-none text-sm" data-testid="input-modifier-note" />
+              <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1.5 block">{tp("specialInstructions")}</Label>
+              <Textarea placeholder={tp("specialInstructionsPlaceholder")} value={modifierNote} onChange={e => setModifierNote(e.target.value)} rows={2} className="resize-none text-sm" data-testid="input-modifier-note" />
             </div>
             {modifierItem && (
               <div className="flex items-center justify-between text-sm bg-muted/50 rounded-lg px-3 py-2">
-                <span className="text-muted-foreground">Adjusted price</span>
+                <span className="text-muted-foreground">{tp("adjustedPrice")}</span>
                 <span className="font-semibold">{fmt(Math.max(0, modifierItem.basePrice * (1 + ((sizeGroup?.options ?? SIZE_MODIFIERS).find(s => s.label === modifierSize)?.priceAdjust ?? 0))))}</span>
               </div>
             )}
             <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setModifierItem(null)} data-testid="button-cancel-modifier">Cancel</Button>
-              <Button className="flex-1" onClick={saveModifiers} data-testid="button-save-modifier">Apply</Button>
+              <Button variant="outline" className="flex-1" onClick={() => setModifierItem(null)} data-testid="button-cancel-modifier">{tc("cancel")}</Button>
+              <Button className="flex-1" onClick={saveModifiers} data-testid="button-save-modifier">{tp("apply")}</Button>
             </div>
           </div>
         </DialogContent>
@@ -2459,7 +2467,7 @@ export default function POSPage() {
 
       <Dialog open={showRecall} onOpenChange={setShowRecall}>
         <DialogContent className="max-w-sm" data-testid="dialog-recall">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-primary" /> Held Orders</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-primary" /> {tp("heldOrders")}</DialogTitle></DialogHeader>
           {heldOrdersFromCache && (
             <div className="flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1" data-testid="text-held-orders-stale">
               <AlertCircle className="h-3 w-3 shrink-0" />
@@ -2493,7 +2501,7 @@ export default function POSPage() {
                     <p className="font-medium text-sm">{held.label}</p>
                     <p className="text-xs text-muted-foreground">{held.tab.cart.length} items · {formatLocalTime(held.heldAt, outletTimezone)}</p>
                   </div>
-                  <Button size="sm" className="text-xs h-7" onClick={() => recallHeldTab(held)} data-testid={`button-recall-${i}`}>Recall</Button>
+                  <Button size="sm" className="text-xs h-7" onClick={() => recallHeldTab(held)} data-testid={`button-recall-${i}`}>{tp("recall")}</Button>
                   <Button size="sm" variant="ghost" className="h-7 w-7 p-0 text-destructive" onClick={() => deleteHeldTab(held)} data-testid={`button-delete-held-${i}`}><X className="h-3 w-3" /></Button>
                 </div>
               ))}
@@ -2501,9 +2509,9 @@ export default function POSPage() {
                 <div key={order.id} className="flex items-center gap-2 p-3 border border-dashed rounded-lg" data-testid={`held-order-server-${i}`}>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm">{order.tableId ? `Table #${order.tableNumber ?? "?"}` : order.orderType}</p>
-                    <p className="text-xs text-muted-foreground">{(order.items || []).length} items · from server</p>
+                    <p className="text-xs text-muted-foreground">{(order.items || []).length} items · {tp("fromServer")}</p>
                   </div>
-                  <Button size="sm" className="text-xs h-7" onClick={() => recallServerOrder(order)} data-testid={`button-recall-server-${i}`}>Recall</Button>
+                  <Button size="sm" className="text-xs h-7" onClick={() => recallServerOrder(order)} data-testid={`button-recall-server-${i}`}>{tp("recall")}</Button>
                 </div>
               ))}
             </div>
@@ -2513,11 +2521,11 @@ export default function POSPage() {
 
       <Dialog open={showSplitDialog} onOpenChange={(o) => { setShowSplitDialog(o); if (!o) { setSplitAssignment({}); setSplitGroupCount(2); } }}>
         <DialogContent className="max-w-sm" data-testid="dialog-split-bill">
-          <DialogHeader><DialogTitle className="flex items-center gap-2"><Scissors className="h-4 w-4 text-primary" /> Split Bill</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle className="flex items-center gap-2"><Scissors className="h-4 w-4 text-primary" /> {tp("splitBillDialogTitle")}</DialogTitle></DialogHeader>
           <div className="flex items-center gap-2 mb-2">
-            <p className="text-xs text-muted-foreground flex-1">Assign items to groups. Each group becomes a separate order.</p>
+            <p className="text-xs text-muted-foreground flex-1">{tp("assignItemsToGroups")}</p>
             <button className="px-2 py-0.5 rounded text-xs border border-border hover:bg-muted disabled:opacity-40" disabled={splitGroupCount <= 2} onClick={() => { setSplitGroupCount(n => n - 1); setSplitAssignment(prev => { const updated = { ...prev }; Object.keys(updated).forEach(k => { if (updated[k] >= splitGroupCount) updated[k] = splitGroupCount - 1; }); return updated; }); }} data-testid="button-split-remove-group">−</button>
-            <span className="text-xs font-medium w-16 text-center">{splitGroupCount} Groups</span>
+            <span className="text-xs font-medium w-16 text-center">{tp("nGroups", { n: splitGroupCount })}</span>
             <button className="px-2 py-0.5 rounded text-xs border border-border hover:bg-muted disabled:opacity-40" disabled={splitGroupCount >= cart.length} onClick={() => setSplitGroupCount(n => n + 1)} data-testid="button-split-add-group">+</button>
           </div>
           <div className="space-y-2 max-h-64 overflow-y-auto">
@@ -2549,9 +2557,9 @@ export default function POSPage() {
             ))}
           </div>
           <div className="flex gap-2 mt-2">
-            <Button variant="outline" className="flex-1" onClick={() => setShowSplitDialog(false)} data-testid="button-cancel-split">Cancel</Button>
+            <Button variant="outline" className="flex-1" onClick={() => setShowSplitDialog(false)} data-testid="button-cancel-split">{tc("cancel")}</Button>
             <Button className="flex-1" onClick={handleSplitConfirm} disabled={splitOrderMutation.isPending} data-testid="button-confirm-split">
-              {splitOrderMutation.isPending ? "Splitting..." : "Place Split Orders"}
+              {splitOrderMutation.isPending ? tp("splittingEllipsis") : tp("placeSplitOrders")}
             </Button>
           </div>
         </DialogContent>
@@ -2571,19 +2579,19 @@ export default function POSPage() {
         <DialogContent className="max-w-sm" data-testid="dialog-reprint-manager-approval">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Printer className="h-5 w-5 text-primary" /> Manager Approval Required
+              <Printer className="h-5 w-5 text-primary" /> {tp("managerApprovalRequired")}
             </DialogTitle>
             <DialogDescription>
-              This reprint will be logged. Please confirm to proceed.
+              {tp("reprintWillBeLogged")}
             </DialogDescription>
           </DialogHeader>
           <div className="py-2 text-sm text-muted-foreground">
-            Reprint Bill request for order{" "}
+            {tp("reprintBillRequest")}{" "}
             <span className="font-mono font-semibold">#{reprintManagerDialog?.orderId?.slice(-6).toUpperCase()}</span>
-            {" "}will be recorded in the audit log.
+            {" "}{tp("willBeRecordedAuditLog")}
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setReprintManagerDialog(null)} data-testid="button-cancel-reprint-approval">Cancel</Button>
+            <Button variant="outline" onClick={() => setReprintManagerDialog(null)} data-testid="button-cancel-reprint-approval">{tc("cancel")}</Button>
             <Button
               onClick={async () => {
                 if (!reprintManagerDialog?.orderId) return;
@@ -2595,10 +2603,10 @@ export default function POSPage() {
                     credentials: "include",
                     body: JSON.stringify({ orderId: reprintManagerDialog.orderId, type: "bill", isReprint: true, reason: "Manager-approved reprint from POS" }),
                   });
-                  toast({ title: "Reprint Bill queued", description: "Bill sent to printer and logged" });
+                  toast({ title: tp("reprintBillQueued"), description: tp("billSentToPrinterLogged") });
                   setReprintManagerDialog(null);
                 } catch (e: any) {
-                  toast({ title: "Reprint failed", description: e.message, variant: "destructive" });
+                  toast({ title: tp("reprintFailed"), description: e.message, variant: "destructive" });
                 } finally {
                   setReprintManagerLoading(false);
                 }
@@ -2606,7 +2614,7 @@ export default function POSPage() {
               disabled={reprintManagerLoading}
               data-testid="button-confirm-reprint-approval"
             >
-              {reprintManagerLoading ? "Processing..." : "Confirm Reprint"}
+              {reprintManagerLoading ? tp("processing") : tp("confirmReprint")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2646,11 +2654,11 @@ export default function POSPage() {
 
       <Dialog open={!!closeTabConfirm} onOpenChange={() => setCloseTabConfirm(null)}>
         <DialogContent className="max-w-xs" data-testid="dialog-close-tab-confirm">
-          <DialogHeader><DialogTitle>Close tab?</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">This tab has unsent items that haven't been sent to the kitchen yet. Close anyway?</p>
+          <DialogHeader><DialogTitle>{tp("closeTabTitle")}</DialogTitle></DialogHeader>
+          <p className="text-sm text-muted-foreground">{tp("closeTabWarning")}</p>
           <div className="flex gap-2 justify-end mt-2">
-            <Button variant="outline" onClick={() => setCloseTabConfirm(null)} data-testid="button-cancel-close-tab">Cancel</Button>
-            <Button variant="destructive" onClick={() => { if (closeTabConfirm) { closeTab(closeTabConfirm); setCloseTabConfirm(null); } }} data-testid="button-confirm-close-tab">Close Tab</Button>
+            <Button variant="outline" onClick={() => setCloseTabConfirm(null)} data-testid="button-cancel-close-tab">{tc("cancel")}</Button>
+            <Button variant="destructive" onClick={() => { if (closeTabConfirm) { closeTab(closeTabConfirm); setCloseTabConfirm(null); } }} data-testid="button-confirm-close-tab">{tp("closeTab")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -2667,7 +2675,7 @@ export default function POSPage() {
             will change where the order is assigned. Kitchen staff will not be automatically notified.
           </p>
           <div className="flex gap-2 justify-end mt-2">
-            <Button variant="outline" onClick={() => setPendingTableId(null)} data-testid="button-cancel-wrong-table">Cancel</Button>
+            <Button variant="outline" onClick={() => setPendingTableId(null)} data-testid="button-cancel-wrong-table">{tc("cancel")}</Button>
             <Button
               variant="destructive"
               data-testid="button-confirm-wrong-table"
@@ -2720,7 +2728,7 @@ export default function POSPage() {
             The order will be queued and synced automatically when you reconnect. Note that payment is marked as pending.
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setShowOfflinePaymentDialog(false)} data-testid="button-offline-payment-cancel">Cancel</Button>
+            <Button variant="outline" onClick={() => setShowOfflinePaymentDialog(false)} data-testid="button-offline-payment-cancel">{tc("cancel")}</Button>
             <Button
               onClick={() => {
                 setShowOfflinePaymentDialog(false);

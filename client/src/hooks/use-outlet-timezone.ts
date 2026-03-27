@@ -45,14 +45,15 @@ export function useOutletTimezone(outletId?: string | null): string {
 export function formatLocal(
   date: string | Date | null | undefined,
   timezone: string,
-  opts?: Intl.DateTimeFormatOptions
+  opts?: Intl.DateTimeFormatOptions,
+  locale?: string
 ): string {
   if (!date) return "—";
   try {
     const d = typeof date === "string" ? new Date(date) : date;
     if (isNaN(d.getTime())) return "—";
     const tz = timezone || "UTC";
-    return new Intl.DateTimeFormat("en-US", {
+    return new Intl.DateTimeFormat(locale || "en-US", {
       timeZone: tz,
       year: "numeric",
       month: "short",

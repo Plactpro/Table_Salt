@@ -31,6 +31,7 @@ import { currencyMap } from "@shared/currency";
 import { getJurisdictionByCurrency } from "@shared/jurisdictions";
 import type { MenuItem } from "@shared/schema";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 const ROUNDING_OPTIONS = [
   { value: "none", label: "None" },
@@ -40,6 +41,7 @@ const ROUNDING_OPTIONS = [
 ];
 
 function CashCurrencySettings() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -74,11 +76,11 @@ function CashCurrencySettings() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Currency settings saved" });
+      toast({ title: t("currencySettingsSaved") });
       queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
     },
     onError: (err: Error) => {
-      toast({ title: "Save failed", description: err.message, variant: "destructive" });
+      toast({ title: t("saveFailed"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -89,14 +91,14 @@ function CashCurrencySettings() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Banknote className="h-5 w-5 text-emerald-600" />
-          Cash & Currency Settings
+          {t("cashCurrencyTitle")}
         </CardTitle>
-        <CardDescription>Configure how currency is displayed and how cash amounts are rounded</CardDescription>
+        <CardDescription>{t("cashCurrencyDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
-            <Label>Currency</Label>
+            <Label>{t("currency")}</Label>
             <Select value={selectedCurrency} onValueChange={setSelectedCurrency} data-testid="select-currency-code">
               <SelectTrigger className="mt-1" data-testid="select-currency-code">
                 <SelectValue />
@@ -112,25 +114,25 @@ function CashCurrencySettings() {
           </div>
 
           <div>
-            <Label>Currency Symbol (auto-filled)</Label>
+            <Label>{t("currencySymbolAutoFilled")}</Label>
             <Input value={symbol} readOnly className="mt-1 bg-muted" />
           </div>
 
           <div>
-            <Label>Symbol Position</Label>
+            <Label>{t("symbolPosition")}</Label>
             <Select value={currencyPosition} onValueChange={setCurrencyPosition} data-testid="select-currency-position">
               <SelectTrigger className="mt-1" data-testid="select-currency-position">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="before">Before amount → {symbol}1,500</SelectItem>
-                <SelectItem value="after">After amount → 1,500 {symbol}</SelectItem>
+                <SelectItem value="before">{t("symbolBefore", { sym: symbol })}</SelectItem>
+                <SelectItem value="after">{t("symbolAfter", { sym: symbol })}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div>
-            <Label>Decimal Places</Label>
+            <Label>{t("decimalPlaces")}</Label>
             <Input
               type="number"
               min="0"
@@ -143,7 +145,7 @@ function CashCurrencySettings() {
           </div>
 
           <div>
-            <Label>Cash Rounding</Label>
+            <Label>{t("cashRounding")}</Label>
             <Select value={cashRounding} onValueChange={setCashRounding} data-testid="select-cash-rounding">
               <SelectTrigger className="mt-1" data-testid="select-cash-rounding">
                 <SelectValue />
@@ -157,7 +159,7 @@ function CashCurrencySettings() {
           </div>
 
           <div>
-            <Label>Preview</Label>
+            <Label>{t("preview")}</Label>
             <div className="mt-1 px-3 py-2 rounded-md border bg-muted text-sm font-medium" data-testid="text-denomination-preview">
               {previewAmount}
             </div>
@@ -165,10 +167,10 @@ function CashCurrencySettings() {
         </div>
 
         <div className="space-y-3">
-          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">Denomination Preview</p>
+          <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">{t("denominationPreview")}</p>
           <div className="space-y-2">
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Notes</p>
+              <p className="text-xs text-muted-foreground mb-1">{t("notes")}</p>
               <div className="flex flex-wrap gap-2">
                 {denoms.notes.map(d => (
                   <Badge key={d} variant="outline" className="text-sm">
@@ -178,7 +180,7 @@ function CashCurrencySettings() {
               </div>
             </div>
             <div>
-              <p className="text-xs text-muted-foreground mb-1">Coins</p>
+              <p className="text-xs text-muted-foreground mb-1">{t("coins")}</p>
               <div className="flex flex-wrap gap-2">
                 {denoms.coins.map(d => (
                   <Badge key={d} variant="secondary" className="text-sm">
@@ -195,7 +197,7 @@ function CashCurrencySettings() {
           disabled={saveMutation.isPending}
           data-testid="button-save-currency"
         >
-          {saveMutation.isPending ? "Saving..." : "Save Currency Settings"}
+          {saveMutation.isPending ? t("saving") : t("saveCurrencySettings")}
         </Button>
       </CardContent>
     </Card>
@@ -228,6 +230,7 @@ const IDLE_TIMEOUT_OPTIONS = [
 ];
 
 function IdleTimeoutPanel({ outlet }: { outlet: Outlet }) {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -255,10 +258,10 @@ function IdleTimeoutPanel({ outlet }: { outlet: Outlet }) {
       }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outlets", outlet.id, "idle-timeout"] });
-      toast({ title: "Idle timeout updated", description: "Staff will be auto-logged out after the configured period of inactivity." });
+      toast({ title: t("idleTimeoutUpdated") });
     },
     onError: (e: Error) => {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
+      toast({ title: t("saveFailed"), description: e.message, variant: "destructive" });
     },
   });
 
@@ -269,14 +272,14 @@ function IdleTimeoutPanel({ outlet }: { outlet: Outlet }) {
       <div className="space-y-1">
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <Shield className="h-4 w-4 text-primary" />
-          Session Security
+          {t("sessionSecurity")}
         </h3>
         <p className="text-xs text-muted-foreground">
-          Automatically log out staff if they are inactive for this long. A 60-second warning countdown is shown before logout.
+          {t("idleTimeoutDesc")}
         </p>
       </div>
       <div className="space-y-2">
-        <Label htmlFor={`idle-timeout-${outlet.id}`}>Idle Timeout</Label>
+        <Label htmlFor={`idle-timeout-${outlet.id}`}>{t("idleTimeout")}</Label>
         <Select
           value={value}
           onValueChange={setValue}
@@ -301,13 +304,14 @@ function IdleTimeoutPanel({ outlet }: { outlet: Outlet }) {
         data-testid="button-save-idle-timeout"
       >
         <Save className="h-3.5 w-3.5" />
-        {mutation.isPending ? "Saving…" : "Save Timeout"}
+        {mutation.isPending ? t("saving") : t("saveTimeout")}
       </Button>
     </div>
   );
 }
 
 function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -352,10 +356,10 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/tips/settings", outlet.id] });
       queryClient.invalidateQueries({ queryKey: ["/api/tips/config", outlet.id] });
-      toast({ title: "Tip settings saved", description: "Settings updated successfully." });
+      toast({ title: t("tipSettingsSaved"), description: t("settingsUpdatedSuccessfully") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("saveFailed"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -370,7 +374,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
   }
 
   if (isLoading) {
-    return <div className="py-6 text-center text-muted-foreground text-sm">Loading tip settings...</div>;
+    return <div className="py-6 text-center text-muted-foreground text-sm">{t("loadingTipSettings")}</div>;
   }
 
   return (
@@ -378,8 +382,8 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
       <div className="flex items-center gap-3 p-4 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
         <DollarSign className="h-5 w-5 text-amber-600 shrink-0" />
         <div className="flex-1">
-          <p className="font-semibold text-sm">Enable Tips for {outlet.name}</p>
-          <p className="text-xs text-muted-foreground">Master switch — when off, no tip prompts will appear anywhere</p>
+          <p className="font-semibold text-sm">{t("enableTipsFor", { name: outlet.name })}</p>
+          <p className="text-xs text-muted-foreground">{t("tipsMasterSwitchDesc")}</p>
         </div>
         <Switch
           checked={form.tipsEnabled}
@@ -391,25 +395,25 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
       {form.tipsEnabled && (
         <>
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Show Tip Option On</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("showTipOptionOn")}</p>
             <div className="space-y-2">
               <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                <Label>POS Payment Screen</Label>
+                <Label>{t("posPaymentScreen")}</Label>
                 <Switch checked={form.showOnPos} onCheckedChange={v => setForm(f => ({ ...f, showOnPos: v }))} data-testid="toggle-show-on-pos" />
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                <Label>QR Customer Payment</Label>
+                <Label>{t("qrCustomerPayment")}</Label>
                 <Switch checked={form.showOnQr} onCheckedChange={v => setForm(f => ({ ...f, showOnQr: v }))} data-testid="toggle-show-on-qr" />
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                <Label>Print on Receipt</Label>
+                <Label>{t("printOnReceipt")}</Label>
                 <Switch checked={form.showOnReceipt} onCheckedChange={v => setForm(f => ({ ...f, showOnReceipt: v }))} data-testid="toggle-show-on-receipt" />
               </div>
             </div>
           </div>
 
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tip Prompt Style</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tipPromptStyle")}</p>
             <div className="space-y-2">
               {(["BUTTONS", "INPUT", "NONE"] as const).map(style => (
                 <label key={style} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 bg-card">
@@ -422,7 +426,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
                     data-testid={`radio-prompt-style-${style}`}
                   />
                   <span className="text-sm">
-                    {style === "BUTTONS" ? "Quick % Buttons (recommended)" : style === "INPUT" ? "Amount input only" : "No prompt (manual entry)"}
+                    {style === "BUTTONS" ? t("promptStyleButtons") : style === "INPUT" ? t("promptStyleInput") : t("promptStyleNone")}
                   </span>
                 </label>
               ))}
@@ -431,7 +435,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
 
           {form.promptStyle === "BUTTONS" && (
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Suggested Percentages</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("suggestedPercentages")}</p>
               <div className="grid grid-cols-3 gap-3">
                 {([1, 2, 3] as const).map(n => (
                   <div key={n} className="space-y-1">
@@ -452,14 +456,14 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
                 ))}
               </div>
               <div className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                <Label>Allow custom amount</Label>
+                <Label>{t("allowCustomAmount")}</Label>
                 <Switch checked={form.allowCustom} onCheckedChange={v => setForm(f => ({ ...f, allowCustom: v }))} data-testid="toggle-allow-custom" />
               </div>
             </div>
           )}
 
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tip Calculated On</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tipCalculatedOn")}</p>
             <div className="space-y-2">
               {(["SUBTOTAL", "TOTAL"] as const).map(basis => (
                 <label key={basis} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 bg-card">
@@ -472,7 +476,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
                     data-testid={`radio-tip-basis-${basis}`}
                   />
                   <span className="text-sm">
-                    {basis === "SUBTOTAL" ? "Subtotal (before tax)" : "Final total (including tax)"}
+                    {basis === "SUBTOTAL" ? t("tipBasisSubtotal") : t("tipBasisTotal")}
                   </span>
                 </label>
               ))}
@@ -480,7 +484,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
           </div>
 
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tip Distribution</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tipDistribution")}</p>
             <div className="space-y-2">
               {(["INDIVIDUAL", "POOL", "SPLIT"] as const).map(method => (
                 <label key={method} className="flex items-center gap-3 p-3 rounded-lg border cursor-pointer hover:bg-muted/30 bg-card">
@@ -493,7 +497,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
                     data-testid={`radio-distribution-${method}`}
                   />
                   <span className="text-sm">
-                    {method === "INDIVIDUAL" ? "Individual — goes to serving waiter" : method === "POOL" ? "Pool — shared equally among all staff" : "Split — % to waiter + % to kitchen"}
+                    {method === "INDIVIDUAL" ? t("distributionIndividual") : method === "POOL" ? t("distributionPool") : t("distributionSplit")}
                   </span>
                 </label>
               ))}
@@ -502,7 +506,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
             {form.distributionMethod === "SPLIT" && (
               <div className="grid grid-cols-2 gap-3 pl-4 border-l-2 border-amber-300">
                 <div className="space-y-1">
-                  <Label className="text-xs">Waiter share (%)</Label>
+                  <Label className="text-xs">{t("waiterSharePct")}</Label>
                   <Input
                     type="number"
                     min={0}
@@ -516,7 +520,7 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
                   />
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs">Kitchen share (%) — auto</Label>
+                  <Label className="text-xs">{t("kitchenSharePctAuto")}</Label>
                   <Input
                     type="number"
                     value={100 - form.waiterSharePct}
@@ -533,20 +537,22 @@ function TipSettingsPanel({ outlet }: { outlet: Outlet }) {
 
       <Button onClick={handleSave} disabled={saveMutation.isPending} className="w-full" data-testid="button-save-tip-settings">
         <Save className="h-4 w-4 mr-2" />
-        {saveMutation.isPending ? "Saving..." : "Save Settings"}
+        {saveMutation.isPending ? t("saving") : t("saveSettings")}
       </Button>
     </div>
   );
 }
 
-const CHARGE_TYPES = [
-  { value: "FIXED_PER_ORDER", label: "Fixed amount per order" },
-  { value: "FIXED_PER_ITEM", label: "Fixed amount per item" },
-  { value: "PERCENTAGE", label: "Percentage of subtotal" },
-  { value: "PER_CATEGORY", label: "Per food category" },
-];
+const CHARGE_TYPE_VALUES = ["FIXED_PER_ORDER", "FIXED_PER_ITEM", "PERCENTAGE", "PER_CATEGORY"] as const;
+const CHARGE_TYPE_KEYS: Record<string, string> = {
+  FIXED_PER_ORDER: "chargeFixed",
+  FIXED_PER_ITEM: "chargeFixedItem",
+  PERCENTAGE: "chargePercentage",
+  PER_CATEGORY: "chargePerCategory",
+};
 
 function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -634,11 +640,11 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Shield className="h-5 w-5 text-blue-600" />
-          Legal & Tax Details
+          {t("legalTaxDetails")}
         </CardTitle>
         {outlets.length > 1 && (
           <div className="mt-2">
-            <Label className="text-xs text-muted-foreground mb-1">Configure for outlet:</Label>
+            <Label className="text-xs text-muted-foreground mb-1">{t("configureForOutlet")}</Label>
             <select
               className="w-full border rounded px-2 py-1 text-sm bg-background"
               value={outletId}
@@ -701,10 +707,10 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
         {jur.tradeLicenseRequired && (
           <div className="space-y-4">
             <Separator />
-            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Trade License</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("tradeLicense")}</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <Label>{jur.tradeLicenseLabel || "License No."}</Label>
+                <Label>{jur.tradeLicenseLabel || t("jurisdictionLicenseNo")}</Label>
                 <Input
                   value={form.tradeLicenseNumber || ""}
                   onChange={e => setForm(f => ({ ...f, tradeLicenseNumber: e.target.value }))}
@@ -714,10 +720,10 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
               </div>
               {jur.tradeLicenseAuthorities && (
                 <div className="space-y-1">
-                  <Label>Issuing Authority</Label>
+                  <Label>{t("issuingAuthority")}</Label>
                   <Select value={form.tradeLicenseAuthority || ""} onValueChange={v => setForm(f => ({ ...f, tradeLicenseAuthority: v }))}>
                     <SelectTrigger data-testid="select-trade-license-authority">
-                      <SelectValue placeholder="Select authority" />
+                      <SelectValue placeholder={t("selectAuthority")} />
                     </SelectTrigger>
                     <SelectContent>
                       {jur.tradeLicenseAuthorities.map(a => (
@@ -728,7 +734,7 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
                 </div>
               )}
               <div className="space-y-1">
-                <Label>Expiry Date</Label>
+                <Label>{t("expiryDateLabel")}</Label>
                 <Input
                   type="date"
                   value={form.tradeLicenseExpiry || ""}
@@ -743,7 +749,7 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
         {(jur.companyRegLabel || jur.tradeLicenseLabel) && !jur.tradeLicenseRequired && (
           <div className="space-y-4">
             <Separator />
-            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Company Details</p>
+            <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("companyDetails")}</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {jur.companyRegLabel && (
                 <div className="space-y-1">
@@ -762,7 +768,7 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
                   <Input
                     value={form.tradeLicenseNumber || ""}
                     onChange={e => setForm(f => ({ ...f, tradeLicenseNumber: e.target.value }))}
-                    placeholder="Optional"
+                    placeholder={t("optional")}
                     data-testid="input-trade-license-number"
                   />
                 </div>
@@ -775,26 +781,26 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
           <div className="space-y-4">
             <Separator />
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Grievance Officer</p>
+              <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("grievanceOfficer")}</p>
               <Badge variant="outline" className="text-xs text-amber-600 border-amber-400">Required under IT Act 2000</Badge>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-1">
-                <Label>Name</Label>
+                <Label>{t("nameLabel")}</Label>
                 <Input
                   value={form.grievanceOfficerName || ""}
                   onChange={e => setForm(f => ({ ...f, grievanceOfficerName: e.target.value }))}
-                  placeholder="Full name"
+                  placeholder={t("fullName")}
                   data-testid="input-grievance-officer-name"
                 />
               </div>
               <div className="space-y-1">
-                <Label>Email</Label>
+                <Label>{t("emailLabel")}</Label>
                 <Input
                   type="email"
                   value={form.grievanceOfficerEmail || ""}
                   onChange={e => setForm(f => ({ ...f, grievanceOfficerEmail: e.target.value }))}
-                  placeholder="grievance@example.com"
+                  placeholder={t("optional")}
                   data-testid="input-grievance-officer-email"
                 />
               </div>
@@ -804,18 +810,18 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
 
         {jur.ccpaApplicable && (
           <div className="p-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/30">
-            <p className="text-sm font-medium text-blue-800 dark:text-blue-300">CCPA Compliance</p>
-            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">Auto-enabled for USD outlets. "Do Not Sell My Info" link added to receipts.</p>
+            <p className="text-sm font-medium text-blue-800 dark:text-blue-300">{t("ccpaCompliance")}</p>
+            <p className="text-xs text-blue-700 dark:text-blue-400 mt-1">{t("ccpaComplianceDesc")}</p>
           </div>
         )}
 
         <div className="space-y-4">
           <Separator />
-          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Invoice Footer Text</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">{t("invoiceFooterText")}</p>
           <Textarea
             value={form.regulatoryFooterText || ""}
             onChange={e => setForm(f => ({ ...f, regulatoryFooterText: e.target.value }))}
-            placeholder={jur.country === "UAE" ? "Licensed by Dubai Economy & Tourism" : jur.country === "India" ? "FSSAI Lic. No.: xxxx | PAN: AAABBB1234C" : "Optional footer text"}
+            placeholder={jur.country === "UAE" ? "Licensed by Dubai Economy & Tourism" : jur.country === "India" ? "FSSAI Lic. No.: xxxx | PAN: AAABBB1234C" : t("optionalFooterText")}
             rows={2}
             data-testid="input-regulatory-footer-text"
           />
@@ -824,7 +830,7 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
         <div className="p-3 rounded-lg border bg-muted/50 space-y-2">
           <p className="text-sm font-semibold flex items-center gap-2">
             <CheckCircle2 className="h-4 w-4 text-green-600" />
-            Breach Notification Authority (auto-configured)
+            {t("breachNotificationAuthority")}
           </p>
           <p className="text-sm" data-testid="text-breach-authority">{jur.breachAuthority}</p>
           <a href={jur.breachAuthorityUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline" data-testid="link-breach-authority-url">
@@ -840,7 +846,7 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
         </div>
 
         <div className="p-3 rounded-lg border bg-muted/50 space-y-2">
-          <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Applicable Regulations</p>
+          <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">{t("applicableRegulations")}</p>
           <div className="flex flex-wrap gap-1.5" data-testid="text-applicable-regulations">
             {jur.applicableRegulations.map(reg => (
               <Badge key={reg} variant="secondary" className="text-xs">{reg.replace(/_/g, " ")}</Badge>
@@ -853,7 +859,7 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
           disabled={saveMutation.isPending}
           data-testid="button-save-legal-tax"
         >
-          {saveMutation.isPending ? "Saving..." : "Save Legal & Tax Details"}
+          {saveMutation.isPending ? t("saving") : t("saveLegalTaxDetails")}
         </Button>
       </CardContent>
     </Card>
@@ -861,6 +867,7 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
 }
 
 function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1015,14 +1022,14 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Package className="h-5 w-5 text-amber-600" />
-          Packing Charge Settings
+          {t("packingChargeSettings")}
         </CardTitle>
-        <CardDescription>Configure packing charges for takeaway and delivery orders</CardDescription>
+        <CardDescription>{t("packingChargesDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {outlets.length > 1 && (
           <div>
-            <Label>Select Outlet</Label>
+            <Label>{t("selectOutlet")}</Label>
             <Select value={selectedOutletId} onValueChange={setSelectedOutletId}>
               <SelectTrigger className="mt-1 w-64">
                 <SelectValue />
@@ -1035,7 +1042,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
         )}
 
         <div className="space-y-3">
-          <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Enable Packing Charge</p>
+          <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">{t("enablePackingCharge")}</p>
           <div className="flex items-center gap-3">
             <Switch
               id="takeaway-toggle"
@@ -1044,7 +1051,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
               disabled={!isOwner}
               data-testid="toggle-takeaway-charge-enabled"
             />
-            <Label htmlFor="takeaway-toggle">Takeaway orders</Label>
+            <Label htmlFor="takeaway-toggle">{t("takeawayOrders")}</Label>
           </div>
           <div className="flex items-center gap-3">
             <Switch
@@ -1054,7 +1061,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
               disabled={!isOwner}
               data-testid="toggle-delivery-charge-enabled"
             />
-            <Label htmlFor="delivery-toggle">Delivery orders</Label>
+            <Label htmlFor="delivery-toggle">{t("deliveryOrders")}</Label>
           </div>
         </div>
 
@@ -1062,17 +1069,17 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
           <>
             <Separator />
             <div className="space-y-3">
-              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Charge Type</p>
+              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">{t("chargeType")}</p>
               <RadioGroup
                 value={form.chargeType}
                 onValueChange={(v) => setForm(f => ({ ...f, chargeType: v }))}
                 disabled={!isOwner}
                 className="space-y-2"
               >
-                {CHARGE_TYPES.map(ct => (
-                  <div key={ct.value} className="flex items-center gap-2">
-                    <RadioGroupItem value={ct.value} id={`ct-${ct.value}`} data-testid={`radio-charge-type-${ct.value}`} />
-                    <Label htmlFor={`ct-${ct.value}`}>{ct.label}</Label>
+                {CHARGE_TYPE_VALUES.map(ctv => (
+                  <div key={ctv} className="flex items-center gap-2">
+                    <RadioGroupItem value={ctv} id={`ct-${ctv}`} data-testid={`radio-charge-type-${ctv}`} />
+                    <Label htmlFor={`ct-${ctv}`}>{t(CHARGE_TYPE_KEYS[ctv])}</Label>
                   </div>
                 ))}
               </RadioGroup>
@@ -1085,7 +1092,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Rates (per order)</p>
                   {form.takeawayChargeEnabled && (
                     <div className="flex items-center gap-2">
-                      <Label className="w-24 shrink-0">Takeaway</Label>
+                      <Label className="w-24 shrink-0">{t("takeaway")}</Label>
                       <span className="text-muted-foreground text-sm">{symbol}</span>
                       <Input
                         type="number" min="0" step="0.5"
@@ -1099,7 +1106,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   )}
                   {form.deliveryChargeEnabled && (
                     <div className="flex items-center gap-2">
-                      <Label className="w-24 shrink-0">Delivery</Label>
+                      <Label className="w-24 shrink-0">{t("delivery")}</Label>
                       <span className="text-muted-foreground text-sm">{symbol}</span>
                       <Input
                         type="number" min="0" step="0.5"
@@ -1122,7 +1129,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Rates (per item)</p>
                   {form.takeawayChargeEnabled && (
                     <div className="flex items-center gap-2">
-                      <Label className="w-24 shrink-0">Takeaway</Label>
+                      <Label className="w-24 shrink-0">{t("takeaway")}</Label>
                       <span className="text-muted-foreground text-sm">{symbol}</span>
                       <Input
                         type="number" min="0" step="0.5"
@@ -1137,7 +1144,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   )}
                   {form.deliveryChargeEnabled && (
                     <div className="flex items-center gap-2">
-                      <Label className="w-24 shrink-0">Delivery</Label>
+                      <Label className="w-24 shrink-0">{t("delivery")}</Label>
                       <span className="text-muted-foreground text-sm">{symbol}</span>
                       <Input
                         type="number" min="0" step="0.5"
@@ -1161,7 +1168,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Rates (% of subtotal)</p>
                   {form.takeawayChargeEnabled && (
                     <div className="flex items-center gap-2">
-                      <Label className="w-24 shrink-0">Takeaway</Label>
+                      <Label className="w-24 shrink-0">{t("takeaway")}</Label>
                       <Input
                         type="number" min="0" step="0.5"
                         value={form.takeawayChargeAmount}
@@ -1175,7 +1182,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   )}
                   {form.deliveryChargeEnabled && (
                     <div className="flex items-center gap-2">
-                      <Label className="w-24 shrink-0">Delivery</Label>
+                      <Label className="w-24 shrink-0">{t("delivery")}</Label>
                       <Input
                         type="number" min="0" step="0.5"
                         value={form.deliveryChargeAmount}
@@ -1193,23 +1200,23 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
 
             <Separator />
             <div className="flex items-center gap-2">
-              <Label className="w-40 shrink-0">Maximum cap</Label>
+              <Label className="w-40 shrink-0">{t("maximumCap")}</Label>
               <span className="text-muted-foreground text-sm">{symbol}</span>
               <Input
                 type="number" min="0" step="1"
                 value={form.maxChargePerOrder}
                 onChange={(e) => setForm(f => ({ ...f, maxChargePerOrder: e.target.value }))}
-                placeholder="No cap"
+                placeholder={t("noCap")}
                 className="w-28"
                 disabled={!isOwner}
                 data-testid="input-max-charge"
               />
-              <span className="text-muted-foreground text-xs">(blank = no cap)</span>
+              <span className="text-muted-foreground text-xs">{t("blankNoCap")}</span>
             </div>
 
             <Separator />
             <div className="space-y-2">
-              <Label>Charge label on receipt</Label>
+              <Label>{t("chargeLabelOnReceipt")}</Label>
               <Input
                 value={form.chargeLabel}
                 onChange={(e) => setForm(f => ({ ...f, chargeLabel: e.target.value }))}
@@ -1221,7 +1228,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
 
             <Separator />
             <div className="space-y-3">
-              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Tax on Packing Charge</p>
+              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">{t("taxOnPackingCharge")}</p>
               <div className="flex items-center gap-3">
                 <Switch
                   id="taxable-toggle"
@@ -1230,11 +1237,11 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   disabled={!isOwner}
                   data-testid="toggle-packing-taxable"
                 />
-                <Label htmlFor="taxable-toggle">Is packing charge taxable?</Label>
+                <Label htmlFor="taxable-toggle">{t("isPackingChargeTaxable")}</Label>
               </div>
               {form.packingChargeTaxable && (
                 <div className="flex items-center gap-2">
-                  <Label className="w-16 shrink-0">Tax %</Label>
+                  <Label className="w-16 shrink-0">{t("taxPct")}</Label>
                   <Input
                     type="number" min="0" step="0.5"
                     value={form.packingChargeTaxPct}
@@ -1256,7 +1263,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                 disabled={!isOwner}
                 data-testid="toggle-show-on-receipt"
               />
-              <Label htmlFor="show-receipt-toggle">Show on receipt</Label>
+              <Label htmlFor="show-receipt-toggle">{t("showOnReceipt")}</Label>
             </div>
 
             {isOwner && (
@@ -1265,7 +1272,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                 disabled={saveMutation.isPending || !selectedOutletId}
                 data-testid="button-save-packing-settings"
               >
-                {saveMutation.isPending ? "Saving..." : "Save Settings"}
+                {saveMutation.isPending ? t("saving") : t("saveSettings")}
               </Button>
             )}
 
@@ -1274,10 +1281,10 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                 <Separator />
                 <div className="space-y-3">
                   <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Per Category Rates</p>
+                    <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">{t("perCategoryRates")}</p>
                     {isOwner && (
                       <Button size="sm" variant="outline" onClick={() => setAddingCat(true)} data-testid="button-add-category">
-                        <Plus className="h-3.5 w-3.5 mr-1" /> Add Category
+                        <Plus className="h-3.5 w-3.5 mr-1" /> {t("addCategory")}
                       </Button>
                     )}
                   </div>
@@ -1285,9 +1292,9 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                     <table className="w-full text-sm">
                       <thead className="bg-muted/50">
                         <tr>
-                          <th className="text-left px-3 py-2 font-medium">Category Name</th>
-                          <th className="text-right px-3 py-2 font-medium">Takeaway</th>
-                          <th className="text-right px-3 py-2 font-medium">Delivery</th>
+                          <th className="text-left px-3 py-2 font-medium">{t("categoryName")}</th>
+                          <th className="text-right px-3 py-2 font-medium">{t("takeaway")}</th>
+                          <th className="text-right px-3 py-2 font-medium">{t("delivery")}</th>
                           {isOwner && <th className="px-3 py-2" />}
                         </tr>
                       </thead>
@@ -1321,7 +1328,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                               <Input
                                 value={newCat.categoryName}
                                 onChange={(e) => setNewCat(c => ({ ...c, categoryName: e.target.value }))}
-                                placeholder="Category name"
+                                placeholder={t("categoryName")}
                                 className="h-7 text-xs"
                                 data-testid="input-category-name-new"
                               />
@@ -1348,8 +1355,8 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                             </td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex gap-1 justify-end">
-                                <Button size="sm" className="h-7 text-xs" onClick={() => addCatMutation.mutate()} data-testid="button-save-category">Save</Button>
-                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddingCat(false)}>Cancel</Button>
+                                <Button size="sm" className="h-7 text-xs" onClick={() => addCatMutation.mutate()} data-testid="button-save-category">{t("save")}</Button>
+                                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => setAddingCat(false)}>{t("cancel")}</Button>
                               </div>
                             </td>
                           </tr>
@@ -1363,13 +1370,13 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
 
             <Separator />
             <div className="space-y-3" data-testid="list-packing-exemptions">
-              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">Exemptions</p>
-              <p className="text-xs text-muted-foreground">Items or categories exempt from packing charge</p>
+              <p className="text-sm font-medium uppercase tracking-wide text-muted-foreground">{t("exemptions")}</p>
+              <p className="text-xs text-muted-foreground">{t("exemptionsDesc")}</p>
               {exemptions.length > 0 && (
                 <div className="space-y-2">
                   {exemptions.filter((e: any) => e.exemptionType === "MENU_ITEM").length > 0 && (
                     <div>
-                      <p className="text-xs font-medium mb-1">Exempted items:</p>
+                      <p className="text-xs font-medium mb-1">{t("exemptedItems")}</p>
                       <div className="flex flex-wrap gap-2">
                         {exemptions.filter((e: any) => e.exemptionType === "MENU_ITEM").map((e: any) => (
                           <Badge key={e.id} variant="secondary" className="gap-1" data-testid={`tag-exemption-${e.id}`}>
@@ -1386,7 +1393,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                   )}
                   {exemptions.filter((e: any) => e.exemptionType === "CATEGORY").length > 0 && (
                     <div>
-                      <p className="text-xs font-medium mb-1">Exempted categories:</p>
+                      <p className="text-xs font-medium mb-1">{t("exemptedCategories")}</p>
                       <div className="flex flex-wrap gap-2">
                         {exemptions.filter((e: any) => e.exemptionType === "CATEGORY").map((e: any) => (
                           <Badge key={e.id} variant="secondary" className="gap-1 bg-purple-100 text-purple-800" data-testid={`tag-exemption-${e.id}`}>
@@ -1407,7 +1414,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                 <div className="flex gap-2 flex-wrap">
                   <div className="relative">
                     <Button size="sm" variant="outline" onClick={() => { setShowItemExemptPicker(v => !v); setShowCatExemptPicker(false); }} data-testid="button-add-item-exemption">
-                      + Add Item Exemption
+                      {t("addItemExemption")}
                     </Button>
                     {showItemExemptPicker && (
                       <div className="absolute top-full left-0 mt-1 z-50 bg-background border rounded-lg shadow-lg p-2 w-64 max-h-48 overflow-y-auto">
@@ -1423,13 +1430,13 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                             {item.name}
                           </button>
                         ))}
-                        {menuItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No items found</p>}
+                        {menuItems.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">{t("noItemsFound")}</p>}
                       </div>
                     )}
                   </div>
                   <div className="relative">
                     <Button size="sm" variant="outline" onClick={() => { setShowCatExemptPicker(v => !v); setShowItemExemptPicker(false); }} data-testid="button-add-category-exemption">
-                      + Add Category Exemption
+                      {t("addCategoryExemption")}
                     </Button>
                     {showCatExemptPicker && (
                       <div className="absolute top-full left-0 mt-1 z-50 bg-background border rounded-lg shadow-lg p-2 w-64 max-h-48 overflow-y-auto">
@@ -1445,7 +1452,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
                             {cat.name}
                           </button>
                         ))}
-                        {menuCategories.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">No categories found</p>}
+                        {menuCategories.length === 0 && <p className="text-xs text-muted-foreground text-center py-2">{t("noCategoriesFound")}</p>}
                       </div>
                     )}
                   </div>
@@ -1461,7 +1468,7 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
             disabled={saveMutation.isPending || !selectedOutletId}
             data-testid="button-save-packing-settings"
           >
-            {saveMutation.isPending ? "Saving..." : "Save Settings"}
+            {saveMutation.isPending ? t("saving") : t("saveSettings")}
           </Button>
         )}
       </CardContent>
@@ -1470,20 +1477,20 @@ function PackingChargeSettings({ outlets }: { outlets: Outlet[] }) {
 }
 
 const RESOURCE_CODES = [
-  { code: "HIGH_CHAIR", label: "High Chair", icon: "🪑" },
-  { code: "BOOSTER_SEAT", label: "Booster Seat", icon: "🪑" },
-  { code: "BABY_COT", label: "Baby Cot", icon: "🛏️" },
-  { code: "WHEELCHAIR", label: "Wheelchair", icon: "♿" },
-  { code: "PRAYER_MAT", label: "Prayer Mat", icon: "🕌" },
-  { code: "WALKING_FRAME", label: "Walking Frame", icon: "🦯" },
-  { code: "CUSTOM", label: "Custom", icon: "🪑" },
+  { code: "HIGH_CHAIR", labelKey: "resourceHighChair", icon: "🪑" },
+  { code: "BOOSTER_SEAT", labelKey: "resourceBoosterSeat", icon: "🪑" },
+  { code: "BABY_COT", labelKey: "resourceBabyCot", icon: "🛏️" },
+  { code: "WHEELCHAIR", labelKey: "resourceWheelchair", icon: "♿" },
+  { code: "PRAYER_MAT", labelKey: "resourcePrayerMat", icon: "🕌" },
+  { code: "WALKING_FRAME", labelKey: "resourceWalkingFrame", icon: "🦯" },
+  { code: "CUSTOM", labelKey: "resourceCustom", icon: "🪑" },
 ];
 
-const UNIT_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
-  available: { label: "Available", color: "bg-green-100 text-green-700 border-green-200" },
-  in_use: { label: "In Use", color: "bg-blue-100 text-blue-700 border-blue-200" },
-  cleaning: { label: "Cleaning", color: "bg-amber-100 text-amber-700 border-amber-200" },
-  damaged: { label: "Damaged", color: "bg-red-100 text-red-700 border-red-200" },
+const UNIT_STATUS_CONFIG: Record<string, { labelKey: string; color: string }> = {
+  available: { labelKey: "statusAvailable", color: "bg-green-100 text-green-700 border-green-200" },
+  in_use: { labelKey: "statusInUse", color: "bg-blue-100 text-blue-700 border-blue-200" },
+  cleaning: { labelKey: "statusCleaning", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  damaged: { labelKey: "statusDamaged", color: "bg-red-100 text-red-700 border-red-200" },
 };
 
 interface SpecialResource {
@@ -1508,6 +1515,7 @@ interface ResourceUnit {
 }
 
 function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -1660,7 +1668,7 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
 
   function handleCodeChange(code: string) {
     const found = RESOURCE_CODES.find(r => r.code === code);
-    setResourceForm(f => ({ ...f, resourceCode: code, resourceName: found?.label || f.resourceName, resourceIcon: found?.icon || f.resourceIcon }));
+    setResourceForm(f => ({ ...f, resourceCode: code, resourceName: found ? t(found.labelKey) : f.resourceName, resourceIcon: found?.icon || f.resourceIcon }));
   }
 
   if (user?.role !== "owner") return null;
@@ -1673,12 +1681,12 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
           <div>
             <CardTitle className="flex items-center gap-2">
               <span className="text-lg">🪑</span>
-              Special Resources
+              {t("specialResources")}
             </CardTitle>
-            <CardDescription>Manage high chairs, baby cots, wheelchairs, and other special equipment</CardDescription>
+            <CardDescription>{t("specialResourcesDesc")}</CardDescription>
           </div>
           <Button size="sm" onClick={() => { resetForm(); setShowAddDialog(true); }} data-testid="button-add-resource">
-            <Plus className="h-4 w-4 mr-1.5" />Add Resource
+            <Plus className="h-4 w-4 mr-1.5" />{t("addResource")}
           </Button>
         </div>
         {outlets.length > 1 && (
@@ -1702,20 +1710,20 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
         ) : resources.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
             <span className="text-4xl block mb-3">🪑</span>
-            <p className="text-sm">No special resources configured yet.</p>
-            <p className="text-xs mt-1">Add high chairs, baby cots, or other equipment.</p>
+            <p className="text-sm">{t("noSpecialResources")}</p>
+            <p className="text-xs mt-1">{t("specialResourcesHint")}</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b text-muted-foreground">
-                  <th className="text-left py-2 pr-4">Icon</th>
-                  <th className="text-left py-2 pr-4">Name</th>
-                  <th className="text-center py-2 pr-4">Total</th>
-                  <th className="text-center py-2 pr-4">Available</th>
-                  <th className="text-center py-2 pr-4">In Use</th>
-                  <th className="text-right py-2">Actions</th>
+                  <th className="text-left py-2 pr-4">{t("icon")}</th>
+                  <th className="text-left py-2 pr-4">{t("name")}</th>
+                  <th className="text-center py-2 pr-4">{t("total")}</th>
+                  <th className="text-center py-2 pr-4">{t("available")}</th>
+                  <th className="text-center py-2 pr-4">{t("inUse")}</th>
+                  <th className="text-right py-2">{t("actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1763,59 +1771,59 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
       <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
         <DialogContent className="max-w-md" data-testid="dialog-add-resource">
           <DialogHeader>
-            <DialogTitle>Add Special Resource</DialogTitle>
-            <DialogDescription>Configure a new special resource for this outlet</DialogDescription>
+            <DialogTitle>{t("addResource")}</DialogTitle>
+            <DialogDescription>{t("configureSpecialResource")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Resource Type</Label>
+              <Label>{t("resourceType")}</Label>
               <Select value={resourceForm.resourceCode} onValueChange={handleCodeChange} data-testid="select-resource-code">
                 <SelectTrigger className="mt-1" data-testid="select-resource-code">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {RESOURCE_CODES.map(r => (
-                    <SelectItem key={r.code} value={r.code}>{r.icon} {r.label}</SelectItem>
+                    <SelectItem key={r.code} value={r.code}>{r.icon} {t(r.labelKey)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Display Name</Label>
+                <Label>{t("displayName")}</Label>
                 <Input className="mt-1" value={resourceForm.resourceName} onChange={e => setResourceForm(f => ({ ...f, resourceName: e.target.value }))} data-testid="input-resource-name" />
               </div>
               <div>
-                <Label>Icon (emoji)</Label>
+                <Label>{t("iconEmoji")}</Label>
                 <Input className="mt-1" value={resourceForm.resourceIcon} onChange={e => setResourceForm(f => ({ ...f, resourceIcon: e.target.value }))} maxLength={4} placeholder="🪑" />
               </div>
             </div>
             <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
               <div>
-                <p className="text-sm font-medium">Trackable</p>
-                <p className="text-xs text-muted-foreground">Track individual units (off = unlimited like ramp)</p>
+                <p className="text-sm font-medium">{t("trackable")}</p>
+                <p className="text-xs text-muted-foreground">{t("trackableDesc")}</p>
               </div>
               <Switch checked={resourceForm.isTrackable} onCheckedChange={v => setResourceForm(f => ({ ...f, isTrackable: v }))} />
             </div>
             {resourceForm.isTrackable && (
               <div>
-                <Label>Total Units</Label>
+                <Label>{t("totalUnits")}</Label>
                 <Input className="mt-1" type="number" min="0" value={resourceForm.totalUnits} onChange={e => setResourceForm(f => ({ ...f, totalUnits: e.target.value }))} data-testid="input-resource-units" />
               </div>
             )}
             <div>
-              <Label>Setup Time (minutes)</Label>
+              <Label>{t("setupTimeMinutes")}</Label>
               <Input className="mt-1" type="number" min="0" value={resourceForm.requiresSetupTime} onChange={e => setResourceForm(f => ({ ...f, requiresSetupTime: e.target.value }))} />
             </div>
             <div>
-              <Label>Notes</Label>
-              <Textarea className="mt-1" value={resourceForm.notes} onChange={e => setResourceForm(f => ({ ...f, notes: e.target.value }))} placeholder="Optional notes..." rows={2} />
+              <Label>{t("notes")}</Label>
+              <Textarea className="mt-1" value={resourceForm.notes} onChange={e => setResourceForm(f => ({ ...f, notes: e.target.value }))} placeholder={t("optionalNotes")} rows={2} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowAddDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowAddDialog(false)}>{t("cancel")}</Button>
             <Button onClick={() => createMut.mutate(resourceForm)} disabled={!resourceForm.resourceName || createMut.isPending} data-testid="button-save-resource">
-              {createMut.isPending ? "Saving..." : "Add Resource"}
+              {createMut.isPending ? t("saving") : t("addResource")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1825,58 +1833,58 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
       <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Edit Resource</DialogTitle>
+            <DialogTitle>{t("editResource")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Resource Type</Label>
+              <Label>{t("resourceType")}</Label>
               <Select value={resourceForm.resourceCode} onValueChange={handleCodeChange}>
                 <SelectTrigger className="mt-1">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {RESOURCE_CODES.map(r => (
-                    <SelectItem key={r.code} value={r.code}>{r.icon} {r.label}</SelectItem>
+                    <SelectItem key={r.code} value={r.code}>{r.icon} {t(r.labelKey)}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Display Name</Label>
+                <Label>{t("displayName")}</Label>
                 <Input className="mt-1" value={resourceForm.resourceName} onChange={e => setResourceForm(f => ({ ...f, resourceName: e.target.value }))} />
               </div>
               <div>
-                <Label>Icon (emoji)</Label>
+                <Label>{t("iconEmoji")}</Label>
                 <Input className="mt-1" value={resourceForm.resourceIcon} onChange={e => setResourceForm(f => ({ ...f, resourceIcon: e.target.value }))} maxLength={4} />
               </div>
             </div>
             <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/30">
               <div>
-                <p className="text-sm font-medium">Trackable</p>
-                <p className="text-xs text-muted-foreground">Track individual units</p>
+                <p className="text-sm font-medium">{t("trackable")}</p>
+                <p className="text-xs text-muted-foreground">{t("trackableDescShort")}</p>
               </div>
               <Switch checked={resourceForm.isTrackable} onCheckedChange={v => setResourceForm(f => ({ ...f, isTrackable: v }))} />
             </div>
             {resourceForm.isTrackable && (
               <div>
-                <Label>Total Units</Label>
+                <Label>{t("totalUnits")}</Label>
                 <Input className="mt-1" type="number" min="0" value={resourceForm.totalUnits} onChange={e => setResourceForm(f => ({ ...f, totalUnits: e.target.value }))} />
               </div>
             )}
             <div>
-              <Label>Setup Time (minutes)</Label>
+              <Label>{t("setupTimeMinutes")}</Label>
               <Input className="mt-1" type="number" min="0" value={resourceForm.requiresSetupTime} onChange={e => setResourceForm(f => ({ ...f, requiresSetupTime: e.target.value }))} />
             </div>
             <div>
-              <Label>Notes</Label>
+              <Label>{t("notes")}</Label>
               <Textarea className="mt-1" value={resourceForm.notes} onChange={e => setResourceForm(f => ({ ...f, notes: e.target.value }))} rows={2} />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setShowEditDialog(false)}>{t("cancel")}</Button>
             <Button onClick={() => { if (editingResource) updateMut.mutate({ id: editingResource.id, data: resourceForm }); }} disabled={!resourceForm.resourceName || updateMut.isPending} data-testid="button-save-resource">
-              {updateMut.isPending ? "Saving..." : "Save Changes"}
+              {updateMut.isPending ? t("saving") : t("saveChanges")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1886,12 +1894,12 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
       <Dialog open={showUnitsDialog} onOpenChange={setShowUnitsDialog}>
         <DialogContent className="max-w-lg" data-testid="dialog-manage-units">
           <DialogHeader>
-            <DialogTitle>Manage Units — {managingResource?.resourceName}</DialogTitle>
-            <DialogDescription>Track individual units and their current status</DialogDescription>
+            <DialogTitle>{t("manageUnits")} — {managingResource?.resourceName}</DialogTitle>
+            <DialogDescription>{t("trackUnitsDesc")}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
             {units.length === 0 ? (
-              <p className="text-sm text-center text-muted-foreground py-4">No units found</p>
+              <p className="text-sm text-center text-muted-foreground py-4">{t("noUnitsFound")}</p>
             ) : (
               <div className="space-y-2">
                 {units.map(unit => (
@@ -1904,7 +1912,7 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge variant="outline" className={`text-xs ${UNIT_STATUS_CONFIG[unit.status]?.color || ""}`}>
-                        {UNIT_STATUS_CONFIG[unit.status]?.label || unit.status}
+                        {UNIT_STATUS_CONFIG[unit.status] ? t(UNIT_STATUS_CONFIG[unit.status].labelKey) : unit.status}
                       </Badge>
                       <div className="flex gap-1">
                         {unit.status !== "cleaning" && (
@@ -1931,9 +1939,9 @@ function SpecialResourceSettings({ outlets }: { outlets: Outlet[] }) {
           </div>
           <DialogFooter className="flex items-center justify-between">
             <Button variant="outline" size="sm" onClick={() => addUnitMut.mutate()} disabled={addUnitMut.isPending || !managingResource?.isTrackable} data-testid="button-add-unit">
-              <Plus className="h-3 w-3 mr-1" />Add Unit
+              <Plus className="h-3 w-3 mr-1" />{t("addUnit")}
             </Button>
-            <Button variant="outline" onClick={() => setShowUnitsDialog(false)}>Close</Button>
+            <Button variant="outline" onClick={() => setShowUnitsDialog(false)}>{t("close")}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1946,43 +1954,44 @@ function getBusinessTypeView(businessType: string | undefined) {
     case "food_truck":
       return {
         icon: Truck,
-        label: "Food Truck Locations",
-        description: "Manage GPS locations and routes for your food trucks",
-        extraFields: ["GPS Coordinates", "Route Schedule"],
-        emptyMessage: "No food truck locations configured. Add your first route!",
-        cardLabel: "Route",
+        labelKey: "viewFoodTruckLabel",
+        descriptionKey: "viewFoodTruckDesc",
+        extraFieldKeys: ["viewFieldGps", "viewFieldRoute"],
+        emptyMessageKey: "viewFoodTruckEmpty",
+        cardLabelKey: "viewCardRoute",
       };
     case "cloud_kitchen":
       return {
         icon: Cloud,
-        label: "Delivery Zones",
-        description: "Manage delivery zones and virtual kitchen locations",
-        extraFields: ["Delivery Radius", "Zone Coverage"],
-        emptyMessage: "No delivery zones configured. Set up your first zone!",
-        cardLabel: "Zone",
+        labelKey: "viewCloudKitchenLabel",
+        descriptionKey: "viewCloudKitchenDesc",
+        extraFieldKeys: ["viewFieldRadius", "viewFieldZoneCoverage"],
+        emptyMessageKey: "viewCloudKitchenEmpty",
+        cardLabelKey: "viewCardZone",
       };
     case "enterprise":
       return {
         icon: Building2,
-        label: "Centralized Outlets",
-        description: "Enterprise-wide outlet management across all locations",
-        extraFields: ["Region", "District Manager"],
-        emptyMessage: "No outlets configured. Add your first enterprise location!",
-        cardLabel: "Branch",
+        labelKey: "viewEnterpriseLabel",
+        descriptionKey: "viewEnterpriseDesc",
+        extraFieldKeys: ["viewFieldRegion", "viewFieldDistrictMgr"],
+        emptyMessageKey: "viewEnterpriseEmpty",
+        cardLabelKey: "viewCardBranch",
       };
     default:
       return {
         icon: Store,
-        label: "Outlet Locations",
-        description: "Manage your restaurant outlet locations",
-        extraFields: [],
-        emptyMessage: "No outlets yet. Add your first location!",
-        cardLabel: "Outlet",
+        labelKey: "viewOutletLabel",
+        descriptionKey: "viewOutletDesc",
+        extraFieldKeys: [] as string[],
+        emptyMessageKey: "viewOutletEmpty",
+        cardLabelKey: "viewCardOutlet",
       };
   }
 }
 
 export default function OutletsPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -2037,7 +2046,7 @@ export default function OutletsPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/outlets"] });
       setDialogOpen(false);
       resetForm();
-      toast({ title: `${view.cardLabel} added`, description: `${view.cardLabel} created successfully.` });
+      toast({ title: t(view.cardLabelKey) + " " + t("added"), description: t(view.cardLabelKey) + " " + t("createdSuccessfully") });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -2054,7 +2063,7 @@ export default function OutletsPage() {
       setDialogOpen(false);
       setEditingOutlet(null);
       resetForm();
-      toast({ title: `${view.cardLabel} updated` });
+      toast({ title: t(view.cardLabelKey) + " " + t("updated") });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -2067,7 +2076,7 @@ export default function OutletsPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outlets"] });
-      toast({ title: "Deleted", description: `${view.cardLabel} removed.` });
+      toast({ title: t("deleted"), description: t(view.cardLabelKey) + " " + t("removed") });
     },
     onError: (err: Error) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
@@ -2125,20 +2134,20 @@ export default function OutletsPage() {
       data-testid="page-outlets"
     >
       <div className="flex items-center justify-between">
-        <PageTitle title="Outlets" />
+        <PageTitle title={t("outlets")} />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <ViewIcon className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold font-heading" data-testid="text-outlets-title">{view.label}</h1>
-            <p className="text-muted-foreground">{view.description}</p>
+            <h1 className="text-2xl font-bold font-heading" data-testid="text-outlets-title">{t(view.labelKey)}</h1>
+            <p className="text-muted-foreground">{t(view.descriptionKey)}</p>
           </div>
         </div>
         {canEdit && (
           <Button onClick={openAddDialog} data-testid="button-add-outlet">
             <Plus className="h-4 w-4 mr-2" />
-            Add {view.cardLabel}
+            {t("add")} {t(view.cardLabelKey)}
           </Button>
         )}
       </div>
@@ -2146,7 +2155,7 @@ export default function OutletsPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0 }}>
           <StatCard
-            title={`Total ${view.cardLabel}s`}
+            title={t("total") + " " + t(view.cardLabelKey) + "s"}
             value={outlets.length}
             icon={ViewIcon}
             iconColor="text-teal-600"
@@ -2186,8 +2195,8 @@ export default function OutletsPage() {
             <CardContent className="p-4 flex items-center gap-3">
               <Navigation className="h-5 w-5 text-teal-600" />
               <div>
-                <p className="font-medium text-teal-800 dark:text-teal-300" data-testid="text-food-truck-info">GPS Route Tracking</p>
-                <p className="text-sm text-teal-600 dark:text-teal-400">Track real-time locations and manage daily routes for your food trucks</p>
+                <p className="font-medium text-teal-800 dark:text-teal-300" data-testid="text-food-truck-info">{t("gpsRouteTracking")}</p>
+                <p className="text-sm text-teal-600 dark:text-teal-400">{t("gpsRouteTrackingDesc")}</p>
               </div>
             </CardContent>
           </Card>
@@ -2204,8 +2213,8 @@ export default function OutletsPage() {
             <CardContent className="p-4 flex items-center gap-3">
               <Cloud className="h-5 w-5 text-purple-600" />
               <div>
-                <p className="font-medium text-purple-800 dark:text-purple-300" data-testid="text-cloud-kitchen-info">Delivery Zone Management</p>
-                <p className="text-sm text-purple-600 dark:text-purple-400">Configure delivery zones, radius coverage, and partner integrations</p>
+                <p className="font-medium text-purple-800 dark:text-purple-300" data-testid="text-cloud-kitchen-info">{t("deliveryZoneManagement")}</p>
+                <p className="text-sm text-purple-600 dark:text-purple-400">{t("deliveryZoneManagementDesc")}</p>
               </div>
             </CardContent>
           </Card>
@@ -2222,8 +2231,8 @@ export default function OutletsPage() {
             <CardContent className="p-4 flex items-center gap-3">
               <Building2 className="h-5 w-5 text-amber-600" />
               <div>
-                <p className="font-medium text-amber-800 dark:text-amber-300" data-testid="text-enterprise-info">Centralized Management</p>
-                <p className="text-sm text-amber-600 dark:text-amber-400">Manage all locations from a single dashboard with regional grouping</p>
+                <p className="font-medium text-amber-800 dark:text-amber-300" data-testid="text-enterprise-info">{t("centralizedManagement")}</p>
+                <p className="text-sm text-amber-600 dark:text-amber-400">{t("centralizedManagementDesc")}</p>
               </div>
             </CardContent>
           </Card>
@@ -2233,7 +2242,7 @@ export default function OutletsPage() {
       <div className="relative w-full max-w-sm">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
-          placeholder={`Search ${view.cardLabel.toLowerCase()}s...`}
+          placeholder={t("search") + " " + t(view.cardLabelKey).toLowerCase() + "s..."}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9"
@@ -2247,7 +2256,7 @@ export default function OutletsPage() {
         <Card>
           <CardContent className="text-center py-12">
             <ViewIcon className="h-12 w-12 text-muted-foreground mx-auto mb-3 opacity-40" />
-            <p className="text-muted-foreground" data-testid="text-no-outlets">{view.emptyMessage}</p>
+            <p className="text-muted-foreground" data-testid="text-no-outlets">{t(view.emptyMessageKey)}</p>
           </CardContent>
         </Card>
       ) : (
@@ -2335,21 +2344,21 @@ export default function OutletsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{editingOutlet ? `Edit ${view.cardLabel}` : `Add ${view.cardLabel}`}</DialogTitle>
+            <DialogTitle>{editingOutlet ? t("edit") + " " + t(view.cardLabelKey) : t("add") + " " + t(view.cardLabelKey)}</DialogTitle>
             <DialogDescription>
-              {editingOutlet ? `Update the details of this ${view.cardLabel.toLowerCase()}.` : `Add a new ${view.cardLabel.toLowerCase()} to your business.`}
+              {editingOutlet ? t("updateDetailsOf") + " " + t(view.cardLabelKey).toLowerCase() + "." : t("addNewTo") + " " + t(view.cardLabelKey).toLowerCase() + " " + t("toyBusiness") + "."}
             </DialogDescription>
           </DialogHeader>
 
           {editingOutlet && user?.role === "owner" ? (
             <Tabs defaultValue="details">
               <TabsList className="w-full">
-                <TabsTrigger value="details" className="flex-1">Details</TabsTrigger>
+                <TabsTrigger value="details" className="flex-1">{t("details")}</TabsTrigger>
                 <TabsTrigger value="tips" className="flex-1" data-testid="tab-tip-settings">
-                  <DollarSign className="h-3.5 w-3.5 mr-1.5" /> Tips
+                  <DollarSign className="h-3.5 w-3.5 mr-1.5" /> {t("tips")}
                 </TabsTrigger>
                 <TabsTrigger value="security" className="flex-1" data-testid="tab-outlet-security">
-                  <Shield className="h-3.5 w-3.5 mr-1.5" /> Security
+                  <Shield className="h-3.5 w-3.5 mr-1.5" /> {t("security")}
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="details">
@@ -2367,11 +2376,11 @@ export default function OutletsPage() {
                     <Input id="outlet-hours" value={formData.openingHours} onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })} placeholder="e.g. 9:00 AM - 10:00 PM" data-testid="input-outlet-hours" />
                   </div>
                   <div className="space-y-2">
-                    <Label>Region</Label>
+                    <Label>{t("region")}</Label>
                     <Select value={formData.regionId || "none"} onValueChange={(v) => setFormData({ ...formData, regionId: v === "none" ? "" : v })}>
                       <SelectTrigger data-testid="select-outlet-region"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="none">No Region</SelectItem>
+                        <SelectItem value="none">{t("noRegion")}</SelectItem>
                         {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
@@ -2386,25 +2395,25 @@ export default function OutletsPage() {
                         ))}
                       </SelectContent>
                     </Select>
-                    <p className="text-xs text-muted-foreground">Controls how dates and times are displayed for this outlet</p>
+                    <p className="text-xs text-muted-foreground">{t("timezoneDisplayHint")}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />
-                    <Label htmlFor="outlet-franchise">Franchise Outlet</Label>
+                    <Label htmlFor="outlet-franchise">{t("franchiseOutlet")}</Label>
                   </div>
                   {formData.isFranchise && (
                     <div className="space-y-3 pl-4 border-l-2 border-amber-300">
                       <div className="space-y-2">
-                        <Label>Franchisee Name</Label>
+                        <Label>{t("franchiseeName")}</Label>
                         <Input value={formData.franchiseeName} onChange={(e) => setFormData({ ...formData, franchiseeName: e.target.value })} placeholder="e.g. Gulf Dining Group LLC" data-testid="input-franchisee-name" />
                       </div>
                       <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-2">
-                          <Label>Royalty Rate (%)</Label>
+                          <Label>{t("royaltyRate")}</Label>
                           <Input type="number" step="0.1" value={formData.royaltyRate} onChange={(e) => setFormData({ ...formData, royaltyRate: e.target.value })} placeholder="e.g. 8" data-testid="input-royalty-rate" />
                         </div>
                         <div className="space-y-2">
-                          <Label>Min Guarantee</Label>
+                          <Label>{t("minGuarantee")}</Label>
                           <Input type="number" step="100" value={formData.minimumGuarantee} onChange={(e) => setFormData({ ...formData, minimumGuarantee: e.target.value })} placeholder="e.g. 5000" data-testid="input-min-guarantee" />
                         </div>
                       </div>
@@ -2412,9 +2421,9 @@ export default function OutletsPage() {
                   )}
                 </div>
                 <DialogFooter className="pt-4">
-                  <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">Cancel</Button>
+                  <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">{t("cancel")}</Button>
                   <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-outlet">
-                    {editingOutlet ? "Update" : `Add ${view.cardLabel}`}
+                    {editingOutlet ? t("update") : t("add") + " " + t(view.cardLabelKey)}
                   </Button>
                 </DialogFooter>
               </TabsContent>
@@ -2441,11 +2450,11 @@ export default function OutletsPage() {
                   <Input id="outlet-hours" value={formData.openingHours} onChange={(e) => setFormData({ ...formData, openingHours: e.target.value })} placeholder="e.g. 9:00 AM - 10:00 PM" data-testid="input-outlet-hours" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Region</Label>
+                  <Label>{t("region")}</Label>
                   <Select value={formData.regionId || "none"} onValueChange={(v) => setFormData({ ...formData, regionId: v === "none" ? "" : v })}>
                     <SelectTrigger data-testid="select-outlet-region"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="none">No Region</SelectItem>
+                      <SelectItem value="none">{t("noRegion")}</SelectItem>
                       {regions.map(r => <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>)}
                     </SelectContent>
                   </Select>
@@ -2464,21 +2473,21 @@ export default function OutletsPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <input type="checkbox" id="outlet-franchise" checked={formData.isFranchise} onChange={(e) => setFormData({ ...formData, isFranchise: e.target.checked })} data-testid="checkbox-franchise" />
-                  <Label htmlFor="outlet-franchise">Franchise Outlet</Label>
+                  <Label htmlFor="outlet-franchise">{t("franchiseOutlet")}</Label>
                 </div>
                 {formData.isFranchise && (
                   <div className="space-y-3 pl-4 border-l-2 border-amber-300">
                     <div className="space-y-2">
-                      <Label>Franchisee Name</Label>
+                      <Label>{t("franchiseeName")}</Label>
                       <Input value={formData.franchiseeName} onChange={(e) => setFormData({ ...formData, franchiseeName: e.target.value })} placeholder="e.g. Gulf Dining Group LLC" data-testid="input-franchisee-name" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-2">
-                        <Label>Royalty Rate (%)</Label>
+                        <Label>{t("royaltyRate")}</Label>
                         <Input type="number" step="0.1" value={formData.royaltyRate} onChange={(e) => setFormData({ ...formData, royaltyRate: e.target.value })} placeholder="e.g. 8" data-testid="input-royalty-rate" />
                       </div>
                       <div className="space-y-2">
-                        <Label>Min Guarantee</Label>
+                        <Label>{t("minGuarantee")}</Label>
                         <Input type="number" step="100" value={formData.minimumGuarantee} onChange={(e) => setFormData({ ...formData, minimumGuarantee: e.target.value })} placeholder="e.g. 5000" data-testid="input-min-guarantee" />
                       </div>
                     </div>
@@ -2486,9 +2495,9 @@ export default function OutletsPage() {
                 )}
               </div>
               <DialogFooter>
-                <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">Cancel</Button>
+                <Button variant="outline" onClick={() => setDialogOpen(false)} data-testid="button-cancel-outlet">{t("cancel")}</Button>
                 <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-outlet">
-                  {editingOutlet ? "Update" : `Add ${view.cardLabel}`}
+                  {editingOutlet ? t("update") : t("add") + " " + t(view.cardLabelKey)}
                 </Button>
               </DialogFooter>
             </>
@@ -2528,6 +2537,7 @@ export default function OutletsPage() {
 }
 
 function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -2676,14 +2686,14 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           <Settings className="h-5 w-5 text-blue-600" />
-          Parking Settings
+          {t("parkingSettings")}
         </CardTitle>
-        <CardDescription>Configure valet parking for your outlet</CardDescription>
+        <CardDescription>{t("valetParkingDesc")}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {outlets.length > 1 && (
           <div>
-            <Label>Select Outlet</Label>
+            <Label>{t("selectOutlet")}</Label>
             <Select value={selectedOutletId} onValueChange={v => { setSelectedOutletId(v); setZones([]); setRates([]); }}>
               <SelectTrigger className="mt-1 w-64" data-testid="select-parking-outlet">
                 <SelectValue />
@@ -2711,28 +2721,28 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
           <>
             <Separator />
             <div className="space-y-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Parking Configuration</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("parkingConfiguration")}</p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Parking Type</Label>
+                  <Label>{t("parkingType")}</Label>
                   <RadioGroup value={form.parkingType} onValueChange={v => setForm(f => ({ ...f, parkingType: v }))}>
-                    {[{ value: "VALET", label: "Valet Only" }, { value: "SELF", label: "Self Parking" }, { value: "BOTH", label: "Both" }].map(opt => (
+                    {([{ value: "VALET", labelKey: "valetOnly" }, { value: "SELF", labelKey: "selfParking" }, { value: "BOTH", labelKey: "both" }] as const).map(opt => (
                       <div key={opt.value} className="flex items-center gap-2">
                         <RadioGroupItem value={opt.value} id={`pt-${opt.value}`} data-testid={`radio-parking-type-${opt.value}`} />
-                        <Label htmlFor={`pt-${opt.value}`}>{opt.label}</Label>
+                        <Label htmlFor={`pt-${opt.value}`}>{t(opt.labelKey)}</Label>
                       </div>
                     ))}
                   </RadioGroup>
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Charge Mode</Label>
+                  <Label>{t("chargeMode")}</Label>
                   <RadioGroup value={form.chargeMode} onValueChange={v => setForm(f => ({ ...f, chargeMode: v }))}>
-                    {[{ value: "HOURLY", label: "Hourly" }, { value: "FLAT", label: "Flat Rate" }, { value: "SLAB", label: "Slab-based" }, { value: "FREE", label: "Free" }].map(opt => (
+                    {([{ value: "HOURLY", labelKey: "hourly" }, { value: "FLAT", labelKey: "flatRate" }, { value: "SLAB", labelKey: "slabBased" }, { value: "FREE", labelKey: "free" }] as const).map(opt => (
                       <div key={opt.value} className="flex items-center gap-2">
                         <RadioGroupItem value={opt.value} id={`cm-${opt.value}`} data-testid={`radio-charge-mode-${opt.value}`} />
-                        <Label htmlFor={`cm-${opt.value}`}>{opt.label}</Label>
+                        <Label htmlFor={`cm-${opt.value}`}>{t(opt.labelKey)}</Label>
                       </div>
                     ))}
                   </RadioGroup>
@@ -2741,7 +2751,7 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label>Free Period (minutes)</Label>
+                  <Label>{t("freePeriodMinutes")}</Label>
                   <Input
                     type="number" min="0"
                     value={form.freeMinutes}
@@ -2750,18 +2760,18 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label>Receipt Label</Label>
+                  <Label>{t("receiptLabel")}</Label>
                   <Input
                     value={form.receiptLabel}
                     onChange={e => setForm(f => ({ ...f, receiptLabel: e.target.value }))}
-                    placeholder="Parking Charge"
+                    placeholder={t("parkingChargePlaceholder")}
                     data-testid="input-receipt-label"
                   />
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label>Operating Hours</Label>
+                <Label>{t("operatingHours")}</Label>
                 <Input
                   value={form.operatingHours}
                   onChange={e => setForm(f => ({ ...f, operatingHours: e.target.value }))}
@@ -2773,9 +2783,9 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
 
             <Separator />
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Validation</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("validation")}</p>
               <div className="flex items-center justify-between p-3 rounded-lg border">
-                <Label>Validation (parking discount with min spend)</Label>
+                <Label>{t("parkingValidation")}</Label>
                 <Switch
                   checked={form.validationEnabled}
                   onCheckedChange={v => setForm(f => ({ ...f, validationEnabled: v }))}
@@ -2785,24 +2795,24 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
               {form.validationEnabled && (
                 <div className="grid grid-cols-2 gap-3 pl-4 border-l-2 border-blue-200">
                   <div className="space-y-1">
-                    <Label className="text-xs">Min Spend</Label>
+                    <Label className="text-xs">{t("minSpend")}</Label>
                     <Input type="number" min="0" value={form.validationMinSpend} onChange={e => setForm(f => ({ ...f, validationMinSpend: Number(e.target.value) }))} data-testid="input-validation-min-spend" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Validation Benefit</Label>
+                    <Label className="text-xs">{t("validationBenefit")}</Label>
                     <Select value={form.validationBenefit} onValueChange={v => setForm(f => ({ ...f, validationBenefit: v }))}>
                       <SelectTrigger className="h-8 text-xs" data-testid="select-validation-benefit">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="FREE_PARKING">Free Parking</SelectItem>
-                        <SelectItem value="DISCOUNT_50">50% Discount</SelectItem>
-                        <SelectItem value="FLAT_DISCOUNT">Flat Discount</SelectItem>
+                        <SelectItem value="FREE_PARKING">{t("freeParking")}</SelectItem>
+                        <SelectItem value="DISCOUNT_50">{t("discount50")}</SelectItem>
+                        <SelectItem value="FLAT_DISCOUNT">{t("flatDiscount")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Max Hours Free</Label>
+                    <Label className="text-xs">{t("maxHoursFree")}</Label>
                     <Input type="number" min="0" value={form.validationMaxHours} onChange={e => setForm(f => ({ ...f, validationMaxHours: Number(e.target.value) }))} data-testid="input-validation-max-hours" />
                   </div>
                 </div>
@@ -2811,14 +2821,14 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
 
             <Separator />
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Tax</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("tax")}</p>
               <div className="flex items-center justify-between p-3 rounded-lg border">
-                <Label>Apply Tax to Parking Charge</Label>
+                <Label>{t("applyTaxToParking")}</Label>
                 <Switch checked={form.taxEnabled} onCheckedChange={v => setForm(f => ({ ...f, taxEnabled: v }))} data-testid="toggle-parking-tax-enabled" />
               </div>
               {form.taxEnabled && (
                 <div className="flex items-center gap-2">
-                  <Label className="text-xs w-16">Tax %</Label>
+                  <Label className="text-xs w-16">{t("taxPercent")}</Label>
                   <Input type="number" min="0" max="100" value={form.taxPercent} onChange={e => setForm(f => ({ ...f, taxPercent: Number(e.target.value) }))} className="w-24" data-testid="input-parking-tax-percent" />
                   <span className="text-sm text-muted-foreground">%</span>
                 </div>
@@ -2827,36 +2837,36 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
 
             <Separator />
             <div className="space-y-3">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Customer Display</p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t("customerDisplay")}</p>
               <div className="flex items-center justify-between p-3 rounded-lg border">
-                <Label>Show Parking Status to Customers (QR)</Label>
+                <Label>{t("showParkingToCustomers")}</Label>
                 <Switch checked={form.showToCustomers} onCheckedChange={v => setForm(f => ({ ...f, showToCustomers: v }))} data-testid="toggle-show-to-customers" />
               </div>
               {form.showToCustomers && (
                 <div className="grid grid-cols-1 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs">Display Mode</Label>
+                    <Label className="text-xs">{t("displayMode")}</Label>
                     <Select value={form.displayMode} onValueChange={v => setForm(f => ({ ...f, displayMode: v }))}>
                       <SelectTrigger className="h-8 text-xs" data-testid="select-display-mode">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="FULL">Full (count + slots)</SelectItem>
-                        <SelectItem value="SIMPLE">Simple (available/full)</SelectItem>
-                        <SelectItem value="MESSAGE_ONLY">Message Only</SelectItem>
+                        <SelectItem value="FULL">{t("displayModeFull")}</SelectItem>
+                        <SelectItem value="SIMPLE">{t("displayModeSimple")}</SelectItem>
+                        <SelectItem value="MESSAGE_ONLY">{t("messageOnly")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg border">
-                    <Label>Show Slot Numbers</Label>
+                    <Label>{t("showSlotNumbers")}</Label>
                     <Switch checked={form.showSlotNumbers} onCheckedChange={v => setForm(f => ({ ...f, showSlotNumbers: v }))} data-testid="toggle-show-slot-numbers" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Available Message</Label>
+                    <Label className="text-xs">{t("availableMessage")}</Label>
                     <Input value={form.availableMessage} onChange={e => setForm(f => ({ ...f, availableMessage: e.target.value }))} data-testid="input-available-message" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs">Full Message</Label>
+                    <Label className="text-xs">{t("fullMessage")}</Label>
                     <Input value={form.fullMessage} onChange={e => setForm(f => ({ ...f, fullMessage: e.target.value }))} data-testid="input-full-message" />
                   </div>
                 </div>
@@ -2868,7 +2878,7 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
               disabled={saveMutation.isPending}
               data-testid="button-save-parking-settings"
             >
-              {saveMutation.isPending ? "Saving..." : "Save Parking Settings"}
+              {saveMutation.isPending ? t("saving") : t("saveParkingSettings")}
             </Button>
 
             <Separator />
@@ -2889,13 +2899,13 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
                   <table className="w-full text-sm">
                     <thead className="bg-muted/50">
                       <tr>
-                        <th className="text-left px-3 py-2 font-medium">Code</th>
-                        <th className="text-left px-3 py-2 font-medium">Name</th>
-                        <th className="text-left px-3 py-2 font-medium">Type</th>
-                        <th className="text-left px-3 py-2 font-medium">Level</th>
-                        <th className="text-left px-3 py-2 font-medium">Covered</th>
-                        <th className="text-left px-3 py-2 font-medium">Slots</th>
-                        <th className="text-left px-3 py-2 font-medium">Active</th>
+                        <th className="text-left px-3 py-2 font-medium">{t("code")}</th>
+                        <th className="text-left px-3 py-2 font-medium">{t("name")}</th>
+                        <th className="text-left px-3 py-2 font-medium">{t("type")}</th>
+                        <th className="text-left px-3 py-2 font-medium">{t("level")}</th>
+                        <th className="text-left px-3 py-2 font-medium">{t("covered")}</th>
+                        <th className="text-left px-3 py-2 font-medium">{t("slots")}</th>
+                        <th className="text-left px-3 py-2 font-medium">{t("active")}</th>
                         <th className="px-3 py-2" />
                       </tr>
                     </thead>
@@ -2993,26 +3003,26 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
                               }
                             }}
                           >
-                            Save
+                            {t("save")}
                           </Button>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                           <div className="space-y-1">
-                            <Label className="text-xs">Rate Type</Label>
+                            <Label className="text-xs">{t("rateType")}</Label>
                             <Select value={edit.rateType} onValueChange={v => setEdit({ rateType: v })}>
                               <SelectTrigger className="h-7 text-xs" data-testid={`select-rate-type-${vt}`}>
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="FLAT">Flat</SelectItem>
-                                <SelectItem value="HOURLY">Hourly</SelectItem>
-                                <SelectItem value="SLAB">Slab</SelectItem>
-                                <SelectItem value="FREE">Free</SelectItem>
+                                <SelectItem value="FLAT">{t("flat")}</SelectItem>
+                                <SelectItem value="HOURLY">{t("hourly")}</SelectItem>
+                                <SelectItem value="SLAB">{t("slab")}</SelectItem>
+                                <SelectItem value="FREE">{t("free")}</SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
                           <div className="space-y-1">
-                            <Label className="text-xs">Base Rate</Label>
+                            <Label className="text-xs">{t("baseRate")}</Label>
                             <Input
                               type="number"
                               min={0}
@@ -3172,35 +3182,35 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
       <Dialog open={zoneDialog} onOpenChange={setZoneDialog}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>{editingZone ? "Edit Zone" : "Add Zone"}</DialogTitle>
+            <DialogTitle>{editingZone ? t("editZone") : t("addZone")}</DialogTitle>
             <DialogDescription>{editingZone ? "Update zone details" : "Create a new parking zone"}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Zone Code *</Label>
+                <Label>{t("zoneCode")}</Label>
                 <Input value={zoneForm.code} onChange={e => setZoneForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} placeholder="e.g. A" data-testid="input-zone-code" />
               </div>
               <div className="space-y-1">
-                <Label>Zone Name *</Label>
+                <Label>{t("zoneName")}</Label>
                 <Input value={zoneForm.name} onChange={e => setZoneForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. Ground Floor" data-testid="input-zone-name" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Type</Label>
+                <Label>{t("type")}</Label>
                 <Select value={zoneForm.type} onValueChange={v => setZoneForm(f => ({ ...f, type: v }))}>
                   <SelectTrigger data-testid="select-zone-type"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="INDOOR">Indoor</SelectItem>
-                    <SelectItem value="OUTDOOR">Outdoor</SelectItem>
-                    <SelectItem value="ROOFTOP">Rooftop</SelectItem>
-                    <SelectItem value="BASEMENT">Basement</SelectItem>
+                    <SelectItem value="INDOOR">{t("indoor")}</SelectItem>
+                    <SelectItem value="OUTDOOR">{t("outdoor")}</SelectItem>
+                    <SelectItem value="ROOFTOP">{t("rooftop")}</SelectItem>
+                    <SelectItem value="BASEMENT">{t("basement")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1">
-                <Label>Color</Label>
+                <Label>{t("color")}</Label>
                 <div className="flex gap-2 items-center">
                   <input type="color" value={zoneForm.color} onChange={e => setZoneForm(f => ({ ...f, color: e.target.value }))} className="h-9 w-12 rounded cursor-pointer" data-testid="input-zone-color" />
                   <Input value={zoneForm.color} onChange={e => setZoneForm(f => ({ ...f, color: e.target.value }))} className="flex-1 font-mono text-xs" />
@@ -3209,23 +3219,23 @@ function ParkingSettings({ outlets }: { outlets: Outlet[] }) {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Level</Label>
+                <Label>{t("level")}</Label>
                 <Input type="number" value={zoneForm.level} onChange={e => setZoneForm(f => ({ ...f, level: Number(e.target.value) }))} placeholder="0" data-testid="input-zone-level" />
               </div>
               <div className="space-y-1">
-                <Label>Slot Count</Label>
+                <Label>{t("slotCount")}</Label>
                 <Input type="number" min="0" value={zoneForm.slotCount} onChange={e => setZoneForm(f => ({ ...f, slotCount: Number(e.target.value) }))} data-testid="input-zone-slot-count" />
               </div>
             </div>
             <div className="flex items-center gap-2">
               <Switch checked={zoneForm.covered} onCheckedChange={v => setZoneForm(f => ({ ...f, covered: v }))} data-testid="toggle-zone-covered" />
-              <Label>Covered/Enclosed</Label>
+              <Label>{t("coveredEnclosed")}</Label>
             </div>
           </div>
           <div className="flex gap-2 pt-2">
             <Button variant="outline" className="flex-1" onClick={() => setZoneDialog(false)} data-testid="button-cancel-zone">Cancel</Button>
             <Button className="flex-1" onClick={() => saveZoneMutation.mutate()} disabled={saveZoneMutation.isPending || !zoneForm.code || !zoneForm.name} data-testid="button-save-zone">
-              {saveZoneMutation.isPending ? "Saving..." : editingZone ? "Update Zone" : "Add Zone"}
+              {saveZoneMutation.isPending ? t("saving") : editingZone ? t("updateZone") : t("addZone")}
             </Button>
           </div>
         </DialogContent>

@@ -9,6 +9,7 @@ import {
   Bell, TrendingUp, Star, Clock, AlertTriangle, Users, Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useTranslation } from "react-i18next";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -60,6 +61,7 @@ function StatCard({ title, value, icon: Icon, color = "text-primary" }: {
 }
 
 export default function CustomerRequestsAnalytics() {
+  const { t } = useTranslation("modules");
   const [range, setRange] = useState("7d");
   const [ratingAggregation, setRatingAggregation] = useState<"day" | "week" | "month">("day");
 

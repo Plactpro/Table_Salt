@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -87,6 +88,7 @@ export default function CloseCashSessionModal({
   expectedCash,
   onSessionClosed,
 }: Props) {
+  const { t, i18n } = useTranslation("pos");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -132,14 +134,14 @@ export default function CloseCashSessionModal({
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "Cash session closed", description: `Variance: ${symbol}${variance.toFixed(2)}` });
+      toast({ title: t("cashSessionClosed"), description: `${t("variance")}: ${symbol}${variance.toFixed(2)}` });
       queryClient.invalidateQueries({ queryKey: ["/api/cash-sessions/active"] });
       setShowHandover(false);
       onSessionClosed();
       onClose();
     },
     onError: (err: Error) => {
-      toast({ title: "Failed to close session", description: err.message, variant: "destructive" });
+      toast({ title: t("failedToCloseSession"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -148,7 +150,7 @@ export default function CloseCashSessionModal({
       <Dialog open={open && !showHandover} onOpenChange={onClose}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" data-testid="modal-close-session">
           <DialogHeader>
-            <DialogTitle>🔒 Close Cash Session</DialogTitle>
+            <DialogTitle>🔒 {t("closeCashSession")}</DialogTitle>
             <div className="flex gap-2 text-sm text-muted-foreground">
               {sessionNumber && <span>{sessionNumber}</span>}
               {cashierName && <span>| {cashierName}</span>}
@@ -157,18 +159,18 @@ export default function CloseCashSessionModal({
 
           <div className="space-y-4">
             <div className="rounded-lg border bg-blue-50 p-3 flex items-center justify-between">
-              <span className="text-sm font-medium text-blue-800">System Expected:</span>
+              <span className="text-sm font-medium text-blue-800">{t("systemExpected")}:</span>
               <span className="text-lg font-bold text-blue-900" data-testid="text-expected-cash">
-                {symbol}{expectedCash.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {symbol}{expectedCash.toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
 
             <div>
-              <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">Count Physical Cash in Drawer:</p>
+              <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-3">{t("countPhysicalCash")}:</p>
 
               {denoms.notes.length > 0 && (
                 <>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">Notes</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">{t("notes")}</p>
                   <div className="space-y-2 mb-4">
                     {denoms.notes.map((d) => {
                       const qty = parseInt(quantities[String(d.value)] || "0") || 0;
@@ -197,7 +199,7 @@ export default function CloseCashSessionModal({
 
               {denoms.coins.length > 0 && (
                 <>
-                  <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">Coins</p>
+                  <p className="text-xs font-semibold uppercase text-muted-foreground mb-2">{t("coins")}</p>
                   <div className="space-y-2">
                     {denoms.coins.map((d) => {
                       const qty = parseInt(quantities[String(d.value)] || "0") || 0;
@@ -228,15 +230,15 @@ export default function CloseCashSessionModal({
             <Separator />
 
             <div className="flex items-center justify-between bg-muted/40 rounded-lg p-3">
-              <span className="font-semibold">Physical Total:</span>
+              <span className="font-semibold">{t("physicalTotal")}:</span>
               <span className="text-xl font-bold" data-testid="text-physical-total">
-                {symbol}{physicalTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {symbol}{physicalTotal.toLocaleString(i18n.language, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </span>
             </div>
 
             <div className="rounded-lg border p-3 space-y-2">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Variance:</span>
+                <span className="text-sm font-medium">{t("variance")}:</span>
                 <div className="flex items-center gap-2">
                   <span className={`font-bold ${variance === 0 ? "text-green-700" : variance > 0 ? "text-blue-700" : "text-red-600"}`} data-testid="text-variance">
                     {variance >= 0 ? "+" : ""}{symbol}{variance.toFixed(2)}
@@ -246,18 +248,18 @@ export default function CloseCashSessionModal({
                     className={variance === 0 ? "bg-green-100 text-green-800 border-green-200" : ""}
                     data-testid="badge-variance-status"
                   >
-                    {variance === 0 ? "✅ Balanced" : variance > 0 ? "⚠️ Over" : "⚠️ Short"}
+                    {variance === 0 ? `✅ ${t("balanced")}` : variance > 0 ? `⚠️ ${t("over")}` : `⚠️ ${t("short")}`}
                   </Badge>
                 </div>
               </div>
               {requiresReason && (
                 <div>
-                  <Label className="text-xs text-red-600">Reason required for variance <span className="text-red-500">*</span></Label>
+                  <Label className="text-xs text-red-600">{t("varianceReasonRequired")} <span className="text-red-500">*</span></Label>
                   <Input
                     value={varianceReason}
                     onChange={e => setVarianceReason(e.target.value)}
                     className="mt-1 border-red-300"
-                    placeholder="Explain the variance..."
+                    placeholder={t("varianceReasonPlaceholder")}
                     data-testid="input-variance-reason"
                   />
                 </div>
@@ -265,12 +267,12 @@ export default function CloseCashSessionModal({
             </div>
 
             <div>
-              <Label>Session Notes (Optional)</Label>
+              <Label>{t("sessionNotesOptional")}</Label>
               <Input
                 value={sessionNotes}
                 onChange={e => setSessionNotes(e.target.value)}
                 className="mt-1"
-                placeholder="Any notes for this session..."
+                placeholder={t("sessionNotesPlaceholder")}
               />
             </div>
 
@@ -283,8 +285,8 @@ export default function CloseCashSessionModal({
                 data-testid="button-close-session"
               >
                 {closeSessionMutation.isPending ? (
-                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Closing...</>
-                ) : "🔒 Close Session"}
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("closing")}</>
+                ) : `🔒 ${t("closeSession")}`}
               </Button>
               <Button
                 className="flex-1"
@@ -292,7 +294,7 @@ export default function CloseCashSessionModal({
                 onClick={() => setShowHandover(true)}
                 data-testid="button-cash-handover"
               >
-                Cash Handover
+                {t("cashHandover")}
               </Button>
             </div>
           </div>

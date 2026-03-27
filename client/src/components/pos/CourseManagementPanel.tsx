@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +63,7 @@ function SetCoursesDialog({
   items: CartItem[];
   onSaved: () => void;
 }) {
+  const { t } = useTranslation("pos");
   const { toast } = useToast();
   const [assignments, setAssignments] = useState<Record<string, number>>({});
   const [saving, setSaving] = useState(false);
@@ -79,8 +81,8 @@ function SetCoursesDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ courses: courseItems }),
       });
-      if (!res.ok) throw new Error("Failed");
-      toast({ title: "Courses saved" });
+      if (!res.ok) throw new Error(t("failedToSaveCourses"));
+      toast({ title: t("coursesSaved") });
       onSaved();
       onClose();
     } catch (_) {
@@ -94,7 +96,7 @@ function SetCoursesDialog({
     <Dialog open={open} onOpenChange={v => !v && onClose()}>
       <DialogContent data-testid="dialog-set-courses">
         <DialogHeader>
-          <DialogTitle>Set Courses</DialogTitle>
+          <DialogTitle>{t("setCourses")}</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">Assign each item to a course number for the kitchen.</p>
@@ -141,6 +143,7 @@ export default function CourseManagementPanel({
 }) {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { t } = useTranslation("pos");
   const [showSetCourses, setShowSetCourses] = useState(false);
 
   const { data: courseData, refetch, isLoading } = useQuery<CourseData>({
@@ -164,14 +167,14 @@ export default function CourseManagementPanel({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
       });
-      if (!res.ok) throw new Error("Failed to fire course");
+      if (!res.ok) throw new Error(t("failedToFireCourse"));
       return res.json();
     },
     onSuccess: (_, courseNumber) => {
       qc.invalidateQueries({ queryKey: ["/api/orders", orderId, "courses"] });
-      toast({ title: `Course ${courseNumber} fired to kitchen` });
+      toast({ title: t("courseFired") });
     },
-    onError: () => toast({ title: "Could not fire course — backend feature pending", variant: "default" }),
+    onError: () => toast({ title: t("failedToFireCourse"), variant: "default" }),
   });
 
   const courses = courseData?.courses ?? [];
@@ -197,7 +200,7 @@ export default function CourseManagementPanel({
           onClick={() => setShowSetCourses(true)}
           data-testid="button-set-courses"
         >
-          Set Courses
+          {t("setCourses")}
         </Button>
       </div>
 
@@ -205,7 +208,7 @@ export default function CourseManagementPanel({
         <Card>
           <CardContent className="py-6 text-center text-sm text-muted-foreground">
             <Utensils className="h-6 w-6 mx-auto mb-2 opacity-40" />
-            No courses set. Click "Set Courses" to organize items by course.
+            {t("noCourses")}
           </CardContent>
         </Card>
       ) : (
@@ -238,7 +241,7 @@ export default function CourseManagementPanel({
                         data-testid={`button-fire-course-${course.courseNumber}`}
                       >
                         <Flame className="h-3 w-3 mr-1" />
-                        🔥 Fire Course {course.courseNumber} to Kitchen
+                        🔥 {t("fireCourse")} {course.courseNumber}
                       </Button>
                     )}
                   </div>

@@ -25,6 +25,7 @@ import {
   Calendar, Clock, CheckCircle2, XCircle, Zap, AlertCircle,
 } from "lucide-react";
 import type { Offer } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 const offerTypeLabels: Record<string, string> = {
   percentage: "Percentage Off",
@@ -107,6 +108,7 @@ const emptyForm: OfferForm = {
 };
 
 export default function OffersPage() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -247,7 +249,7 @@ export default function OffersPage() {
       data-testid="offers-page"
     >
       <div className="flex items-center justify-between">
-        <PageTitle title="Offers & Deals" />
+        <PageTitle title={t("offersAndDeals")} />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <Tag className="h-6 w-6 text-primary" />

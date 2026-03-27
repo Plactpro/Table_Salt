@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -122,6 +123,7 @@ const DEFAULT_PRINTER: Partial<PrinterDevice> = {
 };
 
 export default function PrinterSettingsPage() {
+  const { i18n } = useTranslation();
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -552,7 +554,7 @@ export default function PrinterSettingsPage() {
                       {printJobs.map((job, i) => (
                         <TableRow key={job.id} data-testid={`row-job-${job.id}`}>
                           <TableCell className="text-xs text-muted-foreground">
-                            {job.createdAt ? new Date(job.createdAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                            {job.createdAt ? new Date(job.createdAt).toLocaleString(i18n.language, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
                           </TableCell>
                           <TableCell>
                             <Badge variant="outline" className="text-xs capitalize">{job.type}</Badge>

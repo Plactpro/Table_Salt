@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { TableSkeleton } from "@/components/ui/skeletons";
 import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
+import { useTranslation } from "react-i18next";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant", "delivery_agent", "cleaning_staff"] as const;
 
@@ -102,6 +103,8 @@ export default function StaffPage() {
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useTranslation("staff");
+  const { t: tc } = useTranslation("common");
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<StaffMember | null>(null);
@@ -138,7 +141,7 @@ export default function StaffPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "PIN set successfully", description: `${pinDialogStaff?.name} can now log in with their PIN.` });
+      toast({ title: t("pinSetSuccess"), description: t("pinSetDesc", { name: pinDialogStaff?.name }) });
       setPinDialogStaff(null);
       setPinValue(""); setPinConfirm(""); setPinError(null);
     },
@@ -152,18 +155,18 @@ export default function StaffPage() {
       return res.json();
     },
     onSuccess: () => {
-      toast({ title: "PIN cleared", description: `${pinDialogStaff?.name}'s PIN login has been disabled.` });
+      toast({ title: t("pinCleared"), description: t("pinClearedDesc", { name: pinDialogStaff?.name }) });
       setPinDialogStaff(null);
       setPinValue(""); setPinConfirm(""); setPinError(null);
     },
-    onError: (err: Error) => { toast({ title: "Failed to clear PIN", description: err.message, variant: "destructive" }); },
+    onError: (err: Error) => { toast({ title: t("failedToClearPin"), description: err.message, variant: "destructive" }); },
   });
 
   const handleSetPin = () => {
     if (!pinDialogStaff) return;
     const validationErr = pinValidationError(pinValue, pinDialogStaff.id?.slice(-4));
     if (validationErr) { setPinError(validationErr); return; }
-    if (pinValue !== pinConfirm) { setPinError("PINs do not match"); return; }
+    if (pinValue !== pinConfirm) { setPinError(t("pinsDoNotMatch")); return; }
     setPinError(null);
     setPinMutation.mutate({ staffId: pinDialogStaff.id, pin: pinValue });
   };
@@ -239,11 +242,11 @@ export default function StaffPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Staff member added" });
+      toast({ title: t("staffMemberAdded") });
       setDialogOpen(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -254,12 +257,12 @@ export default function StaffPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/users"] });
-      toast({ title: "Staff member updated" });
+      toast({ title: t("staffMemberUpdated") });
       setDialogOpen(false);
       setEditingUser(null);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -270,11 +273,11 @@ export default function StaffPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/staff-schedules"] });
-      toast({ title: "Shift added" });
+      toast({ title: t("shiftAdded") });
       setShowAddShift(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -285,10 +288,10 @@ export default function StaffPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/staff-schedules"] });
-      toast({ title: "Shift updated" });
+      toast({ title: t("shiftUpdated") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -298,10 +301,10 @@ export default function StaffPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/staff-schedules"] });
-      toast({ title: "Shift deleted" });
+      toast({ title: t("shiftDeleted") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -357,9 +360,9 @@ export default function StaffPage() {
     const username = formData.get("username") as string;
     const password = formData.get("password") as string;
     const errs: { name?: string; username?: string; password?: string } = {};
-    if (!name.trim()) errs.name = "Name is required";
-    if (!editingUser && !username.trim()) errs.username = "Username is required";
-    if (!editingUser && !password.trim()) errs.password = "Password is required";
+    if (!name.trim()) errs.name = t("nameRequired");
+    if (!editingUser && !username.trim()) errs.username = t("usernameRequired");
+    if (!editingUser && !password.trim()) errs.password = t("passwordRequired");
     if (Object.keys(errs).length > 0) {
       setStaffFormErrors(errs);
       setTimeout(scrollToFirstError, 0);
@@ -423,15 +426,15 @@ export default function StaffPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6">
-      <PageTitle title="Staff" />
+      <PageTitle title={t("title")} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <UserCog className="h-6 w-6 text-primary" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold font-heading" data-testid="text-staff-title">Staff Management</h1>
-            <p className="text-muted-foreground">Manage your team members, schedules, and attendance</p>
+            <h1 className="text-2xl font-bold font-heading" data-testid="text-staff-title">{t("staffList")}</h1>
+            <p className="text-muted-foreground">{t("attendance")}</p>
           </div>
         </div>
         <div className="flex gap-2">
@@ -440,38 +443,38 @@ export default function StaffPage() {
               setShiftForm({ userId: activeStaff[0]?.id || "", date: new Date().toISOString().split("T")[0], startTime: "09:00", endTime: "17:00", role: "", outletId: "" });
               setShowAddShift(true);
             }} data-testid="button-add-shift">
-              <Calendar className="h-4 w-4 mr-2" /> Add Shift
+              <Calendar className="h-4 w-4 me-2" /> {t("shift")}
             </Button>
           )}
           <Dialog open={dialogOpen} onOpenChange={handleDialogClose}>
             <DialogTrigger asChild>
               <Button data-testid="button-add-staff" onClick={openAdd}>
-                <Plus className="h-4 w-4 mr-2" /> Add Staff
+                <Plus className="h-4 w-4 me-2" /> {t("addStaff")}
               </Button>
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>{editingUser ? "Edit Staff Member" : "Add Staff Member"}</DialogTitle>
+                <DialogTitle>{editingUser ? t("editStaff") : t("addStaff")}</DialogTitle>
               </DialogHeader>
-              <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> Required field</p>
+              <p className="text-xs text-muted-foreground -mt-1"><span className="text-red-500">*</span> {t("requiredField")}</p>
               <form onSubmit={handleSubmit} className="space-y-4" onChange={() => setFormDirty(true)} noValidate>
                 <div className="space-y-2">
-                  <Label>Name <span className="text-red-500 ml-0.5">*</span></Label>
-                  <Input name="name" defaultValue={editingUser?.name || ""} onBlur={(e) => { if (!e.target.value.trim()) setStaffFormErrors(p => ({ ...p, name: "Name is required" })); else setStaffFormErrors(p => ({ ...p, name: undefined })); }} className={staffFormErrors.name ? "border-red-500" : ""} data-testid="input-staff-name" />
+                  <Label>{t("name")} <span className="text-red-500 ml-0.5">*</span></Label>
+                  <Input name="name" defaultValue={editingUser?.name || ""} onBlur={(e) => { if (!e.target.value.trim()) setStaffFormErrors(p => ({ ...p, name: t("nameRequired") })); else setStaffFormErrors(p => ({ ...p, name: undefined })); }} className={staffFormErrors.name ? "border-red-500" : ""} data-testid="input-staff-name" />
                   {staffFormErrors.name && <p className="text-red-500 text-xs">{staffFormErrors.name}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Username <span className="text-red-500 ml-0.5">*</span></Label>
-                  <Input name="username" defaultValue={editingUser?.username || ""} disabled={!!editingUser} onBlur={(e) => { if (!editingUser && !e.target.value.trim()) setStaffFormErrors(p => ({ ...p, username: "Username is required" })); else setStaffFormErrors(p => ({ ...p, username: undefined })); }} className={staffFormErrors.username ? "border-red-500" : ""} data-testid="input-staff-username" />
+                  <Label>{t("username")} <span className="text-red-500 ml-0.5">*</span></Label>
+                  <Input name="username" defaultValue={editingUser?.username || ""} disabled={!!editingUser} onBlur={(e) => { if (!editingUser && !e.target.value.trim()) setStaffFormErrors(p => ({ ...p, username: t("usernameRequired") })); else setStaffFormErrors(p => ({ ...p, username: undefined })); }} className={staffFormErrors.username ? "border-red-500" : ""} data-testid="input-staff-username" />
                   {staffFormErrors.username && <p className="text-red-500 text-xs">{staffFormErrors.username}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>{editingUser ? "New Password (leave blank to keep)" : <span>Password <span className="text-red-500 ml-0.5">*</span></span>}</Label>
-                  <Input name="password" type="password" onBlur={(e) => { if (!editingUser && !e.target.value.trim()) setStaffFormErrors(p => ({ ...p, password: "Password is required" })); else setStaffFormErrors(p => ({ ...p, password: undefined })); }} className={staffFormErrors.password ? "border-red-500" : ""} data-testid="input-staff-password" />
+                  <Label>{editingUser ? t("newPasswordHint") : <span>{t("password")} <span className="text-red-500 ml-0.5">*</span></span>}</Label>
+                  <Input name="password" type="password" onBlur={(e) => { if (!editingUser && !e.target.value.trim()) setStaffFormErrors(p => ({ ...p, password: t("passwordRequired") })); else setStaffFormErrors(p => ({ ...p, password: undefined })); }} className={staffFormErrors.password ? "border-red-500" : ""} data-testid="input-staff-password" />
                   {staffFormErrors.password && <p className="text-red-500 text-xs">{staffFormErrors.password}</p>}
                 </div>
                 <div className="space-y-2">
-                  <Label>Role <span className="text-red-500 ml-0.5">*</span></Label>
+                  <Label>{t("role")} <span className="text-red-500 ml-0.5">*</span></Label>
                   <Select name="role" defaultValue={editingUser?.role || "waiter"} onValueChange={() => setFormDirty(true)}>
                     <SelectTrigger data-testid="select-staff-role"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -487,15 +490,15 @@ export default function StaffPage() {
                   </Select>
                 </div>
                 <div className="space-y-2">
-                  <Label>Email</Label>
+                  <Label>{t("email")}</Label>
                   <Input name="email" type="email" defaultValue={editingUser?.email || ""} data-testid="input-staff-email" />
                 </div>
                 <div className="space-y-2">
-                  <Label>Phone</Label>
+                  <Label>{t("phone")}</Label>
                   <Input name="phone" defaultValue={editingUser?.phone || ""} data-testid="input-staff-phone" />
                 </div>
                 <Button type="submit" className="w-full" data-testid="button-submit-staff">
-                  {editingUser ? "Update" : "Add"} Staff Member
+                  {editingUser ? t("updateStaffMember") : t("addStaffMember")}
                 </Button>
               </form>
             </DialogContent>
@@ -505,13 +508,13 @@ export default function StaffPage() {
 
       <div className="flex gap-2">
         <Button data-testid="button-tab-roster" variant={activeTab === "roster" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("roster")}>
-          <Users className="w-4 h-4 mr-1" /> Roster
+          <Users className="w-4 h-4 mr-1" /> {t("tabRoster")}
         </Button>
         <Button data-testid="button-tab-schedule" variant={activeTab === "schedule" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("schedule")}>
-          <Calendar className="w-4 h-4 mr-1" /> Schedule
+          <Calendar className="w-4 h-4 mr-1" /> {t("tabSchedule")}
         </Button>
         <Button data-testid="button-tab-attendance" variant={activeTab === "attendance" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("attendance")}>
-          <ClipboardCheck className="w-4 h-4 mr-1" /> Attendance
+          <ClipboardCheck className="w-4 h-4 mr-1" /> {t("tabAttendance")}
         </Button>
       </div>
 
@@ -520,7 +523,7 @@ export default function StaffPage() {
           <div className="flex items-center gap-4">
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Search staff..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" data-testid="input-search-staff" />
+              <Input placeholder={t("searchStaff")} value={search} onChange={(e) => setSearch(e.target.value)} className="pl-10" data-testid="input-search-staff" />
             </div>
           </div>
 
@@ -529,13 +532,13 @@ export default function StaffPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Username</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Phone</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
+                    <TableHead>{t("staffName")}</TableHead>
+                    <TableHead>{t("username")}</TableHead>
+                    <TableHead>{t("role")}</TableHead>
+                    <TableHead>{t("email")}</TableHead>
+                    <TableHead>{t("phone")}</TableHead>
+                    <TableHead>{tc("status")}</TableHead>
+                    <TableHead>{tc("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 {isLoading && <TableSkeleton rows={8} cols={7} />}
@@ -598,7 +601,7 @@ export default function StaffPage() {
                             <div className="flex items-center gap-2">
                               <span className={`w-2 h-2 rounded-full ${staff.active !== false ? "bg-green-500" : "bg-gray-400"}`} />
                               <Badge variant={staff.active !== false ? "default" : "secondary"} data-testid={`badge-staff-status-${staff.id}`}>
-                                {staff.active !== false ? "Active" : "Inactive"}
+                                {staff.active !== false ? t("active") : t("inactive")}
                               </Badge>
                             </div>
                           </TableCell>
@@ -874,7 +877,7 @@ export default function StaffPage() {
                         if (val > 0) {
                           await apiRequest("PUT", "/api/attendance/settings", { lateThresholdMinutes: val });
                           queryClient.invalidateQueries({ queryKey: ["/api/attendance/settings"] });
-                          toast({ title: "Updated", description: `Late threshold set to ${val} minutes` });
+                          toast({ title: tc("update"), description: t("lateThresholdSet", { val }) });
                         }
                       }}
                     />
@@ -895,7 +898,7 @@ export default function StaffPage() {
                     return (
                       <Card className="border-2 border-dashed">
                         <CardHeader className="pb-2">
-                          <CardTitle className="text-sm flex items-center gap-2"><CalendarDays className="h-4 w-4" /> Today's Scheduled Staff ({todaySchedules.length})</CardTitle>
+                          <CardTitle className="text-sm flex items-center gap-2"><CalendarDays className="h-4 w-4" /> {t("todayScheduledStaff", { count: todaySchedules.length })}</CardTitle>
                         </CardHeader>
                         <CardContent className="pt-0">
                           <div className="flex flex-wrap gap-2">
@@ -914,7 +917,7 @@ export default function StaffPage() {
                             })}
                           </div>
                           {notClockedIn.length > 0 && (
-                            <p className="text-xs text-red-600 mt-2" data-testid="text-not-clocked-in">{notClockedIn.length} scheduled staff not clocked in</p>
+                            <p className="text-xs text-red-600 mt-2" data-testid="text-not-clocked-in">{t("notClockedInCount", { count: notClockedIn.length })}</p>
                           )}
                         </CardContent>
                       </Card>
@@ -955,7 +958,7 @@ export default function StaffPage() {
                     <CardContent className="p-4 flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30"><Timer className="h-5 w-5 text-purple-600" /></div>
                       <div>
-                        <p className="text-xs text-muted-foreground">Hours Today</p>
+                        <p className="text-xs text-muted-foreground">{t("hoursToday")}</p>
                         <p className="text-2xl font-bold" data-testid="text-total-hours">{totalHours.toFixed(1)}h</p>
                       </div>
                     </CardContent>
@@ -965,7 +968,7 @@ export default function StaffPage() {
                 {attendanceSummary.length > 0 && (
                   <Card>
                     <CardHeader className="pb-3">
-                      <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5" /> Employee Summary</CardTitle>
+                      <CardTitle className="text-lg flex items-center gap-2"><Users className="h-5 w-5" /> {t("employeeSummary")}</CardTitle>
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1000,25 +1003,25 @@ export default function StaffPage() {
 
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-lg flex items-center gap-2"><ClipboardCheck className="h-5 w-5" /> Attendance Log</CardTitle>
+                    <CardTitle className="text-lg flex items-center gap-2"><ClipboardCheck className="h-5 w-5" /> {t("attendance")}</CardTitle>
                   </CardHeader>
                   <CardContent className="p-0">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Staff Member</TableHead>
-                          <TableHead>Clock In</TableHead>
-                          <TableHead>Clock Out</TableHead>
-                          <TableHead>Hours</TableHead>
-                          <TableHead>Status</TableHead>
+                          <TableHead>{tc("date")}</TableHead>
+                          <TableHead>{t("staffName")}</TableHead>
+                          <TableHead>{t("clockIn")}</TableHead>
+                          <TableHead>{t("clockOut")}</TableHead>
+                          <TableHead>{t("duration")}</TableHead>
+                          <TableHead>{tc("status")}</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
                         {attendanceLogs.length === 0 ? (
                           <TableRow>
                             <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                              No attendance records found for selected date range
+                              {t("noAttendanceRecords")}
                             </TableCell>
                           </TableRow>
                         ) : (
@@ -1027,13 +1030,13 @@ export default function StaffPage() {
                               <TableCell>{log.date ? formatLocalDate(log.date, outletTimezone) : "—"}</TableCell>
                               <TableCell className="font-medium">{staffMap.get(log.userId) || "Unknown"}</TableCell>
                               <TableCell>{formatLocalTime(log.clockIn, outletTimezone)}</TableCell>
-                              <TableCell>{log.clockOut ? formatLocalTime(log.clockOut, outletTimezone) : <Badge variant="secondary" className="bg-green-100 text-green-700"><Clock className="h-3 w-3 mr-1" />Active</Badge>}</TableCell>
+                              <TableCell>{log.clockOut ? formatLocalTime(log.clockOut, outletTimezone) : <Badge variant="secondary" className="bg-green-100 text-green-700"><Clock className="h-3 w-3 mr-1" />{t("activeNow")}</Badge>}</TableCell>
                               <TableCell>{log.hoursWorked ? `${parseFloat(log.hoursWorked).toFixed(1)}h` : "—"}</TableCell>
                               <TableCell>
                                 <Badge className={log.status === "late" ? "bg-amber-100 text-amber-700" : log.status === "on_time" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"} data-testid={`badge-attendance-status-${log.id}`}>
                                   {log.status === "late" && <AlertCircle className="h-3 w-3 mr-1" />}
                                   {log.status === "on_time" && <CheckCircle className="h-3 w-3 mr-1" />}
-                                  {log.status === "late" ? `Late (${log.lateMinutes}m)` : log.status === "on_time" ? "On Time" : log.status}
+                                  {log.status === "late" ? t("lateMinutes", { minutes: log.lateMinutes }) : log.status === "on_time" ? t("onTime") : log.status}
                                 </Badge>
                               </TableCell>
                             </TableRow>
@@ -1051,12 +1054,12 @@ export default function StaffPage() {
 
       <Dialog open={showAddShift} onOpenChange={setShowAddShift}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Add Shift</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("addShift")}</DialogTitle></DialogHeader>
           <div className="space-y-4">
             <div>
-              <Label>Staff Member</Label>
+              <Label>{t("staffName")}</Label>
               <Select value={shiftForm.userId} onValueChange={(v) => setShiftForm({ ...shiftForm, userId: v })}>
-                <SelectTrigger data-testid="select-shift-staff"><SelectValue placeholder="Select staff" /></SelectTrigger>
+                <SelectTrigger data-testid="select-shift-staff"><SelectValue placeholder={t("selectStaff")} /></SelectTrigger>
                 <SelectContent>
                   {activeStaff.map((s) => (<SelectItem key={s.id} value={s.id}>{s.name} ({s.role})</SelectItem>))}
                 </SelectContent>
@@ -1064,36 +1067,36 @@ export default function StaffPage() {
             </div>
             {outlets.length > 0 && (
               <div>
-                <Label>Outlet</Label>
+                <Label>{t("outlet")}</Label>
                 <Select value={shiftForm.outletId || "none"} onValueChange={(v) => setShiftForm({ ...shiftForm, outletId: v === "none" ? "" : v })}>
-                  <SelectTrigger data-testid="select-shift-outlet"><SelectValue placeholder="Select outlet (optional)" /></SelectTrigger>
+                  <SelectTrigger data-testid="select-shift-outlet"><SelectValue placeholder={t("selectOutlet")} /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">No specific outlet</SelectItem>
+                    <SelectItem value="none">{t("noSpecificOutlet")}</SelectItem>
                     {outlets.map((o) => (<SelectItem key={o.id} value={o.id}>{o.name}</SelectItem>))}
                   </SelectContent>
                 </Select>
               </div>
             )}
             <div>
-              <Label>Date</Label>
+              <Label>{tc("date")}</Label>
               <Input type="date" value={shiftForm.date} onChange={(e) => setShiftForm({ ...shiftForm, date: e.target.value })} data-testid="input-shift-date" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Start Time</Label>
+                <Label>{t("startTime")}</Label>
                 <Input type="time" value={shiftForm.startTime} onChange={(e) => setShiftForm({ ...shiftForm, startTime: e.target.value })} data-testid="input-shift-start" />
               </div>
               <div>
-                <Label>End Time</Label>
+                <Label>{t("endTime")}</Label>
                 <Input type="time" value={shiftForm.endTime} onChange={(e) => setShiftForm({ ...shiftForm, endTime: e.target.value })} data-testid="input-shift-end" />
               </div>
             </div>
             <div>
-              <Label>Role Override (optional)</Label>
+              <Label>{t("roleOverride")}</Label>
               <Input value={shiftForm.role} onChange={(e) => setShiftForm({ ...shiftForm, role: e.target.value })} placeholder="e.g. Floor Manager" data-testid="input-shift-role" />
             </div>
             <Button className="w-full" onClick={handleAddShift} disabled={!shiftForm.userId || !shiftForm.date || createShiftMutation.isPending} data-testid="button-submit-shift">
-              Add Shift
+              {t("addShift")}
             </Button>
           </div>
         </DialogContent>
@@ -1110,36 +1113,36 @@ export default function StaffPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <KeyRound className="h-5 w-5 text-primary" />
-              PIN Login — {pinDialogStaff?.name}
+              {t("pinLoginTitle", { name: pinDialogStaff?.name })}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Set a 4-digit PIN so this staff member can log in quickly on shared devices. PINs expire after 90 days.
+              {t("pinLoginDesc")}
             </p>
             <div className="space-y-2">
-              <Label htmlFor="pin-new">New PIN <span className="text-red-500">*</span></Label>
+              <Label htmlFor="pin-new">{t("newPin")} <span className="text-red-500">*</span></Label>
               <Input
                 id="pin-new"
                 type="password"
                 inputMode="numeric"
                 pattern="\d{4}"
                 maxLength={4}
-                placeholder="4 digits"
+                placeholder={t("pinPlaceholder")}
                 value={pinValue}
                 onChange={(e) => { setPinValue(e.target.value.replace(/\D/g, "").slice(0, 4)); setPinError(null); }}
                 data-testid="input-pin-new"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="pin-confirm">Confirm PIN <span className="text-red-500">*</span></Label>
+              <Label htmlFor="pin-confirm">{t("confirmPin")} <span className="text-red-500">*</span></Label>
               <Input
                 id="pin-confirm"
                 type="password"
                 inputMode="numeric"
                 pattern="\d{4}"
                 maxLength={4}
-                placeholder="Repeat PIN"
+                placeholder={t("pinConfirmPlaceholder")}
                 value={pinConfirm}
                 onChange={(e) => { setPinConfirm(e.target.value.replace(/\D/g, "").slice(0, 4)); setPinError(null); }}
                 data-testid="input-pin-confirm"
@@ -1160,7 +1163,7 @@ export default function StaffPage() {
               data-testid="button-clear-pin"
             >
               {clearPinMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
-              Clear PIN
+              {t("clearPin")}
             </Button>
             <Button
               onClick={handleSetPin}
@@ -1168,7 +1171,7 @@ export default function StaffPage() {
               data-testid="button-save-pin"
             >
               {setPinMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Lock className="h-4 w-4 mr-1" />}
-              Set PIN
+              {t("setPIN")}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { ResourceAvailabilityWidget } from "@/components/resources/ResourceAvailabilityWidget";
+import { useTranslation } from "react-i18next";
 
 interface TableRequest {
   id: string;
@@ -430,6 +431,7 @@ function RequestCard({ req, onAcknowledge, onComplete, onAssign, isManager }: {
 const HOWTO_KEY = "live_requests_howto_dismissed";
 
 export default function LiveRequestsPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -588,7 +590,7 @@ export default function LiveRequestsPage() {
   return (
     <TooltipProvider delayDuration={400}>
       <div className="space-y-6 p-1" data-testid="live-requests-page">
-        <PageTitle title="Live Requests" />
+        <PageTitle title={t("liveRequests")} />
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">

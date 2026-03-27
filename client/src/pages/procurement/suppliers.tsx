@@ -17,6 +17,7 @@ import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, Star, Pencil, BookOpen, X } from "lucide-react";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface Supplier {
   id: string;
@@ -92,6 +93,7 @@ function StarRating({ value, onChange }: { value: number; onChange?: (v: number)
 }
 
 export default function SuppliersTab() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -282,8 +284,8 @@ export default function SuppliersTab() {
                   <TableHead>Payment Terms</TableHead>
                   <TableHead>GST/Tax</TableHead>
                   <TableHead>Rating</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>{t("status")}</TableHead>
+                  <TableHead>{t("actions")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>

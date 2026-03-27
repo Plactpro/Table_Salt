@@ -35,6 +35,7 @@ import {
 } from "lucide-react";
 import type { MenuCategory, MenuItem, KitchenStation, ComboOffer } from "@shared/schema";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 const categoryIcons: Record<string, React.ElementType> = {
   appetizers: Soup, starters: Soup, mains: Beef, main: Beef,
@@ -91,6 +92,8 @@ interface RecipeLinkSectionProps {
 }
 
 function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCost, sp, foodCostPct, fmt, onNavigate, queryClient, toast, userRole }: RecipeLinkSectionProps) {
+  const { t } = useTranslation("pos");
+  const { t: tc } = useTranslation("common");
   const [selectedRecipeId, setSelectedRecipeId] = useState<string>("none");
   const [linking, setLinking] = useState(false);
   const [comboOpen, setComboOpen] = useState(false);
@@ -111,10 +114,10 @@ function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCo
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Link failed"); }
       queryClient.invalidateQueries({ queryKey: ["/api/recipes"] });
-      toast({ title: "Recipe linked to menu item" });
+      toast({ title: t("recipeLinkSuccess") });
       setSelectedRecipeId("none");
     } catch (e: unknown) {
-      toast({ title: "Error", description: e instanceof Error ? e.message : "Link failed", variant: "destructive" });
+      toast({ title: tc("error"), description: e instanceof Error ? e.message : "Link failed", variant: "destructive" });
     } finally {
       setLinking(false);
     }
@@ -135,9 +138,9 @@ function RecipeLinkSection({ editingItem, linkedRecipe, unlinkedRecipes, plateCo
       });
       if (!res.ok) { const err = await res.json(); throw new Error(err.message || "Unlink failed"); }
       queryClient.invalidateQueries({ queryKey: ["/api/recipes"] });
-      toast({ title: "Recipe unlinked" });
+      toast({ title: t("recipeUnlinked") });
     } catch (e: unknown) {
-      toast({ title: "Error", description: e instanceof Error ? e.message : "Unlink failed", variant: "destructive" });
+      toast({ title: tc("error"), description: e instanceof Error ? e.message : "Unlink failed", variant: "destructive" });
     } finally {
       setLinking(false);
     }
@@ -245,6 +248,8 @@ export default function MenuPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { t } = useTranslation("pos");
+  const { t: tc } = useTranslation("common");
   const [, navigate] = useLocation();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -346,11 +351,11 @@ export default function MenuPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/menu-categories"] });
-      toast({ title: "Category created" });
+      toast({ title: t("categoryCreated") });
       setCategoryDialogOpen(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -361,11 +366,11 @@ export default function MenuPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/menu-categories"] });
-      toast({ title: "Category updated" });
+      toast({ title: t("categoryUpdated") });
       setCategoryDialogOpen(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -374,10 +379,10 @@ export default function MenuPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/menu-categories"] });
       if (selectedCategoryId) setSelectedCategoryId(null);
-      toast({ title: "Category deleted" });
+      toast({ title: t("categoryDeleted") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -388,11 +393,11 @@ export default function MenuPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/menu-items"] });
-      toast({ title: "Item created" });
+      toast({ title: t("itemCreated") });
       setItemDialogOpen(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -420,7 +425,7 @@ export default function MenuPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/menu-items"] });
-      toast({ title: "Item updated" });
+      toast({ title: t("itemUpdated") });
       setItemDialogOpen(false);
     },
     onError: (err: Error) => {
@@ -434,7 +439,7 @@ export default function MenuPage() {
         });
         return;
       }
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -450,13 +455,13 @@ export default function MenuPage() {
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/menu-items/${id}`); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/menu-items"] });
-      toast({ title: "Item deleted" });
+      toast({ title: t("itemDeleted") });
     },
     onError: (err: Error) => {
       const cleanMsg = err.message.replace(/^\d+:\s*/, "");
       const isInUse = cleanMsg.toLowerCase().includes("cannot delete") || cleanMsg.toLowerCase().includes("in use");
       toast({
-        title: isInUse ? "Cannot delete item" : "Error",
+        title: isInUse ? t("cannotDeleteItem") : tc("error"),
         description: cleanMsg,
         variant: "destructive",
       });
@@ -478,11 +483,11 @@ export default function MenuPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/combo-offers"] });
-      toast({ title: "Combo created" });
+      toast({ title: t("comboCreated") });
       setComboDialogOpen(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -493,11 +498,11 @@ export default function MenuPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/combo-offers"] });
-      toast({ title: "Combo updated" });
+      toast({ title: t("comboUpdated") });
       setComboDialogOpen(false);
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -505,10 +510,10 @@ export default function MenuPage() {
     mutationFn: async (id: string) => { await apiRequest("DELETE", `/api/combo-offers/${id}`); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/combo-offers"] });
-      toast({ title: "Combo deleted" });
+      toast({ title: t("comboDeleted") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -519,10 +524,10 @@ export default function MenuPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/combo-offers"] });
-      toast({ title: "Combo duplicated" });
+      toast({ title: t("comboDuplicated") });
     },
     onError: (err: Error) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: tc("error"), description: err.message, variant: "destructive" });
     },
   });
 
@@ -702,15 +707,15 @@ export default function MenuPage() {
     if (!item) return;
     const ref: ComboItemRef = { menuItemId: item.id, name: item.name, price: String(item.price) };
     if (type === "mainItems" && comboForm.mainItems.length >= 1) {
-      toast({ title: "Exactly 1 main item allowed", variant: "destructive" });
+      toast({ title: t("exactly1MainItem"), variant: "destructive" });
       return;
     }
     if (type === "sideItems" && comboForm.sideItems.length >= 3) {
-      toast({ title: "Maximum 3 side items", variant: "destructive" });
+      toast({ title: t("max3SideItems"), variant: "destructive" });
       return;
     }
     if (type === "addonItems" && comboForm.addonItems.length >= 2) {
-      toast({ title: "Maximum 2 add-on items", variant: "destructive" });
+      toast({ title: t("max2AddonItems"), variant: "destructive" });
       return;
     }
     if (comboForm[type].some((r) => r.menuItemId === menuItemId)) return;
@@ -766,7 +771,7 @@ export default function MenuPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col h-full" data-testid="menu-page">
-      <PageTitle title="Menu" />
+      <PageTitle title={tc("menu")} />
       <div className="flex items-center gap-2 px-6 pt-4 pb-2 border-b">
         <Button
           variant={activeTab === "items" ? "default" : "outline"}

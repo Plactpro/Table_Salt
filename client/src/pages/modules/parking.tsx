@@ -30,6 +30,7 @@ import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { useTranslation } from "react-i18next";
 
 const VEHICLE_TYPES = [
   { value: "TWO_WHEELER", label: "Two-Wheeler", icon: "🏍" },
@@ -1546,6 +1547,7 @@ function RetrievalRequestCard({ request, outletId }: { request: any; outletId: s
 function SlotDetailDialog({ slot, outletId, onClose }: { slot: any; outletId: string; onClose: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { t } = useTranslation("modules");
 
   const requestRetrievalMutation = useMutation({
     mutationFn: async () => {
@@ -1610,7 +1612,7 @@ function SlotDetailDialog({ slot, outletId, onClose }: { slot: any; outletId: st
           )}
           {slot.entryTime && (
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Duration</span>
+              <span className="text-muted-foreground">{t("duration")}</span>
               <LiveTimer entryTime={slot.entryTime} />
             </div>
           )}
@@ -1672,6 +1674,7 @@ function FloorPlanSlot({
   onClick: (slot: any) => void;
   isDragging: boolean;
 }) {
+  const { t } = useTranslation("modules");
   const statusColors: Record<string, string> = {
     available: "#22c55e",
     occupied: "#ef4444",
@@ -2029,6 +2032,7 @@ function DashboardTab({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { t } = useTranslation("modules");
   const isOwnerOrManager = user?.role === "owner" || user?.role === "manager";
   const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
 
@@ -2545,6 +2549,7 @@ type DateFilter = "today" | "yesterday" | "week" | "month" | "custom";
 
 function RevenueHistoryTab({ outletId }: { outletId: string }) {
   const { user } = useAuth();
+  const { t } = useTranslation("modules");
   const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
   const [filter, setFilter] = useState<DateFilter>("today");
   const [analyticsView, setAnalyticsView] = useState<"overview" | "history">("overview");
@@ -2883,7 +2888,7 @@ function RevenueHistoryTab({ outletId }: { outletId: string }) {
                   <TableHead>Customer</TableHead>
                   <TableHead>Entry</TableHead>
                   <TableHead>Exit</TableHead>
-                  <TableHead>Duration</TableHead>
+                  <TableHead>{t("duration")}</TableHead>
                   <TableHead>Zone</TableHead>
                   <TableHead>Charge</TableHead>
                 </TableRow>
@@ -4512,6 +4517,7 @@ function IncidentsTab({ outletId }: { outletId: string }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { t } = useTranslation("modules");
   const fmt = (v: number) => formatCurrency(v, user?.tenant?.currency ?? "USD", { position: (user?.tenant?.currencyPosition ?? "before") as "before" | "after", decimals: user?.tenant?.currencyDecimals ?? 2 });
 
   const [filterStatus, setFilterStatus] = useState("all");
@@ -4668,7 +4674,7 @@ function IncidentsTab({ outletId }: { outletId: string }) {
                     <div className="space-y-3 p-3 bg-blue-50 rounded-lg border border-blue-200" data-testid={`incident-edit-form-${inc.id}`}>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <Label className="text-xs">Status</Label>
+                          <Label className="text-xs">{t("status")}</Label>
                           <Select value={editForm.status} onValueChange={v => setEditForm((f: any) => ({ ...f, status: v }))}>
                             <SelectTrigger className="h-8 text-xs mt-1" data-testid={`select-inc-status-${inc.id}`}><SelectValue /></SelectTrigger>
                             <SelectContent>
@@ -5544,6 +5550,7 @@ function SettingsTab({ outletId }: { outletId: string }) {
 
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export default function ParkingPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -5649,7 +5656,7 @@ export default function ParkingPage() {
       data-testid="parking-page"
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-        <PageTitle title="Parking" />
+        <PageTitle title={t("parking")} />
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
             <ParkingSquare className="h-6 w-6 text-blue-600" />

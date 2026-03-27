@@ -29,6 +29,7 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
   PieChart, Pie, Cell, LineChart, Line,
 } from "recharts";
+import { useTranslation } from "react-i18next";
 
 type AuditTemplate = {
   id: string;
@@ -135,6 +136,7 @@ const frequencyLabels: Record<string, string> = {
 const CHART_COLORS = ["#0d9488", "#f59e0b", "#ef4444", "#6366f1", "#22c55e", "#ec4899"];
 
 export default function AuditsPage() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -463,7 +465,7 @@ export default function AuditsPage() {
 
   return (
     <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-      <PageTitle title="Audits" />
+      <PageTitle title={t("audits")} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold font-heading flex items-center gap-2" data-testid="text-audits-title">
@@ -591,9 +593,9 @@ export default function AuditsPage() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Audit</TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead>{t("date")}</TableHead>
                       <TableHead>Assigned To</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>{t("status")}</TableHead>
                       <TableHead>Score</TableHead>
                       <TableHead></TableHead>
                     </TableRow>

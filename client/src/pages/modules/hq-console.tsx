@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Building2, MapPin, TrendingUp, DollarSign, BarChart3, Receipt, Plus, FileText, Calculator, Store, Crown, ChevronRight, ExternalLink, XCircle } from "lucide-react";
 import { useLocation } from "wouter";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface Region { id: string; tenantId: string; name: string; description: string | null; sortOrder: number; active: boolean; }
 interface Outlet { id: string; tenantId: string; regionId: string | null; name: string; address: string | null; openingHours: string | null; isFranchise: boolean | null; franchiseeName: string | null; royaltyRate: string | null; minimumGuarantee: string | null; active: boolean | null; }
@@ -26,6 +27,7 @@ interface MenuItem { id: string; name: string; price: string; categoryId: string
 interface OutletMenuOverride { id: string; tenantId: string; outletId: string; menuItemId: string; overridePrice: string | null; available: boolean; }
 
 export default function HQConsolePage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -155,7 +157,7 @@ export default function HQConsolePage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="hq-console-page">
-      <PageTitle title="HQ Console" />
+      <PageTitle title={t("hqConsole")} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-page-title">
@@ -408,9 +410,9 @@ export default function HQConsolePage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Outlet</TableHead>
+                    <TableHead>{t("outlet")}</TableHead>
                     <TableHead>Region</TableHead>
-                    <TableHead>Type</TableHead>
+                    <TableHead>{t("type")}</TableHead>
                     <TableHead className="text-right">Orders</TableHead>
                     <TableHead className="text-right">Revenue</TableHead>
                     <TableHead className="text-right">Avg Check</TableHead>
@@ -557,8 +559,8 @@ export default function HQConsolePage() {
                     <TableHead className="text-right">Net Sales</TableHead>
                     <TableHead className="text-right">Royalty</TableHead>
                     <TableHead className="text-right">Final Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Date</TableHead>
+                    <TableHead>{t("status")}</TableHead>
+                    <TableHead>{t("date")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>

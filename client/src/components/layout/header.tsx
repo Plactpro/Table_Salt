@@ -27,6 +27,7 @@ import {
   Headset,
   PackageOpen,
   PartyPopper,
+  Globe,
   type LucideIcon,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -37,25 +38,28 @@ import { useToast } from "@/hooks/use-toast";
 import { usePrepNotifications } from "@/hooks/use-prep-notifications";
 import { usePrepAlertSound } from "@/hooks/use-prep-alert-sound";
 import PrepNotificationDrawer from "@/components/notifications/prep-notification-drawer";
+import { useTranslation } from "react-i18next";
+import { SUPPORTED_LANGUAGES, isRTL } from "@/i18n/index";
+import i18n from "@/i18n/index";
 
 interface HeaderProps {
   onOpenSupport?: () => void;
 }
 
-const roleLabels: Partial<Record<Role, string>> = {
-  owner: "Owner",
-  manager: "Manager",
-  waiter: "Waiter",
-  kitchen: "Kitchen",
-  accountant: "Accountant",
-  customer: "Customer",
-  cashier: "Cashier",
-  supervisor: "Supervisor",
-  outlet_manager: "Outlet Manager",
-  hq_admin: "HQ Admin",
-  franchise_owner: "Franchise Owner",
-  auditor: "Auditor",
-  super_admin: "Super Admin",
+const ROLE_KEYS: Partial<Record<Role, string>> = {
+  owner: "roles.owner",
+  manager: "roles.manager",
+  waiter: "roles.waiter",
+  kitchen: "roles.kitchen",
+  accountant: "roles.accountant",
+  customer: "roles.customer",
+  cashier: "roles.cashier",
+  supervisor: "roles.supervisor",
+  outlet_manager: "roles.outlet_manager",
+  hq_admin: "roles.hq_admin",
+  franchise_owner: "roles.franchise_owner",
+  auditor: "roles.auditor",
+  super_admin: "roles.super_admin",
 };
 
 const roleBadgeColors: Partial<Record<Role, string>> = {
@@ -102,6 +106,8 @@ const PREP_NOTIF_ROLES: Role[] = ["kitchen", "owner", "manager", "outlet_manager
 
 export default function Header({ onOpenSupport }: HeaderProps) {
   const { user, logout } = useAuth();
+  const { t } = useTranslation("common");
+  const { t: tl } = useTranslation("layout");
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -109,6 +115,23 @@ export default function Header({ onOpenSupport }: HeaderProps) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [celebrate, setCelebrate] = useState(false);
   const wsConnected = useRealtimeConnectionStatus();
+
+  const changeLanguageMutation = useMutation({
+    mutationFn: async (lang: string) => {
+      await apiRequest("PUT", "/api/users/me/language", { language: lang });
+      return lang;
+    },
+    onSuccess: (lang) => {
+      i18n.changeLanguage(lang);
+      document.documentElement.setAttribute("dir", isRTL(lang) ? "rtl" : "ltr");
+      document.documentElement.setAttribute("lang", lang);
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: t("languageUpdated") });
+    },
+    onError: () => {
+      toast({ title: t("languageUpdateFailed"), variant: "destructive" });
+    },
+  });
 
   const canSeeInventoryAlerts = user && ["owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"].includes(user.role);
   const canSeePrepNotif = user && PREP_NOTIF_ROLES.includes(user.role as Role);
@@ -183,20 +206,20 @@ export default function Header({ onOpenSupport }: HeaderProps) {
   useRealtimeEvent("prep:task_overdue", useCallback((data: any) => {
     if (!canSeePrepNotif) return;
     playSound("HIGH", "task_overdue");
-    showPrepToast(`🔴 OVERDUE: ${data.taskName ?? "Task"}`, "This task has passed its deadline", "HIGH");
-  }, [canSeePrepNotif, playSound, showPrepToast]));
+    showPrepToast(`🔴 ${tl("prepOverdue", { taskName: data.taskName ?? tl("genericTask") })}`, tl("prepTaskPastDeadline"), "HIGH");
+  }, [canSeePrepNotif, playSound, showPrepToast, tl]));
 
   useRealtimeEvent("prep:task_help", useCallback((data: any) => {
     if (!canSeePrepNotif) return;
     playSound("HIGH", "task_help");
-    showPrepToast(`🆘 ${data.chefName ?? "Chef"} needs help`, data.taskName ?? undefined, "HIGH");
-  }, [canSeePrepNotif, playSound, showPrepToast]));
+    showPrepToast(`🆘 ${tl("prepNeedsHelp", { chefName: data.chefName ?? tl("genericChef") })}`, data.taskName ?? undefined, "HIGH");
+  }, [canSeePrepNotif, playSound, showPrepToast, tl]));
 
   useRealtimeEvent("prep:task_issue", useCallback((data: any) => {
     if (!canSeePrepNotif) return;
     playSound("HIGH", "task_issue");
-    showPrepToast(`⚠️ Issue reported`, data.taskName ?? undefined, "HIGH");
-  }, [canSeePrepNotif, playSound, showPrepToast]));
+    showPrepToast(`⚠️ ${tl("prepIssueReported")}`, data.taskName ?? undefined, "HIGH");
+  }, [canSeePrepNotif, playSound, showPrepToast, tl]));
 
   useRealtimeEvent("prep:all_complete", useCallback((_data: any) => {
     if (!canSeePrepNotif) return;
@@ -209,21 +232,21 @@ export default function Header({ onOpenSupport }: HeaderProps) {
     if (!canSeePrepNotif) return;
     playSound("LOW", "task_progress");
     showPrepToast(
-      `⏳ ${data.assignedToName ?? "Chef"} is halfway: ${data.taskName ?? "Task"}`,
-      `${data.completedQty}${data.unit ?? ""} done of ${data.totalQty}${data.unit ?? ""}`,
+      `⏳ ${tl("prepIsHalfway", { chefName: data.assignedToName ?? tl("genericChef"), taskName: data.taskName ?? tl("genericTask") })}`,
+      tl("prepDoneOf", { completed: data.completedQty, unit: data.unit ?? "", total: data.totalQty }),
       "LOW"
     );
-  }, [canSeePrepNotif, playSound, showPrepToast]));
+  }, [canSeePrepNotif, playSound, showPrepToast, tl]));
 
   useRealtimeEvent("prep:low_readiness_alert", useCallback((data: any) => {
     if (!canSeePrepNotif) return;
     playSound("HIGH", "low_readiness_alert");
     showPrepToast(
-      `🚨 LOW PREP READINESS — ${data.readinessPct}% complete`,
-      `${data.hoursToShift}hrs to shift — ${data.unassignedCount} tasks unassigned`,
+      `🚨 ${tl("prepLowReadiness", { pct: data.readinessPct })}`,
+      tl("prepHrsToShift", { hrs: data.hoursToShift, count: data.unassignedCount }),
       "HIGH"
     );
-  }, [canSeePrepNotif, playSound, showPrepToast]));
+  }, [canSeePrepNotif, playSound, showPrepToast, tl]));
 
   const invUnreadCount = alertCountData?.count || 0;
 
@@ -243,7 +266,8 @@ export default function Header({ onOpenSupport }: HeaderProps) {
 
   const RoleIcon = roleIcons[user.role] ?? User;
   const badgeColor = roleBadgeColors[user.role] ?? "bg-slate-100 text-slate-800 border-slate-200";
-  const roleLabel = roleLabels[user.role] ?? user.role.replace(/_/g, " ");
+  const roleKey = ROLE_KEYS[user.role];
+  const roleLabel = roleKey ? t(roleKey) : user.role.replace(/_/g, " ");
 
   return (
     <>
@@ -264,8 +288,8 @@ export default function Header({ onOpenSupport }: HeaderProps) {
               className="bg-green-500 text-white rounded-2xl px-10 py-8 shadow-2xl flex flex-col items-center gap-3"
             >
               <PartyPopper className="h-12 w-12" />
-              <p className="text-2xl font-bold">All Prep Complete!</p>
-              <p className="text-sm opacity-80">Outstanding work today 🎉</p>
+              <p className="text-2xl font-bold">{t("allPrepComplete")}</p>
+              <p className="text-sm opacity-80">{t("outstandingWork")}</p>
             </motion.div>
           </motion.div>
         )}
@@ -296,7 +320,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
 
         <div className="flex items-center gap-2">
           <div
-            title={wsConnected ? "Live connection active" : "Reconnecting…"}
+            title={wsConnected ? tl("liveConnectionActive") : tl("reconnecting")}
             data-testid="indicator-ws-status"
             className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${wsConnected ? "bg-green-500" : "bg-orange-400 animate-pulse"}`}
           />
@@ -309,8 +333,8 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                 size="icon"
                 className="relative h-9 w-9 text-cyan-600 hover:text-cyan-700 hover:bg-cyan-50 dark:text-cyan-400 dark:hover:bg-cyan-950"
                 onClick={onOpenSupport}
-                title="Need help? Contact Support"
-                aria-label="Contact Support"
+                title={tl("needHelp")}
+                aria-label={tl("contactSupport")}
                 data-testid="button-contact-support-header"
               >
                 <Headset className="h-[18px] w-[18px]" aria-hidden="true" />
@@ -325,8 +349,8 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                 size="icon"
                 className="relative h-9 w-9 text-muted-foreground hover:text-foreground"
                 onClick={() => setDrawerOpen(true)}
-                title="Kitchen prep notifications"
-                aria-label={prepUnread > 0 ? `Kitchen prep notifications — ${prepUnread} unread` : "Kitchen prep notifications"}
+                title={tl("kitchenPrepNotifications")}
+                aria-label={prepUnread > 0 ? `${tl("kitchenPrepNotifications")} — ${prepUnread} ${tl("unread")}` : tl("kitchenPrepNotifications")}
                 data-testid="button-prep-notifications"
               >
                 <ChefHat className="h-4 w-4" aria-hidden="true" />
@@ -352,7 +376,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                     size="icon"
                     className="relative h-9 w-9 text-muted-foreground hover:text-foreground"
                     data-testid="button-notifications"
-                    aria-label={invUnreadCount > 0 ? `Low stock alerts — ${invUnreadCount} unread` : "Low stock alerts"}
+                    aria-label={invUnreadCount > 0 ? `${tl("lowStockAlerts")} — ${invUnreadCount} ${tl("unread")}` : tl("lowStockAlerts")}
                   >
                     <Bell className="h-4 w-4" aria-hidden="true" />
                     {invUnreadCount > 0 && (
@@ -371,7 +395,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                 <DropdownMenuLabel className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <PackageOpen className="h-4 w-4 text-amber-600" />
-                    <span>Low Stock Alerts</span>
+                    <span>{t("lowStockAlerts")}</span>
                     {invUnreadCount > 0 && (
                       <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-0.5 rounded-full">{invUnreadCount}</span>
                     )}
@@ -382,14 +406,14 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                       onClick={() => acknowledgeAll.mutate()}
                       data-testid="button-acknowledge-all-alerts"
                     >
-                      Clear all
+                      {t("clearAll")}
                     </button>
                   )}
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {alerts.length === 0 ? (
                   <div className="py-6 text-center text-sm text-muted-foreground">
-                    No unacknowledged low-stock alerts
+                    {t("noLowStockAlerts")}
                   </div>
                 ) : (
                   alerts.slice(0, 8).map(alert => {
@@ -412,9 +436,9 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                           <span className="font-medium text-sm truncate">{alert.title}</span>
                         </div>
                         {alert.description && (
-                          <span className="text-xs text-muted-foreground pl-5 line-clamp-2">{alert.description}</span>
+                          <span className="text-xs text-muted-foreground ps-5 line-clamp-2">{alert.description}</span>
                         )}
-                        <span className="text-[10px] text-primary pl-5">View in Stock Movements →</span>
+                        <span className="text-[10px] text-primary ps-5">{t("viewInStockMovements")}</span>
                       </DropdownMenuItem>
                     );
                   })
@@ -423,7 +447,7 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                   <>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={() => navigate("/inventory?tab=movements")} className="text-xs text-center justify-center text-primary">
-                      View all in Stock Movements →
+                      {t("viewAllInStockMovements")}
                     </DropdownMenuItem>
                   </>
                 )}
@@ -454,13 +478,28 @@ export default function Header({ onOpenSupport }: HeaderProps) {
                 onClick={() => { window.location.href = "/account"; }}
                 className="cursor-pointer"
               >
-                <User className="mr-2 h-4 w-4" />
-                My Account &amp; Sessions
+                <User className="me-2 h-4 w-4" />
+                {t("account")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              <DropdownMenuLabel className="flex items-center gap-2 text-xs font-normal text-muted-foreground py-1">
+                <Globe className="h-3.5 w-3.5" />
+                {t("language")}
+              </DropdownMenuLabel>
+              {SUPPORTED_LANGUAGES.map((lang) => (
+                <DropdownMenuItem
+                  key={lang.code}
+                  data-testid={`menu-item-lang-${lang.code}`}
+                  onClick={() => changeLanguageMutation.mutate(lang.code)}
+                  className={`cursor-pointer ${user.preferredLanguage === lang.code || (!user.preferredLanguage && lang.code === "en") ? "font-semibold text-primary" : ""}`}
+                >
+                  {lang.label}
+                </DropdownMenuItem>
+              ))}
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={handleLogout} data-testid="menu-item-logout">
-                <LogOut className="mr-2 h-4 w-4" />
-                Sign out
+                <LogOut className="me-2 h-4 w-4" />
+                {t("logout")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>

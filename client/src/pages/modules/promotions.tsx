@@ -29,6 +29,7 @@ import {
   Monitor, BarChart3, Settings2, Gift,
 } from "lucide-react";
 import type { PromotionRule } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 const ruleTypeLabels: Record<string, string> = {
   happy_hour: "Happy Hour",
@@ -158,6 +159,7 @@ const emptyForm: RuleForm = {
 const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 export default function PromotionsPage() {
+  const { t } = useTranslation("modules");
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -372,7 +374,7 @@ export default function PromotionsPage() {
       data-testid="promotions-page"
     >
       <div className="flex items-center justify-between">
-        <PageTitle title="Promotions" />
+        <PageTitle title={t("promotions")} />
         <div className="flex items-center gap-3">
           <div className="p-2.5 rounded-xl bg-primary/10">
             <Zap className="h-6 w-6 text-primary" />

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { formatCurrency } from "@shared/currency";
 import type { Shift } from "@shared/schema";
+import { useTranslation } from "react-i18next";
 
 interface StockMovement {
   id: string;
@@ -140,6 +141,7 @@ function VarianceBadge({ variance, pct }: { variance: number; pct: number }) {
 }
 
 export default function ShiftReconciliation() {
+  const { t } = useTranslation("modules");
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -217,7 +219,7 @@ export default function ShiftReconciliation() {
 
   return (
     <div className="space-y-6" data-testid="shift-reconciliation">
-      <PageTitle title="Shift Reconciliation" />
+      <PageTitle title={t("shiftReconciliation")} />
       <div>
         <h2 className="text-xl font-semibold">Shift Reconciliation</h2>
         <p className="text-sm text-muted-foreground mt-0.5">

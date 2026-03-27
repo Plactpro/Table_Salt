@@ -14,6 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, CreditCard, CheckCircle, ExternalLink, Plus, Lock } from "lucide-react";
 import { format } from "date-fns";
+import { useTranslation } from "react-i18next";
 
 interface PciStatus {
   saqType: string;
@@ -154,6 +155,7 @@ function LogSaqDialog({ onClose }: { onClose: () => void }) {
 }
 
 export default function PciCompliancePage() {
+  const { t } = useTranslation("modules");
   const [showLogDialog, setShowLogDialog] = useState(false);
   const { user } = useAuth();
   const isSuperAdmin = user?.role === "super_admin";
@@ -184,7 +186,7 @@ export default function PciCompliancePage() {
 
   return (
     <div className="space-y-6" data-testid="pci-compliance-page">
-      <PageTitle title="PCI Compliance" />
+      <PageTitle title={t("pciCompliance")} />
       <div className="flex items-center gap-3">
         <Lock className="h-6 w-6 text-primary" />
         <div>

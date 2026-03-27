@@ -29,6 +29,8 @@ import {
 } from "@/lib/subscription";
 import { timezones, getTimezoneByIana, formatTimeInZone, formatDateInZone } from "@/lib/timezones";
 import { currencyMap, formatCurrency as sharedFormatCurrency, type CurrencyCode } from "@shared/currency";
+import { SUPPORTED_LANGUAGES } from "@/i18n/index";
+import { useTranslation } from "react-i18next";
 
 interface TenantData {
   id: string;
@@ -58,16 +60,18 @@ function SubscriptionPlanCard() {
   const isTrialing = status === "trialing";
   const isActive = status === "active";
 
-  let statusLabel = "Trial";
+  const { t: ts } = useTranslation("settings");
+
+  let statusLabel = ts("statusTrial");
   let statusColor = "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-200";
   if (isActive) {
-    statusLabel = "Active";
+    statusLabel = ts("statusActive");
     statusColor = "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-200";
   } else if (status === "canceled") {
-    statusLabel = "Canceled";
+    statusLabel = ts("statusCanceled");
     statusColor = "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-200";
   } else if (status === "past_due") {
-    statusLabel = "Past Due";
+    statusLabel = ts("statusPastDue");
     statusColor = "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-200";
   }
 
@@ -82,27 +86,27 @@ function SubscriptionPlanCard() {
               </div>
               <div>
                 <div className="flex items-center gap-2 mb-0.5">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Your Plan</span>
+                  <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{ts("yourPlan")}</span>
                   <Badge className={`text-xs px-2 py-0 ${statusColor}`} data-testid="text-plan-name">
                     {statusLabel}
                   </Badge>
                 </div>
                 {isTrialing ? (
                   <div>
-                    <p className="text-sm font-medium">Free trial</p>
+                    <p className="text-sm font-medium">{ts("freeTrial")}</p>
                     <p className="text-xs text-muted-foreground" data-testid="text-trial-days">
-                      {days > 0 ? `${days} ${days === 1 ? "day" : "days"} remaining — ₹0/month during trial` : "Trial ended"}
+                      {days > 0 ? ts("trialDaysRemaining", { count: days }) : ts("trialEnded")}
                     </p>
                   </div>
                 ) : isActive && tenant.stripeSubscriptionId ? (
                   <div>
-                    <p className="text-sm font-medium capitalize">{tenant.plan} Plan</p>
-                    <p className="text-xs text-muted-foreground">Subscription active</p>
+                    <p className="text-sm font-medium capitalize">{ts("planLabel", { plan: tenant.plan })}</p>
+                    <p className="text-xs text-muted-foreground">{ts("subscriptionActive")}</p>
                   </div>
                 ) : (
                   <div>
-                    <p className="text-sm font-medium capitalize">{tenant.plan} Plan</p>
-                    <p className="text-xs text-muted-foreground capitalize">{status.replace("_", " ")}</p>
+                    <p className="text-sm font-medium capitalize">{ts("planLabel", { plan: tenant.plan })}</p>
+                    <p className="text-xs text-muted-foreground capitalize">{status.replace(/_/g, " ")}</p>
                   </div>
                 )}
               </div>
@@ -110,7 +114,7 @@ function SubscriptionPlanCard() {
             <div className="flex flex-col gap-2">
               {isTrialing ? (
                 <>
-                  <p className="text-xs text-muted-foreground hidden sm:block">Full access to all features</p>
+                  <p className="text-xs text-muted-foreground hidden sm:block">{ts("fullAccessAllFeatures")}</p>
                   <div className="flex gap-2">
                     <Button
                       size="sm"
@@ -119,7 +123,7 @@ function SubscriptionPlanCard() {
                       data-testid="button-upgrade-plan"
                     >
                       <Zap className="h-3.5 w-3.5" />
-                      Upgrade to Pro — ₹2,999/mo
+                      {ts("upgradeToPro")}
                     </Button>
                     <Button
                       size="sm"
@@ -128,7 +132,7 @@ function SubscriptionPlanCard() {
                       data-testid="button-contact-sales"
                     >
                       <Phone className="h-3.5 w-3.5 mr-1" />
-                      Contact sales
+                      {ts("contactSales")}
                     </Button>
                   </div>
                 </>
@@ -139,7 +143,7 @@ function SubscriptionPlanCard() {
                   onClick={() => navigate("/billing")}
                   data-testid="button-upgrade-plan"
                 >
-                  Manage subscription
+                  {ts("manageSubscription")}
                 </Button>
               ) : (
                 <Button
@@ -149,7 +153,7 @@ function SubscriptionPlanCard() {
                   data-testid="button-upgrade-plan"
                 >
                   <Zap className="h-3.5 w-3.5" />
-                  Upgrade Plan
+                  {ts("upgradePlan")}
                 </Button>
               )}
             </div>
@@ -164,11 +168,12 @@ function ThemeCard() {
   const { user } = useAuth();
   const { setTheme, isUpdating } = useTheme(user?.themePreference ?? "system");
   const current = user?.themePreference ?? "system";
+  const { t: ts } = useTranslation("settings");
 
   const options: { value: ThemePreference; label: string; Icon: React.ElementType }[] = [
-    { value: "light", label: "Light", Icon: Sun },
-    { value: "dark", label: "Dark", Icon: Moon },
-    { value: "system", label: "System", Icon: Monitor },
+    { value: "light", label: ts("themeLight"), Icon: Sun },
+    { value: "dark", label: ts("themeDark"), Icon: Moon },
+    { value: "system", label: ts("themeSystem"), Icon: Monitor },
   ];
 
   return (
@@ -179,12 +184,12 @@ function ThemeCard() {
             <div className="p-1.5 rounded-lg bg-indigo-100 dark:bg-indigo-900">
               <Monitor className="h-5 w-5 text-indigo-700 dark:text-indigo-300" />
             </div>
-            <CardTitle>Appearance</CardTitle>
+            <CardTitle>{ts("appearance")}</CardTitle>
           </div>
-          <CardDescription>Choose your preferred color theme. Your preference is saved to your account.</CardDescription>
+          <CardDescription>{ts("appearanceDesc")}</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="flex gap-3" role="group" aria-label="Theme preference">
+          <div className="flex gap-3" role="group" aria-label={ts("themePreference")}>
             {options.map(({ value, label, Icon }) => (
               <button
                 key={value}
@@ -213,6 +218,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const { t, i18n } = useTranslation("settings");
   const [savedSection, setSavedSection] = useState<string | null>(null);
 
   const { data: tenant, isLoading } = useQuery<TenantData>({
@@ -233,7 +239,7 @@ export default function SettingsPage() {
       setSavedSection("kitchen-printers");
       setTimeout(() => setSavedSection(null), 2000);
     },
-    onError: (e: Error) => { toast({ title: "Error", description: e.message, variant: "destructive" }); },
+    onError: (e: Error) => { toast({ title: t("error"), description: e.message, variant: "destructive" }); },
   });
 
   const [name, setName] = useState("");
@@ -261,6 +267,32 @@ export default function SettingsPage() {
   const [tzSearch, setTzSearch] = useState("");
   const [currencySearch, setCurrencySearch] = useState("");
   const [clockTick, setClockTick] = useState(0);
+  const [tenantDefaultLang, setTenantDefaultLang] = useState("en");
+
+  const { data: tenantLangData } = useQuery<{ defaultLanguage: string }>({
+    queryKey: ["/api/tenant/default-language"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/tenant/default-language");
+      return res.json();
+    },
+  });
+  useEffect(() => {
+    if (tenantLangData?.defaultLanguage) setTenantDefaultLang(tenantLangData.defaultLanguage);
+  }, [tenantLangData]);
+
+  const updateTenantLangMutation = useMutation({
+    mutationFn: async (language: string) => {
+      const res = await apiRequest("PUT", "/api/tenant/default-language", { language });
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: t("languageSaved") });
+      queryClient.invalidateQueries({ queryKey: ["/api/tenant/default-language"] });
+    },
+    onError: () => {
+      toast({ title: t("languageSaveError"), variant: "destructive" });
+    },
+  });
 
   useEffect(() => {
     if (tenant) {
@@ -323,22 +355,22 @@ export default function SettingsPage() {
         keys.some((k) => variables[k] !== undefined)
       );
       if (matchedSections.length > 1) {
-        toast({ title: "All settings saved" });
+        toast({ title: t("saved") });
         matchedSections.forEach(([section]) => showSaveAnimation(section));
       } else if (matchedSections.length === 1) {
         const [section] = matchedSections[0];
-        toast({ title: `${section.charAt(0).toUpperCase() + section.slice(1)} settings saved` });
+        toast({ title: t("saved") });
         showSaveAnimation(section);
       }
     },
     onError: (err: any) => {
-      toast({ title: "Error", description: err.message, variant: "destructive" });
+      toast({ title: t("saveError"), description: err.message, variant: "destructive" });
     },
   });
 
   const handleProfileSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) { setNameError("Restaurant name is required"); return; }
+    if (!name.trim()) { setNameError(t("restaurantNameRequired")); return; }
     setNameError("");
     setProfileDirty(false);
     updateMutation.mutate({ name, address });
@@ -408,8 +440,8 @@ export default function SettingsPage() {
   }, [currencySearch]);
 
   const selectedTz = getTimezoneByIana(timezone);
-  const currentTime = formatTimeInZone(timezone, timeFormat as "12hr" | "24hr");
-  const currentDate = formatDateInZone(timezone);
+  const currentTime = formatTimeInZone(timezone, timeFormat as "12hr" | "24hr", i18n.language);
+  const currentDate = formatDateInZone(timezone, i18n.language);
 
   const previewAmount = 1234.56;
   const previewFormatted = sharedFormatCurrency(previewAmount, currency, {
@@ -433,7 +465,7 @@ export default function SettingsPage() {
   if (isLoading) {
     return (
       <div className="p-6 flex items-center justify-center">
-        <p className="text-muted-foreground">Loading settings...</p>
+        <p className="text-muted-foreground">{t("loadingSettings")}</p>
       </div>
     );
   }
@@ -456,12 +488,12 @@ export default function SettingsPage() {
   );
 
   const taxTypeLabels: Record<string, string> = {
-    vat: "VAT (Value Added Tax)",
-    gst: "GST (Goods & Services Tax)",
-    sales_tax: "Sales Tax",
-    service_tax: "Service Tax",
-    custom: "Custom Tax",
-    none: "No Tax",
+    vat: t("taxVat"),
+    gst: t("taxGst"),
+    sales_tax: t("taxSales"),
+    service_tax: t("taxService"),
+    custom: t("taxCustom"),
+    none: t("taxNone"),
   };
 
   const SaveOverlay = ({ section }: { section: string }) => (
@@ -475,7 +507,7 @@ export default function SettingsPage() {
         >
           <motion.div initial={{ scale: 0 }} animate={{ scale: [0, 1.2, 1] }} className="flex flex-col items-center gap-2">
             <CheckCircle2 className="h-12 w-12 text-green-500" />
-            <span className="text-sm font-medium text-green-600">Saved!</span>
+            <span className="text-sm font-medium text-green-600">{t("savedExclamation")}</span>
           </motion.div>
         </motion.div>
       )}
@@ -484,14 +516,14 @@ export default function SettingsPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-settings">
-      <PageTitle title="General Settings" />
+      <PageTitle title={t("generalSettings")} />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10">
           <Settings className="h-6 w-6 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold font-heading" data-testid="text-settings-title">Settings</h1>
-          <p className="text-muted-foreground">Manage your restaurant configuration</p>
+          <h1 className="text-2xl font-bold font-heading" data-testid="text-settings-title">{t("title")}</h1>
+          <p className="text-muted-foreground">{t("manageRestaurantConfig")}</p>
         </div>
       </div>
 
@@ -509,16 +541,16 @@ export default function SettingsPage() {
                   <div className="p-1.5 rounded-lg bg-purple-100 dark:bg-purple-900">
                     <Store className="h-5 w-5 text-purple-700 dark:text-purple-300" />
                   </div>
-                  <CardTitle>Business Configuration</CardTitle>
+                  <CardTitle>{t("businessConfig")}</CardTitle>
                 </div>
-                <CardDescription>Set your business type and subscription plan</CardDescription>
+                <CardDescription>{t("businessConfigDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleBusinessConfigSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Business Type</Label>
+                    <Label>{t("businessType")}</Label>
                     <Select value={businessType} onValueChange={(val) => setBusinessType(val as BusinessType)}>
-                      <SelectTrigger data-testid="select-business-type"><SelectValue placeholder="Select business type" /></SelectTrigger>
+                      <SelectTrigger data-testid="select-business-type"><SelectValue placeholder={t("selectBusinessType")} /></SelectTrigger>
                       <SelectContent>
                         {businessTypes.map((bt) => (
                           <SelectItem key={bt.value} value={bt.value} data-testid={`option-business-type-${bt.value}`}>
@@ -539,9 +571,9 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <div className="space-y-2">
-                    <Label>Subscription Plan</Label>
+                    <Label>{t("subscriptionPlan")}</Label>
                     <Select value={plan} onValueChange={(val) => setPlan(val as SubscriptionTier)}>
-                      <SelectTrigger data-testid="select-plan"><SelectValue placeholder="Select plan" /></SelectTrigger>
+                      <SelectTrigger data-testid="select-plan"><SelectValue placeholder={t("selectPlan")} /></SelectTrigger>
                       <SelectContent>
                         {plansList.map((p) => (
                           <SelectItem key={p.value} value={p.value} data-testid={`option-plan-${p.value}`}>
@@ -564,7 +596,7 @@ export default function SettingsPage() {
                     )}
                   </div>
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-business-config" className="transition-all duration-200 hover:scale-[1.02]">
-                    <Save className="h-4 w-4 mr-2" /> Save Business Config
+                    <Save className="h-4 w-4 mr-2" /> {t("saveBusinessConfig")}
                   </Button>
                 </form>
               </CardContent>
@@ -579,26 +611,62 @@ export default function SettingsPage() {
                   <div className="p-1.5 rounded-lg bg-teal-100 dark:bg-teal-900">
                     <Building2 className="h-5 w-5 text-teal-700 dark:text-teal-300" />
                   </div>
-                  <CardTitle>Restaurant Profile</CardTitle>
+                  <CardTitle>{t("restaurantProfile")}</CardTitle>
                 </div>
-                <CardDescription>Update your restaurant's basic information</CardDescription>
+                <CardDescription>{t("restaurantProfileDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleProfileSubmit} className="space-y-4" noValidate>
-                  <p className="text-xs text-muted-foreground"><span className="text-red-500">*</span> Required field</p>
+                  <p className="text-xs text-muted-foreground"><span className="text-red-500">*</span> {t("requiredField")}</p>
                   <div className="space-y-2">
-                    <Label>Restaurant Name <span className="text-red-500 ml-0.5">*</span></Label>
-                    <Input value={name} onChange={(e) => { setName(e.target.value); setProfileDirty(true); if (e.target.value.trim()) setNameError(""); }} onBlur={(e) => { if (!e.target.value.trim()) setNameError("Restaurant name is required"); }} className={nameError ? "border-red-500" : ""} data-testid="input-settings-name" />
+                    <Label>{t("restaurantName")} <span className="text-red-500 ml-0.5">*</span></Label>
+                    <Input value={name} onChange={(e) => { setName(e.target.value); setProfileDirty(true); if (e.target.value.trim()) setNameError(""); }} onBlur={(e) => { if (!e.target.value.trim()) setNameError(t("restaurantNameRequired")); }} className={nameError ? "border-red-500" : ""} data-testid="input-settings-name" />
                     {nameError && <p className="text-red-500 text-xs mt-1">{nameError}</p>}
                   </div>
                   <div className="space-y-2">
-                    <Label>Address</Label>
+                    <Label>{t("restaurantAddress")}</Label>
                     <Input value={address} onChange={(e) => { setAddress(e.target.value); setProfileDirty(true); }} data-testid="input-settings-address" />
                   </div>
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-profile" className="transition-all duration-200 hover:scale-[1.02]">
-                    <Save className="h-4 w-4 mr-2" /> Save Profile
+                    <Save className="h-4 w-4 mr-2" /> {t("saveProfile")}
                   </Button>
                 </form>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-purple-100 dark:bg-purple-900">
+                    <Globe className="h-5 w-5 text-purple-700 dark:text-purple-300" />
+                  </div>
+                  <CardTitle>{t("defaultLanguage")}</CardTitle>
+                </div>
+                <CardDescription>{t("defaultLanguageDesc")}</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-4 max-w-xs">
+                  <Select
+                    value={tenantDefaultLang}
+                    onValueChange={(val) => {
+                      setTenantDefaultLang(val);
+                      updateTenantLangMutation.mutate(val);
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-default-language">
+                      <SelectValue placeholder={t("selectLanguage")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SUPPORTED_LANGUAGES.map((lang) => (
+                        <SelectItem key={lang.code} value={lang.code} data-testid={`option-lang-${lang.code}`}>
+                          {lang.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </CardContent>
             </Card>
           </motion.div>
@@ -611,17 +679,17 @@ export default function SettingsPage() {
                   <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900">
                     <Globe className="h-5 w-5 text-blue-700 dark:text-blue-300" />
                   </div>
-                  <CardTitle>Time Zone & Format</CardTitle>
+                  <CardTitle>{t("timezoneAndFormat")}</CardTitle>
                 </div>
-                <CardDescription>Configure your restaurant's local time zone and clock format</CardDescription>
+                <CardDescription>{t("timezoneDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleTimezoneSubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Time Zone</Label>
+                    <Label>{t("timezone")}</Label>
                     <Select value={timezone} onValueChange={setTimezone}>
                       <SelectTrigger data-testid="select-timezone">
-                        <SelectValue placeholder="Select timezone">
+                        <SelectValue placeholder={t("selectTimezone")}>
                           {selectedTz ? `${selectedTz.flag} ${selectedTz.label} (${selectedTz.offset})` : timezone}
                         </SelectValue>
                       </SelectTrigger>
@@ -630,7 +698,7 @@ export default function SettingsPage() {
                           <div className="relative">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                             <Input
-                              placeholder="Search timezones..."
+                              placeholder={t("searchTimezones")}
                               value={tzSearch}
                               onChange={(e) => setTzSearch(e.target.value)}
                               className="pl-8 h-8 text-sm"
@@ -648,32 +716,32 @@ export default function SettingsPage() {
                           </SelectItem>
                         ))}
                         {filteredTimezones.length === 0 && (
-                          <div className="px-3 py-2 text-sm text-muted-foreground">No timezones found</div>
+                          <div className="px-3 py-2 text-sm text-muted-foreground">{t("noTimezonesFound")}</div>
                         )}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Time Format</Label>
+                    <Label>{t("timeFormat")}</Label>
                     <Select value={timeFormat} onValueChange={setTimeFormat}>
                       <SelectTrigger data-testid="select-time-format"><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="12hr" data-testid="option-time-12hr">12-hour (2:30 PM)</SelectItem>
-                        <SelectItem value="24hr" data-testid="option-time-24hr">24-hour (14:30)</SelectItem>
+                        <SelectItem value="12hr" data-testid="option-time-12hr">{t("time12hr")}</SelectItem>
+                        <SelectItem value="24hr" data-testid="option-time-24hr">{t("time24hr")}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
                     <div className="flex items-center gap-2 mb-1">
                       <Clock className="h-4 w-4 text-blue-600" />
-                      <span className="text-sm font-medium text-blue-700 dark:text-blue-300">Current Time</span>
+                      <span className="text-sm font-medium text-blue-700 dark:text-blue-300">{t("currentTime")}</span>
                     </div>
                     <p className="text-2xl font-bold font-heading text-blue-800 dark:text-blue-200" data-testid="text-live-clock">{currentTime}</p>
                     <p className="text-xs text-blue-600 dark:text-blue-400" data-testid="text-live-date">{currentDate}</p>
                   </div>
                   <div className="flex gap-2">
                     <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-timezone" className="transition-all duration-200 hover:scale-[1.02]">
-                      <Save className="h-4 w-4 mr-2" /> Save Time Zone
+                      <Save className="h-4 w-4 mr-2" /> {t("saveTimezone")}
                     </Button>
                     <Button
                       type="button"
@@ -684,7 +752,7 @@ export default function SettingsPage() {
                         setTimezone(browserTz);
                       }}
                     >
-                      <RotateCcw className="h-4 w-4 mr-2" /> Reset to Browser
+                      <RotateCcw className="h-4 w-4 mr-2" /> {t("resetToBrowser")}
                     </Button>
                   </div>
                 </form>
@@ -700,19 +768,19 @@ export default function SettingsPage() {
                   <div className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-900">
                     <Receipt className="h-5 w-5 text-orange-600 dark:text-orange-300" />
                   </div>
-                  <CardTitle>Tax Configuration</CardTitle>
+                  <CardTitle>{t("taxConfig")}</CardTitle>
                 </div>
-                <CardDescription>Set tax type, rate, and service charge</CardDescription>
+                <CardDescription>{t("taxConfigDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleTaxSubmit} className="space-y-4">
                   {currency === "INR" && (
                     <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50/50 dark:bg-orange-950/20 p-3 space-y-3">
-                      <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">GST (India)</p>
+                      <p className="text-xs font-semibold text-orange-700 dark:text-orange-300 uppercase tracking-wide">{t("gstIndia")}</p>
                       <div className="space-y-2">
-                        <Label>GSTIN (Restaurant)</Label>
+                        <Label>{t("gstinLabel", { name: t("restaurantName") })}</Label>
                         <Input
-                          placeholder="22AAAAA0000A1Z5"
+                          placeholder={t("gstinPlaceholder")}
                           value={gstin}
                           onChange={(e) => setGstin(e.target.value.toUpperCase())}
                           maxLength={15}
@@ -721,23 +789,23 @@ export default function SettingsPage() {
                       </div>
                       <div className="grid grid-cols-3 gap-3">
                         <div className="space-y-2">
-                          <Label>CGST Rate (%)</Label>
+                          <Label>{t("cgstRate")}</Label>
                           <Input type="number" step="0.5" min="0" max="50" value={cgstRate} onChange={(e) => setCgstRate(e.target.value)} data-testid="input-settings-cgst-rate" />
                         </div>
                         <div className="space-y-2">
-                          <Label>SGST Rate (%)</Label>
+                          <Label>{t("sgstRate")}</Label>
                           <Input type="number" step="0.5" min="0" max="50" value={sgstRate} onChange={(e) => setSgstRate(e.target.value)} data-testid="input-settings-sgst-rate" />
                         </div>
                         <div className="space-y-2">
-                          <Label>Invoice Prefix</Label>
+                          <Label>{t("invoicePrefix")}</Label>
                           <Input placeholder="INV" value={invoicePrefix} onChange={(e) => setInvoicePrefix(e.target.value.toUpperCase())} maxLength={10} data-testid="input-settings-invoice-prefix" />
                         </div>
                       </div>
-                      <p className="text-xs text-muted-foreground">Combined GST = CGST + SGST. Invoice numbers will be {invoicePrefix || "INV"}/2025-26/0001.</p>
+                      <p className="text-xs text-muted-foreground">{t("gstCombinedNote", { prefix: invoicePrefix || "INV" })}</p>
                     </div>
                   )}
                   <div className="space-y-2">
-                    <Label>Tax Type</Label>
+                    <Label>{t("taxType")}</Label>
                     <Select value={taxType} onValueChange={setTaxType}>
                       <SelectTrigger data-testid="select-tax-type"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -749,7 +817,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Tax Rate (%)</Label>
+                      <Label>{t("taxRate")}</Label>
                       <Input
                         type="number"
                         step="0.01"
@@ -762,7 +830,7 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label>Service Charge (%)</Label>
+                      <Label>{t("serviceCharge")}</Label>
                       <Input
                         type="number"
                         step="0.01"
@@ -776,8 +844,8 @@ export default function SettingsPage() {
                   </div>
                   <div className="flex items-center justify-between p-3 rounded-lg border">
                     <div>
-                      <Label className="text-sm font-medium">Compound Tax</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">Apply tax on top of service charge</p>
+                      <Label className="text-sm font-medium">{t("compoundTax")}</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">{t("compoundTaxDesc")}</p>
                     </div>
                     <Switch
                       checked={compoundTax}
@@ -787,7 +855,7 @@ export default function SettingsPage() {
                     />
                   </div>
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-tax" className="transition-all duration-200 hover:scale-[1.02]">
-                    <Save className="h-4 w-4 mr-2" /> Save Tax Settings
+                    <Save className="h-4 w-4 mr-2" /> {t("saveTaxSettings")}
                   </Button>
                 </form>
               </CardContent>
@@ -802,14 +870,14 @@ export default function SettingsPage() {
                   <div className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900">
                     <DollarSign className="h-5 w-5 text-emerald-700 dark:text-emerald-300" />
                   </div>
-                  <CardTitle>Currency Configuration</CardTitle>
+                  <CardTitle>{t("currencyConfig")}</CardTitle>
                 </div>
-                <CardDescription>Set your currency, symbol position, and decimal places</CardDescription>
+                <CardDescription>{t("currencyConfigDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleCurrencySubmit} className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Currency</Label>
+                    <Label>{t("currency")}</Label>
                     <Select value={currency} onValueChange={setCurrency}>
                       <SelectTrigger data-testid="select-currency">
                         <SelectValue>
@@ -823,7 +891,7 @@ export default function SettingsPage() {
                           <div className="relative">
                             <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                             <Input
-                              placeholder="Search currencies..."
+                              placeholder={t("searchCurrencies")}
                               value={currencySearch}
                               onChange={(e) => setCurrencySearch(e.target.value)}
                               className="pl-8 h-8 text-sm"
@@ -841,31 +909,31 @@ export default function SettingsPage() {
                           </SelectItem>
                         ))}
                         {currencyList.length === 0 && (
-                          <div className="px-3 py-2 text-sm text-muted-foreground">No currencies found</div>
+                          <div className="px-3 py-2 text-sm text-muted-foreground">{t("noCurrenciesFound")}</div>
                         )}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label>Symbol Position</Label>
+                      <Label>{t("symbolPosition")}</Label>
                       <Select value={currencyPosition} onValueChange={setCurrencyPosition}>
                         <SelectTrigger data-testid="select-currency-position"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="before" data-testid="option-position-before">Before amount ($100)</SelectItem>
-                          <SelectItem value="after" data-testid="option-position-after">After amount (100$)</SelectItem>
+                          <SelectItem value="before" data-testid="option-position-before">{t("positionBefore")}</SelectItem>
+                          <SelectItem value="after" data-testid="option-position-after">{t("positionAfter")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-2">
-                      <Label>Decimal Places</Label>
+                      <Label>{t("decimalPlaces")}</Label>
                       <Select value={String(currencyDecimals)} onValueChange={(v) => setCurrencyDecimals(Number(v))}>
                         <SelectTrigger data-testid="select-currency-decimals"><SelectValue /></SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="0" data-testid="option-decimals-0">0 (100)</SelectItem>
-                          <SelectItem value="1" data-testid="option-decimals-1">1 (100.0)</SelectItem>
-                          <SelectItem value="2" data-testid="option-decimals-2">2 (100.00)</SelectItem>
-                          <SelectItem value="3" data-testid="option-decimals-3">3 (100.000)</SelectItem>
+                          <SelectItem value="0" data-testid="option-decimals-0">{t("decimalPlaces0")}</SelectItem>
+                          <SelectItem value="1" data-testid="option-decimals-1">{t("decimalPlaces1")}</SelectItem>
+                          <SelectItem value="2" data-testid="option-decimals-2">{t("decimalPlaces2")}</SelectItem>
+                          <SelectItem value="3" data-testid="option-decimals-3">{t("decimalPlaces3")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -873,15 +941,15 @@ export default function SettingsPage() {
                   <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
                     <div className="flex items-center gap-2 mb-1">
                       <Eye className="h-4 w-4 text-emerald-600" />
-                      <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">Preview</span>
+                      <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">{t("preview")}</span>
                     </div>
                     <p className="text-lg font-bold font-heading text-emerald-800 dark:text-emerald-200" data-testid="text-currency-preview">
                       {previewFormatted}
                     </p>
-                    <p className="text-xs text-emerald-600 dark:text-emerald-400">Sample: 1,234.56</p>
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">{t("sampleAmount")}</p>
                   </div>
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-currency" className="transition-all duration-200 hover:scale-[1.02]">
-                    <Save className="h-4 w-4 mr-2" /> Save Currency Settings
+                    <Save className="h-4 w-4 mr-2" /> {t("saveCurrencySettings")}
                   </Button>
                 </form>
               </CardContent>
@@ -896,16 +964,16 @@ export default function SettingsPage() {
                   <div className="p-1.5 rounded-lg bg-blue-100 dark:bg-blue-900">
                     <CreditCard className="h-5 w-5 text-blue-600 dark:text-blue-300" />
                   </div>
-                  <CardTitle>Payment Gateway</CardTitle>
+                  <CardTitle>{t("paymentGateway")}</CardTitle>
                 </div>
-                <CardDescription>Enable Razorpay to verify card and UPI payments at POS</CardDescription>
+                <CardDescription>{t("paymentGatewayDesc")}</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleRazorpaySubmit} className="space-y-4">
                   <div className="flex items-center justify-between p-3 rounded-lg border">
                     <div>
-                      <Label className="text-sm font-medium">Enable Razorpay Gateway</Label>
-                      <p className="text-xs text-muted-foreground mt-0.5">Require gateway verification for card and UPI payments</p>
+                      <Label className="text-sm font-medium">{t("enableRazorpay")}</Label>
+                      <p className="text-xs text-muted-foreground mt-0.5">{t("enableRazorpayDesc")}</p>
                     </div>
                     <Switch
                       checked={razorpayEnabled}
@@ -916,36 +984,35 @@ export default function SettingsPage() {
                   {razorpayEnabled && (
                     <div className="space-y-3">
                       <div className="space-y-2">
-                        <Label>Razorpay Key ID</Label>
+                        <Label>{t("razorpayKeyId")}</Label>
                         <Input
-                          placeholder="rzp_live_xxxxxxxxxxxx"
+                          placeholder={t("razorpayKeyIdPlaceholder")}
                           value={razorpayKeyId}
                           onChange={(e) => setRazorpayKeyId(e.target.value.trim())}
                           data-testid="input-razorpay-key-id"
                         />
-                        <p className="text-xs text-muted-foreground">Your Razorpay publishable key ID.</p>
+                        <p className="text-xs text-muted-foreground">{t("razorpayKeyIdHint")}</p>
                       </div>
                       <div className="space-y-2">
-                        <Label>Razorpay Key Secret</Label>
+                        <Label>{t("razorpayKeySecret")}</Label>
                         <Input
                           type="password"
-                          placeholder="Enter new secret to update (leave blank to keep current)"
+                          placeholder={t("razorpayKeySecretPlaceholder")}
                           value={razorpayKeySecret}
                           onChange={(e) => setRazorpayKeySecret(e.target.value)}
                           autoComplete="new-password"
                           data-testid="input-razorpay-key-secret"
                         />
-                        <p className="text-xs text-muted-foreground">Your Razorpay API secret. Stored securely server-side — never shown after saving.</p>
+                        <p className="text-xs text-muted-foreground">{t("razorpayKeySecretHint")}</p>
                       </div>
                       <div className="rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 p-3 text-xs text-blue-700 dark:text-blue-300 space-y-1">
-                        <p className="font-semibold">How it works</p>
-                        <p>When enabled, the POS will generate a Razorpay payment link for card/UPI payments. The customer scans the QR or opens the link to pay. Payment is verified automatically.</p>
-                        <p className="mt-1">For the webhook, register <code className="font-mono bg-blue-100 dark:bg-blue-900 px-1 rounded">/api/webhooks/razorpay</code> in your Razorpay dashboard with secret stored as <code className="font-mono bg-blue-100 dark:bg-blue-900 px-1 rounded">RAZORPAY_WEBHOOK_SECRET</code>.</p>
+                        <p className="font-semibold">{t("howItWorks")}</p>
+                        <p>{t("razorpayHowItWorksDesc")}</p>
                       </div>
                     </div>
                   )}
                   <Button type="submit" disabled={updateMutation.isPending} data-testid="button-save-razorpay" className="transition-all duration-200 hover:scale-[1.02]">
-                    <Save className="h-4 w-4 mr-2" /> Save Gateway Settings
+                    <Save className="h-4 w-4 mr-2" /> {t("saveGatewaySettings")}
                   </Button>
                 </form>
               </CardContent>
@@ -960,7 +1027,7 @@ export default function SettingsPage() {
               disabled={updateMutation.isPending}
               data-testid="button-save-all"
             >
-              <Save className="h-4 w-4 mr-2" /> Save All Changes
+              <Save className="h-4 w-4 mr-2" /> {t("saveAllChanges")}
             </Button>
           </motion.div>
         </div>
@@ -971,14 +1038,14 @@ export default function SettingsPage() {
               <CardHeader className="pb-3">
                 <div className="flex items-center gap-2">
                   <Eye className="h-5 w-5 text-primary" />
-                  <CardTitle className="text-base">Live Preview</CardTitle>
+                  <CardTitle className="text-base">{t("livePreview")}</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900">
                   <div className="flex items-center gap-1.5 mb-1">
                     <Clock className="h-3.5 w-3.5 text-blue-600" />
-                    <span className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wider">Clock</span>
+                    <span className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wider">{t("clock")}</span>
                   </div>
                   <p className="text-xl font-bold font-heading" data-testid="text-preview-clock">{currentTime}</p>
                   <p className="text-xs text-muted-foreground">{selectedTz?.flag} {selectedTz?.label || timezone}</p>
@@ -989,47 +1056,47 @@ export default function SettingsPage() {
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Receipt className="h-3.5 w-3.5 text-orange-600" />
-                    <span className="text-xs font-medium text-orange-600 dark:text-orange-400 uppercase tracking-wider">Sample Receipt</span>
+                    <span className="text-xs font-medium text-orange-600 dark:text-orange-400 uppercase tracking-wider">{t("sampleReceipt")}</span>
                   </div>
                   <div className="rounded-lg border bg-card p-3 space-y-2 text-sm">
-                    <div className="text-center font-bold text-base" data-testid="text-preview-restaurant-name">{name || "Your Restaurant"}</div>
+                    <div className="text-center font-bold text-base" data-testid="text-preview-restaurant-name">{name || t("yourRestaurant")}</div>
                     <Separator />
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Grilled Salmon</span>
+                      <span className="text-muted-foreground">{t("sampleItem1")}</span>
                       <span>{fmtPreview(18.50)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Caesar Salad</span>
+                      <span className="text-muted-foreground">{t("sampleItem2")}</span>
                       <span>{fmtPreview(12.00)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Sparkling Water</span>
+                      <span className="text-muted-foreground">{t("sampleItem3")}</span>
                       <span>{fmtPreview(4.50)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">Tiramisu</span>
+                      <span className="text-muted-foreground">{t("sampleItem4")}</span>
                       <span>{fmtPreview(10.00)}</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between font-medium">
-                      <span>Subtotal</span>
+                      <span>{t("subtotal")}</span>
                       <span data-testid="text-preview-subtotal">{fmtPreview(sampleSubtotal)}</span>
                     </div>
                     {taxType !== "none" && sampleTaxPct > 0 && (
                       <div className="flex justify-between text-muted-foreground">
-                        <span>{taxTypeLabels[taxType]?.split(" (")[0] || "Tax"} ({sampleTaxPct}%)</span>
+                        <span>{taxTypeLabels[taxType]?.split(" (")[0] || t("tax")} ({sampleTaxPct}%)</span>
                         <span data-testid="text-preview-tax">{fmtPreview(sampleTax)}</span>
                       </div>
                     )}
                     {sampleServicePct > 0 && (
                       <div className="flex justify-between text-muted-foreground">
-                        <span>Service Charge ({sampleServicePct}%)</span>
+                        <span>{t("serviceChargeLabel", { pct: sampleServicePct })}</span>
                         <span data-testid="text-preview-service">{fmtPreview(sampleService)}</span>
                       </div>
                     )}
                     <Separator />
                     <div className="flex justify-between font-bold text-base">
-                      <span>Total</span>
+                      <span>{t("total")}</span>
                       <span data-testid="text-preview-total">{fmtPreview(sampleTotal)}</span>
                     </div>
                     <div className="text-center text-xs text-muted-foreground mt-2">
@@ -1050,18 +1117,17 @@ export default function SettingsPage() {
               <div className="absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm rounded-lg">
                 <div className="flex flex-col items-center gap-2">
                   <CheckCircle2 className="h-12 w-12 text-green-500" />
-                  <span className="text-sm font-medium text-green-600">Saved!</span>
+                  <span className="text-sm font-medium text-green-600">{t("savedExclamation")}</span>
                 </div>
               </div>
             )}
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Printer className="h-5 w-5" />
-                Kitchen Station Printers
+                {t("kitchenStationPrinters")}
               </CardTitle>
               <CardDescription>
-                Configure network printer URLs for each kitchen station. KOT tickets will be sent automatically when orders start cooking.
-                Leave blank to use browser print dialog as fallback.
+                {t("kitchenStationPrintersDesc")}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -1069,7 +1135,7 @@ export default function SettingsPage() {
                 <div key={station.id} className="flex items-center gap-3" data-testid={`station-printer-row-${station.id}`}>
                   <Label className="w-28 shrink-0 font-medium capitalize">{station.name}</Label>
                   <Input
-                    placeholder="http://192.168.1.100:9100 (optional)"
+                    placeholder={t("printerUrlPlaceholder")}
                     value={stationPrinterUrls[station.id] ?? (station.printerUrl || "")}
                     onChange={(e) => setStationPrinterUrls(prev => ({ ...prev, [station.id]: e.target.value }))}
                     className="flex-1"
@@ -1085,7 +1151,7 @@ export default function SettingsPage() {
                     disabled={updateStationPrinterMutation.isPending}
                     data-testid={`button-save-printer-${station.id}`}
                   >
-                    <Save className="h-3 w-3 mr-1" /> Save
+                    <Save className="h-3 w-3 mr-1" /> {t("save")}
                   </Button>
                 </div>
               ))}
@@ -1095,7 +1161,7 @@ export default function SettingsPage() {
       )}
 
       <div className="mt-8">
-        <PrintQueuePanel restaurantName={tenant?.name || "Restaurant"} />
+        <PrintQueuePanel restaurantName={tenant?.name || t("yourRestaurant")} />
       </div>
     </motion.div>
   );

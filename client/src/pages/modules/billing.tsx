@@ -20,12 +20,16 @@ import {
 } from "@/components/ui/table";
 import type { Order, OrderItem, Table as TableType, Customer } from "@shared/schema";
 import { useOutletTimezone, formatLocal, formatLocalDate } from "@/hooks/use-outlet-timezone";
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n/index";
 
 type OrderWithItems = Order & { items?: OrderItem[] };
 
 type InvoiceView = "list" | "by_table" | "by_day" | "by_customer";
 
 export default function BillingPage() {
+  const { t } = useTranslation("billing");
+  const { t: tc } = useTranslation("common");
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
   const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
@@ -61,9 +65,9 @@ export default function BillingPage() {
 
   const tableMap = useMemo(() => {
     const map: Record<string, string> = {};
-    tables.forEach((t) => { map[t.id] = `Table ${t.number}`; });
+    tables.forEach((tbl) => { map[tbl.id] = `${t("tableLabel")} ${tbl.number}`; });
     return map;
-  }, [tables]);
+  }, [tables, t]);
 
   const invoiceNumberMap = useMemo(() => {
     const map: Record<string, string | null> = {};
@@ -111,27 +115,28 @@ export default function BillingPage() {
     const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
     filteredInvoices.forEach((o) => {
       const key = o.tableId || "no_table";
-      const label = o.tableId ? (tableMap[o.tableId] || "Unknown Table") : "Takeaway / Delivery";
+      const label = o.tableId ? (tableMap[o.tableId] || t("unknownTable")) : t("takeawayDelivery");
       if (!groups[key]) groups[key] = { label, orders: [], revenue: 0 };
       groups[key].orders.push(o);
       groups[key].revenue += Number(o.total);
     });
     return Object.entries(groups).sort((a, b) => b[1].revenue - a[1].revenue);
-  }, [filteredInvoices, tableMap]);
+  }, [filteredInvoices, tableMap, t]);
 
   const byCustomerData = useMemo(() => {
     const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
     filteredInvoices.forEach((o) => {
       const key = o.customerId || "walk_in";
-      const label = o.customerId ? (customerMap[o.customerId] || "Unknown Customer") : "Walk-in";
+      const label = o.customerId ? (customerMap[o.customerId] || t("unknownCustomer")) : t("walkIn");
       if (!groups[key]) groups[key] = { label, orders: [], revenue: 0 };
       groups[key].orders.push(o);
       groups[key].revenue += Number(o.total);
     });
     return Object.entries(groups).sort((a, b) => b[1].revenue - a[1].revenue);
-  }, [filteredInvoices, customerMap]);
+  }, [filteredInvoices, customerMap, t]);
 
   const byDayData = useMemo(() => {
+    const locale = i18n.language || "en";
     const groups: Record<string, { label: string; orders: Order[]; revenue: number }> = {};
     filteredInvoices.forEach((o) => {
       if (!o.createdAt) return;
@@ -140,10 +145,10 @@ export default function BillingPage() {
       let label: string;
       try {
         key = new Intl.DateTimeFormat("en-US", { timeZone: outletTimezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(d);
-        label = new Intl.DateTimeFormat("en-US", { timeZone: outletTimezone, month: "short", day: "numeric", year: "numeric" }).format(d);
+        label = new Intl.DateTimeFormat(locale, { timeZone: outletTimezone, month: "short", day: "numeric", year: "numeric" }).format(d);
       } catch {
         key = d.toLocaleDateString("en-US", { year: "numeric", month: "2-digit", day: "2-digit" });
-        label = d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        label = d.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" });
       }
       if (!groups[key]) groups[key] = { label, orders: [], revenue: 0 };
       groups[key].orders.push(o);
@@ -202,9 +207,9 @@ export default function BillingPage() {
   };
 
   const typeLabels: Record<string, string> = {
-    dine_in: "Dine In",
-    takeaway: "Takeaway",
-    delivery: "Delivery",
+    dine_in: t("dineIn"),
+    takeaway: t("takeaway"),
+    delivery: t("delivery"),
   };
 
   const getInvoiceLabel = (orderId: string) => {
@@ -217,13 +222,13 @@ export default function BillingPage() {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Date</TableHead>
-            <TableHead>Invoice #</TableHead>
-            <TableHead>Type</TableHead>
-            <TableHead>Table</TableHead>
-            <TableHead>Amount</TableHead>
-            <TableHead>Payment</TableHead>
-            <TableHead className="w-[80px]">View</TableHead>
+            <TableHead>{t("date")}</TableHead>
+            <TableHead>{t("invoiceHash")}</TableHead>
+            <TableHead>{t("type")}</TableHead>
+            <TableHead>{t("tableLabel")}</TableHead>
+            <TableHead>{t("amount")}</TableHead>
+            <TableHead>{t("payment")}</TableHead>
+            <TableHead className="w-[80px]">{t("view")}</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -254,7 +259,7 @@ export default function BillingPage() {
     showTableCol = false
   ) => {
     const Icon = icon;
-    if (data.length === 0) return <Card><CardContent className="p-8 text-center text-muted-foreground">No invoices found.</CardContent></Card>;
+    if (data.length === 0) return <Card><CardContent className="p-8 text-center text-muted-foreground">{t("noInvoicesFound")}</CardContent></Card>;
     return data.map(([key, group]) => (
       <Card key={key} data-testid={`${revenueTestPrefix}-group-${key}`}>
         <CardHeader className="pb-2">
@@ -264,7 +269,7 @@ export default function BillingPage() {
               {group.label}
             </CardTitle>
             <div className="flex items-center gap-3 text-sm">
-              <span className="text-muted-foreground">{group.orders.length} orders</span>
+              <span className="text-muted-foreground">{t("ordersCount", { count: group.orders.length })}</span>
               <span className="font-bold" data-testid={`text-${revenueTestPrefix}-revenue-${key}`}>{fmt(group.revenue)}</span>
             </div>
           </div>
@@ -274,13 +279,13 @@ export default function BillingPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Type</TableHead>
-                  {showTableCol && <TableHead>Table</TableHead>}
-                  <TableHead>Payment</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead className="w-[80px]">View</TableHead>
+                  <TableHead>{t("invoiceHash")}</TableHead>
+                  <TableHead>{t("date")}</TableHead>
+                  <TableHead>{t("type")}</TableHead>
+                  {showTableCol && <TableHead>{t("tableLabel")}</TableHead>}
+                  <TableHead>{t("payment")}</TableHead>
+                  <TableHead>{tc("total")}</TableHead>
+                  <TableHead className="w-[80px]">{t("view")}</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -309,31 +314,31 @@ export default function BillingPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-billing">
-      <PageTitle title="Billing" />
+      <PageTitle title={t("title")} />
       <div className="flex items-center gap-3">
         <div className="p-2.5 rounded-xl bg-primary/10">
           <CreditCard className="h-6 w-6 text-primary" />
         </div>
         <div>
-          <h1 className="text-2xl font-bold font-heading" data-testid="text-billing-title">Billing</h1>
-          <p className="text-muted-foreground">View and manage your invoice history</p>
+          <h1 className="text-2xl font-bold font-heading" data-testid="text-billing-title">{t("title")}</h1>
+          <p className="text-muted-foreground">{t("invoiceHistory")}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { label: "Total Revenue", value: fmt(invoiceStats.totalRevenue), icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-900/30" },
-          { label: "Invoices", value: String(invoiceStats.count), icon: FileText, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/30" },
-          { label: "Avg Order", value: fmt(invoiceStats.avgOrderValue), icon: TrendingUp, color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-900/30" },
-          { label: "Total Tax", value: fmt(invoiceStats.totalTax), icon: Receipt, color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/30" },
+          { key: "totalRevenue", label: t("totalRevenue"), value: fmt(invoiceStats.totalRevenue), icon: DollarSign, color: "text-emerald-600", bg: "bg-emerald-100 dark:bg-emerald-900/30" },
+          { key: "invoices", label: t("invoices"), value: String(invoiceStats.count), icon: FileText, color: "text-blue-600", bg: "bg-blue-100 dark:bg-blue-900/30" },
+          { key: "avgOrder", label: t("avgOrder"), value: fmt(invoiceStats.avgOrderValue), icon: TrendingUp, color: "text-amber-600", bg: "bg-amber-100 dark:bg-amber-900/30" },
+          { key: "totalTax", label: t("totalTax"), value: fmt(invoiceStats.totalTax), icon: Receipt, color: "text-purple-600", bg: "bg-purple-100 dark:bg-purple-900/30" },
         ].map((stat, i) => (
-          <motion.div key={stat.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
+          <motion.div key={stat.key} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }}>
             <Card className="transition-all duration-200 hover:shadow-md">
               <CardContent className="p-4 flex items-center gap-3">
                 <div className={`rounded-lg p-2.5 ${stat.bg}`}><stat.icon className={`h-5 w-5 ${stat.color}`} /></div>
                 <div>
                   <p className="text-sm text-muted-foreground">{stat.label}</p>
-                  <p className="text-xl font-bold" data-testid={`text-invoice-${stat.label.toLowerCase().replace(/\s/g, "-")}`}>{stat.value}</p>
+                  <p className="text-xl font-bold" data-testid={`text-invoice-${stat.key}`}>{stat.value}</p>
                 </div>
               </CardContent>
             </Card>
@@ -344,19 +349,19 @@ export default function BillingPage() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <CardTitle className="text-lg flex items-center gap-2"><Search className="h-4 w-4" /> Invoice Filters</CardTitle>
+            <CardTitle className="text-lg flex items-center gap-2"><Search className="h-4 w-4" /> {t("invoiceFilters")}</CardTitle>
             <div className="flex gap-1">
               <Button variant={invoiceView === "list" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("list")} data-testid="button-view-list">
-                <LayoutGrid className="h-3.5 w-3.5 mr-1" /> List
+                <LayoutGrid className="h-3.5 w-3.5 mr-1" /> {t("list")}
               </Button>
               <Button variant={invoiceView === "by_table" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_table")} data-testid="button-view-by-table">
-                <Table2 className="h-3.5 w-3.5 mr-1" /> By Table
+                <Table2 className="h-3.5 w-3.5 mr-1" /> {t("byTable")}
               </Button>
               <Button variant={invoiceView === "by_customer" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_customer")} data-testid="button-view-by-customer">
-                <User className="h-3.5 w-3.5 mr-1" /> By Customer
+                <User className="h-3.5 w-3.5 mr-1" /> {t("byCustomer")}
               </Button>
               <Button variant={invoiceView === "by_day" ? "default" : "outline"} size="sm" onClick={() => setInvoiceView("by_day")} data-testid="button-view-by-day">
-                <CalendarDays className="h-3.5 w-3.5 mr-1" /> By Day
+                <CalendarDays className="h-3.5 w-3.5 mr-1" /> {t("byDay")}
               </Button>
             </div>
           </div>
@@ -365,19 +370,19 @@ export default function BillingPage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input data-testid="input-search-invoices" placeholder="Search invoices..." className="pl-9" value={invoiceSearch} onChange={(e) => setInvoiceSearch(e.target.value)} />
+              <Input data-testid="input-search-invoices" placeholder={t("searchInvoices")} className="pl-9" value={invoiceSearch} onChange={(e) => setInvoiceSearch(e.target.value)} />
             </div>
             <Select value={invoiceTypeFilter} onValueChange={setInvoiceTypeFilter}>
-              <SelectTrigger data-testid="select-invoice-type"><SelectValue placeholder="Order Type" /></SelectTrigger>
+              <SelectTrigger data-testid="select-invoice-type"><SelectValue placeholder={t("orderType")} /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                <SelectItem value="dine_in">Dine In</SelectItem>
-                <SelectItem value="takeaway">Takeaway</SelectItem>
-                <SelectItem value="delivery">Delivery</SelectItem>
+                <SelectItem value="all">{t("allTypes")}</SelectItem>
+                <SelectItem value="dine_in">{t("dineIn")}</SelectItem>
+                <SelectItem value="takeaway">{t("takeaway")}</SelectItem>
+                <SelectItem value="delivery">{t("delivery")}</SelectItem>
               </SelectContent>
             </Select>
-            <Input type="date" placeholder="From" value={invoiceDateFrom} onChange={(e) => setInvoiceDateFrom(e.target.value)} data-testid="input-date-from" />
-            <Input type="date" placeholder="To" value={invoiceDateTo} onChange={(e) => setInvoiceDateTo(e.target.value)} data-testid="input-date-to" />
+            <Input type="date" placeholder={tc("from")} value={invoiceDateFrom} onChange={(e) => setInvoiceDateFrom(e.target.value)} data-testid="input-date-from" />
+            <Input type="date" placeholder={tc("to")} value={invoiceDateTo} onChange={(e) => setInvoiceDateTo(e.target.value)} data-testid="input-date-to" />
           </div>
         </CardContent>
       </Card>
@@ -386,7 +391,7 @@ export default function BillingPage() {
         <Card>
           <CardContent className="p-0">
             {filteredInvoices.length === 0 ? (
-              <div className="p-8 text-center text-muted-foreground">No invoices found.</div>
+              <div className="p-8 text-center text-muted-foreground">{t("noInvoicesFound")}</div>
             ) : renderInvoiceTable(filteredInvoices)}
           </CardContent>
         </Card>
@@ -415,13 +420,13 @@ export default function BillingPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
-              {selectedInvoice ? getInvoiceLabel(selectedInvoice.id) : "Invoice"}
+              {selectedInvoice ? getInvoiceLabel(selectedInvoice.id) : t("invoice")}
             </DialogTitle>
           </DialogHeader>
           {selectedInvoice && (
             <div className="space-y-4">
               <div className="text-center border-b pb-3">
-                <h3 className="font-heading font-bold text-lg">{tenant?.name || "Restaurant"}</h3>
+                <h3 className="font-heading font-bold text-lg">{tenant?.name || t("restaurant")}</h3>
                 <p className="text-xs text-muted-foreground">{formatLocal(selectedInvoice.createdAt, outletTimezone)}</p>
                 <div className="flex items-center justify-center gap-2 mt-1">
                   {selectedInvoice.tableId && <Badge variant="outline">{tableMap[selectedInvoice.tableId]}</Badge>}
@@ -445,22 +450,22 @@ export default function BillingPage() {
 
               <div className="space-y-1.5 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground">{tc("subtotal")}</span>
                   <span>{fmt(selectedInvoice.subtotal)}</span>
                 </div>
                 {Number(selectedInvoice.discount) > 0 && (
                   <div className="flex justify-between text-green-600">
-                    <span>Discount</span>
+                    <span>{tc("discount")}</span>
                     <span>-{fmt(selectedInvoice.discount)}</span>
                   </div>
                 )}
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax</span>
+                  <span className="text-muted-foreground">{tc("tax")}</span>
                   <span>{fmt(selectedInvoice.tax)}</span>
                 </div>
                 {(selectedInvoice.orderType === "takeaway" || selectedInvoice.orderType === "delivery") && Number(selectedInvoice.packingCharge) > 0 && (
                   <div className="flex justify-between" data-testid="text-billing-packing-charge">
-                    <span className="text-muted-foreground">📦 Packing Charge</span>
+                    <span className="text-muted-foreground">📦 {tc("packingCharge")}</span>
                     <span>{fmt(selectedInvoice.packingCharge)}</span>
                   </div>
                 )}
@@ -475,21 +480,21 @@ export default function BillingPage() {
                   const scAmount = totalNum - (subtotalNum - discountNum + taxNum);
                   return (
                     <div className="flex justify-between" data-testid="invoice-service-charge">
-                      <span className="text-muted-foreground">Service Charge{scPercent ? ` (${scPercent}%)` : ""}</span>
+                      <span className="text-muted-foreground">{tc("serviceCharge")}{scPercent ? ` (${scPercent}%)` : ""}</span>
                       <span>{fmt(scAmount > 0 ? scAmount : 0)}</span>
                     </div>
                   );
                 })()}
                 <Separator />
                 <div className="flex justify-between font-bold text-lg">
-                  <span>Total</span>
+                  <span>{tc("total")}</span>
                   <span data-testid="text-billing-total-with-packing">{fmt(selectedInvoice.total)}</span>
                 </div>
               </div>
 
               <div className="flex items-center justify-between pt-2 text-xs text-muted-foreground border-t">
-                <Badge className="bg-emerald-100 text-emerald-800">Paid</Badge>
-                <span>Invoice #{selectedInvoice.id.slice(-6).toUpperCase()}</span>
+                <Badge className="bg-emerald-100 text-emerald-800">{t("paid")}</Badge>
+                <span>{t("invoiceHash")} {selectedInvoice.id.slice(-6).toUpperCase()}</span>
               </div>
 
               <Button
@@ -504,7 +509,7 @@ export default function BillingPage() {
                 }}
               >
                 <Mail className="h-4 w-4 mr-2" />
-                Email Receipt
+                {t("emailReceipt")}
               </Button>
             </div>
           )}
@@ -516,11 +521,11 @@ export default function BillingPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Mail className="h-5 w-5 text-primary" />
-              Email Receipt
+              {t("emailReceipt")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">Enter the customer's email address to send the receipt.</p>
+            <p className="text-sm text-muted-foreground">{t("emailReceiptPrompt")}</p>
             <Input
               type="email"
               placeholder="customer@example.com"
@@ -529,20 +534,20 @@ export default function BillingPage() {
               data-testid="input-customer-email"
             />
             {emailReceiptStatus === "success" && (
-              <p className="text-sm text-emerald-600 font-medium" data-testid="status-receipt-sent">Receipt sent successfully!</p>
+              <p className="text-sm text-emerald-600 font-medium" data-testid="status-receipt-sent">{t("receiptSent")}</p>
             )}
             {emailReceiptStatus === "error" && (
-              <p className="text-sm text-red-600 font-medium" data-testid="status-receipt-error">Failed to send receipt. Please try again.</p>
+              <p className="text-sm text-red-600 font-medium" data-testid="status-receipt-error">{t("receiptSendFailed")}</p>
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setEmailReceiptOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => setEmailReceiptOpen(false)}>{tc("cancel")}</Button>
             <Button
               onClick={handleSendReceipt}
               disabled={emailReceiptSending || !emailReceiptAddress}
               data-testid="button-send-receipt"
             >
-              {emailReceiptSending ? "Sending..." : "Send Receipt"}
+              {emailReceiptSending ? tc("sending") : t("sendReceipt")}
             </Button>
           </DialogFooter>
         </DialogContent>

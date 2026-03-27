@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useTranslation } from "react-i18next";
 import {
   ChefHat, Utensils, TrendingDown, Trash2, Clock,
   AlertTriangle, CheckCircle, Package,
@@ -54,6 +55,7 @@ interface IngredientBreakdown {
 }
 
 export default function ChefReport() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const [dateRange, setDateRange] = useState<"today" | "week" | "month">("today");
   const [from, setFrom] = useState("");
@@ -134,7 +136,7 @@ export default function ChefReport() {
 
   return (
     <div className="space-y-6" data-testid="chef-report">
-      <PageTitle title="Chef Report" />
+      <PageTitle title={t("chefReport")} />
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex items-center gap-1.5 rounded-lg border p-1 bg-muted/30">
           {(["today", "week", "month"] as const).map(r => (

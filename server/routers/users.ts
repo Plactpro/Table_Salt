@@ -48,16 +48,17 @@ export function registerUsersRoutes(app: Express): void {
       }
       const plainPassword = req.body.password || "demo123";
       const hashedPw = await hashPassword(plainPassword);
+      const tenant = await storage.getTenant(user.tenantId);
       const newUser = await storage.createUser({
         ...req.body,
         tenantId: user.tenantId,
         password: hashedPw,
+        preferredLanguage: req.body.preferredLanguage || tenant?.defaultLanguage || "en",
       });
       const { password: _, ...safeUser } = newUser;
       auditLogFromReq(req, { action: "user_created", entityType: "user", entityId: newUser.id, entityName: newUser.name, after: { name: newUser.name, role: newUser.role } });
 
       if (newUser.email) {
-        const tenant = await storage.getTenant(user.tenantId);
         const appUrl = process.env.APP_URL || "https://tablesalt.app";
         sendStaffInviteEmail(
           newUser.email,

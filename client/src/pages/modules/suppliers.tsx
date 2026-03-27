@@ -18,6 +18,7 @@ import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
 import { ListCardSkeleton } from "@/components/ui/skeletons";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useTranslation } from "react-i18next";
 
 interface Supplier { id: string; tenantId: string; name: string; contactName: string | null; email: string | null; phone: string | null; address: string | null; paymentTerms: string | null; leadTimeDays: number | null; rating: string | null; notes: string | null; active: boolean | null; createdAt: string; }
 interface CatalogItem { id: string; tenantId: string; supplierId: string; inventoryItemId: string; supplierSku: string | null; packSize: string | null; packUnit: string | null; packCost: string; contractedPrice: string | null; lastPurchasePrice: string | null; preferred: boolean | null; }
@@ -27,6 +28,7 @@ const emptySupplier = { name: "", contactName: "", email: "", phone: "", address
 const emptyCatalog = { inventoryItemId: "", supplierSku: "", packSize: "1", packUnit: "kg", packCost: "", contractedPrice: "", preferred: false };
 
 export default function SuppliersPage() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -97,7 +99,7 @@ export default function SuppliersPage() {
 
   return (
     <div className="p-6 space-y-6" data-testid="suppliers-page">
-      <PageTitle title="Suppliers" />
+      <PageTitle title={t("suppliers")} />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Truck className="h-7 w-7 text-primary" />

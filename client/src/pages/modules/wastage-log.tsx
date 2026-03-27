@@ -14,6 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 type WastageType = "ingredient" | "prepared_dish" | "plated_item";
 type Preventability = "yes" | "no" | "unsure";
@@ -61,6 +62,7 @@ function addRecentItem(name: string) {
 }
 
 export default function WastageLogPage() {
+  const { t } = useTranslation("modules");
   const [, navigate] = useLocation();
   const { toast } = useToast();
 
@@ -149,7 +151,7 @@ export default function WastageLogPage() {
       data-testid="page-wastage-log"
     >
       <div className="flex items-center gap-3">
-        <PageTitle title="Wastage Log" />
+        <PageTitle title={t("wastageLog")} />
         <Button
           variant="ghost"
           size="icon"

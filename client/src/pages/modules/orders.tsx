@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { PageTitle } from "@/lib/accessibility";
 import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -28,27 +29,6 @@ import { useOutletTimezone, formatLocal } from "@/hooks/use-outlet-timezone";
 
 type OrderWithItems = Order & { items?: OrderItem[] };
 
-const STATUS_OPTIONS = [
-  { value: "all", label: "All Statuses" },
-  { value: "new", label: "New" },
-  { value: "sent_to_kitchen", label: "Sent to Kitchen" },
-  { value: "in_progress", label: "In Progress" },
-  { value: "ready", label: "Ready" },
-  { value: "served", label: "Served" },
-  { value: "ready_to_pay", label: "Ready to Pay" },
-  { value: "paid", label: "Paid" },
-  { value: "completed", label: "Completed" },
-  { value: "cancelled", label: "Cancelled" },
-  { value: "voided", label: "Voided" },
-];
-
-const ORDER_TYPE_OPTIONS = [
-  { value: "all", label: "All Types" },
-  { value: "dine_in", label: "Dine In" },
-  { value: "takeaway", label: "Takeaway" },
-  { value: "delivery", label: "Delivery" },
-];
-
 const statusColors: Record<string, string> = {
   new: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",
   sent_to_kitchen: "bg-cyan-100 text-cyan-800 dark:bg-cyan-900 dark:text-cyan-200",
@@ -62,19 +42,6 @@ const statusColors: Record<string, string> = {
   voided: "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200",
 };
 
-const statusLabels: Record<string, string> = {
-  new: "New",
-  sent_to_kitchen: "Sent to Kitchen",
-  in_progress: "In Progress",
-  ready: "Ready",
-  served: "Served",
-  ready_to_pay: "Ready to Pay",
-  paid: "Paid",
-  completed: "Completed",
-  cancelled: "Cancelled",
-  voided: "Voided",
-};
-
 const statusIcons: Record<string, React.ElementType> = {
   new: CircleDot,
   sent_to_kitchen: Send,
@@ -86,12 +53,6 @@ const statusIcons: Record<string, React.ElementType> = {
   completed: CheckCircle2,
   cancelled: XCircle,
   voided: Ban,
-};
-
-const typeLabels: Record<string, string> = {
-  dine_in: "Dine In",
-  takeaway: "Takeaway",
-  delivery: "Delivery",
 };
 
 const NEXT_STATUS: Record<string, string | null> = {
@@ -108,6 +69,8 @@ const NEXT_STATUS: Record<string, string | null> = {
 };
 
 export default function OrdersPage() {
+  const { t: tc } = useTranslation("common");
+  const { t: to } = useTranslation("orders");
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
@@ -122,6 +85,46 @@ export default function OrdersPage() {
     return sharedFormatCurrency(val, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
   };
 
+  const statusLabels: Record<string, string> = {
+    new: to("statusNew"),
+    sent_to_kitchen: to("statusSentToKitchen"),
+    in_progress: to("statusInProgress"),
+    ready: to("statusReady"),
+    served: to("statusServed"),
+    ready_to_pay: to("statusReadyToPay"),
+    paid: to("statusPaid"),
+    completed: to("statusCompleted"),
+    cancelled: to("statusCancelled"),
+    voided: to("statusVoided"),
+  };
+
+  const typeLabels: Record<string, string> = {
+    dine_in: to("dineIn"),
+    takeaway: to("takeaway"),
+    delivery: to("delivery"),
+  };
+
+  const STATUS_OPTIONS = [
+    { value: "all", label: to("allStatuses") },
+    { value: "new", label: to("statusNew") },
+    { value: "sent_to_kitchen", label: to("statusSentToKitchen") },
+    { value: "in_progress", label: to("statusInProgress") },
+    { value: "ready", label: to("statusReady") },
+    { value: "served", label: to("statusServed") },
+    { value: "ready_to_pay", label: to("statusReadyToPay") },
+    { value: "paid", label: to("statusPaid") },
+    { value: "completed", label: to("statusCompleted") },
+    { value: "cancelled", label: to("statusCancelled") },
+    { value: "voided", label: to("statusVoided") },
+  ];
+
+  const ORDER_TYPE_OPTIONS = [
+    { value: "all", label: to("allTypes") },
+    { value: "dine_in", label: to("dineIn") },
+    { value: "takeaway", label: to("takeaway") },
+    { value: "delivery", label: to("delivery") },
+  ];
+
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
@@ -134,7 +137,6 @@ export default function OrdersPage() {
   const [supervisorDialog, setSupervisorDialog] = useState<{ open: boolean; orderId: string; action: string; version?: number } | null>(null);
   const [versionConflictOpen, setVersionConflictOpen] = useState(false);
   const [ordersPage, setOrdersPage] = useState(0);
-  // PR-009: Wrong-table confirmation state
   const [tableChangeConfirm, setTableChangeConfirm] = useState<{ orderId: string; oldTableId: string | null; newTableId: string; version: number } | null>(null);
   const [showTableMoveSelect, setShowTableMoveSelect] = useState(false);
   const ORDERS_LIMIT = 50;
@@ -166,7 +168,6 @@ export default function OrdersPage() {
       const body: Record<string, unknown> = { status };
       if (pm) body.paymentMethod = pm;
       if (supervisorOverride) body.supervisorOverride = supervisorOverride;
-      // Include version for optimistic locking — server will 409 if version has changed
       if (version !== undefined && version !== null) body.version = version;
       const res = await apiRequest("PATCH", `/api/orders/${id}`, body);
       if (!res.ok) {
@@ -184,7 +185,7 @@ export default function OrdersPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       if (selectedOrderId) queryClient.invalidateQueries({ queryKey: ["/api/orders", selectedOrderId] });
-      toast({ title: "Order status updated" });
+      toast({ title: to("orderStatusUpdated") });
     },
     onError: (err: unknown) => {
       const error = err as Error & { requiresSupervisor?: boolean; action?: string; orderId?: string; isVersionConflict?: boolean; version?: number };
@@ -196,11 +197,10 @@ export default function OrdersPage() {
         setSupervisorDialog({ open: true, orderId: error.orderId, action: error.action || "void_order", version: error.version });
         return;
       }
-      toast({ variant: "destructive", title: "Failed to update", description: error.message });
+      toast({ variant: "destructive", title: to("failedToUpdate"), description: error.message });
     },
   });
 
-  // PR-009: Mutation to change table on a sent order (triggers server-side TABLE_CHANGED audit log)
   const changeTableMutation = useMutation({
     mutationFn: async ({ orderId, tableId, version }: { orderId: string; tableId: string; version: number }) => {
       const res = await apiRequest("PATCH", `/api/orders/${orderId}`, { tableId, version });
@@ -211,10 +211,10 @@ export default function OrdersPage() {
       if (selectedOrderId) queryClient.invalidateQueries({ queryKey: ["/api/orders", selectedOrderId] });
       setTableChangeConfirm(null);
       setShowTableMoveSelect(false);
-      toast({ title: "Table updated", description: "Order moved to new table and event logged." });
+      toast({ title: to("tableUpdated"), description: to("orderMovedToNewTable") });
     },
     onError: (err: Error) => {
-      toast({ variant: "destructive", title: "Failed to move table", description: err.message });
+      toast({ variant: "destructive", title: to("failedToMoveTable"), description: err.message });
     },
   });
 
@@ -232,9 +232,9 @@ export default function OrdersPage() {
 
   const tableMap = useMemo(() => {
     const map: Record<string, string> = {};
-    tables.forEach((t) => { map[t.id] = `Table ${t.number}`; });
+    tables.forEach((t) => { map[t.id] = `${to("table")} ${t.number}`; });
     return map;
-  }, [tables]);
+  }, [tables, to]);
 
   const filteredOrders = useMemo(() => {
     let result = [...orders];
@@ -290,20 +290,20 @@ export default function OrdersPage() {
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6 max-w-7xl mx-auto">
-      <PageTitle title="Orders History" />
+      <PageTitle title={tc("orders")} />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">Online Orders</h1>
-          <p className="text-muted-foreground text-sm">Manage and track all orders</p>
+          <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">{tc("nav.onlineOrders")}</h1>
+          <p className="text-muted-foreground text-sm">{tc("manageAndTrackOrders")}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[
-          { key: "total", icon: ClipboardList, label: "Total", value: summaryStats.total, color: "primary", testId: "stat-total-orders" },
-          { key: "active", icon: Clock, label: "Active", value: summaryStats.active, color: "blue", testId: "stat-active-orders" },
-          { key: "readyToPay", icon: Receipt, label: "Ready to Pay", value: summaryStats.readyToPay, color: "amber", testId: "stat-ready-to-pay" },
-          { key: "completed", icon: CheckCircle2, label: "Completed", value: summaryStats.completed, color: "green", testId: "stat-completed-orders" },
+          { key: "total", icon: ClipboardList, label: to("statTotal"), value: summaryStats.total, color: "primary", testId: "stat-total-orders" },
+          { key: "active", icon: Clock, label: to("statActive"), value: summaryStats.active, color: "blue", testId: "stat-active-orders" },
+          { key: "readyToPay", icon: Receipt, label: to("statusReadyToPay"), value: summaryStats.readyToPay, color: "amber", testId: "stat-ready-to-pay" },
+          { key: "completed", icon: CheckCircle2, label: to("statCompleted"), value: summaryStats.completed, color: "green", testId: "stat-completed-orders" },
         ].map((stat, i) => (
           <motion.div key={stat.key} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
             <Card data-testid={stat.testId} className="transition-all duration-200 hover:shadow-md">
@@ -323,16 +323,16 @@ export default function OrdersPage() {
 
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2"><Search className="h-4 w-4 text-muted-foreground" /> Filters</CardTitle>
+          <CardTitle className="text-lg flex items-center gap-2"><Search className="h-4 w-4 text-muted-foreground" /> {tc("filters")}</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input data-testid="input-search-orders" placeholder="Search orders..." className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              <Input data-testid="input-search-orders" placeholder={to("searchOrders")} className="pl-9" value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger data-testid="select-status-filter"><SelectValue placeholder="Status" /></SelectTrigger>
+              <SelectTrigger data-testid="select-status-filter"><SelectValue placeholder={to("orderStatus")} /></SelectTrigger>
               <SelectContent>
                 {STATUS_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value} data-testid={`option-status-${opt.value}`}>{opt.label}</SelectItem>
@@ -340,7 +340,7 @@ export default function OrdersPage() {
               </SelectContent>
             </Select>
             <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger data-testid="select-type-filter"><SelectValue placeholder="Order Type" /></SelectTrigger>
+              <SelectTrigger data-testid="select-type-filter"><SelectValue placeholder={to("orderType")} /></SelectTrigger>
               <SelectContent>
                 {ORDER_TYPE_OPTIONS.map((opt) => (
                   <SelectItem key={opt.value} value={opt.value} data-testid={`option-type-${opt.value}`}>{opt.label}</SelectItem>
@@ -356,26 +356,26 @@ export default function OrdersPage() {
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="p-8 text-center text-muted-foreground" data-testid="text-loading">Loading orders...</div>
+            <div className="p-8 text-center text-muted-foreground" data-testid="text-loading">{to("loadingOrders")}</div>
           ) : filteredOrders.length === 0 ? (
-            <div className="p-8 text-center text-muted-foreground" data-testid="text-no-orders">No orders found matching your filters.</div>
+            <div className="p-8 text-center text-muted-foreground" data-testid="text-no-orders">{to("noOrdersFound")}</div>
           ) : (
             <div className="overflow-x-auto">
               <UITable>
                 <TableHeader>
                   <TableRow>
-                    <TableHead className="w-[120px]">Order ID</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Table</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead className="w-[120px]">{to("orderId")}</TableHead>
+                    <TableHead>{to("orderType")}</TableHead>
+                    <TableHead>{to("table")}</TableHead>
+                    <TableHead>{to("orderStatus")}</TableHead>
                     <TableHead className="cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => toggleSort("total")}>
-                      Total <SortIcon field="total" />
+                      {tc("total")} <SortIcon field="total" />
                     </TableHead>
-                    <TableHead>Payment</TableHead>
+                    <TableHead>{tc("payment")}</TableHead>
                     <TableHead className="cursor-pointer select-none hover:text-foreground transition-colors" onClick={() => toggleSort("createdAt")}>
-                      Date <SortIcon field="createdAt" />
+                      {tc("date")} <SortIcon field="createdAt" />
                     </TableHead>
-                    <TableHead className="w-[140px]">Actions</TableHead>
+                    <TableHead className="w-[140px]">{tc("actions")}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -434,16 +434,16 @@ export default function OrdersPage() {
           {ordersTotal > ORDERS_LIMIT && (
             <div className="flex items-center justify-between px-4 py-3 border-t" data-testid="pagination-controls-orders">
               <p className="text-sm text-muted-foreground">
-                Showing {ordersPage * ORDERS_LIMIT + 1}–{Math.min((ordersPage + 1) * ORDERS_LIMIT, ordersTotal)} of {ordersTotal} orders
+                {to("showingRange", { from: ordersPage * ORDERS_LIMIT + 1, to: Math.min((ordersPage + 1) * ORDERS_LIMIT, ordersTotal), total: ordersTotal })}
               </p>
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={() => setOrdersPage((p) => Math.max(0, p - 1))} disabled={ordersPage === 0} data-testid="button-prev-page-orders">
                   <ChevronLeft className="h-4 w-4" />
-                  Prev
+                  {tc("previous")}
                 </Button>
-                <span className="text-sm font-medium px-2" data-testid="text-page-orders">Page {ordersPage + 1}</span>
+                <span className="text-sm font-medium px-2" data-testid="text-page-orders">{to("pageNum", { num: ordersPage + 1 })}</span>
                 <Button variant="outline" size="sm" onClick={() => setOrdersPage((p) => p + 1)} disabled={(ordersPage + 1) * ORDERS_LIMIT >= ordersTotal} data-testid="button-next-page-orders">
-                  Next
+                  {tc("next")}
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
@@ -455,35 +455,34 @@ export default function OrdersPage() {
       <Dialog open={!!selectedOrderId} onOpenChange={(open) => !open && setSelectedOrderId(null)}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle data-testid="text-order-detail-title">Order #{selectedOrderDetail?.id?.slice(-6).toUpperCase() || ""}</DialogTitle>
-            <DialogDescription>View order details and manage status</DialogDescription>
+            <DialogTitle data-testid="text-order-detail-title">{to("orderHash", { id: selectedOrderDetail?.id?.slice(-6).toUpperCase() || "" })}</DialogTitle>
+            <DialogDescription>{to("viewOrderDetails")}</DialogDescription>
           </DialogHeader>
           {selectedOrderDetail && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
-                  <p className="text-muted-foreground">Status</p>
+                  <p className="text-muted-foreground">{to("orderStatus")}</p>
                   <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[selectedOrderDetail.status || "new"]}`} data-testid="badge-detail-status">
                     {(() => { const SI = statusIcons[selectedOrderDetail.status || "new"] || CircleDot; return <SI className="h-3 w-3" />; })()}
                     {statusLabels[selectedOrderDetail.status || "new"]}
                   </span>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Type</p>
+                  <p className="text-muted-foreground">{to("orderType")}</p>
                   <p className="font-medium" data-testid="text-detail-type">{typeLabels[selectedOrderDetail.orderType || "dine_in"]}</p>
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Table</p>
+                  <p className="text-muted-foreground">{to("table")}</p>
                   <div className="flex items-center gap-2">
                     <p className="font-medium" data-testid="text-detail-table">{selectedOrderDetail.tableId ? tableMap[selectedOrderDetail.tableId] || "—" : "—"}</p>
-                    {/* PR-009: Move table button for sent orders — shows confirmation if already sent to kitchen */}
                     {selectedOrderDetail.orderType === "dine_in" && !["paid","voided","cancelled","completed"].includes(selectedOrderDetail.status || "") && (
                       <button
                         className="text-xs text-primary underline hover:no-underline"
                         data-testid="button-move-table-orders"
                         onClick={() => setShowTableMoveSelect(v => !v)}
                       >
-                        Move
+                        {to("move")}
                       </button>
                     )}
                   </div>
@@ -514,12 +513,12 @@ export default function OrdersPage() {
                       }}
                     >
                       <SelectTrigger className="h-7 text-xs w-36 mt-1" data-testid="select-move-table-orders">
-                        <SelectValue placeholder="Select table…" />
+                        <SelectValue placeholder={to("selectTable")} />
                       </SelectTrigger>
                       <SelectContent>
                         {tables.filter(t => t.status === "free" || t.id === selectedOrderDetail.tableId).map(t => (
                           <SelectItem key={t.id} value={t.id} data-testid={`option-table-${t.id}`}>
-                            Table {t.number} {t.zone ? `(${t.zone})` : ""}
+                            {to("table")} {t.number} {t.zone ? `(${t.zone})` : ""}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -527,25 +526,25 @@ export default function OrdersPage() {
                   )}
                 </div>
                 <div>
-                  <p className="text-muted-foreground">Date</p>
+                  <p className="text-muted-foreground">{tc("date")}</p>
                   <p className="font-medium" data-testid="text-detail-date">{formatLocal(selectedOrderDetail.createdAt, outletTimezone)}</p>
                 </div>
                 {selectedOrderDetail.paymentMethod && (
                   <div>
-                    <p className="text-muted-foreground">Payment</p>
+                    <p className="text-muted-foreground">{tc("payment")}</p>
                     <p className="font-medium" data-testid="text-detail-payment">{selectedOrderDetail.paymentMethod}</p>
                   </div>
                 )}
                 {selectedOrderDetail.notes && (
                   <div className="col-span-2">
-                    <p className="text-muted-foreground">Notes</p>
+                    <p className="text-muted-foreground">{tc("notes")}</p>
                     <p className="font-medium" data-testid="text-detail-notes">{selectedOrderDetail.notes}</p>
                   </div>
                 )}
               </div>
               <Separator />
               <div>
-                <h4 className="font-medium mb-2">Items</h4>
+                <h4 className="font-medium mb-2">{to("items")}</h4>
                 {selectedOrderDetail.items && selectedOrderDetail.items.length > 0 ? (
                   <div className="space-y-2">
                     {selectedOrderDetail.items.map((item, idx) => (
@@ -560,28 +559,28 @@ export default function OrdersPage() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-muted-foreground" data-testid="text-no-items">No items</p>
+                  <p className="text-sm text-muted-foreground" data-testid="text-no-items">{to("noItems")}</p>
                 )}
               </div>
               <Separator />
               <div className="space-y-1 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Subtotal</span>
+                  <span className="text-muted-foreground">{tc("subtotal")}</span>
                   <span data-testid="text-detail-subtotal">{fmt(selectedOrderDetail.subtotal)}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-muted-foreground">Tax</span>
+                  <span className="text-muted-foreground">{tc("tax")}</span>
                   <span data-testid="text-detail-tax">{fmt(selectedOrderDetail.tax)}</span>
                 </div>
                 {Number(selectedOrderDetail.discount) > 0 && (
                   <div className="flex justify-between">
-                    <span className="text-muted-foreground">Discount</span>
+                    <span className="text-muted-foreground">{tc("discount")}</span>
                     <span className="text-red-500" data-testid="text-detail-discount">-{fmt(selectedOrderDetail.discount)}</span>
                   </div>
                 )}
                 <Separator />
                 <div className="flex justify-between font-bold text-base">
-                  <span>Total</span>
+                  <span>{tc("total")}</span>
                   <span data-testid="text-detail-total">{fmt(selectedOrderDetail.total)}</span>
                 </div>
               </div>
@@ -589,23 +588,23 @@ export default function OrdersPage() {
                 <div className="flex gap-2 pt-2">
                   {selectedOrderDetail.status === "served" && (
                     <Button className="bg-amber-500 hover:bg-amber-600 text-white" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "ready_to_pay", version: selectedOrderDetail.version })} disabled={updateStatusMutation.isPending} data-testid="button-mark-ready-to-pay">
-                      <Receipt className="h-4 w-4 mr-1" /> Mark Ready to Pay
+                      <Receipt className="h-4 w-4 mr-1" /> {to("markReadyToPay")}
                     </Button>
                   )}
                   {selectedOrderDetail.status === "ready_to_pay" && (
                     <Button className="bg-emerald-500 hover:bg-emerald-600 text-white" onClick={() => handleBillPreview(selectedOrderDetail.id)} data-testid="button-view-bill">
-                      <Receipt className="h-4 w-4 mr-1" /> View Bill & Settle
+                      <Receipt className="h-4 w-4 mr-1" /> {to("viewBillAndSettle")}
                     </Button>
                   )}
                   {NEXT_STATUS[selectedOrderDetail.status || "new"] && selectedOrderDetail.status !== "served" && selectedOrderDetail.status !== "ready_to_pay" && (
                     <Button onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: NEXT_STATUS[selectedOrderDetail.status || "new"]!, version: selectedOrderDetail.version })} disabled={updateStatusMutation.isPending} data-testid="button-advance-detail-status">
-                      Advance to {statusLabels[NEXT_STATUS[selectedOrderDetail.status || "new"]!]}
+                      {to("advanceTo", { status: statusLabels[NEXT_STATUS[selectedOrderDetail.status || "new"]!] })}
                     </Button>
                   )}
                   {(selectedOrderDetail.status === "paid" || selectedOrderDetail.status === "completed") && (
                     <>
                       <Button variant="outline" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-view-bill">
-                        <Receipt className="h-4 w-4 mr-1" /> View Bill / Refund
+                        <Receipt className="h-4 w-4 mr-1" /> {to("viewBillRefund")}
                       </Button>
                       <Button variant="outline" className="gap-1" onClick={async () => {
                         try {
@@ -615,12 +614,12 @@ export default function OrdersPage() {
                             credentials: "include",
                             body: JSON.stringify({ orderId: selectedOrderDetail.id, type: "receipt", isReprint: true, reason: "Manual reprint from order history" }),
                           });
-                          toast({ title: "Reprint Receipt queued", description: "Receipt sent to printer" });
+                          toast({ title: to("reprintQueued"), description: to("receiptSentToPrinter") });
                         } catch (e: any) {
-                          toast({ title: "Reprint failed", description: e.message, variant: "destructive" });
+                          toast({ title: to("reprintFailed"), description: e.message, variant: "destructive" });
                         }
                       }} data-testid={`button-reprint-receipt-${selectedOrderDetail.id}`}>
-                        <Printer className="h-4 w-4" /> Reprint Receipt
+                        <Printer className="h-4 w-4" /> {to("reprintReceipt")}
                       </Button>
                     </>
                   )}
@@ -628,11 +627,11 @@ export default function OrdersPage() {
                     <>
                       {isManagerOrOwner && (
                         <Button variant="destructive" onClick={() => { setSelectedOrderId(null); navigate(`/pos/bill/${selectedOrderDetail.id}`); }} data-testid="button-void-order">
-                          <Ban className="h-4 w-4 mr-1" /> Void Bill
+                          <Ban className="h-4 w-4 mr-1" /> {to("voidBill")}
                         </Button>
                       )}
                       <Button variant="outline" className="text-destructive border-destructive/50" onClick={() => updateStatusMutation.mutate({ id: selectedOrderDetail.id, status: "cancelled", version: selectedOrderDetail.version })} disabled={updateStatusMutation.isPending} data-testid="button-cancel-order">
-                        Cancel Order
+                        {to("cancelOrder")}
                       </Button>
                     </>
                   )}
@@ -648,26 +647,25 @@ export default function OrdersPage() {
           open={supervisorDialog.open}
           onOpenChange={(open) => !open && setSupervisorDialog(null)}
           action={supervisorDialog.action}
-          actionLabel="Void Order"
+          actionLabel={to("voidOrder")}
           onApproved={handleSupervisorApproved}
         />
       )}
 
-      {/* PR-009: Wrong-table confirmation dialog — for sent orders in the orders view */}
       <Dialog open={!!tableChangeConfirm} onOpenChange={() => setTableChangeConfirm(null)}>
         <DialogContent className="max-w-sm" data-testid="dialog-wrong-table-confirm-orders">
           <DialogHeader>
-            <DialogTitle>Move order to different table?</DialogTitle>
+            <DialogTitle>{to("moveOrderTitle")}</DialogTitle>
             <DialogDescription>
-              This order has already been sent to the kitchen.
+              {to("moveOrderDesc")}
               {tableChangeConfirm && (
-                <> Moving from <strong>{tableChangeConfirm.oldTableId ? tableMap[tableChangeConfirm.oldTableId] || "Unknown" : "No table"}</strong> to{" "}
-                <strong>{tableMap[tableChangeConfirm.newTableId] || "Unknown"}</strong>. The kitchen will not automatically update.</>
+                <> {to("movingFrom")} <strong>{tableChangeConfirm.oldTableId ? tableMap[tableChangeConfirm.oldTableId] || tc("unknown") : to("noTable")}</strong> {to("movingTo")}{" "}
+                <strong>{tableMap[tableChangeConfirm.newTableId] || tc("unknown")}</strong>. {to("kitchenWontUpdate")}</>
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-2 justify-end mt-2">
-            <Button variant="outline" onClick={() => { setTableChangeConfirm(null); setShowTableMoveSelect(false); }} data-testid="button-cancel-table-change-orders">Cancel</Button>
+            <Button variant="outline" onClick={() => { setTableChangeConfirm(null); setShowTableMoveSelect(false); }} data-testid="button-cancel-table-change-orders">{tc("cancel")}</Button>
             <Button
               variant="destructive"
               disabled={changeTableMutation.isPending}
@@ -682,7 +680,7 @@ export default function OrdersPage() {
                 }
               }}
             >
-              Move Order
+              {to("moveOrder")}
             </Button>
           </div>
         </DialogContent>
@@ -691,10 +689,9 @@ export default function OrdersPage() {
       <AlertDialog open={versionConflictOpen} onOpenChange={() => {}}>
         <AlertDialogContent data-testid="dialog-version-conflict">
           <AlertDialogHeader>
-            <AlertDialogTitle>Order Updated by Someone Else</AlertDialogTitle>
+            <AlertDialogTitle>{to("orderUpdatedByOther")}</AlertDialogTitle>
             <AlertDialogDescription>
-              This order was modified by another user since you last loaded it.
-              You must refresh to see the latest version before making any changes.
+              {to("orderUpdatedByOtherDesc")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -706,7 +703,7 @@ export default function OrdersPage() {
                 queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
               }}
             >
-              Refresh Order
+              {to("refreshOrder")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

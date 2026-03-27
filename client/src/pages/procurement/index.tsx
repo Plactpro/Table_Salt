@@ -7,8 +7,10 @@ import PurchaseOrdersTab from "./purchase-orders";
 import ReturnsTab from "./returns";
 import StockTransfersTab from "./stock-transfers";
 import StockCountTab from "./stock-count";
+import { useTranslation } from "react-i18next";
 
 export default function ProcurementPage() {
+  const { t } = useTranslation("modules");
   const [tab, setTab] = useState("suppliers");
 
   return (

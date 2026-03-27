@@ -28,6 +28,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Slider } from "@/components/ui/slider";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "react-i18next";
 
 const AD_FILE_RESTRICTIONS = {
   IMAGE: { maxSizeBytes: 2 * 1024 * 1024, allowedTypes: ["image/jpeg", "image/png", "image/webp", "image/gif"], label: "JPG/PNG/WEBP/GIF ≤ 2 MB" },
@@ -1047,6 +1048,7 @@ function CampaignCard({ campaign, onEdit, onDelete, onViewCreatives, onStatusCha
 }
 
 export default function AdvertisementsPage() {
+  const { t } = useTranslation("modules");
   const { tenant, isLoading: authLoading } = useAuth();
   const { tier } = useSubscription();
   const { toast } = useToast();
@@ -1135,7 +1137,7 @@ export default function AdvertisementsPage() {
 
   return (
     <div className="p-6 space-y-6 max-w-6xl mx-auto" data-testid="ads-page">
-      <PageTitle title="Advertisements" />
+      <PageTitle title={t("advertisements")} />
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">

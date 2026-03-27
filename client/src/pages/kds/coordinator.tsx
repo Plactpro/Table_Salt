@@ -4,6 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -73,21 +74,21 @@ interface RawTicket {
   items?: RawTicketItem[];
 }
 
-function getCookingStatusInfo(status: string): { label: string; color: string; bgColor: string; dotColor: string } {
+function getCookingStatusInfo(status: string, t: (key: string) => string): { label: string; color: string; bgColor: string; dotColor: string } {
   switch (status) {
-    case "queued": return { label: "Queued", color: "text-gray-600", bgColor: "bg-gray-100", dotColor: "bg-gray-400" };
-    case "hold": return { label: "On Hold", color: "text-purple-700", bgColor: "bg-purple-100", dotColor: "bg-purple-500" };
-    case "ready_to_start": return { label: "START NOW", color: "text-amber-700", bgColor: "bg-amber-100", dotColor: "bg-amber-500" };
-    case "started": return { label: "Cooking", color: "text-blue-700", bgColor: "bg-blue-100", dotColor: "bg-blue-500" };
-    case "almost_ready": return { label: "Almost Ready", color: "text-teal-700", bgColor: "bg-teal-100", dotColor: "bg-teal-500" };
-    case "ready": return { label: "Ready ✓", color: "text-green-700", bgColor: "bg-green-100", dotColor: "bg-green-500" };
-    case "held_warm": return { label: "Kept Warm", color: "text-orange-700", bgColor: "bg-orange-100", dotColor: "bg-orange-500" };
-    case "served": return { label: "Served", color: "text-gray-500", bgColor: "bg-gray-50", dotColor: "bg-gray-300" };
+    case "queued": return { label: t("statusQueued"), color: "text-gray-600", bgColor: "bg-gray-100", dotColor: "bg-gray-400" };
+    case "hold": return { label: t("statusOnHold"), color: "text-purple-700", bgColor: "bg-purple-100", dotColor: "bg-purple-500" };
+    case "ready_to_start": return { label: t("statusStartNow"), color: "text-amber-700", bgColor: "bg-amber-100", dotColor: "bg-amber-500" };
+    case "started": return { label: t("statusCooking"), color: "text-blue-700", bgColor: "bg-blue-100", dotColor: "bg-blue-500" };
+    case "almost_ready": return { label: t("statusAlmostReady"), color: "text-teal-700", bgColor: "bg-teal-100", dotColor: "bg-teal-500" };
+    case "ready": return { label: t("statusReadyCheck"), color: "text-green-700", bgColor: "bg-green-100", dotColor: "bg-green-500" };
+    case "held_warm": return { label: t("statusKeptWarm"), color: "text-orange-700", bgColor: "bg-orange-100", dotColor: "bg-orange-500" };
+    case "served": return { label: t("served"), color: "text-gray-500", bgColor: "bg-gray-50", dotColor: "bg-gray-300" };
     default: {
-      const legacyMap: Record<string, ReturnType<typeof getCookingStatusInfo>> = {
-        pending: { label: "Queued", color: "text-gray-600", bgColor: "bg-gray-100", dotColor: "bg-gray-400" },
-        cooking: { label: "Cooking", color: "text-blue-700", bgColor: "bg-blue-100", dotColor: "bg-blue-500" },
-        done: { label: "Ready ✓", color: "text-green-700", bgColor: "bg-green-100", dotColor: "bg-green-500" },
+      const legacyMap: Record<string, { label: string; color: string; bgColor: string; dotColor: string }> = {
+        pending: { label: t("statusQueued"), color: "text-gray-600", bgColor: "bg-gray-100", dotColor: "bg-gray-400" },
+        cooking: { label: t("statusCooking"), color: "text-blue-700", bgColor: "bg-blue-100", dotColor: "bg-blue-500" },
+        done: { label: t("statusReadyCheck"), color: "text-green-700", bgColor: "bg-green-100", dotColor: "bg-green-500" },
       };
       return legacyMap[status] ?? { label: status, color: "text-gray-600", bgColor: "bg-gray-100", dotColor: "bg-gray-400" };
     }
@@ -118,7 +119,8 @@ function CountdownTimer({ estimatedReadyAt }: { estimatedReadyAt: string }) {
 }
 
 function CellContent({ item }: { item: CoordItem }) {
-  const info = getCookingStatusInfo(item.cookingStatus);
+  const { t } = useTranslation("kitchen");
+  const info = getCookingStatusInfo(item.cookingStatus, t);
   return (
     <div className={`rounded p-1.5 text-xs ${info.bgColor} border border-opacity-50`} style={{ borderColor: info.dotColor }}>
       <div className="font-medium truncate">{item.quantity > 1 ? `${item.quantity}× ` : ""}{item.name}</div>
@@ -193,6 +195,7 @@ interface ManagerAlert {
 export default function CoordinatorPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useTranslation("kitchen");
   const { data, isLoading, refetch } = useCoordinatorData();
 
   const [rushDialog, setRushDialog] = useState<{ orderId: string; tableNumber: number | null } | null>(null);
@@ -201,7 +204,7 @@ export default function CoordinatorPage() {
 
   useRealtimeEvent("kds:manager_alert", (rawPayload: unknown) => {
     const payload = rawPayload as { message?: string } | undefined;
-    const msg = payload?.message ?? "Kitchen manager alert";
+    const msg = payload?.message ?? t("kitchenManagerAlert");
     setManagerAlerts(prev => [
       { id: `alert-${Date.now()}`, message: msg, receivedAt: Date.now() },
       ...prev.slice(0, 4),
@@ -226,7 +229,7 @@ export default function CoordinatorPage() {
       setRushDialog(null);
       setRushPin("");
       refetch();
-      toast({ title: "Order rushed — all items started" });
+      toast({ title: t("orderRushed") });
     },
   });
 
@@ -246,12 +249,12 @@ export default function CoordinatorPage() {
             <LayoutGrid className="h-5 w-5 text-primary" />
           </div>
           <div>
-            <h1 className="text-xl font-bold" data-testid="heading-coordinator">Coordinator View</h1>
-            <p className="text-xs text-muted-foreground">Cross-station expeditor dashboard</p>
+            <h1 className="text-xl font-bold" data-testid="heading-coordinator">{t("coordinatorTitle")}</h1>
+            <p className="text-xs text-muted-foreground">{t("coordinatorDesc")}</p>
           </div>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh-coordinator">
-          <RefreshCw className="h-4 w-4 mr-1" />Refresh
+          <RefreshCw className="h-4 w-4 mr-1" />{t("refresh")}
         </Button>
       </div>
 
@@ -267,7 +270,7 @@ export default function CoordinatorPage() {
                 className="ml-4 text-red-400 hover:text-red-600"
                 onClick={() => setManagerAlerts(prev => prev.filter(a => a.id !== alert.id))}
                 data-testid={`dismiss-alert-${alert.id}`}
-                aria-label="Dismiss alert"
+                aria-label={t("dismissAlert")}
               >✕</button>
             </div>
           ))}
@@ -276,9 +279,9 @@ export default function CoordinatorPage() {
 
       <div className="grid grid-cols-3 gap-3">
         {[
-          { label: "Active Orders", value: totalOrders, icon: Clock, color: "text-blue-600" },
-          { label: "Ready", value: readyOrders, icon: CheckCircle2, color: "text-green-600" },
-          { label: "Overdue", value: overdueOrders, icon: AlertTriangle, color: overdueOrders > 0 ? "text-red-600" : "text-muted-foreground" },
+          { label: t("activeOrders"), value: totalOrders, icon: Clock, color: "text-blue-600" },
+          { label: t("ready"), value: readyOrders, icon: CheckCircle2, color: "text-green-600" },
+          { label: t("overdue"), value: overdueOrders, icon: AlertTriangle, color: overdueOrders > 0 ? "text-red-600" : "text-muted-foreground" },
         ].map(s => (
           <Card key={s.label} className="p-4" data-testid={`coord-stat-${s.label.toLowerCase().replace(" ", "-")}`}>
             <div className="flex items-center justify-between">
@@ -300,7 +303,7 @@ export default function CoordinatorPage() {
         <Card>
           <CardContent className="py-16 text-center text-muted-foreground">
             <ChefHat className="h-12 w-12 mx-auto mb-4 opacity-30" />
-            <p>No active orders</p>
+            <p>{t("noActiveOrders")}</p>
           </CardContent>
         </Card>
       ) : (
@@ -308,21 +311,21 @@ export default function CoordinatorPage() {
           <table className="w-full border-collapse text-sm">
             <thead>
               <tr className="border-b">
-                <th className="text-left p-2 font-semibold text-muted-foreground w-32">Order</th>
+                <th className="text-left p-2 font-semibold text-muted-foreground w-32">{t("orderCol")}</th>
                 {stations.length > 0 ? (
                   stations.map(s => (
                     <th key={s} className="text-left p-2 font-semibold text-muted-foreground capitalize">{s}</th>
                   ))
                 ) : (
-                  <th className="text-left p-2 font-semibold text-muted-foreground">Items</th>
+                  <th className="text-left p-2 font-semibold text-muted-foreground">{t("items")}</th>
                 )}
-                <th className="text-left p-2 font-semibold text-muted-foreground w-36">Progress</th>
+                <th className="text-left p-2 font-semibold text-muted-foreground w-36">{t("progressCol")}</th>
                 {settings?.allow_rush_override && <th className="p-2 w-24" />}
               </tr>
             </thead>
             <tbody>
               {orders.map(order => {
-                const label = order.tableNumber ? `Table ${order.tableNumber}` : order.orderType === "takeaway" ? "Takeaway" : `#${order.id.slice(-4).toUpperCase()}`;
+                const label = order.tableNumber ? t("tableRef", { n: order.tableNumber }) : order.orderType === "takeaway" ? t("takeaway") : `#${order.id.slice(-4).toUpperCase()}`;
                 const isComplete = order.readyCount === order.totalCount && order.totalCount > 0;
                 const hasOverdue = order.items.some(i => i.cookingStatus === "ready_to_start");
 
@@ -364,7 +367,7 @@ export default function CoordinatorPage() {
                     )}
                     <td className="p-2">
                       <div className="text-xs font-medium mb-1">
-                        {order.readyCount}/{order.totalCount} ready
+                        {t("readyProgress", { ready: order.readyCount, total: order.totalCount })}
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-2" data-testid={`progress-order-${order.id}`}>
                         <div
@@ -373,11 +376,11 @@ export default function CoordinatorPage() {
                         />
                       </div>
                       {isComplete && (
-                        <div className="text-xs text-green-600 font-semibold mt-1">ORDER COMPLETE</div>
+                        <div className="text-xs text-green-600 font-semibold mt-1">{t("orderComplete")}</div>
                       )}
                       {order.etaMinutes !== null && !isComplete && (
                         <div className="text-xs text-muted-foreground mt-1">
-                          ETA: {order.etaMinutes >= 0 ? `${order.etaMinutes}m` : "overdue"}
+                          {t("etaLabel", { value: order.etaMinutes >= 0 ? `${order.etaMinutes}m` : t("overdueBadge") })}
                         </div>
                       )}
                     </td>
@@ -391,7 +394,7 @@ export default function CoordinatorPage() {
                             onClick={() => setRushDialog({ orderId: order.id, tableNumber: order.tableNumber })}
                             data-testid={`button-rush-${order.id}`}
                           >
-                            <Zap className="h-3 w-3 mr-1" />Rush
+                            <Zap className="h-3 w-3 mr-1" />{t("rush")}
                           </Button>
                         )}
                       </td>
@@ -409,37 +412,37 @@ export default function CoordinatorPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Zap className="h-5 w-5 text-destructive" />
-              ⚡ RUSH ORDER
+              {t("rushOrder")}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              This will immediately start all remaining items on{" "}
-              <strong>{rushDialog?.tableNumber ? `Table ${rushDialog.tableNumber}` : "this order"}</strong>.
-              All timing suggestions will be ignored.
+              {t("rushDesc", {
+                ref: rushDialog?.tableNumber ? t("tableRef", { n: rushDialog.tableNumber }) : t("orderCol"),
+              })}
             </p>
             {settings?.rush_requires_manager_pin && (
               <div>
-                <Label>Manager PIN</Label>
+                <Label>{t("managerPin")}</Label>
                 <Input
                   type="password"
                   value={rushPin}
                   onChange={e => setRushPin(e.target.value)}
-                  placeholder="Enter PIN"
+                  placeholder={t("enterPin")}
                   data-testid="input-rush-pin"
                 />
               </div>
             )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRushDialog(null)}>Cancel</Button>
+            <Button variant="ghost" onClick={() => setRushDialog(null)}>{t("cancel")}</Button>
             <Button
               variant="destructive"
               onClick={() => rushDialog && rushMut.mutate({ orderId: rushDialog.orderId, pin: rushPin || undefined })}
               disabled={rushMut.isPending || (settings?.rush_requires_manager_pin ? !rushPin : false)}
               data-testid="button-confirm-rush"
             >
-              <Zap className="h-4 w-4 mr-1" />RUSH ALL ITEMS
+              <Zap className="h-4 w-4 mr-1" />{t("rushAllItems")}
             </Button>
           </DialogFooter>
         </DialogContent>

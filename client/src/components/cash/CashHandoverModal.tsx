@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useAuth } from "@/lib/auth";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,7 @@ export default function CashHandoverModal({
   onConfirm,
   isLoading = false,
 }: Props) {
+  const { t } = useTranslation("pos");
   const { user } = useAuth();
   const currencyCode = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const symbol = currencyMap[currencyCode as keyof typeof currencyMap]?.symbol || currencyCode;
@@ -46,13 +48,13 @@ export default function CashHandoverModal({
     <Dialog open={open} onOpenChange={onClose}>
       <DialogContent className="max-w-md" data-testid="modal-cash-handover">
         <DialogHeader>
-          <DialogTitle>🤝 Cash Handover</DialogTitle>
-          {sessionNumber && <p className="text-sm text-muted-foreground">Session {sessionNumber}</p>}
+          <DialogTitle>🤝 {t("cashHandover")}</DialogTitle>
+          {sessionNumber && <p className="text-sm text-muted-foreground">{t("session")} {sessionNumber}</p>}
         </DialogHeader>
 
         <div className="space-y-4">
           <div>
-            <Label>Amount Handed Over</Label>
+            <Label>{t("amountHandedOver")}</Label>
             <div className="relative mt-1">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{symbol}</span>
               <Input
@@ -66,36 +68,36 @@ export default function CashHandoverModal({
           </div>
 
           <div>
-            <Label>Handed To <span className="text-red-500">*</span></Label>
+            <Label>{t("handedTo")} <span className="text-red-500">*</span></Label>
             <Input
               value={recipient}
               onChange={e => setRecipient(e.target.value)}
               className="mt-1"
-              placeholder="Manager name / role"
+              placeholder={t("handedToPlaceholder")}
               data-testid="input-handover-recipient"
             />
           </div>
 
           <div>
-            <Label>Notes (Optional)</Label>
+            <Label>{t("notesOptional")}</Label>
             <Input
               value={notes}
               onChange={e => setNotes(e.target.value)}
               className="mt-1"
-              placeholder="e.g. End of morning shift"
+              placeholder={t("handoverNotesPlaceholder")}
               data-testid="input-handover-notes"
             />
           </div>
 
           {denomSummary && (
             <div className="rounded-lg bg-muted/40 border p-3">
-              <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wide">Denomination Summary</p>
+              <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wide">{t("denominationSummary")}</p>
               <p className="text-sm">{denomSummary}</p>
             </div>
           )}
 
           <div className="flex gap-2 pt-2">
-            <Button variant="outline" className="flex-1" onClick={onClose}>Back</Button>
+            <Button variant="outline" className="flex-1" onClick={onClose}>{t("back")}</Button>
             <Button
               className="flex-1"
               disabled={!canSubmit || isLoading}
@@ -103,8 +105,8 @@ export default function CashHandoverModal({
               data-testid="button-confirm-handover"
             >
               {isLoading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Closing...</>
-              ) : "✅ Confirm Handover & Close Session"}
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />{t("closing")}</>
+              ) : `✅ ${t("confirmHandoverAndClose")}`}
             </Button>
           </div>
         </div>

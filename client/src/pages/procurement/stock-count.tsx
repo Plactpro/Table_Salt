@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Loader2, Plus, AlertTriangle, ClipboardCheck, Upload } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 interface InventoryItem {
   id: string;
@@ -98,6 +99,7 @@ function isPieceCategory(cat: string | null | undefined) {
 }
 
 export default function StockCountTab() {
+  const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -448,11 +450,11 @@ export default function StockCountTab() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Count #</TableHead>
-                      <TableHead>Type</TableHead>
+                      <TableHead>{t("type")}</TableHead>
                       <TableHead>Scheduled</TableHead>
-                      <TableHead>Status</TableHead>
+                      <TableHead>{t("status")}</TableHead>
                       <TableHead>Progress</TableHead>
-                      <TableHead>Actions</TableHead>
+                      <TableHead>{t("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -541,7 +543,7 @@ export default function StockCountTab() {
                       <TableHead>Qty</TableHead>
                       <TableHead>Total Value</TableHead>
                       <TableHead>Type</TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead>{t("date")}</TableHead>
                       <TableHead>Disposal</TableHead>
                       <TableHead>Status</TableHead>
                     </TableRow>

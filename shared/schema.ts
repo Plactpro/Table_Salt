@@ -114,6 +114,8 @@ export const tenants = pgTable("tenants", {
   razorpayKeyId: text("razorpay_key_id"),
   razorpayKeySecret: text("razorpay_key_secret"),
   createdAt: timestamp("created_at").defaultNow(),
+  // PR-013: Default language for new staff accounts
+  defaultLanguage: varchar("default_language", { length: 10 }).default("en"),
 });
 
 export const users = pgTable("users", {
@@ -145,6 +147,8 @@ export const users = pgTable("users", {
   pinHash: text("pin_hash"),
   pinSetAt: timestamp("pin_set_at", { withTimezone: true }),
   pinExpiresAt: timestamp("pin_expires_at", { withTimezone: true }),
+  // PR-013: User language preference for i18n
+  preferredLanguage: varchar("preferred_language", { length: 10 }).default("en"),
 }, (t) => [
   index("idx_users_tenant_id").on(t.tenantId),
 ]);
