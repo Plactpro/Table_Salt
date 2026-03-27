@@ -294,3 +294,14 @@ export function setupWebSocket(httpServer: HttpServer) {
 
   return wss;
 }
+
+// PR-011: Export function to get active WebSocket connection count for health endpoint
+export function getWssClientCount(): number {
+  let total = 0;
+  for (const [, socketSet] of tenantSockets) {
+    for (const ws of socketSet) {
+      if (ws.readyState === WebSocket.OPEN) total++;
+    }
+  }
+  return total;
+}

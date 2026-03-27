@@ -169,6 +169,16 @@ export function registerBillingRoutes(app: Express): void {
       });
       res.json({ url: session.url });
     } catch (err: any) {
+      // PR-011: Distinguish gateway outages from application errors
+      const isGatewayErr = err?.type?.startsWith("Stripe") || err?.statusCode >= 500 ||
+        /ECONNREFUSED|ETIMEDOUT|ENOTFOUND|EAI_AGAIN/i.test(err?.message || "");
+      if (isGatewayErr) {
+        pool.query(
+          `INSERT INTO system_events (event_type, name, message, created_at) VALUES ($1, $2, $3, NOW())`,
+          ["GATEWAY_FAILURE", "stripe", `Stripe gateway failure during create-checkout-session: ${err.message}`]
+        ).catch(() => {});
+        return res.status(503).json({ code: "GATEWAY_DOWN", message: "Payment system is temporarily unavailable. Please try again shortly." });
+      }
       res.status(500).json({ message: err.message });
     }
   });
@@ -189,11 +199,23 @@ export function registerBillingRoutes(app: Express): void {
       }
       const stripeClient = await getUncachableStripeClient();
       const origin = `${req.protocol}://${req.get("host")}`;
-      const session = await stripeClient.billingPortal.sessions.create({
-        customer: tenant.stripeCustomerId,
-        return_url: `${origin}/settings?tab=subscription`,
-      });
-      res.json({ url: session.url });
+      try {
+        const session = await stripeClient.billingPortal.sessions.create({
+          customer: tenant.stripeCustomerId,
+          return_url: `${origin}/settings?tab=subscription`,
+        });
+        res.json({ url: session.url });
+      } catch (stripeErr: any) {
+        const isGatewayDown = stripeErr?.type === "StripeConnectionError" || stripeErr?.type === "StripeAPIError" || stripeErr?.code === "ECONNREFUSED";
+        if (isGatewayDown) {
+          pool.query(
+            `INSERT INTO system_events (event_type, name, message, created_at) VALUES ($1, $2, $3, NOW())`,
+            ["GATEWAY_FAILURE", "stripe", `Stripe gateway failure during billing-portal: ${stripeErr.message}`]
+          ).catch(() => {});
+          return res.status(503).json({ code: "GATEWAY_DOWN", message: "Payment system is temporarily unavailable. Please try again shortly." });
+        }
+        res.status(500).json({ message: stripeErr.message });
+      }
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }

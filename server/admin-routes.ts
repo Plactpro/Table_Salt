@@ -2288,4 +2288,43 @@ export function registerAdminRoutes(app: Express) {
       return res.status(500).json({ message });
     }
   });
+
+  // PR-011: System events endpoint — circuit breaker state changes and gateway failures
+  app.get("/api/admin/system-events", requireSuperAdmin, async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(parseInt(req.query.limit as string || "50", 10), 200);
+      const offset = Math.max(parseInt(req.query.offset as string || "0", 10), 0);
+      const eventType = req.query.event_type as string | undefined;
+
+      const params: any[] = [limit, offset];
+      let whereClause = "";
+      if (eventType) {
+        params.push(eventType);
+        whereClause = `WHERE event_type = $${params.length}`;
+      }
+
+      const countParams = eventType ? [eventType] : [];
+      const countWhere = eventType ? `WHERE event_type = $1` : "";
+
+      const [{ rows: data }, { rows: countRows }] = await Promise.all([
+        pool.query(
+          `SELECT id, event_type, name, message, created_at
+           FROM system_events
+           ${whereClause}
+           ORDER BY created_at DESC
+           LIMIT $1 OFFSET $2`,
+          params
+        ),
+        pool.query(
+          `SELECT COUNT(*)::int AS total FROM system_events ${countWhere}`,
+          countParams
+        ),
+      ]);
+
+      return res.json({ data, total: Number(countRows[0]?.total || 0), limit, offset });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
 }

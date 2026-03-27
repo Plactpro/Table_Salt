@@ -213,6 +213,7 @@ export default function BillPreviewModal({
   const [refundStep, setRefundStep] = useState(false);
   const [upiMarkedPaid, setUpiMarkedPaid] = useState(false);
   const [gatewayDown, setGatewayDown] = useState(false); // PR-001: shown when gateway returns 503 GATEWAY_DOWN
+  const [gatewayRetryCountdown, setGatewayRetryCountdown] = useState<number | null>(null); // PR-011: retry after 30s
   const [loyaltySearchPhone, setLoyaltySearchPhone] = useState("");
   const [lookedUpCustomer, setLookedUpCustomer] = useState<{
     id: string; name: string; loyaltyPoints: number; gstin?: string | null;
@@ -590,6 +591,14 @@ export default function BillPreviewModal({
       const isGatewayDown = cause?.code === "GATEWAY_DOWN";
       if (isGatewayDown) {
         setGatewayDown(true);
+        // PR-011: Start 30-second retry countdown
+        setGatewayRetryCountdown(30);
+        const countdownInterval = setInterval(() => {
+          setGatewayRetryCountdown(prev => {
+            if (prev === null || prev <= 1) { clearInterval(countdownInterval); return null; }
+            return prev - 1;
+          });
+        }, 1000);
         toast({
           variant: "destructive",
           title: "Payment gateway unavailable",
@@ -1905,16 +1914,26 @@ export default function BillPreviewModal({
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {/* PR-001: Gateway-down fallback — offer manual pending record when Razorpay is unreachable */}
+                  {/* PR-001/PR-011: Gateway-down fallback — offer manual pending record when payment gateway is unreachable */}
                   {gatewayDown && createdBill && (
                     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm space-y-2">
-                      <p className="font-medium text-amber-800">Payment gateway unavailable</p>
-                      <p className="text-amber-700 text-xs">The payment gateway is unreachable. You can record this payment as manually collected and reconcile with the gateway later.</p>
+                      <p className="font-medium text-amber-800">Payment system temporarily unavailable</p>
+                      <p className="text-amber-700 text-xs">Please record this as a manual payment and process it later. The gateway failure has been logged for admin review.</p>
                       <Button size="sm" variant="outline" className="w-full border-amber-400 text-amber-800 hover:bg-amber-100" data-testid="button-record-manual-payment"
                         disabled={recordManualPendingMutation.isPending}
                         onClick={() => recordManualPendingMutation.mutate()}>
-                        {recordManualPendingMutation.isPending ? "Recording…" : "Record Manual Payment (Gateway Pending)"}
+                        {recordManualPendingMutation.isPending ? "Recording…" : "Record as Manual Payment (Gateway Pending)"}
                       </Button>
+                      {gatewayRetryCountdown !== null ? (
+                        <Button size="sm" variant="ghost" className="w-full text-xs text-amber-700" disabled data-testid="button-retry-payment-countdown">
+                          Retry available in {gatewayRetryCountdown}s
+                        </Button>
+                      ) : (
+                        <Button size="sm" variant="ghost" className="w-full text-xs text-amber-700 hover:text-amber-900" data-testid="button-retry-payment"
+                          onClick={() => { setGatewayDown(false); payBillMutation.mutate(); }}>
+                          Retry payment
+                        </Button>
+                      )}
                     </div>
                   )}
                   <Button className="w-full" size="lg" data-testid="button-confirm-payment"

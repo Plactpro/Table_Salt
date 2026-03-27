@@ -3,12 +3,30 @@ import { storage } from "../storage";
 import { snapshotPrepTime } from "../lib/snapshot-prep-time";
 import { requireRole } from "../middleware";
 import { getAdapter } from "../aggregator-adapters";
+import { pool } from "../db";
 
 export function registerChannelsRoutes(app: Express): void {
   app.get("/api/order-channels", requireRole("owner", "manager", "waiter", "kitchen", "accountant", "outlet_manager", "hq_admin", "franchise_owner"), async (req, res) => {
     try {
       const user = req.user as any;
-      res.json(await storage.getOrderChannelsByTenant(user.tenantId));
+      // PR-011: Include last_webhook_at and webhook_alert_threshold_minutes for channel health display
+      const { rows } = await pool.query(
+        `SELECT id, tenant_id, name, slug, icon, active, commission_pct,
+                last_webhook_at, webhook_alert_threshold_minutes
+         FROM order_channels WHERE tenant_id = $1 ORDER BY name`,
+        [user.tenantId]
+      );
+      res.json(rows.map((r: any) => ({
+        id: r.id,
+        tenantId: r.tenant_id,
+        name: r.name,
+        slug: r.slug,
+        icon: r.icon,
+        active: r.active,
+        commissionPct: r.commission_pct,
+        lastWebhookAt: r.last_webhook_at,
+        webhookAlertThresholdMinutes: r.webhook_alert_threshold_minutes ?? 120,
+      })));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -103,6 +121,12 @@ export function registerChannelsRoutes(app: Express): void {
       const channels = await storage.getOrderChannelsByTenant(user.tenantId);
       const ch = channels.find(c => c.slug === channel);
       if (!ch) return res.status(400).json({ message: `Unknown channel: ${channel}` });
+      // PR-011: Update last_webhook_at timestamp on order receipt via ingest
+      await pool.query(
+        `UPDATE order_channels SET last_webhook_at = NOW() WHERE id = $1`,
+        [ch.id]
+      ).catch((err: any) => console.error("[WebhookMonitor] Failed to update last_webhook_at:", err));
+
       const normalizedOrder = {
         channelOrderId: channelOrderId || `${channel.toUpperCase()}-${Date.now().toString(36).toUpperCase()}`,
         items: (items as Array<Record<string, unknown>>).map((i: Record<string, unknown>) => ({
@@ -161,6 +185,12 @@ export function registerChannelsRoutes(app: Express): void {
       const channels = await storage.getOrderChannelsByTenant(user.tenantId);
       const ch = channels.find(c => c.slug === platform);
       if (!ch) return res.status(400).json({ message: `Channel ${platform} not configured` });
+
+      // PR-011: Update last_webhook_at timestamp on webhook receipt
+      await pool.query(
+        `UPDATE order_channels SET last_webhook_at = NOW() WHERE id = $1`,
+        [ch.id]
+      ).catch((err: any) => console.error("[WebhookMonitor] Failed to update last_webhook_at:", err));
       const parsed = adapter.parseOrder(req.body);
       const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
       const menuMap = new Map(menuItems.map(m => [m.id, m]));
