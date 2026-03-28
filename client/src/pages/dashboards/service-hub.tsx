@@ -156,7 +156,7 @@ export default function ServiceHubPage() {
   const now = new Date();
   const dayName = now.toLocaleDateString(i18n.language, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const timeStr = now.toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit", hour12: true });
-  const peakInfo = data ? getPeakHour(data.summary.hour) : getPeakHour(now.getHours());
+  const peakInfo = data?.summary ? getPeakHour(data.summary.hour) : getPeakHour(now.getHours());
 
   const summary = data?.summary;
   const kpis = data?.kpis;
