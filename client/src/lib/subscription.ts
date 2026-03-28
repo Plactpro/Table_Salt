@@ -75,7 +75,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["pos", "orders", "inventory", "menu"],
     badges: ["Mobile", "GPS Tracking", "On-The-Go"],
     icon: "Truck",
-    excludedFeatureKeys: ["tables", "reservations", "cleaning"],
+    excludedFeatureKeys: ["reservations"],
   },
   cafe: {
     label: "Café",
