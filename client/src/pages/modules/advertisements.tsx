@@ -259,7 +259,6 @@ function CampaignDialog({
       setSavedCampaignId(data.id);
       queryClient.invalidateQueries({ queryKey: ["/api/ad-campaigns"] });
     },
-    onError: () => toast({ title: "Failed to save campaign", variant: "destructive" }),
   });
 
   const handleFileSelect = async (file: File) => {
@@ -281,7 +280,15 @@ function CampaignDialog({
         body: formData,
         credentials: "include",
       });
-      if (!r.ok) throw new Error("Upload failed");
+      if (!r.ok) {
+        let message = "Upload failed";
+        try {
+          const body = await r.json();
+          if (body?.error) message = body.error;
+        } catch {}
+        toast({ title: message, variant: "destructive" });
+        return;
+      }
       const data = await r.json();
       setCreatives((prev) => [...prev, data]);
       setUploadFile(null);
@@ -301,7 +308,13 @@ function CampaignDialog({
         (step === 1 && form.campaignType === "OWN") ||
         (step === 3 && form.campaignType === "THIRD_PARTY");
       if (shouldSave) {
-        await saveMutation.mutateAsync();
+        try {
+          await saveMutation.mutateAsync();
+        } catch (err: any) {
+          const message = err?.message || "Failed to save campaign";
+          toast({ title: message, variant: "destructive" });
+          return;
+        }
       }
       setStep((s) => s + 1);
     } else {
@@ -749,10 +762,18 @@ function CreativesDialog({ campaign, open, onClose }: { campaign: any; open: boo
         body: formData,
         credentials: "include",
       });
-      if (!r.ok) throw new Error("Upload failed");
+      if (!r.ok) {
+        let message = "Upload failed";
+        try {
+          const body = await r.json();
+          if (body?.error) message = body.error;
+        } catch {}
+        toast({ title: message, variant: "destructive" });
+        return;
+      }
       setUploadFile(null);
       refetch();
-      toast({ title: "Creative uploaded" });
+      toast({ title: "Creative uploaded successfully" });
     } catch {
       toast({ title: "Upload failed", variant: "destructive" });
     } finally {
