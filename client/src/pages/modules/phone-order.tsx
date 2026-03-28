@@ -21,6 +21,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
 import { useTranslation } from "react-i18next";
+import { printHtmlWithIframe } from "@/lib/print-utils";
 
 interface MenuItem {
   id: string;
@@ -88,7 +89,8 @@ export default function PhoneOrderPage() {
 
   const [menuSearch, setMenuSearch] = useState("");
   const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
-  const [successOrder, setSuccessOrder] = useState<{ orderNumber: string; orderType: string } | null>(null);
+  const [successOrder, setSuccessOrder] = useState<{ id: string; orderNumber: string; orderType: string } | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   const { data: menuItemsData } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({
     queryKey: ["/api/menu-items"],
@@ -243,7 +245,7 @@ export default function PhoneOrderPage() {
       return res.json();
     },
     onSuccess: (data) => {
-      setSuccessOrder({ orderNumber: data.orderNumber || data.id?.slice(-6).toUpperCase(), orderType });
+      setSuccessOrder({ id: data.id, orderNumber: data.orderNumber || data.id?.slice(-6).toUpperCase(), orderType });
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
     },
     onError: (err: Error) => {
@@ -265,6 +267,32 @@ export default function PhoneOrderPage() {
     setMenuSearch("");
     setOrderItems([]);
     setSuccessOrder(null);
+  };
+
+  const handlePrint = async () => {
+    if (!successOrder?.id) return;
+    setIsPrinting(true);
+    try {
+      const res = await apiRequest("POST", `/api/print/kot/${successOrder.id}`, {});
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Print request failed");
+      }
+      if (data.htmlFallback) {
+        printHtmlWithIframe(data.htmlFallback);
+        toast({ title: "Print Ticket", description: "Print dialog opened in browser." });
+      } else {
+        toast({ title: "Print Ticket", description: "Ticket sent to printer." });
+      }
+    } catch (err: unknown) {
+      toast({
+        title: "Print Failed",
+        description: err instanceof Error ? err.message : "Could not print ticket. Check printer connection.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsPrinting(false);
+    }
   };
 
   if (successOrder) {
@@ -291,8 +319,15 @@ export default function PhoneOrderPage() {
           )}
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="gap-2" data-testid="button-print-ticket">
-            <Printer className="w-4 h-4" /> Print Ticket
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={handlePrint}
+            disabled={isPrinting}
+            data-testid="button-print-ticket"
+          >
+            <Printer className="w-4 h-4" />
+            {isPrinting ? "Printing…" : "Print Ticket"}
           </Button>
           <Button onClick={resetForm} className="gap-2" data-testid="button-new-order">
             <RefreshCw className="w-4 h-4" /> New Order
