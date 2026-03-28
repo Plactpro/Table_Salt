@@ -468,7 +468,24 @@ export default function PromotionsPage() {
                                 </p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-2">
+                              {!expired && (
+                                <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  rule.active
+                                    ? "bg-green-100 text-green-700 dark:bg-green-950/40 dark:text-green-400"
+                                    : "bg-muted text-muted-foreground"
+                                }`}>
+                                  <Switch
+                                    checked={rule.active ?? false}
+                                    onCheckedChange={(checked) => toggleRule.mutate({ id: rule.id, active: checked })}
+                                    data-testid={`switch-rule-active-${rule.id}`}
+                                    className="scale-75"
+                                  />
+                                  <span data-testid={`label-rule-active-${rule.id}`}>
+                                    {rule.active ? "Enabled" : "Disabled"}
+                                  </span>
+                                </div>
+                              )}
                               <Badge
                                 variant={active ? "default" : expired ? "destructive" : "secondary"}
                                 className="text-xs"
@@ -547,18 +564,8 @@ export default function PromotionsPage() {
 
                           <Separator />
 
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={rule.active ?? false}
-                                onCheckedChange={(checked) => toggleRule.mutate({ id: rule.id, active: checked })}
-                                data-testid={`switch-rule-active-${rule.id}`}
-                              />
-                              <span className="text-xs text-muted-foreground">
-                                {rule.active ? "Enabled" : "Disabled"}
-                              </span>
-                            </div>
-                            <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                          <div className="flex items-center justify-end">
+                            <div className="flex gap-1 opacity-40 group-hover:opacity-100 transition-opacity duration-200">
                               <Button size="sm" variant="ghost" onClick={() => openEdit(rule)} data-testid={`button-edit-rule-${rule.id}`}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
