@@ -5,6 +5,7 @@ import { useActiveAlerts, ActiveAlert } from "@/lib/active-alerts-context";
 import { apiRequest } from "@/lib/queryClient";
 import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
+import { useToast } from "@/hooks/use-toast";
 
 function timeAgo(ts: number): string {
   const diff = Math.floor((Date.now() - ts) / 1000);
@@ -20,7 +21,7 @@ function urgencyStyle(urgency: ActiveAlert["urgency"]) {
     case "high":
       return "bg-amber-50 dark:bg-amber-950/60 border-l-4 border-amber-500";
     default:
-      return "bg-card border-l-4 border-transparent";
+      return "bg-blue-50/30 dark:bg-blue-950/20 border-l-4 border-blue-300 dark:border-blue-700";
   }
 }
 
@@ -52,8 +53,8 @@ function AlertRow({ alert, onAck, onToggleMute, isMuted }: AlertRowProps) {
         <div className="flex items-start gap-2 flex-1 min-w-0">
           <span className="text-base leading-none shrink-0">{urgencyIcon(alert.urgency)}</span>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-foreground truncate">{alert.alertName}</p>
-            <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{alert.message}</p>
+            <p className="text-xs font-semibold text-foreground break-words">{alert.alertName}</p>
+            <p className="text-[11px] text-muted-foreground line-clamp-4 mt-0.5" title={alert.message}>{alert.message}</p>
           </div>
         </div>
         <span className="text-[10px] text-muted-foreground shrink-0 whitespace-nowrap mt-0.5">
@@ -107,7 +108,8 @@ function AlertRow({ alert, onAck, onToggleMute, isMuted }: AlertRowProps) {
 type TabType = "critical" | "info";
 
 export default function AlertNotificationBell() {
-  const { activeAlerts, removeAlert, clearAll } = useActiveAlerts();
+  const { activeAlerts, removeAlert } = useActiveAlerts();
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>("critical");
   const [, forceRender] = useState(0);
@@ -144,10 +146,12 @@ export default function AlertNotificationBell() {
   const handleClearAllAcknowledged = async () => {
     setClearingAll(true);
     try {
-      // Deletes server-side acknowledged (resolved) non-critical notifications.
-      // Local state only contains unresolved active alerts, so no local state change is needed.
       await apiRequest("POST", "/api/notifications/clear-acknowledged", {});
-    } catch (_) {}
+      infoAlerts.forEach(a => removeAlert(a.eventId));
+      toast({ title: "Notifications cleared" });
+    } catch (err: any) {
+      toast({ title: "Failed to clear", description: err.message, variant: "destructive" });
+    }
     setClearingAll(false);
   };
 
@@ -289,7 +293,7 @@ export default function AlertNotificationBell() {
               )}
 
               {/* Alert list */}
-              <div className="overflow-y-auto max-h-72 divide-y divide-border/50">
+              <div className="overflow-y-auto max-h-96 divide-y divide-border/50">
                 {visibleAlerts.length === 0 ? (
                   <div className="py-8 text-center text-sm text-muted-foreground">
                     <Bell className="h-8 w-8 mx-auto mb-2 opacity-30" />
