@@ -110,6 +110,23 @@ function formatCondition(rule: PriceRule): string {
   return "—";
 }
 
+function applyRulesToBasePrice(basePrice: number, rules: PriceRule[]): number {
+  let price = basePrice;
+  const sorted = [...rules].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  for (const rule of sorted) {
+    if (!rule.active) continue;
+    const v = Number(rule.adjustment_value);
+    switch (rule.adjustment_type) {
+      case "fixed": price = v; break;
+      case "increase_pct": price = price * (1 + v / 100); break;
+      case "decrease_pct": price = price * (1 - v / 100); break;
+      case "increase_fixed": price = price + v; break;
+      case "decrease_fixed": price = price - v; break;
+    }
+  }
+  return Math.max(0, price);
+}
+
 export default function MenuPricingPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -415,6 +432,22 @@ export default function MenuPricingPage() {
             )}
           </div>
 
+          {selectedOutletId && (() => {
+            const outletName = outlets.find(o => o.id === selectedOutletId)?.name;
+            return outletName ? (
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-semibold text-foreground" data-testid="text-pricing-outlet-heading">
+                  Pricing — {outletName}
+                </h3>
+                {priceRules.filter(r => r.active && !r.outlet_id).length > 0 && (
+                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200" data-testid="badge-global-rules-active">
+                    {priceRules.filter(r => r.active && !r.outlet_id).length} global rule{priceRules.filter(r => r.active && !r.outlet_id).length > 1 ? "s" : ""} active
+                  </Badge>
+                )}
+              </div>
+            ) : null;
+          })()}
+
           {selectedOutletId && (
             <Card>
               <CardContent className="p-0">
@@ -425,6 +458,7 @@ export default function MenuPricingPage() {
                         <th className="text-left px-4 py-2 font-medium">Item Name</th>
                         <th className="text-left px-4 py-2 font-medium">Category</th>
                         <th className="text-right px-4 py-2 font-medium">Base</th>
+                        <th className="text-right px-4 py-2 font-medium">After Rules</th>
                         <th className="text-right px-4 py-2 font-medium w-32">Override Price</th>
                       </tr>
                     </thead>
@@ -440,6 +474,34 @@ export default function MenuPricingPage() {
                               {item.categoryId ? categoryMap.get(item.categoryId) || "—" : "—"}
                             </td>
                             <td className="px-4 py-1.5 text-right text-muted-foreground">{fmt(item.price)}</td>
+                            {(() => {
+                              const applicableRules = priceRules.filter(r => r.active);
+                              if (applicableRules.length === 0) {
+                                return (
+                                  <td className="px-4 py-1.5 text-right text-muted-foreground text-xs" data-testid={`after-rules-${item.id}`}>—</td>
+                                );
+                              }
+                              const adjustedPrice = applyRulesToBasePrice(Number(item.price), applicableRules);
+                              const diff = adjustedPrice - Number(item.price);
+                              const pctChange = Number(item.price) > 0 ? ((diff / Number(item.price)) * 100).toFixed(1) : "0";
+                              const hasChange = Math.abs(diff) > 0.001;
+                              return (
+                                <td className="px-4 py-1.5 text-right" data-testid={`after-rules-${item.id}`}>
+                                  {hasChange ? (
+                                    <div className="flex flex-col items-end gap-0.5">
+                                      <span className={diff < 0 ? "text-green-700 font-medium" : "text-orange-600 font-medium"}>
+                                        {fmt(adjustedPrice)}
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground">
+                                        {diff < 0 ? `−${Math.abs(Number(pctChange))}%` : `+${pctChange}%`}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-muted-foreground text-xs">—</span>
+                                  )}
+                                </td>
+                              );
+                            })()}
                             <td className="px-4 py-1.5 text-right">
                               <Input
                                 type="number"
