@@ -2022,12 +2022,10 @@ function DashboardTab({
   outletId,
   tickets,
   retrievalRequests,
-  onNewCheckin,
 }: {
   outletId: string;
   tickets: any[];
   retrievalRequests: any[];
-  onNewCheckin: () => void;
 }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -2151,12 +2149,7 @@ function DashboardTab({
 
   return (
     <div className="space-y-5" data-testid="dashboard-tab">
-      <div className="flex items-center justify-between">
-        <h2 className="text-base font-semibold">Overview</h2>
-        <Button onClick={onNewCheckin} size="sm" data-testid="button-dashboard-new-checkin">
-          <Plus className="h-4 w-4 mr-1" /> New Check-in
-        </Button>
-      </div>
+      <h2 className="text-base font-semibold">Overview</h2>
 
       {/* Active Shift Banner */}
       {isOwnerOrManager && (
@@ -5715,7 +5708,6 @@ export default function ParkingPage() {
               outletId={outletId}
               tickets={tickets}
               retrievalRequests={retrievalRequests}
-              onNewCheckin={() => setShowNewTicket(true)}
             />
           )}
         </TabsContent>
