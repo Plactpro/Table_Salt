@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -202,7 +202,9 @@ function NewTicketDialog({
     enabled: open && step === 1,
     staleTime: 30000,
   });
-  const activeTables = allTables.filter((t: any) => !t.outletId || t.outletId === outletId);
+  const activeTables = allTables.filter(
+    (t: any) => (!t.outletId || t.outletId === outletId) && t.status === "free"
+  );
 
   const availableSlots = slots.filter((s: any) => s.status === "available");
 
@@ -489,11 +491,29 @@ function NewTicketDialog({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="_none">None</SelectItem>
-                          {activeTables.map((t: any) => (
-                            <SelectItem key={t.id} value={String(t.number ?? t.name ?? t.id)} data-testid={`option-table-${t.id}`}>
-                              {t.number != null ? `Table ${t.number}` : t.name || `Table ${t.id}`}
-                            </SelectItem>
-                          ))}
+                          {(() => {
+                            const byZone: Record<string, any[]> = {};
+                            for (const t of activeTables) {
+                              const z = t.zone || "Main";
+                              if (!byZone[z]) byZone[z] = [];
+                              byZone[z].push(t);
+                            }
+                            return Object.entries(byZone).map(([zoneName, zoneTables]) => (
+                              <SelectGroup key={zoneName}>
+                                <SelectLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                                  {zoneName}
+                                </SelectLabel>
+                                {(zoneTables as any[]).map((t: any) => {
+                                  const label = `Table ${t.number ?? t.name ?? t.id}${t.capacity ? ` (${t.capacity} seats)` : ""}`;
+                                  return (
+                                    <SelectItem key={t.id} value={String(t.number ?? t.name ?? t.id)} data-testid={`option-table-${t.id}`}>
+                                      {label}
+                                    </SelectItem>
+                                  );
+                                })}
+                              </SelectGroup>
+                            ));
+                          })()}
                         </SelectContent>
                       </Select>
                     ) : (
