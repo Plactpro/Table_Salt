@@ -355,6 +355,18 @@ export function registerParkingRoutes(app: Express): void {
           await _recalcAvailability(ticket.outletId, user.tenantId);
         }
 
+        // Always compute and store the charge on the ticket itself (source of truth for revenue)
+        let chargeResult: Awaited<ReturnType<typeof calculateParkingCharge>> | null = null;
+        try {
+          chargeResult = await calculateParkingCharge(ticket.id, ticket.outletId, user.tenantId);
+          await pool.query(
+            `UPDATE valet_tickets SET final_charge = $1 WHERE id = $2 AND tenant_id = $3`,
+            [chargeResult.finalCharge, ticket.id, user.tenantId]
+          );
+        } catch (e) {
+          console.error("[parking] Charge calculation failed at checkout:", e);
+        }
+
         if (ticket.billId && !ticket.chargeAddedToBill) {
           applyParkingChargeToBill(ticket.billId, ticket.id, user.tenantId).catch(e =>
             console.error("[parking] Auto apply charge failed:", e)
@@ -845,9 +857,8 @@ export function registerParkingRoutes(app: Express): void {
 
       const { rows: lastSessions } = await pool.query(
         `SELECT vt.exit_time, vt.vehicle_number, vt.duration_minutes,
-                bpc.final_charge, pz.name AS zone_name
+                vt.final_charge, pz.name AS zone_name
          FROM valet_tickets vt
-         LEFT JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
          LEFT JOIN parking_slots ps ON ps.id = vt.slot_id
          LEFT JOIN parking_zones pz ON pz.id = ps.zone_id
          WHERE vt.customer_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
@@ -1001,22 +1012,20 @@ export function registerParkingRoutes(app: Express): void {
 
       // Revenue by vehicle type
       const { rows: byVehicle } = await pool.query(
-        `SELECT vt.vehicle_type, COALESCE(SUM(bpc.final_charge),0) AS revenue, COUNT(vt.id) AS count
-         FROM valet_tickets vt
-         LEFT JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
-         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
-           AND DATE(vt.exit_time) >= $3 AND DATE(vt.exit_time) <= $4
-         GROUP BY vt.vehicle_type`,
+        `SELECT vehicle_type, COALESCE(SUM(final_charge),0) AS revenue, COUNT(id) AS count
+         FROM valet_tickets
+         WHERE outlet_id=$1 AND tenant_id=$2 AND status='completed'
+           AND DATE(exit_time) >= $3 AND DATE(exit_time) <= $4
+         GROUP BY vehicle_type`,
         [outletId, tenantId, fromStr, toStr]
       );
 
       // Revenue by zone
       const { rows: byZone } = await pool.query(
-        `SELECT pz.name AS zone_name, COALESCE(SUM(bpc.final_charge),0) AS revenue, COUNT(vt.id) AS count
+        `SELECT pz.name AS zone_name, COALESCE(SUM(vt.final_charge),0) AS revenue, COUNT(vt.id) AS count
          FROM valet_tickets vt
          LEFT JOIN parking_slots ps ON ps.id = vt.slot_id
          LEFT JOIN parking_zones pz ON pz.id = ps.zone_id
-         LEFT JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
          WHERE vt.outlet_id=$1 AND vt.tenant_id=$2 AND vt.status='completed'
            AND DATE(vt.exit_time) >= $3 AND DATE(vt.exit_time) <= $4
          GROUP BY pz.name`,
@@ -1069,14 +1078,13 @@ export function registerParkingRoutes(app: Express): void {
       );
       const vehiclesIn = parseInt(activeRows[0]?.count ?? "0", 10);
 
-      // Revenue today (sum of charge from completed tickets today)
+      // Revenue today (sum of final_charge directly from completed tickets today)
       const { rows: revenueRows } = await pool.query(
-        `SELECT COALESCE(SUM(bpc.final_charge),0) AS revenue
-         FROM valet_tickets vt
-         JOIN bill_parking_charges bpc ON bpc.ticket_id = vt.id
-         WHERE vt.outlet_id=$1 AND vt.tenant_id=$2
-           AND vt.status = 'completed'
-           AND vt.exit_time >= CURRENT_DATE`,
+        `SELECT COALESCE(SUM(final_charge),0) AS revenue
+         FROM valet_tickets
+         WHERE outlet_id=$1 AND tenant_id=$2
+           AND status = 'completed'
+           AND exit_time >= CURRENT_DATE`,
         [outletId, tenantId]
       );
       const revenueToday = parseFloat(revenueRows[0]?.revenue ?? "0");
@@ -1725,12 +1733,11 @@ export function registerParkingRoutes(app: Express): void {
          FROM valet_tickets WHERE shift_id=$1 AND tenant_id=$2`,
         [req.params.shiftId, user.tenantId]
       );
-      // Also sum fees from bill_parking_charges for tickets in this shift
+      // Sum final_charge directly from valet_tickets for tickets in this shift
       const { rows: chargeStats } = await pool.query(
-        `SELECT COALESCE(SUM(bpc.final_charge),0) AS billed_fees
-         FROM bill_parking_charges bpc
-         JOIN valet_tickets vt ON vt.id = bpc.ticket_id
-         WHERE vt.shift_id=$1 AND vt.tenant_id=$2`,
+        `SELECT COALESCE(SUM(final_charge),0) AS billed_fees
+         FROM valet_tickets
+         WHERE shift_id=$1 AND tenant_id=$2`,
         [req.params.shiftId, user.tenantId]
       );
       res.json({

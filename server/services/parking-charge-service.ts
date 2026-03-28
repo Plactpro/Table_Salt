@@ -144,8 +144,8 @@ export async function applyParkingChargeToBill(
       );
 
       await client.query(
-        `UPDATE valet_tickets SET charge_added_to_bill = true, duration_minutes = $1 WHERE id = $2 AND tenant_id = $3`,
-        [result.durationMinutes, ticketId, tenantId]
+        `UPDATE valet_tickets SET charge_added_to_bill = true, duration_minutes = $1, final_charge = $4 WHERE id = $2 AND tenant_id = $3`,
+        [result.durationMinutes, ticketId, tenantId, result.finalCharge]
       );
     }
 

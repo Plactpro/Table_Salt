@@ -3824,4 +3824,7 @@ export async function runTask191Migrations(): Promise<void> {
 
   // PR-013: Tenant default language for new staff
   await pool.query(`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS default_language VARCHAR(10) DEFAULT 'en'`);
+
+  // Task #209: Add final_charge to valet_tickets as authoritative charge field for revenue queries
+  await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS final_charge NUMERIC(12,2) NOT NULL DEFAULT 0`);
 }
