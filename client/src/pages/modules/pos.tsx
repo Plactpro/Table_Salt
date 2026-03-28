@@ -1519,7 +1519,8 @@ export default function POSPage() {
               <span>{tp("usingCachedMenu", { n: Math.round((Date.now() - menuCacheNotice.cachedAt) / 60000) })}</span>
             </div>
           )}
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <div className="relative flex-shrink-0">
+            <div className="flex gap-2 flex-nowrap overflow-x-auto pb-1 scrollbar-none">
             {posMenuLoading ? (
               <PosCategorySkeleton />
             ) : (
@@ -1543,6 +1544,8 @@ export default function POSPage() {
                 })}
               </>
             )}
+            </div>
+            <div className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-background to-transparent" />
           </div>
         </div>
 
@@ -1790,11 +1793,11 @@ export default function POSPage() {
         </SheetContent>
       </Sheet>
 
-      <div className="hidden md:flex w-[400px] shrink-0 flex-col bg-card overflow-hidden">
+      <div className="hidden md:flex w-[400px] shrink-0 flex-col bg-card overflow-hidden h-full">
         <div className="border-b">
           <div className="flex items-center gap-0 px-2 pt-2 overflow-x-auto" data-testid="pos-tabs-bar">
             {tabs.map((tab, idx) => (
-              <div key={tab.id} className={`flex items-center gap-1 px-2.5 py-1.5 rounded-t-lg text-xs font-medium cursor-pointer border border-b-0 mr-0.5 whitespace-nowrap transition-colors ${tab.id === activeTabId ? "bg-card border-border text-foreground" : "bg-muted/50 border-transparent text-muted-foreground hover:text-foreground"}`}
+              <div key={tab.id} className={`flex shrink-0 items-center gap-1 px-2.5 py-1.5 rounded-t-lg text-xs font-medium cursor-pointer border border-b-0 mr-0.5 whitespace-nowrap transition-colors ${tab.id === activeTabId ? "bg-card border-border text-foreground" : "bg-muted/50 border-transparent text-muted-foreground hover:text-foreground"}`}
                 onClick={() => setActiveTabId(tab.id)}
                 data-testid={`pos-tab-${idx}`}
               >
@@ -2027,22 +2030,22 @@ export default function POSPage() {
                               <Button
                                 data-testid={`button-customize-${item.menuItemId}`}
                                 variant="ghost"
-                                size="sm"
-                                className="h-7 px-1.5 text-[10px] font-semibold text-violet-600 hover:bg-violet-50"
+                                size="icon"
+                                className="h-9 w-9 text-violet-600 hover:bg-violet-50 flex items-center justify-center rounded"
                                 onClick={() => setCustomizeItem(item)}
                                 title="Customize this item"
                               >
                                 ✏️
                               </Button>
-                              <Button data-testid={`button-modifier-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-primary" onClick={() => openModifierDrawer(item)} title="Modifiers & instructions" aria-label={`Modifiers and instructions for ${item.name}`}>
+                              <Button data-testid={`button-modifier-${item.menuItemId}`} variant="ghost" size="icon" className="h-9 w-9 text-primary flex items-center justify-center rounded" onClick={() => openModifierDrawer(item)} title="Modifiers & instructions" aria-label={`Modifiers and instructions for ${item.name}`}>
                                 <ChevronDown className="h-3 w-3" aria-hidden="true" />
                               </Button>
                             </>
                           )}
-                          <Button data-testid={`button-note-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7" onClick={() => openNoteDialog(item.cartKey)} aria-label={`Add note to ${item.name}`}>
+                          <Button data-testid={`button-note-${item.menuItemId}`} variant="ghost" size="icon" className="h-9 w-9 flex items-center justify-center rounded" onClick={() => openNoteDialog(item.cartKey)} aria-label={`Add note to ${item.name}`}>
                             <StickyNote className="h-3 w-3" aria-hidden="true" />
                           </Button>
-                          <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => removeFromCart(item.cartKey)} aria-label={`Remove ${item.name} from cart`}>
+                          <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-9 w-9 text-destructive flex items-center justify-center rounded" onClick={() => removeFromCart(item.cartKey)} aria-label={`Remove ${item.name} from cart`}>
                             <Trash2 className="h-3 w-3" aria-hidden="true" />
                           </Button>
                         </div>
