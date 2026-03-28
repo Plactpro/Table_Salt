@@ -419,7 +419,18 @@ export function registerAdsRoutes(app: any) {
     }
   });
 
-  router.post("/:id/creatives", adUpload.single("file"), async (req: any, res: any) => {
+  router.post("/:id/creatives", (req: any, res: any, next: any) => {
+    adUpload.single("file")(req, res, (err: any) => {
+      if (err) {
+        const status = 400;
+        const message = err.code === "LIMIT_FILE_SIZE"
+          ? "File is too large (max 50 MB)"
+          : err.message || "File upload error";
+        return res.status(status).json({ error: message });
+      }
+      next();
+    });
+  }, async (req: any, res: any) => {
     try {
       if (!req.file) return res.status(400).json({ error: "No file provided" });
 
