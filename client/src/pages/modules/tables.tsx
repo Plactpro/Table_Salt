@@ -468,7 +468,8 @@ function TablesPageContent() {
   const { data: tables = [], isLoading: tablesLoading } = useQuery<TableData[]>({ queryKey: ["/api/tables"] });
   const { data: zones = [] } = useQuery<ZoneData[]>({ queryKey: ["/api/table-zones"] });
   const { data: waitlist = [] } = useQuery<WaitlistData[]>({ queryKey: ["/api/waitlist"] });
-  const { data: reservations = [] } = useQuery<ReservationData[]>({ queryKey: ["/api/reservations"] });
+  const { data: reservationsRes } = useQuery<{ data: ReservationData[]; total: number }>({ queryKey: ["/api/reservations"] });
+  const reservations: ReservationData[] = reservationsRes?.data ?? [];
   const { data: analytics } = useQuery<AnalyticsData>({ queryKey: ["/api/table-analytics"] });
   const { data: customersRes } = useQuery<{ data: CustomerData[]; total: number }>({ queryKey: ["/api/customers"] });
   const customers = customersRes?.data ?? [];
