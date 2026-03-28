@@ -453,19 +453,6 @@ export function registerAdsRoutes(app: any) {
         ? `${(fileSizeBytes / 1024).toFixed(1)} KB`
         : `${(fileSizeBytes / (1024 * 1024)).toFixed(1)} MB`;
 
-      if (IMAGE_MIMES.includes(mime)) {
-        try {
-          const meta = await sharp(req.file.buffer).metadata();
-          const w = meta.width ?? 0;
-          const h = meta.height ?? 0;
-          if (w < 800 || h < 450) {
-            return res.status(400).json({ error: `Image must be at least 800×450 px (got ${w}×${h})` });
-          }
-        } catch {
-          return res.status(400).json({ error: "Could not read image dimensions" });
-        }
-      }
-
       let durationSeconds: number | null = null;
       if (VIDEO_MIMES.includes(mime)) {
         const ext = path.extname(req.file.originalname) || ".mp4";
