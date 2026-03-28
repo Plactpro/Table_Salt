@@ -88,7 +88,7 @@ export function registerParkingRoutes(app: Express): void {
           ticketNumber: t.ticket_number,
         } as typeof s & { vehicleNumber?: string; vehicleType?: string; entryTime?: Date; ticketNumber?: string } : s;
       });
-      res.json(enriched);
+      res.json(enriched.map((s: any) => ({ ...s, code: s.slotCode })));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 

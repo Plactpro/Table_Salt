@@ -631,7 +631,10 @@ function NewTicketDialog({
                     </div>
                   )}
                   {availableSlots.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">No available slots configured</p>
+                    <div className="text-center py-4 space-y-1">
+                      <p className="text-sm text-muted-foreground">No available slots configured</p>
+                      <p className="text-xs text-muted-foreground">Add slots in Parking → Settings → Slot Management</p>
+                    </div>
                   ) : (
                     <div className="grid grid-cols-4 gap-2 max-h-60 overflow-y-auto">
                       <button
@@ -646,7 +649,7 @@ function NewTicketDialog({
                           key={slot.id}
                           data-testid={`card-slot-${slot.code}`}
                           onClick={() => setForm(f => ({ ...f, selectedSlotId: slot.id, selectedSlotCode: slot.code }))}
-                          className={`p-2 rounded-lg border text-xs font-medium transition-colors ${form.selectedSlotId === slot.id ? "bg-green-100 border-green-400 text-green-700" : "border-green-200 bg-green-50 text-green-700 hover:bg-green-100"}`}
+                          className={`p-2 rounded-lg border text-xs font-medium transition-colors ${form.selectedSlotId === slot.id ? "bg-green-100 border-green-400 text-green-700 dark:bg-green-900/40 dark:border-green-500 dark:text-green-300" : "border-green-200 bg-green-50 text-green-700 hover:bg-green-100 dark:border-green-700 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40"}`}
                         >
                           {slot.code}
                         </button>
