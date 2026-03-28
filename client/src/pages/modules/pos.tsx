@@ -1627,7 +1627,7 @@ export default function POSPage() {
                             {item.description && <p className="text-[10px] text-muted-foreground line-clamp-1 mb-1.5">{item.description}</p>}
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-sm text-primary" data-testid={`text-price-${item.id}`}>{fmt(resolvedItemPrice?.resolvedPrice ?? item.price)}</span>
-                              {inCart && !isUnavailable ? (<div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button><span className="w-6 text-center text-sm font-semibold">{inCart.quantity}</span><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button></div>) : (!isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={() => addToCart(item)}><Plus className="h-3.5 w-3.5 text-primary" /></button>)}
+                              {inCart && !isUnavailable ? (<div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button><span className="w-6 text-center text-sm font-semibold">{inCart.quantity}</span><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button></div>) : (!isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={(e) => { e.stopPropagation(); addToCart(item); }}><Plus className="h-3.5 w-3.5 text-primary" /></button>)}
                             </div>
                           </CardContent>
                         </Card>
@@ -1712,7 +1712,7 @@ export default function POSPage() {
                               <button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-increase-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button>
                             </div>
                           ) : (
-                            !isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={() => addToCart(item)} data-testid={`button-card-add-${item.id}`}><Plus className="h-3.5 w-3.5 text-primary" /></button>
+                            !isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={(e) => { e.stopPropagation(); addToCart(item); }} data-testid={`button-card-add-${item.id}`}><Plus className="h-3.5 w-3.5 text-primary" /></button>
                           )}
                         </div>
                       </CardContent>
