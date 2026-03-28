@@ -104,7 +104,7 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
           <div>
             <Label>{t("amount")} ({currencyCode})</Label>
             <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{symbol}</span>
+              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground text-sm font-medium">{symbol}</span>
               <Input
                 type="number"
                 min="0"
@@ -112,7 +112,7 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
                 step="0.01"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
-                className="pl-7"
+                className={symbol.length === 1 ? "pl-8" : symbol.length === 2 ? "pl-10" : "pl-16"}
                 placeholder="0.00"
                 data-testid="input-payout-amount"
               />
