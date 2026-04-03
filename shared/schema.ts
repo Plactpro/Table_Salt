@@ -403,6 +403,7 @@ export const inventoryItems = pgTable("inventory_items", {
     .primaryKey()
     .default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+    outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
   name: text("name").notNull(),
   sku: text("sku"),
   category: text("category"),
@@ -432,6 +433,7 @@ export const inventoryItems = pgTable("inventory_items", {
   index("idx_inventory_items_tenant_id").on(t.tenantId),
   index("idx_inventory_items_tenant_category").on(t.tenantId, t.category),
   index("idx_inventory_item_category").on(t.tenantId, t.itemCategory),
+    index("idx_inventory_items_outlet_id").on(t.outletId),
 ]);
 
 export const stockMovements = pgTable("stock_movements", {
