@@ -8,3 +8,4 @@ cookies.txt
 *.cookies.txt.auth/
 playwright-report/
 test-results/
+.env
