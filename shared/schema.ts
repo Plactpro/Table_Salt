@@ -1820,7 +1820,7 @@ export const bills = pgTable("bills", {
   orderId: varchar("order_id", { length: 36 }).notNull().references(() => orders.id),
   tableId: varchar("table_id", { length: 36 }).references(() => tables.id),
   customerId: varchar("customer_id", { length: 36 }),
-  waiterId: varchar("waiter_id", { length: 36 }).notNull().references(() => users.id),
+    waiterId: varchar("waiter_id", { length: 36 }).references(() => users.id),
   waiterName: varchar("waiter_name", { length: 255 }),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0"),
   discountAmount: decimal("discount_amount", { precision: 10, scale: 2 }).default("0"),
