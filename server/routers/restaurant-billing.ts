@@ -395,7 +395,12 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         const tenant = await storage.getTenant(user.tenantId);
         const configuredTaxRate = Number(tenant?.taxRate ?? 0);
         if (configuredTaxRate > 0) {
-          const expectedTax = Math.round(billSubtotal * configuredTaxRate) / 100;
+          // Account for compound tax: if enabled, service charge is added to tax base
+        const serviceChargePct = Number(tenant?.serviceCharge ?? 0) / 100;
+        const serviceChargeAmt = billSubtotal * serviceChargePct;
+        const isCompoundTax = tenant?.compoundTax === true || tenant?.compoundTax === "true";
+        const taxBase = isCompoundTax ? billSubtotal + serviceChargeAmt : billSubtotal;
+        const expectedTax = Math.round(taxBase * configuredTaxRate) / 100;
           const taxDeviation = Math.abs(billTaxAmount - expectedTax);
           const toleranceAmt = 1.0; // ±1 currency unit to absorb per-line rounding
           if (taxDeviation > toleranceAmt) {
