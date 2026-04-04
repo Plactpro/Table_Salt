@@ -1710,9 +1710,9 @@ export default function POSPage() {
                           </div>
                           {inCart && !isUnavailable ? (
                             <div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}>
-                              <button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-decrease-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button>
+                              <button className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-decrease-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button>
                               <motion.span key={inCart.quantity} initial={{ scale: 1.3 }} animate={{ scale: 1 }} className="w-6 text-center text-sm font-semibold" data-testid={`badge-qty-${item.id}`}>{inCart.quantity}</motion.span>
-                              <button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-increase-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button>
+                              <button className="h-7 w-7 rounded border flex items-center justify-center hover:bg-muted transition-colors" data-testid={`button-card-increase-${item.id}`} onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button>
                             </div>
                           ) : (
                             !isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={(e) => { e.stopPropagation(); addToCart(item); }} data-testid={`button-card-add-${item.id}`}><Plus className="h-3.5 w-3.5 text-primary" /></button>
