@@ -1,0 +1,33 @@
+I am working on Table Salt restaurant SaaS. GitHub repo: https://github.com/Plactpro/Table_Salt
+Build is clean. Now fix P2 Batch A - Validation and Customer Name Bugs (O2, D1, D2).
+
+O2 - Takeaway/Delivery accepted without customer name and phone:
+Find the order submission handler for takeaway and delivery orders. Add validation before submission:
+if (orderType === 'takeaway' || orderType === 'delivery') {
+  if (!customerName || customerName.trim() === '') {
+    toast.error("Customer name is required for takeaway and delivery orders");
+    return;
+  }
+  if (!customerPhone || customerPhone.trim() === '') {
+    toast.error("Customer phone number is required for takeaway and delivery orders");
+    return;
+  }
+}
+Also add server-side validation in the orders router POST /api/orders endpoint:
+if ((body.orderType === 'takeaway' || body.orderType === 'delivery') && (!body.customerName || !body.customerPhone)) {
+  return res.status(400).json({ error: "Customer name and phone are required for takeaway and delivery orders" });
+}
+
+D1 - Phone order shows Guest instead of customer name:
+Find where phone orders set customer name. The delivery order display is reading customerName but phone orders likely store the name in a different field. Check the order creation for phone orders and ensure customerName is populated from the phone order entry form. If the display falls back to Guest when customerName is empty, find that fallback and also check order.notes or order.channelData for the customer name from phone orders.
+
+D2 - Orders move to delivery states without agent assigned:
+Find the status transition handler for delivery orders. Add agent assignment check before allowing status change to out_for_delivery:
+if (newStatus === 'out_for_delivery') {
+  const deliveryOrder = await storage.getDeliveryOrder(orderId);
+  if (!deliveryOrder?.driverName && !deliveryOrder?.deliveryAgentId) {
+    return res.status(400).json({ error: "A delivery agent must be assigned before marking order as Out for Delivery" });
+  }
+}
+
+After fixing all 3 bugs, run: npm run build 2>&1 | tail -10
