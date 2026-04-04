@@ -75,7 +75,7 @@ import {
   type StockTakeLine, type InsertStockTakeLine,
   type KitchenStation, type InsertKitchenStation,
   orderChannels, channelConfigs, onlineMenuMappings,
-  regions, franchiseInvoices, outletMenuOverrides, outletMenuPrices,
+  regions, franchiseInvoices, outletMenuPrices,
   suppliers, supplierCatalogItems, purchaseOrders, purchaseOrderItems,
   goodsReceivedNotes, grnItems, procurementApprovals,
   type OrderChannel, type InsertOrderChannel,
@@ -83,7 +83,6 @@ import {
   type OnlineMenuMapping, type InsertOnlineMenuMapping,
   type Region, type InsertRegion,
   type FranchiseInvoice, type InsertFranchiseInvoice,
-  type OutletMenuOverride, type InsertOutletMenuOverride,
   type Supplier, type InsertSupplier,
   type SupplierCatalogItem, type InsertSupplierCatalogItem,
   type PurchaseOrder, type InsertPurchaseOrder,
@@ -429,11 +428,6 @@ export interface IStorage {
   getFranchiseInvoicesByOutlet(outletId: string, tenantId: string): Promise<FranchiseInvoice[]>;
   createFranchiseInvoice(data: InsertFranchiseInvoice): Promise<FranchiseInvoice>;
   updateFranchiseInvoice(id: string, tenantId: string, data: Partial<InsertFranchiseInvoice>): Promise<FranchiseInvoice | undefined>;
-
-  getOutletMenuOverrides(outletId: string, tenantId: string): Promise<OutletMenuOverride[]>;
-  createOutletMenuOverride(data: InsertOutletMenuOverride): Promise<OutletMenuOverride>;
-  updateOutletMenuOverride(id: string, tenantId: string, data: Partial<InsertOutletMenuOverride>): Promise<OutletMenuOverride | undefined>;
-  deleteOutletMenuOverride(id: string, tenantId: string): Promise<void>;
 
   getOutletKPIs(tenantId: string, outletId?: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
   getOutletFeedbackMetrics(tenantId: string, from?: Date, to?: Date): Promise<Record<string, unknown>[]>;
@@ -1947,21 +1941,6 @@ export class DatabaseStorage implements IStorage {
     return inv;
   }
 
-  async getOutletMenuOverrides(outletId: string, tenantId: string) {
-    return db.select().from(outletMenuOverrides).where(and(eq(outletMenuOverrides.outletId, outletId), eq(outletMenuOverrides.tenantId, tenantId)));
-  }
-  async createOutletMenuOverride(data: InsertOutletMenuOverride) {
-    const [o] = await db.insert(outletMenuOverrides).values(data).returning();
-    return o;
-  }
-  async updateOutletMenuOverride(id: string, tenantId: string, data: Partial<InsertOutletMenuOverride>) {
-    const [o] = await db.update(outletMenuOverrides).set(data).where(and(eq(outletMenuOverrides.id, id), eq(outletMenuOverrides.tenantId, tenantId))).returning();
-    return o;
-  }
-  async deleteOutletMenuOverride(id: string, tenantId: string) {
-    await db.delete(outletMenuOverrides).where(and(eq(outletMenuOverrides.id, id), eq(outletMenuOverrides.tenantId, tenantId)));
-  }
-
   async getOutletKPIs(tenantId: string, outletId?: string, from?: Date, to?: Date) {
     const conditions = [eq(orders.tenantId, tenantId)];
     if (outletId) conditions.push(eq(orders.outletId, outletId));
@@ -2041,21 +2020,7 @@ export class DatabaseStorage implements IStorage {
 
   async getMenuItemsForOutlet(tenantId: string, outletId: string) {
     const items = await db.select().from(menuItems).where(and(eq(menuItems.tenantId, tenantId), eq(menuItems.isDeleted, false)));
-    const overrideRows = await db.select().from(outletMenuOverrides)
-      .where(and(eq(outletMenuOverrides.tenantId, tenantId), eq(outletMenuOverrides.outletId, outletId)));
-    const overrideMap = new Map(overrideRows.map(o => [o.menuItemId, o]));
-    return items.map(item => {
-      const override = overrideMap.get(item.id);
-      if (override) {
-        return {
-          ...item,
-          price: override.overridePrice || item.price,
-          available: override.available,
-          hasOverride: true,
-        };
-      }
-      return { ...item, hasOverride: false };
-    }).filter(item => item.available !== false);
+    return items;
   }
 
   async getSuppliersByTenant(tenantId: string) {
