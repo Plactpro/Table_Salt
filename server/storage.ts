@@ -843,6 +843,39 @@ export interface IStorage {
   generateValetTicketNumber(outletId: string, tenantId: string): Promise<string>;
 }
 
+function mapCashSessionRow(row) {
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    outletId: row.outlet_id,
+    posSessionId: row.pos_session_id,
+    sessionNumber: row.session_number,
+    cashierId: row.cashier_id,
+    cashierName: row.cashier_name,
+    currencyCode: row.currency_code,
+    currencySymbol: row.currency_symbol,
+    status: row.status,
+    openingFloat: row.opening_float,
+    openingFloatBreakdown: row.opening_float_breakdown,
+    expectedClosingCash: row.expected_closing_cash,
+    physicalClosingCash: row.physical_closing_cash,
+    closingBreakdown: row.closing_breakdown,
+    cashVariance: row.cash_variance,
+    varianceReason: row.variance_reason,
+    totalCashSales: row.total_cash_sales,
+    totalCashRefunds: row.total_cash_refunds,
+    totalCashPayouts: row.total_cash_payouts,
+    totalTransactions: row.total_transactions,
+    openedAt: row.opened_at,
+    closedAt: row.closed_at,
+    approvedBy: row.approved_by,
+    approvedAt: row.approved_at,
+    notes: row.notes,
+    createdAt: row.created_at,
+  };
+}
+
 export class DatabaseStorage implements IStorage {
   async getTenant(id: string) {
     const [t] = await db.select().from(tenants).where(eq(tenants.id, id));
@@ -3658,38 +3691,6 @@ export class DatabaseStorage implements IStorage {
   }
 
 
-function mapCashSessionRow(row) {
-  if (!row) return undefined;
-  return {
-    id: row.id,
-    tenantId: row.tenant_id,
-    outletId: row.outlet_id,
-    posSessionId: row.pos_session_id,
-    sessionNumber: row.session_number,
-    cashierId: row.cashier_id,
-    cashierName: row.cashier_name,
-    currencyCode: row.currency_code,
-    currencySymbol: row.currency_symbol,
-    status: row.status,
-    openingFloat: row.opening_float,
-    openingFloatBreakdown: row.opening_float_breakdown,
-    expectedClosingCash: row.expected_closing_cash,
-    physicalClosingCash: row.physical_closing_cash,
-    closingBreakdown: row.closing_breakdown,
-    cashVariance: row.cash_variance,
-    varianceReason: row.variance_reason,
-    totalCashSales: row.total_cash_sales,
-    totalCashRefunds: row.total_cash_refunds,
-    totalCashPayouts: row.total_cash_payouts,
-    totalTransactions: row.total_transactions,
-    openedAt: row.opened_at,
-    closedAt: row.closed_at,
-    approvedBy: row.approved_by,
-    approvedAt: row.approved_at,
-    notes: row.notes,
-    createdAt: row.created_at,
-  };
-}
   async getCashSession(id: string): Promise<CashSession | undefined> {
     const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1`, [id]);
     return mapCashSessionRow(rows[0]) as CashSession | undefined;
