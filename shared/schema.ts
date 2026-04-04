@@ -413,6 +413,7 @@ export const orderItems = pgTable("order_items", {
   id: varchar("id", { length: 36 })
     .primaryKey()
     .default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).references(() => tenants.id, { onDelete: "cascade" }),
   orderId: varchar("order_id", { length: 36 }).notNull().references(() => orders.id),
   menuItemId: varchar("menu_item_id", { length: 36 }).references(() => menuItems.id),
   name: text("name").notNull(),
@@ -458,6 +459,7 @@ export const orderItems = pgTable("order_items", {
   servedAt: timestamp("served_at", { withTimezone: true }),
 }, (t) => [
   index("idx_order_items_order_id").on(t.orderId),
+  index("idx_order_items_tenant_id").on(t.tenantId),
 ]);
 
 export const inventoryItems = pgTable("inventory_items", {
@@ -732,6 +734,7 @@ export const attendanceLogs = pgTable("attendance_logs", {
   index("idx_attendance_tenant_id").on(t.tenantId),
   index("idx_attendance_tenant_created").on(t.tenantId, t.createdAt),
   index("idx_attendance_tenant_user").on(t.tenantId, t.userId),
+  index("idx_attendance_clock_in").on(t.clockIn),
 ]);
 
 export const insertStaffScheduleSchema = createInsertSchema(staffSchedules).omit({ id: true });
