@@ -374,7 +374,7 @@ export const orders = pgTable("orders", {
   servedAt: timestamp("served_at", { withTimezone: true }),
   specialInstructions: text("special_instructions"),
   vipNotes: text("vip_notes"),
-  customerId: varchar("customer_id", { length: 36 }),
+  customerId: varchar("customer_id", { length: 36 }).references(() => customers.id, { onDelete: "set null" }),
   orderType: orderTypeEnum("order_type").default("dine_in"),
   status: orderStatusEnum("status").default("new"),
   subtotal: decimal("subtotal", { precision: 10, scale: 2 }).default("0"),
