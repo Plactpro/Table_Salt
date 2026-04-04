@@ -2938,37 +2938,6 @@ export async function runTask108Migrations(): Promise<void> {
   await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS condition_report JSONB`);
   await pool.query(`ALTER TABLE valet_retrieval_requests ADD COLUMN IF NOT EXISTS scheduled_for TIMESTAMP`);
 
-  // Post-merge fix: Create quotation_requests + quotation_request_items tables that exist in
-  // schema.ts but were never created in the DB (causing Drizzle rename warnings on every db:push)
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS quotation_requests (
-      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      tenant_id VARCHAR(36) NOT NULL REFERENCES tenants(id),
-      outlet_id VARCHAR(36) REFERENCES outlets(id),
-      rfq_number VARCHAR(50) NOT NULL,
-      status VARCHAR(30) DEFAULT 'draft',
-      requested_by VARCHAR(36) REFERENCES users(id),
-      requested_by_name VARCHAR(255),
-      required_by_date DATE,
-      notes TEXT,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-  await pool.query(`
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_quotation_requests_tenant_rfq
-    ON quotation_requests(tenant_id, rfq_number)
-  `);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS quotation_request_items (
-      id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      rfq_id VARCHAR(36) NOT NULL REFERENCES quotation_requests(id),
-      inventory_item_id VARCHAR(36) REFERENCES inventory_items(id),
-      ingredient_name VARCHAR(255),
-      required_quantity DECIMAL(10,3),
-      unit VARCHAR(30),
-      specifications TEXT
-    )
-  `);
 
   // Task #168: Impersonation Trust & Transparency — impersonation sessions audit table
   await pool.query(`
