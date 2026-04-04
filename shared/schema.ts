@@ -154,6 +154,7 @@ export const users = pgTable("users", {
   pinSetAt: timestamp("pin_set_at", { withTimezone: true }),
   pinExpiresAt: timestamp("pin_expires_at", { withTimezone: true }),
   // PR-013: User language preference for i18n
+    restrictionLiftedById: integer("restriction_lifted_by_id"),
   preferredLanguage: varchar("preferred_language", { length: 10 }).default("en"),
 }, (t) => [
   index("idx_users_tenant_id").on(t.tenantId),
@@ -1109,6 +1110,8 @@ export const orderChannels = pgTable("order_channels", {
   slug: text("slug").notNull(),
   icon: text("icon"),
   active: boolean("active").default(true),
+    lastWebhookAt: timestamp("last_webhook_at", { withTimezone: true }),
+  webhookAlertThresholdMinutes: integer("webhook_alert_threshold_minutes"),
   commissionPct: decimal("commission_pct", { precision: 5, scale: 2 }).default("0"),
 });
 
