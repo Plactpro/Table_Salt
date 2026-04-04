@@ -406,9 +406,12 @@ export default function MenuPage() {
   const updateItem = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Record<string, unknown> }) => {
       pendingUpdateRef.current = { id, data };
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+      const csrfHdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrfMatch) csrfHdrs["x-csrf-token"] = decodeURIComponent(csrfMatch[1]);
       const res = await fetch(`/api/menu-items/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: csrfHdrs,
         credentials: "include",
         body: JSON.stringify(data),
       });
