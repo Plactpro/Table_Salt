@@ -250,7 +250,7 @@ export interface IStorage {
   updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
   deleteReservationByTenant(id: string, tenantId: string, deletedBy?: string): Promise<void>;
 
-  getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Order[]>;
+  getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string; orderType?: string; dateFrom?: string; dateTo?: string }): Promise<Order[]>;
   getOrder(id: string, tenantId: string): Promise<Order | undefined>;
   getOrderById(id: string): Promise<Order | undefined>;
   getOrderByClientId(tenantId: string, clientOrderId: string): Promise<Order | undefined>;
@@ -1058,8 +1058,14 @@ export class DatabaseStorage implements IStorage {
     await db.update(reservations).set({ isDeleted: true, deletedAt: new Date(), deletedBy: deletedBy ?? null }).where(and(eq(reservations.id, id), eq(reservations.tenantId, tenantId)));
   }
 
-  async getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }) {
-    const q = db.select().from(orders).where(eq(orders.tenantId, tenantId)).orderBy(desc(orders.createdAt));
+  async getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string; orderType?: string; dateFrom?: string; dateTo?: string }) {
+    const conditions: any[] = [eq(orders.tenantId, tenantId)];
+    if (opts?.status && opts.status !== "all") conditions.push(eq(orders.status, opts.status as any));
+    if (opts?.orderType && opts.orderType !== "all") conditions.push(eq(orders.orderType, opts.orderType as any));
+    if (opts?.dateFrom) conditions.push(gte(orders.createdAt, new Date(opts.dateFrom)));
+    if (opts?.dateTo) { const dt = new Date(opts.dateTo); dt.setHours(23, 59, 59, 999); conditions.push(lte(orders.createdAt, dt)); }
+    const where = conditions.length > 1 ? and(...conditions) : conditions[0];
+    const q = db.select().from(orders).where(where).orderBy(desc(orders.createdAt));
     if (opts?.limit !== undefined && opts?.offset !== undefined) return q.limit(opts.limit).offset(opts.offset);
     if (opts?.limit !== undefined) return q.limit(opts.limit);
     return q;

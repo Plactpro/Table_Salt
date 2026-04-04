@@ -240,10 +240,13 @@ export default function OrdersHub() {
       stats[ch.slug] = { total: 0, active: 0, revenue: 0 };
     }
     stats["pos"] = stats["pos"] || { total: 0, active: 0, revenue: 0 };
+    // D6 fix: activeStatuses matches only non-terminal statuses — excludes completed/cancelled/voided/paid
+    const activeStatuses = ["new", "confirmed", "sent_to_kitchen", "in_progress", "ready", "served", "ready_to_pay", "pending_payment"];
     for (const o of orders) {
       const ch = o.channel || "pos";
       if (!stats[ch]) stats[ch] = { total: 0, active: 0, revenue: 0 };
-      stats[ch].total++;
+      // Only count active statuses toward channel active count (fixes D6)
+      if (activeStatuses.includes(o.status || "")) stats[ch].total++;
       if (liveStatuses.includes(o.status || "")) stats[ch].active++;
       if (o.status === "paid" || o.status === "served") stats[ch].revenue += parseFloat(o.total || "0");
     }

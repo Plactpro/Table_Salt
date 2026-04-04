@@ -141,10 +141,15 @@ export default function OrdersPage() {
   const [showTableMoveSelect, setShowTableMoveSelect] = useState(false);
   const ORDERS_LIMIT = 50;
 
-  const { data: ordersRes, isLoading } = useQuery<{ data: Order[]; total: number; limit: number; offset: number }>({
-    queryKey: ["/api/orders", ordersPage],
+  const { data: ordersRes, isLoading } = useQuery<{ data: Order[]; total: number; activeCount: number; readyToPayCount: number; completedCount: number; limit: number; offset: number }>({
+    queryKey: ["/api/orders", ordersPage, statusFilter, typeFilter, dateFrom, dateTo],
     queryFn: async () => {
-      const res = await fetch(`/api/orders?limit=${ORDERS_LIMIT}&offset=${ordersPage * ORDERS_LIMIT}`, { credentials: "include" });
+      const params = new URLSearchParams({ limit: String(ORDERS_LIMIT), offset: String(ordersPage * ORDERS_LIMIT) });
+      if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
+      if (typeFilter && typeFilter !== "all") params.set("orderType", typeFilter);
+      if (dateFrom) params.set("dateFrom", dateFrom);
+      if (dateTo) params.set("dateTo", dateTo);
+      const res = await fetch(`/api/orders?${params}`, { credentials: "include" });
       return res.json();
     },
   });
@@ -237,21 +242,11 @@ export default function OrdersPage() {
   }, [tables, to]);
 
   const filteredOrders = useMemo(() => {
+    // Status, type, and date filters are now applied server-side — only search and sort applied here
     let result = [...orders];
-    if (statusFilter !== "all") result = result.filter((o) => o.status === statusFilter);
-    if (typeFilter !== "all") result = result.filter((o) => o.orderType === typeFilter);
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       result = result.filter((o) => o.id.toLowerCase().includes(q) || (o.notes && o.notes.toLowerCase().includes(q)) || (o.tableId && tableMap[o.tableId]?.toLowerCase().includes(q)));
-    }
-    if (dateFrom) {
-      const from = new Date(dateFrom);
-      result = result.filter((o) => o.createdAt && new Date(o.createdAt) >= from);
-    }
-    if (dateTo) {
-      const to = new Date(dateTo);
-      to.setHours(23, 59, 59, 999);
-      result = result.filter((o) => o.createdAt && new Date(o.createdAt) <= to);
     }
     result.sort((a, b) => {
       let cmp = 0;
@@ -260,7 +255,7 @@ export default function OrdersPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return result;
-  }, [orders, statusFilter, typeFilter, searchQuery, dateFrom, dateTo, sortField, sortDir, tableMap]);
+  }, [orders, searchQuery, sortField, sortDir, tableMap]);
 
   const canUpdateStatus = user?.role === "owner" || user?.role === "manager" || user?.role === "kitchen" || user?.role === "waiter";
 
@@ -274,13 +269,13 @@ export default function OrdersPage() {
     return sortDir === "asc" ? <ChevronUp className="h-3 w-3 ml-1 inline" /> : <ChevronDown className="h-3 w-3 ml-1 inline" />;
   };
 
-  const summaryStats = useMemo(() => {
-    const total = filteredOrders.length;
-    const active = filteredOrders.filter((o) => !["paid", "cancelled", "voided"].includes(o.status || "")).length;
-    const readyToPay = filteredOrders.filter((o) => o.status === "ready_to_pay").length;
-    const completed = filteredOrders.filter((o) => o.status === "paid").length;
-    return { total, active, readyToPay, completed };
-  }, [filteredOrders]);
+  const summaryStats = useMemo(() => ({
+    // Use server-provided counts — accurate across ALL pages, not just current page (fixes O13)
+    total: ordersRes?.total ?? 0,
+    active: ordersRes?.activeCount ?? 0,
+    readyToPay: ordersRes?.readyToPayCount ?? 0,
+    completed: ordersRes?.completedCount ?? 0,
+  }), [ordersRes]);
 
   const handleBillPreview = async (orderId: string) => {
     navigate(`/pos/bill/${orderId}`);
