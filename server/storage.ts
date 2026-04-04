@@ -4411,7 +4411,7 @@ export class DatabaseStorage implements IStorage {
     return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, name: r.name, level: r.level, color: r.color, totalSlots: r.total_slots, availableSlots: r.available_slots, isActive: r.is_active, sortOrder: r.sort_order, createdAt: r.created_at };
   }
   private _mapParkingSlot(r: any): ParkingSlot {
-    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, zoneId: r.zone_id, slotCode: r.slot_code, slotType: r.slot_type, status: r.status, isActive: r.is_active, notes: r.notes, createdAt: r.created_at };
+    return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, zoneId: r.zone_id, slotCode: r.slot_code, slotType: r.slot_type, status: r.status, isActive: r.is_active, notes: r.notes, createdAt: r.created_at, posX: r.pos_x, posY: r.pos_y };
   }
   private _mapParkingRate(r: any): ParkingRate {
     return { id: r.id, tenantId: r.tenant_id, outletId: r.outlet_id, vehicleType: r.vehicle_type, rateType: r.rate_type, rateAmount: r.rate_amount, dailyMaxCharge: r.daily_max_charge, taxRate: r.tax_rate, isActive: r.is_active, createdAt: r.created_at };
@@ -4528,7 +4528,7 @@ export class DatabaseStorage implements IStorage {
     return this._mapParkingSlot(rows[0]);
   }
   async updateParkingSlot(id: string, tenantId: string, data: Partial<InsertParkingSlot>): Promise<ParkingSlot | undefined> {
-    const fields: Record<string, string> = { zoneId: "zone_id", slotCode: "slot_code", slotType: "slot_type", status: "status", isActive: "is_active", notes: "notes" };
+    const fields: Record<string, string> = { zoneId: "zone_id", slotCode: "slot_code", slotType: "slot_type", status: "status", isActive: "is_active", notes: "notes", posX: "pos_x", posY: "pos_y" };
     const sets: string[] = []; const vals: any[] = [id, tenantId];
     for (const [k, col] of Object.entries(fields)) {
       if ((data as any)[k] !== undefined) { vals.push((data as any)[k]); sets.push(`${col} = $${vals.length}`); }
