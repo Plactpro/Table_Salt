@@ -3,10 +3,12 @@ import { useTranslation } from "react-i18next";
 import CourseManagementPanel from "@/components/pos/CourseManagementPanel";
 import CashPaymentModal from "@/components/cash/CashPaymentModal";
 import { renderBillHtml, dispatchPrint } from "@/lib/print-utils";
+import { exportReceiptPdf } from "@/lib/pdf-export";
 import i18n from "@/i18n/index";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { useOutletTimezone, formatLocal } from "@/hooks/use-outlet-timezone";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { getJurisdictionByCurrency, applyJurisdictionRounding } from "@shared/jurisdictions";
 import { useToast } from "@/hooks/use-toast";
@@ -126,6 +128,8 @@ export default function BillPreviewModal({
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const printRef = useRef<HTMLDivElement>(null);
+  // O10: Use outlet/tenant timezone for bill timestamps
+  const outletTimezone = useOutletTimezone();
   // PR-001: Stable per-bill-session idempotency key — generated once, reused on retry, reset on success
   const paymentIdemKeyRef = useRef<string | null>(null);
 
@@ -434,9 +438,9 @@ export default function BillPreviewModal({
       setBillNumber(existingBillData.billNumber || "");
       if (existingBillData.paymentStatus === "paid") {
         setStep("receipt");
-      } else if (existingBillData.paymentStatus === "partially_paid") {
-        setStep("payment");
       }
+      // O6: Do NOT auto-advance to "payment" for unpaid/partially_paid bills.
+      // Staff must always see the bill preview first so they can verify amounts.
     }
   }, [existingBillData]);
 
@@ -716,6 +720,19 @@ export default function BillPreviewModal({
     const isGST = isGSTTenant;
     const cgst = isGST ? taxAmount / 2 : 0;
     const sgst = isGST ? taxAmount / 2 : 0;
+    const digitalReceiptUrl = createdBill?.id
+      ? `${window.location.origin}/receipt/${createdBill.id}`
+      : null;
+
+    // O7: Pre-generate QR code as data URL so it is available in print contexts
+    // (external API fetches fail or load too late during printing)
+    let qrDataUrl: string | null = null;
+    if (digitalReceiptUrl) {
+      try {
+        qrDataUrl = await QRCode.toDataURL(digitalReceiptUrl, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } });
+      } catch (_) {}
+    }
+
     const billPayload = {
       billNumber: billNumber || createdBill?.billNumber || "",
       invoiceNumber: createdBill?.invoiceNumber,
@@ -744,9 +761,7 @@ export default function BillPreviewModal({
       customerGstin: (createdBill?.customerGstin || customerGstinInput) || null,
       loyaltyPointsEarned: lookedUpCustomer ? loyaltyEarned : undefined,
       restaurantLogo: user?.tenant?.logo || null,
-      digitalReceiptUrl: createdBill?.id
-        ? `${window.location.origin}/receipt/${createdBill.id}`
-        : null,
+      digitalReceiptUrl,
     };
 
     const html = renderBillHtml({
@@ -770,11 +785,15 @@ export default function BillPreviewModal({
       sgstAmount: billPayload.sgstAmount,
       tips: billPayload.tips,
       totalAmount: billPayload.totalAmount,
+      // O7: use tenant currency symbol (not hardcoded "₹")
+      currency,
       paymentMethod: billPayload.paymentMethod,
       customerName: billPayload.customerName,
       customerGstin: billPayload.customerGstin,
       loyaltyPointsEarned: billPayload.loyaltyPointsEarned,
       digitalReceiptUrl: billPayload.digitalReceiptUrl,
+      // O7: pass pre-generated QR data URL for reliable print rendering
+      qrDataUrl: qrDataUrl || undefined,
       language: tenant?.defaultLanguage || i18n.language || "en",
     });
 
@@ -978,9 +997,10 @@ export default function BillPreviewModal({
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   };
 
+  // O10: Format bill timestamp using tenant/outlet timezone (not browser timezone)
   const now = new Date();
-  const dateStr = now.toLocaleDateString(i18n.language, { day: "2-digit", month: "short", year: "numeric" });
-  const timeStr = now.toLocaleTimeString(i18n.language, { hour: "2-digit", minute: "2-digit" });
+  const dateStr = formatLocal(now, outletTimezone, { day: "2-digit", month: "short", year: "numeric" }, i18n.language);
+  const timeStr = formatLocal(now, outletTimezone, { hour: "2-digit", minute: "2-digit", hour12: true }, i18n.language);
 
   const BillWrapper = fullPage ? DialogPageContent : DialogContent;
   const billWrapperClass = fullPage
@@ -2066,19 +2086,33 @@ export default function BillPreviewModal({
                   <Printer className="h-4 w-4 mr-2" /> {tp("print")}
                 </Button>
                 <Button variant="outline" onClick={async () => {
-                  if (createdBill?.id) {
-                    try {
-                      const res = await fetch(`/api/print/bill/${createdBill.id}`, { method: "POST", credentials: "include" });
-                      const data = await res.json();
-                      if (data.fallback && data.html) {
-                        const w = window.open("", "_blank");
-                        if (w) { w.document.write(data.html); w.document.close(); }
-                        return;
-                      }
-                      if (data.success) return;
-                    } catch (_) {}
+                  // O10: Generate PDF directly without reopening the print dialog
+                  try {
+                    await exportReceiptPdf({
+                      restaurantName: tenantName,
+                      billNumber: billNumber || createdBill?.billNumber || "",
+                      dateStr,
+                      timeStr,
+                      orderType,
+                      tableNumber,
+                      waiterName: user?.name || user?.username || null,
+                      items: cart.map(item => ({ name: item.name, quantity: item.quantity, price: item.price })),
+                      subtotal,
+                      discountAmount: discountAmount + tierDiscountAmount,
+                      serviceCharge: serviceChargeAmount,
+                      taxAmount,
+                      tips: tipAmount,
+                      totalAmount: grandTotal,
+                      currency,
+                      currencyPosition,
+                      currencyDecimals,
+                      paymentMethod: activeMethod,
+                      customerName: lookedUpCustomer?.name || null,
+                      filename: `Receipt-${billNumber || createdBill?.billNumber || "bill"}.pdf`,
+                    });
+                  } catch (_) {
+                    toast({ title: tp("error"), description: "Could not generate PDF", variant: "destructive" });
                   }
-                  document.title = `Receipt-${billNumber}`; handlePrint();
                 }} data-testid="button-download-pdf">
                   <FileDown className="h-4 w-4 mr-2" /> {tp("downloadPdf")}
                 </Button>

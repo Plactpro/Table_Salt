@@ -124,6 +124,52 @@ export async function finalizeBillCompletion(opts: {
 
 export function registerRestaurantBillingRoutes(app: Express): void {
 
+  // O8: Public receipt endpoint — no auth required so customers can view via QR code
+  app.get("/api/public/receipt/:id", async (req, res) => {
+    try {
+      const bill = await storage.getBill(req.params.id);
+      if (!bill) return res.status(404).json({ message: "Receipt not found" });
+      // Fetch tenant name for display
+      const tenantRow = await db.select({ name: tenantsTable.name, currency: tenantsTable.currency })
+        .from(tenantsTable)
+        .where(eq(tenantsTable.id, bill.tenantId))
+        .limit(1);
+      const tenant = tenantRow[0] ?? null;
+      const allPayments = await storage.getBillPayments(bill.id);
+      const order = bill.orderId ? await storage.getOrder(bill.orderId, bill.tenantId) : null;
+      const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
+      res.json({
+        id: bill.id,
+        billNumber: bill.billNumber,
+        invoiceNumber: bill.invoiceNumber,
+        totalAmount: bill.totalAmount,
+        paymentStatus: bill.paymentStatus,
+        paidAt: bill.paidAt,
+        createdAt: bill.createdAt,
+        subtotal: bill.subtotal,
+        discountAmount: bill.discountAmount,
+        serviceCharge: bill.serviceCharge,
+        taxAmount: bill.taxAmount,
+        tips: bill.tips,
+        orderType: order?.orderType ?? null,
+        tableId: order?.tableId ?? null,
+        restaurantName: tenant?.name ?? "Restaurant",
+        currency: tenant?.currency ?? "USD",
+        // Restrict to safe fields only — no internal IDs or metadata exposed publicly
+        payments: allPayments.map(p => ({
+          paymentMethod: p.paymentMethod,
+          amount: p.amount,
+          isRefund: p.isRefund ?? false,
+        })),
+        items: items.map(i => ({
+          name: i.name,
+          quantity: i.quantity,
+          price: i.price,
+        })),
+      });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/restaurant-bills", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;

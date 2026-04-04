@@ -1,5 +1,6 @@
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 
 export interface PdfExportOptions {
   title: string;
@@ -147,6 +148,119 @@ export async function exportToPdf(opts: PdfExportOptions): Promise<void> {
       }
     },
   });
+
+  doc.save(filename);
+}
+
+export interface ReceiptPdfOptions {
+  restaurantName: string;
+  billNumber: string;
+  dateStr: string;
+  timeStr: string;
+  orderType?: string | null;
+  tableNumber?: string | number | null;
+  waiterName?: string | null;
+  items: Array<{ name: string; quantity: number; price: number }>;
+  subtotal: number;
+  discountAmount?: number;
+  serviceCharge?: number;
+  taxAmount?: number;
+  tips?: number;
+  totalAmount: number;
+  currency: string;
+  currencyPosition?: "before" | "after";
+  currencyDecimals?: number;
+  paymentMethod?: string;
+  customerName?: string | null;
+  filename?: string;
+}
+
+/**
+ * O10: Generate a receipt-shaped PDF and trigger a direct download.
+ * Used by the "Download PDF" button in BillPreviewModal to avoid
+ * reopening the browser print dialog.
+ */
+export async function exportReceiptPdf(opts: ReceiptPdfOptions): Promise<void> {
+  const {
+    restaurantName, billNumber, dateStr, timeStr, orderType, tableNumber, waiterName,
+    items, subtotal, discountAmount = 0, serviceCharge = 0, taxAmount = 0, tips = 0,
+    totalAmount, currency, currencyPosition = "before", currencyDecimals = 2,
+    paymentMethod, customerName, filename = `Receipt-${billNumber}.pdf`,
+  } = opts;
+
+  const fmt = (n: number) => sharedFormatCurrency(n, currency, { position: currencyPosition, decimals: currencyDecimals });
+
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: [80, 200] });
+  const pageW = doc.internal.pageSize.getWidth();
+  let y = 8;
+
+  const center = (text: string, fontSize: number, bold = false) => {
+    doc.setFontSize(fontSize);
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.text(text, pageW / 2, y, { align: "center" });
+    y += fontSize * 0.4 + 1;
+  };
+
+  const line = (text: string, fontSize = 7) => {
+    doc.setFontSize(fontSize);
+    doc.setFont("helvetica", "normal");
+    doc.text(text, 4, y);
+    y += fontSize * 0.4 + 1;
+  };
+
+  const row = (left: string, right: string, fontSize = 7, bold = false) => {
+    doc.setFontSize(fontSize);
+    doc.setFont("helvetica", bold ? "bold" : "normal");
+    doc.text(left, 4, y);
+    doc.text(right, pageW - 4, y, { align: "right" });
+    y += fontSize * 0.4 + 1;
+  };
+
+  const dashedLine = () => {
+    doc.setLineWidth(0.1);
+    doc.setLineDashPattern([1, 1], 0);
+    doc.line(4, y, pageW - 4, y);
+    doc.setLineDashPattern([], 0);
+    y += 2;
+  };
+
+  doc.setTextColor(30, 30, 30);
+  center(restaurantName.toUpperCase(), 9, true);
+  center(`Bill #${billNumber}`, 7);
+  center(`${dateStr} ${timeStr}`, 7);
+  if (tableNumber) center(`Table: ${tableNumber}`, 7);
+  if (waiterName) center(`Served by: ${waiterName}`, 7);
+  if (customerName) center(`Customer: ${customerName}`, 7);
+
+  dashedLine();
+
+  doc.setFontSize(7);
+  doc.setFont("helvetica", "bold");
+  doc.text("Item", 4, y);
+  doc.text("Qty", pageW * 0.6, y, { align: "center" });
+  doc.text("Amount", pageW - 4, y, { align: "right" });
+  y += 4;
+  dashedLine();
+
+  for (const item of items) {
+    row(item.name.length > 20 ? item.name.slice(0, 20) + "…" : item.name, fmt(item.price * item.quantity));
+    if (item.quantity > 1) line(`  ${item.quantity} x ${fmt(item.price)}`);
+  }
+
+  dashedLine();
+
+  row("Subtotal", fmt(subtotal));
+  if (discountAmount > 0) row("Discount", `-${fmt(discountAmount)}`);
+  if (serviceCharge > 0) row("Service Charge", fmt(serviceCharge));
+  if (taxAmount > 0) row("Tax", fmt(taxAmount));
+  if (tips > 0) row("Tips", fmt(tips));
+
+  dashedLine();
+  row("TOTAL", fmt(totalAmount), 8, true);
+  if (paymentMethod) row("Paid via", paymentMethod);
+
+  y += 3;
+  center("Thank you for dining with us!", 7);
 
   doc.save(filename);
 }
