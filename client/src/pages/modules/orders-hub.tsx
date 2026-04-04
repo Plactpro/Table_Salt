@@ -1,9 +1,10 @@
 import { PageTitle } from "@/lib/accessibility";
-import { useState, useMemo, Component } from "react";
+import { useState, useMemo, Component, useCallback } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -118,12 +119,33 @@ export default function OrdersHub() {
   const { toast } = useToast();
   const { dispatchKotForOrder } = useKotAutoDispatch();
   const queryClient = useQueryClient();
+  // D7: Listen for real-time order status changes from WebSocket — refresh live orders panel
+  useRealtimeEvent("order:updated", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+  }, [queryClient]));
+  useRealtimeEvent("order:new", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+  }, [queryClient]));
+  useRealtimeEvent("order:completed", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+  }, [queryClient]));
   const [activeTab, setActiveTab] = useState("live-orders");
   const [channelFilter, setChannelFilter] = useState("all");
   const [outletFilter, setOutletFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedOrder, setSelectedOrder] = useState<OrderWithItems | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  // D4: Fetch full order detail with items when an order is selected
+  const { data: orderDetail } = useQuery<OrderWithItems>({
+    queryKey: ["/api/orders", selectedOrderId],
+    queryFn: async () => {
+      const res = await fetch(`/api/orders/${selectedOrderId}`, { credentials: "include" });
+      return res.json();
+    },
+    enabled: !!selectedOrderId,
+  });
+  const activeOrderDetail = orderDetail ?? selectedOrder;
   const [mappingDialog, setMappingDialog] = useState(false);
   const [mappingForm, setMappingForm] = useState({ menuItemId: "", channelId: "", externalItemId: "", externalPrice: "" });
   const [configDialog, setConfigDialog] = useState(false);
@@ -212,6 +234,7 @@ export default function OrdersHub() {
     onSuccess: (data: any, variables: { id: string; status: string }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
       setSelectedOrder(null);
+      setSelectedOrderId(null);
       if (variables.status === "sent_to_kitchen") {
         dispatchKotForOrder(variables.id, user?.tenant?.name || "Kitchen");
       }
@@ -362,7 +385,7 @@ export default function OrdersHub() {
                 const channelData = order.channelData as Record<string, string> | null;
                 return (
                   <motion.div key={order.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }} layout>
-                    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => setSelectedOrder(order)} data-testid={`card-order-${order.id.slice(-4)}`}>
+                    <Card className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => { setSelectedOrder(order); setSelectedOrderId(order.id); }} data-testid={`card-order-${order.id.slice(-4)}`}>
                       <CardContent className="p-4 space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
@@ -520,36 +543,42 @@ export default function OrdersHub() {
         </TabsContent>
       </Tabs></TabErrorBoundary>
 
-      <Dialog open={!!selectedOrder} onOpenChange={() => setSelectedOrder(null)}>
+      <Dialog open={!!(selectedOrder || selectedOrderId)} onOpenChange={() => { setSelectedOrder(null); setSelectedOrderId(null); }}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               Order Details
-              {selectedOrder?.channel && (
+              {activeOrderDetail?.channel && (
                 <Badge variant="outline" className={CHANNEL_COLORS[selectedOrder.channel] || ""}>
-                  {selectedOrder.channel.toUpperCase()}
+                  {activeOrderDetail?.channel?.toUpperCase()}
                 </Badge>
               )}
             </DialogTitle>
           </DialogHeader>
-          {selectedOrder && (
+          {activeOrderDetail && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="text-muted-foreground">Order ID:</span> <span className="font-mono">{selectedOrder.id.slice(-8)}</span></div>
-                {selectedOrder.channelOrderId && <div><span className="text-muted-foreground">Channel ID:</span> <span className="font-mono">{selectedOrder.channelOrderId}</span></div>}
-                <div><span className="text-muted-foreground">Status:</span> <Badge className={STATUS_COLORS[selectedOrder.status || "new"]}>{(selectedOrder.status || "new").replace(/_/g, " ")}</Badge></div>
-                <div><span className="text-muted-foreground">Type:</span> {selectedOrder.orderType}</div>
+                <div><span className="text-muted-foreground">Order ID:</span> <span className="font-mono">{activeOrderDetail?.id.slice(-8)}</span></div>
+                {activeOrderDetail?.channelOrderId && <div><span className="text-muted-foreground">Channel ID:</span> <span className="font-mono">{activeOrderDetail?.channelOrderId}</span></div>}
+                <div><span className="text-muted-foreground">Status:</span> <Badge className={STATUS_COLORS[activeOrderDetail?.status || "new"]}>{(activeOrderDetail?.status || "new").replace(/_/g, " ")}</Badge></div>
+                {activeOrderDetail?.status === "voided" && (activeOrderDetail as any)?.voidedReason && (
+                  <div className="text-sm text-red-500 mt-1">Void reason: {(activeOrderDetail as any).voidedReason}</div>
+                )}
+                {activeOrderDetail?.status === "cancelled" && (activeOrderDetail as any)?.rejectionReason && (
+                  <div className="text-sm text-red-500 mt-1">Cancellation reason: {(activeOrderDetail as any).rejectionReason}</div>
+                )}
+                <div><span className="text-muted-foreground">Type:</span> {activeOrderDetail?.orderType}</div>
               </div>
-              {(selectedOrder.channelData as Record<string, string> | null) && (
+              {(activeOrderDetail?.channelData as Record<string, string> | null) && (
                 <div className="p-3 rounded bg-muted/30 space-y-1 text-sm">
-                  {(selectedOrder.channelData as Record<string, string>).customerName && <div className="flex items-center gap-1"><User className="h-3 w-3" /> {(selectedOrder.channelData as Record<string, string>).customerName}</div>}
-                  {(selectedOrder.channelData as Record<string, string>).customerPhone && <div className="flex items-center gap-1"><Phone className="h-3 w-3" /> {(selectedOrder.channelData as Record<string, string>).customerPhone}</div>}
-                  {(selectedOrder.channelData as Record<string, string>).customerAddress && <div className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {(selectedOrder.channelData as Record<string, string>).customerAddress}</div>}
+                  {(activeOrderDetail?.channelData as Record<string, string>).customerName && <div className="flex items-center gap-1"><User className="h-3 w-3" /> {(activeOrderDetail?.channelData as Record<string, string>).customerName}</div>}
+                  {(activeOrderDetail?.channelData as Record<string, string>).customerPhone && <div className="flex items-center gap-1"><Phone className="h-3 w-3" /> {(activeOrderDetail?.channelData as Record<string, string>).customerPhone}</div>}
+                  {(activeOrderDetail?.channelData as Record<string, string>).customerAddress && <div className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {(activeOrderDetail?.channelData as Record<string, string>).customerAddress}</div>}
                 </div>
               )}
               <Separator />
               <div className="space-y-1">
-                {selectedOrder.items?.map(item => (
+                {activeOrderDetail?.items?.map(item => (
                   <div key={item.id} className="flex justify-between text-sm">
                     <span>{item.quantity}x {item.name}</span>
                     <span>{formatCurrency(parseFloat(item.price) * (item.quantity || 1))}</span>
@@ -558,15 +587,16 @@ export default function OrdersHub() {
               </div>
               <Separator />
               <div className="space-y-1 text-sm">
-                <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(selectedOrder.subtotal || "0")}</span></div>
-                <div className="flex justify-between"><span>Tax</span><span>{formatCurrency(selectedOrder.tax || "0")}</span></div>
-                <div className="flex justify-between font-bold text-base"><span>Total</span><span>{formatCurrency(selectedOrder.total || "0")}</span></div>
+                <div className="flex justify-between"><span>Subtotal</span><span>{formatCurrency(activeOrderDetail?.subtotal || "0")}</span></div>
+                <div className="flex justify-between"><span>Tax</span><span>{formatCurrency(activeOrderDetail?.tax || "0")}</span></div>
+                <div className="flex justify-between text-sm"><span>Food Subtotal</span><span>{formatCurrency(activeOrderDetail?.subtotal || "0")}</span></div>
+                <div className="flex justify-between font-bold text-base"><span>Bill Total</span><span>{formatCurrency(activeOrderDetail?.total || "0")}</span></div>
               </div>
               <div className="flex gap-2 flex-wrap">
-                {selectedOrder.status === "new" && <Button size="sm" onClick={() => updateOrderStatus.mutate({ id: selectedOrder.id, status: "sent_to_kitchen" })} data-testid="button-send-kitchen"><Send className="h-3 w-3 mr-1" /> Send to Kitchen</Button>}
-                {selectedOrder.status === "ready" && <Button size="sm" onClick={() => updateOrderStatus.mutate({ id: selectedOrder.id, status: "served" })} data-testid="button-mark-served"><Package className="h-3 w-3 mr-1" /> Mark Served</Button>}
-                {selectedOrder.status === "served" && <Button size="sm" onClick={() => updateOrderStatus.mutate({ id: selectedOrder.id, status: "paid" })} data-testid="button-mark-paid"><DollarSign className="h-3 w-3 mr-1" /> Mark Paid</Button>}
-                {["new", "sent_to_kitchen"].includes(selectedOrder.status || "") && <Button size="sm" variant="destructive" onClick={() => updateOrderStatus.mutate({ id: selectedOrder.id, status: "cancelled" })} data-testid="button-cancel-order"><XCircle className="h-3 w-3 mr-1" /> Cancel</Button>}
+                {activeOrderDetail?.status === "new" && <Button size="sm" onClick={() => updateOrderStatus.mutate({ id: selectedOrder.id, status: "sent_to_kitchen" })} data-testid="button-send-kitchen"><Send className="h-3 w-3 mr-1" /> Send to Kitchen</Button>}
+                {activeOrderDetail?.status === "ready" && <Button size="sm" onClick={() => updateOrderStatus.mutate({ id: selectedOrder.id, status: "served" })} data-testid="button-mark-served"><Package className="h-3 w-3 mr-1" /> Mark Served</Button>}
+                {activeOrderDetail?.status === "served" && <Button size="sm" onClick={() => updateOrderStatus.mutate({ id: selectedOrder.id, status: "paid" })} data-testid="button-mark-paid"><DollarSign className="h-3 w-3 mr-1" /> Mark Paid</Button>}
+                {["new", "sent_to_kitchen"].includes(activeOrderDetail?.status || "") && <Button size="sm" variant="destructive" onClick={() => updateOrderStatus.mutate({ id: activeOrderDetail!.id, status: "cancelled" })} data-testid="button-cancel-order"><XCircle className="h-3 w-3 mr-1" /> Cancel</Button>}
               </div>
             </div>
           )}
