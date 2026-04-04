@@ -3204,6 +3204,7 @@ export const parkingZones = pgTable("parking_zones", {
   availableSlots: integer("available_slots").notNull().default(0),
   isActive: boolean("is_active").notNull().default(true),
   sortOrder: integer("sort_order").notNull().default(0),
+  description: text("description"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 export const insertParkingZoneSchema = createInsertSchema(parkingZones).omit({ id: true, createdAt: true });
@@ -3220,6 +3221,8 @@ export const parkingSlots = pgTable("parking_slots", {
   status: varchar("status", { length: 20 }).notNull().default("available"),
   isActive: boolean("is_active").notNull().default(true),
   notes: text("notes"),
+  posX: integer("pos_x").default(0),
+  posY: integer("pos_y").default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 export const insertParkingSlotSchema = createInsertSchema(parkingSlots).omit({ id: true, createdAt: true });
@@ -3303,6 +3306,14 @@ export const valetTickets = pgTable("valet_tickets", {
   keyType: varchar("key_type", { length: 30 }),
   keyLocation: text("key_location"),
   chargeAmount: numeric("charge_amount", { precision: 10, scale: 2 }),
+  keyTagNumber: varchar("key_tag_number", { length: 50 }),
+  slotCode: varchar("slot_code", { length: 50 }),
+  zoneName: text("zone_name"),
+  tableNumber: text("table_number"),
+  parkedAt: timestamp("parked_at", { withTimezone: true }),
+  parkedByName: text("parked_by_name"),
+  retrievedByName: text("retrieved_by_name"),
+  finalCharge: numeric("final_charge"),
   isDeleted: boolean("is_deleted").notNull().default(false),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   deletedBy: varchar("deleted_by", { length: 36 }),
@@ -3338,6 +3349,7 @@ export const valetRetrievalRequests = pgTable("valet_retrieval_requests", {
   status: varchar("status", { length: 20 }).notNull().default("pending"),
   notes: text("notes"),
   completedAt: timestamp("completed_at", { withTimezone: true }),
+  scheduledFor: timestamp("scheduled_for"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   priority: varchar("priority", { length: 10 }).notNull().default("NORMAL"),
   queuePosition: integer("queue_position"),
