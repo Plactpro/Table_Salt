@@ -54,7 +54,8 @@ export async function finalizeBillCompletion(opts: {
   amountStr: string;
   collectedById?: string;
 }): Promise<void> {
-  const { bill, paymentMethod, paymentId, linkId, amountStr, collectedById } = opts;
+  const { bill: billInit, paymentMethod, paymentId, linkId, amountStr, collectedById } = opts;
+  let bill = billInit;
 
   // 1. Mark bill as paid
   await storage.updateBill(bill.id, bill.tenantId, { paymentStatus: "paid", paidAt: new Date() });
