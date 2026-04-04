@@ -418,6 +418,8 @@ export interface BillPrintOptions {
   customerGstin?: string | null;
   loyaltyPointsEarned?: number;
   digitalReceiptUrl?: string | null;
+  /** O7: Pre-generated QR code data URL for reliable rendering in print contexts */
+  qrDataUrl?: string | null;
   language?: string;
 }
 
@@ -428,8 +430,8 @@ export function renderBillHtml(opts: BillPrintOptions): string {
     items, subtotal, discountAmount = 0, discountReason,
     serviceCharge = 0, taxAmount = 0, taxType, taxRate,
     cgstAmount, sgstAmount, tips = 0, totalAmount,
-    currency = "₹", paymentMethod, paidAt,
-    customerName, customerGstin, loyaltyPointsEarned, digitalReceiptUrl,
+    currency = "USD", paymentMethod, paidAt,
+    customerName, customerGstin, loyaltyPointsEarned, digitalReceiptUrl, qrDataUrl,
     timezone = "UTC", language = "en",
   } = opts;
 
@@ -437,7 +439,15 @@ export function renderBillHtml(opts: BillPrintOptions): string {
   const now = paidAt ? new Date(paidAt) : new Date();
   const dateStr = formatInTimezone(now, timezone, { day: "2-digit", month: "short", year: "numeric" }, language);
   const timeStr = formatInTimezone(now, timezone, { hour: "2-digit", minute: "2-digit", hour12: true }, language);
-  const fmt = (n: number) => `${currency}${n.toFixed(2)}`;
+  // O7: Use Intl.NumberFormat to produce the correct currency symbol from the tenant currency code
+  const locale = LOCALE_MAP[language] ?? "en-US";
+  const fmt = (n: number) => {
+    try {
+      return new Intl.NumberFormat(locale, { style: "currency", currency: currency || "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+    } catch {
+      return `${currency}${n.toFixed(2)}`;
+    }
+  };
 
   const orderLabel =
     orderType === "dine_in" && tableNumber
@@ -482,13 +492,16 @@ export function renderBillHtml(opts: BillPrintOptions): string {
       `
       : "";
 
-  const qrApiUrl = digitalReceiptUrl
-    ? `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(digitalReceiptUrl)}`
-    : null;
+  // O7: Prefer pre-generated data URL (works in print); fall back to external API only if no data URL provided
+  const qrImgSrc = qrDataUrl
+    ? qrDataUrl
+    : digitalReceiptUrl
+      ? `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(digitalReceiptUrl)}`
+      : null;
   const digitalReceiptSection = digitalReceiptUrl
     ? `<div style="text-align:center;margin-top:6px;font-size:10px;">
         <div style="margin-bottom:4px;">${esc(labels.scanQrMsg)}</div>
-        ${qrApiUrl ? `<img src="${qrApiUrl}" alt="QR Code" width="80" height="80" style="display:block;margin:0 auto 4px;" onerror="this.style.display='none'" />` : ""}
+        ${qrImgSrc ? `<img src="${qrImgSrc}" alt="QR Code" width="80" height="80" style="display:block;margin:0 auto 4px;" />` : ""}
         <div style="font-family:monospace;font-size:9px;word-break:break-all;">${esc(digitalReceiptUrl)}</div>
       </div>`
     : "";

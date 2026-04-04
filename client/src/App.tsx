@@ -123,6 +123,7 @@ const VendorRisksPage = lazy(() => import("@/pages/admin/vendor-risks"));
 const IncidentPlaybookPage = lazy(() => import("@/pages/admin/incident-playbook"));
 const SystemHealthPage = lazy(() => import("@/pages/admin/system-health"));
 
+import GuestReceiptPage from "@/pages/guest-receipt";
 import CookieConsentBanner from "@/components/CookieConsentBanner";
 import SupportWidget from "@/components/support/SupportWidget";
 import AlertListener from "@/components/alert-listener";
@@ -684,6 +685,16 @@ function Router() {
 
   if (location.startsWith("/kds/wall")) {
     return <KdsWallScreen />;
+  }
+
+  // O8: Public receipt route — no auth required so customers can view via QR scan
+  if (location.startsWith("/receipt/")) {
+    return (
+      <Switch>
+        <Route path="/receipt/:id" component={GuestReceiptPage} />
+        <Route component={NotFound} />
+      </Switch>
+    );
   }
 
   return (
