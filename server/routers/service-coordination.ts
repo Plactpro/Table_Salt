@@ -702,6 +702,7 @@ export function registerServiceCoordinationRoutes(app: Express): void {
           customerPhone: customerPhone || null,
           status: "pending",
           estimatedTime: 45,
+          trackingNotes: customerName ? `customerName:${customerName}` : null,
         });
       }
 

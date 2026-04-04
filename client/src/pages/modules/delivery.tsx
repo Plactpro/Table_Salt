@@ -48,6 +48,18 @@ interface DeliveryOrder {
   deliveredAt: string | null;
 }
 
+function resolveCustomerName(delivery: DeliveryOrder, customerMap: Map<string, { id: string; name: string; phone: string | null }>): string | null {
+  if (delivery.customerId) {
+    const c = customerMap.get(delivery.customerId);
+    if (c) return c.name;
+  }
+  if (delivery.trackingNotes) {
+    const match = delivery.trackingNotes.match(/customerName:(.+?)(?:\||$)/);
+    if (match) return match[1].trim();
+  }
+  return null;
+}
+
 interface CustomerData {
   id: string;
   name: string;
@@ -289,6 +301,10 @@ export default function DeliveryPage() {
     const currentIdx = statusFlow.indexOf(delivery.status as DeliveryStatus);
     if (currentIdx >= 0 && currentIdx < statusFlow.length - 1) {
       const nextStatus = statusFlow[currentIdx + 1];
+      if (nextStatus === "in_transit" && !delivery.driverName) {
+        toast({ title: "No agent assigned", description: "Assign a delivery agent before marking this order as Out for Delivery.", variant: "destructive" });
+        return;
+      }
       const updateData: Record<string, unknown> = { status: nextStatus };
       if (nextStatus === "delivered") {
         updateData.deliveredAt = new Date().toISOString();
@@ -468,7 +484,7 @@ export default function DeliveryPage() {
                 ) : (
                   colDeliveries.map((delivery) => {
                     const status = (delivery.status || "pending") as DeliveryStatus;
-                    const customer = delivery.customerId ? customerMap.get(delivery.customerId) : null;
+                    const resolvedCustomerName = resolveCustomerName(delivery, customerMap);
                     const platform = platformIcon(delivery.deliveryPartner);
                     const isReady = col.key === "ready";
                     const isOut = col.key === "out";
@@ -485,7 +501,7 @@ export default function DeliveryPage() {
                             <div className="flex items-center gap-1.5">
                               <span className="text-base">{platform}</span>
                               <div>
-                                <p className="font-semibold text-sm">{customer?.name || "Guest"}</p>
+                                <p className="font-semibold text-sm">{resolvedCustomerName || "Guest"}</p>
                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                   <MapPin className="w-3 h-3" />
                                   {delivery.customerAddress.length > 30
@@ -504,8 +520,13 @@ export default function DeliveryPage() {
                                 {statusFlow.map((s) => (
                                   <DropdownMenuItem
                                     key={s}
+                                    disabled={s === "in_transit" && !delivery.driverName}
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      if (s === "in_transit" && !delivery.driverName) {
+                                        toast({ title: "No agent assigned", description: "Assign a delivery agent before dispatching.", variant: "destructive" });
+                                        return;
+                                      }
                                       const updateData: Record<string, unknown> = { status: s };
                                       if (s === "delivered") updateData.deliveredAt = new Date().toISOString();
                                       updateMutation.mutate({ id: delivery.id, data: updateData });
@@ -555,8 +576,14 @@ export default function DeliveryPage() {
                               <Button
                                 size="sm"
                                 className="flex-1 text-xs h-7"
+                                disabled={!delivery.driverName}
+                                title={!delivery.driverName ? "Assign a delivery agent first" : undefined}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  if (!delivery.driverName) {
+                                    toast({ title: "No agent assigned", description: "Assign a delivery agent before dispatching.", variant: "destructive" });
+                                    return;
+                                  }
                                   updateMutation.mutate({ id: delivery.id, data: { status: "in_transit" } });
                                 }}
                                 data-testid={`button-dispatch-${delivery.id}`}
@@ -645,7 +672,7 @@ export default function DeliveryPage() {
                 const status = (delivery.status || "pending") as DeliveryStatus;
                 const cfg = statusConfig[status] || statusConfig.pending;
                 const StatusIcon = cfg.icon;
-                const customer = delivery.customerId ? customerMap.get(delivery.customerId) : null;
+                const resolvedCustomerName = resolveCustomerName(delivery, customerMap);
                 const canAdvance = statusFlow.indexOf(status) >= 0 && statusFlow.indexOf(status) < statusFlow.length - 1;
                 return (
                   <motion.div
@@ -667,7 +694,7 @@ export default function DeliveryPage() {
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="text-base">{platformIcon(delivery.deliveryPartner)}</span>
-                              <p className="font-semibold">{customer?.name || "Guest"}</p>
+                              <p className="font-semibold">{resolvedCustomerName || "Guest"}</p>
                               <Badge className={cfg.color} data-testid={`badge-delivery-status-${delivery.id}`}>
                                 {cfg.label}
                               </Badge>
@@ -800,7 +827,7 @@ export default function DeliveryPage() {
           {selectedDelivery && (() => {
             const status = (selectedDelivery.status || "pending") as DeliveryStatus;
             const cfg = statusConfig[status] || statusConfig.pending;
-            const customer = selectedDelivery.customerId ? customerMap.get(selectedDelivery.customerId) : null;
+            const resolvedCustomerName = resolveCustomerName(selectedDelivery, customerMap);
 
             return (
               <div className="space-y-4">
@@ -817,7 +844,7 @@ export default function DeliveryPage() {
                 <div className="grid grid-cols-2 gap-3">
                   <div className="p-3 rounded-lg bg-muted/50">
                     <p className="text-xs text-muted-foreground">Customer</p>
-                    <p className="font-medium">{customer?.name || "Guest"}</p>
+                    <p className="font-medium">{resolvedCustomerName || "Guest"}</p>
                   </div>
                   <div className="p-3 rounded-lg bg-muted/50">
                     <p className="text-xs text-muted-foreground">Phone</p>
@@ -886,23 +913,31 @@ export default function DeliveryPage() {
                 <div>
                   <Label className="text-xs text-muted-foreground">Update Status</Label>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {statusFlow.map((s) => (
-                      <Button
-                        key={s}
-                        size="sm"
-                        variant={selectedDelivery.status === s ? "default" : "outline"}
-                        onClick={() => {
-                          const updateData: Record<string, unknown> = { status: s };
-                          if (s === "delivered") updateData.deliveredAt = new Date().toISOString();
-                          updateMutation.mutate({ id: selectedDelivery.id, data: updateData });
-                          setSelectedDelivery({ ...selectedDelivery, status: s });
-                        }}
-                        disabled={updateMutation.isPending}
-                        data-testid={`button-set-status-${s}`}
-                      >
-                        {statusConfig[s].label}
-                      </Button>
-                    ))}
+                    {statusFlow.map((s) => {
+                      const needsAgent = s === "in_transit" && !selectedDelivery.driverName;
+                      return (
+                        <Button
+                          key={s}
+                          size="sm"
+                          variant={selectedDelivery.status === s ? "default" : "outline"}
+                          onClick={() => {
+                            if (needsAgent) {
+                              toast({ title: "No agent assigned", description: "Assign a delivery agent before marking this order as Out for Delivery.", variant: "destructive" });
+                              return;
+                            }
+                            const updateData: Record<string, unknown> = { status: s };
+                            if (s === "delivered") updateData.deliveredAt = new Date().toISOString();
+                            updateMutation.mutate({ id: selectedDelivery.id, data: updateData });
+                            setSelectedDelivery({ ...selectedDelivery, status: s });
+                          }}
+                          disabled={updateMutation.isPending || needsAgent}
+                          title={needsAgent ? "Assign a delivery agent first" : undefined}
+                          data-testid={`button-set-status-${s}`}
+                        >
+                          {statusConfig[s].label}
+                        </Button>
+                      );
+                    })}
                   </div>
                 </div>
 
