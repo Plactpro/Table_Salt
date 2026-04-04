@@ -9,3 +9,9 @@ cookies.txt
 playwright-report/
 test-results/
 .env
+
+# Database backup files
+*.sql
+*_database_backup*
+*.dump
+*.pg_dump
