@@ -13,7 +13,7 @@ export function registerChannelsRoutes(app: Express): void {
       const { rows } = await pool.query(
         `SELECT id, tenant_id, name, slug, icon, active, commission_pct,
                 last_webhook_at, webhook_alert_threshold_minutes
-         FROM order_channels WHERE tenant_id = $1 ORDER BY name`,
+         FROM order_channels WHERE tenant_id = $1 AND active = true ORDER BY name`,
         [user.tenantId]
       );
       res.json(rows.map((r: any) => ({
