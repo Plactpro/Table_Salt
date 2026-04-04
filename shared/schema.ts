@@ -13,6 +13,9 @@ import {
   uniqueIndex,
   date,
   numeric,
+  serial,
+  bigint,
+  time,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -3381,3 +3384,512 @@ export const reportCache = pgTable("report_cache", {
 export const insertReportCacheSchema = createInsertSchema(reportCache).omit({ id: true, createdAt: true });
 export type ReportCache = typeof reportCache.$inferSelect;
 export type InsertReportCache = z.infer<typeof insertReportCacheSchema>;
+
+// ─── Password Reset Tokens ────────────────────────────────────────────────────
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id", { length: 36 }).notNull().references(() => users.id, { onDelete: "cascade" }),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  usedAt: timestamp("used_at", { withTimezone: true }),
+});
+
+// ─── Push Subscriptions ───────────────────────────────────────────────────────
+export const pushSubscriptions = pgTable("push_subscriptions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id", { length: 36 }).references(() => users.id, { onDelete: "cascade" }),
+  tenantId: varchar("tenant_id", { length: 36 }).references(() => tenants.id),
+  endpoint: text("endpoint").notNull(),
+  p256dh: text("p256dh"),
+  auth: text("auth"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// ─── Idempotency Keys ─────────────────────────────────────────────────────────
+export const idempotencyKeys = pgTable("idempotency_keys", {
+  key: varchar("key", { length: 255 }).primaryKey(),
+  tenantId: varchar("tenant_id", { length: 36 }),
+  endpoint: text("endpoint"),
+  responseCode: integer("response_code"),
+  responseBody: jsonb("response_body"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Impersonation Sessions ---
+export const impersonationSessions = pgTable("impersonation_sessions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull().references(() => tenants.id),
+  superAdminId: varchar("super_admin_id", { length: 36 }).notNull().references(() => users.id),
+  superAdminName: varchar("super_admin_name", { length: 255 }).notNull(),
+  impersonatedUserId: varchar("impersonated_user_id", { length: 36 }).notNull().references(() => users.id),
+  impersonatedUserName: varchar("impersonated_user_name", { length: 255 }).notNull(),
+  impersonatedUserRole: varchar("impersonated_user_role", { length: 50 }),
+  accessMode: varchar("access_mode", { length: 20 }).default("READ_ONLY"),
+  status: varchar("status", { length: 20 }).default("active"),
+  accessReason: text("access_reason").notNull(),
+  supportTicketId: varchar("support_ticket_id", { length: 100 }),
+  startedAt: timestamp("started_at").defaultNow(),
+  endedAt: timestamp("ended_at"),
+  durationMinutes: integer("duration_minutes"),
+  lastActivityAt: timestamp("last_activity_at"),
+  sessionTimeoutMinutes: integer("session_timeout_minutes").default(30),
+  ipAddress: varchar("ip_address", { length: 50 }),
+  editUnlocked: boolean("edit_unlocked").default(false),
+  editUnlockedAt: timestamp("edit_unlocked_at"),
+  editUnlockReason: text("edit_unlock_reason"),
+  pagesVisited: jsonb("pages_visited").default([]),
+  changesMade: boolean("changes_made").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  autoExpired: boolean("auto_expired").default(false),
+});
+
+// --- Table QR Sessions ---
+export const tableQrSessions = pgTable("table_qr_sessions", {
+  id: serial("id").primaryKey(),
+  tableId: varchar("table_id", { length: 36 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  sessionToken: varchar("session_token", { length: 36 }).notNull().default(sql`gen_random_uuid()`),
+  orderIds: text("order_ids").array().default([]),
+  startedAt: timestamp("started_at", { withTimezone: true }).defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+// --- Service Messages ---
+export const serviceMessages = pgTable("service_messages", {
+  id: serial("id").primaryKey(),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  orderId: varchar("order_id", { length: 36 }),
+  fromStaffId: varchar("from_staff_id", { length: 36 }).notNull(),
+  fromName: varchar("from_name", { length: 255 }),
+  fromRole: varchar("from_role", { length: 50 }),
+  toStaffId: varchar("to_staff_id", { length: 36 }),
+  toRole: varchar("to_role", { length: 50 }),
+  message: text("message").notNull(),
+  messageType: varchar("message_type", { length: 30 }).default("GENERAL"),
+  priority: varchar("priority", { length: 10 }).default("normal"),
+  isRead: boolean("is_read").default(false),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- VIP Order Flags ---
+export const vipOrderFlags = pgTable("vip_order_flags", {
+  id: serial("id").primaryKey(),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  orderId: varchar("order_id", { length: 36 }).notNull(),
+  vipLevel: varchar("vip_level", { length: 20 }).default("VIP"),
+  specialNotes: text("special_notes"),
+  specialSetup: text("special_setup"),
+  managerNotified: boolean("manager_notified").default(false),
+  flaggedBy: varchar("flagged_by", { length: 36 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Prep Notifications ---
+export const prepNotifications = pgTable("prep_notifications", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  chefId: varchar("chef_id", { length: 36 }),
+  type: varchar("type", { length: 50 }).notNull(),
+  title: text("title").notNull(),
+  body: text("body"),
+  priority: varchar("priority", { length: 10 }).notNull().default("LOW"),
+  relatedTaskId: varchar("related_task_id", { length: 36 }),
+  relatedOrderId: varchar("related_order_id", { length: 36 }),
+  relatedMenuItem: varchar("related_menu_item", { length: 255 }),
+  actionUrl: text("action_url"),
+  actionLabel: text("action_label"),
+  action2Url: text("action2_url"),
+  action2Label: text("action2_label"),
+  readAt: timestamp("read_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Valet Incidents ---
+export const valetIncidents = pgTable("valet_incidents", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  ticketId: varchar("ticket_id", { length: 36 }),
+  shiftId: varchar("shift_id", { length: 36 }),
+  incidentNumber: varchar("incident_number", { length: 30 }).notNull(),
+  incidentType: varchar("incident_type", { length: 40 }).notNull().default("OTHER"),
+  severity: varchar("severity", { length: 20 }).notNull().default("LOW"),
+  description: text("description").notNull(),
+  vehicleNumber: text("vehicle_number"),
+  customerName: text("customer_name"),
+  customerPhone: text("customer_phone"),
+  reportedById: varchar("reported_by_id", { length: 36 }),
+  reportedByName: text("reported_by_name"),
+  status: varchar("status", { length: 20 }).notNull().default("open"),
+  resolution: text("resolution"),
+  managerNotified: boolean("manager_notified").notNull().default(false),
+  policeReportNo: text("police_report_no"),
+  insuranceClaimNo: text("insurance_claim_no"),
+  estimatedDamageCost: numeric("estimated_damage_cost"),
+  actualDamageCost: numeric("actual_damage_cost"),
+  resolvedById: varchar("resolved_by_id", { length: 36 }),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Valet Shifts ---
+export const valetShifts = pgTable("valet_shifts", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  shiftDate: date("shift_date").notNull().default(sql`CURRENT_DATE`),
+  shiftType: varchar("shift_type", { length: 20 }).notNull().default("EVENING"),
+  headValetId: varchar("head_valet_id", { length: 36 }),
+  headValetName: text("head_valet_name"),
+  status: varchar("status", { length: 20 }).notNull().default("active"),
+  vehicleCount: integer("vehicle_count").notNull().default(0),
+  totalTips: numeric("total_tips").notNull().default("0"),
+  totalFees: numeric("total_fees").notNull().default("0"),
+  incidents: integer("incidents").notNull().default(0),
+  openingNotes: text("opening_notes"),
+  closingNotes: text("closing_notes"),
+  openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+  createdBy: varchar("created_by", { length: 36 }),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Valet Staff Assignments ---
+export const valetStaffAssignments = pgTable("valet_staff_assignments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  shiftId: varchar("shift_id", { length: 36 }).notNull(),
+  staffId: varchar("staff_id", { length: 36 }).notNull(),
+  staffName: text("staff_name"),
+  role: varchar("role", { length: 30 }).notNull().default("VALET"),
+  zone: varchar("zone", { length: 100 }),
+  clockIn: timestamp("clock_in", { withTimezone: true }),
+  clockOut: timestamp("clock_out", { withTimezone: true }),
+  vehiclesHandled: integer("vehicles_handled").notNull().default(0),
+  tipsCollected: numeric("tips_collected").notNull().default("0"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Audit Events Archive ---
+export const auditEventsArchive = pgTable("audit_events_archive", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  tenantId: varchar("tenant_id", { length: 36 }),
+  userId: varchar("user_id", { length: 36 }),
+  userName: text("user_name"),
+  action: text("action").notNull(),
+  entityType: text("entity_type"),
+  entityId: varchar("entity_id", { length: 36 }),
+  entityName: text("entity_name"),
+  outletId: varchar("outlet_id", { length: 36 }),
+  before: jsonb("before"),
+  after: jsonb("after"),
+  metadata: jsonb("metadata"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  supervisorId: varchar("supervisor_id", { length: 36 }),
+  createdAt: timestamp("created_at", { withTimezone: true }),
+  archivedAt: timestamp("archived_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Breach Incidents ---
+export const breachIncidents = pgTable("breach_incidents", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  severity: varchar("severity", { length: 20 }).notNull().default("medium"),
+  status: varchar("status", { length: 30 }).notNull().default("detected"),
+  detectedAt: timestamp("detected_at").defaultNow(),
+  containedAt: timestamp("contained_at"),
+  notifiedAt: timestamp("notified_at"),
+  resolvedAt: timestamp("resolved_at"),
+  affectedRecords: integer("affected_records").default(0),
+  affectedDataTypes: text("affected_data_types").array(),
+  rootCause: text("root_cause"),
+  remediation: text("remediation"),
+  reportedById: varchar("reported_by_id", { length: 36 }),
+  reportedByName: text("reported_by_name"),
+  notificationDeadline: timestamp("notification_deadline"),
+  tenantNotified: boolean("tenant_notified").default(false),
+  authorityNotified: boolean("authority_notified").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  certinNotified: boolean("certin_notified").default(false),
+  certinNotifiedAt: timestamp("certin_notified_at"),
+  certinReferenceNo: varchar("certin_reference_no", { length: 100 }),
+  requiresDpaNotification: boolean("requires_dpa_notification").default(false),
+  notificationRationale: text("notification_rationale"),
+});
+
+// --- Consent Log ---
+export const consentLog = pgTable("consent_log", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id", { length: 36 }).notNull(),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  documentType: varchar("document_type", { length: 30 }).notNull(),
+  documentVersion: varchar("document_version", { length: 20 }).notNull(),
+  acceptedAt: timestamp("accepted_at").defaultNow(),
+  ipAddress: varchar("ip_address", { length: 50 }),
+  userAgent: varchar("user_agent", { length: 500 }),
+});
+
+// --- Cookie Consent Log ---
+export const cookieConsentLog = pgTable("cookie_consent_log", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id", { length: 36 }),
+  tenantId: varchar("tenant_id", { length: 36 }),
+  sessionId: varchar("session_id", { length: 255 }),
+  analytics: boolean("analytics").default(false),
+  marketing: boolean("marketing").default(false),
+  necessary: boolean("necessary").default(true),
+  acceptedAt: timestamp("accepted_at").defaultNow(),
+  ipAddress: varchar("ip_address", { length: 50 }),
+  userAgent: varchar("user_agent", { length: 500 }),
+});
+
+// --- Coordination Rules ---
+export const coordinationRules = pgTable("coordination_rules", {
+  id: serial("id").primaryKey(),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  ruleName: varchar("rule_name", { length: 255 }).notNull(),
+  triggerEvent: varchar("trigger_event", { length: 50 }).notNull(),
+  conditionJson: jsonb("condition_json").notNull(),
+  action: varchar("action", { length: 50 }).notNull(),
+  messageTemplate: text("message_template").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Key Management Log ---
+export const keyManagementLog = pgTable("key_management_log", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  ticketId: varchar("ticket_id", { length: 36 }),
+  action: varchar("action", { length: 40 }).notNull(),
+  performedBy: varchar("performed_by", { length: 36 }),
+  performedByName: text("performed_by_name"),
+  keyLocation: varchar("key_location", { length: 100 }),
+  incidentId: varchar("incident_id", { length: 36 }),
+  notes: text("notes"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Key Storage Locations ---
+export const keyStorageLocations = pgTable("key_storage_locations", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }).notNull(),
+  locationCode: varchar("location_code", { length: 50 }).notNull(),
+  locationName: text("location_name").notNull(),
+  capacity: integer("capacity").notNull().default(50),
+  currentCount: integer("current_count").notNull().default(0),
+  isSecure: boolean("is_secure").notNull().default(true),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- Incident Response Playbook ---
+export const incidentResponsePlaybook = pgTable("incident_response_playbook", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  stepNumber: integer("step_number").notNull(),
+  stepTitle: text("step_title").notNull(),
+  stepDescription: text("step_description").notNull(),
+  responsibleRole: text("responsible_role"),
+  timeTarget: text("time_target"),
+  checklist: jsonb("checklist").default([]),
+  notes: text("notes"),
+  lastTestedAt: date("last_tested_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// --- PCI SAQ Log ---
+export const pciSaqLog = pgTable("pci_saq_log", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  completedById: varchar("completed_by_id", { length: 36 }).notNull(),
+  completedByName: text("completed_by_name").notNull(),
+  saqType: varchar("saq_type", { length: 20 }).notNull().default("SAQ-A"),
+  completionDate: date("completion_date").notNull(),
+  validUntil: date("valid_until").notNull(),
+  scopeDescription: text("scope_description"),
+  qsaName: text("qsa_name"),
+  paymentGateways: text("payment_gateways").array(),
+  notes: text("notes"),
+  documentReference: text("document_reference"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// --- Vendor Risk Assessments ---
+export const vendorRiskAssessments = pgTable("vendor_risk_assessments", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  vendorName: text("vendor_name").notNull(),
+  vendorCategory: varchar("vendor_category", { length: 50 }).notNull(),
+  website: text("website"),
+  serviceDescription: text("service_description"),
+  dataProcessed: text("data_processed").array(),
+  riskLevel: varchar("risk_level", { length: 20 }).notNull().default("medium"),
+  complianceCerts: text("compliance_certs").array(),
+  dpaInPlace: boolean("dpa_in_place").default(false),
+  dpaSignedDate: date("dpa_signed_date"),
+  lastReviewedAt: date("last_reviewed_at"),
+  nextReviewDue: date("next_review_due"),
+  notes: text("notes"),
+  isActive: boolean("is_active").default(true),
+  createdById: varchar("created_by_id", { length: 36 }),
+  createdByName: text("created_by_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// --- Tenant Access Preferences ---
+export const tenantAccessPreferences = pgTable("tenant_access_preferences", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  showAccessLog: boolean("show_access_log").default(true),
+  notifyOnAccess: boolean("notify_on_access").default(false),
+  notifyEmail: varchar("notify_email", { length: 255 }),
+  allowEditMode: boolean("allow_edit_mode").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// --- Platform Settings ---
+export const platformSettings = pgTable("platform_settings", {
+  id: varchar("id", { length: 36 }).primaryKey().default("singleton"),
+  maintenanceMode: boolean("maintenance_mode").default(false),
+  registrationOpen: boolean("registration_open").default(true),
+  platformName: text("platform_name").default("Table Salt"),
+  maxTenantsPerPlan: jsonb("max_tenants_per_plan"),
+  alertEmailRecipients: text("alert_email_recipients").array().default([]),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  activePaymentGateway: text("active_payment_gateway").notNull().default("stripe"),
+  stripeKeyId: text("stripe_key_id"),
+  stripeKeySecret: text("stripe_key_secret"),
+  razorpayKeyId: text("razorpay_key_id"),
+  razorpayKeySecret: text("razorpay_key_secret"),
+  tosVersion: varchar("tos_version", { length: 20 }).default("2026-01"),
+  privacyVersion: varchar("privacy_version", { length: 20 }).default("2026-01"),
+  tosUrl: text("tos_url").default("/legal/terms"),
+  privacyUrl: text("privacy_url").default("/legal/privacy"),
+});
+
+// --- Platform Settings KV ---
+export const platformSettingsKv = pgTable("platform_settings_kv", {
+  key: text("key").primaryKey(),
+  value: text("value").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- System Events ---
+export const systemEvents = pgTable("system_events", {
+  id: serial("id").primaryKey(),
+  eventType: text("event_type").notNull(),
+  name: text("name").notNull(),
+  message: text("message").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
+});
+
+// --- System Health Log ---
+export const systemHealthLog = pgTable("system_health_log", {
+  id: serial("id").primaryKey(),
+  checkedAt: timestamp("checked_at").defaultNow(),
+  status: varchar("status", { length: 20 }).notNull(),
+  dbResponseMs: integer("db_response_ms"),
+  processUptimeSeconds: integer("process_uptime_seconds"),
+  memoryUsedMb: integer("memory_used_mb"),
+  activeSessions: integer("active_sessions").default(0),
+});
+
+// --- Ad Campaigns ---
+export const adCampaigns = pgTable("ad_campaigns", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  campaignName: varchar("campaign_name", { length: 255 }).notNull(),
+  campaignType: varchar("campaign_type", { length: 20 }).notNull().default("OWN"),
+  advertiserName: varchar("advertiser_name", { length: 255 }),
+  advertiserContact: varchar("advertiser_contact", { length: 255 }),
+  advertiserPhone: varchar("advertiser_phone", { length: 30 }),
+  advertiserEmail: varchar("advertiser_email", { length: 255 }),
+  status: varchar("status", { length: 20 }).notNull().default("draft"),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  activeHoursStart: time("active_hours_start").default("00:00:00"),
+  activeHoursEnd: time("active_hours_end").default("23:59:00"),
+  activeDays: jsonb("active_days").default([1,2,3,4,5,6,7]),
+  displayLocations: jsonb("display_locations").notNull(),
+  displayDurationSec: integer("display_duration_sec").default(10),
+  displayPriority: integer("display_priority").default(5),
+  revenueModel: varchar("revenue_model", { length: 20 }),
+  ratePerDay: numeric("rate_per_day"),
+  ratePer1000Imp: numeric("rate_per_1000_imp"),
+  totalContractValue: numeric("total_contract_value"),
+  amountPaid: numeric("amount_paid").default("0"),
+  balanceDue: numeric("balance_due").default("0"),
+  submittedForApprovalAt: timestamp("submitted_for_approval_at"),
+  approvedBy: varchar("approved_by", { length: 36 }),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  totalImpressions: integer("total_impressions").default(0),
+  totalClicks: integer("total_clicks").default(0),
+  createdBy: varchar("created_by", { length: 36 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// --- Ad Creatives ---
+export const adCreatives = pgTable("ad_creatives", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  campaignId: varchar("campaign_id", { length: 36 }).notNull(),
+  creativeName: varchar("creative_name", { length: 255 }),
+  fileType: varchar("file_type", { length: 20 }).notNull(),
+  fileUrl: text("file_url").notNull(),
+  fileName: varchar("file_name", { length: 255 }),
+  fileSizeBytes: bigint("file_size_bytes", { mode: "number" }).notNull(),
+  fileSizeDisplay: varchar("file_size_display", { length: 20 }),
+  mimeType: varchar("mime_type", { length: 50 }),
+  dimensions: varchar("dimensions", { length: 30 }),
+  durationSeconds: integer("duration_seconds"),
+  displayOrder: integer("display_order").default(1),
+  isActive: boolean("is_active").default(true),
+  passedContentCheck: boolean("passed_content_check").default(false),
+  contentCheckNotes: text("content_check_notes"),
+  uploadedBy: varchar("uploaded_by", { length: 36 }),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+});
+
+// --- Ad Impressions ---
+export const adImpressions = pgTable("ad_impressions", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  campaignId: varchar("campaign_id", { length: 36 }).notNull(),
+  creativeId: varchar("creative_id", { length: 36 }).notNull(),
+  displayLocation: varchar("display_location", { length: 30 }),
+  displayedAt: timestamp("displayed_at").defaultNow(),
+  durationShownSec: integer("duration_shown_sec"),
+  deviceId: varchar("device_id", { length: 100 }),
+  sessionId: varchar("session_id", { length: 100 }),
+});
+
+// --- Ad Revenue Records ---
+export const adRevenueRecords = pgTable("ad_revenue_records", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  campaignId: varchar("campaign_id", { length: 36 }).notNull(),
+  advertiserName: varchar("advertiser_name", { length: 255 }),
+  revenuePeriod: varchar("revenue_period", { length: 20 }),
+  periodStart: date("period_start"),
+  periodEnd: date("period_end"),
+  impressions: integer("impressions").default(0),
+  amountEarned: numeric("amount_earned"),
+  paymentStatus: varchar("payment_status", { length: 20 }).default("pending"),
+  invoiceNumber: varchar("invoice_number", { length: 50 }),
+  paidAt: timestamp("paid_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
