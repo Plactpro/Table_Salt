@@ -1090,8 +1090,8 @@ export const insertKitchenStationSchema = createInsertSchema(kitchenStations).om
 export type KitchenStation = typeof kitchenStations.$inferSelect;
 export type InsertKitchenStation = z.infer<typeof insertKitchenStationSchema>;
 
-export const printJobTypeEnum = pgEnum("print_job_type", ["kot", "bill", "receipt"]);
-export const printJobStatusEnum = pgEnum("print_job_status", ["queued", "printed", "failed"]);
+export const printJobTypeEnum = pgEnum("print_job_type", ["kot", "bill", "receipt", "label"]);
+export const printJobStatusEnum = pgEnum("print_job_status", ["queued", "printed", "failed", "completed"]);
 
 export const printJobs = pgTable("print_jobs", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
@@ -2138,6 +2138,14 @@ export const ticketAssignments = pgTable("ticket_assignments", {
   completedQty: decimal("completed_qty"),
   totalQty: decimal("total_qty"),
   unit: text("unit"),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedBy: varchar("verified_by", { length: 36 }),
+  qualityScore: integer("quality_score"),
+  verificationFeedback: text("verification_feedback"),
+  issueNote: text("issue_note"),
+  helpRequested: boolean("help_requested").default(false),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  overdueAlerted: boolean("overdue_alerted").default(false),
   createdAt: timestamp("created_at").defaultNow(),
 }, (t) => [
   index("idx_ticket_assignments_tenant").on(t.tenantId),
@@ -2526,7 +2534,7 @@ export const itemTimeLogs = pgTable("item_time_logs", {
   outletId: varchar("outlet_id", { length: 36 }),
   orderId: varchar("order_id", { length: 36 }).notNull(),
   orderNumber: varchar("order_number", { length: 50 }),
-  orderItemId: varchar("order_item_id", { length: 36 }).notNull().unique(),
+  orderItemId: varchar("order_item_id", { length: 50 }).notNull().unique(),
   menuItemId: varchar("menu_item_id", { length: 36 }),
   menuItemName: varchar("menu_item_name", { length: 255 }),
   counterId: varchar("counter_id", { length: 36 }),
@@ -2777,7 +2785,7 @@ export type InsertItemRefireRequest = z.infer<typeof insertItemRefireRequestSche
 export const alertDefinitions = pgTable("alert_definitions", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
   tenantId: varchar("tenant_id", { length: 36 }),
-  alertCode: varchar("alert_code", { length: 20 }).notNull(),
+  alertCode: varchar("alert_code", { length: 50 }).notNull(),
   alertName: varchar("alert_name", { length: 100 }).notNull(),
   soundKey: varchar("sound_key", { length: 50 }).notNull(),
   urgency: varchar("urgency", { length: 20 }).notNull().default("normal"),
@@ -2802,7 +2810,7 @@ export const alertOutletConfigs = pgTable("alert_outlet_configs", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
   tenantId: varchar("tenant_id", { length: 36 }).notNull(),
   outletId: varchar("outlet_id", { length: 36 }).notNull(),
-  alertCode: varchar("alert_code", { length: 20 }).notNull(),
+  alertCode: varchar("alert_code", { length: 50 }).notNull(),
   isEnabled: boolean("is_enabled").default(true),
   volumeLevel: integer("volume_level").default(80),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -2819,13 +2827,14 @@ export const alertEvents = pgTable("alert_events", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()::text`),
   tenantId: varchar("tenant_id", { length: 36 }).notNull(),
   outletId: varchar("outlet_id", { length: 36 }),
-  alertCode: varchar("alert_code", { length: 20 }).notNull(),
+  alertCode: varchar("alert_code", { length: 50 }).notNull(),
   urgency: varchar("urgency", { length: 20 }).notNull(),
   referenceId: varchar("reference_id", { length: 36 }),
   referenceNumber: varchar("reference_number", { length: 50 }),
   message: text("message").notNull(),
   targetRoles: jsonb("target_roles").notNull().default([]),
   isResolved: boolean("is_resolved").default(false),
+  autoAcknowledged: boolean("auto_acknowledged").default(false),
   acknowledgedBy: varchar("acknowledged_by", { length: 36 }),
   acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
@@ -3379,7 +3388,7 @@ export const valetTickets = pgTable("valet_tickets", {
   vipNotes: text("vip_notes"),
   isOvernight: boolean("is_overnight").notNull().default(false),
   tipAmount: numeric("tip_amount", { precision: 10, scale: 2 }),
-  keyType: varchar("key_type", { length: 30 }),
+  keyType: varchar("key_type", { length: 20 }),
   keyLocation: text("key_location"),
   chargeAmount: numeric("charge_amount", { precision: 10, scale: 2 }),
   keyTagNumber: varchar("key_tag_number", { length: 50 }),
@@ -3495,7 +3504,7 @@ export const pushSubscriptions = pgTable("push_subscriptions", {
 
 // ─── Idempotency Keys ─────────────────────────────────────────────────────────
 export const idempotencyKeys = pgTable("idempotency_keys", {
-  key: varchar("key", { length: 255 }).primaryKey(),
+  key: varchar("key", { length: 100 }).primaryKey(),
   tenantId: varchar("tenant_id", { length: 36 }),
   endpoint: text("endpoint"),
   responseCode: integer("response_code"),
