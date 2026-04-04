@@ -3648,12 +3648,45 @@ export class DatabaseStorage implements IStorage {
         data.expectedClosingCash || '0', data.notes || null,
       ]
     );
-    return rows[0] as CashSession;
+    return mapCashSessionRow(rows[0]) as CashSession;
   }
 
+
+function mapCashSessionRow(row) {
+  if (!row) return undefined;
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    outletId: row.outlet_id,
+    posSessionId: row.pos_session_id,
+    sessionNumber: row.session_number,
+    cashierId: row.cashier_id,
+    cashierName: row.cashier_name,
+    currencyCode: row.currency_code,
+    currencySymbol: row.currency_symbol,
+    status: row.status,
+    openingFloat: row.opening_float,
+    openingFloatBreakdown: row.opening_float_breakdown,
+    expectedClosingCash: row.expected_closing_cash,
+    physicalClosingCash: row.physical_closing_cash,
+    closingBreakdown: row.closing_breakdown,
+    cashVariance: row.cash_variance,
+    varianceReason: row.variance_reason,
+    totalCashSales: row.total_cash_sales,
+    totalCashRefunds: row.total_cash_refunds,
+    totalCashPayouts: row.total_cash_payouts,
+    totalTransactions: row.total_transactions,
+    openedAt: row.opened_at,
+    closedAt: row.closed_at,
+    approvedBy: row.approved_by,
+    approvedAt: row.approved_at,
+    notes: row.notes,
+    createdAt: row.created_at,
+  };
+}
   async getCashSession(id: string): Promise<CashSession | undefined> {
     const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1`, [id]);
-    return rows[0] as CashSession | undefined;
+    return mapCashSessionRow(rows[0]) as CashSession | undefined;
   }
 
   async getActiveCashSession(tenantId: string, cashierId: string): Promise<CashSession | undefined> {
@@ -3661,7 +3694,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM cash_sessions WHERE tenant_id = $1 AND cashier_id = $2 AND status = 'open' LIMIT 1`,
       [tenantId, cashierId]
     );
-    return rows[0] as CashSession | undefined;
+    return mapCashSessionRow(rows[0]) as CashSession | undefined;
   }
 
   async updateCashSession(id: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined> {
@@ -3697,7 +3730,7 @@ export class DatabaseStorage implements IStorage {
 
     if (fields.length === 0) {
       const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1`, [id]);
-      return rows[0] as CashSession;
+      return mapCashSessionRow(rows[0]) as CashSession;
     }
 
     values.push(id);
@@ -3705,7 +3738,7 @@ export class DatabaseStorage implements IStorage {
       `UPDATE cash_sessions SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
       values
     );
-    return rows[0] as CashSession | undefined;
+    return mapCashSessionRow(rows[0]) as CashSession | undefined;
   }
 
   async getCashSessions(tenantId: string, opts?: { status?: string; date?: string; cashierId?: string }): Promise<CashSession[]> {
@@ -3730,7 +3763,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM cash_sessions WHERE ${conditions.join(' AND ')} ORDER BY opened_at DESC`,
       values
     );
-    return rows as CashSession[];
+    return rows.map(mapCashSessionRow) as CashSession[];
   }
 
   async createCashDrawerEvent(data: InsertCashDrawerEvent): Promise<CashDrawerEvent> {
