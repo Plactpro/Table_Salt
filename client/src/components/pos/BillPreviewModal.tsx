@@ -703,6 +703,11 @@ export default function BillPreviewModal({
       toast({ title: tp("orderNotPlacedYet"), description: tp("placeOrderFirst"), variant: "destructive" });
       return;
     }
+    // O9: Validate payment amount before creating bill
+    if (!grandTotal || grandTotal <= 0) {
+      toast({ title: "No amount to pay", description: "Please add items to the order before proceeding to payment.", variant: "destructive" });
+      return;
+    }
     createBillMutation.mutate();
   };
 
@@ -1486,7 +1491,7 @@ export default function BillPreviewModal({
                 <Button variant="outline" size="sm" onClick={handlePrint} className="flex-1">
                   <Printer className="h-4 w-4 mr-1" /> {tp("printPreview")}
                 </Button>
-                <Button onClick={handleProceedToPayment} disabled={createBillMutation.isPending} className="flex-1" data-testid="button-proceed-payment">
+                <Button onClick={handleProceedToPayment} disabled={createBillMutation.isPending || !grandTotal || grandTotal <= 0} className="flex-1" data-testid="button-proceed-payment">
                   {createBillMutation.isPending ? tp("creatingBill") : tp("proceedToPayment")}
                 </Button>
               </div>
