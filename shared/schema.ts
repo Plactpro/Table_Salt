@@ -106,6 +106,9 @@ export const tenants = pgTable("tenants", {
   stripeCustomerId: text("stripe_customer_id"),
   stripeSubscriptionId: text("stripe_subscription_id"),
   trialEndsAt: timestamp("trial_ends_at", { withTimezone: true }),
+  trialWarningSent7d: boolean("trial_warning_sent_7d").default(false),
+  trialWarningSent3d: boolean("trial_warning_sent_3d").default(false),
+  trialWarningSent1d: boolean("trial_warning_sent_1d").default(false),
   subscriptionStatus: text("subscription_status").default("trialing"),
   wallScreenToken: text("wall_screen_token"),
   gstin: text("gstin"),
@@ -397,6 +400,11 @@ export const orderItems = pgTable("order_items", {
   voidRequestId: varchar("void_request_id", { length: 36 }),
   isRefire: boolean("is_refire").default(false),
   originalItemId: varchar("original_item_id", { length: 36 }),
+  prepTimeMinutes: integer("prep_time_minutes"),
+  specialNote: text("special_note"),
+  kotSentAt: timestamp("kot_sent_at", { withTimezone: true }),
+  ticketAcknowledgedAt: timestamp("ticket_acknowledged_at", { withTimezone: true }),
+  waiterPickupAt: timestamp("waiter_pickup_at", { withTimezone: true }),
 }, (t) => [
   index("idx_order_items_order_id").on(t.orderId),
 ]);
@@ -3186,6 +3194,8 @@ export const parkingLayoutConfig = pgTable("parking_layout_config", {
   validationEnabled: boolean("validation_enabled").notNull().default(false),
   validationMinSpend: numeric("validation_min_spend", { precision: 12, scale: 2 }).default("0"),
   displayMessage: text("display_message"),
+  overnightFee: numeric("overnight_fee").default("0"),
+  overnightCutoffHour: integer("overnight_cutoff_hour").default(23),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
