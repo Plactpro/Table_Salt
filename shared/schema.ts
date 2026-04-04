@@ -329,6 +329,10 @@ export const orders = pgTable("orders", {
   outletId: varchar("outlet_id", { length: 36 }).references(() => outlets.id),
   tableId: varchar("table_id", { length: 36 }).references(() => tables.id),
   waiterId: varchar("waiter_id", { length: 36 }).references(() => users.id),
+  waiterName: varchar("waiter_name", { length: 255 }),
+  kotSentAt: timestamp("kot_sent_at", { withTimezone: true }),
+  allItemsReadyAt: timestamp("all_items_ready_at", { withTimezone: true }),
+  allItemsServedAt: timestamp("all_items_served_at", { withTimezone: true }),
   customerId: varchar("customer_id", { length: 36 }),
   orderType: orderTypeEnum("order_type").default("dine_in"),
   status: orderStatusEnum("status").default("new"),
@@ -405,6 +409,12 @@ export const orderItems = pgTable("order_items", {
   kotSentAt: timestamp("kot_sent_at", { withTimezone: true }),
   ticketAcknowledgedAt: timestamp("ticket_acknowledged_at", { withTimezone: true }),
   waiterPickupAt: timestamp("waiter_pickup_at", { withTimezone: true }),
+  chefId: varchar("chef_id", { length: 36 }),
+  chefName: varchar("chef_name", { length: 255 }),
+  counterId: varchar("counter_id", { length: 36 }),
+  counterName: varchar("counter_name", { length: 100 }),
+  preparationStartedAt: timestamp("preparation_started_at", { withTimezone: true }),
+  servedAt: timestamp("served_at", { withTimezone: true }),
 }, (t) => [
   index("idx_order_items_order_id").on(t.orderId),
 ]);
