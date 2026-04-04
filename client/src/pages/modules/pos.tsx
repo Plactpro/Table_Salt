@@ -1279,6 +1279,14 @@ export default function POSPage() {
       return;
     }
     if (!isDineIn) {
+      if (!activeTab?.customerName?.trim()) {
+        toast({ title: "Customer name required", description: "Please enter a customer name for this order.", variant: "destructive" });
+        return;
+      }
+      if (!activeTab?.customerPhone?.trim()) {
+        toast({ title: "Customer phone required", description: "Please enter a customer phone number for this order.", variant: "destructive" });
+        return;
+      }
       if (isOffline) {
         setShowOfflinePaymentDialog(true);
         return;

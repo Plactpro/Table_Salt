@@ -369,6 +369,20 @@ export function registerOrdersRoutes(app: Express): void {
         orderData.idempotencyKey = idempotencyKey;
       }
 
+      if (orderData.orderType === "takeaway" || orderData.orderType === "delivery") {
+        const notes: string = typeof orderData.notes === "string" ? orderData.notes : "";
+        const nameFromNotes = notes.match(/Customer:\s*([^|]+)/)?.[1]?.trim() ?? "";
+        const phoneFromNotes = notes.match(/Phone:\s*([^|]+)/)?.[1]?.trim() ?? "";
+        const customerNameValue = typeof req.body.customerName === "string" ? req.body.customerName.trim() : nameFromNotes;
+        const customerPhoneValue = typeof req.body.customerPhone === "string" ? req.body.customerPhone.trim() : phoneFromNotes;
+        if (!customerNameValue) {
+          return res.status(400).json({ message: "Customer name is required for takeaway and delivery orders." });
+        }
+        if (!customerPhoneValue) {
+          return res.status(400).json({ message: "Customer phone is required for takeaway and delivery orders." });
+        }
+      }
+
       const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
       if (secSettings.requireSupervisorForLargeDiscount && discountPct > secSettings.largeDiscountThreshold && !can(user, "apply_large_discount")) {
