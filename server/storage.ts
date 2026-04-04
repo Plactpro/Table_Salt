@@ -123,9 +123,9 @@ import {
   type Event, type InsertEvent,
   comboOffers,
   type ComboOffer, type InsertComboOffer,
-  shifts, menuItemStations, kotEvents,
+  shifts, kotEvents,
   type Shift, type InsertShift,
-  type MenuItemStation, type InsertMenuItemStation,
+
   type KotEvent, type InsertKotEvent,
   bills, billPayments, posSessions,
   type Bill, type InsertBill,
@@ -393,10 +393,6 @@ export interface IStorage {
   deleteShift(id: string, tenantId: string): Promise<void>;
   getActiveShift(tenantId: string, outletId?: string): Promise<Shift | undefined>;
 
-  getMenuItemStationsByTenant(tenantId: string): Promise<MenuItemStation[]>;
-  getMenuItemStationsByItem(menuItemId: string): Promise<MenuItemStation[]>;
-  upsertMenuItemStation(data: InsertMenuItemStation): Promise<MenuItemStation>;
-  deleteMenuItemStations(menuItemId: string, tenantId: string): Promise<void>;
 
   createKotEvent(data: InsertKotEvent): Promise<KotEvent>;
   getKotEventsByOrder(orderId: string): Promise<KotEvent[]>;
@@ -2614,22 +2610,6 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async getMenuItemStationsByTenant(tenantId: string) {
-    return db.select().from(menuItemStations).where(eq(menuItemStations.tenantId, tenantId)).limit(500);
-  }
-  async getMenuItemStationsByItem(menuItemId: string) {
-    return db.select().from(menuItemStations).where(eq(menuItemStations.menuItemId, menuItemId));
-  }
-  async upsertMenuItemStation(data: InsertMenuItemStation) {
-    const [existing] = await db.select().from(menuItemStations)
-      .where(and(eq(menuItemStations.menuItemId, data.menuItemId), eq(menuItemStations.station, data.station)));
-    if (existing) return existing;
-    const [s] = await db.insert(menuItemStations).values(data).returning();
-    return s;
-  }
-  async deleteMenuItemStations(menuItemId: string, tenantId: string) {
-    await db.delete(menuItemStations).where(and(eq(menuItemStations.menuItemId, menuItemId), eq(menuItemStations.tenantId, tenantId)));
-  }
 
   async createKotEvent(data: InsertKotEvent) {
     const [e] = await db.insert(kotEvents).values(data).returning();
