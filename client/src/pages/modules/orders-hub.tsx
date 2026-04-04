@@ -245,8 +245,13 @@ export default function OrdersHub() {
   const menuItemMap = useMemo(() => new Map(menuItems.map(m => [m.id, m])), [menuItems]);
 
   const liveStatuses = ["new", "sent_to_kitchen", "in_progress", "ready", "served"];
+  // D5: Include ALL order types in Live Orders (dine_in, takeaway, delivery, kiosk, phone)
+  const liveOrderTypes = ["dine_in", "takeaway", "delivery", "kiosk", "phone"];
   const liveOrders = useMemo(() => {
-    let filtered = orders.filter(o => liveStatuses.includes(o.status || ""));
+    let filtered = orders.filter(o =>
+      liveStatuses.includes(o.status || "") &&
+      liveOrderTypes.includes(o.orderType || "dine_in")
+    );
     if (channelFilter !== "all") filtered = filtered.filter(o => (o.channel || "pos") === channelFilter);
     if (outletFilter !== "all") filtered = filtered.filter(o => o.outletId === outletFilter);
     if (statusFilter !== "all") filtered = filtered.filter(o => o.status === statusFilter);

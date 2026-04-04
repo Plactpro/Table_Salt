@@ -56,12 +56,13 @@ export default function CashHandoverModal({
           <div>
             <Label>{t("amountHandedOver")}</Label>
             <div className="relative mt-1">
-              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm">{symbol}</span>
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground text-sm pointer-events-none select-none">{symbol}</span>
               <Input
                 type="number"
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
-                className="pl-7"
+                className="pl-8"
+                placeholder="0.00"
                 data-testid="input-handover-amount"
               />
             </div>

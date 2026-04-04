@@ -1055,6 +1055,17 @@ export default function MenuPage() {
                           <TrendingUp className="h-3 w-3" />
                           {combo.orderCount ?? 0} orders
                         </span>
+                        {/* M2: Resolve outlet IDs to names */}
+                        {combo.outlets && (combo.outlets as string[]).length > 0 && (
+                          <span className="flex items-center gap-1 truncate">
+                            <Store className="h-3 w-3 shrink-0" />
+                            <span className="truncate">
+                              {(combo.outlets as string[]).map((id: string) =>
+                                outletsList.find((o) => o.id === id)?.name ?? id
+                              ).join(", ")}
+                            </span>
+                          </span>
+                        )}
                       </div>
 
                       <div className="flex items-center justify-end gap-1 pt-1 border-t opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1388,7 +1399,7 @@ export default function MenuPage() {
                 <Label>Main Item (required, exactly 1)</Label>
                 <Select onValueChange={(v) => addComboItem("mainItems", v)} value="">
                   <SelectTrigger data-testid="select-combo-main"><SelectValue placeholder="Add main item..." /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-64 overflow-y-auto">
                     {allItems.filter((i) => !comboForm.mainItems.some((r) => r.menuItemId === i.id)).map((item) => (
                       <SelectItem key={item.id} value={item.id}>{item.name} - {fmt(item.price)}</SelectItem>
                     ))}
@@ -1407,7 +1418,7 @@ export default function MenuPage() {
                 <Label>Side Items (up to 3)</Label>
                 <Select onValueChange={(v) => addComboItem("sideItems", v)} value="">
                   <SelectTrigger data-testid="select-combo-side"><SelectValue placeholder="Add side item..." /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-64 overflow-y-auto">
                     {allItems.filter((i) => !comboForm.sideItems.some((r) => r.menuItemId === i.id)).map((item) => (
                       <SelectItem key={item.id} value={item.id}>{item.name} - {fmt(item.price)}</SelectItem>
                     ))}
@@ -1426,7 +1437,7 @@ export default function MenuPage() {
                 <Label>Add-on Items (up to 2)</Label>
                 <Select onValueChange={(v) => addComboItem("addonItems", v)} value="">
                   <SelectTrigger data-testid="select-combo-addon"><SelectValue placeholder="Add add-on item..." /></SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-h-64 overflow-y-auto">
                     {allItems.filter((i) => !comboForm.addonItems.some((r) => r.menuItemId === i.id)).map((item) => (
                       <SelectItem key={item.id} value={item.id}>{item.name} - {fmt(item.price)}</SelectItem>
                     ))}
