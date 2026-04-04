@@ -105,11 +105,16 @@ export async function finalizeBillCompletion(opts: {
       `SELECT id FROM valet_tickets WHERE bill_id=$1 AND tenant_id=$2 AND charge_added_to_bill=false LIMIT 1`,
       [bill.id, bill.tenantId]
     );
-    if (valetRows[0]) {
-      applyParkingChargeToBill(bill.id, valetRows[0].id, bill.tenantId).catch(e =>
-        console.error("[billing] Parking charge auto-apply failed:", e)
-      );
-    }
+      if (valetRows[0]) {
+        try {
+          await applyParkingChargeToBill(bill.id, valetRows[0].id, bill.tenantId);
+          // Re-read bill to get updated totalAmount including parking
+          const updatedBill = await storage.getBill(bill.id);
+          if (updatedBill) bill = updatedBill;
+        } catch (e) {
+          console.error("[billing] Parking charge auto-apply failed:", e);
+        }
+      }
   } catch (_) {}
 
   // 7. Realtime notification
@@ -259,7 +264,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         ? Number(totalAmount)
         : Number(totalAmount) + packingChargeAmount + packingChargeTaxAmount;
 
-      const bill = await storage.createBill({
+      let bill = await storage.createBill({
         tenantId: user.tenantId,
         outletId: user.outletId || null,
         billNumber: "",
