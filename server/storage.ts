@@ -1111,7 +1111,15 @@ export class DatabaseStorage implements IStorage {
 
   async getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string; orderType?: string; dateFrom?: string; dateTo?: string }) {
     const conditions: any[] = [eq(orders.tenantId, tenantId)];
-    if (opts?.status && opts.status !== "all") conditions.push(eq(orders.status, opts.status as any));
+    if (opts?.status && opts.status !== "all") {
+      // O14 fix: support comma-separated composite status values (e.g., "paid,completed")
+      const statusParts = opts.status.split(",").map((s: string) => s.trim());
+      if (statusParts.length > 1) {
+        conditions.push(inArray(orders.status, statusParts as any));
+      } else {
+        conditions.push(eq(orders.status, opts.status as any));
+      }
+    }
     if (opts?.orderType && opts.orderType !== "all") conditions.push(eq(orders.orderType, opts.orderType as any));
     if (opts?.dateFrom) conditions.push(gte(orders.createdAt, new Date(opts.dateFrom)));
     if (opts?.dateTo) { const dt = new Date(opts.dateTo); dt.setHours(23, 59, 59, 999); conditions.push(lte(orders.createdAt, dt)); }
