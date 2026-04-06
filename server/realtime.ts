@@ -73,7 +73,7 @@ async function getTenantFromRequest(req: IncomingMessage): Promise<{ tenantId: s
     const rawCookie = req.headers.cookie;
     if (!rawCookie) return null;
     const cookies = parseCookie(rawCookie);
-    let sid = cookies["connect.sid"];
+    let sid = cookies["ts.sid"];
     if (!sid) return null;
 
     if (sid.startsWith("s:")) sid = sid.slice(2);
@@ -81,7 +81,8 @@ async function getTenantFromRequest(req: IncomingMessage): Promise<{ tenantId: s
     if (dotIdx === -1) return null;
     const sessionId = decodeURIComponent(sid.slice(0, dotIdx));
 
-    const secret = process.env.SESSION_SECRET || "table-salt-secret-key-change-in-prod";
+        const secret = process.env.SESSION_SECRET;
+    if (!secret) return null;
     const { createHmac } = await import("crypto");
     const expectedSig = createHmac("sha256", secret).update(sessionId).digest("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
     const actualSig = sid.slice(dotIdx + 1);
