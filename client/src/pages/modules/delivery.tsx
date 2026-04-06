@@ -36,6 +36,7 @@ interface DeliveryOrder {
   customerId: string | null;
   customerAddress: string;
   customerPhone: string | null;
+  customerName: string | null;
   deliveryPartner: string | null;
   driverName: string | null;
   driverPhone: string | null;
@@ -44,11 +45,13 @@ interface DeliveryOrder {
   actualTime: number | null;
   deliveryFee: string | null;
   trackingNotes: string | null;
+  notes?: string | null;
   createdAt: string | null;
   deliveredAt: string | null;
 }
 
 function resolveCustomerName(delivery: DeliveryOrder, customerMap: Map<string, { id: string; name: string; phone: string | null }>): string | null {
+  if (delivery.customerName) return delivery.customerName;
   if (delivery.customerId) {
     const c = customerMap.get(delivery.customerId);
     if (c) return c.name;
@@ -56,6 +59,11 @@ function resolveCustomerName(delivery: DeliveryOrder, customerMap: Map<string, {
   if (delivery.trackingNotes) {
     const match = delivery.trackingNotes.match(/customerName:(.+?)(?:\||$)/);
     if (match) return match[1].trim();
+  }
+  if (delivery.notes) {
+    const noteMatch = delivery.notes.match(/Customer:\s*([^
+|]+)/);
+    if (noteMatch) return noteMatch[1].trim();
   }
   return null;
 }
