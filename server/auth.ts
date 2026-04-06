@@ -123,6 +123,15 @@ export function setupAuth(app: Express) {
   const PgSession = connectPgSimple(session);
 
   app.use(
+    // Cookie migration: users with legacy connect.sid (pre PA-1 rename) can still authenticate
+    // This copies the old cookie value to ts.sid so express-session can find the session
+    // Safe to remove after 30 days from deployment
+    (req: any, _res: any, next: any) => {
+      if (req.cookies?.["connect.sid"] && !req.cookies?.["ts.sid"]) {
+        req.cookies["ts.sid"] = req.cookies["connect.sid"];
+      }
+      next();
+    },
     session({
       store: new PgSession({
         pool,
