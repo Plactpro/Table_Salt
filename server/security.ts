@@ -8,7 +8,8 @@ const CSRF_COOKIE = "csrf-token";
 const CSRF_HEADER = "x-csrf-token";
 
 function computeCsrfToken(sessionId: string): string {
-  const secret = process.env.SESSION_SECRET || "table-salt-secret-key-change-in-prod";
+      const secret = process.env.SESSION_SECRET;
+    if (!secret) throw new Error("[security] SESSION_SECRET is not set — cannot compute CSRF token");
   return createHmac("sha256", secret).update(sessionId).digest("hex");
 }
 
