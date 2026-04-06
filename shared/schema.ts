@@ -402,6 +402,8 @@ export const orders = pgTable("orders", {
   version: integer("version").notNull().default(1),
   // PR-001: Idempotency key stored on the order for deterministic duplicate detection
   idempotencyKey: varchar("idempotency_key", { length: 100 }),
+    customerName: text("customer_name"),
+    customerPhone: text("customer_phone"),
 }, (t) => [
   index("idx_orders_tenant_id").on(t.tenantId),
   index("idx_orders_tenant_created").on(t.tenantId, t.createdAt),
