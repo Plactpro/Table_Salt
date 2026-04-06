@@ -63,4 +63,7 @@ export default defineConfig({
       deny: ["**/.*"],
     },
   },
+    ssr: {
+    noExternal: ["@tanstack/react-query", "@tanstack/react-virtual"],
+  },
 });
