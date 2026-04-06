@@ -876,6 +876,24 @@ function mapCashSessionRow(row) {
   };
 }
 
+/** snake_case → camelCase helpers for raw SQL rows */
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function mapRowToCamelCase<T>(row: Record<string, any>): T {
+  if (!row) return row as T;
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(row)) {
+    result[snakeToCamel(key)] = value;
+  }
+  return result as T;
+}
+
+function mapRowsToCamelCase<T>(rows: Record<string, any>[]): T[] {
+  return rows.map(row => mapRowToCamelCase<T>(row));
+}
+
 export class DatabaseStorage implements IStorage {
   async getTenant(id: string) {
     const [t] = await db.select().from(tenants).where(eq(tenants.id, id));
@@ -3613,7 +3631,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM alert_definitions WHERE alert_code = $1 AND (tenant_id = $2 OR tenant_id IS NULL) ORDER BY CASE WHEN tenant_id = $2 THEN 0 ELSE 1 END LIMIT 1`,
       [code, tenantId ?? null]
     );
-    return rows[0] as AlertDefinition | undefined;
+    return rows[0] ? mapRowToCamelCase<AlertDefinition>(rows[0]) : undefined;
   }
 
   async createAlertEvent(data: InsertAlertEvent): Promise<AlertEvent> {
@@ -3629,7 +3647,7 @@ export class DatabaseStorage implements IStorage {
         : `SELECT * FROM alert_events WHERE tenant_id = $1 AND created_at > NOW() - INTERVAL '${hours} hours' ORDER BY created_at DESC`,
       outletId ? [tenantId, outletId] : [tenantId]
     );
-    return rows as AlertEvent[];
+    return mapRowsToCamelCase<AlertEvent>(rows);
   }
 
   async resolveAlertEvent(id: string, tenantId: string, data: { acknowledgedBy: string }): Promise<AlertEvent | undefined> {
@@ -3644,7 +3662,7 @@ export class DatabaseStorage implements IStorage {
         : `SELECT * FROM alert_events WHERE tenant_id = $1 AND is_resolved = false ORDER BY created_at DESC`,
       outletId ? [tenantId, outletId] : [tenantId]
     );
-    return rows as AlertEvent[];
+    return mapRowsToCamelCase<AlertEvent>(rows);
   }
 
   async getAlertOutletConfigs(tenantId: string, outletId: string): Promise<AlertOutletConfig[]> {
@@ -3666,7 +3684,7 @@ export class DatabaseStorage implements IStorage {
        RETURNING *`,
       [data.tenantId, data.outletId, data.alertCode, data.isEnabled ?? true, data.volumeLevel ?? 80]
     );
-    return rows[0] as AlertOutletConfig;
+    return mapRowToCamelCase<AlertOutletConfig>(rows[0]);
   }
 
   // ── Task #118: Cash Machine ────────────────────────────────────────────
@@ -3790,7 +3808,7 @@ export class DatabaseStorage implements IStorage {
         data.reason || null, data.isManual ?? false,
       ]
     );
-    return rows[0] as CashDrawerEvent;
+    return mapRowToCamelCase<CashDrawerEvent>(rows[0]);
   }
 
   async getCashDrawerEvents(sessionId: string): Promise<CashDrawerEvent[]> {
@@ -3798,7 +3816,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM cash_drawer_events WHERE session_id = $1 ORDER BY created_at DESC`,
       [sessionId]
     );
-    return rows as CashDrawerEvent[];
+    return mapRowsToCamelCase<CashDrawerEvent>(rows);
   }
 
   async createCashPayout(data: InsertCashPayout): Promise<CashPayout> {
@@ -3814,7 +3832,7 @@ export class DatabaseStorage implements IStorage {
         data.approvedBy || null, data.performedBy,
       ]
     );
-    return rows[0] as CashPayout;
+    return mapRowToCamelCase<CashPayout>(rows[0]);
   }
 
   async getCashPayouts(sessionId: string): Promise<CashPayout[]> {
@@ -3822,7 +3840,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM cash_payouts WHERE session_id = $1 ORDER BY created_at DESC`,
       [sessionId]
     );
-    return rows as CashPayout[];
+    return mapRowsToCamelCase<CashPayout>(rows);
   }
 
   async createCashHandover(data: InsertCashHandover): Promise<CashHandover> {
@@ -3840,7 +3858,7 @@ export class DatabaseStorage implements IStorage {
         data.receivedByName || null, data.notes || null,
       ]
     );
-    return rows[0] as CashHandover;
+    return mapRowToCamelCase<CashHandover>(rows[0]);
   }
 
   async getCashHandovers(sessionId: string): Promise<CashHandover[]> {
@@ -3848,7 +3866,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM cash_handovers WHERE session_id = $1 ORDER BY created_at DESC`,
       [sessionId]
     );
-    return rows as CashHandover[];
+    return mapRowsToCamelCase<CashHandover>(rows);
   }
 
   async getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined> {
@@ -3857,7 +3875,7 @@ export class DatabaseStorage implements IStorage {
        FROM outlets WHERE id = $1`,
       [outletId]
     );
-    return rows[0];
+    return mapRowToCamelCase(rows[0]);
   }
 
   async updateOutletCurrencySettings(outletId: string, data: Record<string, any>): Promise<Record<string, any>> {
@@ -3889,7 +3907,7 @@ export class DatabaseStorage implements IStorage {
 
     if (fields.length === 0) {
       const { rows } = await pool.query(`SELECT * FROM outlets WHERE id = $1`, [outletId]);
-      return rows[0];
+      return mapRowToCamelCase(rows[0]);
     }
 
     values.push(outletId);
@@ -3897,7 +3915,7 @@ export class DatabaseStorage implements IStorage {
       `UPDATE outlets SET ${fields.join(', ')} WHERE id = $${i} RETURNING id, currency_code, currency_symbol, currency_name, currency_position, decimal_places, denomination_config, cash_rounding`,
       values
     );
-    return rows[0];
+    return mapRowToCamelCase(rows[0]);
   }
 
   async getOutletTipSettings(outletId: string, tenantId: string): Promise<OutletTipSettings | null> {
@@ -3905,7 +3923,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM outlet_tip_settings WHERE outlet_id = $1 AND tenant_id = $2 LIMIT 1`,
       [outletId, tenantId]
     );
-    return rows[0] || null;
+    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
   }
 
   async upsertOutletTipSettings(data: Record<string, any>): Promise<OutletTipSettings> {
@@ -3947,7 +3965,7 @@ export class DatabaseStorage implements IStorage {
       data.tipIsTaxable ?? false, data.currencyCode || "INR", data.currencySymbol || "₹",
       data.updatedBy || null,
     ]);
-    return rows[0];
+    return mapRowToCamelCase(rows[0]);
   }
 
   async getBillTip(billId: string): Promise<BillTip | null> {
@@ -3955,7 +3973,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM bill_tips WHERE bill_id = $1 LIMIT 1`,
       [billId]
     );
-    return rows[0] || null;
+    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
   }
 
   async getTipReport(tenantId: string, outletId: string | undefined, date: string): Promise<Record<string, any>> {
@@ -4049,7 +4067,7 @@ export class DatabaseStorage implements IStorage {
       `UPDATE tip_distributions SET is_paid = true, paid_at = NOW() WHERE id = $1 AND tenant_id = $2 RETURNING *`,
       [id, tenantId]
     );
-    return rows[0] || null;
+    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
   }
 
   async getOutletPackingSettings(outletId: string, tenantId: string): Promise<OutletPackingSettings | null> {
@@ -4103,7 +4121,7 @@ export class DatabaseStorage implements IStorage {
       data.currencySymbol ?? '₹',
       data.updatedBy ?? null,
     ]);
-    return rows[0];
+    return mapRowToCamelCase(rows[0]);
   }
 
   async getPackingCategories(outletId: string, tenantId: string): Promise<PackingChargeCategory[]> {
@@ -4162,12 +4180,12 @@ export class DatabaseStorage implements IStorage {
       VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9, $10)
       RETURNING *
     `, [data.tenantId, data.createdBy, data.createdByName, data.subject, data.description, data.category, data.priority, data.pageContext, data.browserInfo, data.tenantPlan]);
-    return rows[0];
+    return mapRowToCamelCase(rows[0]);
   }
 
   async getInAppSupportTicket(id: string): Promise<InAppSupportTicket | null> {
     const { rows } = await pool.query(`SELECT * FROM in_app_support_tickets WHERE id = $1`, [id]);
-    return rows[0] || null;
+    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
   }
 
   async getInAppSupportTickets(tenantId: string): Promise<InAppSupportTicket[]> {
@@ -4194,7 +4212,7 @@ export class DatabaseStorage implements IStorage {
     if (data.replyCount !== undefined) { setClauses.push(`reply_count = $${i++}`); values.push(data.replyCount); }
     values.push(id);
     const { rows } = await pool.query(`UPDATE in_app_support_tickets SET ${setClauses.join(", ")} WHERE id = $${i} RETURNING *`, values);
-    return rows[0] || null;
+    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
   }
 
   async createInAppSupportTicketReply(data: InsertInAppSupportTicketReply): Promise<InAppSupportTicketReply> {
@@ -4203,7 +4221,7 @@ export class DatabaseStorage implements IStorage {
       VALUES ($1, $2, $3, $4, $5, $6)
       RETURNING *
     `, [data.ticketId, data.tenantId, data.authorId, data.authorName, data.isAdmin ?? false, data.message]);
-    return rows[0];
+    return mapRowToCamelCase(rows[0]);
   }
 
   async getInAppSupportTicketReplies(ticketId: string): Promise<InAppSupportTicketReply[]> {
