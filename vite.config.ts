@@ -45,6 +45,10 @@ export default defineConfig({
         main: path.resolve(import.meta.dirname, "client", "index.html"),
         qr: path.resolve(import.meta.dirname, "client", "qr.html"),
       },
+            onwarn(warning, warn) {
+        if (warning.code === "MODULE_LEVEL_DIRECTIVE") return;
+        warn(warning);
+      },
     },
   },
   optimizeDeps: {
@@ -63,7 +67,4 @@ export default defineConfig({
       deny: ["**/.*"],
     },
   },
-    ssr: {
-    noExternal: ["@tanstack/react-query", "@tanstack/react-virtual"],
-  },
-});
+    
