@@ -73,7 +73,8 @@ async function getTenantFromRequest(req: IncomingMessage): Promise<{ tenantId: s
     const rawCookie = req.headers.cookie;
     if (!rawCookie) return null;
     const cookies = parseCookie(rawCookie);
-    let sid = cookies["ts.sid"];
+    // PA-1 compat: fall back to legacy connect.sid cookie for users who haven't re-logged-in
+    let sid = cookies["ts.sid"] || cookies["connect.sid"];
     if (!sid) return null;
 
     if (sid.startsWith("s:")) sid = sid.slice(2);
