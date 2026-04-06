@@ -369,6 +369,8 @@ export function registerOrdersRoutes(app: Express): void {
         orderData.idempotencyKey = idempotencyKey;
       }
 
+      let orderCustomerName: string | null = null;
+      let orderCustomerPhone: string | null = null;
       if (orderData.orderType === "takeaway" || orderData.orderType === "delivery") {
         const notes: string = typeof orderData.notes === "string" ? orderData.notes : "";
         const nameFromNotes = notes.match(/Customer:\s*([^|]+)/)?.[1]?.trim() ?? "";
@@ -380,8 +382,10 @@ export function registerOrdersRoutes(app: Express): void {
         }
         if (!customerPhoneValue) {
           return res.status(400).json({ message: "Customer phone is required for takeaway and delivery orders." });
-        }
       }
+      orderCustomerName = customerNameValue;
+      orderCustomerPhone = customerPhoneValue;
+    }
 
       const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
@@ -555,6 +559,8 @@ export function registerOrdersRoutes(app: Express): void {
         tax: serverTax.toFixed(2),
         serviceCharge: serverServiceCharge.toFixed(2),
         total: serverTotal.toFixed(2),
+        customerName: orderCustomerName,
+        customerPhone: orderCustomerPhone,
         ...(gstNotes ? { notes: [orderData.notes, gstNotes].filter(Boolean).join(" | ") } : {}),
       };
 
