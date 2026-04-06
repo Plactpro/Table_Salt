@@ -1,5 +1,6 @@
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { RedisStore } from "rate-limit-redis";
 import { createHmac } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 
@@ -51,7 +52,7 @@ const CSP_DIRECTIVES = {
   frameAncestors: ["'none'"],
 };
 
-export function setupSecurity(app: Express) {
+export async function setupSecurity(app: Express) {
   app.set("trust proxy", 1);
 
   // PR-001: CSP rollout — Phase 1 (report-only) was validated in development; Phase 2 (enforcing)
@@ -89,7 +90,31 @@ export function setupSecurity(app: Express) {
 
   const isTest = process.env.NODE_ENV === "test";
 
+  // Redis store for rate limiting — shared across all Node.js processes/instances.
+  // Falls back to in-memory store if REDIS_URL is not set (single-process dev/staging).
+  let redisStore: RedisStore | undefined;
+  if (process.env.REDIS_URL) {
+    try {
+      const { default: Redis } = await import("ioredis");
+      const redisClient = new Redis(process.env.REDIS_URL, {
+        lazyConnect: true,
+        enableOfflineQueue: false,
+      });
+      redisClient.on("error", (err: Error) =>
+        console.warn("[rate-limit] Redis error — falling back to in-memory:", err.message)
+      );
+      await redisClient.connect().catch(() => {});
+      redisStore = new RedisStore({
+        sendCommand: (...args: string[]) => redisClient.call(...args) as any,
+      });
+      console.log("[rate-limit] Using Redis store for rate limiters");
+    } catch (err: any) {
+      console.warn("[rate-limit] Could not connect to Redis, using in-memory store:", err.message);
+    }
+  }
+
   const authLimiter = rateLimit({
+    store: redisStore,
     windowMs: 15 * 60 * 1000,
     limit: 15,
     standardHeaders: "draft-7",
@@ -106,6 +131,7 @@ export function setupSecurity(app: Express) {
   app.use("/api/auth/register", authLimiter);
 
   const apiLimiter = rateLimit({
+    store: redisStore,
     windowMs: 60 * 1000,
     limit: 120,
     standardHeaders: "draft-7",
@@ -128,6 +154,7 @@ export function setupSecurity(app: Express) {
   app.use("/api/", apiLimiter);
 
   const uploadLimiter = rateLimit({
+    store: redisStore,
     windowMs: 60 * 1000,
     limit: 10,
     standardHeaders: "draft-7",
