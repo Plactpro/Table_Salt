@@ -1,6 +1,5 @@
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
-import { RedisStore } from "rate-limit-redis";
 import { createHmac } from "crypto";
 import type { Express, Request, Response, NextFunction } from "express";
 
@@ -93,7 +92,8 @@ export async function setupSecurity(app: Express) {
 
   // Redis store for rate limiting — shared across all Node.js processes/instances.
   // Falls back to in-memory store if REDIS_URL is not set (single-process dev/staging).
-  let redisStore: RedisStore | undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let redisStore: any | undefined;
   if (process.env.REDIS_URL) {
     try {
       const { default: Redis } = await import("ioredis");
@@ -105,6 +105,7 @@ export async function setupSecurity(app: Express) {
         console.warn("[rate-limit] Redis error — falling back to in-memory:", err.message)
       );
       await redisClient.connect().catch(() => {});
+      const { RedisStore } = await import("rate-limit-redis");
       redisStore = new RedisStore({
         sendCommand: (...args: string[]) => redisClient.call(...args) as any,
       });
