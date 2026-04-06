@@ -369,34 +369,16 @@ function startWebhookMonitor() {
 }
 
 (async () => {
-  try {
-    const { runAdminMigrations } = await import("./admin-migrations");
+    try {
+    const { runAdminMigrations, runTask108Migrations, runTask184Migrations, runTask191Migrations } = await import("./admin-migrations");
     await runAdminMigrations();
+    await runTask108Migrations();
+    await runTask184Migrations();
+    await runTask191Migrations();
   } catch (e) {
     console.error("Admin migrations error:", e);
   }
-
-  try {
-    const { runTask108Migrations } = await import("./admin-migrations");
-    await runTask108Migrations();
-  } catch (e) {
-    console.error("Task 108 migrations error:", e);
-  }
-
-  try {
-    const { runTask184Migrations } = await import("./admin-migrations");
-    await runTask184Migrations();
-  } catch (e) {
-    console.error("Task 184 migrations error:", e);
-  }
-
-  try {
-    const { runTask191Migrations } = await import("./admin-migrations");
-    await runTask191Migrations();
-  } catch (e) {
-    console.error("Task 191 migrations error:", e);
-  }
-
+    
   try {
     const { seedDatabase } = await import("./seed");
     await seedDatabase();
