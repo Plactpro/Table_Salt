@@ -124,18 +124,28 @@ export function registerOrdersRoutes(app: Express): void {
       const dateTo = req.query.dateTo as string | undefined;
       // Build filter conditions for paginated data + filtered total
       const filterConditions: any[] = [eq(ordersTable.tenantId, user.tenantId)];
-      if (statusFilter && statusFilter !== "all") filterConditions.push(eq(ordersTable.status, statusFilter as any));
+      // O14 fix: "completed" in UI = status 'paid' or 'completed' in DB
+      const normalizedStatus = statusFilter && statusFilter !== "all"
+        ? (statusFilter === "completed" ? ["paid", "completed"] : [statusFilter.toLowerCase()])
+        : null;
+      if (normalizedStatus) {
+        filterConditions.push(
+          normalizedStatus.length > 1
+            ? inArray(ordersTable.status, normalizedStatus as any)
+            : eq(ordersTable.status, normalizedStatus[0] as any)
+        );
+      }
       if (typeFilter && typeFilter !== "all") filterConditions.push(eq(ordersTable.orderType, typeFilter as any));
       if (dateFrom) filterConditions.push(sql`${ordersTable.createdAt} >= ${new Date(dateFrom)}`);
       if (dateTo) { const dt = new Date(dateTo); dt.setHours(23, 59, 59, 999); filterConditions.push(sql`${ordersTable.createdAt} <= ${dt}`); }
       const filterWhere = filterConditions.length > 1 ? and(...filterConditions) : filterConditions[0];
       const [data, [{ total }], [counts]] = await Promise.all([
-        storage.getOrdersByTenant(user.tenantId, { limit, offset, status: statusFilter, orderType: typeFilter, dateFrom, dateTo }),
+        storage.getOrdersByTenant(user.tenantId, { limit, offset, status: statusFilter === 'completed' ? 'paid,completed' : statusFilter?.toLowerCase(), orderType: typeFilter, dateFrom, dateTo }),
         db.select({ total: sql<number>`count(*)::int` }).from(ordersTable).where(filterWhere),
         db.select({
           activeCount: sql<number>`count(case when status in ('new','confirmed','sent_to_kitchen','in_progress','ready','served','ready_to_pay') then 1 end)::int`,
           readyToPayCount: sql<number>`count(case when status = 'ready_to_pay' then 1 end)::int`,
-          completedCount: sql<number>`count(case when status = 'paid' then 1 end)::int`,
+          completedCount: sql<number>`count(case when status in ('paid','completed') then 1 end)::int`,
         }).from(ordersTable).where(eq(ordersTable.tenantId, user.tenantId)),
       ]);
       res.json({ data, total: Number(total), activeCount: Number(counts?.activeCount ?? 0), readyToPayCount: Number(counts?.readyToPayCount ?? 0), completedCount: Number(counts?.completedCount ?? 0), limit, offset, hasMore: offset + data.length < Number(total) });
