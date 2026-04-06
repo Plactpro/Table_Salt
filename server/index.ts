@@ -369,15 +369,28 @@ function startWebhookMonitor() {
 }
 
 (async () => {
-    try {
+  // TD-4: Consolidated migration runner — each runs independently
     const { runAdminMigrations, runTask108Migrations, runTask184Migrations, runTask191Migrations } = await import("./admin-migrations");
-    await runAdminMigrations();
-    await runTask108Migrations();
-    await runTask184Migrations();
-    await runTask191Migrations();
-  } catch (e) {
-    console.error("Admin migrations error:", e);
-  }
+    const migrationRunners: Array<{ name: string; fn: () => Promise<void> }> = [
+      { name: "AdminMigrations", fn: runAdminMigrations },
+      { name: "Task108Migrations", fn: runTask108Migrations },
+      { name: "Task184Migrations", fn: runTask184Migrations },
+      { name: "Task191Migrations", fn: runTask191Migrations },
+    ];
+
+    for (const { name, fn } of migrationRunners) {
+      try {
+        await fn();
+        console.log(`[Migration] ${name} completed successfully`);
+      } catch (err) {
+        console.error(`[Migration] FAILED: ${name}`, err);
+        if (process.env.NODE_ENV === "production") {
+          console.error("[FATAL] Migration failure in production — shutting down");
+          process.exit(1);
+        }
+        // In development — log error and continue so other migrations still run
+      }
+    }
     
   try {
     const { seedDatabase } = await import("./seed");
