@@ -12,7 +12,8 @@ import { pool } from "./db";
 import { routeContext } from "./lib/query-logger";
 
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
-  console.error("[CRITICAL] SESSION_SECRET env var is not set. Using insecure default — set it before deploying to AWS.");
+    console.error("[FATAL] SESSION_SECRET env var is not set. Refusing to start in production.");
+    process.exit(1);
 }
 
 process.on('unhandledRejection', (reason, promise) => {
