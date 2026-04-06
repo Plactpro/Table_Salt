@@ -61,8 +61,7 @@ function resolveCustomerName(delivery: DeliveryOrder, customerMap: Map<string, {
     if (match) return match[1].trim();
   }
   if (delivery.notes) {
-    const noteMatch = delivery.notes.match(/Customer:\s*([^
-|]+)/);
+          const noteMatch = delivery.notes.match(/Customer:\s*([^\n|]+)/);
     if (noteMatch) return noteMatch[1].trim();
   }
   return null;
