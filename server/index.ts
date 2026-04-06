@@ -29,7 +29,7 @@ const httpServer = createServer(app);
 
 app.use(compression());
 
-await setupSecurity(app);
+setupSecurity(app);
 
 declare module "http" {
   interface IncomingMessage {
