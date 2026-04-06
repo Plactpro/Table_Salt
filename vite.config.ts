@@ -29,6 +29,7 @@ export default defineConfig({
       "@shared": path.resolve(import.meta.dirname, "shared"),
       "@assets": path.resolve(import.meta.dirname, "attached_assets"),
     },
+    dedupe: ["@tanstack/react-query"],
   },
   css: {
     postcss: {
@@ -47,7 +48,12 @@ export default defineConfig({
     },
   },
   optimizeDeps: {
-    include: ["jspdf", "jspdf-autotable"],
+    include: [
+      "jspdf",
+      "jspdf-autotable",
+      "@tanstack/react-query",
+      "@tanstack/react-virtual",
+    ],
   },
   server: {
     host: "0.0.0.0",
