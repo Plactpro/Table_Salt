@@ -2310,7 +2310,7 @@ export const wastageLogs = pgTable("wastage_logs", {
   chefName: text("chef_name"),
   counterId: varchar("counter_id", { length: 36 }),
   counterName: text("counter_name"),
-  shiftId: varchar("shift_id", { length: 36 }).references(() => shifts.id, { onDelete: "set null" }),
+  shiftId: varchar("shift_id", { length: 36 }),
   stockMovementId: varchar("stock_movement_id", { length: 36 }),
   isVoided: boolean("is_voided").notNull().default(false),
   voidReason: text("void_reason"),
