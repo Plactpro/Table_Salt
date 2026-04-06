@@ -124,11 +124,22 @@ export function setupAuth(app: Express) {
 
   app.use(
     session({
-      store: new PgSession({ pool, createTableIfMissing: true }),
-      secret: process.env.SESSION_SECRET || "table-salt-secret-key-change-in-prod",
+      store: new PgSession({
+        pool,
+        createTableIfMissing: true,
+        pruneSessionInterval: 60 * 15,
+        ttl: 30 * 24 * 60 * 60,
+      }),
+      secret: process.env.SESSION_SECRET as string,
       resave: false,
       saveUninitialized: false,
-      cookie: { maxAge: 30 * 24 * 60 * 60 * 1000 },
+      name: "ts.sid",
+      cookie: {
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax" as const,
+      },
     })
   );
 
