@@ -67,6 +67,7 @@
     "embla-carousel-react": "^8.6.0",
     "express": "^5.0.1",
     "express-rate-limit": "^8.3.1",
+    "rate-limit-redis": "^4.2.0",
     "express-session": "^1.18.1",
     "framer-motion": "^12.23.24",
     "helmet": "^8.1.0",
