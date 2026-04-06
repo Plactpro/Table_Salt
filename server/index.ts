@@ -29,7 +29,7 @@ const httpServer = createServer(app);
 
 app.use(compression());
 
-setupSecurity(app);
+await setupSecurity(app);
 
 declare module "http" {
   interface IncomingMessage {
@@ -668,10 +668,38 @@ function startWebhookMonitor() {
 
   const shutdown = async (signal: string) => {
     console.log(`[Shutdown] Received ${signal}, shutting down gracefully...`);
-    httpServer.close(() => console.log('[Shutdown] HTTP server closed'));
-    if (wss) wss.clients.forEach((client: any) => client.terminate());
-    try { await pool.end(); } catch (_) {}
-    console.log('[Shutdown] DB pool closed, exiting.');
+
+    // Force-exit after 10 seconds — prevents hanging if connections don't drain
+    const forceExit = setTimeout(() => {
+      console.error('[Shutdown] Graceful shutdown timed out — forcing exit');
+      process.exit(1);
+    }, 10_000);
+    forceExit.unref();
+
+    // 1. Stop accepting new HTTP connections; await in-flight requests to finish
+    await new Promise<void>((resolve) => httpServer.close(() => {
+      console.log('[Shutdown] HTTP server closed');
+      resolve();
+    }));
+
+    // 2. Close WebSocket connections gracefully (send CLOSE frame, then terminate)
+    if (wss) {
+      wss.clients.forEach((client: any) => {
+        if (client.readyState === client.OPEN) client.close(1001, 'Server shutting down');
+      });
+      await new Promise<void>((resolve) => setTimeout(resolve, 500));
+      wss.clients.forEach((client: any) => client.terminate());
+    }
+
+    // 3. Drain DB pool
+    try {
+      await pool.end();
+      console.log('[Shutdown] DB pool closed');
+    } catch (err) {
+      console.error('[Shutdown] Error closing DB pool:', err);
+    }
+
+    console.log('[Shutdown] Clean exit.');
     process.exit(0);
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
