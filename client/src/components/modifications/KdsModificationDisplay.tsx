@@ -13,11 +13,11 @@ interface KdsModificationDisplayProps {
 
 function SpiceChip({ level }: { level: string }) {
   const labels: Record<string, string> = {
-    none: "No Spice",
-    mild: "🌶️ Mild",
-    medium: "🌶️🌶️ Medium",
-    spicy: "🌶️🌶️🌶️ Spicy",
-    extra_spicy: "🔥 Extra Spicy",
+    NO_SPICE: "No Spice",
+    MILD: "🌶️ Mild",
+    MEDIUM: "🌶️🌶️ Medium",
+    SPICY: "🌶️🌶️🌶️ Spicy",
+    EXTRA_HOT: "🔥 Extra Spicy",
   };
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-orange-100 text-orange-800 border border-orange-300" data-testid={`kds-spice-${level}`}>
@@ -28,9 +28,9 @@ function SpiceChip({ level }: { level: string }) {
 
 function SaltChip({ level }: { level: string }) {
   const labels: Record<string, string> = {
-    less_salt: "🧂 Less Salt",
-    normal_salt: "Normal Salt",
-    extra_salt: "🧂+ Extra Salt",
+    LESS: "🧂 Less Salt",
+    NORMAL: "Normal Salt",
+    EXTRA: "🧂+ Extra Salt",
   };
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-100 text-sky-800 border border-sky-300" data-testid={`kds-salt-${level}`}>
@@ -56,13 +56,13 @@ function NoteChip({ note }: { note: string }) {
 }
 
 function AllergyAlertBox({
-  allergies,
-  allergyNote,
+  allergyFlags,
+  allergyDetails,
   acknowledged,
   onAcknowledge,
 }: {
-  allergies: string[];
-  allergyNote: string;
+  allergyFlags: string[];
+  allergyDetails: string;
   acknowledged: boolean;
   onAcknowledge?: () => void;
 }) {
@@ -90,14 +90,14 @@ function AllergyAlertBox({
             {acknowledged ? "Allergy Acknowledged ✓" : "⚠ ALLERGY ALERT"}
           </p>
           <div className="flex flex-wrap gap-1 mt-1">
-            {allergies.map(a => (
+            {allergyFlags.map(a => (
               <Badge key={a} className="text-[10px] bg-red-600 text-white px-1.5 py-0 border-0" data-testid={`kds-allergy-${a.toLowerCase()}`}>
                 {a}
               </Badge>
             ))}
           </div>
-          {allergyNote && (
-            <p className="text-[10px] text-red-700 dark:text-red-300 mt-1 italic">{allergyNote}</p>
+          {allergyDetails && (
+            <p className="text-[10px] text-red-700 dark:text-red-300 mt-1 italic">{allergyDetails}</p>
           )}
         </div>
       </div>
@@ -130,13 +130,13 @@ export default function KdsModificationDisplay({
     modification.spiceLevel ||
     modification.saltLevel ||
     modification.removedIngredients.length > 0 ||
-    modification.specialInstruction?.trim() ||
-    modification.allergies.length > 0 ||
-    modification.allergyNote?.trim();
+    modification.specialNotes?.trim() ||
+    modification.allergyFlags.length > 0 ||
+    modification.allergyDetails?.trim();
 
   if (!hasAnything) return null;
 
-  const hasAllergy = modification.allergies.length > 0 || !!modification.allergyNote?.trim();
+  const hasAllergy = modification.allergyFlags.length > 0 || !!modification.allergyDetails?.trim();
 
   return (
     <div className="mt-1 space-y-1" data-testid="kds-modification-display">
@@ -154,14 +154,14 @@ export default function KdsModificationDisplay({
         ))}
       </div>
 
-      {modification.specialInstruction?.trim() && (
-        <NoteChip note={modification.specialInstruction.trim()} />
+      {modification.specialNotes?.trim() && (
+        <NoteChip note={modification.specialNotes.trim()} />
       )}
 
       {hasAllergy && (
         <AllergyAlertBox
-          allergies={modification.allergies}
-          allergyNote={modification.allergyNote || ""}
+          allergyFlags={modification.allergyFlags}
+          allergyDetails={modification.allergyDetails || ""}
           acknowledged={acknowledged}
           onAcknowledge={onAllergyAcknowledge}
         />

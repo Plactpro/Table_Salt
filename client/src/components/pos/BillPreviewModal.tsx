@@ -1179,8 +1179,8 @@ export default function BillPreviewModal({
                     if (fm.spiceLevel) modChips.push(`🌶 ${fm.spiceLevel}`);
                     if (fm.saltLevel) modChips.push(`🧂 ${fm.saltLevel} salt`);
                     fm.removedIngredients.forEach(r => modChips.push(`no ${r}`));
-                    if (fm.specialInstruction?.trim()) modChips.push(`"${fm.specialInstruction.trim()}"`);
-                    fm.allergies.forEach(a => modChips.push(`⚠ ${a}`));
+                    if (fm.specialNotes?.trim()) modChips.push(`"${fm.specialNotes.trim()}"`);
+                    fm.allergyFlags.forEach(a => modChips.push(`⚠ ${a}`));
                   }
                   const isVoided = !!item.is_voided;
                   return (
