@@ -636,7 +636,7 @@ export function registerWastageRoutes(app: Express): void {
       const tenantId = user.tenantId;
       const { from, to, category, chefId, counterId, preventable, minCost, outletId, limit: limitParam = "50", offset: offsetParam = "0" } = req.query;
 
-      let whereClauses = ["wl.tenant_id = $1"];
+      let whereClauses = ["wl.tenant_id = $1", "wl.is_voided = false"];
       const params: unknown[] = [tenantId];
 
       if (outletId) { params.push(outletId); whereClauses.push(`COALESCE(wl.outlet_id,'') = COALESCE($${params.length},'')`); }
