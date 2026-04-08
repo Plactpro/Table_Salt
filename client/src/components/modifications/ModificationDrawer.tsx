@@ -38,17 +38,17 @@ export const DEFAULT_MODIFICATION: FoodModification = {
 };
 
 const SPICE_LEVELS = [
-  { key: "none", label: "No Spice", color: "bg-gray-100 text-gray-700 border-gray-300 data-[selected=true]:bg-gray-700 data-[selected=true]:text-white data-[selected=true]:border-gray-700" },
-  { key: "mild", label: "🌶️ Mild", color: "bg-green-50 text-green-700 border-green-300 data-[selected=true]:bg-green-600 data-[selected=true]:text-white data-[selected=true]:border-green-600" },
-  { key: "medium", label: "🌶️🌶️ Medium", color: "bg-yellow-50 text-yellow-700 border-yellow-400 data-[selected=true]:bg-yellow-500 data-[selected=true]:text-white data-[selected=true]:border-yellow-500" },
-  { key: "spicy", label: "🌶️🌶️🌶️ Spicy", color: "bg-orange-50 text-orange-700 border-orange-400 data-[selected=true]:bg-orange-500 data-[selected=true]:text-white data-[selected=true]:border-orange-500" },
-  { key: "extra_spicy", label: "🔥 Extra", color: "bg-red-50 text-red-700 border-red-400 data-[selected=true]:bg-red-600 data-[selected=true]:text-white data-[selected=true]:border-red-600" },
+  { key: "NO_SPICE", label: "No Spice", color: "bg-gray-100 text-gray-700 border-gray-300 data-[selected=true]:bg-gray-700 data-[selected=true]:text-white data-[selected=true]:border-gray-700" },
+  { key: "MILD", label: "🌶️ Mild", color: "bg-green-50 text-green-700 border-green-300 data-[selected=true]:bg-green-600 data-[selected=true]:text-white data-[selected=true]:border-green-600" },
+  { key: "MEDIUM", label: "🌶️🌶️ Medium", color: "bg-yellow-50 text-yellow-700 border-yellow-400 data-[selected=true]:bg-yellow-500 data-[selected=true]:text-white data-[selected=true]:border-yellow-500" },
+  { key: "SPICY", label: "🌶️🌶️🌶️ Spicy", color: "bg-orange-50 text-orange-700 border-orange-400 data-[selected=true]:bg-orange-500 data-[selected=true]:text-white data-[selected=true]:border-orange-500" },
+  { key: "EXTRA_HOT", label: "🔥 Extra", color: "bg-red-50 text-red-700 border-red-400 data-[selected=true]:bg-red-600 data-[selected=true]:text-white data-[selected=true]:border-red-600" },
 ];
 
 const SALT_LEVELS = [
-  { key: "less_salt", label: "🧂 Less Salt", color: "bg-sky-50 text-sky-700 border-sky-300 data-[selected=true]:bg-sky-500 data-[selected=true]:text-white data-[selected=true]:border-sky-500" },
-  { key: "normal_salt", label: "Normal Salt", color: "bg-gray-50 text-gray-700 border-gray-300 data-[selected=true]:bg-gray-600 data-[selected=true]:text-white data-[selected=true]:border-gray-600" },
-  { key: "extra_salt", label: "🧂 Extra Salt", color: "bg-indigo-50 text-indigo-700 border-indigo-300 data-[selected=true]:bg-indigo-500 data-[selected=true]:text-white data-[selected=true]:border-indigo-500" },
+  { key: "LESS", label: "🧂 Less Salt", color: "bg-sky-50 text-sky-700 border-sky-300 data-[selected=true]:bg-sky-500 data-[selected=true]:text-white data-[selected=true]:border-sky-500" },
+  { key: "NORMAL", label: "Normal Salt", color: "bg-gray-50 text-gray-700 border-gray-300 data-[selected=true]:bg-gray-600 data-[selected=true]:text-white data-[selected=true]:border-gray-600" },
+  { key: "EXTRA", label: "🧂 Extra Salt", color: "bg-indigo-50 text-indigo-700 border-indigo-300 data-[selected=true]:bg-indigo-500 data-[selected=true]:text-white data-[selected=true]:border-indigo-500" },
 ];
 
 const COMMON_ALLERGIES = [
