@@ -151,6 +151,7 @@ export default function CleaningPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cleaning/logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cleaning/compliance-report"] });
       toast({ title: "Task completed", description: "Cleaning task marked as done" });
     },
   });
@@ -161,6 +162,7 @@ export default function CleaningPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cleaning/logs"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cleaning/compliance-report"] });
     },
   });
 
