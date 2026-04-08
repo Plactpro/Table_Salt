@@ -188,6 +188,7 @@ export function registerTablesRoutes(app: Express): void {
       seatedTableId: tableId,
       seatedAt: new Date(),
     });
+    emitToTenant(user.tenantId, "table:updated", { tableId, status: "occupied" });
     res.json(w);
   });
   app.delete("/api/waitlist/:id", requireAuth, async (req, res) => {
