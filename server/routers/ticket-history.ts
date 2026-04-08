@@ -507,9 +507,23 @@ export function registerTicketHistoryRoutes(app: Express) {
         entityId: orderId,
       }).catch(() => {});
 
+      const items = itemsRes.rows.map((item: any) => {
+        const mods: string[] = [];
+        if (item.spice_level) mods.push(item.spice_level);
+        if (item.salt_level) mods.push(item.salt_level);
+        if (item.removed_ingredients && Array.isArray(item.removed_ingredients) && item.removed_ingredients.length > 0) {
+          item.removed_ingredients.forEach((r: string) => mods.push(`No ${r}`));
+        }
+        if (item.has_allergy && item.allergy_flags && Array.isArray(item.allergy_flags) && item.allergy_flags.length > 0) {
+          item.allergy_flags.forEach((a: string) => mods.push(`Allergy: ${a}`));
+        }
+        if (item.special_notes) mods.push(item.special_notes);
+        return { ...item, modifications: mods.length > 0 ? mods : undefined };
+      });
+
       return res.json({
         order,
-        items: itemsRes.rows,
+        items,
         bill: billRes.rows[0] || null,
         voidRequests: voidRes.rows,
         refireRequests: refireRes.rows,
