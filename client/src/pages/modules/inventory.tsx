@@ -38,6 +38,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { StatCard } from "@/components/widgets/stat-card";
 import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "react-i18next";
@@ -1569,6 +1570,11 @@ export default function InventoryPage() {
   const { t } = useTranslation("inventory");
   const { t: tc } = useTranslation("common");
   const [location, navigate] = useLocation();
+  const queryClient = useQueryClient();
+
+  useRealtimeEvent("stock:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+  });
 
   const getTabFromUrl = (): InventoryTabValue => {
     const searchStr = location.includes("?") ? location.split("?")[1] : "";

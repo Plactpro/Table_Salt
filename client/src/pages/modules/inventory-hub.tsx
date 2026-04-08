@@ -21,6 +21,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { StatCard } from "@/components/widgets/stat-card";
 import { useTranslation } from "react-i18next";
 
@@ -212,7 +213,12 @@ function RecipesTab() {
 export default function InventoryHub() {
   const { t } = useTranslation("modules");
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const canManage = MANAGEMENT_ROLES.includes(user?.role || "");
+
+  useRealtimeEvent("stock:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
+  });
 
   const searchParams = new URLSearchParams(typeof window !== "undefined" ? window.location.search : "");
   const urlTab = searchParams.get("tab");
