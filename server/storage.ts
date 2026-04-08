@@ -2144,7 +2144,7 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(purchaseOrders).where(and(eq(purchaseOrders.tenantId, tenantId), eq(purchaseOrders.isDeleted, false))).orderBy(desc(purchaseOrders.createdAt)).limit(200);
   }
   async countPurchaseOrdersByTenant(tenantId: string) {
-    const [row] = await db.select({ total: count() }).from(purchaseOrders).where(eq(purchaseOrders.tenantId, tenantId));
+    const [row] = await db.select({ total: count() }).from(purchaseOrders).where(and(eq(purchaseOrders.tenantId, tenantId), eq(purchaseOrders.isDeleted, false)));
     return row?.total ?? 0;
   }
   async getPurchaseOrder(id: string, tenantId: string) {
