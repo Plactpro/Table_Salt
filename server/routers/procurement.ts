@@ -304,7 +304,7 @@ export function registerProcurementRoutes(app: Express): void {
   app.post("/api/grns", procurementWrite, async (req, res) => {
     try {
       const user = req.user as any;
-      const { items, purchaseOrderId, notes } = req.body;
+      const { items, purchaseOrderId, notes, status } = req.body;
       if (!purchaseOrderId || !items || !Array.isArray(items)) return res.status(400).json({ message: "purchaseOrderId and items required" });
       const po = await storage.getPurchaseOrder(purchaseOrderId, user.tenantId);
       if (!po) return res.status(404).json({ message: "PO not found" });
@@ -337,13 +337,15 @@ export function registerProcurementRoutes(app: Express): void {
           const newReceivedQty = parseFloat(poItem.receivedQty || "0") + parseFloat(item.quantityReceived);
           await tx.update(purchaseOrderItems).set({ receivedQty: newReceivedQty.toFixed(2) }).where(eq(purchaseOrderItems.id, poItem.id));
 
-          const [inv] = await tx.select().from(inventoryItems).where(and(eq(inventoryItems.id, poItem.inventoryItemId), eq(inventoryItems.tenantId, user.tenantId)));
-          if (inv) {
-            const conversionRatio = parseFloat(inv.conversionRatio || "1");
-            const receivedQtyBase = parseFloat(item.quantityReceived) * conversionRatio;
-            const costPerBaseUnit = conversionRatio > 0 ? (parseFloat(item.actualUnitCost) / conversionRatio).toFixed(4) : item.actualUnitCost;
-            await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: inv.id, deltaQty: receivedQtyBase, outletId: null, movementType: "received", reason: `GRN ${grnNumber} from PO ${po.poNumber}`, unitCost: item.actualUnitCost });
-            await tx.update(inventoryItems).set({ costPerBaseUnit }).where(and(eq(inventoryItems.id, inv.id), eq(inventoryItems.tenantId, user.tenantId)));
+          if (status === "confirmed") {
+            const [inv] = await tx.select().from(inventoryItems).where(and(eq(inventoryItems.id, poItem.inventoryItemId), eq(inventoryItems.tenantId, user.tenantId)));
+            if (inv) {
+              const conversionRatio = parseFloat(inv.conversionRatio || "1");
+              const receivedQtyBase = parseFloat(item.quantityReceived) * conversionRatio;
+              const costPerBaseUnit = conversionRatio > 0 ? (parseFloat(item.actualUnitCost) / conversionRatio).toFixed(4) : item.actualUnitCost;
+              await storage.updateInventoryItemStock({ tx, tenantId: user.tenantId, inventoryItemId: inv.id, deltaQty: receivedQtyBase, outletId: null, movementType: "received", reason: `GRN ${grnNumber} from PO ${po.poNumber}`, unitCost: item.actualUnitCost });
+              await tx.update(inventoryItems).set({ costPerBaseUnit }).where(and(eq(inventoryItems.id, inv.id), eq(inventoryItems.tenantId, user.tenantId)));
+            }
           }
         }
 
@@ -357,7 +359,9 @@ export function registerProcurementRoutes(app: Express): void {
         return grn;
       });
 
-      emitToTenant(user.tenantId, "stock:updated", { grnId: result.id, source: "grn" });
+      if (status === "confirmed") {
+        emitToTenant(user.tenantId, "stock:updated", { grnId: result.id, source: "grn" });
+      }
       res.json(result);
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
