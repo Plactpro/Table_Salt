@@ -3985,32 +3985,37 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTipReport(tenantId: string, outletId: string | undefined, date: string): Promise<Record<string, any>> {
-    const outletFilter = outletId ? `AND outlet_id = '${outletId}'` : "";
+    const baseParams: any[] = [tenantId, date];
+    let outletFilter = "";
+    if (outletId) {
+      baseParams.push(outletId);
+      outletFilter = `AND outlet_id = $${baseParams.length}`;
+    }
     const summaryRes = await pool.query(`
       SELECT COALESCE(SUM(tip_amount), 0) AS total_tips, COUNT(*) AS total_transactions,
              COALESCE(AVG(tip_amount), 0) AS avg_tip_per_bill
       FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
-    `, [tenantId, date]);
+    `, baseParams);
     const byMethodRes = await pool.query(`
       SELECT payment_method, SUM(tip_amount) AS total
       FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
       GROUP BY payment_method
-    `, [tenantId, date]);
+    `, baseParams);
     const byWaiterRes = await pool.query(`
       SELECT waiter_id, waiter_name, SUM(tip_amount) AS total_tips, COUNT(*) AS count
       FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
       GROUP BY waiter_id, waiter_name ORDER BY total_tips DESC
-    `, [tenantId, date]);
+    `, baseParams);
     const byHourRes = await pool.query(`
       SELECT EXTRACT(HOUR FROM created_at)::int AS hour, SUM(tip_amount) AS tips
       FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
       GROUP BY hour ORDER BY hour
-    `, [tenantId, date]);
+    `, baseParams);
     const recentRes = await pool.query(`
       SELECT bill_id, tip_amount AS amount, waiter_name, created_at AS time
       FROM bill_tips WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
       ORDER BY created_at DESC LIMIT 20
-    `, [tenantId, date]);
+    `, baseParams);
     const s = summaryRes.rows[0];
     const byMethod: Record<string, number> = {};
     for (const r of byMethodRes.rows) { byMethod[r.payment_method || "CASH"] = Number(r.total); }
