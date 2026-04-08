@@ -58,8 +58,9 @@ export default function VoidRequestModal({ open, onClose, orderId, orderNumber, 
     setIsSubmitting(true);
     try {
       await apiRequest("POST", `/api/tickets/${orderId}/void-request`, {
-        itemId: selectedItemId,
-        reason,
+        orderItemId: selectedItemId,
+        voidReason: reason,
+        voidType: "full",
       });
       setSubmitted(true);
       onSuccess?.();
