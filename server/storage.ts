@@ -1698,6 +1698,9 @@ export class DatabaseStorage implements IStorage {
   async deleteCleaningTemplate(id: string, tenantId: string) {
     const [template] = await db.select().from(cleaningTemplates).where(and(eq(cleaningTemplates.id, id), eq(cleaningTemplates.tenantId, tenantId)));
     if (!template) return;
+    await db.delete(cleaningSchedules).where(
+      and(eq(cleaningSchedules.templateId, id), eq(cleaningSchedules.tenantId, tenantId))
+    );
     await db.delete(cleaningLogs).where(
       and(eq(cleaningLogs.templateId, id), eq(cleaningLogs.tenantId, tenantId))
     );
