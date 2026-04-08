@@ -1797,7 +1797,7 @@ function TablesPageContent() {
                 try {
                   const checkResp = await apiRequest("POST", "/api/resources/check-availability", {
                     outletId,
-                    requirements: reqResources.map(r => ({ resourceId: r.resourceId, quantity: r.quantity })),
+                    resources: reqResources.map(r => ({ resourceId: r.resourceId, quantity: r.quantity })),
                   });
                   checkResult = await checkResp.json();
                 } catch {}
