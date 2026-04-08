@@ -1148,6 +1148,18 @@ export default function KitchenDashboard() {
     });
   }, [queryClient, playAllergyAlert, toast]));
 
+  useRealtimeEvent("allergy:acknowledged", useCallback((payload: unknown) => {
+    const p = payload as { orderItemId?: string; acknowledgedByName?: string } | null;
+    queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
+    toast({
+      title: "Allergy Acknowledged",
+      description: p?.acknowledgedByName
+        ? `Chef ${p.acknowledgedByName} acknowledged the allergy alert`
+        : "Allergy alert has been acknowledged",
+      duration: 4000,
+    });
+  }, [queryClient, toast]));
+
   useRealtimeEvent("order:new", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
     playChime();
