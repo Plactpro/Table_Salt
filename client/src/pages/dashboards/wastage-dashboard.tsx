@@ -394,6 +394,15 @@ export default function WastageDashboard() {
     queryClient.invalidateQueries({ queryKey: ["/api/wastage"] });
   }, [toast, queryClient]));
 
+  useRealtimeEvent("wastage:repeat_pattern", useCallback((payload: any) => {
+    toast({
+      title: "🔁 Repeat Wastage Pattern",
+      description: payload?.message ?? "An ingredient has been wasted multiple times today.",
+      variant: "destructive",
+    });
+    queryClient.invalidateQueries({ queryKey: ["/api/wastage"] });
+  }, [toast, queryClient]));
+
   const today = dashData?.today ?? {};
   const week = dashData?.week ?? {};
   const target = dashData?.target ?? null;
