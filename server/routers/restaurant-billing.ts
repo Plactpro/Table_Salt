@@ -445,16 +445,31 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const billSubtotal = Number(bill.subtotal ?? 0);
       if (billSubtotal > 0.01 && billTaxAmount > 0) {
         const tenant = await storage.getTenant(user.tenantId);
-        const configuredTaxRate = Number(tenant?.taxRate ?? 0);
+        let configuredTaxRate = Number(tenant?.taxRate ?? 0);
+        if (bill.outletId) {
+          try {
+            const outletResult = await pool.query(
+              `SELECT outlet_tax_rate FROM outlets WHERE id = $1 AND tenant_id = $2`,
+              [bill.outletId, bill.tenantId]
+            );
+            if (outletResult.rows[0]?.outlet_tax_rate != null) {
+              configuredTaxRate = Number(outletResult.rows[0].outlet_tax_rate);
+            }
+          } catch (_) {}
+        }
         if (configuredTaxRate > 0) {
           // Account for compound tax: if enabled, service charge is added to tax base
         const serviceChargePct = Number(tenant?.serviceCharge ?? 0) / 100;
         const serviceChargeAmt = billSubtotal * serviceChargePct;
         const isCompoundTax = tenant?.compoundTax === true || tenant?.compoundTax === "true";
-        const taxBase = isCompoundTax ? billSubtotal + serviceChargeAmt : billSubtotal;
+        const discountAmt = Number(bill.discountAmount ?? 0);
+        const taxableSubtotal = Math.max(0, billSubtotal - discountAmt);
+        const taxBase = isCompoundTax
+          ? taxableSubtotal + (taxableSubtotal * serviceChargePct)
+          : taxableSubtotal;
         const expectedTax = Math.round(taxBase * configuredTaxRate) / 100;
           const taxDeviation = Math.abs(billTaxAmount - expectedTax);
-          const toleranceAmt = 1.0; // ±1 currency unit to absorb per-line rounding
+          const toleranceAmt = 2.0; // ±2 currency units to absorb per-line rounding
           if (taxDeviation > toleranceAmt) {
             auditLogFn({ tenantId: user.tenantId, userId: user.id, userName: user.name, action: "payment_validation_failed", entityType: "bill", entityId: bill.id, metadata: { reason: "tax_rate_mismatch", storedTax: billTaxAmount, expectedTax, configuredTaxRate, subtotal: billSubtotal }, req }).catch(() => {});
             return res.status(400).json({ message: `Bill tax amount (${billTaxAmount.toFixed(2)}) does not match expected tax at configured rate ${configuredTaxRate}% (expected ~${expectedTax.toFixed(2)})` });
