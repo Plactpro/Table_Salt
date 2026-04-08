@@ -146,7 +146,7 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
   const netLoss = totalCost - recoveryAmount;
 
   const voidMutation = useMutation({
-    mutationFn: () => apiRequest("DELETE", `/api/wastage/${entry.id}`).then((r) => r.json()),
+    mutationFn: (voidReason: string) => apiRequest("DELETE", `/api/wastage/${entry.id}`, { voidReason }).then((r) => r.json()),
     onSuccess: () => {
       toast({ title: "Entry voided" });
       queryClient.invalidateQueries({ queryKey: ["/api/wastage"] });
@@ -274,7 +274,10 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
               variant="destructive"
               size="sm"
               className="flex-1 gap-1"
-              onClick={() => voidMutation.mutate()}
+              onClick={() => {
+                const reason = window.prompt("Enter a reason for voiding this entry:");
+                if (reason) voidMutation.mutate(reason);
+              }}
               disabled={voidMutation.isPending || entry.is_voided}
               data-testid="btn-void-entry"
             >
