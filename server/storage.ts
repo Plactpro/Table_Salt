@@ -4075,7 +4075,7 @@ export class DatabaseStorage implements IStorage {
       WHERE ${conditions.join(" AND ")}
       ORDER BY td.created_at DESC LIMIT 200
     `, values);
-    return rows;
+    return rows.map(row => mapRowToCamelCase<TipDistribution>(row));
   }
 
   async markTipDistributionPaid(id: string, tenantId: string): Promise<TipDistribution | null> {
