@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Separator } from "@/components/ui/separator";
 import { Loader2, Plus, ChevronRight, CheckCircle, Send, Package, AlertTriangle, FileText, X, ClipboardCheck } from "lucide-react";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { useTranslation } from "react-i18next";
 
 interface Supplier { id: string; name: string; }
@@ -91,6 +92,10 @@ export default function PurchaseOrdersTab() {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+
+  useRealtimeEvent("stock:updated", useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+  }, [qc]));
 
   const [filterStatus, setFilterStatus] = useState("all");
   const [detailPO, setDetailPO] = useState<string | null>(null);
