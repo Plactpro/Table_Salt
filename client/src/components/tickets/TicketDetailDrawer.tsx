@@ -220,7 +220,7 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
 
   const rejectMutation = useMutation({
     mutationFn: ({ id, reason }: { id: string; reason: string }) =>
-      apiRequest("PUT", `/api/tickets/void-requests/${id}/reject`, { reason }),
+      apiRequest("PUT", `/api/tickets/void-requests/${id}/reject`, { rejectedReason: reason }),
     onSuccess: () => {
       toast({ title: "❌ Void rejected" });
       queryClient.invalidateQueries({ queryKey: [`/api/tickets/${orderId}/void-requests`] });
