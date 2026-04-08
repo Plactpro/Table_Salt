@@ -432,6 +432,24 @@ export function registerTicketHistoryRoutes(app: Express) {
     }
   });
 
+  // ── GET /api/tickets/:orderId/void-requests ───────────────────────────────────
+  app.get("/api/tickets/:orderId/void-requests", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      const { orderId } = req.params;
+      const result = await pool.query(
+        `SELECT vr.* FROM item_void_requests vr
+         WHERE vr.order_id = $1 AND vr.tenant_id = $2
+         ORDER BY vr.created_at DESC`,
+        [orderId, user.tenantId]
+      );
+      return res.json(result.rows);
+    } catch (err) {
+      console.error("[ticket-history] order void-requests error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // ── GET /api/tickets/:orderId — full ticket detail ────────────────────────────
   app.get("/api/tickets/:orderId", requireAuth, async (req: Request, res: Response) => {
     try {
