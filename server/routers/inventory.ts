@@ -149,10 +149,11 @@ export function registerInventoryRoutes(app: Express): void {
       const rawNewStock = Number(lockedItem.current_stock) + (type === "in" ? Number(quantity) : -Number(quantity));
       const newStock = lockedItem.unit_type === "PIECE" ? Math.round(rawNewStock) : rawNewStock;
       await client.query(`UPDATE inventory_items SET current_stock = $1 WHERE id = $2`, [String(newStock), req.params.id]);
+      const movementType = type === "in" ? "STOCK_IN" : "ADJUSTMENT";
       await client.query(
         `INSERT INTO stock_movements (tenant_id, item_id, type, quantity, reason)
          VALUES ($1, $2, $3, $4, $5)`,
-        [user.tenantId, req.params.id, type, String(quantity), reason]
+        [user.tenantId, req.params.id, movementType, String(quantity), reason]
       );
       await client.query("COMMIT");
       auditLogFromReq(req, { action: "inventory_adjusted", entityType: "inventory_item", entityId: req.params.id, entityName: lockedItem.name, before: { currentStock: lockedItem.current_stock }, after: { currentStock: String(newStock) }, metadata: { type, quantity, reason } });
