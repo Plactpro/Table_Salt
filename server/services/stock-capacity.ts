@@ -109,7 +109,7 @@ export async function calculateMenuCapacity(
     const { rows: ingRows } = await pool.query(
       `SELECT ri.recipe_id, ri.inventory_item_id, ii.name, ii.unit, ii.current_stock, ri.quantity AS req_per_portion, ii.cost_price
        FROM recipe_ingredients ri
-       JOIN inventory_items ii ON ii.id = ri.inventory_item_id
+       JOIN inventory_items ii ON ii.id = ri.inventory_item_id AND ii.is_deleted = false
        WHERE ri.recipe_id = ANY($1)`,
       [recipeIds]
     );
