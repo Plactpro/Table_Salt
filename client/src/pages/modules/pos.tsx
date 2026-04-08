@@ -1100,9 +1100,9 @@ export default function POSPage() {
         const hasActiveMod = foodMod && (
           foodMod.spiceLevel || foodMod.saltLevel ||
           foodMod.removedIngredients.length > 0 ||
-          foodMod.allergies.length > 0 ||
-          foodMod.allergyNote?.trim() ||
-          foodMod.specialInstruction?.trim()
+          foodMod.allergyFlags.length > 0 ||
+          foodMod.allergyDetails?.trim() ||
+          foodMod.specialNotes?.trim()
         );
         orderItems.push({
           menuItemId: c.menuItemId, name: c.name,

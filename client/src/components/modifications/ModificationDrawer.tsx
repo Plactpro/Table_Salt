@@ -21,20 +21,20 @@ export interface FoodModification {
   spiceLevel: string | null;
   saltLevel: string | null;
   removedIngredients: string[];
-  allergies: string[];
-  allergyNote: string;
+  allergyFlags: string[];
+  allergyDetails: string;
   allergyAcknowledged?: boolean;
-  specialInstruction: string;
+  specialNotes: string;
 }
 
 export const DEFAULT_MODIFICATION: FoodModification = {
   spiceLevel: null,
   saltLevel: null,
   removedIngredients: [],
-  allergies: [],
-  allergyNote: "",
+  allergyFlags: [],
+  allergyDetails: "",
   allergyAcknowledged: false,
-  specialInstruction: "",
+  specialNotes: "",
 };
 
 const SPICE_LEVELS = [
@@ -71,9 +71,9 @@ function isModified(mod: FoodModification): boolean {
     mod.spiceLevel !== null ||
     mod.saltLevel !== null ||
     mod.removedIngredients.length > 0 ||
-    mod.allergies.length > 0 ||
-    !!mod.allergyNote.trim() ||
-    !!mod.specialInstruction.trim()
+    mod.allergyFlags.length > 0 ||
+    !!mod.allergyDetails.trim() ||
+    !!mod.specialNotes.trim()
   );
 }
 
@@ -90,7 +90,7 @@ function buildSummaryChips(mod: FoodModification): string[] {
   for (const ing of mod.removedIngredients) {
     chips.push(`➖ No ${ing}`);
   }
-  for (const allergy of mod.allergies) {
+  for (const allergy of mod.allergyFlags) {
     chips.push(`🚨 ${allergy}`);
   }
   return chips;
@@ -135,12 +135,12 @@ export default function ModificationDrawer({
 
   const toggleAllergy = useCallback((allergy: string) => {
     setMod(prev => {
-      const exists = prev.allergies.includes(allergy);
+      const exists = prev.allergyFlags.includes(allergy);
       return {
         ...prev,
-        allergies: exists
-          ? prev.allergies.filter(a => a !== allergy)
-          : [...prev.allergies, allergy],
+        allergyFlags: exists
+          ? prev.allergyFlags.filter(a => a !== allergy)
+          : [...prev.allergyFlags, allergy],
       };
     });
   }, []);
@@ -151,7 +151,7 @@ export default function ModificationDrawer({
   };
 
   const summaryChips = buildSummaryChips(mod);
-  const hasAllergies = mod.allergies.length > 0 || !!mod.allergyNote.trim();
+  const hasAllergies = mod.allergyFlags.length > 0 || !!mod.allergyDetails.trim();
 
   return (
     <Sheet open={open} onOpenChange={(v) => { if (!v) onClose(); }}>
@@ -270,7 +270,7 @@ export default function ModificationDrawer({
                   key={allergy}
                   data-testid={`allergy-${allergy.toLowerCase()}`}
                   className={`px-2 py-1.5 rounded-lg text-xs font-medium border-2 transition-all ${
-                    mod.allergies.includes(allergy)
+                    mod.allergyFlags.includes(allergy)
                       ? "bg-red-600 text-white border-red-600"
                       : "bg-background text-red-700 border-red-300 hover:border-red-500"
                   }`}
@@ -282,8 +282,8 @@ export default function ModificationDrawer({
             </div>
             <Textarea
               placeholder="Describe allergy or severity (e.g. severe nut allergy — EpiPen on hand)"
-              value={mod.allergyNote}
-              onChange={e => updateMod({ allergyNote: e.target.value })}
+              value={mod.allergyDetails}
+              onChange={e => updateMod({ allergyDetails: e.target.value })}
               rows={2}
               className="resize-none text-sm bg-white dark:bg-background border-red-300 focus:border-red-500"
               data-testid="input-allergy-note"
@@ -305,10 +305,10 @@ export default function ModificationDrawer({
               <div className="mt-1">
                 <Textarea
                   placeholder="Any other requests for the chef..."
-                  value={mod.specialInstruction}
+                  value={mod.specialNotes}
                   onChange={e => {
                     if (e.target.value.length <= MAX_SPECIAL_INSTRUCTION_LENGTH) {
-                      updateMod({ specialInstruction: e.target.value });
+                      updateMod({ specialNotes: e.target.value });
                     }
                   }}
                   rows={3}
@@ -316,7 +316,7 @@ export default function ModificationDrawer({
                   data-testid="input-special-instruction"
                 />
                 <p className="text-xs text-muted-foreground mt-1 text-right" data-testid="text-char-count">
-                  {mod.specialInstruction.length}/{MAX_SPECIAL_INSTRUCTION_LENGTH}
+                  {mod.specialNotes.length}/{MAX_SPECIAL_INSTRUCTION_LENGTH}
                 </p>
               </div>
             </CollapsibleContent>

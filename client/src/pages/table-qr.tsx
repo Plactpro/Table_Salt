@@ -733,7 +733,7 @@ function FoodOrderFlow({
           // Push cart items to server-side guest cart first, then add to shared order
           for (const cartItem of cart) {
             const fm = cartItem.foodModification;
-            const hasActiveMod = fm && (fm.spiceLevel || fm.saltLevel || fm.removedIngredients.length > 0 || fm.allergies.length > 0 || fm.allergyNote?.trim() || fm.specialInstruction?.trim());
+            const hasActiveMod = fm && (fm.spiceLevel || fm.saltLevel || fm.removedIngredients.length > 0 || fm.allergyFlags.length > 0 || fm.allergyDetails?.trim() || fm.specialNotes?.trim());
             await fetch(`/api/guest/session/${sessionId}/cart`, {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -783,7 +783,7 @@ function FoodOrderFlow({
       // Default path (separate order or join with no existing shared order)
       for (const cartItem of cart) {
         const fm = cartItem.foodModification;
-        const hasActiveMod = fm && (fm.spiceLevel || fm.saltLevel || fm.removedIngredients.length > 0 || fm.allergies.length > 0 || fm.allergyNote?.trim() || fm.specialInstruction?.trim());
+        const hasActiveMod = fm && (fm.spiceLevel || fm.saltLevel || fm.removedIngredients.length > 0 || fm.allergyFlags.length > 0 || fm.allergyDetails?.trim() || fm.specialNotes?.trim());
         await fetch(`/api/guest/session/${sessionId}/cart`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -1004,8 +1004,8 @@ function FoodOrderFlow({
                 c.foodModification.spiceLevel ||
                 c.foodModification.saltLevel ||
                 c.foodModification.removedIngredients.length > 0 ||
-                c.foodModification.allergies.length > 0 ||
-                c.foodModification.specialInstruction?.trim()
+                c.foodModification.allergyFlags.length > 0 ||
+                c.foodModification.specialNotes?.trim()
               );
               return (
                 <div key={c.menuItemId} data-testid={`cart-item-${c.menuItemId}`} className="bg-white rounded-xl p-3 border border-gray-100">

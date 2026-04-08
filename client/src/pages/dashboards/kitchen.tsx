@@ -492,12 +492,12 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
 
   const hasAnyAllergy = ticket.items.some(i => {
     const mod = i.metadata?.foodModification;
-    return mod && (mod.allergies.length > 0 || mod.allergyNote?.trim());
+    return mod && (mod.allergyFlags.length > 0 || mod.allergyDetails?.trim());
   });
   const allAllergiesAcknowledged = !hasAnyAllergy || ticket.items
     .filter(i => {
       const mod = i.metadata?.foodModification;
-      return mod && (mod.allergies.length > 0 || mod.allergyNote?.trim());
+      return mod && (mod.allergyFlags.length > 0 || mod.allergyDetails?.trim());
     })
     .every(i => acknowledgedAllergyItems.has(i.id));
 
@@ -647,7 +647,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
               )}
               {courseItems.map(item => {
                 const itemMod = item.metadata?.foodModification;
-                const itemHasAllergy = itemMod && (itemMod.allergies.length > 0 || itemMod.allergyNote?.trim());
+                const itemHasAllergy = itemMod && (itemMod.allergyFlags.length > 0 || itemMod.allergyDetails?.trim());
                 const itemAllergyAck = acknowledgedAllergyItems.has(item.id);
                 return (
                   <div key={item.id} className="space-y-0.5">
