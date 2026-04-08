@@ -143,7 +143,12 @@ export function registerTipManagementRoutes(app: Express) {
       const date = (req.query.date as string) || new Date().toISOString().split("T")[0];
       const outletId = req.query.outletId as string | undefined;
 
-      const outletFilter = outletId ? `AND outlet_id = '${outletId}'` : "";
+      const baseParams: any[] = [user.tenantId, date];
+      let outletFilter = "";
+      if (outletId) {
+        baseParams.push(outletId);
+        outletFilter = `AND outlet_id = $${baseParams.length}`;
+      }
 
       const summaryRes = await pool.query(`
         SELECT
@@ -154,14 +159,14 @@ export function registerTipManagementRoutes(app: Express) {
         WHERE tenant_id = $1
           AND DATE(created_at) = $2
           ${outletFilter}
-      `, [user.tenantId, date]);
+      `, baseParams);
 
       const byMethodRes = await pool.query(`
         SELECT payment_method, SUM(tip_amount) AS total
         FROM bill_tips
         WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
         GROUP BY payment_method
-      `, [user.tenantId, date]);
+      `, baseParams);
 
       const byWaiterRes = await pool.query(`
         SELECT waiter_id, waiter_name, SUM(tip_amount) AS total_tips, COUNT(*) AS count
@@ -169,7 +174,7 @@ export function registerTipManagementRoutes(app: Express) {
         WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
         GROUP BY waiter_id, waiter_name
         ORDER BY total_tips DESC
-      `, [user.tenantId, date]);
+      `, baseParams);
 
       const byHourRes = await pool.query(`
         SELECT EXTRACT(HOUR FROM created_at)::int AS hour, SUM(tip_amount) AS tips
@@ -177,7 +182,7 @@ export function registerTipManagementRoutes(app: Express) {
         WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
         GROUP BY hour
         ORDER BY hour
-      `, [user.tenantId, date]);
+      `, baseParams);
 
       const recentRes = await pool.query(`
         SELECT bill_id, tip_amount AS amount, waiter_name, created_at AS time
@@ -185,7 +190,7 @@ export function registerTipManagementRoutes(app: Express) {
         WHERE tenant_id = $1 AND DATE(created_at) = $2 ${outletFilter}
         ORDER BY created_at DESC
         LIMIT 20
-      `, [user.tenantId, date]);
+      `, baseParams);
 
       const s = summaryRes.rows[0];
       const byMethod: Record<string, number> = {};
