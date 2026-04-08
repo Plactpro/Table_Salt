@@ -232,7 +232,7 @@ export function registerFranchiseRoutes(app: Express): void {
       const { rows: pendingPOs } = await pool.query(
         `SELECT COUNT(*) AS cnt FROM purchase_orders
          WHERE supplier_id = $1 AND tenant_id = $2
-           AND status NOT IN ('received', 'cancelled')
+           AND status NOT IN ('closed', 'cancelled')
            AND is_deleted = false`,
         [req.params.id, user.tenantId]
       );
