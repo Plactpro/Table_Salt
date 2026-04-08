@@ -3727,7 +3727,7 @@ export class DatabaseStorage implements IStorage {
       `SELECT * FROM cash_sessions WHERE tenant_id = $1 AND cashier_id = $2 AND status = 'open' LIMIT 1`,
       [tenantId, cashierId]
     );
-    return mapCashSessionRow(rows[0]) as CashSession | undefined;
+    return rows[0] ? mapRowToCamelCase<CashSession>(rows[0]) : null;
   }
 
   async updateCashSession(id: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined> {
