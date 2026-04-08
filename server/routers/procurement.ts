@@ -477,7 +477,7 @@ export function registerProcurementRoutes(app: Express): void {
         for (const item of items) {
           const total = parseFloat(item.quotedQuantity || "1") * parseFloat(item.unitPrice || "0");
           totalAmount += total;
-          await storage.createQuotationItem(insertSupplierQuotationItemSchema.parse({
+          await storage.createQuotationItem(insertQuotationItemSchema.parse({
             ...item,
             quotationId: quotation.id,
             totalPrice: total.toFixed(2),
