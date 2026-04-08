@@ -227,9 +227,9 @@ export default function TipReportPage() {
                     {(report.byWaiter || []).map((w: any, i: number) => (
                       <tr key={w.waiterId || i} className="border-b last:border-0 hover:bg-muted/30" data-testid={`row-tip-waiter-${w.waiterId || i}`}>
                         <td className="py-2 px-2 font-medium">{w.waiterName || "Unknown"}</td>
-                        <td className="py-2 px-2 text-right font-semibold text-amber-600">{fmt(w.total || 0)}</td>
+                        <td className="py-2 px-2 text-right font-semibold text-amber-600">{fmt(w.totalTips || 0)}</td>
                         <td className="py-2 px-2 text-right">{w.count || 0}</td>
-                        <td className="py-2 px-2 text-right">{fmt(w.avg || 0)}</td>
+                        <td className="py-2 px-2 text-right">{fmt(w.count ? (w.totalTips / w.count) : 0)}</td>
                         <td className="py-2 px-2 text-right text-green-600">{fmt(w.paid || 0)}</td>
                         <td className="py-2 px-2 text-right text-amber-600">{fmt(w.pending || 0)}</td>
                       </tr>
