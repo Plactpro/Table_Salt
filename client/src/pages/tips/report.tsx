@@ -84,13 +84,13 @@ export default function TipReportPage() {
     if (!report) return;
     const rows = [
       ["Bill #", "Waiter", "Amount", "Type", "Method", "Time"],
-      ...(report.transactions || []).map((t: any) => [
-        t.billNumber || "",
+      ...(report.recentTips || []).map((t: any) => [
+        t.billId || "",
         t.waiterName || "",
         t.amount || 0,
         t.tipType || "",
         t.paymentMethod || "",
-        t.createdAt ? new Date(t.createdAt).toLocaleTimeString() : "",
+        t.time ? new Date(t.time).toLocaleTimeString() : "",
       ]),
     ];
     const csv = rows.map(r => r.join(",")).join("\n");
@@ -286,19 +286,19 @@ export default function TipReportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {(report.transactions || []).map((t: any, i: number) => (
+                    {(report.recentTips || []).map((t: any, i: number) => (
                       <tr key={t.id || i} className="border-b last:border-0 hover:bg-muted/30">
                         <td className="py-2 px-2 text-muted-foreground text-xs">
-                          {t.createdAt ? new Date(t.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+                          {t.time ? new Date(t.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
                         </td>
-                        <td className="py-2 px-2 font-mono text-xs">{t.billNumber || "—"}</td>
+                        <td className="py-2 px-2 font-mono text-xs">{t.billId || "—"}</td>
                         <td className="py-2 px-2">{t.waiterName || "—"}</td>
                         <td className="py-2 px-2 text-right font-semibold text-amber-600">{fmt(t.amount || 0)}</td>
                         <td className="py-2 px-2 text-right text-xs">{t.tipType || "—"}</td>
                         <td className="py-2 px-2 text-right text-xs">{t.paymentMethod || "—"}</td>
                       </tr>
                     ))}
-                    {(report.transactions || []).length === 0 && (
+                    {(report.recentTips || []).length === 0 && (
                       <tr><td colSpan={6} className="text-center py-4 text-muted-foreground text-sm">No transactions</td></tr>
                     )}
                   </tbody>
