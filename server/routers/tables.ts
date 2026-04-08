@@ -110,6 +110,7 @@ export function registerTablesRoutes(app: Express): void {
     const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
       mergedWith: targetTableId,
     });
+    emitToTenant(user.tenantId, "table:updated", { tableId: req.params.id });
     res.json(tbl);
   });
 
@@ -119,6 +120,7 @@ export function registerTablesRoutes(app: Express): void {
       mergedWith: null,
     });
     if (!tbl) return res.status(404).json({ message: "Table not found" });
+    emitToTenant(user.tenantId, "table:updated", { tableId: req.params.id });
     res.json(tbl);
   });
 
