@@ -35,7 +35,7 @@ async function upsertPlannedQty(
   createdBy: string,
   disabledReason?: string | null
 ): Promise<Record<string, any>> {
-  const outletFilter = outletId ? "AND outlet_id = $3" : "AND outlet_id IS NULL";
+  const outletFilter = outletId ? "AND outlet_id = $4" : "AND outlet_id IS NULL";
   const params: any[] = [tenantId, menuItemId, plannedDate];
   if (outletId) params.push(outletId);
 
