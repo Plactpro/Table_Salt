@@ -897,6 +897,63 @@ export function registerKitchenRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  // PUT /api/kds/orders/:id/rush — rush all items in an order by orderId (manager/owner)
+  app.put("/api/kds/orders/:id/rush", requireRole("owner", "manager"), async (req, res) => {
+    try {
+      const user = req.user as any;
+      const order = await storage.getOrder(req.params.id, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
+
+      const kitSettings = await storage.getKitchenSettings(user.tenantId);
+
+      if (kitSettings && kitSettings.allowRushOverride === false) {
+        return res.status(403).json({ message: "Rush override is disabled in kitchen settings" });
+      }
+
+      if (kitSettings?.rushRequiresManagerPin ?? true) {
+        const { managerPin, pin } = req.body as { managerPin?: string; pin?: string };
+        const providedPin = managerPin || pin;
+        if (!providedPin) {
+          return res.status(400).json({ message: "Manager PIN is required to rush an order" });
+        }
+        const pinHash = kitSettings?.managerPinHash;
+        if (!pinHash) {
+          return res.status(400).json({ message: "No manager PIN has been configured for this tenant. Set one via kitchen settings." });
+        }
+        const pinValid = await comparePasswords(providedPin, pinHash);
+        if (!pinValid) {
+          return res.status(403).json({ message: "Invalid manager PIN" });
+        }
+      }
+
+      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const now = new Date();
+      const chefName = (user as any).name || (user as any).username || "Chef";
+
+      for (const i of allItems) {
+        if (["queued", "hold", "ready_to_start"].includes(i.cookingStatus || "queued")) {
+          const prepMinutes = i.itemPrepMinutes ?? 0;
+          await storage.updateOrderItemCooking(i.id, {
+            cookingStatus: "started",
+            actualStartAt: now,
+            estimatedReadyAt: new Date(now.getTime() + prepMinutes * 60 * 1000),
+            startedById: user.id,
+            startedByName: chefName,
+          });
+          await storage.updateOrderItem(i.id, { status: "cooking", startedAt: now }, user.tenantId);
+        }
+      }
+
+      if (order.status === "new" || order.status === "sent_to_kitchen") {
+        await storage.updateOrder(order.id, { status: "in_progress" });
+      }
+
+      emitToTenant(user.tenantId, "kds:order_rushed", { orderId: order.id, rushedBy: chefName });
+
+      res.json({ success: true });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   // POST /api/kds/orders/:id/timing — calculate and save timing suggestions
   app.post("/api/kds/orders/:id/timing", requireRole("owner", "manager", "kitchen"), async (req, res) => {
     try {
