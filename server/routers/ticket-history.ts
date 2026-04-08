@@ -145,6 +145,24 @@ export function registerTicketHistoryRoutes(app: Express) {
     }
   });
 
+  // ── GET /api/tickets/void-requests/pending-count ─────────────────────────────
+  app.get("/api/tickets/void-requests/pending-count", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!VOID_APPROVE_ROLES.includes(user.role)) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+      const result = await pool.query(
+        `SELECT COUNT(*)::int AS count FROM item_void_requests WHERE tenant_id = $1 AND status = 'pending'`,
+        [user.tenantId]
+      );
+      return res.json({ count: result.rows[0]?.count ?? 0 });
+    } catch (err) {
+      console.error("[ticket-history] pending void-requests count error:", err);
+      return res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
   // ── GET /api/tickets/history ──────────────────────────────────────────────────
   app.get("/api/tickets/history", requireAuth, async (req: Request, res: Response) => {
     try {
