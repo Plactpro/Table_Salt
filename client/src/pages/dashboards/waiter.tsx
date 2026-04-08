@@ -534,7 +534,7 @@ export default function WaiterDashboard() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/table-requests"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/table-requests/live"] });
       toast({ title: "Request Handled", description: "Customer request marked as handled" });
     },
     onError: (e: Error) => {
@@ -547,12 +547,19 @@ export default function WaiterDashboard() {
     queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
   }, [queryClient]);
 
+  const invalidateTableRequests = useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/table-requests/live"] });
+  }, [queryClient]);
+
   useRealtimeEvent("coordination:item_ready", (payload: any) => {
     invalidateWaiterData();
     toast({ title: "Item Ready!", description: "An item is ready to serve" });
   });
   useRealtimeEvent("order:updated", invalidateWaiterData);
   useRealtimeEvent("coordination:order_updated", invalidateWaiterData);
+  useRealtimeEvent("table-request:new", invalidateTableRequests);
+  useRealtimeEvent("table-request:updated", invalidateTableRequests);
+  useRealtimeEvent("table-request:escalated", invalidateTableRequests);
 
   const readyItems = waiterData?.readyItems ?? [];
 
