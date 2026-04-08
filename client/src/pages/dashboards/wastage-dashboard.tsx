@@ -323,7 +323,7 @@ export default function WastageDashboard() {
     ...(counterFilter !== "all" && { counterId: counterFilter }),
     ...(preventableOnly && { preventable: "true" }),
     ...(minCost && { minCost }),
-    page: String(page),
+    offset: String((page - 1) * PAGE_SIZE),
     limit: String(PAGE_SIZE),
   }).toString();
 
