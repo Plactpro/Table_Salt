@@ -350,9 +350,9 @@ export default function TipReportPage() {
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium text-sm">{d.waiterName || "Unknown"}</span>
-                      <span className="text-sm font-semibold text-amber-600">{fmt(d.amount || 0)}</span>
-                      {d.billNumber && <span className="text-xs text-muted-foreground font-mono">Bill #{d.billNumber}</span>}
+                      <span className="font-medium text-sm">{d.staffName || "Unknown"}</span>
+                      <span className="text-sm font-semibold text-amber-600">{fmt(d.shareAmount || 0)}</span>
+                      {d.billId && <span className="text-xs text-muted-foreground font-mono">Bill #{d.billId}</span>}
                     </div>
                   </div>
                   <Badge
