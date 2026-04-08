@@ -350,9 +350,9 @@ export function registerProcurementRoutes(app: Express): void {
       const user = req.user as any;
       const rfq = await storage.getRFQ(req.params.id, user.tenantId);
       if (!rfq) return res.status(404).json({ message: "RFQ not found" });
-      const quotations = await storage.getSupplierQuotations(rfq.id);
+      const quotations = await storage.getQuotationsByRFQ(rfq.id);
       const result = await Promise.all(quotations.map(async q => {
-        const qItems = await storage.getSupplierQuotationItems(q.id);
+        const qItems = await storage.getQuotationItems(q.id);
         return { ...q, items: qItems };
       }));
       res.json(result);
@@ -388,9 +388,9 @@ export function registerProcurementRoutes(app: Express): void {
       const rfq = await storage.getRFQ(req.params.id, user.tenantId);
       if (!rfq) return res.status(404).json({ message: "RFQ not found" });
       const items = await storage.getRFQItems(rfq.id);
-      const quotations = await storage.getSupplierQuotations(rfq.id);
+      const quotations = await storage.getQuotationsByRFQ(rfq.id);
       const quotationsWithItems = await Promise.all(quotations.map(async q => {
-        const qItems = await storage.getSupplierQuotationItems(q.id);
+        const qItems = await storage.getQuotationItems(q.id);
         return { ...q, items: qItems };
       }));
       res.json({ ...rfq, items, quotations: quotationsWithItems });
@@ -401,7 +401,7 @@ export function registerProcurementRoutes(app: Express): void {
   app.get("/api/supplier-quotations", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      res.json(await storage.getSupplierQuotationsByTenant(user.tenantId));
+      res.json(await db.select().from(supplierQuotations).where(eq(supplierQuotations.tenantId, user.tenantId)));
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
@@ -410,7 +410,7 @@ export function registerProcurementRoutes(app: Express): void {
       const user = req.user as any;
       const quotation = await db.select().from(supplierQuotations).where(and(eq(supplierQuotations.id, req.params.id), eq(supplierQuotations.tenantId, user.tenantId))).then(rows => rows[0]);
       if (!quotation) return res.status(404).json({ message: "Quotation not found" });
-      const qItems = await storage.getSupplierQuotationItems(quotation.id);
+      const qItems = await storage.getQuotationItems(quotation.id);
       const existingPOs2 = await storage.getPurchaseOrdersByTenant(user.tenantId);
       const poNumber = generateSequenceNumber("PO", existingPOs2.map(p => p.poNumber));
 
@@ -458,7 +458,7 @@ export function registerProcurementRoutes(app: Express): void {
   app.patch("/api/supplier-quotations/:id", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const q = await storage.updateSupplierQuotation(req.params.id, user.tenantId, req.body);
+      const [q] = await db.update(supplierQuotations).set(req.body).where(and(eq(supplierQuotations.id, req.params.id), eq(supplierQuotations.tenantId, user.tenantId))).returning();
       if (!q) return res.status(404).json({ message: "Quotation not found" });
       res.json(q);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -468,7 +468,7 @@ export function registerProcurementRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const { items, ...qBody } = req.body;
-      const allQuotations = await storage.getSupplierQuotationsByTenant(user.tenantId);
+      const allQuotations = await db.select().from(supplierQuotations).where(eq(supplierQuotations.tenantId, user.tenantId));
       const quotationNumber = qBody.quotationNumber || generateSequenceNumber("QTN", allQuotations.map(q => q.quotationNumber));
       const data = insertSupplierQuotationSchema.parse({ ...qBody, tenantId: user.tenantId, quotationNumber });
       const quotation = await storage.createSupplierQuotation(data);
@@ -477,15 +477,15 @@ export function registerProcurementRoutes(app: Express): void {
         for (const item of items) {
           const total = parseFloat(item.quotedQuantity || "1") * parseFloat(item.unitPrice || "0");
           totalAmount += total;
-          await storage.createSupplierQuotationItem(insertSupplierQuotationItemSchema.parse({
+          await storage.createQuotationItem(insertSupplierQuotationItemSchema.parse({
             ...item,
             quotationId: quotation.id,
             totalPrice: total.toFixed(2),
           }));
         }
-        await storage.updateSupplierQuotation(quotation.id, user.tenantId, { totalAmount: totalAmount.toFixed(2) });
+        await db.update(supplierQuotations).set({ totalAmount: totalAmount.toFixed(2) }).where(and(eq(supplierQuotations.id, quotation.id), eq(supplierQuotations.tenantId, user.tenantId))).returning();
       }
-      const qItems = await storage.getSupplierQuotationItems(quotation.id);
+      const qItems = await storage.getQuotationItems(quotation.id);
       res.json({ ...quotation, totalAmount: totalAmount.toFixed(2), items: qItems });
     } catch (err: any) { res.status(400).json({ message: err.message }); }
   });
