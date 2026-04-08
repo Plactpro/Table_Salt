@@ -5,6 +5,19 @@ import { emitToTenant } from "../realtime";
 import { z } from "zod";
 import { alertEngine } from "../services/alert-engine";
 
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+}
+
+function mapRowToCamelCase<T>(row: Record<string, any>): T {
+  if (!row) return row as T;
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(row)) {
+    result[snakeToCamel(key)] = value;
+  }
+  return result as T;
+}
+
 const VALID_SPICE_LEVELS = ["NO_SPICE", "MILD", "MEDIUM", "SPICY", "EXTRA_HOT"] as const;
 const VALID_SALT_LEVELS = ["LESS", "NORMAL", "EXTRA"] as const;
 const MAX_REMOVALS = 5;
@@ -107,7 +120,7 @@ export function registerModificationsRoutes(app: Express): void {
         alertEngine.trigger('ALERT-03', { tenantId: user.tenantId, outletId: (user as any).outletId ?? undefined, referenceId: orderId, message: `ALLERGY: ${allergyFlags?.join(', ') || allergyDetails || 'allergy flagged'}` }).catch(() => {});
       }
 
-      res.status(201).json(rows[0]);
+      res.status(201).json(mapRowToCamelCase(rows[0]));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -131,7 +144,7 @@ export function registerModificationsRoutes(app: Express): void {
         [orderItemId]
       );
 
-      res.json(rows[0] ?? null);
+      res.json(rows[0] ? mapRowToCamelCase(rows[0]) : null);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -169,7 +182,7 @@ export function registerModificationsRoutes(app: Express): void {
         acknowledgedByName: user.name || user.username,
       });
 
-      res.json(rows[0]);
+      res.json(mapRowToCamelCase(rows[0]));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -195,7 +208,7 @@ export function registerModificationsRoutes(app: Express): void {
         [orderId, user.tenantId]
       );
 
-      res.json(rows);
+      res.json(rows.map(r => mapRowToCamelCase(r)));
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
