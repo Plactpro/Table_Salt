@@ -140,6 +140,8 @@ export function registerTablesRoutes(app: Express): void {
     });
     const updated = await storage.getTablesByTenant(user.tenantId);
     res.json({ source: updated.find(t => t.id === source.id), target: updated.find(t => t.id === target.id) });
+    emitToTenant(user.tenantId, "table:updated", { tableId: source.id, status: "free" });
+    emitToTenant(user.tenantId, "table:updated", { tableId: target.id, status: "occupied" });
   });
 
   app.delete("/api/tables/:id", requireRole("owner", "manager"), async (req, res) => {
