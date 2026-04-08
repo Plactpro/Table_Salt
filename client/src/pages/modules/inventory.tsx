@@ -94,7 +94,16 @@ function ParLevelStatusPanel({ outletId }: { outletId?: string }) {
       const url = id ? `/api/inventory/par-check/${id}` : "/api/inventory/par-check";
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error("No par-check endpoint");
-      return res.json();
+      const rows = await res.json();
+      return rows.map((r: any) => ({
+        itemId: r.id,
+        itemName: r.name,
+        category: r.item_category,
+        currentStock: r.currentStock,
+        parLevelPerShift: r.parLevelPerShift,
+        reorderPieces: r.reorderPieces,
+        status: r.isBelowPar ? "BELOW_PAR" : r.isBelowReorder ? "BELOW_REORDER" : "OK",
+      }));
     },
     retry: false,
   });
