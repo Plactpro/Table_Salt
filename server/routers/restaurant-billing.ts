@@ -769,15 +769,30 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const cashPayments = (await storage.getBillPayments(bill.id)).filter(p => !p.isRefund && p.paymentMethod === "CASH");
       if (cashPayments.length > 0) {
         const totalCash = cashPayments.reduce((s, p) => s + Number(p.amount), 0);
-        setImmediate(() => {
-          logCashDrawerEvent({
-            tenantId: user.tenantId,
-            cashierId: user.id,
-            cashierName: user.name || user.username,
-            eventType: "VOID",
-            billId: bill.id,
-            amount: totalCash,
-          }).catch(e => console.error("[billing] VOID cash drawer error:", e));
+        setImmediate(async () => {
+          try {
+            const { pool: billingPool } = await import("../db");
+            const activeSession = await billingPool.query(
+              `SELECT id FROM cash_sessions WHERE cashier_id = $1 AND status = 'open' AND tenant_id = $2 LIMIT 1`,
+              [user.id, user.tenantId]
+            );
+            if (activeSession.rows[0]) {
+              await billingPool.query(
+                `UPDATE cash_sessions SET total_cash_refunds = total_cash_refunds + $1 WHERE id = $2`,
+                [totalCash, activeSession.rows[0].id]
+              );
+            }
+            await logCashDrawerEvent({
+              tenantId: user.tenantId,
+              cashierId: user.id,
+              cashierName: user.name || user.username,
+              eventType: "VOID",
+              billId: bill.id,
+              amount: totalCash,
+            });
+          } catch (e) {
+            console.error("[billing] VOID cash drawer error:", e);
+          }
         });
       }
 
@@ -908,15 +923,30 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       // PR-004: Open cash drawer + log REFUND event for CASH payment method
       if ((paymentMethod || "CASH") === "CASH") {
-        setImmediate(() => {
-          logCashDrawerEvent({
-            tenantId: user.tenantId,
-            cashierId: user.id,
-            cashierName: user.name || user.username,
-            eventType: "REFUND",
-            billId: bill.id,
-            amount: -Number(amount),
-          }).catch(e => console.error("[billing] REFUND cash drawer error:", e));
+        setImmediate(async () => {
+          try {
+            const { pool: billingPool } = await import("../db");
+            const activeSession = await billingPool.query(
+              `SELECT id FROM cash_sessions WHERE cashier_id = $1 AND status = 'open' AND tenant_id = $2 LIMIT 1`,
+              [user.id, user.tenantId]
+            );
+            if (activeSession.rows[0]) {
+              await billingPool.query(
+                `UPDATE cash_sessions SET total_cash_refunds = total_cash_refunds + $1 WHERE id = $2`,
+                [Number(amount), activeSession.rows[0].id]
+              );
+            }
+            await logCashDrawerEvent({
+              tenantId: user.tenantId,
+              cashierId: user.id,
+              cashierName: user.name || user.username,
+              eventType: "REFUND",
+              billId: bill.id,
+              amount: -Number(amount),
+            });
+          } catch (e) {
+            console.error("[billing] REFUND cash drawer error:", e);
+          }
         });
       }
 
