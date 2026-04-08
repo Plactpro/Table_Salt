@@ -140,8 +140,8 @@ export function registerModificationsRoutes(app: Express): void {
       if (!itemCheck[0]) return res.status(404).json({ message: "Order item not found" });
 
       const { rows } = await pool.query(
-        `SELECT * FROM order_item_modifications WHERE order_item_id = $1`,
-        [orderItemId]
+        `SELECT * FROM order_item_modifications WHERE order_item_id = $1 AND tenant_id = $2`,
+        [orderItemId, user.tenantId]
       );
 
       res.json(rows[0] ? mapRowToCamelCase(rows[0]) : null);
