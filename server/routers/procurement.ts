@@ -124,6 +124,35 @@ export function registerProcurementRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+  app.post("/api/purchase-orders/:id/approve", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
+      if (!po) return res.status(404).json({ message: "PO not found" });
+      const updated = await storage.updatePurchaseOrder(po.id, user.tenantId, {
+        status: "approved",
+        approvedBy: user.id,
+        approvedAt: new Date(),
+        updatedAt: new Date(),
+      });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  app.post("/api/purchase-orders/:id/send", procurementWrite, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const po = await storage.getPurchaseOrder(req.params.id, user.tenantId);
+      if (!po) return res.status(404).json({ message: "PO not found" });
+      const updated = await storage.updatePurchaseOrder(po.id, user.tenantId, {
+        status: "sent",
+        sentAt: new Date(),
+        updatedAt: new Date(),
+      });
+      res.json(updated);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/goods-received-notes", requireRole("owner", "manager"), async (req, res) => {
     try {
       const user = req.user as any;
