@@ -700,6 +700,7 @@ function KDSTicketCard({ ticket, stationFilter, onItemStatus, onBulkStatus, onSt
                         acknowledged={itemAllergyAck}
                         onAllergyAcknowledge={itemHasAllergy ? () => {
                           setAcknowledgedAllergyItems(prev => new Set(Array.from(prev).concat(item.id)));
+                          apiRequest("PATCH", `/api/order-items/${item.id}/modifications/acknowledge`, {}).catch(() => {});
                         } : undefined}
                       />
                     )}
