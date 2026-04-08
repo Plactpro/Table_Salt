@@ -154,7 +154,8 @@ export function registerTipManagementRoutes(app: Express) {
         SELECT
           COALESCE(SUM(tip_amount), 0) AS total_tips,
           COUNT(*) AS total_transactions,
-          COALESCE(AVG(tip_amount), 0) AS avg_tip_per_bill
+          COALESCE(AVG(tip_amount), 0) AS avg_tip_per_bill,
+          COALESCE(MAX(tip_amount), 0) AS max_tip
         FROM bill_tips
         WHERE tenant_id = $1
           AND DATE(created_at) = $2
@@ -202,6 +203,7 @@ export function registerTipManagementRoutes(app: Express) {
         totalTips: Number(s.total_tips),
         totalTransactions: Number(s.total_transactions),
         avgTipPerBill: Number(s.avg_tip_per_bill),
+        maxTip: Number(s.max_tip),
         byMethod,
         byWaiter: byWaiterRes.rows.map(r => ({
           waiterId: r.waiter_id,

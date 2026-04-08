@@ -174,13 +174,13 @@ export default function TipReportPage() {
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Total Tips</p>
                 <p className="text-2xl font-bold text-amber-600" data-testid="text-total-tips">{fmt(report.totalTips || 0)}</p>
-                <p className="text-xs text-muted-foreground mt-1">{report.totalCount || 0} transactions</p>
+                <p className="text-xs text-muted-foreground mt-1">{report.totalTransactions || 0} transactions</p>
               </CardContent>
             </Card>
             <Card>
               <CardContent className="p-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wide">Avg per Bill</p>
-                <p className="text-2xl font-bold" data-testid="text-avg-tip">{fmt(report.avgTip || 0)}</p>
+                <p className="text-2xl font-bold" data-testid="text-avg-tip">{fmt(report.avgTipPerBill || 0)}</p>
               </CardContent>
             </Card>
             <Card>
