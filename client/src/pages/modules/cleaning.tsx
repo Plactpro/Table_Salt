@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "react-i18next";
 import {
@@ -107,24 +108,12 @@ export default function CleaningPage() {
     mutationFn: async ({ templateId, assignedTo }: { templateId: string; assignedTo: string | null }) => {
       const existing = schedules.find((s: any) => s.templateId === templateId);
       if (existing) {
-        const res = await fetch(`/api/cleaning/schedules/${existing.id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ assignedTo }),
-        });
-        if (!res.ok) throw new Error("Failed to update assignment");
+        const res = await apiRequest("PATCH", `/api/cleaning/schedules/${existing.id}`, { assignedTo });
         return res.json();
       } else {
         const today = new Date(selectedDate);
         today.setHours(12, 0, 0, 0);
-        const res = await fetch("/api/cleaning/schedules", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          credentials: "include",
-          body: JSON.stringify({ templateId, date: today.toISOString(), assignedTo }),
-        });
-        if (!res.ok) throw new Error("Failed to create assignment");
+        const res = await apiRequest("POST", "/api/cleaning/schedules", { templateId, date: today.toISOString(), assignedTo });
         return res.json();
       }
     },
@@ -157,13 +146,7 @@ export default function CleaningPage() {
     mutationFn: async (data: { templateId: string; templateItemId: string; notes?: string }) => {
       const today = new Date(selectedDate);
       today.setHours(12, 0, 0, 0);
-      const res = await fetch("/api/cleaning/logs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ ...data, date: today.toISOString() }),
-      });
-      if (!res.ok) throw new Error("Failed to log");
+      const res = await apiRequest("POST", "/api/cleaning/logs", { ...data, date: today.toISOString() });
       return res.json();
     },
     onSuccess: () => {
@@ -174,11 +157,7 @@ export default function CleaningPage() {
 
   const undoMutation = useMutation({
     mutationFn: async (logId: string) => {
-      const res = await fetch(`/api/cleaning/logs/${logId}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to undo");
+      await apiRequest("DELETE", `/api/cleaning/logs/${logId}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cleaning/logs"] });
@@ -187,13 +166,7 @@ export default function CleaningPage() {
 
   const createTemplateMutation = useMutation({
     mutationFn: async (data: any) => {
-      const res = await fetch("/api/cleaning/templates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to create template");
+      const res = await apiRequest("POST", "/api/cleaning/templates", data);
       return res.json();
     },
     onSuccess: () => {
@@ -205,11 +178,7 @@ export default function CleaningPage() {
 
   const deleteTemplateMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/cleaning/templates/${id}`, {
-        method: "DELETE",
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to delete");
+      await apiRequest("DELETE", `/api/cleaning/templates/${id}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cleaning/templates"] });
