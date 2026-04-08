@@ -110,9 +110,9 @@ export default function TipReportPage() {
   }
 
   const hourlyData = report?.byHour
-    ? Object.entries(report.byHour as Record<string, number>).map(([hour, total]) => ({
-        hour: `${hour}:00`,
-        total: Number(total),
+    ? (report.byHour as { hour: number; tips: number }[]).map(h => ({
+        hour: `${h.hour}:00`,
+        total: Number(h.tips),
       })).sort((a, b) => parseInt(a.hour) - parseInt(b.hour))
     : [];
 
