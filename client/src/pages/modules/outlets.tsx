@@ -40,7 +40,7 @@ const ROUNDING_OPTIONS = [
   { value: "25", label: "Round to nearest 25 fils" },
 ];
 
-function CashCurrencySettings() {
+function CashCurrencySettings({ outletId }: { outletId?: string }) {
   const { t } = useTranslation("modules");
   const { user } = useAuth();
   const { toast } = useToast();
@@ -67,7 +67,9 @@ function CashCurrencySettings() {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const res = await apiRequest("PUT", `/api/outlets/currency-settings`, {
+      const oid = outletId || user?.outletId;
+      if (!oid) throw new Error("No outlet selected");
+      const res = await apiRequest("PUT", `/api/outlets/${oid}/currency-settings`, {
         currencyCode: selectedCurrency,
         cashRounding,
         currencyPosition,
@@ -250,12 +252,7 @@ function IdleTimeoutPanel({ outlet }: { outlet: Outlet }) {
 
   const mutation = useMutation({
     mutationFn: (idleTimeoutMinutes: number) =>
-      fetch(`/api/outlets/${outlet.id}/idle-timeout`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ idleTimeoutMinutes }),
-      }).then(r => r.json()),
+      apiRequest("PUT", `/api/outlets/${outlet.id}/idle-timeout`, { idleTimeoutMinutes }).then(r => r.json()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/outlets", outlet.id, "idle-timeout"] });
       toast({ title: t("idleTimeoutUpdated") });
@@ -594,16 +591,11 @@ function JurisdictionLegalSettings({ outlets }: { outlets: Outlet[] }) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/outlets/${outletId}/jurisdiction`, {
-        method: "PUT",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...form,
-          vatRegistered: form.vatRegistered,
-          outletTaxRate: form.outletTaxRate !== "" ? parseFloat(form.outletTaxRate) : null,
-          tradeLicenseExpiry: form.tradeLicenseExpiry || null,
-        }),
+      const res = await apiRequest("PUT", `/api/outlets/${outletId}/jurisdiction`, {
+        ...form,
+        vatRegistered: form.vatRegistered,
+        outletTaxRate: form.outletTaxRate !== "" ? parseFloat(form.outletTaxRate) : null,
+        tradeLicenseExpiry: form.tradeLicenseExpiry || null,
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.message); }
       return res.json();
@@ -2506,7 +2498,7 @@ export default function OutletsPage() {
       </Dialog>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
-        <CashCurrencySettings />
+        <CashCurrencySettings outletId={outlets[0]?.id} />
       </motion.div>
 
       {outlets.length > 0 && (
