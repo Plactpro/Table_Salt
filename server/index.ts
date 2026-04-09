@@ -653,6 +653,11 @@ function startWebhookMonitor() {
     await setupVite(httpServer, app);
   }
 
+  // Attach WebSocket upgrade handler BEFORE listen so the /ws endpoint is
+  // ready the moment the first connection arrives (Replit's proxy can send
+  // upgrade requests immediately after the port becomes reachable).
+  const wss = setupWebSocket(httpServer);
+
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5000 if not specified.
   // this serves both the API and the client.
@@ -662,14 +667,11 @@ function startWebhookMonitor() {
     {
       port,
       host: "0.0.0.0",
-      reusePort: true,
     },
     () => {
       log(`serving on port ${port}`);
     },
   );
-
-  const wss = setupWebSocket(httpServer);
 
   const shutdown = async (signal: string) => {
     console.log(`[Shutdown] Received ${signal}, shutting down gracefully...`);
