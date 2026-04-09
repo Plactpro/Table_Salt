@@ -1,7 +1,7 @@
 import { PageTitle } from "@/lib/accessibility";
 import { useState, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getCsrfToken } from "@/lib/queryClient";
 import { useAuth, useSubscription } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -275,10 +275,12 @@ function CampaignDialog({
       const formData = new FormData();
       formData.append("file", uploadFile);
       formData.append("creativeName", uploadFile.name);
+      const csrf = getCsrfToken();
       const r = await fetch(`/api/ad-campaigns/${savedCampaignId}/creatives`, {
         method: "POST",
         body: formData,
         credentials: "include",
+        headers: csrf ? { "x-csrf-token": csrf } : {},
       });
       if (!r.ok) {
         let message = "Upload failed";
@@ -757,10 +759,12 @@ function CreativesDialog({ campaign, open, onClose }: { campaign: any; open: boo
     try {
       const formData = new FormData();
       formData.append("file", uploadFile);
+      const csrf = getCsrfToken();
       const r = await fetch(`/api/ad-campaigns/${campaign.id}/creatives`, {
         method: "POST",
         body: formData,
         credentials: "include",
+        headers: csrf ? { "x-csrf-token": csrf } : {},
       });
       if (!r.ok) {
         let message = "Upload failed";
