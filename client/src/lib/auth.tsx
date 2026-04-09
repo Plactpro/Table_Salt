@@ -198,7 +198,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await logoutMutation.mutateAsync();
+    try {
+      await logoutMutation.mutateAsync();
+    } catch {
+      // Session may already be expired — that's fine, just redirect
+    }
+    queryClient.clear();
+    window.location.href = "/auth";
   };
 
   const tenant = tenantData ?? null;
