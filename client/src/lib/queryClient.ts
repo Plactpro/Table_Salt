@@ -144,6 +144,13 @@ export const getQueryFn: <T>(options: {
             window.dispatchEvent(new CustomEvent("session-conflict"));
           }
         } catch {}
+        // AUTH-1: Redirect to login on session expiry for non-auth-check queries
+        if (unauthorizedBehavior === "throw") {
+          queryClient.clear();
+          window.location.href = "/auth";
+          // Throw to prevent further processing
+          throw new Error("401: Session expired");
+        }
       }
 
       await throwIfResNotOk(res);
@@ -215,6 +222,16 @@ export const queryClient = new QueryClient({
   mutationCache: new MutationCache({
     onError: (error, _variables, _context, mutation) => {
       handleReadOnlyError(error as Error);
+      // AUTH-1: Redirect to login on 401 during mutations
+      try {
+        const errMsg = (error as Error).message || "";
+        const statusMatch = errMsg.match(/^(\d{3}):/);
+        if (statusMatch && parseInt(statusMatch[1]) === 401) {
+          queryClient.clear();
+          window.location.href = "/auth";
+          return;
+        }
+      } catch {}
       // PR-001: Dispatch session-conflict event for mutations
       try {
         const cause = (error as { cause?: { code?: string } }).cause;
