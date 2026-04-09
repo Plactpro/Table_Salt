@@ -20,6 +20,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { getCsrfToken } from "@/lib/queryClient";
 
 interface KDSWallItem {
   id: string;
@@ -270,9 +271,12 @@ function HoldDialog({
       const body: { holdReason: string; holdUntilItemId?: string; holdUntilMinutes?: number } = { holdReason };
       if (holdType === "item") body.holdUntilItemId = holdItemId;
       if (holdType === "minutes") body.holdUntilMinutes = holdMinutes;
-      const res = await fetch(`/api/kds/items/${item.id}/hold`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
+      const res = await fetch(`/api/kds/items/${item.id}/hold`, { method: "PUT", headers: hdrs, body: JSON.stringify(body), credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "pending" }) });
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "pending" }), credentials: "include" });
       }
     } catch (_) {}
     setLoading(false);
@@ -377,16 +381,20 @@ function RushDialog({
     if (!ticket) return;
     setLoading(true);
     try {
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
       const res = await fetch(`/api/kds/orders/${ticket.id}/rush`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ managerPin: pin }),
+        credentials: "include",
       });
       if (!res.ok) {
         for (const item of ticket.items) {
           if (mapItemCookingStatus(item) !== "ready" && mapItemCookingStatus(item) !== "served") {
             try {
-              await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) });
+              await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "cooking" }), credentials: "include" });
             } catch (_) {}
           }
         }
@@ -466,10 +474,13 @@ function ItemRow({
 
   async function handleStart() {
     setStartLoading(true);
+    const csrf = getCsrfToken();
+    const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+    if (csrf) hdrs["x-csrf-token"] = csrf;
     try {
-      const res = await fetch(`/api/kds/items/${item.id}/start`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+      const res = await fetch(`/api/kds/items/${item.id}/start`, { method: "PUT", headers: hdrs, body: JSON.stringify({}), credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) });
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "cooking" }), credentials: "include" });
         setStartTooltip(tk("started"));
       } else {
         const data = await res.json();
@@ -479,7 +490,7 @@ function ItemRow({
       }
       setTimeout(() => setStartTooltip(null), 3000);
     } catch (_) {
-      try { await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) }); } catch (_) {}
+      try { await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "cooking" }), credentials: "include" }); } catch (_) {}
     }
     setStartLoading(false);
     onRefresh();
@@ -487,13 +498,16 @@ function ItemRow({
 
   async function handleReady() {
     setReadyLoading(true);
+    const csrf = getCsrfToken();
+    const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+    if (csrf) hdrs["x-csrf-token"] = csrf;
     try {
-      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: { "Content-Type": "application/json" } });
+      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: hdrs, credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ready" }) });
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "ready" }), credentials: "include" });
       }
     } catch (_) {
-      try { await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ready" }) }); } catch (_) {}
+      try { await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "ready" }), credentials: "include" }); } catch (_) {}
     }
     setReadyLoading(false);
     onRefresh();

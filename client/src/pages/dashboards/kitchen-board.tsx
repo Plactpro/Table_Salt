@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, getCsrfToken } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
@@ -178,9 +178,12 @@ function KdsHoldDialog({
     if (holdType === "item") body.holdUntilItemId = holdItemId;
     if (holdType === "minutes") body.holdUntilMinutes = holdMinutes;
     try {
-      const res = await fetch(`/api/kds/items/${item.id}/hold`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
+      const res = await fetch(`/api/kds/items/${item.id}/hold`, { method: "PUT", headers: hdrs, body: JSON.stringify(body), credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "pending" }) });
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "pending" }), credentials: "include" });
       }
     } catch (_) {}
     setLoading(false);
@@ -283,9 +286,12 @@ function KdsRushDialog({
     setLoading(true);
     try {
       const body: { managerPin?: string } = requiresPin && pin ? { managerPin: pin } : {};
-      const res = await fetch(`/api/kds/orders/${ticketId}/rush`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
+      const res = await fetch(`/api/kds/orders/${ticketId}/rush`, { method: "PUT", headers: hdrs, body: JSON.stringify(body), credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/orders/${ticketId}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "rush" }) });
+        await fetch(`/api/orders/${ticketId}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "rush" }), credentials: "include" });
       }
     } catch (_) {}
     setLoading(false);
@@ -336,9 +342,12 @@ function KdsItemRow({
   async function startItem() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/kds/items/${item.id}/start`, { method: "PUT", headers: { "Content-Type": "application/json" } });
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
+      const res = await fetch(`/api/kds/items/${item.id}/start`, { method: "PUT", headers: hdrs, credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "cooking" }) });
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "cooking" }), credentials: "include" });
       }
     } catch (_) {}
     setLoading(false);
@@ -348,9 +357,12 @@ function KdsItemRow({
   async function readyItem() {
     setLoading(true);
     try {
-      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: { "Content-Type": "application/json" } });
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
+      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: hdrs, credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ready" }) });
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "ready" }), credentials: "include" });
       }
     } catch (_) {}
     setLoading(false);
@@ -622,10 +634,14 @@ function ActiveItemRow({ item, onRefresh }: { item: KdsItem; onRefresh: () => vo
   async function handleFlagIssue() {
     setFlagLoading(true);
     try {
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
       await fetch(`/api/kds/order-items/${item.id}/status`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: hdrs,
         body: JSON.stringify({ notes: flagNote }),
+        credentials: "include",
       });
     } catch (_) {}
     setFlagLoading(false);
@@ -636,9 +652,12 @@ function ActiveItemRow({ item, onRefresh }: { item: KdsItem; onRefresh: () => vo
 
   async function handleReady() {
     try {
-      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: { "Content-Type": "application/json" } });
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
+      const res = await fetch(`/api/kds/items/${item.id}/ready`, { method: "PUT", headers: hdrs, credentials: "include" });
       if (!res.ok) {
-        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "ready" }) });
+        await fetch(`/api/kds/order-items/${item.id}/status`, { method: "PATCH", headers: hdrs, body: JSON.stringify({ status: "ready" }), credentials: "include" });
       }
     } catch (_) {}
     onRefresh();
@@ -724,7 +743,7 @@ function ChefStatsPanel({
     queryKey: ["/api/time-performance/by-chef", chefId, today],
     queryFn: async () => {
       try {
-        const res = await fetch(`/api/time-performance/by-chef?chefId=${chefId}&date=${today}`);
+        const res = await fetch(`/api/time-performance/by-chef?chefId=${chefId}&date=${today}`, { credentials: "include" });
         if (res.ok) return res.json();
       } catch (_) {}
       return null;
