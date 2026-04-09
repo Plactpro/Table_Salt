@@ -37,7 +37,7 @@ export default function CashHandoverModal({
   const [notes, setNotes] = useState("");
 
   const amountNum = parseFloat(amount) || 0;
-  const canSubmit = amountNum > 0 && recipient.trim().length > 0;
+  const canSubmit = amountNum >= 0 && recipient.trim().length > 0;
 
   const denomSummary = Object.entries(denominationBreakdown)
     .filter(([, qty]) => qty > 0)
@@ -62,7 +62,7 @@ export default function CashHandoverModal({
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 className="pl-8"
-                placeholder="0.00"
+                placeholder=""
                 data-testid="input-handover-amount"
               />
             </div>
