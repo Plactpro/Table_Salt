@@ -42,7 +42,6 @@ class TablesErrorBoundary extends Component<{ children: ReactNode }, { hasError:
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
     console.error("[TablesPage] render error:", error, info);
-    setTimeout(() => this.setState({ hasError: false, error: "" }), 2000);
   }
   render() {
     if (this.state.hasError) {
