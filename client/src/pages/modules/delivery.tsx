@@ -27,6 +27,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { useTranslation } from "react-i18next";
 
 interface DeliveryOrder {
@@ -290,6 +291,13 @@ export default function DeliveryPage() {
     onError: (err: Error) => {
       toast({ title: t("error"), description: err.message, variant: "destructive" });
     },
+  });
+
+  useRealtimeEvent("delivery:updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
+  });
+  useRealtimeEvent("coordination:order_updated", () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
   });
 
   const customerMap = new Map(customers.map((c) => [c.id, c]));
