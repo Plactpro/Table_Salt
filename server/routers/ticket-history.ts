@@ -760,6 +760,7 @@ export function registerTicketHistoryRoutes(app: Express) {
         voidRequestId: voidRequest.id,
         orderNumber: order.order_number || orderId.slice(-6),
         itemName: item.name,
+                voidReason,
         requestedBy: user.name,
         tableNumber: order.table_number,
         _targetRoles: VOID_APPROVE_ROLES,
