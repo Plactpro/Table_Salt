@@ -1564,6 +1564,20 @@ export default function MenuPage() {
               currency={tenantCurrency}
             />
           )}
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const item = detailItem;
+                setDetailItem(null);
+                if (item) openEditItem(item);
+              }}
+              data-testid="button-edit-from-detail"
+            >
+              <Pencil className="h-4 w-4 mr-2" />
+              Edit Item
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       {supervisorDialog && (
