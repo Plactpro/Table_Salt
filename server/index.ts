@@ -10,6 +10,7 @@ import { discoverPriceIds } from "./stripe";
 import { setupWebSocket } from "./realtime";
 import { pool } from "./db";
 import { routeContext } from "./lib/query-logger";
+import { clearLoginFailures } from './auth';
 
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
     console.error("[FATAL] SESSION_SECRET env var is not set. Refusing to start in production.");
@@ -392,7 +393,10 @@ function startWebhookMonitor() {
         // In development — log error and continue so other migrations still run
       }
     }
-    
+
+    // Clear any in-memory lockout for superadmin so it can log in after a fresh deploy
+    clearLoginFailures('superadmin');
+
   try {
     const { seedDatabase } = await import("./seed");
     await seedDatabase();
