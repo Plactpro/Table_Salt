@@ -3796,6 +3796,22 @@ export async function runTask191Migrations(): Promise<void> {
 
   // Task #209: Add final_charge to valet_tickets as authoritative charge field for revenue queries
   await pool.query(`ALTER TABLE valet_tickets ADD COLUMN IF NOT EXISTS final_charge NUMERIC(12,2) NOT NULL DEFAULT 0`);
+
+  // POS-1/CB-FIX: Missing orders columns that Drizzle schema defines but no ALTER TABLE migration existed.
+  // Without these, INSERT INTO orders fails → 500 → circuit breaker trips OPEN.
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_name TEXT`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_phone TEXT`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS channel TEXT`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS channel_order_id TEXT`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS channel_data JSONB`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS pos_session_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS parent_order_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS is_held BOOLEAN DEFAULT false`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS kitchen_sent_at TIMESTAMPTZ`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id VARCHAR(36)`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_amount NUMERIC(10,2) DEFAULT 0`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount_reason TEXT`);
+  await pool.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS offer_id VARCHAR(36)`);
 }
 
 // P3-Deploy: valet constraint drop + super admin password repair
