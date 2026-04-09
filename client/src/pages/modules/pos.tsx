@@ -624,6 +624,10 @@ export default function POSPage() {
   useRealtimeEvent("order:item_updated", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
   }, [queryClient]));
+  useRealtimeEvent("menu:updated", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/menu-items"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/menu-categories"] });
+  }, [queryClient]));
 
   const { data: categoriesRaw = [], isLoading: categoriesLoading, isOfflineCached: categoriesFromCache } = useCachedQuery<MenuCategory[]>(["/api/menu-categories"], "/api/menu-categories");
   const { data: menuItemsRaw = [], isLoading: menuItemsLoading, isOfflineCached: itemsFromCache, refetch: refetchMenuItems } = useCachedQuery<MenuItem[], PaginatedResponse<MenuItem>>(["/api/menu-items", "all"], "/api/menu-items?limit=500", { select: selectPageData });
