@@ -230,6 +230,7 @@ function CampaignDialog({
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadError, setUploadError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [savedCampaignId, setSavedCampaignId] = useState<string | null>(campaign?.id || null);
   const [creatives, setCreatives] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -304,24 +305,30 @@ function CampaignDialog({
   };
 
   const handleNext = async () => {
-    if (step < maxSteps) {
-      const shouldSave =
-        step === 2 ||
-        (step === 1 && form.campaignType === "OWN") ||
-        (step === 3 && form.campaignType === "THIRD_PARTY");
-      if (shouldSave) {
-        try {
-          await saveMutation.mutateAsync();
-        } catch (err: any) {
-          const message = err?.message || "Failed to save campaign";
-          toast({ title: message, variant: "destructive" });
-          return;
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      if (step < maxSteps) {
+        const shouldSave =
+          step === 2 ||
+          (step === 1 && form.campaignType === "OWN") ||
+          (step === 3 && form.campaignType === "THIRD_PARTY");
+        if (shouldSave) {
+          try {
+            await saveMutation.mutateAsync();
+          } catch (err: any) {
+            const message = err?.message || "Failed to save campaign";
+            toast({ title: message, variant: "destructive" });
+            return;
+          }
         }
+        setStep((s) => s + 1);
+      } else {
+        onSuccess();
+        onClose();
       }
-      setStep((s) => s + 1);
-    } else {
-      onSuccess();
-      onClose();
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -715,12 +722,13 @@ function CampaignDialog({
           <Button
             onClick={handleNext}
             disabled={
+              isSubmitting ||
               (step === 2 && (!form.campaignName || !form.startDate || !form.endDate)) ||
               saveMutation.isPending
             }
             data-testid="button-next-step"
           >
-            {saveMutation.isPending ? "Saving..." : step === maxSteps ? "Done" : "Next"}
+            {isSubmitting || saveMutation.isPending ? "Saving..." : step === maxSteps ? "Done" : "Next"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1139,6 +1147,7 @@ export default function AdvertisementsPage() {
   });
 
   const filteredCampaigns = campaigns.filter((c) => {
+    if (c.status === "expired") return false;
     if (filterType !== "all" && c.campaignType !== filterType) return false;
     if (filterStatus !== "all" && c.status !== filterStatus) return false;
     return true;
