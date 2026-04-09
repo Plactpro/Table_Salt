@@ -3807,8 +3807,9 @@ export async function runP3DeployMigrations(): Promise<void> {
   `);
 
   // 2. Fix super admin password — previous setup used bcrypt but app uses scrypt.
-  // Correct scrypt hash for password: SuperAdmin@2026 (verified round-trip)
-  const SCRYPT_HASH = "5ad52fbb0c3e559d5ddcd7b25e83f9ca584848138b659196c390b47a7a085a66509f9b7955e43a27d3f006deb9562f0c04483e12963920cc0a1aacb297a2d924.a0b3a47fb3d9910594bd1941930a3e2f";
+  // Hash generated with exact auth.ts logic: randomBytes(16).toString('hex') as salt, scrypt(password, salt, 64)
+  // Password: SuperAdmin@2026 — verified round-trip with comparePasswords()
+  const SCRYPT_HASH = "129e1de35477cd64276c89288b61dd680092f98cd5b96af7190e52272f19265bd3911a50544e196c75cc7e534081d273323d12c5a7977f2707b0890c4bd1a3cf.938b76eb77b877c2db717273887e1a26";
   await pool.query(`
     UPDATE users
     SET password = $1
