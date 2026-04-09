@@ -48,6 +48,7 @@ interface RosterEntry {
   shiftDate: string;
   shiftStart?: string;
   shiftEnd?: string;
+  shiftType?: string;
   role?: string;
   status?: string;
 }
@@ -284,7 +285,7 @@ function RosterTab() {
   });
   const [open, setOpen] = useState(false);
   const [editEntry, setEditEntry] = useState<RosterEntry | null>(null);
-  const [form, setForm] = useState({ chefId: "", chefName: "", counterId: "", counterName: "", shiftDate: "", shiftStart: "08:00", shiftEnd: "17:00", role: "Line Cook" });
+  const [form, setForm] = useState({ chefId: "", chefName: "", counterId: "", counterName: "", shiftDate: "", shiftStart: "08:00", shiftEnd: "17:00", shiftType: "Line Cook" });
 
   const { data: outlets = [] } = useQuery<any[]>({ queryKey: ["/api/outlets"] });
   const [outletId, setOutletId] = useState<string>("");
@@ -329,7 +330,7 @@ function RosterTab() {
 
   function openNew(date: string) {
     setEditEntry(null);
-    setForm({ chefId: "", chefName: "", counterId: "", counterName: "", shiftDate: date, shiftStart: "08:00", shiftEnd: "17:00", role: "Line Cook" });
+    setForm({ chefId: "", chefName: "", counterId: "", counterName: "", shiftDate: date, shiftStart: "08:00", shiftEnd: "17:00", shiftType: "Line Cook" });
     setOpen(true);
   }
 
@@ -408,7 +409,7 @@ function RosterTab() {
                       <div key={e.id} className="bg-primary/10 rounded p-1 mb-1 text-xs group relative" data-testid={`roster-entry-${e.id}`}>
                         <div className="font-medium truncate">{e.chefName ?? e.chefId}</div>
                         <div className="text-muted-foreground">{e.shiftStart}–{e.shiftEnd}</div>
-                        <div className="text-muted-foreground">{e.role}</div>
+                        <div className="text-muted-foreground">{e.shiftType ?? e.role}</div>
                         <button
                           onClick={() => deleteMut.mutate(e.id)}
                           className="absolute top-0.5 right-0.5 opacity-0 group-hover:opacity-100 text-destructive"
@@ -477,7 +478,7 @@ function RosterTab() {
             </div>
             <div>
               <Label>{t("role")}</Label>
-              <Select value={form.role} onValueChange={v => setForm(f => ({ ...f, role: v }))}>
+              <Select value={form.shiftType} onValueChange={v => setForm(f => ({ ...f, shiftType: v }))}>
                 <SelectTrigger data-testid="select-roster-role"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {SHIFT_ROLES.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
