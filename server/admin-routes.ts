@@ -2327,4 +2327,24 @@ export function registerAdminRoutes(app: Express) {
       return res.status(500).json({ message });
     }
   });
+
+  // CB-FIX: Force-reset all circuit breakers (super admin only)
+  app.post("/api/admin/circuit-breakers/reset", requireSuperAdmin, async (_req: Request, res: Response) => {
+    try {
+      const { circuitBreakerRegistry } = await import("./lib/circuit-breaker");
+      const before: Record<string, string> = {};
+      for (const [name, breaker] of circuitBreakerRegistry.getAll()) {
+        before[name] = breaker.getState();
+      }
+      circuitBreakerRegistry.resetAll();
+      const after: Record<string, string> = {};
+      for (const [name, breaker] of circuitBreakerRegistry.getAll()) {
+        after[name] = breaker.getState();
+      }
+      return res.json({ message: "All circuit breakers reset to CLOSED", before, after });
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Unknown error";
+      return res.status(500).json({ message });
+    }
+  });
 }

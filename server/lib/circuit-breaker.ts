@@ -105,6 +105,22 @@ export class CircuitBreaker {
   }
 
   /**
+   * Force-reset this circuit breaker to CLOSED.
+   * Used by admin endpoint when the underlying issue is resolved but
+   * the breaker is stuck in OPEN/HALF_OPEN from stale error history.
+   */
+  forceReset(): void {
+    if (this.resetTimer) {
+      clearTimeout(this.resetTimer);
+      this.resetTimer = null;
+    }
+    this.halfOpenTestInFlight = false;
+    this.window = [];
+    this.state = "CLOSED";
+    console.log(`[CircuitBreaker:${this.name}] force-reset → CLOSED`);
+  }
+
+  /**
    * Check if a request should be allowed and throw CircuitOpenError if not.
    * Callers should catch CircuitOpenError and respond with 503.
    */
@@ -182,6 +198,13 @@ class CircuitBreakerRegistry {
   getAll(): Map<string, CircuitBreaker> {
     return this.breakers;
   }
+
+  /** Force-reset ALL circuit breakers to CLOSED. */
+  resetAll(): void {
+    for (const [, breaker] of this.breakers) {
+      breaker.forceReset();
+    }
+  }
 }
 
 export const circuitBreakerRegistry = new CircuitBreakerRegistry();
@@ -209,23 +232,20 @@ export function withCircuitBreaker(name: string) {
     // Prevents HALF_OPEN from getting stuck when routes respond via non-JSON paths.
     //
     // Classification:
-    //   2xx  → success (downstream worked)
-    //   5xx  → error   (downstream failed)
-    //   3xx/4xx → error in HALF_OPEN (re-open circuit; may be auth/validation before downstream)
-    //            → neutral in CLOSED (auth/validation failures shouldn't count against circuit)
+    //   2xx       → success (downstream worked)
+    //   4xx       → success (server processed the request — it's a validation/auth issue, not a downstream failure)
+    //   5xx       → error   (downstream failed)
     //
-    // This ensures HALF_OPEN always resolves to CLOSED or OPEN (never gets stuck).
+    // CB-FIX: Previously, HALF_OPEN treated 4xx as errors, causing the circuit to stay
+    // permanently OPEN when the first test request happened to be an invalid/auth request.
+    // Now 4xx counts as success in ALL states — the server is alive and processing requests.
     res.once("finish", () => {
-      const isHalfOpen = breaker.getState() === "HALF_OPEN";
       if (res.statusCode >= 500) {
         breaker.recordError();
-      } else if (res.statusCode >= 200 && res.statusCode < 300) {
+      } else if (res.statusCode < 500) {
+        // 2xx, 3xx, 4xx all prove the server is responsive
         breaker.recordSuccess();
-      } else if (isHalfOpen) {
-        // In HALF_OPEN: 3xx/4xx treated as error so circuit re-opens (prevents stuck state)
-        breaker.recordError();
       }
-      // In CLOSED: 3xx/4xx are neutral — auth/validation failures shouldn't trip the breaker
     });
 
     next();

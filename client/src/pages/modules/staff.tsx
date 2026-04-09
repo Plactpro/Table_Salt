@@ -34,6 +34,14 @@ const safeDate = (val: any): string | null => {
   return isNaN(d.getTime()) ? null : d.toISOString();
 };
 
+/** SW-3 fix: safely extract YYYY-MM-DD from any date value without crashing on invalid dates */
+const safeDateStr = (val: any): string => {
+  if (!val) return "1970-01-01";
+  const d = val instanceof Date ? val : new Date(String(val));
+  if (isNaN(d.getTime())) return "1970-01-01";
+  return d.toISOString().split("T")[0];
+};
+
 const roleBadgeColors: Record<string, string> = {
   owner: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   manager: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",
@@ -344,17 +352,17 @@ export default function StaffPage() {
   }, [monthDate]);
 
   const getShiftsForDayAndUser = (date: Date, userId: string) => {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = safeDateStr(date);
     return schedules.filter((s) => {
-      const sDate = new Date(s.date).toISOString().split("T")[0];
+      const sDate = safeDateStr(s.date);
       return sDate === dateStr && s.userId === userId;
     });
   };
 
   const getShiftsForDay = (date: Date) => {
-    const dateStr = date.toISOString().split("T")[0];
+    const dateStr = safeDateStr(date);
     return schedules.filter((s) => {
-      const sDate = new Date(s.date).toISOString().split("T")[0];
+      const sDate = safeDateStr(s.date);
       return sDate === dateStr;
     });
   };
@@ -893,7 +901,7 @@ export default function StaffPage() {
 
                 {(() => {
                   const todaySchedules = schedules.filter((s: any) => {
-                    const sDate = new Date(s.date).toISOString().split("T")[0];
+                    const sDate = safeDateStr(s.date);
                     return sDate === today;
                   });
                   const clockedInIds = new Set(todayLogs.map((l: any) => l.userId));
