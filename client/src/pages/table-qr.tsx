@@ -1445,7 +1445,7 @@ export default function TableQrPage() {
   const search = useSearch();
   const routeParams = useParams<{ tenantSlug?: string; outletId?: string; tableId?: string }>();
   const params = new URLSearchParams(search);
-  const token = params.get("token");
+  const token = params.get("qr") || params.get("token");
 
   const [lang, setLang] = useState<Lang>("en");
   const t = TRANSLATIONS[lang];
