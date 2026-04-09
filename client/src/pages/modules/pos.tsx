@@ -2499,7 +2499,7 @@ export default function POSPage() {
                 <div key={order.localId} className="flex items-center gap-2 p-3 border border-amber-300 bg-amber-50 rounded-lg" data-testid={`held-order-offline-${order.localId}`}>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm flex items-center gap-1.5">
-                      {order.localTicket}
+                      {order.serverId || order.localTicket}
                       <span className="text-xs font-medium text-amber-700 bg-amber-100 border border-amber-300 rounded px-1.5 py-0.5">Queued</span>
                     </p>
                     <p className="text-xs text-muted-foreground">{String(order.payload.orderType || "order")} · {new Date(order.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</p>
