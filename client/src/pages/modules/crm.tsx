@@ -166,7 +166,7 @@ export default function CrmPage() {
     name: "", phone: "", email: "", notes: "", loyaltyTier: "bronze", tags: "",
     gstin: "", birthday: "", anniversary: "",
   });
-  const [crmFormErrors, setCrmFormErrors] = useState<{ name?: string }>({});
+  const [crmFormErrors, setCrmFormErrors] = useState<{ name?: string; phone?: string }>({});
 
   const [feedbackForm, setFeedbackForm] = useState({
     customerId: "", orderId: "", rating: "5", comment: "",
@@ -357,9 +357,27 @@ export default function CrmPage() {
     setShowAddDialog(true);
   };
 
+  const nameRegex = /^[a-zA-Z\s\u0600-\u06FF\-'\. ]+$/;
+  const phoneRegex = /^[\d\s\+\-\(\)]+$/;
+
   const handleSubmitAdd = () => {
     if (!formData.name.trim()) {
       setCrmFormErrors({ name: "Name is required" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    if (formData.name.trim().length < 2) {
+      setCrmFormErrors({ name: "Name must be at least 2 characters" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    if (!nameRegex.test(formData.name.trim())) {
+      setCrmFormErrors({ name: "Name must contain only letters" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    if (formData.phone && !phoneRegex.test(formData.phone)) {
+      setCrmFormErrors({ phone: "Phone must contain only numbers and +, -, ()" });
       setTimeout(() => scrollToFirstError(), 50);
       return;
     }
@@ -382,6 +400,21 @@ export default function CrmPage() {
     if (!selectedCustomer) return;
     if (!formData.name.trim()) {
       setCrmFormErrors({ name: "Name is required" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    if (formData.name.trim().length < 2) {
+      setCrmFormErrors({ name: "Name must be at least 2 characters" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    if (!nameRegex.test(formData.name.trim())) {
+      setCrmFormErrors({ name: "Name must contain only letters" });
+      setTimeout(() => scrollToFirstError(), 50);
+      return;
+    }
+    if (formData.phone && !phoneRegex.test(formData.phone)) {
+      setCrmFormErrors({ phone: "Phone must contain only numbers and +, -, ()" });
       setTimeout(() => scrollToFirstError(), 50);
       return;
     }
@@ -845,7 +878,8 @@ export default function CrmPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t("phone")}</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} data-testid="input-customer-phone" />
+                <Input value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setCrmFormErrors((prev) => ({ ...prev, phone: undefined })); }} className={crmFormErrors.phone ? "border-red-500" : ""} data-testid="input-customer-phone" />
+                {crmFormErrors.phone && <p className="text-red-500 text-xs mt-1">{crmFormErrors.phone}</p>}
               </div>
               <div>
                 <Label>{t("email")}</Label>
@@ -914,7 +948,8 @@ export default function CrmPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t("phone")}</Label>
-                <Input value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} data-testid="input-edit-customer-phone" />
+                <Input value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setCrmFormErrors((prev) => ({ ...prev, phone: undefined })); }} className={crmFormErrors.phone ? "border-red-500" : ""} data-testid="input-edit-customer-phone" />
+                {crmFormErrors.phone && <p className="text-red-500 text-xs mt-1">{crmFormErrors.phone}</p>}
               </div>
               <div>
                 <Label>{t("email")}</Label>
