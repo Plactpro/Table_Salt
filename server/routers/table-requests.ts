@@ -598,7 +598,7 @@ export function registerTableRequestRoutes(app: Express): void {
       if (!request || request.tenantId !== user.tenantId) return res.status(404).json({ message: "Request not found" });
       if (request.status === "completed") return res.status(400).json({ message: "Request already completed" });
 
-      const { staffNote } = req.body;
+      const { staffNote } = req.body || {};
       const updated = await storage.updateTableRequest(req.params.id, {
         status: "completed",
         completedAt: new Date(),
