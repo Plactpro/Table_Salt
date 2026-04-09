@@ -142,6 +142,8 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
   const queryClient = useQueryClient();
   const [recoveryType, setRecoveryType] = useState("");
   const [recoveryValue, setRecoveryValue] = useState("");
+  const [showVoidConfirm, setShowVoidConfirm] = useState(false);
+  const [voidReason, setVoidReason] = useState("");
 
   const totalCost = Number(entry.total_cost ?? 0);
   const recoveryAmount = recoveryValue ? Math.min(parseFloat(recoveryValue), totalCost) : 0;
@@ -271,25 +273,52 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
 
           <Separator />
 
-          <div className="flex gap-2">
-            <Button
-              variant="destructive"
-              size="sm"
-              className="flex-1 gap-1"
-              onClick={() => {
-                const reason = window.prompt("Enter a reason for voiding this entry:");
-                if (reason) voidMutation.mutate(reason);
-              }}
-              disabled={voidMutation.isPending || entry.is_voided}
-              data-testid="btn-void-entry"
-            >
-              <X className="h-3.5 w-3.5" />
-              {entry.is_voided ? "Voided" : "Void Entry"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={onClose} data-testid="btn-close-detail">
-              Close
-            </Button>
-          </div>
+          {showVoidConfirm ? (
+            <div className="space-y-2" data-testid="void-confirm-section">
+              <Label className="text-xs">Void Reason (required)</Label>
+              <Input
+                className="h-8 text-sm"
+                value={voidReason}
+                onChange={(e) => setVoidReason(e.target.value)}
+                placeholder="Enter reason for voiding..."
+                autoFocus
+                data-testid="input-void-reason"
+              />
+              <div className="flex gap-2">
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="flex-1 gap-1"
+                  onClick={() => { if (voidReason.trim()) voidMutation.mutate(voidReason.trim()); }}
+                  disabled={voidMutation.isPending || !voidReason.trim()}
+                  data-testid="btn-confirm-void"
+                >
+                  <X className="h-3.5 w-3.5" />
+                  {voidMutation.isPending ? "Voiding..." : "Confirm Void"}
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => { setShowVoidConfirm(false); setVoidReason(""); }} data-testid="btn-cancel-void">
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                size="sm"
+                className="flex-1 gap-1"
+                onClick={() => setShowVoidConfirm(true)}
+                disabled={voidMutation.isPending || entry.is_voided}
+                data-testid="btn-void-entry"
+              >
+                <X className="h-3.5 w-3.5" />
+                {entry.is_voided ? "Voided" : "Void Entry"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={onClose} data-testid="btn-close-detail">
+                Close
+              </Button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
