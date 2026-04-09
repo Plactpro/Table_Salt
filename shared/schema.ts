@@ -3101,7 +3101,7 @@ export const billPackingCharges = pgTable("bill_packing_charges", {
   id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
   tenantId: varchar("tenant_id", { length: 36 }).notNull(),
   outletId: varchar("outlet_id", { length: 36 }).notNull(),
-  billId: varchar("bill_id", { length: 36 }).notNull(),
+  billId: varchar("bill_id", { length: 36 }).notNull().unique(),
   orderId: varchar("order_id", { length: 36 }).notNull(),
   orderType: varchar("order_type", { length: 20 }).notNull(),
   chargeType: varchar("charge_type", { length: 20 }).notNull(),
