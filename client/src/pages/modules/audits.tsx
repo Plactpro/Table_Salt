@@ -274,6 +274,8 @@ export default function AuditsPage() {
       setShowIssueDialog(false);
       setIssueTitle("");
       setIssueDescription("");
+      setIssueSeverity("medium");
+      setIssueAssignedTo("unassigned");
       toast({ title: "Issue created" });
     },
     onError: (err: any) => toast({ title: "Error", description: err.message, variant: "destructive" }),
