@@ -5,6 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
 import { deliveryOrders as deliveryOrdersTable } from "@shared/schema";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "../email";
+import { emitToTenant } from "../realtime";
 
 export function registerDeliveryRoutes(app: Express): void {
   app.get("/api/delivery-orders", requireAuth, async (req, res) => {
@@ -31,6 +32,7 @@ export function registerDeliveryRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const delivery = await storage.createDeliveryOrder({ ...req.body, tenantId: user.tenantId });
+      emitToTenant(user.tenantId, "delivery:updated", { deliveryOrderId: delivery.id, status: delivery.status });
       res.json(delivery);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -55,6 +57,7 @@ export function registerDeliveryRoutes(app: Express): void {
     }
     const delivery = await storage.updateDeliveryOrderByTenant(req.params.id, user.tenantId, body);
     if (!delivery) return res.status(404).json({ message: "Delivery order not found" });
+    emitToTenant(user.tenantId, "delivery:updated", { deliveryOrderId: req.params.id, status: delivery.status });
     res.json(delivery);
   });
 
