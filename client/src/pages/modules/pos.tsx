@@ -1292,7 +1292,7 @@ export default function POSPage() {
         return;
       }
       setTenderedAmount("");
-      setShowPaymentModal(true);
+      setShowBillModal(true);
       return;
     }
     placeOrderMutation.mutate(undefined);
