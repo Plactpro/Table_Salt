@@ -371,7 +371,6 @@ export default function StaffPage() {
     setStaffFormErrors({});
     const data: Record<string, unknown> = {
       name,
-      username,
       role: formData.get("role") as string,
       email: (formData.get("email") as string) || null,
       phone: (formData.get("phone") as string) || null,
@@ -381,6 +380,7 @@ export default function StaffPage() {
       if (password) data.password = password;
       updateMutation.mutate({ id: editingUser.id, data });
     } else {
+      data.username = username;
       data.password = password || "demo123";
       createMutation.mutate(data);
     }

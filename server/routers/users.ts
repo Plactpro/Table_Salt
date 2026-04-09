@@ -83,7 +83,12 @@ export function registerUsersRoutes(app: Express): void {
   app.patch("/api/users/:id", requireRole("owner", "manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
+      const target = await storage.getUser(req.params.id);
+      if (!target || target.tenantId !== user.tenantId) {
+        return res.status(404).json({ message: "User not found" });
+      }
       const data = { ...req.body };
+      delete data.username; // username is immutable after creation
       if (data.name !== undefined && (!data.name || !data.name.trim())) {
         return res.status(400).json({ message: "Name cannot be empty" });
       }
