@@ -49,6 +49,7 @@ export async function deductRecipeInventoryForOrder(
     }
     const recipeIngs = await storage.getRecipeIngredients(recipe.id);
     for (const ing of recipeIngs) {
+            if (!ing.inventoryItemId) { skipped++; continue; }
       const invItem = await storage.getInventoryItem(ing.inventoryItemId, tenantId);
       if (!invItem) continue;
       // Guard: never auto-deduct crockery/cutlery/glassware items
@@ -135,6 +136,7 @@ export async function deductRecipeInventoryForItem(
   const writes: WriteEntry[] = [];
 
   for (const ing of recipeIngs) {
+          if (!ing.inventoryItemId) continue;
     const invItem = await storage.getInventoryItem(ing.inventoryItemId, tenantId);
     if (!invItem) continue;
     // Guard: never auto-deduct crockery/cutlery/glassware items
