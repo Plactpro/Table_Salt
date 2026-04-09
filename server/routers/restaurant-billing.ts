@@ -351,7 +351,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
                   tenant_id, outlet_id, bill_id, order_id, order_type, charge_type,
                   charge_amount, tax_amount, total_amount, item_count, breakdown
                 ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
-                ON CONFLICT (bill_id) DO NOTHING
+                ON CONFLICT DO NOTHING
               `, [
                 user.tenantId, outletId, bill.id, orderId,
                 orderType, packingChargeType,
