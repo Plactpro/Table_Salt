@@ -296,11 +296,7 @@ function DayView({ events, currentDate, onEventClick, onAddEvent, outletNames }:
     <div className="border rounded-lg p-4" data-testid="calendar-day-view">
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-semibold">{currentDate.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</h3>
-        {onAddEvent && (
-          <Button size="sm" onClick={() => onAddEvent(currentDate)} data-testid="button-add-event-day">
-            <Plus className="h-4 w-4 mr-1" />Add Event
-          </Button>
-        )}
+        {/* Main header "New Event" button handles creation; removed duplicate here */}
       </div>
       {dayEvents.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground" data-testid="text-no-events-day">
@@ -981,11 +977,23 @@ export default function EventsPage() {
               <Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} placeholder="Internal notes..." data-testid="input-event-notes" />
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
-            <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-event">
-              {editingEvent ? "Update" : "Create"} Event
-            </Button>
+          <DialogFooter className="flex justify-between sm:justify-between">
+            {editingEvent && canEdit ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => { setDialogOpen(false); setDeleteConfirm(editingEvent); }}
+                data-testid="button-delete-event-dialog"
+              >
+                <Trash2 className="h-4 w-4 mr-1" />Delete
+              </Button>
+            ) : <div />}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+              <Button onClick={handleSave} disabled={createMutation.isPending || updateMutation.isPending} data-testid="button-save-event">
+                {editingEvent ? "Update" : "Create"} Event
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
