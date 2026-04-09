@@ -389,7 +389,7 @@ export default function StaffPage() {
   const handleAddShift = () => {
     createShiftMutation.mutate({
       userId: shiftForm.userId,
-      date: new Date(shiftForm.date).toISOString(),
+      date: shiftForm.date ? new Date(shiftForm.date).toISOString() : new Date().toISOString(),
       startTime: shiftForm.startTime,
       endTime: shiftForm.endTime,
       role: shiftForm.role || null,
