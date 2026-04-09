@@ -259,16 +259,14 @@ export function registerCashMachineRoutes(app: Express): void {
       }
 
       const { physicalCash, closingBreakdown, varianceReason, notes } = req.body;
-      if (physicalCash == null) {
-        return res.status(400).json({ message: "physicalCash is required" });
-      }
+      const physicalCashAmount = Number(physicalCash ?? 0);
 
       const expectedClosingCash =
         Number(session.openingFloat || 0) +
         Number(session.totalCashSales || 0) -
         Number(session.totalCashRefunds || 0) -
         Number(session.totalCashPayouts || 0);
-      const cashVariance = Number(physicalCash) - expectedClosingCash;
+      const cashVariance = physicalCashAmount - expectedClosingCash;
 
       if (Math.abs(cashVariance) > 50 && !varianceReason) {
         return res.status(400).json({
@@ -278,7 +276,7 @@ export function registerCashMachineRoutes(app: Express): void {
 
       const updated = await storage.updateCashSession(req.params.id, {
         status: "closed",
-        physicalClosingCash: String(physicalCash),
+        physicalClosingCash: String(physicalCashAmount),
         closingBreakdown: closingBreakdown || null,
         cashVariance: String(cashVariance.toFixed(2)),
         varianceReason: varianceReason || null,
@@ -292,8 +290,8 @@ export function registerCashMachineRoutes(app: Express): void {
         outletId: session.outletId,
         sessionId: req.params.id,
         eventType: "CLOSING",
-        amount: String(physicalCash),
-        runningBalance: String(physicalCash),
+        amount: String(physicalCashAmount),
+        runningBalance: String(physicalCashAmount),
         performedBy: user.id,
         performedByName: user.name || user.username,
         reason: varianceReason || null,
@@ -304,7 +302,7 @@ export function registerCashMachineRoutes(app: Express): void {
         session: updated,
         cashVariance,
         expectedClosingCash,
-        physicalCash,
+        physicalCash: physicalCashAmount,
       });
 
       res.json({ ...updated, cashVariance, expectedClosingCash });
