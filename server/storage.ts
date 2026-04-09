@@ -2822,7 +2822,7 @@ export class DatabaseStorage implements IStorage {
   }
   async getQrTokensByTenant(tenantId: string): Promise<TableQrToken[]> {
     return db.select().from(tableQrTokens)
-      .where(eq(tableQrTokens.tenantId, tenantId))
+      .where(and(eq(tableQrTokens.tenantId, tenantId), eq(tableQrTokens.active, true)))
       .orderBy(desc(tableQrTokens.createdAt));
   }
   async deactivateQrToken(id: string, tenantId: string): Promise<void> {
