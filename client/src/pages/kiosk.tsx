@@ -866,14 +866,7 @@ function TableNumberScreen({ tableNumber, onTableNumberChange, onContinue, onBac
       />
 
       <div className="flex gap-4">
-        <Button
-          variant="outline"
-          onClick={onContinue}
-          className="px-8 py-4 text-white border-white/20 hover:bg-white/10 rounded-xl"
-          data-testid="button-skip-table"
-        >
-          Skip
-        </Button>
+        {/* Skip button removed — table selection is required for dine-in orders (KSK-1) */}
         <Button
           data-testid="button-confirm-table"
           onClick={onContinue}
