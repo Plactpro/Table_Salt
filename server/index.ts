@@ -370,12 +370,13 @@ function startWebhookMonitor() {
 
 (async () => {
   // TD-4: Consolidated migration runner — each runs independently
-    const { runAdminMigrations, runTask108Migrations, runTask184Migrations, runTask191Migrations } = await import("./admin-migrations");
+    const { runAdminMigrations, runTask108Migrations, runTask184Migrations, runTask191Migrations, runP3DeployMigrations } = await import("./admin-migrations");
     const migrationRunners: Array<{ name: string; fn: () => Promise<void> }> = [
       { name: "AdminMigrations", fn: runAdminMigrations },
       { name: "Task108Migrations", fn: runTask108Migrations },
       { name: "Task184Migrations", fn: runTask184Migrations },
       { name: "Task191Migrations", fn: runTask191Migrations },
+      { name: "P3DeployMigrations", fn: runP3DeployMigrations },
     ];
 
     for (const { name, fn } of migrationRunners) {
