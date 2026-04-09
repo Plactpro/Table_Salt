@@ -1150,6 +1150,7 @@ export default function POSPage() {
     };
     if (tab.heldOrderId) orderData.parentOrderId = tab.heldOrderId;
     if (!tabIsDineIn) orderData.paymentMethod = paymentMethod;
+    if (!tabIsDineIn) { orderData.customerName = tab.customerName?.trim() || null; orderData.customerPhone = tab.customerPhone?.trim() || null; }
     if (supervisorOverride) orderData.supervisorOverride = supervisorOverride;
     if (!isAddonKot && tab.dismissedRuleIds.length > 0) orderData.dismissedRuleIds = tab.dismissedRuleIds;
     return orderData;
@@ -1292,7 +1293,7 @@ export default function POSPage() {
         return;
       }
       setTenderedAmount("");
-      setShowBillModal(true);
+      setShowPaymentModal(true);
       return;
     }
     placeOrderMutation.mutate(undefined);
