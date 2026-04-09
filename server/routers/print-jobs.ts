@@ -377,7 +377,7 @@ export function registerPrintJobRoutes(app: Express): void {
   app.post("/api/print/reprint", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { type, referenceId, reason } = req.body;
+      const { type, referenceId, reason, kotSequence } = req.body;
       if (!type || !referenceId) {
         return res.status(400).json({ message: "type and referenceId are required" });
       }
@@ -409,7 +409,7 @@ export function registerPrintJobRoutes(app: Express): void {
         tenantId: user.tenantId,
         triggeredByName: user.name || user.username,
         isReprint: true,
-        reprintReason: reason || "Manual reprint",
+        reprintReason: reason || "Manual reprint",         ...(kotSequence ? { payload: { kotSequence } } : {}),
       });
 
       res.json({
