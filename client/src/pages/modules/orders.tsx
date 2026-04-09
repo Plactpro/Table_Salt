@@ -288,7 +288,7 @@ export default function OrdersPage() {
       <PageTitle title={tc("orders")} />
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">{tc("nav.onlineOrders")}</h1>
+          <h1 className="text-2xl font-heading font-bold" data-testid="text-orders-title">{tc("onlineOrders")}</h1>
           <p className="text-muted-foreground text-sm">{tc("manageAndTrackOrders")}</p>
         </div>
       </div>
