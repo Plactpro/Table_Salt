@@ -123,6 +123,7 @@ class SyncManager implements SyncService, ConfigCache {
   private configRefreshTimer: ReturnType<typeof setInterval> | null = null;
   private initialized = false;
   private baseBackoffMs = 2000;
+  private reconnectAttempts = 0;
   private _syncCompleteCallbacks: Array<(count: number) => void> = [];
 
   get status(): SyncStatus {
@@ -177,6 +178,7 @@ class SyncManager implements SyncService, ConfigCache {
   }
 
   private async handleOnline(): Promise<void> {
+    this.reconnectAttempts = 0;
     const hadPending = this._pendingCount;
     this.setStatus("syncing");
     const successCount = await this.processQueue();
@@ -266,6 +268,7 @@ class SyncManager implements SyncService, ConfigCache {
         };
         await this.saveOfflineOrder(fallbackOfflineOrder);
         await this.addToQueue(orderId, finalPayload);
+        this.startSyncTimeout(orderId);
         return { queued: true, orderId };
       }
     }
@@ -282,7 +285,24 @@ class SyncManager implements SyncService, ConfigCache {
     };
     await this.saveOfflineOrder(offlineOrder);
     await this.addToQueue(orderId, finalPayload);
+    this.startSyncTimeout(orderId);
     return { queued: true, orderId };
+  }
+
+  private startSyncTimeout(localOrderId: string): void {
+    setTimeout(async () => {
+      if (!this.db) return;
+      const tx = this.db.transaction(OFFLINE_ORDERS_STORE, "readonly");
+      const req = tx.objectStore(OFFLINE_ORDERS_STORE).get(localOrderId);
+      req.onsuccess = async () => {
+        const order = req.result as OfflineOrder | undefined;
+        if (order && order.status === "queued") {
+          await this.updateOfflineOrderStatus(localOrderId, "failed");
+          await this.updateQueueItem(localOrderId, { status: "failed", error: "Sync timeout after 30s" });
+          console.warn(`[SyncManager] Order ${localOrderId} sync timed out after 30s`);
+        }
+      };
+    }, 30000);
   }
 
   private async addToQueue(id: string, payload: Record<string, unknown>): Promise<void> {
@@ -310,7 +330,10 @@ class SyncManager implements SyncService, ConfigCache {
 
   private scheduleRetry(): void {
     if (this.retryTimer) clearTimeout(this.retryTimer);
-    this.retryTimer = setTimeout(() => this.processQueue(), this.baseBackoffMs);
+    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts), 30000);
+    this.reconnectAttempts++;
+    console.log(`[SyncManager] Retry in ${delay}ms — attempt ${this.reconnectAttempts}`);
+    this.retryTimer = setTimeout(() => this.processQueue(), delay);
   }
 
   private async processQueue(): Promise<number> {
