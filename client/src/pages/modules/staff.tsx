@@ -28,6 +28,12 @@ import { useTranslation } from "react-i18next";
 
 const ROLES = ["owner", "manager", "waiter", "kitchen", "accountant", "delivery_agent", "cleaning_staff"] as const;
 
+const safeDate = (val: any): string | null => {
+  if (!val) return null;
+  const d = val instanceof Date ? val : new Date(String(val));
+  return isNaN(d.getTime()) ? null : d.toISOString();
+};
+
 const roleBadgeColors: Record<string, string> = {
   owner: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200",
   manager: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200",
@@ -389,7 +395,7 @@ export default function StaffPage() {
   const handleAddShift = () => {
     createShiftMutation.mutate({
       userId: shiftForm.userId,
-      date: shiftForm.date ? new Date(shiftForm.date).toISOString() : new Date().toISOString(),
+      date: safeDate(shiftForm.date) || new Date().toISOString(),
       startTime: shiftForm.startTime,
       endTime: shiftForm.endTime,
       role: shiftForm.role || null,
