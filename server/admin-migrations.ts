@@ -3807,13 +3807,11 @@ export async function runP3DeployMigrations(): Promise<void> {
   `);
 
   // 2. Fix super admin password — previous setup used bcrypt but app uses scrypt.
-  //    Only updates the row if the stored hash is NOT in scrypt format (hex.hex).
-  //    This is a one-time repair; safe to re-run (WHERE clause is idempotent).
-  const SCRYPT_HASH = "32d66667042acc030545ed9de81be6cc499ff57a4b20c93c28fe068cbd8f00c3b136c866e634b6d19ae492d6639a2d0bcb4de2b66b7151dc666cf9e031b378ef.a0a2a94cc3a71bde89a79fdcfe173170";
+  // Correct scrypt hash for password: SuperAdmin@2026 (verified round-trip)
+  const SCRYPT_HASH = "5ad52fbb0c3e559d5ddcd7b25e83f9ca584848138b659196c390b47a7a085a66509f9b7955e43a27d3f006deb9562f0c04483e12963920cc0a1aacb297a2d924.a0b3a47fb3d9910594bd1941930a3e2f";
   await pool.query(`
     UPDATE users
     SET password = $1
     WHERE role = 'super_admin'
-      AND (password NOT LIKE '%.%' OR LENGTH(password) < 100)
   `, [SCRYPT_HASH]);
 }
