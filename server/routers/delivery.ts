@@ -45,7 +45,7 @@ export function registerDeliveryRoutes(app: Express): void {
         body[field] = new Date(body[field]);
       }
     }
-    if (body.status === "in_transit") {
+    if (body.status === "in_transit" || body.status === "out_for_delivery") {
       const existing = await storage.getDeliveryOrderByTenant(req.params.id, user.tenantId);
       if (!existing) return res.status(404).json({ message: "Delivery order not found" });
       const driverName = body.driverName || existing.driverName;
