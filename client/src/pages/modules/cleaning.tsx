@@ -69,8 +69,19 @@ const frequencyLabels: Record<CleaningFrequency, string> = {
 };
 
 async function fetchJson(url: string) {
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error("Failed to fetch");
+  const csrf = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/)?.[1];
+  const headers: Record<string, string> = {};
+  if (csrf) headers["x-csrf-token"] = decodeURIComponent(csrf);
+  const res = await fetch(url, { credentials: "include", headers });
+  if (res.status === 401) {
+    window.location.href = "/auth";
+    throw new Error("401: Session expired");
+  }
+  if (!res.ok) {
+    let msg = res.statusText;
+    try { const body = await res.json(); msg = body.message || msg; } catch {}
+    throw new Error(`${res.status}: ${msg}`);
+  }
   return res.json();
 }
 
@@ -133,9 +144,14 @@ export default function CleaningPage() {
   useEffect(() => {
     const loadAll = async () => {
       for (const t of templates) {
-        if (!templateItems[t.id]) {
+        try {
           const items = await fetchJson(`/api/cleaning/templates/${t.id}/items`);
-          setTemplateItems(prev => ({ ...prev, [t.id]: items }));
+          setTemplateItems(prev => {
+            if (prev[t.id]) return prev;
+            return { ...prev, [t.id]: items };
+          });
+        } catch {
+          // Continue loading remaining templates even if one fails
         }
       }
     };
