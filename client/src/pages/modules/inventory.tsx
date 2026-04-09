@@ -279,10 +279,7 @@ function InventoryTab() {
   const adjustMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: { type: string; quantity: string; reason: string; supervisorOverride?: { username: string; password: string; otpApprovalToken?: string } } }) => {
       pendingAdjustRef.current = { id, data: { type: data.type, quantity: data.quantity, reason: data.reason } };
-      const res = await fetch(`/api/inventory/${id}/adjust`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-        body: JSON.stringify(data),
-      });
+      const res = await apiRequest("POST", `/api/inventory/${id}/adjust`, data);
       if (res.status === 403) {
         const errData = await res.json();
         if (errData.requiresSupervisor) {
