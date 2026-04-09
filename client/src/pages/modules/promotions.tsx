@@ -178,6 +178,14 @@ export default function PromotionsPage() {
     queryKey: ["/api/promotion-rules"],
   });
 
+  const { data: menuCategories = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/menu-categories"],
+  });
+
+  const { data: menuItems = [] } = useQuery<{ id: string; name: string }[]>({
+    queryKey: ["/api/menu-items", { limit: 500 }],
+  });
+
   const filteredRules = useMemo(() => {
     if (tab === "active") return rules.filter(isRuleActive);
     if (tab === "expired") return rules.filter(isRuleExpired);
@@ -685,16 +693,34 @@ export default function PromotionsPage() {
                   </SelectContent>
                 </Select>
               </div>
-              {(form.scope === "category" || form.scope === "specific_items") && (
+              {form.scope === "category" && (
                 <div>
-                  <Label htmlFor="rule-scope-ref">Scope Reference</Label>
-                  <Input
-                    id="rule-scope-ref"
-                    value={form.scopeRef}
-                    onChange={(e) => setForm({ ...form, scopeRef: e.target.value })}
-                    placeholder="Category name or item IDs"
-                    data-testid="input-rule-scope-ref"
-                  />
+                  <Label>Scope Reference</Label>
+                  <Select value={form.scopeRef} onValueChange={(v) => setForm({ ...form, scopeRef: v })}>
+                    <SelectTrigger data-testid="select-rule-scope-ref">
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {menuCategories.map((cat) => (
+                        <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {form.scope === "specific_items" && (
+                <div>
+                  <Label>Scope Reference</Label>
+                  <Select value={form.scopeRef} onValueChange={(v) => setForm({ ...form, scopeRef: v })}>
+                    <SelectTrigger data-testid="select-rule-scope-ref">
+                      <SelectValue placeholder="Select an item" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {menuItems.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
