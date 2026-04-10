@@ -3133,11 +3133,12 @@ export class DatabaseStorage implements IStorage {
   }
   async getLiveAssignments(tenantId: string, outletId?: string): Promise<TicketAssignment[]> {
     const conditions = [
+    console.log("[KDS-LIVE] tenantId=" + tenantId + " outletId=" + outletId);
       eq(ticketAssignments.tenantId, tenantId),
       sql`${ticketAssignments.status} NOT IN ('completed', 'cancelled')`,
     ];
     if (outletId) conditions.push(eq(ticketAssignments.outletId, outletId));
-    return db.select().from(ticketAssignments).where(and(...conditions)).orderBy(desc(ticketAssignments.createdAt));
+      const _r = await db.select().from(ticketAssignments).where(and(...conditions)).orderBy(desc(ticketAssignments.createdAt)); console.log("[KDS-LIVE] result.length=" + _r.length); return _r;
   }
   async createAssignment(data: InsertTicketAssignment): Promise<TicketAssignment> {
     const [r] = await db.insert(ticketAssignments).values(data).returning();
