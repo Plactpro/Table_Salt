@@ -190,6 +190,7 @@ export function registerKitchenAssignmentRoutes(app: Express): void {
       const user = req.user as any;
       const outletId = req.query.outletId as string | undefined;
       const rows = await storage.getAssignmentBoard(user.tenantId, outletId);
+        console.log("[KDS-DEBUG] board query", { tenantId: user.tenantId, outletId, rowCount: rows.length, firstRow: rows[0] ? { counterId: rows[0].counter?.id, assignCount: rows[0].assignments?.length } : null });
       const byCounter: Record<string, any> = {};
       let totalLive = 0;
       let totalWaitMs = 0;
