@@ -1690,8 +1690,8 @@ export async function runAdminMigrations(): Promise<void> {
   // MODIFIER-GROUPS-001: Create modifier tables
   await pool.query(`
     CREATE TABLE IF NOT EXISTS modifier_groups (
-      id SERIAL PRIMARY KEY,
-      tenant_id INTEGER NOT NULL,
+              id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+              tenant_id VARCHAR(36) NOT NULL,
       name VARCHAR(100) NOT NULL,
       selection_type VARCHAR(20) NOT NULL DEFAULT 'single',
       is_required BOOLEAN NOT NULL DEFAULT false,
@@ -1702,9 +1702,9 @@ export async function runAdminMigrations(): Promise<void> {
       created_at TIMESTAMPTZ DEFAULT NOW()
     );
     CREATE TABLE IF NOT EXISTS modifier_options (
-      id SERIAL PRIMARY KEY,
-      group_id INTEGER NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
-      tenant_id INTEGER NOT NULL,
+              id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+              group_id VARCHAR(36) NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
+              tenant_id VARCHAR(36) NOT NULL,
       name VARCHAR(100) NOT NULL,
       price_adjustment DECIMAL(10,2) DEFAULT 0,
       is_default BOOLEAN DEFAULT false,
@@ -1712,10 +1712,10 @@ export async function runAdminMigrations(): Promise<void> {
       is_active BOOLEAN NOT NULL DEFAULT true
     );
     CREATE TABLE IF NOT EXISTS menu_item_modifier_groups (
-      id SERIAL PRIMARY KEY,
-      menu_item_id INTEGER NOT NULL,
-      group_id INTEGER NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
-      tenant_id INTEGER NOT NULL,
+              id VARCHAR(36) PRIMARY KEY DEFAULT gen_random_uuid(),
+              menu_item_id VARCHAR(36) NOT NULL,
+              group_id VARCHAR(36) NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
+              tenant_id VARCHAR(36) NOT NULL,
       sort_order INTEGER DEFAULT 0,
       UNIQUE(menu_item_id, group_id)
     );
