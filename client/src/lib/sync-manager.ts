@@ -249,11 +249,15 @@ class SyncManager implements SyncService, ConfigCache {
         }
         if (res.status >= 400 && res.status < 500) {
           const errData = await res.json();
-          throw new Error(errData.message || `Server error ${res.status}`);
+                    throw Object.assign(new Error(errData.message || `Server error ${res.status}`), { _httpStatus: res.status });
         }
         throw new Error(`Server returned ${res.status}`);
       } catch (err: any) {
         if (err.status === 403 || (err instanceof Error && err.message.includes("Permission denied"))) {
+          throw err;
+        }
+                // POS-01: Re-throw 4xx errors — these are real server rejections, not connectivity issues
+        if (err._httpStatus && err._httpStatus >= 400 && err._httpStatus < 500) {
           throw err;
         }
         const localTicketFallback = `LOCAL-${orderId.slice(-6).toUpperCase()}`;
