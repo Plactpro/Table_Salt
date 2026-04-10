@@ -764,6 +764,7 @@ export function registerOrdersRoutes(app: Express): void {
       idemResponseStored = true; // mark before res.json so finally block doesn't clean up on success
       res.json(orderResponse);
     } catch (err: any) {
+            console.error('[orders] POST /api/orders failed:', err.message, err.stack);
       res.status(500).json({ message: err.message });
     } finally {
       // PR-001: Idempotency lifecycle — delete key on ALL failure paths (exceptions, early 4xx)
