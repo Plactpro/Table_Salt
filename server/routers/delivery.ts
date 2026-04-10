@@ -1,13 +1,81 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { db } from "../db";
-import { eq, sql } from "drizzle-orm";
+import { db, pool } from "../db";
+import { eq, sql, and, inArray } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
 import { deliveryOrders as deliveryOrdersTable } from "@shared/schema";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "../email";
 import { emitToTenant } from "../realtime";
 
 export function registerDeliveryRoutes(app: Express): void {
+  
+  // [POS-04] Unified delivery view: merge delivery_orders + orders where order_type is delivery
+  app.get("/api/delivery-orders/unified", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+      const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+      // 1. Get from delivery_orders table
+      const [deliveryData, [{ total: delTotal }]] = await Promise.all([
+        storage.getDeliveryOrdersByTenant(user.tenantId, { limit, offset }),
+        db.select({ total: sql<number>`count(*)::int` }).from(deliveryOrdersTable).where(eq(deliveryOrdersTable.tenantId, user.tenantId)),
+      ]);
+
+      // 2. Get from orders table where order_type is delivery-related
+      const { rows: mainDeliveryOrders } = await pool.query(
+        `SELECT o.id, o.tenant_id, o.order_number, o.customer_name, o.customer_phone,
+                o.notes, o.status, o.order_type, o.created_at, o.total, o.outlet_id,
+                o.channel_order_id
+         FROM orders o
+         WHERE o.tenant_id = $1
+           AND o.order_type IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')
+           AND o.status NOT IN ('paid', 'completed', 'voided')
+         ORDER BY o.created_at DESC
+         LIMIT $2 OFFSET $3`,
+        [user.tenantId, limit, offset]
+      );
+
+      // 3. Convert main orders to DeliveryOrder-like shape
+      const mainOrdersMapped = mainDeliveryOrders.map((o: any) => {
+        const notes = o.notes || '';
+        const addressMatch = notes.match(/Address:\s*([^|]+)/);
+        return {
+          id: 'order-' + o.id,
+          _sourceOrderId: o.id,
+          tenantId: o.tenant_id,
+          orderId: o.id,
+          customerName: o.customer_name || null,
+          customerPhone: o.customer_phone || null,
+          customerAddress: addressMatch ? addressMatch[1].trim() : (o.notes || 'No address'),
+          deliveryPartner: o.order_type === 'phone_delivery' ? 'Phone Order' : (o.order_type === 'online_delivery' ? 'Online' : null),
+          driverName: null,
+          driverPhone: null,
+          status: o.status === 'new' ? 'pending' : (o.status === 'sent_to_kitchen' ? 'pending' : (o.status === 'in_progress' ? 'assigned' : (o.status === 'ready' ? 'picked_up' : o.status))),
+          estimatedTime: null,
+          actualTime: null,
+          deliveryFee: null,
+          trackingNotes: null,
+          notes: o.notes,
+          createdAt: o.created_at,
+          deliveredAt: null,
+          orderNumber: o.order_number,
+          orderTotal: o.total,
+          _fromMainOrders: true,
+        };
+      });
+
+      // 4. Deduplicate: if a delivery_order has orderId matching a main order, skip the main order
+      const linkedOrderIds = new Set(deliveryData.filter((d: any) => d.orderId).map((d: any) => d.orderId));
+      const uniqueMainOrders = mainOrdersMapped.filter((m: any) => !linkedOrderIds.has(m._sourceOrderId));
+
+      const combined = [...deliveryData, ...uniqueMainOrders];
+      const totalCount = Number(delTotal) + uniqueMainOrders.length;
+
+      res.json({ data: combined, total: totalCount, limit, offset, hasMore: offset + combined.length < totalCount });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
   app.get("/api/delivery-orders", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;

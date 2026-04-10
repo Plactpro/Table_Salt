@@ -178,7 +178,7 @@ export function registerOrdersRoutes(app: Express): void {
       const rows = await db.select().from(ordersTable).where(
         and(
           eq(ordersTable.tenantId, user.tenantId),
-          eq(ordersTable.orderType, "delivery"),
+          inArray(ordersTable.orderType, ["delivery", "phone_delivery", "online_delivery", "third_party"]),
           inArray(ordersTable.status, allStatuses)
         )
       ).orderBy(ordersTable.createdAt);
