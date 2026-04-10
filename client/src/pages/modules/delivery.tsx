@@ -49,6 +49,10 @@ interface DeliveryOrder {
   notes?: string | null;
   createdAt: string | null;
   deliveredAt: string | null;
+  orderNumber?: string | null;
+  orderTotal?: string | null;
+  _fromMainOrders?: boolean;
+  _sourceOrderId?: string;
 }
 
 function resolveCustomerName(delivery: DeliveryOrder, customerMap: Map<string, { id: string; name: string; phone: string | null }>): string | null {
@@ -240,7 +244,7 @@ export default function DeliveryPage() {
   });
 
   const { data: deliveriesRes, isLoading } = useQuery<{ data: DeliveryOrder[]; total: number }>({
-    queryKey: ["/api/delivery-orders"],
+    queryKey: ["/api/delivery-orders/unified"],
     enabled: deliveryEnabled,
     refetchInterval: 30000,
   });
@@ -263,7 +267,7 @@ export default function DeliveryPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
       toast({ title: t("deliveryUpdated") });
     },
     onError: (err: Error) => {
@@ -282,7 +286,7 @@ export default function DeliveryPage() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
       setShowAgentDialog(false);
       setSelectedAgent("");
       setAssigningDelivery(null);
@@ -293,11 +297,27 @@ export default function DeliveryPage() {
     },
   });
 
+  useRealtimeEvent("order:new", (data: any) => {
+    if (data?.orderType === "delivery" || data?.orderType === "phone_delivery" || data?.orderType === "online_delivery") {
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
+    }
+  });
+
+  useRealtimeEvent("order:updated", (data: any) => {
+    if (data?.orderType === "delivery" || data?.orderType === "phone_delivery" || data?.orderType === "online_delivery") {
+      queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
+    }
+  });
+
+  useRealtimeEvent("order:cancelled", () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
+  });
+
   useRealtimeEvent("delivery:updated", () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
   });
   useRealtimeEvent("coordination:order_updated", () => {
-    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
   });
 
   const customerMap = new Map(customers.map((c) => [c.id, c]));
@@ -517,6 +537,7 @@ export default function DeliveryPage() {
                               <span className="text-base">{platform}</span>
                               <div>
                                 <p className="font-semibold text-sm">{resolvedCustomerName || "Guest"}</p>
+                          {(delivery as any).orderNumber && <p className="text-xs text-muted-foreground">#{(delivery as any).orderNumber}</p>}
                                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                                   <MapPin className="w-3 h-3" />
                                   {delivery.customerAddress.length > 30
