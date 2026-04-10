@@ -716,7 +716,21 @@ export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, cre
 export const insertOrderItemSchema = createInsertSchema(orderItems).omit({ id: true });
 export const insertInventoryItemSchema = createInsertSchema(inventoryItems).omit({ id: true });
 export const insertStockMovementSchema = createInsertSchema(stockMovements).omit({ id: true, createdAt: true });
-export const insertCustomerSchema = createInsertSchema(customers).omit({ id: true });
+export const insertCustomerSchema = createInsertSchema(customers)
+    .omit({ id: true })
+    .extend({
+      name: z.string()
+        .trim()
+        .min(1, "Name is required")
+        .max(200)
+        .regex(/^[a-zA-Z\s\u0600-\u06FF\-\'\.]+'$/, "Name must contain only letters"),
+      phone: z.string()
+        .trim()
+        .regex(/^[\d\s\+\-\(\)]+$/, "Phone must contain only digits and +, -, ()")
+        .max(30)
+        .optional()
+        .nullable(),
+    });
 export const attendanceLogs = pgTable("attendance_logs", {
   id: varchar("id", { length: 36 })
     .primaryKey()
