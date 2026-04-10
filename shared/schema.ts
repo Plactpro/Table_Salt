@@ -5736,8 +5736,8 @@ export const adRevenueRecords = pgTable("ad_revenue_records", {
 // ==========================================
 
 export const modifierGroups = pgTable("modifier_groups", {
-  id: serial("id").primaryKey(),
-  tenantId: integer("tenant_id").notNull(),
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: varchar("tenant_id", { length: 36 }).notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   selectionType: varchar("selection_type", { length: 20 }).notNull().default("single"),
   isRequired: boolean("is_required").notNull().default(false),
@@ -5749,9 +5749,9 @@ export const modifierGroups = pgTable("modifier_groups", {
 });
 
 export const modifierOptions = pgTable("modifier_options", {
-  id: serial("id").primaryKey(),
-  groupId: integer("group_id").notNull().references(() => modifierGroups.id, { onDelete: "cascade" }),
-  tenantId: integer("tenant_id").notNull(),
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    groupId: varchar("group_id", { length: 36 }).notNull().references(() => modifierGroups.id, { onDelete: "cascade" }),
+    tenantId: varchar("tenant_id", { length: 36 }).notNull(),
   name: varchar("name", { length: 100 }).notNull(),
   priceAdjustment: decimal("price_adjustment", { precision: 10, scale: 2 }).default("0"),
   isDefault: boolean("is_default").default(false),
@@ -5762,10 +5762,10 @@ export const modifierOptions = pgTable("modifier_options", {
 export const menuItemModifierGroups = pgTable(
   "menu_item_modifier_groups",
   {
-    id: serial("id").primaryKey(),
-    menuItemId: integer("menu_item_id").notNull(),
-    groupId: integer("group_id").notNull().references(() => modifierGroups.id, { onDelete: "cascade" }),
-    tenantId: integer("tenant_id").notNull(),
+        id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+        menuItemId: varchar("menu_item_id", { length: 36 }).notNull(),
+        groupId: varchar("group_id", { length: 36 }).notNull().references(() => modifierGroups.id, { onDelete: "cascade" }),
+        tenantId: varchar("tenant_id", { length: 36 }).notNull(),
     sortOrder: integer("sort_order").default(0),
   },
   (table) => ({
