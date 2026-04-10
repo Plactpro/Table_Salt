@@ -208,6 +208,20 @@ app.get("/api/health", async (_req: Request, res: Response) => {
 });
 
 // Rate anomaly detection — non-blocking sampler for authenticated GET requests
+// CB-FIX-3: Admin circuit breaker reset endpoint
+app.post('/api/admin/circuit-breakers/reset', async (_req: Request, res: Response) => {
+  try {
+    const { circuitBreakerRegistry } = await import('./lib/circuit-breaker');
+    for (const [name, breaker] of circuitBreakerRegistry.getAll()) {
+      breaker.forceReset();
+    }
+    res.json({ success: true, message: 'All circuit breakers reset to CLOSED' });
+  } catch (err: any) {
+    console.error('[CB-Reset]', err.message);
+    res.status(500).json({ error: 'Failed to reset circuit breakers' });
+  }
+});
+
 app.use((req, _res, next) => {
   const u = (req as any).user;
   if (u && req.method === "GET" && req.path.startsWith("/api")) {
@@ -371,6 +385,24 @@ function startWebhookMonitor() {
 
 (async () => {
   // TD-4: Consolidated migration runner — each runs independently
+  // CB-FIX-1: Add missing columns to orders table
+  try {
+    await pool.query(`
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_fee TEXT DEFAULT '0';
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_notes TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS platform_order_id TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS platform_name TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS estimated_delivery_time TIMESTAMP;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS actual_delivery_time TIMESTAMP;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_name TEXT;
+      ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_phone TEXT;
+    `);
+    console.log('[Migration] CB-FIX-1: orders columns migration completed');
+  } catch (err) {
+    console.error('[Migration] CB-FIX-1: orders columns migration error:', err);
+    if (process.env.NODE_ENV === 'production') process.exit(1);
+  }
     const { runAdminMigrations, runTask108Migrations, runTask184Migrations, runTask191Migrations, runP3DeployMigrations } = await import("./admin-migrations");
     const migrationRunners: Array<{ name: string; fn: () => Promise<void> }> = [
       { name: "AdminMigrations", fn: runAdminMigrations },

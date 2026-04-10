@@ -8,6 +8,13 @@ import {
 import { pool } from "../db";
 import { startBackgroundJob } from "./reports";
 
+function parseDate(val: unknown): Date | null {
+  if (!val) return null;
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  const d = new Date(String(val));
+  return isNaN(d.getTime()) ? null : d;
+}
+
 export function registerStaffRoutes(app: Express): void {
   app.get("/api/staff-schedules", requireAuth, async (req, res) => {
     const user = req.user as any;
@@ -32,7 +39,14 @@ export function registerStaffRoutes(app: Express): void {
       if (shiftDate && isNaN(shiftDate.getTime())) {
         return res.status(400).json({ message: "Invalid date format" });
       }
-      const schedule = await storage.createStaffSchedule({ ...req.body, tenantId: user.tenantId });
+      const schedule = await storage.createStaffSchedule({
+          userId,
+          date: shiftDate ? shiftDate.toISOString() : date,
+          startTime,
+          endTime,
+          ...req.body,
+          tenantId: user.tenantId,
+        });
       res.json(schedule);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to create shift" });
