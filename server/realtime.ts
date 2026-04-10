@@ -149,7 +149,21 @@ async function setupRedisPubSub() {
 }
 
 export function setupWebSocket(httpServer: HttpServer) {
-  const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
+  const wss = new WebSocketServer({ noServer: true });
+
+  
+
+  // WS-PROD: Explicit upgrade handler for production proxy compatibility
+  httpServer.on('upgrade', (req, socket, head) => {
+    const { pathname } = new URL(req.url || '/', `http://${req.headers.host}`);
+    if (pathname === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
 
   setupRedisPubSub().catch((err) =>
     console.error("[WS] Redis pub/sub setup failed:", err)
