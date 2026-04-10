@@ -1676,7 +1676,7 @@ export async function runAdminMigrations(): Promise<void> {
 
 
   // CURR-FIX: Migrate all existing outlets from INR to AED
-  await pool.query(`UPDATE outlets SET currency_code = 'AED', currency_symbol = 'د.إ', currency_name = 'UAE Dirham', outlet_tax_rate = 5 WHERE currency_code = 'INR' OR currency_code IS NULL;`);
+  await pool.query(`UPDATE outlets SET currency_code = 'AED', currency_symbol = 'د.إ', currency_name = 'UAE Dirham', outlet_tax_rate = 5 WHERE currency_symbol != 'د.إ' OR currency_name != 'UAE Dirham' OR currency_code != 'AED' OR currency_code IS NULL;`);
   console.log('[Migration] CURR-FIX: outlets updated to AED');
 
   // CRM-SERVER-V: Clean invalid phone numbers
