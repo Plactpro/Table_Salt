@@ -559,10 +559,21 @@ export function registerOrdersRoutes(app: Express): void {
         gstNotes = `CGST(${cgstRate}%): ${cgstAmount.toFixed(2)} | SGST(${sgstRate}%): ${sgstAmount.toFixed(2)}`;
       }
 
-      const serverOrderData = {
+      // POS-02: Resolve outletId — client > user > tenant default outlet
+        let resolvedOutletId = orderData.outletId || userOutletId || null;
+        if (!resolvedOutletId && user.tenantId) {
+          const { rows: outletRows } = await pool.query(
+            `SELECT id FROM outlets WHERE tenant_id = $1 ORDER BY created_at ASC LIMIT 1`,
+            [user.tenantId]
+          );
+          if (outletRows.length > 0) resolvedOutletId = outletRows[0].id;
+        }
+
+        const serverOrderData = {
         ...orderData,
         tenantId: user.tenantId,
         waiterId: user.id,
+        outletId: resolvedOutletId,
         subtotal: serverSubtotal.toFixed(2),
         discount: totalDiscount.toFixed(2),
         discountAmount: totalDiscount > 0 ? totalDiscount.toFixed(2) : null,

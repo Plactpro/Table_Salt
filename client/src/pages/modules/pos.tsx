@@ -1130,6 +1130,7 @@ export default function POSPage() {
 
     const orderData: Record<string, unknown> = {
       channel: "pos", clientOrderId,
+        outletId: userOutletId,
       orderType: tab.orderType,
       tableId: tabIsDineIn ? tab.selectedTable || null : null,
       subtotal: tabSubtotal.toFixed(2),
