@@ -3132,8 +3132,8 @@ export class DatabaseStorage implements IStorage {
     return r;
   }
   async getLiveAssignments(tenantId: string, outletId?: string): Promise<TicketAssignment[]> {
-    const conditions = [
     console.log("[KDS-LIVE] tenantId=" + tenantId + " outletId=" + outletId);
+    const conditions = [
       eq(ticketAssignments.tenantId, tenantId),
       sql`${ticketAssignments.status} NOT IN ('completed', 'cancelled')`,
     ];
