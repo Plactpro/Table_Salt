@@ -11,6 +11,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  unique,
   date,
   numeric,
   serial,
@@ -5728,3 +5729,49 @@ export const adRevenueRecords = pgTable("ad_revenue_records", {
   paidAt: timestamp("paid_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+
+// ==========================================
+// MODIFIER GROUPS (MOD-001)
+// ==========================================
+
+export const modifierGroups = pgTable("modifier_groups", {
+  id: serial("id").primaryKey(),
+  tenantId: integer("tenant_id").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  selectionType: varchar("selection_type", { length: 20 }).notNull().default("single"),
+  isRequired: boolean("is_required").notNull().default(false),
+  minSelections: integer("min_selections").default(0),
+  maxSelections: integer("max_selections").default(1),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const modifierOptions = pgTable("modifier_options", {
+  id: serial("id").primaryKey(),
+  groupId: integer("group_id").notNull().references(() => modifierGroups.id, { onDelete: "cascade" }),
+  tenantId: integer("tenant_id").notNull(),
+  name: varchar("name", { length: 100 }).notNull(),
+  priceAdjustment: decimal("price_adjustment", { precision: 10, scale: 2 }).default("0"),
+  isDefault: boolean("is_default").default(false),
+  sortOrder: integer("sort_order").default(0),
+  isActive: boolean("is_active").notNull().default(true),
+});
+
+export const menuItemModifierGroups = pgTable(
+  "menu_item_modifier_groups",
+  {
+    id: serial("id").primaryKey(),
+    menuItemId: integer("menu_item_id").notNull(),
+    groupId: integer("group_id").notNull().references(() => modifierGroups.id, { onDelete: "cascade" }),
+    tenantId: integer("tenant_id").notNull(),
+    sortOrder: integer("sort_order").default(0),
+  },
+  (table) => ({
+    uniq: unique().on(table.menuItemId, table.groupId),
+  })
+);
+
+export const insertModifierGroupSchema = createInsertSchema(modifierGroups).omit({ id: true, createdAt: true });
+export const insertModifierOptionSchema = createInsertSchema(modifierOptions).omit({ id: true });

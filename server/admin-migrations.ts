@@ -1686,6 +1686,101 @@ export async function runAdminMigrations(): Promise<void> {
   } catch (err) {
     console.error('[Migration] CRM-SERVER-V: phone cleanup error (non-fatal):', err);
   }
+
+  // MODIFIER-GROUPS-001: Create modifier tables
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS modifier_groups (
+      id SERIAL PRIMARY KEY,
+      tenant_id INTEGER NOT NULL,
+      name VARCHAR(100) NOT NULL,
+      selection_type VARCHAR(20) NOT NULL DEFAULT 'single',
+      is_required BOOLEAN NOT NULL DEFAULT false,
+      min_selections INTEGER DEFAULT 0,
+      max_selections INTEGER DEFAULT 1,
+      sort_order INTEGER DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    );
+    CREATE TABLE IF NOT EXISTS modifier_options (
+      id SERIAL PRIMARY KEY,
+      group_id INTEGER NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
+      tenant_id INTEGER NOT NULL,
+      name VARCHAR(100) NOT NULL,
+      price_adjustment DECIMAL(10,2) DEFAULT 0,
+      is_default BOOLEAN DEFAULT false,
+      sort_order INTEGER DEFAULT 0,
+      is_active BOOLEAN NOT NULL DEFAULT true
+    );
+    CREATE TABLE IF NOT EXISTS menu_item_modifier_groups (
+      id SERIAL PRIMARY KEY,
+      menu_item_id INTEGER NOT NULL,
+      group_id INTEGER NOT NULL REFERENCES modifier_groups(id) ON DELETE CASCADE,
+      tenant_id INTEGER NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      UNIQUE(menu_item_id, group_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_modifier_groups_tenant ON modifier_groups(tenant_id);
+    CREATE INDEX IF NOT EXISTS idx_modifier_options_group ON modifier_options(group_id);
+    CREATE INDEX IF NOT EXISTS idx_menu_item_modifiers_item ON menu_item_modifier_groups(menu_item_id);
+  `);
+  console.log('[Migration] MODIFIER-GROUPS-001: tables created');
+
+  // MODIFIER-GROUPS-002: Seed real modifier groups for all tenants
+  const { rows: modTenants } = await pool.query(
+    `SELECT DISTINCT tenant_id FROM outlets WHERE active = true`
+  );
+  for (const tenant of modTenants) {
+    const tid = tenant.tenant_id;
+    const { rows: existingMod } = await pool.query(
+      `SELECT id FROM modifier_groups WHERE tenant_id = $1 LIMIT 1`, [tid]
+    );
+    if (existingMod.length > 0) continue;
+    const modGroups = [
+      { name: "Cooking Temperature", st: "single", req: true, min: 1, max: 1, so: 1, opts: [
+        { n: "Rare", p: 0, so: 1 }, { n: "Medium Rare", p: 0, so: 2, d: true }, { n: "Medium", p: 0, so: 3 }, { n: "Well Done", p: 0, so: 4 }
+      ]},
+      { name: "Sauce Choice", st: "single", req: false, min: 0, max: 1, so: 2, opts: [
+        { n: "Lemon Butter", p: 0, so: 1, d: true }, { n: "Peppercorn", p: 2, so: 2 }, { n: "BBQ", p: 0, so: 3 }, { n: "Chimichurri", p: 2, so: 4 }, { n: "Garlic Herb", p: 0, so: 5 }
+      ]},
+      { name: "Pasta Type", st: "single", req: false, min: 0, max: 1, so: 3, opts: [
+        { n: "Regular", p: 0, so: 1, d: true }, { n: "Gluten-Free Pasta", p: 5, so: 2 }, { n: "Extra Portion", p: 8, so: 3 }
+      ]},
+      { name: "Protein Add-On", st: "multi", req: false, min: 0, max: 3, so: 4, opts: [
+        { n: "Add Grilled Chicken", p: 8, so: 1 }, { n: "Add Prawns", p: 12, so: 2 }, { n: "Add Extra Cheese", p: 4, so: 3 }
+      ]},
+      { name: "Spice Level", st: "single", req: false, min: 0, max: 1, so: 5, opts: [
+        { n: "Mild", p: 0, so: 1 }, { n: "Medium", p: 0, so: 2, d: true }, { n: "Hot", p: 0, so: 3 }, { n: "Extra Hot", p: 0, so: 4 }
+      ]},
+      { name: "Coffee Size", st: "single", req: true, min: 1, max: 1, so: 6, opts: [
+        { n: "Regular", p: 0, so: 1, d: true }, { n: "Large", p: 3, so: 2 }
+      ]},
+      { name: "Milk Type", st: "single", req: false, min: 0, max: 1, so: 7, opts: [
+        { n: "Whole Milk", p: 0, so: 1, d: true }, { n: "Oat Milk", p: 3, so: 2 }, { n: "Almond Milk", p: 3, so: 3 }, { n: "Skimmed Milk", p: 0, so: 4 }
+      ]},
+      { name: "Side Choice", st: "single", req: false, min: 0, max: 1, so: 8, opts: [
+        { n: "French Fries", p: 0, so: 1, d: true }, { n: "Seasonal Salad", p: 0, so: 2 }, { n: "Mashed Potato", p: 0, so: 3 }, { n: "Steamed Rice", p: 0, so: 4 }
+      ]},
+      { name: "Allergen Flags", st: "multi", req: false, min: 0, max: 4, so: 9, opts: [
+        { n: "No Nuts", p: 0, so: 1 }, { n: "No Dairy", p: 0, so: 2 }, { n: "No Gluten", p: 0, so: 3 }, { n: "No Shellfish", p: 0, so: 4 }
+      ]},
+      { name: "Starter Sauce", st: "multi", req: false, min: 0, max: 3, so: 10, opts: [
+        { n: "Tartar", p: 0, so: 1 }, { n: "Sweet Chili", p: 0, so: 2 }, { n: "Ranch", p: 0, so: 3 }, { n: "Sriracha Mayo", p: 0, so: 4 }
+      ]},
+    ];
+    for (const g of modGroups) {
+      const { rows: [inserted] } = await pool.query(
+        `INSERT INTO modifier_groups (tenant_id, name, selection_type, is_required, min_selections, max_selections, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
+        [tid, g.name, g.st, g.req, g.min, g.max, g.so]
+      );
+      for (const o of g.opts) {
+        await pool.query(
+          `INSERT INTO modifier_options (group_id, tenant_id, name, price_adjustment, is_default, sort_order) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [inserted.id, tid, o.n, o.p, o.d || false, o.so]
+        );
+      }
+    }
+    console.log(`[Migration] MODIFIER-GROUPS-002: seeded tenant ${tid}`);
+  }
 }
 
 export async function runTask108Migrations(): Promise<void> {
