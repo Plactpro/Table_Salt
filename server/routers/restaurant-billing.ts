@@ -1347,4 +1347,48 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       res.status(500).json({ message: err.message });
     }
   });
+
+  // TIP-ENDPOINT: GET /api/tip-settings
+  app.get("/api/tip-settings", async (req: any, res: any) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Not authenticated" });
+      const { rows } = await pool.query(
+        `SELECT * FROM outlet_tip_settings WHERE tenant_id = $1 LIMIT 1`,
+        [user.tenantId]
+      );
+      res.json(rows[0] || { tipsEnabled: false, distributionMethod: "equal", waiterSharePct: 70, kitchenSharePct: 30, tipPercentageOptions: [5, 10, 15, 20] });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // TIP-ENDPOINT: PATCH /api/tip-settings
+  app.patch("/api/tip-settings", async (req: any, res: any) => {
+    try {
+      const user = req.user as any;
+      if (!user) return res.status(401).json({ message: "Not authenticated" });
+      const { tipsEnabled, distributionMethod, waiterShare, kitchenShare, tipPercentageOptions } = req.body;
+      const { rows } = await pool.query(
+        `INSERT INTO outlet_tip_settings (id, tenant_id, outlet_id, tips_enabled, distribution_method, waiter_share_pct, kitchen_share_pct, suggested_pct_1, suggested_pct_2, suggested_pct_3)
+         VALUES (gen_random_uuid(), $1, $1, $2, $3, $4, $5, $6, $7, $8)
+         ON CONFLICT (tenant_id, outlet_id) DO UPDATE SET
+           tips_enabled = $2, distribution_method = $3, waiter_share_pct = $4, kitchen_share_pct = $5,
+           suggested_pct_1 = $6, suggested_pct_2 = $7, suggested_pct_3 = $8, updated_at = NOW()
+         RETURNING *`,
+        [
+          user.tenantId,
+          tipsEnabled ?? false,
+          distributionMethod ?? "equal",
+          waiterShare ?? 70,
+          kitchenShare ?? 30,
+          JSON.stringify(tipPercentageOptions ?? [5, 10, 15, 20]),
+        ]
+      );
+      res.json(rows[0]);
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 }
