@@ -325,6 +325,8 @@ export function registerOrdersRoutes(app: Express): void {
     try {
       const user = req.user as any;
       const { items, supervisorOverride, dismissedRuleIds, manualDiscountAmount, clientOrderId, ...orderData } = req.body;
+      // [POS-01-cleanup] Handler-scope outletId -- available throughout entire POST handler
+      const userOutletId = (user as any)?.outletId ?? null;
 
       // PR-001: Idempotency key deduplication — atomic INSERT to claim the key first
       if (idempotencyKey) {
@@ -443,7 +445,6 @@ export function registerOrdersRoutes(app: Express): void {
               }
             }
             if (combo.outlets && Array.isArray(combo.outlets) && (combo.outlets as string[]).length > 0) {
-              const userOutletId = "outletId" in user ? (user as { outletId?: string }).outletId : null;
               if (userOutletId && !(combo.outlets as string[]).includes(userOutletId)) {
                 return res.status(400).json({ message: `Combo "${combo.name}" is not available at this outlet` });
               }
