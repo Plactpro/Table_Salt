@@ -211,7 +211,7 @@ function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
 
 function GuardedRoute({ path, component: Component }: { path: string; component: React.ComponentType }) {
   const { user } = useAuth();
-  const { hasFeatureAccess } = useSubscription();
+  const { hasFeatureAccess, businessType } = useSubscription();
   const config = routeAccessMap[path];
 
   if (!config) return <Component />;
@@ -221,7 +221,16 @@ function GuardedRoute({ path, component: Component }: { path: string; component:
     return <AccessDenied reason="role" />;
   }
 
-  if (config.featureKey && !hasFeatureAccess(config.featureKey)) {
+  // Business-type path exclusion
+    const btConfig = businessType ? businessConfig[businessType] : null;
+    if (btConfig?.excludedPaths?.includes(path)) {
+      return <AccessDenied reason="business_type" />;
+    }
+    if (btConfig?.excludedFeatureKeys && config.featureKey && btConfig.excludedFeatureKeys.includes(config.featureKey)) {
+      return <AccessDenied reason="business_type" />;
+    }
+
+    if (config.featureKey && !hasFeatureAccess(config.featureKey)) {
     const Fallback = config.subscriptionFallback;
     if (Fallback) {
       return (
