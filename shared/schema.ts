@@ -5802,3 +5802,30 @@ export const session = pgTable("session", {
 export const insertSessionSchema = createInsertSchema(session).omit({ sid: true });
 export type Session = typeof session.$inferSelect;
 export type InsertSession = typeof session.$inferInsert;
+
+
+// ─── LOYALTY TRANSACTIONS ─────────────────────
+export const loyaltyTransactions = pgTable(
+  "loyalty_transactions",
+  {
+    id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+    tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+    customerId: varchar("customer_id", { length: 36 }).notNull(),
+    orderId: varchar("order_id", { length: 36 }),
+    billId: varchar("bill_id", { length: 36 }),
+    type: varchar("type", { length: 20 }).notNull(),
+    points: integer("points").notNull(),
+    balanceBefore: integer("balance_before").notNull().default(0),
+    balanceAfter: integer("balance_after").notNull().default(0),
+    reason: text("reason"),
+    createdBy: varchar("created_by", { length: 36 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    tenantIdx: index("loyalty_transactions_tenant_idx").on(table.tenantId),
+    customerIdx: index("loyalty_transactions_customer_idx").on(table.customerId),
+    createdAtIdx: index("loyalty_transactions_created_at_idx").on(table.createdAt),
+  })
+);
+export type LoyaltyTransaction = typeof loyaltyTransactions.$inferSelect;
+export const insertLoyaltyTransactionSchema = createInsertSchema(loyaltyTransactions).omit({ id: true, createdAt: true });
