@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
-type KioskStep = "welcome" | "language" | "service-type" | "table-number" | "menu" | "upsell" | "cart" | "payment" | "confirmation";
+type KioskStep = "welcome" | "language" | "service-type" | "table-number" | "customer-details" | "menu" | "upsell" | "cart" | "payment" | "confirmation";
 type ServiceType = "dine_in" | "takeaway";
 type KioskLanguage = "en" | "ar";
 
@@ -78,8 +78,44 @@ const ATTRACTOR_SLIDES = [
   { title: "Combo Deals", subtitle: "Save more with our combo meals", gradient: "from-purple-600 to-pink-700" },
 ];
 
+const AR_TEXT: Record<string, string> = {
+  "Tap to Order": "اطلب الآن",
+  "Touch anywhere to begin": "المس في أي مكان للبدء",
+  "Select Language": "اختر اللغة",
+  "How would you like your order?": "كيف تريد طلبك؟",
+  "Dine In": "تناول هنا",
+  "Eat at the restaurant": "تناول الطعام في المطعم",
+  "Takeaway": "سفري",
+  "Take your order to go": "خذ طلبك معك",
+  "Enter Your Table Number": "أدخل رقم الطاولة",
+  "Check the number on your table tent": "تحقق من الرقم على خيمة طاولتك",
+  "Continue": "متابعة",
+  "Menu": "القائمة",
+  "All Items": "جميع الأصناف",
+  "Search menu...": "البحث في القائمة...",
+  "Your Order": "طلبك",
+  "Subtotal": "المجموع الفرعي",
+  "Total": "المجموع",
+  "Checkout": "الدفع",
+  "Add More": "أضف المزيد",
+  "Payment": "الدفع",
+  "Total Amount": "المبلغ الإجمالي",
+  "Confirm & Pay": "تأكيد والدفع",
+  "Order Confirmed!": "تم تأكيد الطلب!",
+  "Your Token Number": "رقم الطلب",
+  "Start New Order": "طلب جديد",
+  "Your Details": "بياناتك",
+  "Your name": "اسمك",
+  "Phone number": "رقم الهاتف",
+  "Skip": "تخطي",
+  "Back": "رجوع",
+  "No items found": "لم يتم العثور على أصناف",
+  "View Cart": "عرض السلة",
+};
+
 export default function KioskPage() {
   const [step, setStep] = useState<KioskStep>("welcome");
+  function kT(text: string) { return language === "ar" && AR_TEXT[text] ? AR_TEXT[text] : text; }
   const [serviceType, setServiceType] = useState<ServiceType>("takeaway");
   const [language, setLanguage] = useState<KioskLanguage>("en");
   const [cart, setCart] = useState<KioskCartItem[]>([]);
@@ -97,6 +133,8 @@ export default function KioskPage() {
   const [tableNumber, setTableNumber] = useState("");
   const [showUpsellStep, setShowUpsellStep] = useState(false);
   const [loyaltyPhone, setLoyaltyPhone] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("online");
   const [syncPending, setSyncPending] = useState(0);
   const [showAdSlideshow, setShowAdSlideshow] = useState(false);
@@ -212,6 +250,8 @@ export default function KioskPage() {
     setTableNumber("");
     setPromoCode("");
     setLoyaltyPhone("");
+    setCustomerName("");
+    setCustomerPhone("");
     setShowUpsellStep(false);
   }, []);
 
@@ -400,7 +440,7 @@ export default function KioskPage() {
 
   if (!token) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center text-white" data-testid="kiosk-no-token">
+      <div dir={language === "ar" ? "rtl" : "ltr"} className="min-h-screen bg-gradient-to-br from-slate-900 to-slate-800 flex items-center justify-center text-white" data-testid="kiosk-no-token">
         <div className="text-center space-y-4">
           <Store className="h-16 w-16 mx-auto opacity-50" />
           <h1 className="text-2xl font-bold">Kiosk Not Configured</h1>
@@ -435,7 +475,7 @@ export default function KioskPage() {
         {step === "service-type" && (
           <ServiceTypeScreen
             key="service-type"
-            onSelect={(t) => { setServiceType(t); setStep(t === "dine_in" ? "table-number" : "menu"); }}
+            onSelect={(t) => { setServiceType(t); setStep(t === "dine_in" ? "table-number" : "customer-details"); }}
             onBack={() => setStep("language")}
           />
         )}
@@ -447,6 +487,59 @@ export default function KioskPage() {
             onContinue={() => setStep("menu")}
             onBack={() => setStep("service-type")}
           />
+        )}
+        
+        {step === "customer-details" && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="min-h-screen flex flex-col items-center justify-center p-8"
+            data-testid="kiosk-customer-details"
+          >
+            <Button variant="ghost" onClick={() => setStep("service-type")} className="absolute top-6 left-6 text-white hover:bg-white/10 rounded-xl" data-testid="button-kiosk-customer-back">
+              <ChevronLeft className="h-6 w-6 mr-1" /> Back
+            </Button>
+            <Package className="h-16 w-16 text-amber-400 mb-6" />
+            <h2 className="text-3xl font-bold mb-2">Your Details</h2>
+            <p className="text-lg text-slate-400 mb-8">So we can notify you when your order is ready</p>
+            <div className="w-full max-w-sm space-y-4">
+              <Input
+                data-testid="input-customer-name"
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                placeholder="Your name"
+                className="text-center text-xl py-4 bg-white/10 border-white/20 text-white placeholder:text-slate-400 rounded-xl"
+                autoFocus
+              />
+              <Input
+                data-testid="input-customer-phone"
+                value={customerPhone}
+                onChange={e => setCustomerPhone(e.target.value)}
+                placeholder="Phone number"
+                type="tel"
+                className="text-center text-xl py-4 bg-white/10 border-white/20 text-white placeholder:text-slate-400 rounded-xl"
+              />
+            </div>
+            <div className="flex gap-4 mt-8">
+              <Button
+                data-testid="button-skip-customer-details"
+                variant="outline"
+                onClick={() => setStep("menu")}
+                className="px-8 py-4 text-white border-white/20 hover:bg-white/10 rounded-xl"
+              >
+                Skip
+              </Button>
+              <Button
+                data-testid="button-confirm-customer-details"
+                onClick={() => setStep("menu")}
+                disabled={!customerName.trim()}
+                className="px-12 py-4 bg-gradient-to-r from-teal-500 to-emerald-500 hover:from-teal-400 hover:to-emerald-400 rounded-xl font-bold text-lg"
+              >
+                Continue
+              </Button>
+            </div>
+          </motion.div>
         )}
         {step === "menu" && (
           <MenuScreen
@@ -467,7 +560,7 @@ export default function KioskPage() {
             onUpdateQuantity={updateQuantity}
             onRemoveFromCart={removeFromCart}
             onViewCart={() => { if (upsellSuggestions.length > 0 && !showUpsellStep) { setShowUpsellStep(true); setStep("upsell"); } else { setStep("cart"); } }}
-            onBack={() => setStep(serviceType === "dine_in" ? "table-number" : "service-type")}
+            onBack={() => setStep(serviceType === "dine_in" ? "table-number" : "customer-details")}
             onItemDetail={(item) => { setItemDetailModal(item); setItemDetailQty(1); setItemNoteText(""); }}
           />
         )}

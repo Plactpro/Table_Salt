@@ -623,6 +623,11 @@ export default function LiveRequestsPage() {
             <Button size="sm" variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/table-requests/live"] })}>
               <RefreshCw className="h-4 w-4" />
             </Button>
+            <Link href="/tables">
+              <Button size="sm" variant="outline" className="text-xs gap-1.5" data-testid="link-header-qr-codes">
+                <QrCode className="h-3.5 w-3.5" /> Table QR Codes
+              </Button>
+            </Link>
           </div>
         </div>
 
