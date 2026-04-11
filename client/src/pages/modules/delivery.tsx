@@ -160,6 +160,8 @@ function platformIcon(partner: string | null) {
   return "🔵";
 }
 
+const shortId = (id: string) => "#" + String(id).slice(-6).toUpperCase();
+
 export default function DeliveryPage() {
   const { user } = useAuth();
   const { toast } = useToast();
