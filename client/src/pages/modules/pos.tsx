@@ -251,9 +251,18 @@ function isOfferActive(offer: Offer): boolean {
 
 function isHappyHourActive(offer: Offer): boolean {
   if (offer.type !== "happy_hour") return true;
+  const conditions = offer.conditions as any;
+  const start = conditions?.happyHourStart as string | undefined;
+  const end   = conditions?.happyHourEnd   as string | undefined;
+  if (!start || !end) {
+    const hour = new Date().getHours();
+    return hour >= 16 && hour < 19;
+  }
   const now = new Date();
-  const hour = now.getHours();
-  return hour >= 16 && hour < 19;
+  const cur = now.getHours() * 60 + now.getMinutes();
+  const [sh, sm] = start.split(":").map(Number);
+  const [eh, em] = end.split(":").map(Number);
+  return cur >= sh * 60 + sm && cur < eh * 60 + em;
 }
 
 function isOfferApplicable(offer: Offer, cart: CartItem[], subtotal: number): boolean {
