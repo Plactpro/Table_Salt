@@ -64,7 +64,7 @@ export function registerKitchenRoutes(app: Express): void {
         const items = await storage.getOrderItemsByOrder(o.id);
         const filteredItems = stationFilter ? items.filter(i => i.station === stationFilter) : items;
         if (filteredItems.length === 0 && stationFilter) continue;
-        tickets.push({ ...o, tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined, items: stationFilter ? filteredItems : items });
+        tickets.push({ ...o, isRush: (o as any).is_rush === true, tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined, items: stationFilter ? filteredItems : items });
       }
       res.json(tickets);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
