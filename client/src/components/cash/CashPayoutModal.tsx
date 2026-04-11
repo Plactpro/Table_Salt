@@ -113,7 +113,7 @@ export default function CashPayoutModal({ open, onClose, sessionId, sessionNumbe
                 value={amount}
                 onChange={e => setAmount(e.target.value)}
                 className={symbol.length === 1 ? "pl-8" : symbol.length === 2 ? "pl-10" : "pl-16"}
-                placeholder="0.00"
+                placeholder={amount ? "" : "0.00"}
                 data-testid="input-payout-amount"
               />
             </div>
