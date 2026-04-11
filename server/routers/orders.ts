@@ -1311,4 +1311,46 @@ export function registerOrdersRoutes(app: Express): void {
     }
   });
 
+
+  // Custom split bill - create sub-bills from selected items
+  app.post("/api/orders/:id/split-bill", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const orderId = parseInt(req.params.id);
+      const { splits } = req.body; // Array of { guestName: string, itemIds: number[] }
+      if (!splits || !Array.isArray(splits)) return res.status(400).json({ message: "splits array required" });
+
+      const results = [];
+      for (const split of splits) {
+        // Get items for this split
+        const items = await db.select().from(require("../../shared/schema").orderItems)
+          .where(and(
+            eq(require("../../shared/schema").orderItems.orderId, orderId),
+            inArray(require("../../shared/schema").orderItems.id, split.itemIds)
+          ));
+
+        const splitTotal = items.reduce((sum: number, item: any) => {
+          const lineTotal = parseFloat(item.price) * item.quantity;
+          const disc = parseFloat(item.itemDiscount || "0");
+          const discAmt = item.itemDiscountType === "percent" ? lineTotal * disc / 100 : disc;
+          return sum + lineTotal - discAmt;
+        }, 0);
+
+        results.push({
+          guestName: split.guestName || "Guest",
+          itemIds: split.itemIds,
+          items: items.map((i: any) => ({ id: i.id, name: i.itemName, price: i.price, quantity: i.quantity })),
+          total: Math.round(splitTotal * 100) / 100
+        });
+      }
+
+      emitToTenant(user.tenantId, "order:bill_split", { orderId, splits: results });
+      auditLogFromReq(req, { action: "split_bill", entityType: "order", entityId: orderId, after: { splitCount: results.length } });
+
+      res.json({ success: true, orderId, splits: results });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 }

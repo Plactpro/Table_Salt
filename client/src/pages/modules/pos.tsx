@@ -529,6 +529,7 @@ export default function POSPage() {
   const [modifierItem, setModifierItem] = useState<CartItem | null>(null);
   const [showTransferDialog, setShowTransferDialog] = useState(false);
   const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [showSplitDialog, setShowSplitDialog] = useState(false);
   const [modifierDialogOpen, setModifierDialogOpen] = useState(false);
   const [pendingMenuItem, setPendingMenuItem] = useState<any>(null);
   const [modifierSize, setModifierSize] = useState("Regular");
