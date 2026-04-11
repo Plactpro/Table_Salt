@@ -993,12 +993,35 @@ export default function BillPreviewModal({
       setCrmNoteSaving(false);
     }
   }, [lookedUpCustomer, crmQuickNote, toast]);
-  const handleEmailReceipt = () => {
-    const subject = encodeURIComponent(`${tp("receiptFrom")} ${tenantName} — ${billNumber}`);
-    const body = encodeURIComponent(
-      `${tenantName}\n${tp("billNo")}: ${billNumber}\n${tp("table")}: ${tableNumber || tp("takeaway")}\n${tp("date")}: ${dateStr} ${timeStr}\n\n${tp("total")}: ${fmt(grandTotal)}\n\n${tp("thankYouForDining")}!`
-    );
-    window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
+  const [showEmailInput, setShowEmailInput] = useState(false);
+  const [emailAddr, setEmailAddr] = useState("");
+  const [sendingEmail, setSendingEmail] = useState(false);
+
+  const handleEmailReceipt = () => setShowEmailInput(true);
+
+  const handleSendEmailReceipt = async () => {
+    if (!emailAddr.trim() || !createdBill?.id) return;
+    setSendingEmail(true);
+    try {
+      const res = await fetch(`/api/bills/${createdBill.id}/email-receipt`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ email: emailAddr.trim() }),
+      });
+      if (res.ok) {
+        toast({ title: "Receipt sent!", description: emailAddr });
+        setShowEmailInput(false);
+        setEmailAddr("");
+      } else {
+        const err = await res.json();
+        toast({ title: "Failed to send", description: err.message, variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error sending receipt", variant: "destructive" });
+    } finally {
+      setSendingEmail(false);
+    }
   };
 
   // O10: Format bill timestamp using tenant/outlet timezone (not browser timezone)
@@ -2123,6 +2146,35 @@ export default function BillPreviewModal({
                 <Button variant="outline" onClick={handleWhatsApp} data-testid="button-whatsapp-receipt">
                   <Share2 className="h-4 w-4 mr-2" /> WhatsApp
                 </Button>
+              {qrDataUrl && (
+                <div className="flex flex-col items-center gap-1 py-2 border rounded-lg bg-muted/30"
+                  data-testid="qr-receipt-display">
+                  <img src={qrDataUrl} alt="Scan for digital receipt" width={96} height={96} />
+                  <p className="text-xs text-muted-foreground">Scan for digital receipt</p>
+                  <button className="text-xs text-primary underline"
+                    onClick={() => navigator.clipboard.writeText(digitalReceiptUrl || "")}>
+                    Copy link
+                  </button>
+                </div>
+              )}
+              {showEmailInput && (
+                <div className="flex gap-2 items-center">
+                  <input
+                    type="email"
+                    placeholder="Customer email"
+                    value={emailAddr}
+                    onChange={(e) => setEmailAddr(e.target.value)}
+                    className="flex-1 px-3 py-2 border rounded-md text-sm"
+                    onKeyDown={(e) => e.key === "Enter" && handleSendEmailReceipt()}
+                  />
+                  <button
+                    onClick={handleSendEmailReceipt}
+                    disabled={sendingEmail || !emailAddr.trim()}
+                    className="px-3 py-2 bg-primary text-primary-foreground rounded-md text-sm disabled:opacity-50">
+                    {sendingEmail ? "Sending..." : "Send"}
+                  </button>
+                </div>
+              )}
                 <Button variant="outline" onClick={handleEmailReceipt} data-testid="button-email-receipt">
                   <Mail className="h-4 w-4 mr-2" /> {tp("email")}
                 </Button>
