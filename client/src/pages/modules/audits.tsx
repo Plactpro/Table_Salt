@@ -461,6 +461,63 @@ export default function AuditsPage() {
             <ShieldCheck className="h-4 w-4 mr-2" /> Submit Audit ({earnedPoints}/{totalPoints} pts)
           </Button>
         </div>
+      {/* AUD-01 FIX: Issue Dialog must be inside audit execution view */}
+      <Dialog open={showIssueDialog} onOpenChange={setShowIssueDialog}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Report Issue</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Issue Title</Label>
+              <Input value={issueTitle} onChange={(e) => setIssueTitle(e.target.value)} placeholder="Describe the issue..." data-testid="input-issue-title-exec" />
+            </div>
+            <div className="space-y-2">
+              <Label>Description</Label>
+              <Textarea value={issueDescription} onChange={(e) => setIssueDescription(e.target.value)} placeholder="Details..." data-testid="input-issue-description-exec" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Severity</Label>
+                <Select value={issueSeverity} onValueChange={setIssueSeverity}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="critical">Critical</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="low">Low</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Assign To</Label>
+                <Select value={issueAssignedTo} onValueChange={setIssueAssignedTo}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {staffList.filter((s: any) => s.role === "owner" || s.role === "manager").map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowIssueDialog(false)}>Cancel</Button>
+            <Button
+              onClick={() => issueMutation.mutate({
+                title: issueTitle,
+                description: issueDescription,
+                severity: issueSeverity,
+                scheduleId: issueScheduleId || null,
+                assignedTo: issueAssignedTo === "unassigned" ? null : issueAssignedTo,
+              })}
+              disabled={!issueTitle.trim() || issueMutation.isPending}
+              data-testid="button-submit-issue-exec"
+            >Submit Issue</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       </motion.div>
     );
   }
