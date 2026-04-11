@@ -132,6 +132,7 @@ export default function BillPreviewModal({
   const outletTimezone = useOutletTimezone();
   // PR-001: Stable per-bill-session idempotency key — generated once, reused on retry, reset on success
   const paymentIdemKeyRef = useRef<string | null>(null);
+  const userInitiatedPaymentRef = useRef(false);
 
   const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -446,7 +447,8 @@ export default function BillPreviewModal({
 
   useEffect(() => {
     if (fullPage && orderId && existingBillStatus === "success" && !existingBillData && !createdBill && !createBillMutation.isPending) {
-      createBillMutation.mutate();
+      userInitiatedPaymentRef.current = true;
+    createBillMutation.mutate();
     }
   }, [fullPage, orderId, existingBillStatus, existingBillData, createdBill]);
 
@@ -546,9 +548,10 @@ export default function BillPreviewModal({
       setBillNumber(bill.billNumber);
       if (bill.alreadyExists && bill.paymentStatus === "paid") {
         setStep("receipt");
-      } else {
+      } else if (userInitiatedPaymentRef.current) {
         setStep("payment");
       }
+      userInitiatedPaymentRef.current = false;
     },
     onError: (err: Error) => toast({ title: tp("error"), description: err.message, variant: "destructive" }),
   });
