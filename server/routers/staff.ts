@@ -11,7 +11,13 @@ import { startBackgroundJob } from "./reports";
 function parseDate(val: unknown): Date | null {
   if (!val) return null;
   if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
-  const d = new Date(String(val));
+  const s = String(val).trim();
+  // Date-only string? Parse as noon UTC to prevent timezone day-shift
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+    const d = new Date(s + "T12:00:00Z");
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const d = new Date(s);
   return isNaN(d.getTime()) ? null : d;
 }
 

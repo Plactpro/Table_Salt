@@ -413,7 +413,7 @@ export default function StaffPage() {
     }
     createShiftMutation.mutate({
       userId: shiftForm.userId,
-      date: safeDate(shiftForm.date) || new Date().toISOString(),
+      date: shiftForm.date.split("T")[0] || new Date().toISOString().split("T")[0],
       startTime: shiftForm.startTime,
       endTime: shiftForm.endTime,
       role: shiftForm.role || null,
