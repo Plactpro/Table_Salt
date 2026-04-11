@@ -1282,7 +1282,7 @@ function TablesPageContent() {
                       ) : (
                         <>
                           <span className="font-medium">{zone.name}</span>
-                          <Badge variant="outline" className="text-xs">{tables.filter(t => t.zone === zone.name).length} tables</Badge>
+                          <Badge variant="outline" className="text-xs">{tables.filter(t => (t.zone || "Main") === zone.name).length} tables</Badge>
                         </>
                       )}
                     </div>
@@ -2122,7 +2122,7 @@ function TablesPageContent() {
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 rounded-full" style={{ backgroundColor: zone.color || "#6366f1" }} />
                   <span className="text-sm font-medium">{zone.name}</span>
-                  <span className="text-xs text-muted-foreground">({tables.filter(t => t.zone === zone.name).length})</span>
+                  <span className="text-xs text-muted-foreground">({tables.filter(t => (t.zone || "Main") === zone.name).length})</span>
                 </div>
                 <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteZoneMut.mutate(zone.id)} aria-label={`Delete zone ${zone.name}`}>
                   <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
