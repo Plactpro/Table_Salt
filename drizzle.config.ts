@@ -8,7 +8,14 @@ export default defineConfig({
   out: "./migrations",
   schema: "./shared/schema.ts",
   dialect: "postgresql",
-  tablesFilter: ["!session"],
+  strict: false,
+  verbose: true,
+  tablesFilter: [
+    "!session",
+    "!modifier_groups",
+    "!modifier_options",
+    "!menu_item_modifier_groups",
+  ],
   dbCredentials: {
     url: process.env.DATABASE_URL,
   },
