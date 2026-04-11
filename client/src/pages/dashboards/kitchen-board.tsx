@@ -22,6 +22,11 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { useTimer, formatMMSS, getTimingStatus } from "@/hooks/useTimer";
 
+// DEL-06: Standardize order ID display to last-6-chars uppercase across all KDS views
+function shortOrderId(id: string): string {
+  return `#${id.slice(-6).toUpperCase()}`;
+}
+
 interface Assignment {
   id: string;
   menuItemName?: string;
@@ -77,9 +82,10 @@ interface KdsItem {
   prepTimeMinutes: number | null;
   is_voided?: boolean;
   voidedReason?: string | null;
-    has_allergy?: boolean;
+  has_allergy?: boolean;
   allergy_flags?: string[] | null;
   allergy_details?: string | null;
+  allergy_acknowledged?: boolean;
 }
 
 interface KdsTicket {
@@ -344,6 +350,9 @@ function KdsItemRow({
   const [loading, setLoading] = useState(false);
   const canStart = ticketStatus === "new" || ticketStatus === "sent_to_kitchen";
   const [showHold, setShowHold] = useState(false);
+  // ALL-02: optimistic local acknowledged state (synced from server via item.allergy_acknowledged)
+  const [allergyAcked, setAllergyAcked] = useState(item.allergy_acknowledged ?? false);
+  const [ackLoading, setAckLoading] = useState(false);
   const cs = mapItemStatus(item);
 
   async function startItem() {
@@ -376,6 +385,25 @@ function KdsItemRow({
     onRefresh();
   }
 
+  // ALL-02: persist allergy acknowledgment to DB
+  async function acknowledgeAllergy() {
+    if (allergyAcked || ackLoading) return;
+    setAckLoading(true);
+    setAllergyAcked(true); // optimistic
+    try {
+      const csrf = getCsrfToken();
+      const hdrs: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrf) hdrs["x-csrf-token"] = csrf;
+      await fetch(`/api/kds/items/${item.id}/acknowledge-allergy`, {
+        method: "PATCH",
+        headers: hdrs,
+        credentials: "include",
+      });
+    } catch (_) {}
+    setAckLoading(false);
+    onRefresh();
+  }
+
   return (
     <>
       <div className="flex items-center justify-between gap-2 py-1 text-xs border-b last:border-0" data-testid={`row-item-${item.id}`}>
@@ -392,11 +420,24 @@ function KdsItemRow({
             <ItemCountdown estimatedReadyAt={item.estimatedReadyAt} itemId={item.id} />
           )}
         </div>
-                  {item.has_allergy && (
-            <div className="px-1.5 py-0.5 bg-red-100 rounded text-[10px] text-red-700 flex-shrink-0 font-semibold animate-pulse" data-testid={`allergy-alert-${item.id}`}>
-              ⚠ ALLERGY{item.allergy_flags?.length ? `: ${item.allergy_flags.join(", ")}` : ""}
-            </div>
-          )}
+        {/* ALL-02: Allergy badge — clickable to acknowledge; persists to DB */}
+        {item.has_allergy && (
+          <button
+            onClick={acknowledgeAllergy}
+            disabled={allergyAcked || ackLoading}
+            className={`px-1.5 py-0.5 rounded text-[10px] flex-shrink-0 font-semibold border transition-colors ${
+              allergyAcked
+                ? "bg-green-100 border-green-300 text-green-700 cursor-default"
+                : "bg-red-100 border-red-200 text-red-700 animate-pulse cursor-pointer hover:bg-red-200"
+            }`}
+            title={allergyAcked ? "Allergy acknowledged" : "Tap to acknowledge allergy"}
+            data-testid={`allergy-alert-${item.id}`}
+          >
+            {allergyAcked
+              ? `✓ ALLERGY${item.allergy_flags?.length ? `: ${item.allergy_flags.join(", ")}` : ""}`
+              : `⚠ ALLERGY${item.allergy_flags?.length ? `: ${item.allergy_flags.join(", ")}` : ""}`}
+          </button>
+        )}
         <div className="flex items-center gap-1 shrink-0" data-testid={`status-${item.id}`}>
           {!item.is_voided && (courseLocked ? (
             <span className="text-yellow-500 text-[10px]">🔒</span>
@@ -440,7 +481,12 @@ function CookingControlTicket({
   rushRequiresPin?: boolean;
 }) {
   const [showRush, setShowRush] = useState(false);
-  const label = ticket.tableNumber ? `Table ${ticket.tableNumber}` : ticket.orderType === "takeaway" ? "Takeaway" : `#${ticket.id.slice(-4).toUpperCase()}`;
+  // DEL-06: Standardized order ID label — table number, order type, or last-6-char shortId
+  const label = ticket.tableNumber
+    ? `Table ${ticket.tableNumber}`
+    : ticket.orderType === "takeaway"
+    ? "Takeaway"
+    : shortOrderId(ticket.id);
   const items = ticket.items.filter(i => mapItemStatus(i) !== "served");
   const readyCount = items.filter(i => mapItemStatus(i) === "ready").length;
 
@@ -885,7 +931,8 @@ export default function KitchenBoardPage() {
     invalidateKds();
     toast({
       title: "🚨 Rush Order",
-      description: `Order #${String(payload?.orderId ?? "").slice(-6).toUpperCase()} marked as RUSH`,
+      // DEL-06: toast now shows last-6-char shortId
+      description: `Order ${shortOrderId(String(payload?.orderId ?? ""))} marked as RUSH`,
       variant: "destructive",
     });
   });
