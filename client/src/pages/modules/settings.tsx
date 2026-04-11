@@ -343,7 +343,6 @@ export default function SettingsPage() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/tenant"] });
       queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/me"] });
       const sectionKeys: Record<string, string[]> = {
         profile: ["name", "address"],
         timezone: ["timezone", "timeFormat"],
