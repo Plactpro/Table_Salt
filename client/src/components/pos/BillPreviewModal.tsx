@@ -537,7 +537,8 @@ export default function BillPreviewModal({
         taxAmount: taxAmount.toFixed(2),
         taxBreakdown: taxRate > 0 ? { [`Tax (${taxRate}%)`]: taxAmount.toFixed(2) } : null,
         tips: "0",
-        totalAmount: (total - tierDiscountAmount).toFixed(2),
+        totalAmount: (total - tierDiscountAmount + parkingTotal).toFixed(2),
+        parkingCharge: parkingTotal > 0 ? parkingTotal.toFixed(2) : undefined,
         posSessionId: posSessionId || null,
         customerGstin: isGSTTenant && customerGstinInput ? customerGstinInput : undefined,
       });
