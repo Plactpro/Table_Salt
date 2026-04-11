@@ -354,7 +354,7 @@ export default function MenuPricingPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {dishView.outlets.map(row => (
+                      {dishView?.outlets?.map(row => (
                         <tr key={row.outletId} className="hover:bg-muted/30" data-testid={`dish-row-${row.outletId}`}>
                           <td className="px-4 py-2 font-medium">{row.outletName}</td>
                           <td className="px-4 py-2 text-right text-muted-foreground">{fmt(row.basePrice)}</td>
