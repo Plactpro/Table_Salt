@@ -259,7 +259,8 @@ export function registerCashMachineRoutes(app: Express): void {
       }
 
       const { physicalCash, closingBreakdown, varianceReason, notes } = req.body;
-      const physicalCashAmount = Number(physicalCash ?? 0);
+      const physicalCashProvided = physicalCash !== undefined && physicalCash !== null;
+    const physicalCashAmount = Number(physicalCash ?? 0);
 
       const expectedClosingCash =
         Number(session.openingFloat || 0) +
@@ -268,7 +269,7 @@ export function registerCashMachineRoutes(app: Express): void {
         Number(session.totalCashPayouts || 0);
       const cashVariance = physicalCashAmount - expectedClosingCash;
 
-      if (Math.abs(cashVariance) > 50 && !varianceReason) {
+      if (physicalCashProvided && Math.abs(cashVariance) > 50 && !varianceReason) {
         return res.status(400).json({
           message: `Variance of ${cashVariance.toFixed(2)} exceeds threshold. Please provide a varianceReason.`,
         });
