@@ -106,6 +106,7 @@ export default function OrdersPage() {
 
   const STATUS_OPTIONS = [
     { value: "all", label: to("allStatuses") },
+        { value: "active", label: to("statActive") },
     { value: "new", label: to("statusNew") },
     { value: "sent_to_kitchen", label: to("statusSentToKitchen") },
     { value: "in_progress", label: to("statusInProgress") },
@@ -145,7 +146,7 @@ export default function OrdersPage() {
     queryKey: ["/api/orders", ordersPage, statusFilter, typeFilter, dateFrom, dateTo],
     queryFn: async () => {
       const params = new URLSearchParams({ limit: String(ORDERS_LIMIT), offset: String(ordersPage * ORDERS_LIMIT) });
-      if (statusFilter && statusFilter !== "all") params.set("status", statusFilter);
+      if (statusFilter && statusFilter !== "all" && statusFilter !== "active") params.set("status", statusFilter);
       if (typeFilter && typeFilter !== "all") params.set("orderType", typeFilter);
       if (dateFrom) params.set("dateFrom", dateFrom);
       if (dateTo) params.set("dateTo", dateTo);
@@ -248,6 +249,10 @@ export default function OrdersPage() {
       const q = searchQuery.toLowerCase();
       result = result.filter((o) => o.id.toLowerCase().includes(q) || (o.notes && o.notes.toLowerCase().includes(q)) || (o.tableId && tableMap[o.tableId]?.toLowerCase().includes(q)));
     }
+        // ORD-03: client-side active filter
+    if (statusFilter === 'active') {
+      result = result.filter((o) => ['pending', 'confirmed', 'preparing', 'ready', 'new', 'sent_to_kitchen', 'in_progress'].includes(o.status || ''));
+    }
     result.sort((a, b) => {
       let cmp = 0;
       if (sortField === "createdAt") cmp = new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
@@ -255,7 +260,7 @@ export default function OrdersPage() {
       return sortDir === "asc" ? cmp : -cmp;
     });
     return result;
-  }, [orders, searchQuery, sortField, sortDir, tableMap]);
+  }, [orders, searchQuery, sortField, sortDir, tableMap, statusFilter]);
 
   const canUpdateStatus = user?.role === "owner" || user?.role === "manager" || user?.role === "kitchen" || user?.role === "waiter";
 
