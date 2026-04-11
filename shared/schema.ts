@@ -5787,3 +5787,18 @@ export type OrderItemModifier = {
   optionName: string;
   priceAdjustment: number;
 };
+
+// ─── SESSION ─────────────────────────────────
+export const session = pgTable("session", {
+  sid: varchar("sid").primaryKey(),
+  sess: jsonb("sess").notNull(),
+  expire: timestamp("expire", { precision: 6 }),
+  userId: varchar("user_id"),
+  ipAddress: text("ip_address"),
+  userAgent: text("user_agent"),
+  lastActive: timestamp("last_active").defaultNow(),
+});
+
+export const insertSessionSchema = createInsertSchema(session).omit({ sid: true });
+export type Session = typeof session.$inferSelect;
+export type InsertSession = typeof session.$inferInsert;
