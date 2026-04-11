@@ -52,6 +52,7 @@ import ModificationDrawer, { type FoodModification, DEFAULT_MODIFICATION, hasMod
 import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 import { PosMenuSkeleton, PosCategorySkeleton } from "@/components/ui/skeletons";
 import SyncErrorPanel from "@/components/sync-error-panel";
+import ModifierSelectionDialog, { SelectedModifier } from "@/components/pos/ModifierSelectionDialog";
 
 interface EngineDiscount {
   ruleId: string;
@@ -514,6 +515,8 @@ export default function POSPage() {
     [serverHeldOrders, heldTabs]
   );
   const [modifierItem, setModifierItem] = useState<CartItem | null>(null);
+  const [modifierDialogOpen, setModifierDialogOpen] = useState(false);
+  const [pendingMenuItem, setPendingMenuItem] = useState<any>(null);
   const [modifierSize, setModifierSize] = useState("Regular");
   const [modifierSpice, setModifierSpice] = useState("Medium");
   const [modifierExtras, setModifierExtras] = useState("");
@@ -795,7 +798,7 @@ export default function POSPage() {
   const evaluatePayload = useMemo(() => {
     if (cart.length === 0) return null;
     return {
-      items: cart.map((c) => ({ menuItemId: c.menuItemId, name: c.name, price: c.price, quantity: c.quantity, categoryId: c.categoryId || undefined })),
+      items: cart.map((c) => ({ menuItemId: c.menuItemId, name: c.name, price: c.price, quantity: c.quantity, categoryId: c.categoryId || undefined, modifiers: c.modifiers?.filter((m: any) => m.type === "modifier-group").map((m: any) => ({ groupId: m.groupId, groupName: m.groupName, optionId: m.optionId, optionName: m.optionName || m.label, priceAdjustment: m.priceAdjust })) || [] })),
       subtotal, channel: "pos", orderType,
     };
   }, [cart, subtotal, orderType]);
@@ -851,6 +854,29 @@ export default function POSPage() {
   const taxAmount = taxBase * taxRate;
   const total = afterDiscount + serviceChargeAmount + taxAmount;
   const isDineIn = orderType === "dine_in";
+
+    const handleModifierConfirm = (modifiers: SelectedModifier[], totalAdjustment: number) => {
+    if (!pendingMenuItem) return;
+    const baseP = parseFloat(String(pendingMenuItem.price));
+    const cartMods: any[] = modifiers.map(m => ({ type: "modifier-group" as const, label: m.optionName, priceAdjust: m.priceAdjustment, groupId: m.groupId, groupName: m.groupName, optionId: m.optionId, optionName: m.optionName }));
+    setCart(prev => {
+      const cartKey = Math.random().toString(36).substr(2, 9);
+      return [...prev, {
+        menuItemId: pendingMenuItem.id,
+        name: pendingMenuItem.name,
+        price: baseP + totalAdjustment,
+        basePrice: baseP,
+        quantity: 1,
+        notes: "",
+        isVeg: pendingMenuItem.isVeg ?? null,
+        categoryId: pendingMenuItem.categoryId ?? null,
+        cartKey,
+        hsnCode: pendingMenuItem.hsnCode || null,
+        modifiers: cartMods.length > 0 ? cartMods : undefined,
+      }];
+    });
+    setPendingMenuItem(null);
+  };
 
   const addToCart = useCallback((item: MenuItem) => {
     setAddedItemId(item.id);
@@ -1647,7 +1673,7 @@ export default function POSPage() {
                             {item.description && <p className="text-[10px] text-muted-foreground line-clamp-1 mb-1.5">{item.description}</p>}
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-sm text-primary" data-testid={`text-price-${item.id}`}>{fmt(resolvedItemPrice?.resolvedPrice ?? item.price)}</span>
-                              {inCart && !isUnavailable ? (<div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button><span className="w-6 text-center text-sm font-semibold">{inCart.quantity}</span><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button></div>) : (!isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={(e) => { e.stopPropagation(); addToCart(item); }}><Plus className="h-3.5 w-3.5 text-primary" /></button>)}
+                              {inCart && !isUnavailable ? (<div className="flex items-center gap-0.5" onClick={e => e.stopPropagation()}><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, -1)}><Minus className="h-3 w-3" /></button><span className="w-6 text-center text-sm font-semibold">{inCart.quantity}</span><button className="h-6 w-6 rounded border flex items-center justify-center hover:bg-muted transition-colors" onClick={() => updateQuantity(inCart.cartKey, 1)}><Plus className="h-3 w-3" /></button></div>) : (!isUnavailable && <button className="h-6 w-6 rounded-full bg-primary/10 flex items-center justify-center hover:bg-primary/20 transition-colors" onClick={(e) => { e.stopPropagation(); setPendingMenuItem(item); setModifierDialogOpen(true); }}><Plus className="h-3.5 w-3.5 text-primary" /></button>)}
                             </div>
                           </CardContent>
                         </Card>

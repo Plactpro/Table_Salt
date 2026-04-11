@@ -184,7 +184,7 @@ export function registerModifiersRoutes(app: Express): void {
   });
 
   // ENDPOINT 5 — GET /api/menu-items/:id/modifiers
-  app.get("/api/menu-items/:id/modifiers", requireAuth, async (req, res) => {
+  app.get("/api/menu-items/:id/modifier-groups", requireAuth, async (req, res) => {
     try {
       const { id } = req.params;
       const tenantId = (req.user as any).tenantId;
@@ -247,7 +247,7 @@ export function registerModifiersRoutes(app: Express): void {
   });
 
   // ENDPOINT 6 — POST /api/menu-items/:id/modifiers
-  app.post("/api/menu-items/:id/modifiers", requireAuth, requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/menu-items/:id/modifier-groups", requireAuth, requireRole("owner", "manager"), async (req, res) => {
     try {
       const { id } = req.params;
       const tenantId = (req.user as any).tenantId;

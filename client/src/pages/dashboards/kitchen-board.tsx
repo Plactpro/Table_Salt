@@ -735,6 +735,15 @@ function ActiveItemRow({ item, onRefresh }: { item: KdsItem; onRefresh: () => vo
       <div className={`rounded-lg border p-3 space-y-2 ${isOverdue ? "border-red-300 bg-red-50/50" : "border-border"}`} data-testid={`active-item-${item.id}`}>
         <div className="flex items-center justify-between">
           <span className="font-semibold text-sm">{item.name}</span>
+                    {item.modifiers && Array.isArray(item.modifiers) && item.modifiers.length > 0 && (
+                      <div className="mt-0.5 space-y-0.5" data-testid="modifier-group-kds">
+                        {(item.modifiers as any[]).map((mod: any, idx: number) => (
+                          <div key={idx} className="text-xs text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">
+                            {"→"} {mod.optionName || mod.label}
+                          </div>
+                        ))}
+                      </div>
+                    )}
           <Badge variant="outline" className="text-xs">T-{item.courseNumber ?? "?"}</Badge>
         </div>
         <div className="text-xs text-muted-foreground">
