@@ -6,6 +6,7 @@ import { requireAuth, requireRole } from "../auth";
 import { deliveryOrders as deliveryOrdersTable } from "@shared/schema";
 import { sendContactSalesEmail, sendSupportEmail, emailConfig } from "../email";
 import { emitToTenant } from "../realtime";
+import { auditLogFromReq } from "../audit";
 
 export function registerDeliveryRoutes(app: Express): void {
   
@@ -102,6 +103,7 @@ export function registerDeliveryRoutes(app: Express): void {
       const user = req.user as any;
       const delivery = await storage.createDeliveryOrder({ ...req.body, tenantId: user.tenantId });
       emitToTenant(user.tenantId, "delivery:updated", { deliveryOrderId: delivery.id, status: delivery.status });
+            auditLogFromReq(req, { action: "delivery_order_created", entityType: "delivery_order", entityId: delivery.id, entityName: delivery.customerName || "Delivery Order" });
       res.json(delivery);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -127,12 +129,14 @@ export function registerDeliveryRoutes(app: Express): void {
     const delivery = await storage.updateDeliveryOrderByTenant(req.params.id, user.tenantId, body);
     if (!delivery) return res.status(404).json({ message: "Delivery order not found" });
     emitToTenant(user.tenantId, "delivery:updated", { deliveryOrderId: req.params.id, status: delivery.status });
+        auditLogFromReq(req, { action: "delivery_order_updated", entityType: "delivery_order", entityId: req.params.id, details: body });
     res.json(delivery);
   });
 
   app.delete("/api/delivery-orders/:id", requireRole("owner", "manager"), async (req, res) => {
     const user = req.user as any;
     await storage.deleteDeliveryOrderByTenant(req.params.id, user.tenantId);
+        auditLogFromReq(req, { action: "delivery_order_deleted", entityType: "delivery_order", entityId: req.params.id });
     res.json({ message: "Deleted" });
   });
 
