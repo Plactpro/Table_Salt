@@ -15,13 +15,36 @@ export function registerTenantRoutes(app: Express): void {
   app.get("/api/tenant", requireAuth, async (req, res) => {
     const user = req.user as any;
     const tenant = await storage.getTenant(user.tenantId);
-    res.json(sanitizeTenant(tenant));
+    const safe = sanitizeTenant(tenant) as any;
+    if (tenant) {
+      safe.currency = (tenant as any).currency ?? "USD";
+      safe.currencyPosition = (tenant as any).currencyPosition ?? "before";
+      safe.currencyDecimals = (tenant as any).currencyDecimals ?? 2;
+    }
+    res.json(safe);
   });
 
   app.patch("/api/tenant", requireRole("owner"), async (req, res) => {
     const user = req.user as any;
     const before = await storage.getTenant(user.tenantId);
-    const tenant = await storage.updateTenant(user.tenantId, req.body);
+    const {
+      name, address, timezone, timeFormat, taxRate, taxType,
+      compoundTax, serviceCharge, gstin, cgstRate, sgstRate, invoicePrefix,
+      currency, currencyPosition, currencyDecimals,
+      businessType, plan, razorpayEnabled, razorpayKeyId, razorpayKeySecret,
+    } = req.body;
+    const updateData: Record<string, any> = {};
+    const fieldMap: Record<string, any> = {
+      name, address, timezone, timeFormat, taxRate, taxType,
+      compoundTax, serviceCharge, gstin, cgstRate, sgstRate, invoicePrefix,
+      currency, currencyPosition, currencyDecimals,
+      businessType, plan, razorpayEnabled, razorpayKeyId,
+      ...(razorpayKeySecret ? { razorpayKeySecret } : {}),
+    };
+    for (const [k, v] of Object.entries(fieldMap)) {
+      if (v !== undefined) updateData[k] = v;
+    }
+    const tenant = await storage.updateTenant(user.tenantId, updateData as any);
     auditLogFromReq(req, { action: "tenant_settings_updated", entityType: "tenant", entityId: user.tenantId, before: before ? { name: before.name, currency: before.currency, taxRate: before.taxRate } : null, after: req.body });
     res.json(sanitizeTenant(tenant));
   });
