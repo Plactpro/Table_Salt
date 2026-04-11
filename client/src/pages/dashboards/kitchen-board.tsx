@@ -77,6 +77,9 @@ interface KdsItem {
   prepTimeMinutes: number | null;
   is_voided?: boolean;
   voidedReason?: string | null;
+    has_allergy?: boolean;
+  allergy_flags?: string[] | null;
+  allergy_details?: string | null;
 }
 
 interface KdsTicket {
@@ -389,6 +392,11 @@ function KdsItemRow({
             <ItemCountdown estimatedReadyAt={item.estimatedReadyAt} itemId={item.id} />
           )}
         </div>
+                  {item.has_allergy && (
+            <div className="px-1.5 py-0.5 bg-red-100 rounded text-[10px] text-red-700 flex-shrink-0 font-semibold animate-pulse" data-testid={`allergy-alert-${item.id}`}>
+              ⚠ ALLERGY{item.allergy_flags?.length ? `: ${item.allergy_flags.join(", ")}` : ""}
+            </div>
+          )}
         <div className="flex items-center gap-1 shrink-0" data-testid={`status-${item.id}`}>
           {!item.is_voided && (courseLocked ? (
             <span className="text-yellow-500 text-[10px]">🔒</span>
