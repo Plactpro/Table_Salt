@@ -85,6 +85,7 @@ interface KdsTicket {
   status: string;
   createdAt: string | null;
   items: KdsItem[];
+  isRush?: boolean;
 }
 
 interface KitchenSettings {
@@ -435,7 +436,7 @@ function CookingControlTicket({
 
   return (
     <>
-      <Card className={`${readyCount === items.length && items.length > 0 ? "border-green-300 bg-green-50/50" : ""}`} data-testid={`ticket-ctrl-${ticket.id}`}>
+      <Card className={`${ticket.isRush ? "border-red-500 border-2 ring-2 ring-red-200 bg-red-50/30" : readyCount === items.length && items.length > 0 ? "border-green-300 bg-green-50/50" : ""}`} data-testid={`ticket-ctrl-${ticket.id}`}>
         <CardHeader className="pb-2">
           <CardTitle className="text-sm flex items-center justify-between">
             <span>{label}</span>
@@ -860,7 +861,14 @@ export default function KitchenBoardPage() {
   useRealtimeEvent("kds:item_started", invalidateKds);
   useRealtimeEvent("kds:item_ready", invalidateKds);
   useRealtimeEvent("kds:item_held", invalidateKds);
-  useRealtimeEvent("kds:order_rushed", invalidateKds);
+  useRealtimeEvent("kds:order_rushed", (payload: any) => {
+    invalidateKds();
+    toast({
+      title: "🚨 Rush Order",
+      description: `Order #${String(payload?.orderId ?? "").slice(-6).toUpperCase()} marked as RUSH`,
+      variant: "destructive",
+    });
+  });
   useRealtimeEvent("kds:course_fired", invalidateKds);
   useRealtimeEvent("kds:hold_released", invalidateKds);
   useRealtimeEvent("kds:refire_ticket", invalidateKds);
@@ -1076,7 +1084,11 @@ export default function KitchenBoardPage() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {kdsTickets.filter(t => ["new", "sent_to_kitchen", "in_progress"].includes(t.status)).map(ticket => (
+              {[...kdsTickets].sort((a, b) => {
+                if (a.isRush && !b.isRush) return -1;
+                if (!a.isRush && b.isRush) return 1;
+                return new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime();
+              }).filter(t => ["new", "sent_to_kitchen", "in_progress"].includes(t.status)).map(ticket => (
                 <CookingControlTicket
                   key={ticket.id}
                   ticket={ticket}
