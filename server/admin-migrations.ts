@@ -1,5 +1,6 @@
 import { pool } from "./db";
 import { hashPassword } from "./auth";
+import { runAllergyAckMigration } from "./admin-migrations-allergy-ack";
 
 export async function runAdminMigrations(): Promise<void> {
   try {
@@ -1781,6 +1782,10 @@ export async function runAdminMigrations(): Promise<void> {
     }
     console.log(`[Migration] MODIFIER-GROUPS-002: seeded tenant ${tid}`);
   }
+
+    // ALL-02: Allergy acknowledgment migration
+  await runAllergyAckMigration();
+  console.log('[Migration] ALL-02: allergy ack migration complete');
 }
 
 export async function runTask108Migrations(): Promise<void> {
