@@ -560,6 +560,8 @@ export const orderItems = pgTable(
       withTimezone: true,
     }),
     servedAt: timestamp("served_at", { withTimezone: true }),
+    itemDiscount: numeric("item_discount").default("0"),
+    itemDiscountType: varchar("item_discount_type", { length: 10 }).default("flat"),
   },
   (t) => [
     index("idx_order_items_order_id").on(t.orderId),
