@@ -1391,4 +1391,41 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     }
   });
 
+  // POS-EMAIL-RECEIPT: Send receipt via SMTP
+  app.post("/api/bills/:id/email-receipt", requireAuth, async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const { email } = req.body;
+      const tenantId = req.user?.tenantId;
+      if (!email?.trim()) return res.status(400).json({ message: "Email required" });
+
+      const { rows: [bill] } = await pool.query(
+        `SELECT b.*, t.name as restaurant_name, o.name as outlet_name
+         FROM bills b
+         JOIN tenants t ON t.id = b.tenant_id
+         LEFT JOIN outlets o ON o.id = b.outlet_id
+         WHERE b.id = $1 AND b.tenant_id = $2`,
+        [id, tenantId]
+      );
+      if (!bill) return res.status(404).json({ message: "Bill not found" });
+
+      const receiptUrl = `${process.env.APP_URL || "https://inifinit.com"}/receipt/${bill.id}`;
+
+      await sendEmail({
+        to: email.trim(),
+        subject: `Receipt from ${bill.restaurant_name} — ${bill.bill_number}`,
+        html: `<div style="font-family:sans-serif;max-width:500px;margin:0 auto">
+          <h2>${bill.restaurant_name}</h2>
+          <p><strong>Bill:</strong> ${bill.bill_number}</p>
+          <p><strong>Total:</strong> ${bill.total_amount}</p>
+          <p><a href="${receiptUrl}" style="background:#0070f3;color:#fff;padding:10px 20px;border-radius:5px;text-decoration:none">View Digital Receipt</a></p>
+        </div>`,
+      });
+
+      res.json({ success: true, message: `Receipt sent to ${email}` });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 }
