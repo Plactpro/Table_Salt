@@ -487,7 +487,7 @@ function CookingControlTicket({
     : ticket.orderType === "takeaway"
     ? "Takeaway"
     : shortOrderId(ticket.id);
-  const items = ticket.items.filter(i => mapItemStatus(i) !== "served");
+  const items = ticket.items.filter(i => mapItemStatus(i) !== "served" && !i.is_voided);
   const readyCount = items.filter(i => mapItemStatus(i) === "ready").length;
 
   const byCourse = items.reduce<Record<string, KdsItem[]>>((acc, item) => {
