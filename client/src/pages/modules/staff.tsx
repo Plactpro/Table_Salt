@@ -287,6 +287,8 @@ export default function StaffPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/staff-schedules"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/chef-roster"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kitchen-roster"] });
       toast({ title: t("shiftAdded") });
       setShowAddShift(false);
     },
@@ -401,6 +403,14 @@ export default function StaffPage() {
   };
 
   const handleAddShift = () => {
+        if (!shiftForm.userId) {
+      toast({ title: "Please select a staff member", variant: "destructive" });
+      return;
+    }
+    if (!shiftForm.date) {
+      toast({ title: "Please select a shift date", variant: "destructive" });
+      return;
+    }
     createShiftMutation.mutate({
       userId: shiftForm.userId,
       date: safeDate(shiftForm.date) || new Date().toISOString(),
