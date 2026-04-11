@@ -993,14 +993,27 @@ export default function DeliveryPage() {
                               <Button
                 variant="destructive"
                 className="w-full gap-2"
-                onClick={() => {
+                              onClick={async () => {
+                // DEL-04: route cancel to correct endpoint based on order source
+                if ((selectedDelivery as any)._fromMainOrders && (selectedDelivery as any)._sourceOrderId) {
+                  // Main-order-sourced delivery: cancel via orders endpoint
+                  try {
+                    await apiRequest("PATCH", `/api/orders/${(selectedDelivery as any)._sourceOrderId}`, { status: "cancelled" });
+                    queryClient.invalidateQueries({ queryKey: ["/api/delivery-orders/unified"] });
+                    toast({ title: "Order cancelled" });
+                  } catch (err: any) {
+                    toast({ title: t("error"), description: err.message, variant: "destructive" });
+                  }
+                } else {
+                  // Native delivery_orders table entry
                   updateMutation.mutate({
                     id: selectedDelivery.id,
                     data: { status: "cancelled" },
                   });
-                  setSelectedDelivery({ ...selectedDelivery, status: "cancelled" });
-                  setShowDetailDialog(false);
-                }}
+                }
+                setSelectedDelivery({ ...selectedDelivery, status: "cancelled" });
+                setShowDetailDialog(false);
+              }}
                 disabled={updateMutation.isPending || selectedDelivery.status === "delivered" || selectedDelivery.status === "cancelled"}
                 data-testid="button-cancel-delivery"
               >
