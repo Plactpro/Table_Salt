@@ -520,7 +520,7 @@ export default function PromotionsPage() {
 
                           <div className="flex flex-wrap gap-1.5">
                             <Badge variant="outline" className="text-xs">
-                              {scopeLabels[rule.scope || "all_items"]}
+                              {rule.scope === "category" && rule.scopeRef ? `Category: ${(menuCategories.find((c: any) => c.id === rule.scopeRef || c.name === rule.scopeRef) || {}).name || rule.scopeRef}` : scopeLabels[rule.scope || "all_items"]}
                             </Badge>
                             {rule.priority !== null && rule.priority !== undefined && rule.priority > 0 && (
                               <Badge variant="outline" className="text-xs">
@@ -702,7 +702,7 @@ export default function PromotionsPage() {
                     </SelectTrigger>
                     <SelectContent>
                       {menuCategories.map((cat) => (
-                        <SelectItem key={cat.id} value={cat.name}>{cat.name}</SelectItem>
+                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>

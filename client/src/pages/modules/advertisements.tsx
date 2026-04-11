@@ -232,6 +232,7 @@ function CampaignDialog({
   const [uploading, setUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [savedCampaignId, setSavedCampaignId] = useState<string | null>(campaign?.id || null);
+  const savedCampaignIdRef = useRef<string | null>(campaign?.id || null);
   const [creatives, setCreatives] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const queryClient = useQueryClient();
@@ -246,8 +247,9 @@ function CampaignDialog({
         ratePer1000Imp: form.ratePer1000Imp ? parseFloat(form.ratePer1000Imp) : null,
         totalContractValue: form.totalContractValue ? parseFloat(form.totalContractValue) : null,
       };
-      if (campaign?.id) {
-        const r = await apiRequest("PATCH", `/api/ad-campaigns/${campaign.id}`, payload);
+      const existingId = campaign?.id || savedCampaignIdRef.current;
+      if (existingId) {
+        const r = await apiRequest("PATCH", `/api/ad-campaigns/${existingId}`, payload);
         if (!r.ok) throw new Error("Failed to update campaign");
         return r.json();
       } else {
@@ -257,6 +259,7 @@ function CampaignDialog({
       }
     },
     onSuccess: (data) => {
+      savedCampaignIdRef.current = data.id;
       setSavedCampaignId(data.id);
       queryClient.invalidateQueries({ queryKey: ["/api/ad-campaigns"] });
     },

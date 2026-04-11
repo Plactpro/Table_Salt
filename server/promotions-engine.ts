@@ -119,7 +119,7 @@ function isScopeMatched(rule: PromotionRule, input: EvaluateInput): boolean {
   if (scope === "all_items" || scope === "order_total") return true;
 
   if (scope === "category" && rule.scopeRef) {
-    return input.items.some((item) => item.categoryId === rule.scopeRef);
+    return input.items.some((item) => item.categoryId === rule.scopeRef || (item as any).categoryName === rule.scopeRef);
   }
 
   if (scope === "specific_items" && rule.scopeRef) {
@@ -145,7 +145,7 @@ function isLoyaltyConditionMet(rule: PromotionRule, input: EvaluateInput): boole
 function getAffectedItems(rule: PromotionRule, input: EvaluateInput): EvaluateItem[] {
   const scope = rule.scope || "all_items";
   if (scope === "category" && rule.scopeRef) {
-    return input.items.filter((i) => i.categoryId === rule.scopeRef);
+    return input.items.filter((i) => i.categoryId === rule.scopeRef || (i as any).categoryName === rule.scopeRef);
   }
   if (scope === "specific_items" && rule.scopeRef) {
     const ids = rule.scopeRef.split(",").map((s) => s.trim());
