@@ -35,17 +35,16 @@ export function registerStaffRoutes(app: Express): void {
       if (!startTime || !endTime) {
         return res.status(400).json({ message: "Start time and end time are required" });
       }
-      const shiftDate = date ? new Date(date) : null;
-      if (shiftDate && isNaN(shiftDate.getTime())) {
-        return res.status(400).json({ message: "Invalid date format" });
+      const shiftDate = parseDate(date);
+      if (!shiftDate) {
+                        return res.status(400).json({ message: "Invalid shift date - please select a valid date" });
       }
       const schedule = await storage.createStaffSchedule({
           userId,
-          date: shiftDate ? shiftDate.toISOString() : date,
+                  date: shiftDate,
           startTime,
           endTime,
-          ...req.body,
-          tenantId: user.tenantId,
+                    tenantId: user.tenantId,
         });
       res.json(schedule);
     } catch (err: any) {
