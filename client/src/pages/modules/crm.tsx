@@ -872,13 +872,13 @@ export default function CrmPage() {
           <div className="space-y-4" onChange={() => setCrmFormDirty(true)}>
             <div>
               <Label>{t("name")} *</Label>
-              <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-customer-name" />
+              <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value.replace(/[^a-zA-Z\s'\-]/g, "") }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-customer-name" />
               {crmFormErrors.name && <p className="text-red-500 text-xs mt-1">{crmFormErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t("phone")}</Label>
-                <Input value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setCrmFormErrors((prev) => ({ ...prev, phone: undefined })); }} className={crmFormErrors.phone ? "border-red-500" : ""} data-testid="input-customer-phone" />
+                <Input value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value.replace(/[^0-9+\-\s()]/g, "") }); setCrmFormErrors((prev) => ({ ...prev, phone: undefined })); }} className={crmFormErrors.phone ? "border-red-500" : ""} data-testid="input-customer-phone" />
                 {crmFormErrors.phone && <p className="text-red-500 text-xs mt-1">{crmFormErrors.phone}</p>}
               </div>
               <div>
@@ -942,13 +942,13 @@ export default function CrmPage() {
           <div className="space-y-4" onChange={() => setCrmFormDirty(true)}>
             <div>
               <Label>{t("name")} *</Label>
-              <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-edit-customer-name" />
+              <Input value={formData.name} onChange={(e) => { setFormData({ ...formData, name: e.target.value.replace(/[^a-zA-Z\s'\-]/g, "") }); setCrmFormErrors({}); }} className={crmFormErrors.name ? "border-red-500" : ""} data-testid="input-edit-customer-name" />
               {crmFormErrors.name && <p className="text-red-500 text-xs mt-1">{crmFormErrors.name}</p>}
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>{t("phone")}</Label>
-                <Input value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value }); setCrmFormErrors((prev) => ({ ...prev, phone: undefined })); }} className={crmFormErrors.phone ? "border-red-500" : ""} data-testid="input-edit-customer-phone" />
+                <Input value={formData.phone} onChange={(e) => { setFormData({ ...formData, phone: e.target.value.replace(/[^0-9+\-\s()]/g, "") }); setCrmFormErrors((prev) => ({ ...prev, phone: undefined })); }} className={crmFormErrors.phone ? "border-red-500" : ""} data-testid="input-edit-customer-phone" />
                 {crmFormErrors.phone && <p className="text-red-500 text-xs mt-1">{crmFormErrors.phone}</p>}
               </div>
               <div>
