@@ -1,6 +1,8 @@
 export type SubscriptionTier = "basic" | "standard" | "premium" | "enterprise";
 export type BusinessType = "enterprise" | "qsr" | "food_truck" | "cafe" | "fine_dining" | "casual_dining" | "cloud_kitchen";
 
+export type OrderType = "dine_in" | "takeaway" | "delivery" | "drive_thru" | "pickup";
+
 export type FeatureKey =
   | "orders"
   | "menu"
@@ -51,6 +53,7 @@ export interface BusinessConfig {
   icon: string;
   excludedFeatureKeys?: FeatureKey[];
   excludedPaths?: string[];
+  allowedOrderTypes: OrderType[];
 }
 
 export const businessConfig: Record<BusinessType, BusinessConfig> = {
@@ -60,6 +63,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["multi_location", "advanced_analytics", "api_access", "custom_branding", "crm"],
     badges: ["Multi-Location", "Enterprise Grade", "API Access"],
     icon: "Building2",
+    allowedOrderTypes: ["dine_in", "takeaway", "delivery", "drive_thru", "pickup"],
   },
   qsr: {
     label: "Quick Service",
@@ -68,6 +72,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     badges: ["Quick Service", "Fast POS", "Drive-Thru"],
     icon: "Zap",
     excludedFeatureKeys: ["reservations"],
+    allowedOrderTypes: ["dine_in", "takeaway", "delivery", "drive_thru"],
   },
   food_truck: {
     label: "Food Truck",
@@ -76,6 +81,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     badges: ["Mobile", "GPS Tracking", "On-The-Go"],
     icon: "Truck",
     excludedFeatureKeys: ["reservations"],
+    allowedOrderTypes: ["takeaway"],
   },
   cafe: {
     label: "Café",
@@ -83,6 +89,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["pos", "orders", "menu", "loyalty_program", "inventory"],
     badges: ["Café", "Loyalty", "Quick Serve"],
     icon: "Coffee",
+    allowedOrderTypes: ["dine_in", "takeaway"],
   },
   fine_dining: {
     label: "Fine Dining",
@@ -90,6 +97,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["reservations", "tables", "crm", "advanced_analytics", "staff"],
     badges: ["Fine Dining", "Reservations", "Premium Service"],
     icon: "Wine",
+    allowedOrderTypes: ["dine_in"],
   },
   casual_dining: {
     label: "Casual Dining",
@@ -97,6 +105,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     relevantFeatures: ["orders", "tables", "menu", "pos", "staff", "reservations"],
     badges: ["Casual Dining", "Full Service"],
     icon: "UtensilsCrossed",
+    allowedOrderTypes: ["dine_in", "takeaway", "delivery"],
   },
   cloud_kitchen: {
     label: "Cloud Kitchen",
@@ -106,6 +115,7 @@ export const businessConfig: Record<BusinessType, BusinessConfig> = {
     icon: "Cloud",
     excludedFeatureKeys: ["tables", "reservations", "cleaning"],
     excludedPaths: ["/kiosk-management"],
+    allowedOrderTypes: ["delivery", "pickup"],
   },
 };
 
@@ -137,3 +147,8 @@ export const tierPricing: Record<SubscriptionTier, { label: string; price: numbe
   premium: { label: "Premium", price: 199, description: "Enterprise-grade for restaurant groups" },
   enterprise: { label: "Enterprise", price: 399, description: "Custom solutions for restaurant chains" },
 };
+
+
+export function getAllowedOrderTypes(businessType: BusinessType): OrderType[] {
+  return businessConfig[businessType]?.allowedOrderTypes ?? ["dine_in", "takeaway", "delivery"];
+}

@@ -855,6 +855,7 @@ export default function POSPage() {
   const taxAmount = taxBase * taxRate;
   const total = afterDiscount + serviceChargeAmount + taxAmount;
   const isDineIn = orderType === "dine_in";
+  const allowedTypes = getAllowedOrderTypes((user?.tenant?.businessType as any) || "casual_dining");
 
     const handleModifierConfirm = (modifiers: SelectedModifier[], totalAdjustment: number) => {
     if (!pendingMenuItem) return;
@@ -1945,15 +1946,15 @@ export default function POSPage() {
           <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5">
             <p className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">Order Details</p>
             <div className="flex gap-1">
-              <Button data-testid="button-order-type-dine-in" variant={orderType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "dine_in" })}>
+              {allowedTypes.includes("dine_in") && <Button data-testid="button-order-type-dine-in" variant={orderType === "dine_in" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "dine_in" })}>
                 <UtensilsCrossed className="h-3.5 w-3.5 mr-1" /> Dine-in
-              </Button>
-              <Button data-testid="button-order-type-takeaway" variant={orderType === "takeaway" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "takeaway" })}>
+              </Button>}
+              {allowedTypes.includes("takeaway") && <Button data-testid="button-order-type-takeaway" variant={orderType === "takeaway" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "takeaway" })}>
                 <Package className="h-3.5 w-3.5 mr-1" /> Takeaway
-              </Button>
-              <Button data-testid="button-order-type-delivery" variant={orderType === "delivery" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "delivery" })}>
+              </Button>}
+              {allowedTypes.includes("delivery") && <Button data-testid="button-order-type-delivery" variant={orderType === "delivery" ? "default" : "outline"} size="sm" className="flex-1 text-xs" onClick={() => updateActiveTab({ orderType: "delivery" })}>
                 <Truck className="h-3.5 w-3.5 mr-1" /> Delivery
-              </Button>
+              </Button>}
             </div>
 
             <AnimatePresence initial={false}>
