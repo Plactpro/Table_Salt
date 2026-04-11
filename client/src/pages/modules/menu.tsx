@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -20,6 +20,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CharCountTextarea } from "@/components/ui/character-count-input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -278,6 +279,8 @@ export default function MenuPage() {
   useDirtyFormGuard(itemFormDirty);
   const [itemConfirmLeave, setItemConfirmLeave] = useState(false);
   const [itemFormErrors, setItemFormErrors] = useState<{ name?: string; price?: string }>({});
+  const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
+  const [savingModifiers, setSavingModifiers] = useState(false);
   const [itemForm, setItemForm] = useState({
     name: "", description: "", price: "", categoryId: "",
     isVeg: false, available: true, image: "", spicyLevel: 0,
@@ -580,7 +583,8 @@ export default function MenuPage() {
 
   function openEditItem(item: MenuItem) {
     setEditingItem(item);
-    setItemDialogTab("details");
+    setItemDialogTab("details")
+    setSelectedModifierIds([]);;
     setItemFormDirty(false);
     setItemFormErrors({});
     const ing = parseIngredients(item);
@@ -653,6 +657,32 @@ export default function MenuPage() {
       createItem.mutate(payload);
     }
   }
+
+  const handleSaveModifiers = async () => {
+    if (!editingItem?.id) return;
+    setSavingModifiers(true);
+    try {
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf-token=([^;]*)/);
+      const csrfHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (csrfMatch) { csrfHeaders["x-csrf-token"] = decodeURIComponent(csrfMatch[1]); }
+      const res = await fetch(`/api/menu-items/${editingItem.id}/modifier-groups`, {
+        method: "POST",
+        headers: csrfHeaders,
+        credentials: "include",
+        body: JSON.stringify({ groupIds: selectedModifierIds }),
+      });
+      if (res.ok) {
+        toast({ title: "Modifiers saved", description: `${selectedModifierIds.length} modifier group${selectedModifierIds.length !== 1 ? "s" : ""} assigned` });
+        refetchItemModifiers();
+      } else {
+        toast({ title: "Failed to save modifiers", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error saving modifiers", variant: "destructive" });
+    } finally {
+      setSavingModifiers(false);
+    }
+  };
 
   function toggleTag(tag: string) {
     setItemForm((prev) => ({
@@ -1356,11 +1386,55 @@ export default function MenuPage() {
                 userRole={user?.role || ""}
               />
             </TabsContent>
+
+          {editingItem && (
+            <TabsContent value="modifiers" className="space-y-4 pt-2">
+              <p className="text-sm text-muted-foreground">
+                Select modifier groups for{" "}
+                <span className="font-medium">{editingItem?.name}</span>.
+                These appear as options in POS when ordering.
+              </p>
+              {(allModifierGroups as any[]).length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground text-sm">No modifier groups found.</div>
+              ) : (
+                <div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+                  {(allModifierGroups as any[]).map((group: any) => (
+                    <div key={group.id} className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${selectedModifierIds.includes(group.id) ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"}`}
+                      onClick={() => { setSelectedModifierIds(prev => prev.includes(group.id) ? prev.filter(id => id !== group.id) : [...prev, group.id]); }}>
+                      <Checkbox checked={selectedModifierIds.includes(group.id)}
+                        onCheckedChange={(checked) => { setSelectedModifierIds(prev => checked ? [...prev, group.id] : prev.filter(id => id !== group.id)); }}
+                        onClick={e => e.stopPropagation()} className="mt-0.5" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">{group.name}</span>
+                          <Badge variant="outline" className="text-xs">{group.selectionType === "single" ? "Single" : "Multi"}</Badge>
+                          {group.isRequired && <Badge variant="destructive" className="text-xs">Required</Badge>}
+                        </div>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {(group.options ?? []).slice(0, 4).map((opt: any, idx: number) => (
+                            <span key={opt.id} className="text-xs text-muted-foreground">
+                              {opt.name}{opt.priceAdjustment > 0 ? ` +${opt.priceAdjustment}` : ""}{idx < Math.min(3, (group.options ?? []).length - 1) ? "," : ""}
+                            </span>
+                          ))}
+                          {(group.options ?? []).length > 4 && <span className="text-xs text-muted-foreground">+{(group.options ?? []).length - 4} more</span>}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+          )}
           )}
           </Tabs>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => { if (itemFormDirty) { setItemConfirmLeave(true); } else { setItemDialogOpen(false); } }} data-testid="button-cancel-item">Cancel</Button>
+            <Button variant="outline" onClick={() => { if (itemFormDirty) { setItemConfirmLeave(true); } else { setItemDialogOpen(false); } }} data-testid="button-save-modifiers-footer" onClick={handleSaveModifiers} disabled={savingModifiers}>
+              {savingModifiers ? "Saving..." : "Save Modifiers"}
+            </Button>
+          )}
+          {itemDialogTab !== "modifiers" && (
+            <Button data-testid="button-cancel-item">Cancel</Button>
             <Button onClick={handleItemSubmit} disabled={createItem.isPending || updateItem.isPending} data-testid="button-save-item">
               {editingItem ? "Update" : "Create"}
             </Button>
