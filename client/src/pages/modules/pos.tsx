@@ -89,6 +89,8 @@ interface CartItem {
   hsnCode?: string | null;
   foodModification?: FoodModification;
   pricingRuleReason?: string | null;
+  itemDiscount?: number;
+  itemDiscountType?: "flat" | "percent";
 }
 
 interface OrderTab {
@@ -796,7 +798,12 @@ export default function POSPage() {
     enabled: usePosVirtual,
   });
 
-  const subtotal = useMemo(() => cart.reduce((sum, item) => sum + item.price * item.quantity, 0), [cart]);
+  const subtotal = useMemo(() => cart.reduce((sum, item) => {
+    const lineTotal = item.price * item.quantity;
+    const disc = item.itemDiscount || 0;
+    const discAmt = item.itemDiscountType === 'percent' ? lineTotal * disc / 100 : disc;
+    return sum + lineTotal - discAmt;
+  }, 0), [cart]);
 
   const selectedOffer = useMemo(() => {
     if (!activeTab?.selectedOfferId) return null;
@@ -1089,6 +1096,8 @@ export default function POSPage() {
       price: parseFloat(item.price),
       basePrice: parseFloat(item.price),
       quantity: item.quantity,
+              itemDiscount: item.itemDiscount || 0,
+              itemDiscountType: item.itemDiscountType || "flat",
       notes: item.notes || "",
       isVeg: null,
       categoryId: null,
@@ -2066,7 +2075,7 @@ export default function POSPage() {
                             ))}
                           </div>
                         </div>
-                        <span className="font-semibold text-sm ml-2">{fmt(item.price * item.quantity)}</span>
+                        <span className="font-semibold text-sm ml-2">{fmt((() => { const lt = item.price * item.quantity; const d = item.itemDiscount || 0; return item.itemDiscountType === 'percent' ? lt - lt * d / 100 : lt - d; })())}</span>
                       </div>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1">
