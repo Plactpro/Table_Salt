@@ -343,7 +343,7 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
                         className="w-full text-sm border rounded px-2 py-1 bg-background"
                       />
                       <div className="flex gap-2">
-                        <Button
+                        {(role === "manager" || role === "owner" || role === "outlet_manager" || role === "supervisor") && <Button
                           size="sm"
                           className="flex-1 bg-green-600 hover:bg-green-700 text-white"
                           onClick={() => approveMutation.mutate(vr.id)}
@@ -351,7 +351,7 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
                           data-testid={`button-approve-void-${vr.id}`}
                         >
                           {approveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <><CheckCircle2 className="h-4 w-4 mr-1" /> APPROVE</>}
-                        </Button>
+                        </Button>}
                         <Button
                           size="sm"
                           variant="destructive"
