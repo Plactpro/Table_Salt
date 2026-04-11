@@ -1247,4 +1247,35 @@ export function registerOrdersRoutes(app: Express): void {
       res.status(500).json({ message: err.message });
     }
   });
+
+  // Transfer order to a different table
+  app.patch("/api/orders/:id/transfer-table", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const orderId = parseInt(req.params.id);
+      const { newTableId } = req.body;
+      if (!newTableId) return res.status(400).json({ message: "newTableId required" });
+
+      // Get current order
+      const [order] = await db.select().from(require("../../shared/schema").orders).where(eq(require("../../shared/schema").orders.id, orderId));
+      if (!order) return res.status(404).json({ message: "Order not found" });
+
+      const oldTableId = order.tableId;
+
+      // Update order table
+      await db.update(require("../../shared/schema").orders).set({ tableId: newTableId }).where(eq(require("../../shared/schema").orders.id, orderId));
+
+      // Free old table, occupy new table
+      if (oldTableId) await storage.updateTable(oldTableId, user.tenantId, { status: "available" });
+      await storage.updateTable(newTableId, user.tenantId, { status: "occupied" });
+
+      emitToTenant(user.tenantId, "order:table_transferred", { orderId, oldTableId, newTableId });
+      auditLogFromReq(req, { action: "table_transfer", entityType: "order", entityId: orderId, before: { tableId: oldTableId }, after: { tableId: newTableId } });
+
+      res.json({ success: true, oldTableId, newTableId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 }
