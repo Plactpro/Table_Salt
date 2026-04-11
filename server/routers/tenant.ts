@@ -229,4 +229,47 @@ export function registerTenantRoutes(app: Express): void {
       res.status(500).json({ message: err.message });
     }
   });
+  // POS-PROMO: Validate promo code
+  app.post("/api/promotions/validate-code", requireAuth, async (req: any, res: any) => {
+    try {
+      const { code, orderTotal } = req.body;
+      const tenantId = req.user?.tenantId;
+      if (!code?.trim()) return res.status(400).json({ message: "Promo code required" });
+
+      const { rows } = await pool.query(
+        `SELECT * FROM offers
+         WHERE tenant_id=$1 AND UPPER(promo_code)=UPPER($2)
+         AND active=true
+         AND (start_date IS NULL OR start_date <= NOW())
+         AND (end_date IS NULL OR end_date >= NOW())
+         AND (usage_limit IS NULL OR usage_count < usage_limit)
+         LIMIT 1`,
+        [tenantId, code.trim()]
+      );
+      if (!rows[0]) return res.status(404).json({ message: "Invalid or expired promo code" });
+
+      const offer = rows[0];
+      let discountAmount = 0;
+      const total = Number(orderTotal) || 0;
+      if (offer.type === "percentage") {
+        discountAmount = (total * Number(offer.value)) / 100;
+      } else if (offer.type === "fixed_amount") {
+        discountAmount = Math.min(Number(offer.value), total);
+      }
+      if (offer.max_discount) {
+        discountAmount = Math.min(discountAmount, Number(offer.max_discount));
+      }
+
+      res.json({
+        valid: true,
+        offerId: offer.id,
+        offerName: offer.name,
+        discountAmount: parseFloat(discountAmount.toFixed(2)),
+        message: `${offer.name} applied`,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 }

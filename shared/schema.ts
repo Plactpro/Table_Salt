@@ -801,6 +801,8 @@ export const offers = pgTable(
     active: boolean("active").default(true),
     usageLimit: integer("usage_limit"),
     usageCount: integer("usage_count").default(0),
+    promoCode: varchar("promo_code", { length: 50 }),
+    promoCodeUses: integer("promo_code_uses").default(0),
     conditions: jsonb("conditions"),
     createdAt: timestamp("created_at").defaultNow(),
   },
