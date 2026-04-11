@@ -33,7 +33,7 @@ import { useTranslation } from "react-i18next";
 import { I18nextProvider } from "react-i18next";
 import i18n from "@/i18n/index";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { FeatureKey } from "@/lib/subscription";
+import { FeatureKey, businessConfig } from "@/lib/subscription";
 import AppLayout from "@/components/layout/app-layout";
 import AdminLayout from "@/components/admin/admin-layout";
 import NotFound from "@/pages/not-found";

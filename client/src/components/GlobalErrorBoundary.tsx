@@ -60,7 +60,7 @@ export class GlobalErrorBoundary extends Component<Props, State> {
               <div className="space-y-2">
                 <h1 className="text-2xl font-bold font-heading">Table Salt</h1>
                 <h2 className="text-lg font-semibold text-muted-foreground">Something went wrong</h2>
-                {this.state.error && (
+                {isDev && this.state.error && (
                   <p className="text-xs text-destructive font-mono bg-destructive/5 p-3 rounded-md text-left break-all">
                     {this.state.error.message}
                   </p>
