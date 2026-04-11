@@ -42,6 +42,7 @@ import {
   Wine, Soup, Pizza, Salad, Sandwich, CheckCircle2, Tag, X, Percent, Link, QrCode,
   Receipt, Clock, Pause, RotateCcw, Scissors, Flame, ChevronDown, Users, Phone, User,
   MapPin, ChevronRight, Printer, AlertCircle, RefreshCw, WifiOff,
+  XCircle,
 } from "lucide-react";
 import type { MenuCategory, MenuItem, Table, Offer, ComboOffer } from "@shared/schema";
 import { selectPageData, type PaginatedResponse } from "@/lib/api-types";
@@ -2091,6 +2092,22 @@ export default function POSPage() {
                           <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-9 w-9 text-destructive flex items-center justify-center rounded" onClick={() => removeFromCart(item.cartKey)} aria-label={`Remove ${item.name} from cart`}>
                             <Trash2 className="h-3 w-3" aria-hidden="true" />
                           </Button>
+                          {isAddonKot && sentKeys.has(item.cartKey) && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-9 w-9 text-orange-600 hover:text-orange-700 flex items-center justify-center rounded"
+                              onClick={() => {
+                                setSelectedVoidItem(item);
+                                setShowVoidModal(true);
+                              }}
+                              data-testid={`button-void-item-${item.menuItemId}`}
+                              title="Void sent item"
+                              aria-label={`Void ${item.name}`}
+                            >
+                              <XCircle className="h-4 w-4" />
+                            </Button>
+                          )}
                         </div>
                       </div>
                       {item.notes && !item.isCombo && <p className="text-xs text-muted-foreground italic pl-1">{tp("noteLabel", { text: item.notes })}</p>}
