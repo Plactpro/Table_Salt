@@ -34,6 +34,7 @@ import {
   Tooltip, TooltipContent, TooltipProvider, TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import VoidRequestModal from "@/components/tickets/VoidRequestModal";
 import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   Search, Plus, Minus, Trash2, ShoppingCart, UtensilsCrossed, Package, Truck,
@@ -319,6 +320,8 @@ export default function POSPage() {
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
+  const [selectedVoidItem, setSelectedVoidItem] = useState<any>(null);
+  const [showVoidModal, setShowVoidModal] = useState(false);
   const { dispatchKotForOrder } = useKotAutoDispatch();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
@@ -2796,5 +2799,17 @@ export default function POSPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div></></PageErrorBoundary>
+      {/* POS-09: Void item modal for sent kitchen items */}
+      {showVoidModal && selectedVoidItem && (
+        <VoidRequestModal
+          open={showVoidModal}
+          onOpenChange={setShowVoidModal}
+          orderItem={selectedVoidItem}
+          onSuccess={() => {
+            setShowVoidModal(false);
+            setSelectedVoidItem(null);
+          }}
+        />
+      )}
   );
 }
