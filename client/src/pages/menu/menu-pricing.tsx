@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useCallback } from "react";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
@@ -139,6 +139,13 @@ export default function MenuPricingPage() {
   const [tab, setTab] = useState("dish");
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<string>("");
   const [selectedOutletId, setSelectedOutletId] = useState<string>("");
+
+  // MP-02: Auto-select first outlet on load
+  useEffect(() => {
+    if (outlets.length > 0 && !selectedOutletId) {
+      setSelectedOutletId(outlets[0].id);
+    }
+  }, [outlets, selectedOutletId]);
   const [ruleSheetOpen, setRuleSheetOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PriceRule | null>(null);
   const [copyDialog, setCopyDialog] = useState(false);
