@@ -62,9 +62,10 @@ export function registerKitchenRoutes(app: Express): void {
       const tickets = [];
       for (const o of activeOrders) {
         const items = await storage.getOrderItemsByOrder(o.id);
-        const filteredItems = stationFilter ? items.filter(i => i.station === stationFilter) : items;
+        const nonVoidedItems = items.filter((i) => !i.is_voided);
+          const filteredItems = stationFilter ? nonVoidedItems.filter((i) => i.station === stationFilter) : nonVoidedItems;
         if (filteredItems.length === 0 && stationFilter) continue;
-        tickets.push({ ...o, isRush: (o as any).is_rush === true, tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined, items: stationFilter ? filteredItems : items });
+        tickets.push({ ...o, isRush: (o as any).is_rush === true, tableNumber: o.tableId ? tableMap.get(o.tableId) : undefined, items: filteredItems });
       }
       res.json(tickets);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -125,7 +126,8 @@ export function registerKitchenRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(403).json({ message: "Forbidden" });
       const items = await storage.getOrderItemsByOrder(req.params.id);
-      const filtered = station ? items.filter(i => i.station === station) : items;
+      const nonVoided = items.filter((i) => !i.is_voided);
+        const filtered = station ? nonVoided.filter((i) => i.station === station) : nonVoided;
       for (const item of filtered) {
         const currentStatus = item.status || "pending";
         const allowed = validTransitions[currentStatus];
@@ -159,7 +161,8 @@ export function registerKitchenRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.orderId, user.tenantId);
       if (!order) return res.status(403).json({ message: "Forbidden" });
       const items = await storage.getOrderItemsByOrder(req.params.orderId);
-      const filtered = station ? items.filter(i => i.station === station) : items;
+      const nonVoided = items.filter((i) => !i.is_voided);
+        const filtered = station ? nonVoided.filter((i) => i.station === station) : nonVoided;
       const result: any[] = [];
       for (const oi of filtered) {
         if (!oi.menuItemId) continue;
