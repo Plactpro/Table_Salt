@@ -5775,3 +5775,15 @@ export const menuItemModifierGroups = pgTable(
 
 export const insertModifierGroupSchema = createInsertSchema(modifierGroups).omit({ id: true, createdAt: true });
 export const insertModifierOptionSchema = createInsertSchema(modifierOptions).omit({ id: true });
+
+export type ModifierGroupWithOptions = typeof modifierGroups.$inferSelect & {
+  options: (typeof modifierOptions.$inferSelect)[];
+};
+
+export type OrderItemModifier = {
+  groupId: string;
+  groupName: string;
+  optionId: string;
+  optionName: string;
+  priceAdjustment: number;
+};
