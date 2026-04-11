@@ -31,6 +31,7 @@ export function registerDeliveryRoutes(app: Express): void {
          WHERE o.tenant_id = $1
            AND o.order_type IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')
            AND o.status NOT IN ('paid', 'completed', 'voided')
+                       AND (o.channel_order_id IS NULL OR NOT EXISTS (SELECT 1 FROM order_channels oc WHERE oc.name = o.order_type AND oc.tenant_id = o.tenant_id AND oc.active = false))
          ORDER BY o.created_at DESC
          LIMIT $2 OFFSET $3`,
         [user.tenantId, limit, offset]
