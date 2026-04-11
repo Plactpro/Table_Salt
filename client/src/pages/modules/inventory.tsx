@@ -4,7 +4,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
-import { useLocation } from "wouter";
+import { useLocation, useSearchParams } from "wouter";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { ConfirmLeaveDialog } from "@/components/confirm-leave-dialog";
 import { formatCurrency } from "@shared/currency";
@@ -1566,7 +1566,9 @@ type InventoryTabValue = typeof INVENTORY_TABS[number]["value"];
 export default function InventoryPage() {
   const { t } = useTranslation("inventory");
   const { t: tc } = useTranslation("common");
-  const [activeTab, setActiveTab] = useState<InventoryTabValue>("stock-list");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = (searchParams.get("tab") || "stock-list") as InventoryTabValue;
+  const setActiveTab = (tab: InventoryTabValue) => setSearchParams({ tab });
   const queryClient = useQueryClient();
 
   useRealtimeEvent("stock:updated", () => {
