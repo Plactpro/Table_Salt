@@ -8,6 +8,7 @@ import { registerAdminRoutes } from "./admin-routes";
 import { setupCsrf, setupIpAllowlistMiddleware } from "./security";
 import { uploadFile } from "./services/file-storage";
 import { withCircuitBreaker } from "./lib/circuit-breaker";
+import allergyAckRouter from "./routes/kds-allergy-ack";
 
 import { registerAuthRoutes } from "./routers/auth";
 import { registerRecycleBinRoutes } from "./routers/recycle-bin";
@@ -250,6 +251,7 @@ export async function registerRoutes(
   registerAdsRoutes(app);
   registerReportsRoutes(app);
   registerCashDrawerLogRoutes(app);
+    app.use(allergyAckRouter);
 
   app.post("/api/errors/client", (req: any, res: any) => {
     const { message, stack, pathname, userAgent } = req.body || {};
