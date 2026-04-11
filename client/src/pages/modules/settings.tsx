@@ -348,7 +348,7 @@ export default function SettingsPage() {
         timezone: ["timezone", "timeFormat"],
         tax: ["taxRate", "taxType", "compoundTax", "serviceCharge", "gstin", "cgstRate", "sgstRate", "invoicePrefix"],
         currency: ["currency", "currencyPosition", "currencyDecimals"],
-        business: ["businessType", "plan"],
+        business: ["businessType"],
         razorpay: ["razorpayEnabled", "razorpayKeyId", "razorpayKeySecret"],
       };
       const matchedSections = Object.entries(sectionKeys).filter(([, keys]) =>
@@ -403,7 +403,7 @@ export default function SettingsPage() {
 
   const handleBusinessConfigSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    updateMutation.mutate({ businessType, plan });
+    updateMutation.mutate({ businessType });
   };
 
   const handleSaveAll = () => {
@@ -411,7 +411,7 @@ export default function SettingsPage() {
       name, address, timezone, timeFormat,
       taxRate, taxType, compoundTax, serviceCharge,
       currency, currencyPosition, currencyDecimals,
-      businessType, plan,
+      businessType,
     });
   };
 
