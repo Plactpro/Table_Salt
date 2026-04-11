@@ -76,6 +76,7 @@ interface KdsItem {
   courseNumber: number | null;
   prepTimeMinutes: number | null;
   is_voided?: boolean;
+  voidedReason?: string | null;
 }
 
 interface KdsTicket {
@@ -377,13 +378,19 @@ function KdsItemRow({
       <div className="flex items-center justify-between gap-2 py-1 text-xs border-b last:border-0" data-testid={`row-item-${item.id}`}>
         <div className="flex items-center gap-1.5 flex-1 min-w-0">
           <ItemStatusDot status={cs} />
-          <span className="truncate font-medium">{item.quantity && item.quantity > 1 ? `${item.quantity}× ` : ""}{item.name}</span>
+          <span className={item.is_voided ? "truncate font-medium line-through opacity-60" : "truncate font-medium"}>{item.quantity && item.quantity > 1 ? `${item.quantity}× ` : ""}{item.name}</span>
+          {item.is_voided && (
+            <div className="px-1.5 py-0.5 bg-red-100 rounded text-[10px] text-red-700 flex-shrink-0">
+              <span className="font-semibold">VOID</span>
+              {item.voidedReason && <span className="ml-1 font-normal">— {item.voidedReason}</span>}
+            </div>
+          )}
           {cs === "started" && item.estimatedReadyAt && (
             <ItemCountdown estimatedReadyAt={item.estimatedReadyAt} itemId={item.id} />
           )}
         </div>
         <div className="flex items-center gap-1 shrink-0" data-testid={`status-${item.id}`}>
-          {courseLocked ? (
+          {!item.is_voided && (courseLocked ? (
             <span className="text-yellow-500 text-[10px]">🔒</span>
           ) : canStart && (cs === "queued" || cs === "ready_to_start") ? (
             <>
@@ -403,7 +410,7 @@ function KdsItemRow({
                 <Pause className="h-2.5 w-2.5" />
               </Button>
             </>
-          ) : null}
+          ) : null)}
         </div>
       </div>
       <KdsHoldDialog
@@ -426,7 +433,7 @@ function CookingControlTicket({
 }) {
   const [showRush, setShowRush] = useState(false);
   const label = ticket.tableNumber ? `Table ${ticket.tableNumber}` : ticket.orderType === "takeaway" ? "Takeaway" : `#${ticket.id.slice(-4).toUpperCase()}`;
-  const items = ticket.items.filter(i => mapItemStatus(i) !== "served" && !i.is_voided);
+  const items = ticket.items.filter(i => mapItemStatus(i) !== "served");
   const readyCount = items.filter(i => mapItemStatus(i) === "ready").length;
 
   const byCourse = items.reduce<Record<string, KdsItem[]>>((acc, item) => {
