@@ -514,25 +514,30 @@ export default function EventsPage() {
     onError: (err: Error) => { toast({ title: "Error", description: err.message, variant: "destructive" }); },
   });
 
+  function toLocalISOString(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
   function openCreate(date?: Date) {
     setEditingEvent(null);
     const d = date || new Date();
-    const startStr = d.toISOString().slice(0, 16);
+    const startStr = toLocalISOString(d);
     const endD = new Date(d);
     endD.setHours(23, 59, 0, 0);
-    setForm({ ...defaultForm, startDate: startStr, endDate: endD.toISOString().slice(0, 16) });
+    setForm({ ...defaultForm, startDate: startStr, endDate: toLocalISOString(endD) });
     setDialogOpen(true);
   }
 
   function openEdit(ev: CalEvent) {
     setEditingEvent(ev);
-    setForm({
+    toLocalISOString(setForm({
       title: ev.title,
       description: ev.description || "",
       type: ev.type,
       impact: ev.impact,
-      startDate: new Date(ev.startDate).toISOString().slice(0, 16),
-      endDate: new Date(ev.endDate).toISOString().slice(0, 16),
+      startDate: new Date(ev.startDate)),
+      endDate: new toLocalISOString(Date(ev.endDate)),
       allDay: ev.allDay ?? true,
       color: ev.color || "#3b82f6",
       outlets: ev.outlets || [],
@@ -550,8 +555,8 @@ export default function EventsPage() {
       description: ev.description || "",
       type: ev.type,
       impact: ev.impact,
-      startDate: new Date(ev.startDate).toISOString().slice(0, 16),
-      endDate: new Date(ev.endDate).toISOString().slice(0, 16),
+      startDate: new toLocalISOString(Date(ev.startDate)),
+      endDate: new toLocalISOString(Date(ev.endDate)),
       allDay: ev.allDay ?? true,
       color: ev.color || "#3b82f6",
       outlets: ev.outlets || [],
