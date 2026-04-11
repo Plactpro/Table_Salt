@@ -989,6 +989,23 @@ export default function DeliveryPage() {
                 >
                   <UserCheck className="w-4 h-4" /> Assign / Change Agent
                 </Button>
+
+                              <Button
+                variant="destructive"
+                className="w-full gap-2"
+                onClick={() => {
+                  updateMutation.mutate({
+                    id: selectedDelivery.id,
+                    data: { status: "cancelled" },
+                  });
+                  setSelectedDelivery({ ...selectedDelivery, status: "cancelled" });
+                  setShowDetailDialog(false);
+                }}
+                disabled={updateMutation.isPending || selectedDelivery.status === "delivered" || selectedDelivery.status === "cancelled"}
+                data-testid="button-cancel-delivery"
+              >
+                <XCircle className="w-4 h-4" /> Cancel Order
+              </Button>
               </div>
             );
           })()}
