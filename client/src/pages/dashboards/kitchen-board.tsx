@@ -329,14 +329,16 @@ function KdsRushDialog({
 }
 
 function KdsItemRow({
-  item, siblingItems, onRefresh, courseLocked,
+  item, siblingItems, onRefresh, courseLocked, ticketStatus,
 }: {
   item: KdsItem;
   siblingItems?: KdsItem[];
   onRefresh: () => void;
   courseLocked?: boolean;
+  ticketStatus?: string;
 }) {
   const [loading, setLoading] = useState(false);
+  const canStart = ticketStatus === "new" || ticketStatus === "sent_to_kitchen";
   const [showHold, setShowHold] = useState(false);
   const cs = mapItemStatus(item);
 
@@ -383,7 +385,7 @@ function KdsItemRow({
         <div className="flex items-center gap-1 shrink-0" data-testid={`status-${item.id}`}>
           {courseLocked ? (
             <span className="text-yellow-500 text-[10px]">🔒</span>
-          ) : cs === "queued" || cs === "ready_to_start" ? (
+          ) : canStart && (cs === "queued" || cs === "ready_to_start") ? (
             <>
               <Button size="sm" variant="outline" className="h-5 text-[10px] px-1.5" onClick={startItem} disabled={loading} data-testid={`button-start-${item.id}`}>
                 <Play className="h-2.5 w-2.5 mr-0.5" />Start
@@ -442,6 +444,7 @@ function CookingControlTicket({
             <span>{label}</span>
             <div className="flex items-center gap-1.5">
               <span className="text-xs font-normal text-muted-foreground">{readyCount}/{items.length} ready</span>
+              {(ticket.status === "new" || ticket.status === "sent_to_kitchen") && (
               <Button
                 size="sm"
                 variant="ghost"
@@ -451,6 +454,7 @@ function CookingControlTicket({
               >
                 <Zap className="h-3 w-3 mr-0.5" />RUSH
               </Button>
+              )}
             </div>
           </CardTitle>
           <div className="w-full bg-gray-200 rounded-full h-1.5" data-testid={`progress-order-${ticket.id}`}>
@@ -482,6 +486,7 @@ function CookingControlTicket({
                       siblingItems={courseItems}
                       onRefresh={onRefresh}
                       courseLocked={isLocked}
+                      ticketStatus={ticket.status}
                     />
                   ))}
                 </div>
@@ -489,7 +494,7 @@ function CookingControlTicket({
             })
           ) : (
             items.map(item => (
-              <KdsItemRow key={item.id} item={item} siblingItems={items} onRefresh={onRefresh} />
+              <KdsItemRow key={item.id} item={item} siblingItems={items} onRefresh={onRefresh} ticketStatus={ticket.status} />
             ))
           )}
           {items.length === 0 && <p className="text-xs text-muted-foreground py-2 text-center">All items served</p>}
