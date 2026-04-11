@@ -958,7 +958,7 @@ function TablesPageContent() {
 
                   {filteredTables.map(table => {
                     const status = table.status || "free";
-                    const cfg = statusConfig[status];
+                    const cfg = statusConfig[status] ?? statusConfig["free"];
                     const isCircle = table.shape === "circle";
                     const isRect = table.shape === "rectangle";
                     const w = isRect ? TABLE_W * 1.5 : TABLE_W;
@@ -1037,7 +1037,7 @@ function TablesPageContent() {
                       <AnimatePresence>
                         {zoneTables.map(table => {
                           const status = table.status || "free";
-                          const cfg = statusConfig[status];
+                          const cfg = statusConfig[status] ?? statusConfig["free"];
                           const Icon = statusIcon[status];
                           const isMerged = !!table.mergedWith;
                           const mergedTarget = tables.find(t => t.id === table.mergedWith);
@@ -1546,7 +1546,7 @@ function TablesPageContent() {
         <DialogContent>
           {selectedTable && (() => {
             const s = selectedTable.status || "free";
-            const cfg = statusConfig[s];
+            const cfg = statusConfig[s] ?? statusConfig["free"];
             const Icon = statusIcon[s];
             return (
               <>
