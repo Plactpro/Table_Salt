@@ -864,6 +864,15 @@ export default function KitchenBoardPage() {
   useRealtimeEvent("kds:course_fired", invalidateKds);
   useRealtimeEvent("kds:hold_released", invalidateKds);
   useRealtimeEvent("kds:refire_ticket", invalidateKds);
+  useRealtimeEvent("void_request:new", (payload) => {
+    toast({
+      title: "Void Requested",
+      description: `${(payload).requestedBy ?? "Staff"}: ${(payload).itemName ?? "item"} - ${(payload).voidReason ?? ""}`,
+      variant: "destructive",
+      duration: 10000,
+    });
+    invalidateKds();
+  });
 
   const { data: board, isLoading, refetch } = useQuery<BoardData>({
     queryKey: ["/api/assignments/board", selectedOutletId],
