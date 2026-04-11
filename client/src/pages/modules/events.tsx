@@ -531,13 +531,13 @@ export default function EventsPage() {
 
   function openEdit(ev: CalEvent) {
     setEditingEvent(ev);
-    toLocalISOString(setForm({
+    setForm({
       title: ev.title,
       description: ev.description || "",
       type: ev.type,
       impact: ev.impact,
-      startDate: new Date(ev.startDate)),
-      endDate: new toLocalISOString(Date(ev.endDate)),
+      startDate: toLocalISOString(new Date(ev.startDate)),
+      endDate: toLocalISOString(new Date(ev.endDate)),
       allDay: ev.allDay ?? true,
       color: ev.color || "#3b82f6",
       outlets: ev.outlets || [],
@@ -555,8 +555,8 @@ export default function EventsPage() {
       description: ev.description || "",
       type: ev.type,
       impact: ev.impact,
-      startDate: new toLocalISOString(Date(ev.startDate)),
-      endDate: new toLocalISOString(Date(ev.endDate)),
+      startDate: toLocalISOString(new Date(ev.startDate)),
+      endDate: toLocalISOString(new Date(ev.endDate)),
       allDay: ev.allDay ?? true,
       color: ev.color || "#3b82f6",
       outlets: ev.outlets || [],
