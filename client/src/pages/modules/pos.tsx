@@ -2798,7 +2798,6 @@ export default function POSPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div></></PageErrorBoundary>
       {/* POS-09: Void item modal for sent kitchen items */}
       {showVoidModal && selectedVoidItem && (
         <VoidRequestModal
@@ -2811,5 +2810,6 @@ export default function POSPage() {
           }}
         />
       )}
+    </div></></PageErrorBoundary>
   );
 }
