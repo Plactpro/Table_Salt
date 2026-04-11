@@ -1278,4 +1278,37 @@ export function registerOrdersRoutes(app: Express): void {
     }
   });
 
+
+  // Merge two tables (move items from source order to target order)
+  app.post("/api/orders/merge-tables", requireAuth, async (req, res) => {
+    try {
+      const user = (req as any).user;
+      const { sourceOrderId, targetOrderId } = req.body;
+      if (!sourceOrderId || !targetOrderId) return res.status(400).json({ message: "sourceOrderId and targetOrderId required" });
+
+      // Move all items from source to target
+      await db.update(require("../../shared/schema").orderItems)
+        .set({ orderId: targetOrderId })
+        .where(eq(require("../../shared/schema").orderItems.orderId, sourceOrderId));
+
+      // Get source order to free its table
+      const [sourceOrder] = await db.select().from(require("../../shared/schema").orders).where(eq(require("../../shared/schema").orders.id, sourceOrderId));
+
+      // Mark source order as merged/cancelled
+      await db.update(require("../../shared/schema").orders)
+        .set({ status: "cancelled", notes: "Merged into order #" + targetOrderId })
+        .where(eq(require("../../shared/schema").orders.id, sourceOrderId));
+
+      // Free source table
+      if (sourceOrder?.tableId) await storage.updateTable(sourceOrder.tableId, user.tenantId, { status: "available" });
+
+      emitToTenant(user.tenantId, "order:tables_merged", { sourceOrderId, targetOrderId });
+      auditLogFromReq(req, { action: "table_merge", entityType: "order", entityId: targetOrderId, before: { sourceOrderId }, after: { merged: true } });
+
+      res.json({ success: true, sourceOrderId, targetOrderId });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
 }
