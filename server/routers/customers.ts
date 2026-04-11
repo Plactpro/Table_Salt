@@ -127,4 +127,21 @@ export function registerCustomersRoutes(app: Express): void {
     const custs = await storage.getCustomersByTags(user.tenantId, req.params.tag);
     res.json(custs);
   });
+// CRM-LOYALTY-LOG: Loyalty transaction history
+app.get("/api/customers/:id/loyalty-history", requireAuth, async (req: any, res: any) => {
+  try {
+    const { id } = req.params;
+    const tenantId = req.user?.tenantId;
+    const { rows } = await pool.query(
+      `SELECT * FROM loyalty_transactions
+       WHERE customer_id = $1 AND tenant_id = $2
+       ORDER BY created_at DESC LIMIT 50`,
+      [id, tenantId]
+    );
+    res.json(rows);
+  } catch (err: any) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 }
