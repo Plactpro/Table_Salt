@@ -1566,27 +1566,16 @@ type InventoryTabValue = typeof INVENTORY_TABS[number]["value"];
 export default function InventoryPage() {
   const { t } = useTranslation("inventory");
   const { t: tc } = useTranslation("common");
-  const [location, navigate] = useLocation();
+  const [activeTab, setActiveTab] = useState<InventoryTabValue>("stock-list");
   const queryClient = useQueryClient();
 
   useRealtimeEvent("stock:updated", () => {
     queryClient.invalidateQueries({ queryKey: ["/api/inventory"] });
   });
 
-  const getTabFromUrl = (): InventoryTabValue => {
-    const searchStr = location.includes("?") ? location.split("?")[1] : "";
-    const params = new URLSearchParams(searchStr);
-    const tab = params.get("tab");
-    if (tab && INVENTORY_TABS.some(t => t.value === tab)) return tab as InventoryTabValue;
-    return "stock-list";
-  };
+  
 
-  const activeTab = getTabFromUrl();
-
-  const setTab = (tab: string) => {
-    navigate(`/inventory?tab=${tab}`);
-  };
-
+  
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="p-6 space-y-6" data-testid="page-inventory">
       <PageTitle title={t("title")} />
@@ -1600,7 +1589,7 @@ export default function InventoryPage() {
 
       <UpcomingEventsSidebar />
 
-      <Tabs value={activeTab} onValueChange={setTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as InventoryTabValue)} className="w-full">
         <TabsList className="flex flex-wrap h-auto gap-1 justify-start">
           {INVENTORY_TABS.map(({ value, label, icon: Icon }) => (
             <TabsTrigger
