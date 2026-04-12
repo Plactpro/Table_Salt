@@ -403,13 +403,14 @@ function startWebhookMonitor() {
     console.error('[Migration] CB-FIX-1: orders columns migration error:', err);
     if (process.env.NODE_ENV === 'production') process.exit(1);
   }
-    const { runAdminMigrations, runTask108Migrations, runTask184Migrations, runTask191Migrations, runP3DeployMigrations } = await import("./admin-migrations");
+    const { runAdminMigrations, runTask108Migrations, runTask184Migrations, runTask191Migrations, runP3DeployMigrations, runChefAssignmentMigrations } = await import("./admin-migrations");
     const migrationRunners: Array<{ name: string; fn: () => Promise<void> }> = [
       { name: "AdminMigrations", fn: runAdminMigrations },
       { name: "Task108Migrations", fn: runTask108Migrations },
       { name: "Task184Migrations", fn: runTask184Migrations },
       { name: "Task191Migrations", fn: runTask191Migrations },
       { name: "P3DeployMigrations", fn: runP3DeployMigrations },
+                { name: "ChefAssignmentMigrations", fn: runChefAssignmentMigrations },
     ];
 
     for (const { name, fn } of migrationRunners) {
