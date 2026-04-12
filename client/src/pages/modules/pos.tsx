@@ -551,7 +551,6 @@ export default function POSPage() {
 
   const sizeGroup = modifierGroups?.groups.find(g => g.id === "size");
   const spiceGroup = modifierGroups?.groups.find(g => g.id === "spice");
-  const [showSplitDialog, setShowSplitDialog] = useState(false);
   const [splitAssignment, setSplitAssignment] = useState<Record<string, number>>({});
   const [splitGroupCount, setSplitGroupCount] = useState(2);
   const [noteDialogItem, setNoteDialogItem] = useState<string | null>(null);
