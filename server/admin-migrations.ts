@@ -1803,6 +1803,12 @@ export async function runAdminMigrations(): Promise<void> {
   }
 
   console.log('[Migration] ALL-02: allergy ack migration complete');
+
+    // EXPIRY: Inventory expiry tracking migration
+  await runExpiryTrackingMigration();
+
+  // AUDIT-PHOTOS: Photo evidence migration
+  await runAuditPhotosMigration();
 }
 
 export async function runTask108Migrations(): Promise<void> {
@@ -4066,4 +4072,24 @@ export async function runChefAssignmentMigrations(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS ticket_assignments_assigned_at_idx ON ticket_assignments(assigned_at)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS ticket_assignments_tenant_outlet_idx ON ticket_assignments(tenant_id, outlet_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS ticket_assignments_order_idx ON ticket_assignments(order_id)`);
+}
+
+export async function runExpiryTrackingMigration(): Promise<void> {
+  await pool.query(`
+    ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS expiry_date DATE;
+    ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS expiry_alert_days INTEGER DEFAULT 7;
+    ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS batch_number VARCHAR(100);
+    ALTER TABLE inventory_items ADD COLUMN IF NOT EXISTS received_date DATE;
+  `);
+  console.log('[MIGRATION] Expiry tracking columns added to inventory_items');
+}
+
+export async function runAuditPhotosMigration(): Promise<void> {
+  await pool.query(`
+    ALTER TABLE audit_responses ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE audit_issues ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE cleaning_logs ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
+    ALTER TABLE cleaning_template_items ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
+  `);
+  console.log('[MIGRATION] photo_urls columns added to audit and cleaning tables');
 }

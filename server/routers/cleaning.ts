@@ -1,6 +1,10 @@
 import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
+import { auditPhotoUpload, getPhotoUrl } from "../services/photo-upload";
+import { pool } from "./db";
+import fs from "fs";
+import pathModule from "path";
 
 export function registerCleaningRoutes(app: Express): void {
   app.get("/api/cleaning/templates", requireAuth, async (req, res) => {
@@ -377,6 +381,52 @@ export function registerCleaningRoutes(app: Express): void {
         categoryScores: Object.entries(categoryScores).map(([category, data]) => ({ category, score: data.max > 0 ? Math.round((data.score / data.max) * 100) : 0 })),
         recentAudits: completed.slice(0, 10).map(s => ({ id: s.id, date: s.scheduledDate, score: s.totalScore, maxScore: s.maxScore, percentage: s.maxScore ? Math.round(((s.totalScore || 0) / s.maxScore) * 100) : 0 })),
       });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+    // AUDIT-PHOTOS: Upload
+  app.post("/api/audit-photos/:targetType/:targetId", requireAuth, auditPhotoUpload.array("photos", 3), async (req: any, res: any) => {
+    try {
+      const { targetType, targetId } = req.params;
+      const files = req.files as any[];
+      if (!files || files.length === 0) return res.status(400).json({ message: "No photos uploaded" });
+      const photoUrls = files.map((f: any) => getPhotoUrl(f.filename));
+      const table = targetType === "response" ? "audit_responses" : targetType === "issue" ? "audit_issues" : "cleaning_logs";
+      const { rows } = await pool.query(
+        `SELECT id, COALESCE(photo_urls, '[]'::jsonb) as photo_urls FROM ${table} WHERE id = $1`,
+        [targetId]
+      );
+      if (rows.length === 0) return res.status(404).json({ message: "Record not found" });
+      const allPhotos = [...((rows[0].photo_urls as string[]) ?? []), ...photoUrls];
+      await pool.query(`UPDATE ${table} SET photo_urls = $1::jsonb WHERE id = $2`, [JSON.stringify(allPhotos), targetId]);
+      res.json({ success: true, photoUrls, totalPhotos: allPhotos.length });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // AUDIT-PHOTOS: Get
+  app.get("/api/audit-photos/:targetType/:targetId", requireAuth, async (req: any, res: any) => {
+    try {
+      const { targetType, targetId } = req.params;
+      const table = targetType === "response" ? "audit_responses" : targetType === "issue" ? "audit_issues" : "cleaning_logs";
+      const { rows } = await pool.query(`SELECT COALESCE(photo_urls, '[]'::jsonb) as photo_urls FROM ${table} WHERE id = $1`, [targetId]);
+      if (rows.length === 0) return res.status(404).json({ message: "Not found" });
+      res.json({ photoUrls: rows[0].photo_urls });
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+  // AUDIT-PHOTOS: Delete
+  app.delete("/api/audit-photos/:targetType/:targetId/:filename", requireAuth, async (req: any, res: any) => {
+    try {
+      const { targetType, targetId, filename } = req.params;
+      const table = targetType === "response" ? "audit_responses" : targetType === "issue" ? "audit_issues" : "cleaning_logs";
+      const photoUrl = "/uploads/audit-photos/" + filename;
+      const { rows } = await pool.query(`SELECT COALESCE(photo_urls, '[]'::jsonb) as photo_urls FROM ${table} WHERE id = $1`, [targetId]);
+      if (rows.length === 0) return res.status(404).json({ message: "Not found" });
+      const updated = ((rows[0].photo_urls as string[]) ?? []).filter((u: string) => u !== photoUrl);
+      await pool.query(`UPDATE ${table} SET photo_urls = $1::jsonb WHERE id = $2`, [JSON.stringify(updated), targetId]);
+      const filePath = pathModule.join(process.cwd(), "uploads", "audit-photos", filename);
+      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+      res.json({ success: true, remainingPhotos: updated.length });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 }

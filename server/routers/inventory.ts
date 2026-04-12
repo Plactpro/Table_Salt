@@ -41,6 +41,43 @@ export function registerInventoryRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
+
+    // EXPIRY: Items expiring soon
+  app.get("/api/inventory/expiring", requireAuth, async (req: any, res: any) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const days = parseInt(req.query.days as string) || 7;
+      const { rows } = await pool.query(
+        `SELECT id, name, category, current_stock, unit, expiry_date,
+           expiry_alert_days, batch_number,
+           CASE WHEN expiry_date < CURRENT_DATE THEN 'expired'
+                WHEN expiry_date <= CURRENT_DATE + $2::integer THEN 'expiring_soon'
+                ELSE 'ok' END as expiry_status,
+           (expiry_date - CURRENT_DATE)::int as days_until_expiry
+         FROM inventory_items
+         WHERE tenant_id = $1 AND expiry_date IS NOT NULL
+           AND expiry_date <= CURRENT_DATE + $2::integer AND is_deleted = false
+         ORDER BY expiry_date ASC`,
+        [tenantId, days]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+    // EXPIRY: Expired items with remaining stock
+  app.get("/api/inventory/expired", requireAuth, async (req: any, res: any) => {
+    try {
+      const tenantId = req.user?.tenantId;
+      const { rows } = await pool.query(
+        `SELECT id, name, category, current_stock, unit, expiry_date,
+           (CURRENT_DATE - expiry_date)::int as days_overdue
+         FROM inventory_items WHERE tenant_id = $1 AND expiry_date < CURRENT_DATE
+           AND current_stock > 0 AND is_deleted = false ORDER BY expiry_date ASC`,
+        [tenantId]
+      );
+      res.json(rows);
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
   app.get("/api/inventory/par-check/:outletId", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
