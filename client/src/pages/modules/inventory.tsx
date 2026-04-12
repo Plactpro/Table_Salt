@@ -546,16 +546,18 @@ function InventoryTab() {
                       {!isCrockeryTab && <TableCell>{item.supplier || "—"}</TableCell>}
                       <TableCell>
                         {isLowStock || belowPar
-                          ? <Badge variant="destructive">{belowPar ? "Below Par" : "Low Stock"}</Badge>
-                                                    {(() => {
-                            const ed = (item as any).expiryDate;
-                            if (!ed) return null;
-                            const diff = Math.round((new Date(ed).getTime() - Date.now()) / 86400000);
-                            const ad = Number((item as any).expiryAlertDays) || 7;
-                            if (diff < 0) return <Badge className="bg-red-100 text-red-700 ml-1 text-xs border-0" data-testid={"badge-expiry-" + item.id}>Exp {Math.abs(diff)}d ago</Badge>;
-                            if (diff <= ad) return <Badge className="bg-amber-100 text-amber-700 ml-1 text-xs border-0" data-testid={"badge-expiry-" + item.id}>Exp {diff}d</Badge>;
-                            return null;
-                          })()}
+                          ? <>
+                              <Badge variant="destructive">{belowPar ? "Below Par" : "Low Stock"}</Badge>
+                              {(() => {
+                                const ed = (item as any).expiryDate;
+                                if (!ed) return null;
+                                const diff = Math.round((new Date(ed).getTime() - Date.now()) / 86400000);
+                                const ad = Number((item as any).expiryAlertDays) || 7;
+                                if (diff < 0) return <Badge className="bg-red-100 text-red-700 ml-1 text-xs border-0" data-testid={"badge-expiry-" + item.id}>Exp {Math.abs(diff)}d ago</Badge>;
+                                if (diff <= ad) return <Badge className="bg-amber-100 text-amber-700 ml-1 text-xs border-0" data-testid={"badge-expiry-" + item.id}>Exp {diff}d</Badge>;
+                                return null;
+                              })()}
+                            </>
                           : <Badge variant="secondary">In Stock</Badge>}
                       </TableCell>
                       {canEdit && (
