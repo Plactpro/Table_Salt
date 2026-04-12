@@ -380,6 +380,12 @@ function startWebhookMonitor() {
   setInterval(runWebhookCheck, CHECK_INTERVAL_MS);
   // Also run once after a 2-minute startup delay to let migrations complete
   setTimeout(runWebhookCheck, 2 * 60 * 1000);
+
+  import("./services/reservation-reminders").then(({ sendReservationReminders }) => {
+    setInterval(() => { sendReservationReminders().catch((e: any) => console.error("[Reminders] Error:", e.message)); }, 15 * 60 * 1000);
+    setTimeout(() => { sendReservationReminders().catch((e: any) => console.error("[Reminders] Startup:", e.message)); }, 60 * 1000);
+    console.log("[Reminders] Scheduler started — every 15 min");
+  }).catch((e) => console.error("[Reminders] Init error:", e));
   console.log("[WebhookMonitor] Started — checking every 30 minutes");
 }
 
