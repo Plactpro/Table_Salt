@@ -2,7 +2,7 @@ import { useState, Component } from "react";
 import { PageTitle } from "@/lib/accessibility";
 import type { ErrorInfo, ReactNode } from "react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag, UtensilsCrossed, DollarSign } from "lucide-react";
+import { BarChart3, Activity, ScrollText, ChefHat, Clock, AlertCircle, Bell, Tag, UtensilsCrossed, DollarSign, FileSpreadsheet } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import ReportsPage from "./reports";
 import BIDashboard from "./bi-dashboard";
@@ -14,6 +14,7 @@ import CustomerRequestsAnalytics from "./customer-requests-analytics";
 import PriceAnalysis from "./price-analysis";
 import CrockeryBreakageReport from "./crockery-breakage-report";
 import CashDrawerLog from "./cash-drawer-log";
+import AccountingExport from "./accounting-export";
 
 class TabErrorBoundary extends Component<{ children: ReactNode; label: string }, { hasError: boolean }> {
   constructor(props: { children: ReactNode; label: string }) {
@@ -77,6 +78,9 @@ export default function ReportsHub() {
           <TabsTrigger value="audit-log" data-testid="tab-audit-log">
             <ScrollText className="h-4 w-4 mr-1.5" />{t("auditLog")}
           </TabsTrigger>
+              <TabsTrigger value="accounting-export" data-testid="tab-accounting-export">
+                <FileSpreadsheet className="h-4 w-4 mr-1" /> Accounting Export
+              </TabsTrigger>
         </TabsList>
         <TabsContent value="reports" className="mt-4" forceMount>
           <TabErrorBoundary label={t("salesReports")}>
@@ -128,6 +132,11 @@ export default function ReportsHub() {
             <AuditLogPage />
           </TabErrorBoundary>
         </TabsContent>
+          <TabsContent value="accounting-export" className="mt-4" forceMount>
+            <TabErrorBoundary label={t("accountingExport")}>
+              <AccountingExport />
+            </TabErrorBoundary>
+          </TabsContent>
       </Tabs>
     </div>
   );
