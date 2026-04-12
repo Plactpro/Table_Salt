@@ -555,4 +555,137 @@ export function registerReportsRoutes(app: Express): void {
       res.json(result);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
+
+    // PR-018: QuickBooks/Xero Accounting Export
+  app.get("/api/reports/export/accounting", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as any;
+      const { from, to, format } = req.query as Record<string, string>;
+      if (!from || !to) return res.status(400).json({ message: "from and to dates are required" });
+      if (!format || !['quickbooks', 'xero', 'json'].includes(format)) {
+        return res.status(400).json({ message: "format must be quickbooks, xero, or json" });
+      }
+
+      // Fetch bills with payments for date range
+      const { rows: bills } = await pool.query(
+        `SELECT b.*, bp.payment_method, bp.amount as payment_amount,
+         bp.reference_no, bp.is_refund
+         FROM bills b
+         LEFT JOIN bill_payments bp ON bp.bill_id = b.id
+         WHERE b.tenant_id = $1
+         AND b.created_at >= $2 AND b.created_at <= $3
+         ORDER BY b.created_at ASC`,
+        [user.tenantId, from, to]
+      );
+
+      // Group payments by bill
+      const billMap = new Map<string, any>();
+      for (const row of bills) {
+        const id = row.id;
+        if (!billMap.has(id)) {
+          billMap.set(id, { ...row, payments: [] });
+        }
+        if (row.payment_method) {
+          billMap.get(id).payments.push({
+            method: row.payment_method,
+            amount: row.payment_amount,
+            reference: row.reference_no,
+            isRefund: row.is_refund
+          });
+        }
+      }
+      const exportBills = Array.from(billMap.values());
+
+      if (format === 'json') {
+        return res.json({ bills: exportBills, count: exportBills.length, from, to });
+      }
+
+      if (format === 'quickbooks') {
+        const iif = generateQuickBooksIIF(exportBills);
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Content-Disposition', `attachment; filename="export_${from}_${to}.iif"`);
+        return res.send(iif);
+      }
+
+      if (format === 'xero') {
+        const csv = generateXeroCSV(exportBills);
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="export_${from}_${to}.csv"`);
+        return res.send(csv);
+      }
+    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  });
+
+}
+
+// QuickBooks IIF Generator
+function generateQuickBooksIIF(bills: any[]): string {
+  const lines: string[] = [];
+  // Header
+  lines.push('!TRNS\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tMEMO');
+  lines.push('!SPL\tTRNSTYPE\tDATE\tACCNT\tNAME\tAMOUNT\tMEMO');
+  lines.push('!ENDTRNS');
+
+  for (const bill of bills) {
+    const date = new Date(bill.created_at).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' });
+    const total = parseFloat(bill.total_amount || '0');
+    const billNum = bill.bill_number || bill.id;
+
+    // Transaction line
+    lines.push(`TRNS\tINVOICE\t${date}\tAccounts Receivable\tCustomer ${bill.customer_id || 'Walk-in'}\t${total.toFixed(2)}\tBill #${billNum}`);
+
+    // Split lines for tax and subtotal
+    const subtotal = parseFloat(bill.subtotal || '0');
+    const tax = parseFloat(bill.tax_amount || '0');
+    const serviceCharge = parseFloat(bill.service_charge || '0');
+    const discount = parseFloat(bill.discount_amount || '0');
+
+    lines.push(`SPL\tINVOICE\t${date}\tSales Revenue\t\t${(-subtotal).toFixed(2)}\tFood & Beverage`);
+    if (tax > 0) lines.push(`SPL\tINVOICE\t${date}\tTax Collected\t\t${(-tax).toFixed(2)}\tTax`);
+    if (serviceCharge > 0) lines.push(`SPL\tINVOICE\t${date}\tService Charge Revenue\t\t${(-serviceCharge).toFixed(2)}\tService Charge`);
+    if (discount > 0) lines.push(`SPL\tINVOICE\t${date}\tSales Discounts\t\t${discount.toFixed(2)}\tDiscount: ${bill.discount_reason || ''}`);
+
+    lines.push('ENDTRNS');
+  }
+  return lines.join('\n');
+}
+
+// Xero CSV Generator
+function generateXeroCSV(bills: any[]): string {
+  const headers = [
+    'ContactName', 'EmailAddress', 'POAddressLine1', 'POCity',
+    'InvoiceNumber', 'Reference', 'InvoiceDate', 'DueDate',
+    'Total', 'TaxTotal', 'SubTotal',
+    'Description', 'Quantity', 'UnitAmount', 'AccountCode', 'TaxType'
+  ];
+  const rows: string[] = [headers.join(',')];
+
+  for (const bill of bills) {
+    const date = new Date(bill.created_at).toISOString().split('T')[0];
+    const billNum = bill.bill_number || bill.id;
+    const total = parseFloat(bill.total_amount || '0');
+    const tax = parseFloat(bill.tax_amount || '0');
+    const subtotal = parseFloat(bill.subtotal || '0');
+
+    const row = [
+      `"Customer ${bill.customer_id || 'Walk-in'}"`,
+      '""',
+      '""',
+      '""',
+      `"${billNum}"`,
+      `"Bill #${billNum}"`,
+      `"${date}"`,
+      `"${date}"`,
+      total.toFixed(2),
+      tax.toFixed(2),
+      subtotal.toFixed(2),
+      '"Food & Beverage"',
+      '1',
+      subtotal.toFixed(2),
+      '"200"',
+      '"Tax on Sales"'
+    ];
+    rows.push(row.join(','));
+  }
+  return rows.join('\n');
 }
