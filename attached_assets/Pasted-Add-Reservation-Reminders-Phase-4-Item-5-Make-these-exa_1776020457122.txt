@@ -1,0 +1,38 @@
+Add Reservation Reminders (Phase 4 Item 5). Make these exact changes:
+
+1. shared/schema.ts — In the reservations pgTable, find the line "customerPhone: text("customer_phone")," and BEFORE "guests: integer("guests").default(2)," add these 4 lines:
+   reminderSentAt: timestamp("reminder_sent_at"),
+   reminder24hSent: boolean("reminder_24h_sent").default(false),
+   reminder2hSent: boolean("reminder_2h_sent").default(false),
+   customerEmail: varchar("customer_email", { length: 255 }),
+
+2. Create NEW file server/services/reservation-reminders.ts with this content:
+   - Import pool from "../db" and sendEmail from "./email-service"
+   - Export async function sendReservationReminders()
+   - Query 24h reminders: SELECT r.*, t.name as restaurant_name FROM reservations r JOIN tenants t ON t.id=r.tenant_id WHERE r.status IN ('confirmed','pending') AND r.reminder_24h_sent=false AND r.date_time BETWEEN NOW()+INTERVAL '23 hours' AND NOW()+INTERVAL '25 hours' AND r.customer_email IS NOT NULL
+   - For each: sendEmail with subject "Reminder: Your reservation at [restaurant] tomorrow", HTML body showing restaurant name, date/time, guests, special notes. Then UPDATE reservations SET reminder_24h_sent=true, reminder_sent_at=NOW() WHERE id=$1. Wrap in try/catch.
+   - Query 2h reminders: same but reminder_2h_sent=false, date_time BETWEEN NOW()+INTERVAL '1 hour 45 minutes' AND NOW()+INTERVAL '2 hours 15 minutes'
+   - For each: sendEmail with subject "Your reservation at [restaurant] is in 2 hours", short HTML. Then UPDATE reminder_2h_sent=true. Wrap in try/catch.
+   - Log counts at end.
+
+3. server/index.ts — Find the line "setInterval(runWebhookCheck, CHECK_INTERVAL_MS);" and add this block immediately after it:
+   try {
+     const { sendReservationReminders } = await import("./services/reservation-reminders");
+     setInterval(() => { sendReservationReminders().catch((e: any) => console.error("[Reminders] Error:", e.message)); }, 15 * 60 * 1000);
+     setTimeout(() => { sendReservationReminders().catch((e: any) => console.error("[Reminders] Startup:", e.message)); }, 60 * 1000);
+     console.log("[Reminders] Scheduler started — every 15 min");
+   } catch (e) { console.error("[Reminders] Init error:", e); }
+
+4. server/admin-migrations.ts — Find "await runAuditPhotosMigration();" near the end of runAdminMigrations. Add after it: "await runRemindersMigration();" Then add this new exported function at the very end of the file:
+   export async function runRemindersMigration(): Promise<void> {
+     await pool.query(`ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ; ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT false; ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT false; ALTER TABLE reservations ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);`);
+     console.log('[Migration] REMINDERS: columns added');
+   }
+
+5. client/src/pages/modules/tables.tsx — Three changes:
+   a) Find resFormData useState (has customerName, customerPhone, tableId, guests, dateTime, notes, customerId). Add customerEmail: "" to it.
+   b) Find the Phone input with data-testid="input-res-phone". Add this email input immediately after it:
+      <div><Label>Email <span className="text-xs text-muted-foreground">(for reminders)</span></Label><Input type="email" placeholder="customer@email.com" value={resFormData.customerEmail ?? ""} onChange={e => setResFormData({ ...resFormData, customerEmail: e.target.value })} data-testid="input-res-email" /></div>
+   c) Find where createReservationMut.mutate is called with customerPhone. Add customerEmail: resFormData.customerEmail || undefined to that object.
+
+Run npm run build. If clean, commit as "feat(reminders): add reservation reminder system [REMINDERS]" and push to main.
