@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { useTimer, formatMMSS, getTimingStatus } from "@/hooks/useTimer";
+import { ALLERGENS, hasAllergens } from "@shared/allergens";
 
 // DEL-06: Standardize order ID display to last-6-chars uppercase across all KDS views
 function shortOrderId(id: string): string {
@@ -438,6 +439,27 @@ function KdsItemRow({
               : `⚠ ALLERGY${item.allergy_flags?.length ? `: ${item.allergy_flags.join(", ")}` : ""}`}
           </button>
         )}
+                    {/* Structured Allergen Display */}
+                    {item.allergen_flags && Object.values(item.allergen_flags as any).some(Boolean) && (
+                      <div className="mt-1 p-1.5 bg-red-50 border border-red-300 rounded text-xs">
+                        <span className="font-bold text-red-700 uppercase tracking-wide text-xs">⚠️ ALLERGENS:</span>
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {ALLERGENS.filter(a => (item.allergen_flags as any)?.[a.key]).map(a => (
+                            <span key={a.key} className="bg-red-100 text-red-800 px-1.5 py-0.5 rounded font-medium">{a.icon} {a.label}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {item.allergen_may_contain && Object.values(item.allergen_may_contain as any).some(Boolean) && (
+                      <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded text-xs">
+                        <span className="font-bold text-amber-700 text-xs">⚠️ MAY CONTAIN:</span>
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {ALLERGENS.filter(a => (item.allergen_may_contain as any)?.[a.key]).map(a => (
+                            <span key={a.key} className="bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded">{a.icon} {a.label}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
         <div className="flex items-center gap-1 shrink-0" data-testid={`status-${item.id}`}>
           {!item.is_voided && (courseLocked ? (
             <span className="text-yellow-500 text-[10px]">🔒</span>

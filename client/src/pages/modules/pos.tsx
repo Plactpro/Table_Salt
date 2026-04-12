@@ -54,6 +54,7 @@ import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 import { PosMenuSkeleton, PosCategorySkeleton } from "@/components/ui/skeletons";
 import SyncErrorPanel from "@/components/sync-error-panel";
 import ModifierSelectionDialog, { SelectedModifier } from "@/components/pos/ModifierSelectionDialog";
+import { ALLERGENS } from "@shared/allergens";
 
 interface EngineDiscount {
   ruleId: string;
@@ -1690,6 +1691,16 @@ export default function POSPage() {
                           <CardContent className="p-2.5">
                             <div className="flex items-start justify-between mb-0.5">
                               <h4 className="font-medium text-sm leading-tight line-clamp-2 flex-1 mr-1">{item.name}</h4>
+                          {item.allergenFlags && Object.values(item.allergenFlags as any).some(Boolean) && (
+                            <div className="flex flex-wrap gap-0.5 mt-0.5" title="Contains allergens">
+                              {ALLERGENS.filter(a => (item.allergenFlags as any)?.[a.key]).slice(0, 5).map(a => (
+                                <span key={a.key} className="text-xs" title={`Contains ${a.label}`}>{a.icon}</span>
+                              ))}
+                              {ALLERGENS.filter(a => (item.allergenFlags as any)?.[a.key]).length > 5 && (
+                                <span className="text-xs text-muted-foreground">+{ALLERGENS.filter(a => (item.allergenFlags as any)?.[a.key]).length - 5}</span>
+                              )}
+                            </div>
+                          )}
                               {item.isVeg === true ? (<span className="h-4 w-4 shrink-0 border-2 border-green-600 rounded-sm flex items-center justify-center mt-0.5"><span className="w-2 h-2 rounded-full bg-green-600" /></span>) : item.isVeg === false ? (<span className="h-4 w-4 shrink-0 border-2 border-red-600 rounded-sm flex items-center justify-center mt-0.5"><span className="w-0 h-0 border-l-[4px] border-r-[4px] border-b-[6px] border-l-transparent border-r-transparent border-b-red-600" /></span>) : null}
                             </div>
                             {item.description && <p className="text-[10px] text-muted-foreground line-clamp-1 mb-1.5">{item.description}</p>}

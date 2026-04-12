@@ -10,6 +10,7 @@ import { useDirtyFormGuard, scrollToFirstError } from "@/lib/form-utils";
 import { TableSkeleton, ListCardSkeleton } from "@/components/ui/skeletons";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { convertUnits } from "@shared/units";
+import { ALLERGENS, hasAllergens } from "@shared/allergens";
 import type { Recipe, RecipeIngredient, InventoryItem } from "@shared/schema";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { CharCountTextarea } from "@/components/ui/character-count-input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -276,6 +278,14 @@ export default function MenuPage() {
   const [itemDialogOpen, setItemDialogOpen] = useState(false);
   const [itemDialogTab, setItemDialogTab] = useState("details");
   const [editingItem, setEditingItem] = useState<MenuItem | null>(null);
+  const [allergenFlags, setAllergenFlags] = useState<Record<string, boolean>>({});
+  const [allergenMayContain, setAllergenMayContain] = useState<Record<string, boolean>>({});
+  // Reset allergen state when editing item changes
+  React.useEffect(() => {
+    setAllergenFlags((editingItem?.allergenFlags as Record<string, boolean>) ?? {});
+    setAllergenMayContain((editingItem?.allergenMayContain as Record<string, boolean>) ?? {});
+  }, [editingItem?.id]);
+
   const [itemFormDirty, setItemFormDirty] = useState(false);
   useDirtyFormGuard(itemFormDirty);
   const [itemConfirmLeave, setItemConfirmLeave] = useState(false);
@@ -657,6 +667,8 @@ export default function MenuPage() {
       station: itemForm.station || null,
       course: itemForm.course || null,
       hsnCode: itemForm.hsnCode || null,
+      allergenFlags: allergenFlags,
+      allergenMayContain: allergenMayContain,
     };
     if (editingItem) {
       updateItem.mutate({ id: editingItem.id, data: payload });
@@ -1331,8 +1343,32 @@ export default function MenuPage() {
                 <Input id="item-ingredients" value={itemForm.ingredientsList} onChange={(e) => setItemForm({ ...itemForm, ingredientsList: e.target.value })} placeholder="e.g. flour, mozzarella, tomato sauce, basil" data-testid="input-item-ingredients" />
               </div>
               <div>
-                <Label htmlFor="item-allergens">Allergens (comma-separated)</Label>
-                <Input id="item-allergens" value={itemForm.allergens} onChange={(e) => setItemForm({ ...itemForm, allergens: e.target.value })} placeholder="e.g. gluten, dairy, nuts" data-testid="input-item-allergens" />
+                <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-base font-semibold">Allergens</Label>
+                      <Badge variant="outline" className="text-xs">14 Standard Allergens</Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
+                      {ALLERGENS.map((allergen) => (
+                        <div key={allergen.key} className="border rounded-lg p-2 hover:bg-accent/50">
+                          <div className="flex items-center gap-1 mb-1">
+                            <span>{allergen.icon}</span>
+                            <span className="text-xs font-medium">{allergen.label}</span>
+                          </div>
+                          <div className="flex gap-3">
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <Checkbox checked={allergenFlags[allergen.key] ?? false} onCheckedChange={(v) => setAllergenFlags(p => ({...p, [allergen.key]: !!v}))} className="h-3 w-3" />
+                              <span className="text-xs text-red-600 font-medium">Contains</span>
+                            </label>
+                            <label className="flex items-center gap-1 cursor-pointer">
+                              <Checkbox checked={allergenMayContain[allergen.key] ?? false} onCheckedChange={(v) => setAllergenMayContain(p => ({...p, [allergen.key]: !!v}))} className="h-3 w-3" />
+                              <span className="text-xs text-amber-600 font-medium">May Contain</span>
+                            </label>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
