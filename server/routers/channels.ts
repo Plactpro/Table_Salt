@@ -201,19 +201,27 @@ export function registerChannelsRoutes(app: Express): void {
 
       const adapter = getAdapter(platform);
       if (!adapter) return res.status(400).json({ message: `No adapter for platform: ${platform}` });
-      const channels = await storage.getOrderChannelsByTenant(user.tenantId);
-      const ch = channels.find(c => c.slug === platform);
+      // Public endpoint: resolve tenant from channel slug
+      const { rows: chRows } = await pool.query(
+        `SELECT oc.id, cc.tenant_id as config_tenant_id,
+                cc.outlet_id as config_outlet_id
+         FROM order_channels oc
+         JOIN channel_configs cc ON cc.channel_id = oc.id
+         WHERE oc.slug = $1 AND oc.active = true LIMIT 1`,
+        [platform]
+      );
+      const ch = (chRows[0] as any);
       if (!ch) return res.status(400).json({ message: `Channel ${platform} not configured` });
-
+      const resolvedTenantId = ch.config_tenant_id;
       // PR-011: Update last_webhook_at timestamp on webhook receipt
       await pool.query(
         `UPDATE order_channels SET last_webhook_at = NOW() WHERE id = $1`,
         [ch.id]
       ).catch((err: any) => console.error("[WebhookMonitor] Failed to update last_webhook_at:", err));
       const parsed = adapter.parseOrder(req.body);
-      const menuItems = await storage.getMenuItemsByTenant(user.tenantId);
+      const menuItems = await storage.getMenuItemsByTenant(resolvedTenantId);
       const menuMap = new Map(menuItems.map(m => [m.id, m]));
-      const mappings = await storage.getOnlineMenuMappingsByTenant(user.tenantId);
+      const mappings = await storage.getOnlineMenuMappingsByTenant(resolvedTenantId);
       const externalToMenuId = new Map(mappings.filter(m => m.channelId === ch.id).map(m => [m.externalItemId, m.menuItemId]));
       let subtotal = 0;
       const orderItemsData: Array<{ menuItemId: string | null; name: string; quantity: number; price: string; station: string | null; course: string | null; itemPrepMinutes: number | null }> = [];
@@ -227,13 +235,13 @@ export function registerChannelsRoutes(app: Express): void {
         const itemPrepMinutes = await snapshotPrepTime(menuItemId, mi?.prepTimeMinutes);
         orderItemsData.push({ menuItemId: menuItemId || null, name: item.name || mi?.name || "Unknown", quantity: item.quantity, price, station: mi?.station || null, course: mi?.course || null, itemPrepMinutes });
       }
-      const tenant = await storage.getTenant(user.tenantId);
+      const tenant = await storage.getTenant(resolvedTenantId);
       const taxRate = parseFloat(tenant?.taxRate || "0");
       const tax = subtotal * (taxRate / 100);
       const total = subtotal + tax;
-      const outlets = await storage.getOutletsByTenant(user.tenantId);
+      const outlets = await storage.getOutletsByTenant(resolvedTenantId);
       const order = await storage.createOrder({
-        tenantId: user.tenantId, outletId: outlets[0]?.id || null, orderType: "delivery", status: "new",
+        tenantId: resolvedTenantId, outletId: outlets[0]?.id || null, orderType: "delivery", status: "new",
         subtotal: subtotal.toFixed(2), tax: tax.toFixed(2), total: total.toFixed(2),
         channel: platform, channelOrderId: parsed.channelOrderId,
         channelData: { customerName: parsed.customerName, customerPhone: parsed.customerPhone, customerAddress: parsed.customerAddress } as Record<string, unknown>,
