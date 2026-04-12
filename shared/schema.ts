@@ -1607,6 +1607,7 @@ export const orderChannels = pgTable("order_channels", {
     .references(() => tenants.id),
   name: text("name").notNull(),
   slug: text("slug").notNull(),
+    webhookSecret: varchar("webhook_secret", { length: 255 }),
   icon: text("icon"),
   active: boolean("active").default(true),
   lastWebhookAt: timestamp("last_webhook_at", { withTimezone: true }),

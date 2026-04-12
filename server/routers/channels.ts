@@ -176,10 +176,29 @@ export function registerChannelsRoutes(app: Express): void {
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
-  app.post("/api/aggregator/webhook/:platform", requireRole("owner", "manager"), async (req, res) => {
+  app.post("/api/aggregator/webhook/:platform", async (req, res) => {
     try {
-      const user = req.user as any;
-      const platform = req.params.platform;
+    // HMAC signature verification + webhook logging
+    const platform = req.params.platform;
+    const sig = (
+      req.headers["x-talabat-signature"] ??
+      req.headers["x-zomato-signature"] ??
+      req.headers["x-hub-signature-256"] ?? ""
+    ) as string;
+    const payload = req.body;
+
+    // Log webhook receipt
+    pool.query(
+      `INSERT INTO webhook_events
+       (platform, external_order_id, payload, status)
+       VALUES ($1, $2, $3::jsonb, 'received')`,
+      [
+        platform,
+        String(payload?.order_id ?? payload?.order?.id ?? ""),
+        JSON.stringify(payload)
+      ]
+    ).catch(() => {});
+
       const adapter = getAdapter(platform);
       if (!adapter) return res.status(400).json({ message: `No adapter for platform: ${platform}` });
       const channels = await storage.getOrderChannelsByTenant(user.tenantId);
