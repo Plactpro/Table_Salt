@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { auditPhotoUpload, getPhotoUrl } from "../services/photo-upload";
-import { pool } from "./db";
+import { pool } from "../db";
 import fs from "fs";
 import pathModule from "path";
 
