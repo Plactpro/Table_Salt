@@ -116,6 +116,12 @@ export default function StaffPage() {
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [leaveForm, setLeaveForm] = useState({ leaveType: "annual", startDate: "", endDate: "", reason: "" });
+  const { data: leaveRequests = [], refetch: refetchLeave } = useQuery<any[]>({ queryKey: ["/api/leave-requests"], queryFn: async () => { const r = await fetch("/api/leave-requests", { credentials: "include" }); return r.ok ? r.json() : []; } });
+  const handleLeaveSubmit = async () => { if (!leaveForm.startDate || !leaveForm.endDate) { toast({ title: "Fill dates", variant: "destructive" }); return; } const r = await fetch("/api/leave-requests", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(leaveForm) }); if (r.ok) { toast({ title: "Submitted" }); setShowLeaveForm(false); refetchLeave(); } else { const e = await r.json(); toast({ title: e.message, variant: "destructive" }); } };
+  const handleLeaveAction = async (id: string, action: string) => { await fetch("/api/leave-requests/" + id + "/" + action, { method: "PATCH", credentials: "include" }); refetchLeave(); toast({ title: "Done" }); };
+
   const queryClient = useQueryClient();
   const { t } = useTranslation("staff");
   const { t: tc } = useTranslation("common");
@@ -126,7 +132,7 @@ export default function StaffPage() {
   useDirtyFormGuard(formDirty);
   const [confirmLeave, setConfirmLeave] = useState(false);
   const [staffFormErrors, setStaffFormErrors] = useState<{ name?: string; username?: string; password?: string }>({});
-  const [activeTab, setActiveTab] = useState<"roster" | "schedule" | "attendance">("roster");
+  const [activeTab, setActiveTab] = useState<"roster" | "schedule" | "attendance" | "leave">("roster");
   const [scheduleView, setScheduleView] = useState<"weekly" | "monthly">("weekly");
   const [showAddShift, setShowAddShift] = useState(false);
   const [weekStart, setWeekStart] = useState(() => {
@@ -539,6 +545,9 @@ export default function StaffPage() {
         </Button>
         <Button data-testid="button-tab-attendance" variant={activeTab === "attendance" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("attendance")}>
           <ClipboardCheck className="w-4 h-4 mr-1" /> {t("tabAttendance")}
+        </Button>
+        <Button data-testid="button-tab-leave" variant={activeTab === "leave" ? "default" : "outline"} size="sm" onClick={() => setActiveTab("leave")}>
+          <CalendarDays className="w-4 h-4 mr-1" /> Leave
         </Button>
       </div>
 
@@ -1200,6 +1209,131 @@ export default function StaffPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {activeTab === "leave" && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-semibold">Leave Requests</h2>
+            <Button data-testid="button-request-leave" size="sm" onClick={() => setShowLeaveForm(v => !v)}>
+              <Plus className="w-4 h-4 mr-1" /> Request Leave
+            </Button>
+          </div>
+
+          {showLeaveForm && (
+            <Card>
+              <CardContent className="pt-4 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>Leave Type</Label>
+                    <Select value={leaveForm.leaveType} onValueChange={v => setLeaveForm(f => ({ ...f, leaveType: v }))}>
+                      <SelectTrigger data-testid="select-leave-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="annual">Annual</SelectItem>
+                        <SelectItem value="sick">Sick</SelectItem>
+                        <SelectItem value="emergency">Emergency</SelectItem>
+                        <SelectItem value="unpaid">Unpaid</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Reason</Label>
+                    <Input
+                      data-testid="input-leave-reason"
+                      value={leaveForm.reason}
+                      onChange={e => setLeaveForm(f => ({ ...f, reason: e.target.value }))}
+                      placeholder="Optional reason"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Start Date</Label>
+                    <Input
+                      data-testid="input-leave-start"
+                      type="date"
+                      value={leaveForm.startDate}
+                      onChange={e => setLeaveForm(f => ({ ...f, startDate: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>End Date</Label>
+                    <Input
+                      data-testid="input-leave-end"
+                      type="date"
+                      value={leaveForm.endDate}
+                      onChange={e => setLeaveForm(f => ({ ...f, endDate: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <Button variant="outline" size="sm" data-testid="button-leave-cancel" onClick={() => setShowLeaveForm(false)}>Cancel</Button>
+                  <Button size="sm" data-testid="button-leave-submit" onClick={handleLeaveSubmit}>Submit</Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {(leaveRequests as any[]).length === 0 ? (
+            <Card>
+              <CardContent className="py-10 text-center text-muted-foreground">No leave requests yet.</CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-3">
+              {(leaveRequests as any[]).map((req: any) => (
+                <Card key={req.id} data-testid={`card-leave-${req.id}`}>
+                  <CardContent className="pt-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium capitalize" data-testid={`text-leave-type-${req.id}`}>{req.leaveType || req.leave_type} Leave</span>
+                          <Badge
+                            data-testid={`badge-leave-status-${req.id}`}
+                            variant={req.status === "approved" ? "default" : req.status === "rejected" ? "destructive" : "secondary"}
+                          >
+                            {req.status}
+                          </Badge>
+                          <span className="text-sm text-muted-foreground" data-testid={`text-leave-days-${req.id}`}>{req.daysRequested ?? req.days_requested} day(s)</span>
+                        </div>
+                        {req.userName && (
+                          <p className="text-sm text-muted-foreground" data-testid={`text-leave-user-${req.id}`}>{req.userName}</p>
+                        )}
+                        <p className="text-sm" data-testid={`text-leave-dates-${req.id}`}>
+                          {req.startDate ?? req.start_date} → {req.endDate ?? req.end_date}
+                        </p>
+                        {req.reason && (
+                          <p className="text-sm text-muted-foreground" data-testid={`text-leave-reason-${req.id}`}>{req.reason}</p>
+                        )}
+                      </div>
+                      {req.status === "pending" && (
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-green-600 border-green-300 hover:bg-green-50"
+                            data-testid={`button-leave-approve-${req.id}`}
+                            onClick={() => handleLeaveAction(req.id, "approve")}
+                          >
+                            <CheckCircle className="w-4 h-4 mr-1" /> Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="text-red-600 border-red-300 hover:bg-red-50"
+                            data-testid={`button-leave-reject-${req.id}`}
+                            onClick={() => handleLeaveAction(req.id, "reject")}
+                          >
+                            <XCircle className="w-4 h-4 mr-1" /> Reject
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
     </motion.div>
   );
 }
