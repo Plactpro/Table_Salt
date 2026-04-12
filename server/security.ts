@@ -205,6 +205,7 @@ export function setupCsrf(app: Express) {
       url.startsWith("/api/kiosk/") ||
       url === "/api/table-requests" ||
       url === "/api/errors/client" ||
+                  url.startsWith("/api/aggregator/webhook/") ||
       url === "/api/ad-impressions"
     ) {
       return next();
