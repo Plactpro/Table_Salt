@@ -226,7 +226,7 @@ function InventoryTab() {
   const [adjustingItem, setAdjustingItem] = useState<ExtendedInventoryItem | null>(null);
   const [formData, setFormData] = useState<ExtendedFormData>({
     name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10",
-    costPrice: "0", supplier: "",
+    costPrice: "0", supplier: "", expiryDate: "", expiryAlertDays: "7", receivedDate: "",
     itemCategory: "INGREDIENT", parLevelPerShift: "", reorderPieces: "", costPerPiece: "",
   });
   const [adjustData, setAdjustData] = useState({ type: "in" as "in" | "out", quantity: "", reason: "" });
@@ -311,7 +311,7 @@ function InventoryTab() {
   }, [supervisorDialog, adjustMutation]);
 
   function resetForm() {
-    setFormData({ name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10", costPrice: "0", supplier: "", itemCategory: "INGREDIENT", parLevelPerShift: "", reorderPieces: "", costPerPiece: "" });
+    setFormData({ name: "", sku: "", category: "", unit: "pcs", currentStock: "0", reorderLevel: "10", costPrice: "0", supplier: "", expiryDate: "", expiryAlertDays: "7", receivedDate: "", itemCategory: "INGREDIENT", parLevelPerShift: "", reorderPieces: "", costPerPiece: "" });
   }
 
   function openEditDialog(item: ExtendedInventoryItem) {
@@ -325,7 +325,7 @@ function InventoryTab() {
       itemCategory: cat,
       parLevelPerShift: item.parLevelPerShift?.toString() || "",
       reorderPieces: item.reorderPieces?.toString() || "",
-      costPerPiece: item.costPerPiece?.toString() || "",
+      costPerPiece: item.costPerPiece?.toString() || "", expiryDate: item.expiryDate || "", expiryAlertDays: item.expiryAlertDays?.toString() || "7", receivedDate: item.receivedDate || "",
     });
     setItemFormDirty(false);
     setInventoryFormErrors({});
@@ -678,6 +678,9 @@ function InventoryTab() {
             )}
           </div>
           <DialogFooter>
+                            <div className="space-y-2"><Label>Expiry Date</Label><Input type="date" value={formData.expiryDate || ""} onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })} data-testid="input-inventory-expiry-date" /></div>
+                <div className="space-y-2"><Label>Expiry Alert Days</Label><Input type="number" min="1" value={formData.expiryAlertDays || "7"} onChange={(e) => setFormData({ ...formData, expiryAlertDays: e.target.value })} placeholder="7" data-testid="input-inventory-expiry-alert" /></div>
+                <div className="space-y-2"><Label>Received Date</Label><Input type="date" value={formData.receivedDate || ""} onChange={(e) => setFormData({ ...formData, receivedDate: e.target.value })} data-testid="input-inventory-received-date" /></div>
             <Button variant="outline" onClick={() => { if (itemFormDirty) { setItemConfirmLeave(true); } else { setItemDialogOpen(false); } }}>Cancel</Button>
             <Button
               onClick={() => {
@@ -693,7 +696,7 @@ function InventoryTab() {
                   unit: isPieceCategory(formData.itemCategory) ? "pcs" : formData.unit,
                   costPrice: isPieceCategory(formData.itemCategory) ? formData.costPerPiece : formData.costPrice,
                   parLevelPerShift: coerceInt(formData.parLevelPerShift),
-                  reorderPieces: coerceInt(formData.reorderPieces),
+                  reorderPieces: coerceInt(formData.reorderPieces), expiryAlertDays: coerceInt(formData.expiryAlertDays),
                 };
                 editingItem ? updateMutation.mutate({ id: editingItem.id, data: apiPayload }) : createMutation.mutate(apiPayload);
               }}
