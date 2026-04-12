@@ -1809,6 +1809,9 @@ export async function runAdminMigrations(): Promise<void> {
 
   // AUDIT-PHOTOS: Photo evidence migration
   await runAuditPhotosMigration();
+
+  // REMINDERS: Reservation reminder columns
+  await runRemindersMigration();
 }
 
 export async function runTask108Migrations(): Promise<void> {
@@ -4092,4 +4095,14 @@ export async function runAuditPhotosMigration(): Promise<void> {
     ALTER TABLE cleaning_template_items ADD COLUMN IF NOT EXISTS photo_urls JSONB DEFAULT '[]'::jsonb;
   `);
   console.log('[MIGRATION] photo_urls columns added to audit and cleaning tables');
+}
+
+export async function runRemindersMigration(): Promise<void> {
+  await pool.query(`
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMPTZ;
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reminder_24h_sent BOOLEAN DEFAULT false;
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS reminder_2h_sent BOOLEAN DEFAULT false;
+    ALTER TABLE reservations ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);
+  `);
+  console.log('[Migration] REMINDERS: columns added');
 }

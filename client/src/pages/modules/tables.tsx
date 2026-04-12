@@ -455,7 +455,7 @@ function TablesPageContent() {
   const [zoneForm, setZoneForm] = useState({ name: "", color: "#6366f1" });
   const [editingZone, setEditingZone] = useState<ZoneData | null>(null);
   const [resFormData, setResFormData] = useState({
-    customerName: "", customerPhone: "", tableId: "", guests: "2",
+    customerName: "", customerPhone: "", customerEmail: "", tableId: "", guests: "2",
     dateTime: "", notes: "", customerId: "",
   });
   const [resResourceRequirements, setResResourceRequirements] = useState<{resourceId: string; resourceName: string; icon: string; quantity: number}[]>([]);
@@ -1200,7 +1200,7 @@ function TablesPageContent() {
                 <ChevronRight className="w-4 h-4" aria-hidden="true" />
               </Button>
             </div>
-            <Button onClick={() => { setResFormData({ customerName: "", customerPhone: "", tableId: "", guests: "2", dateTime: "", notes: "", customerId: "" }); setShowAddReservation(true); }} data-testid="button-add-reservation">
+            <Button onClick={() => { setResFormData({ customerName: "", customerPhone: "", customerEmail: "", tableId: "", guests: "2", dateTime: "", notes: "", customerId: "" }); setShowAddReservation(true); }} data-testid="button-add-reservation">
               <Plus className="w-4 h-4 mr-2" />Reservation
             </Button>
           </div>
@@ -1210,7 +1210,7 @@ function TablesPageContent() {
                 <div className="flex flex-col items-center gap-4">
                   <CalendarDays className="w-10 h-10 text-muted-foreground" />
                   <p className="text-muted-foreground text-sm" data-testid="text-no-reservations">No reservations yet. Add your first reservation to get started.</p>
-                  <Button onClick={() => { setResFormData({ customerName: "", customerPhone: "", tableId: "", guests: "2", dateTime: "", notes: "", customerId: "" }); setShowAddReservation(true); }} data-testid="button-add-first-reservation">
+                  <Button onClick={() => { setResFormData({ customerName: "", customerPhone: "", customerEmail: "", tableId: "", guests: "2", dateTime: "", notes: "", customerId: "" }); setShowAddReservation(true); }} data-testid="button-add-first-reservation">
                     <Plus className="w-4 h-4 mr-2" />Add Reservation
                   </Button>
                 </div>
@@ -1987,6 +1987,7 @@ function TablesPageContent() {
               <div><Label>Phone</Label><Input value={resFormData.customerPhone} onChange={e => setResFormData({ ...resFormData, customerPhone: e.target.value })} data-testid="input-res-phone" /></div>
               <div><Label>Guests</Label><Input type="number" value={resFormData.guests} onChange={e => setResFormData({ ...resFormData, guests: e.target.value })} data-testid="input-res-guests" /></div>
             </div>
+            <div><Label>Email <span className="text-xs text-muted-foreground">(for reminders)</span></Label><Input type="email" placeholder="customer@email.com" value={resFormData.customerEmail ?? ""} onChange={e => setResFormData({ ...resFormData, customerEmail: e.target.value })} data-testid="input-res-email" /></div>
             <div><Label>Date & Time</Label><input type="datetime-local" value={resFormData.dateTime} onChange={e => setResFormData({ ...resFormData, dateTime: e.target.value })} placeholder="YYYY-MM-DDTHH:MM" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" data-testid="input-res-datetime" /></div>
             <div><Label>Table (Optional)</Label>
               <Select value={resFormData.tableId || "none"} onValueChange={v => setResFormData({ ...resFormData, tableId: v === "none" ? "" : v })}>
@@ -2043,6 +2044,7 @@ function TablesPageContent() {
               createResMut.mutate({
                 customerName: resFormData.customerName,
                 customerPhone: resFormData.customerPhone || undefined,
+                customerEmail: resFormData.customerEmail || undefined,
                 guests: parseInt(resFormData.guests),
                 dateTime: resFormData.dateTime ? new Date(resFormData.dateTime).toISOString() : resFormData.dateTime,
                 tableId: resFormData.tableId || undefined,
