@@ -1348,6 +1348,7 @@ export const auditResponses = pgTable("audit_responses", {
     () => users.id,
   ),
   completedAt: timestamp("completed_at"),
+      photoUrls: jsonb("photo_urls").default([]),
 });
 
 export const auditIssues = pgTable(
@@ -1378,6 +1379,7 @@ export const auditIssues = pgTable(
       () => users.id,
     ),
     createdAt: timestamp("created_at").defaultNow(),
+        photoUrls: jsonb("photo_urls").default([]),
   },
   (t) => [
     index("idx_audit_issues_tenant_status").on(t.tenantId, t.status),
