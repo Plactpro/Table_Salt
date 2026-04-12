@@ -5842,3 +5842,41 @@ export const loyaltyTransactions = pgTable(
 );
 export type LoyaltyTransaction = typeof loyaltyTransactions.$inferSelect;
 export const insertLoyaltyTransactionSchema = createInsertSchema(loyaltyTransactions).omit({ id: true, createdAt: true });
+
+// ── Leave Management ──────────────────────────────────────────────────────
+export const leaveRequests = pgTable("leave_requests", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  userId: varchar("user_id", { length: 36 }).notNull(),
+  outletId: varchar("outlet_id", { length: 36 }),
+  leaveType: varchar("leave_type", { length: 50 }).notNull(),
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  daysRequested: integer("days_requested").notNull(),
+  reason: text("reason"),
+  status: varchar("status", { length: 20 }).default("pending"),
+  reviewedBy: varchar("reviewed_by", { length: 36 }),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNotes: text("review_notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const leaveBalances = pgTable("leave_balances", {
+  id: varchar("id", { length: 36 }).primaryKey().default(sql`gen_random_uuid()`),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  userId: varchar("user_id", { length: 36 }).notNull(),
+  year: integer("year").notNull(),
+  annualTotal: integer("annual_total").default(21),
+  annualUsed: integer("annual_used").default(0),
+  sickTotal: integer("sick_total").default(10),
+  sickUsed: integer("sick_used").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type LeaveRequest = typeof leaveRequests.$inferSelect;
+export type LeaveBalance = typeof leaveBalances.$inferSelect;
+export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({
+  id: true, createdAt: true, updatedAt: true
+});
