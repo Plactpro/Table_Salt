@@ -154,7 +154,64 @@ export class UberEatsAdapter implements AggregatorAdapter {
   }
 }
 
+
+export class TalabatAdapter implements AggregatorAdapter {
+  readonly platformSlug = "talabat";
+  readonly platformName = "Talabat";
+
+  parseOrder(raw: Record<string, unknown>): AggregatorIncomingOrder {
+    const data = raw as Record<string, unknown>;
+    const orderData = (data.order as Record<string, unknown>) ?? data;
+    const items = (
+      (orderData.items as Array<Record<string, unknown>>) ??
+      (data.items as Array<Record<string, unknown>>) ?? []
+    ).map(i => ({
+      externalItemId: String(i.item_id ?? i.id ?? ""),
+      name: String(i.name ?? i.item_name ?? ""),
+      quantity: Number(i.quantity ?? i.qty ?? 1),
+      price: String(i.price ?? i.unit_price ?? "0"),
+    }));
+    const customer = (orderData.customer as Record<string, unknown>) ?? {};
+    return {
+      channelOrderId: String(
+        orderData.id ?? data.order_id ??
+        `TAL-${Date.now().toString(36).toUpperCase()}`
+      ),
+      items,
+      customerName: String(customer.name ?? data.customer_name ?? ""),
+      customerPhone: String(customer.phone ?? data.customer_phone ?? ""),
+      customerAddress: String(orderData.delivery_address ?? data.delivery_address ?? ""),
+      notes: String(orderData.special_instructions ?? data.notes ?? ""),
+    };
+  }
+
+  generateMockOrder(
+    menuItems: Array<{ id: string; name: string; price: string }>
+  ): AggregatorIncomingOrder {
+    const items: AggregatorOrderItem[] = [];
+    const count = Math.floor(Math.random() * 3) + 1;
+    for (let i = 0; i < count; i++) {
+      const mi = pick(menuItems);
+      items.push({
+        menuItemId: mi.id,
+        name: mi.name,
+        quantity: Math.floor(Math.random() * 2) + 1,
+        price: mi.price,
+      });
+    }
+    return {
+      channelOrderId: `TAL-${Date.now().toString(36).toUpperCase()}`,
+      items,
+      customerName: pick(SAMPLE_NAMES),
+      customerPhone: `+971-5${Math.floor(Math.random()*10000000).toString().padStart(7,"0")}`,
+      customerAddress: pick(SAMPLE_ADDRESSES),
+      notes: "Talabat order - keep warm",
+    };
+  }
+}
+
 const adapters: Record<string, AggregatorAdapter> = {
+  talabat: new TalabatAdapter(),
   swiggy: new SwiggyAdapter(),
   zomato: new ZomatoAdapter(),
   ubereats: new UberEatsAdapter(),
