@@ -1785,6 +1785,23 @@ export async function runAdminMigrations(): Promise<void> {
 
     // ALL-02: Allergy acknowledgment migration
   await runAllergyAckMigration();
+  // ALLERGEN: Add allergen columns to menu_items and order_items
+  try {
+    await pool.query(`
+      ALTER TABLE menu_items
+        ADD COLUMN IF NOT EXISTS allergen_flags JSONB DEFAULT '{}';
+      ALTER TABLE menu_items
+        ADD COLUMN IF NOT EXISTS allergen_may_contain JSONB DEFAULT '{}';
+      ALTER TABLE order_items
+        ADD COLUMN IF NOT EXISTS allergen_flags JSONB DEFAULT '{}';
+      ALTER TABLE order_items
+        ADD COLUMN IF NOT EXISTS allergen_may_contain JSONB DEFAULT '{}';
+    `);
+    console.log('[Migration] ALLERGEN: allergen columns added to menu_items and order_items');
+  } catch (err: any) {
+    console.error('[Migration] ALLERGEN error:', err.message);
+  }
+
   console.log('[Migration] ALL-02: allergy ack migration complete');
 }
 
