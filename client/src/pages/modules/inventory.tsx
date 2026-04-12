@@ -242,6 +242,16 @@ function InventoryTab() {
     return formatCurrency(v, tenant?.currency || "AED", { position: (tenant?.currencyPosition as "before" | "after") || "before", decimals: tenant?.currencyDecimals ?? 2 });
   };
 
+    const { data: expiringItems = [] } = useQuery<any[]>({
+    queryKey: ["/api/inventory/expiring"],
+    queryFn: async () => {
+      const res = await fetch("/api/inventory/expiring?days=7", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    refetchInterval: 60000,
+  });
+
   const { data: inventoryRes, isLoading } = useQuery<{ data: ExtendedInventoryItem[]; total: number }>({
     queryKey: ["/api/inventory", inventoryPage, categoryFilter],
     queryFn: async ({ queryKey }) => {
@@ -446,6 +456,15 @@ function InventoryTab() {
           </div>
         </CardHeader>
         <CardContent>
+                  {expiringItems.length > 0 && (
+            <div className="mb-4 p-3 bg-amber-50 border border-amber-300 rounded-lg flex items-start gap-3" data-testid="banner-expiring-items">
+              <span className="text-2xl flex-shrink-0">⚠️</span>
+              <div>
+                <p className="font-semibold text-amber-800">{expiringItems.filter((i: any) => i.expiry_status === "expired").length} expired · {expiringItems.filter((i: any) => i.expiry_status === "expiring_soon").length} expiring within 7 days</p>
+                <p className="text-sm text-amber-700 mt-0.5">Review and remove expired stock — HACCP compliance</p>
+              </div>
+            </div>
+          )}
           {isLoading ? (
             <Table>
               <TableSkeleton rows={8} cols={7} />
@@ -528,6 +547,15 @@ function InventoryTab() {
                       <TableCell>
                         {isLowStock || belowPar
                           ? <Badge variant="destructive">{belowPar ? "Below Par" : "Low Stock"}</Badge>
+                                                    {(() => {
+                            const ed = (item as any).expiryDate;
+                            if (!ed) return null;
+                            const diff = Math.round((new Date(ed).getTime() - Date.now()) / 86400000);
+                            const ad = Number((item as any).expiryAlertDays) || 7;
+                            if (diff < 0) return <Badge className="bg-red-100 text-red-700 ml-1 text-xs border-0" data-testid={"badge-expiry-" + item.id}>Exp {Math.abs(diff)}d ago</Badge>;
+                            if (diff <= ad) return <Badge className="bg-amber-100 text-amber-700 ml-1 text-xs border-0" data-testid={"badge-expiry-" + item.id}>Exp {diff}d</Badge>;
+                            return null;
+                          })()}
                           : <Badge variant="secondary">In Stock</Badge>}
                       </TableCell>
                       {canEdit && (

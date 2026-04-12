@@ -16,6 +16,11 @@ export function serveStatic(app: Express) {
     );
   }
 
+    // Serve uploaded audit photos
+  const uploadsPath = path.resolve(process.cwd(), "uploads");
+  if (!fs.existsSync(uploadsPath)) fs.mkdirSync(uploadsPath, { recursive: true });
+  app.use("/uploads", express.static(uploadsPath));
+
   app.use(express.static(distPath));
 
   const qrHtmlPath = path.resolve(distPath, "qr.html");

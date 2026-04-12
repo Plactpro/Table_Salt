@@ -21,7 +21,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { StatCard } from "@/components/widgets/stat-card";
 import {
   ShieldCheck, Plus, ClipboardList, AlertTriangle, CheckCircle2, Clock,
-  BarChart3, Trash2, Edit, Eye, Camera, ChevronRight, Target,
+  BarChart3, Trash2, Edit, Eye, Camera, ChevronRight, Target, Upload,
   TrendingUp, XCircle, AlertCircle, CalendarDays, Users, FileText,
 } from "lucide-react";
 import { format } from "date-fns";
@@ -138,6 +138,49 @@ const CHART_COLORS = ["#0d9488", "#f59e0b", "#ef4444", "#6366f1", "#22c55e", "#e
 export default function AuditsPage() {
   const { t } = useTranslation("modules");
   const { toast } = useToast();
+
+    // AUDIT-PHOTOS: Photo state
+  const [photoFiles, setPhotoFiles] = useState<File[]>([]);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [existingPhotos, setExistingPhotos] = useState<string[]>([]);
+
+  const handlePhotoUpload = async (targetType: string, targetId: string) => {
+    if (photoFiles.length === 0) return;
+    setPhotoUploading(true);
+    try {
+      const formData = new FormData();
+      photoFiles.forEach(f => formData.append("photos", f));
+      const res = await fetch(`/api/audit-photos/${targetType}/${targetId}`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const data = await res.json();
+      setExistingPhotos(prev => [...prev, ...data.photoUrls]);
+      setPhotoFiles([]);
+      toast({ title: "Photos uploaded", description: `${data.photoUrls.length} photo(s) uploaded successfully` });
+    } catch (err: any) {
+      toast({ title: "Upload failed", description: err.message, variant: "destructive" });
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
+
+  const handlePhotoDelete = async (targetType: string, targetId: string, photoUrl: string) => {
+    const filename = photoUrl.split("/").pop();
+    try {
+      const res = await fetch(`/api/audit-photos/${targetType}/${targetId}/${filename}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Delete failed");
+      setExistingPhotos(prev => prev.filter(u => u !== photoUrl));
+      toast({ title: "Photo deleted" });
+    } catch (err: any) {
+      toast({ title: "Delete failed", description: err.message, variant: "destructive" });
+    }
+  };
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -474,6 +517,51 @@ export default function AuditsPage() {
               <Label>Description</Label>
               <Textarea value={issueDescription} onChange={(e) => setIssueDescription(e.target.value)} placeholder="Details..." data-testid="input-issue-description-exec" />
             </div>
+                          {/* AUDIT-PHOTOS: Photo dropzone */}
+              <div className="space-y-2" data-testid="photo-dropzone">
+                <Label className="flex items-center gap-2"><Camera className="h-4 w-4" /> Photo Evidence</Label>
+                <div
+                  className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center cursor-pointer hover:border-primary transition-colors"
+                  onClick={() => document.getElementById('audit-photo-input')?.click()}
+                >
+                  <Upload className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm text-gray-500">Click to upload photos (max 3, 5MB each)</p>
+                  <p className="text-xs text-gray-400">JPEG, PNG, WebP, HEIC</p>
+                  <input
+                    id="audit-photo-input"
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp,image/heic"
+                    className="hidden"
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files || []).slice(0, 3);
+                      setPhotoFiles(files);
+                    }}
+                  />
+                </div>
+                {photoFiles.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {photoFiles.map((f, i) => (
+                      <div key={i} className="relative">
+                        <img src={URL.createObjectURL(f)} alt="preview" className="h-16 w-16 object-cover rounded" />
+                        <button
+                          className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full h-4 w-4 flex items-center justify-center text-xs"
+                          onClick={() => setPhotoFiles(prev => prev.filter((_, idx) => idx !== i))}
+                        >x</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {existingPhotos.length > 0 && (
+                  <div className="flex gap-2 flex-wrap">
+                    {existingPhotos.map((url, i) => (
+                      <div key={i} className="relative">
+                        <img src={url} alt="evidence" className="h-16 w-16 object-cover rounded border" />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Severity</Label>
