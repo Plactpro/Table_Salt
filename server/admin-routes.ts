@@ -2347,4 +2347,41 @@ export function registerAdminRoutes(app: Express) {
       return res.status(500).json({ message });
     }
   });
+
+  // CB-FIX: Diagnostic — test orders table INSERT to identify missing columns
+  app.get("/api/admin/diag/orders-insert-test", requireSuperAdmin, async (req: Request, res: Response) => {
+    const { pool: diagPool } = await import("./db");
+    const checks: Record<string, string> = {};
+    const cols = [
+      "customer_name", "customer_phone", "channel", "channel_order_id",
+      "channel_data", "pos_session_id", "parent_order_id", "is_held",
+      "kitchen_sent_at", "customer_id", "discount_amount", "discount_reason", "offer_id",
+    ];
+    for (const col of cols) {
+      try {
+        await diagPool.query(`SELECT ${col} FROM orders LIMIT 0`);
+        checks[col] = "EXISTS";
+      } catch (e: any) {
+        checks[col] = `MISSING: ${e.message}`;
+      }
+    }
+    // Also test a minimal INSERT + immediate DELETE to surface any Drizzle issue
+    let insertTest = "NOT_RUN";
+    try {
+      const user = req.user as any;
+      const { rows } = await diagPool.query(
+        `INSERT INTO orders (tenant_id, waiter_id, order_type, status, subtotal, tax, discount, total, service_charge, customer_name, customer_phone, channel)
+         VALUES ($1, $2, 'dine_in', 'new', '0', '0', '0', '0', '0', NULL, NULL, 'diag-test')
+         RETURNING id`,
+        [user.tenantId, user.id]
+      );
+      if (rows[0]?.id) {
+        await diagPool.query(`DELETE FROM orders WHERE id = $1`, [rows[0].id]);
+        insertTest = "OK — inserted and cleaned up";
+      }
+    } catch (e: any) {
+      insertTest = `FAILED: ${e.message}`;
+    }
+    return res.json({ columns: checks, insertTest });
+  });
 }

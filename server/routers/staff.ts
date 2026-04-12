@@ -45,13 +45,15 @@ export function registerStaffRoutes(app: Express): void {
       if (!shiftDate) {
                         return res.status(400).json({ message: "Invalid shift date - please select a valid date" });
       }
+      // SW-3 fix: Drizzle's timestamp column calls .toISOString() internally,
+      // so `date` must be a Date object, not a string from req.body.
       const schedule = await storage.createStaffSchedule({
-          userId,
-                  date: shiftDate,
-          startTime,
-          endTime,
-                    tenantId: user.tenantId,
-        });
+        userId,
+        date: shiftDate || new Date(),
+        startTime,
+        endTime,
+        tenantId: user.tenantId,
+      });
       res.json(schedule);
     } catch (err: any) {
       res.status(500).json({ message: err.message || "Failed to create shift" });
