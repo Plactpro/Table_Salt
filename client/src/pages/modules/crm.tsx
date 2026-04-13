@@ -143,6 +143,13 @@ export default function CrmPage() {
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
+
+  const [showCampaignForm, setShowCampaignForm] = useState(false);
+  const [campaignForm, setCampaignForm] = useState({
+    name: "", subject: "", body: "", targetTier: "all",
+  });
+  const [sendingId, setSendingId] = useState<string | null>(null);
+
   const queryClient = useQueryClient();
   const { t } = useTranslation("common");
   const currency = user?.tenant?.currency || "USD";
@@ -210,6 +217,16 @@ export default function CrmPage() {
 
   const { data: orderItemsList = [] } = useQuery<OrderItemData[]>({
     queryKey: ["/api/order-items"],
+  });
+
+
+  const { data: campaigns = [], refetch: refetchCampaigns } = useQuery<any[]>({
+    queryKey: ["/api/campaigns"],
+    queryFn: async () => {
+      const res = await fetch("/api/campaigns", { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
   });
 
   const favoriteDishes = useMemo(() => {
@@ -434,6 +451,43 @@ export default function CrmPage() {
         anniversary: formData.anniversary || null,
       },
     });
+  };
+
+
+  const handleCreateCampaign = async () => {
+    if (!campaignForm.name || !campaignForm.subject || !campaignForm.body) {
+      toast({ title: "Please fill all fields", variant: "destructive" }); return;
+    }
+    try {
+      const res = await fetch("/api/campaigns", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        credentials: "include", body: JSON.stringify(campaignForm),
+      });
+      if (res.ok) {
+        toast({ title: "Campaign created!" });
+        setShowCampaignForm(false);
+        setCampaignForm({ name: "", subject: "", body: "", targetTier: "all" });
+        refetchCampaigns();
+      } else { const err = await res.json(); toast({ title: err.message, variant: "destructive" }); }
+    } catch { toast({ title: "Failed", variant: "destructive" }); }
+  };
+
+  const handleSendCampaign = async (id: string) => {
+    setSendingId(id);
+    try {
+      const res = await fetch(`/api/campaigns/${id}/send`, { method: "POST", credentials: "include" });
+      const data = await res.json();
+      if (res.ok) { toast({ title: "Campaign sent!", description: data.message }); refetchCampaigns(); }
+      else { toast({ title: data.message, variant: "destructive" }); }
+    } catch { toast({ title: "Send failed", variant: "destructive" }); }
+    finally { setSendingId(null); }
+  };
+
+  const handleDeleteCampaign = async (id: string) => {
+    try {
+      await fetch(`/api/campaigns/${id}`, { method: "DELETE", credentials: "include" });
+      toast({ title: "Campaign deleted" }); refetchCampaigns();
+    } catch { toast({ title: "Delete failed", variant: "destructive" }); }
   };
 
   const totalCustomers = customersTotal || customers.length;
@@ -686,7 +740,99 @@ export default function CrmPage() {
       <Dialog open={showProfileDialog} onOpenChange={setShowProfileDialog}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{t("customerProfile")}</DialogTitle>
+            <DialogTitle>
+          <div className="space-y-4 mt-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Megaphone className="h-4 w-4 text-primary" />
+                  Email Campaigns
+                </h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Send targeted emails to customers</p>
+              </div>
+              <Button size="sm" onClick={() => setShowCampaignForm(!showCampaignForm)} data-testid="button-new-campaign">
+                <Plus className="h-4 w-4 mr-1" />New Campaign
+              </Button>
+            </div>
+
+            {showCampaignForm && (
+              <Card className="p-4">
+                <div className="space-y-3">
+                  <div><Label>Campaign Name *</Label>
+                    <Input placeholder="e.g. Weekend Special" value={campaignForm.name}
+                      onChange={e => setCampaignForm(p => ({ ...p, name: e.target.value }))}
+                      data-testid="input-campaign-name" /></div>
+                  <div><Label>Email Subject *</Label>
+                    <Input placeholder="Special offer for you!" value={campaignForm.subject}
+                      onChange={e => setCampaignForm(p => ({ ...p, subject: e.target.value }))}
+                      data-testid="input-campaign-subject" /></div>
+                  <div><Label>Target Segment</Label>
+                    <Select value={campaignForm.targetTier} onValueChange={v => setCampaignForm(p => ({ ...p, targetTier: v }))}>
+                      <SelectTrigger data-testid="select-campaign-segment"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Customers</SelectItem>
+                        <SelectItem value="bronze">Bronze Members</SelectItem>
+                        <SelectItem value="silver">Silver Members</SelectItem>
+                        <SelectItem value="gold">Gold Members</SelectItem>
+                      </SelectContent>
+                    </Select></div>
+                  <div><Label>Message Body *</Label>
+                    <textarea className="w-full h-32 p-2 border rounded-md text-sm bg-background resize-none"
+                      placeholder={"Dear {{name}},\n\nWe have a special offer..."}
+                      value={campaignForm.body}
+                      onChange={e => setCampaignForm(p => ({ ...p, body: e.target.value }))}
+                      data-testid="textarea-campaign-body" /></div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="outline" size="sm" onClick={() => setShowCampaignForm(false)}>Cancel</Button>
+                    <Button size="sm" onClick={handleCreateCampaign} data-testid="button-create-campaign">Create Campaign</Button>
+                  </div>
+                </div>
+              </Card>
+            )}
+
+            {campaigns.length === 0 ? (
+              <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-lg">
+                <Megaphone className="h-8 w-8 mx-auto mb-2 opacity-20" />
+                <p className="font-medium text-sm">No campaigns yet</p>
+                <p className="text-xs mt-1">Create your first campaign above</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {campaigns.map((campaign: any) => (
+                  <Card key={campaign.id} className="p-3" data-testid={"card-campaign-" + campaign.id}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-sm">{campaign.name}</span>
+                          <Badge variant={campaign.status === "sent" ? "default" : campaign.status === "failed" ? "destructive" : "outline"}
+                            className="text-xs" data-testid={"badge-campaign-" + campaign.id}>
+                            {campaign.status}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-0.5 truncate">{campaign.subject}</p>
+                        <p className="text-xs text-muted-foreground">
+                          Segment: {campaign.target_tier === "all" ? "All Customers" : campaign.target_tier}
+                          {campaign.sent_count > 0 && ` · ${campaign.sent_count} sent`}
+                        </p>
+                      </div>
+                      {campaign.status === "draft" && (
+                        <div className="flex gap-1 flex-shrink-0">
+                          <Button size="sm" onClick={() => handleSendCampaign(campaign.id)}
+                            disabled={sendingId === campaign.id}
+                            data-testid={"button-send-" + campaign.id}>
+                            {sendingId === campaign.id ? "Sending..." : "Send"}
+                          </Button>
+                          <Button size="sm" variant="ghost" onClick={() => handleDeleteCampaign(campaign.id)}
+                            data-testid={"button-delete-" + campaign.id}>Delete</Button>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+{t("customerProfile")}</DialogTitle>
           </DialogHeader>
           {selectedCustomer && (
             <div className="space-y-4">
