@@ -4105,4 +4105,20 @@ export async function runRemindersMigration(): Promise<void> {
     ALTER TABLE reservations ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);
   `);
   console.log('[Migration] REMINDERS: columns added');
+  // STAFF-OUTLET: Persistent outlet assignment
+  try {
+    await pool.query(`
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS outlet_id VARCHAR(36);
+      ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS primary_outlet_id VARCHAR(36);
+      CREATE INDEX IF NOT EXISTS users_outlet_id_idx
+        ON users(outlet_id)
+        WHERE outlet_id IS NOT NULL;
+    `);
+    console.log('[Migration] STAFF-OUTLET: columns added');
+  } catch (err: any) {
+    console.error('[Migration] STAFF-OUTLET error:', err.message);
+  }
+
 }

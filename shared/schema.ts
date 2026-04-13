@@ -1583,6 +1583,7 @@ export const printJobs = pgTable(
     payload: jsonb("payload").notNull().default({}),
     createdAt: timestamp("created_at").defaultNow(),
     outletId: varchar("outlet_id", { length: 36 }),
+  primaryOutletId: varchar("primary_outlet_id", { length: 36 }),
     printerId: varchar("printer_id", { length: 36 }),
     content: text("content"),
     contentFormat: text("content_format").default("escpos"),

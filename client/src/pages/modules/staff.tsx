@@ -396,6 +396,8 @@ export default function StaffPage() {
       role: formData.get("role") as string,
       email: (formData.get("email") as string) || null,
       phone: (formData.get("phone") as string) || null,
+      outletId: (formData.get("outletId") as string) || null,
+      primaryOutletId: (formData.get("primaryOutletId") as string) || null,
     };
 
     if (editingUser) {
@@ -519,6 +521,50 @@ export default function StaffPage() {
                     </SelectContent>
                   </Select>
                 </div>
+              {/* Assigned Outlet */}
+              <div className="space-y-2">
+                <Label>Assigned Outlet</Label>
+                <Select
+                  name="outletId"
+                  defaultValue={editingUser?.outletId ?? "all"}
+                >
+                  <SelectTrigger data-testid="select-staff-outlet">
+                    <SelectValue placeholder="All outlets" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Outlets</SelectItem>
+                    {outlets.map((outlet: any) => (
+                      <SelectItem key={outlet.id} value={outlet.id}>
+                        {outlet.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Leave empty to allow all outlets.
+                </p>
+              </div>
+
+              {/* Primary Outlet */}
+              <div className="space-y-2">
+                <Label>Primary Outlet</Label>
+                <Select
+                  name="primaryOutletId"
+                  defaultValue={editingUser?.primaryOutletId ?? "none"}
+                >
+                  <SelectTrigger data-testid="select-staff-primary-outlet">
+                    <SelectValue placeholder="No primary outlet" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No primary outlet</SelectItem>
+                    {outlets.map((outlet: any) => (
+                      <SelectItem key={outlet.id} value={outlet.id}>
+                        {outlet.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
                 <div className="space-y-2">
                   <Label>{t("email")}</Label>
                   <Input name="email" type="email" defaultValue={editingUser?.email || ""} data-testid="input-staff-email" />
@@ -636,6 +682,17 @@ export default function StaffPage() {
                               <Badge variant={staff.active !== false ? "default" : "secondary"} data-testid={`badge-staff-status-${staff.id}`}>
                                 {staff.active !== false ? t("active") : t("inactive")}
                               </Badge>
+              {staff.outletId ? (
+                <Badge variant="outline" className="text-xs"
+                  data-testid={"badge-staff-outlet-" + staff.id}>
+                  {outlets.find((o: any) => o.id === staff.outletId)?.name ?? "Outlet"}
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="text-xs"
+                  data-testid={"badge-staff-outlet-" + staff.id}>
+                  All Outlets
+                </Badge>
+              )}
                             </div>
                           </TableCell>
                           <TableCell>

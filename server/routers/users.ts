@@ -130,4 +130,38 @@ export function registerUsersRoutes(app: Express): void {
     await storage.deleteOutlet(req.params.id, user.tenantId);
     res.json({ success: true });
   });
+// STAFF-OUTLET: Assign staff to specific outlet
+app.patch("/api/users/:id/assign-outlet",
+  requireAuth,
+  requireRole("owner", "manager"),
+  async (req: any, res: any) => {
+    try {
+      const { id } = req.params;
+      const { outletId, primaryOutletId } = req.body;
+      const tenantId = req.user?.tenantId;
+      if (outletId) {
+        const { rows } = await pool.query(
+          'SELECT id FROM outlets WHERE id=$1 AND tenant_id=$2',
+          [outletId, tenantId]
+        );
+        if (!rows[0]) return res.status(400).json({
+          message: "Outlet not found for this tenant"
+        });
+      }
+      await pool.query(
+        'UPDATE users SET outlet_id=$1, primary_outlet_id=$2 WHERE id=$3 AND tenant_id=$4',
+        [outletId ?? null, primaryOutletId ?? null, id, tenantId]
+      );
+      res.json({
+        success: true,
+        userId: id,
+        outletId: outletId ?? null,
+        primaryOutletId: primaryOutletId ?? null
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  }
+);
+
 }
