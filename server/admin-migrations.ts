@@ -4123,7 +4123,7 @@ export async function runRemindersMigration(): Promise<void> {
 
 
   // CRM Email Campaigns table
-  await db.execute(sql`CREATE TABLE IF NOT EXISTS campaigns (
+  await pool.query(`CREATE TABLE IF NOT EXISTS campaigns (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id VARCHAR(36) NOT NULL,
     name VARCHAR(255) NOT NULL,
@@ -4141,11 +4141,11 @@ export async function runRemindersMigration(): Promise<void> {
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
   )`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_tenant_idx ON campaigns(tenant_id)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_status_idx ON campaigns(status)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS campaigns_tenant_idx ON campaigns(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS campaigns_status_idx ON campaigns(status)`);
 
   // Loyalty Tier Configuration tables
-  await db.execute(sql`CREATE TABLE IF NOT EXISTS loyalty_tier_config (
+  await pool.query(`CREATE TABLE IF NOT EXISTS loyalty_tier_config (
     id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id VARCHAR(36) NOT NULL,
     tier_name VARCHAR(20) NOT NULL,
@@ -4158,7 +4158,7 @@ export async function runRemindersMigration(): Promise<void> {
     created_at TIMESTAMP DEFAULT NOW(),
     updated_at TIMESTAMP DEFAULT NOW()
   )`);
-  await db.execute(sql`CREATE TABLE IF NOT EXISTS loyalty_tier_log (
+  await pool.query(`CREATE TABLE IF NOT EXISTS loyalty_tier_log (
     id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
     tenant_id VARCHAR(36) NOT NULL,
     customer_id INTEGER NOT NULL,
@@ -4169,7 +4169,7 @@ export async function runRemindersMigration(): Promise<void> {
     total_visits INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT NOW()
   )`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS loyalty_tier_config_tenant_idx ON loyalty_tier_config(tenant_id)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS loyalty_tier_log_tenant_idx ON loyalty_tier_log(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS loyalty_tier_config_tenant_idx ON loyalty_tier_config(tenant_id)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS loyalty_tier_log_tenant_idx ON loyalty_tier_log(tenant_id)`);
 
 }
