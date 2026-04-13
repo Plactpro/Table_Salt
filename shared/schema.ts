@@ -5885,3 +5885,31 @@ export type LeaveBalance = typeof leaveBalances.$inferSelect;
 export const insertLeaveRequestSchema = createInsertSchema(leaveRequests).omit({
   id: true, createdAt: true, updatedAt: true
 });
+
+
+// -- CRM Email Campaigns --
+export const campaigns = pgTable("campaigns", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  body: text("body").notNull(),
+  status: varchar("status", { length: 20 }).default("draft"),
+  targetTier: varchar("target_tier", { length: 20 }),
+  targetTags: jsonb("target_tags"),
+  sentCount: integer("sent_count").default(0),
+  openedCount: integer("opened_count").default(0),
+  clickedCount: integer("clicked_count").default(0),
+  scheduledAt: timestamp("scheduled_at"),
+  sentAt: timestamp("sent_at"),
+  createdBy: varchar("created_by", { length: 36 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type Campaign = typeof campaigns.$inferSelect;
+export type InsertCampaign = typeof campaigns.$inferInsert;
+export const insertCampaignSchema = createInsertSchema(campaigns).omit({
+  id: true, createdAt: true, updatedAt: true,
+  sentCount: true, openedCount: true, clickedCount: true, sentAt: true,
+});

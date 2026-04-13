@@ -64,6 +64,7 @@ import { registerParkingRoutes } from "./routers/parking";
 import { registerAdsRoutes } from "./routers/ads";
 import { registerReportsRoutes } from "./routers/reports";
 import { registerCashDrawerLogRoutes } from "./routers/cash-drawer-log"; import { registerModifiersRoutes } from "./routers/modifiers";
+import { registerCampaignsRoutes } from "./routers/campaigns";
 
 const uploadDir = path.join(process.cwd(), "uploads");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -252,6 +253,7 @@ export async function registerRoutes(
   registerAdsRoutes(app);
   registerReportsRoutes(app);
   registerCashDrawerLogRoutes(app);   registerModifiersRoutes(app);
+  registerCampaignsRoutes(app);
   registerLeaveRoutes(app);
     app.use(allergyAckRouter);
 

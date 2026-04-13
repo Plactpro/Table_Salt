@@ -4121,4 +4121,27 @@ export async function runRemindersMigration(): Promise<void> {
     console.error('[Migration] STAFF-OUTLET error:', err.message);
   }
 
+
+  // CRM Email Campaigns table
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS campaigns (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(36) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    subject VARCHAR(500) NOT NULL,
+    body TEXT NOT NULL,
+    status VARCHAR(20) DEFAULT 'draft',
+    target_tier VARCHAR(20),
+    target_tags JSONB,
+    sent_count INTEGER DEFAULT 0,
+    opened_count INTEGER DEFAULT 0,
+    clicked_count INTEGER DEFAULT 0,
+    scheduled_at TIMESTAMP,
+    sent_at TIMESTAMP,
+    created_by VARCHAR(36),
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  )`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_tenant_idx ON campaigns(tenant_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_status_idx ON campaigns(status)`);
+
 }
