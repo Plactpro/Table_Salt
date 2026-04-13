@@ -1,5 +1,4 @@
 import { registerLeaveRoutes } from "./routers/leave";
-import { registerLeaveRoutes } from "./routers/leave";
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import multer from "multer";
@@ -253,7 +252,6 @@ export async function registerRoutes(
   registerAdsRoutes(app);
   registerReportsRoutes(app);
   registerCashDrawerLogRoutes(app);   registerModifiersRoutes(app);
-  registerLeaveRoutes(app);
   registerLeaveRoutes(app);
     app.use(allergyAckRouter);
 
