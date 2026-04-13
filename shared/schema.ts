@@ -5913,3 +5913,39 @@ export const insertCampaignSchema = createInsertSchema(campaigns).omit({
   id: true, createdAt: true, updatedAt: true,
   sentCount: true, openedCount: true, clickedCount: true, sentAt: true,
 });
+
+// -- Loyalty Tier Configuration --
+export const loyaltyTierConfig = pgTable("loyalty_tier_config", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  tierName: varchar("tier_name", { length: 20 }).notNull(),
+  minSpend: integer("min_spend").notNull().default(0),
+  maxSpend: integer("max_spend"),
+  minVisits: integer("min_visits").default(0),
+  pointsMultiplier: decimal("points_multiplier").default("1.0"),
+  discountPercent: decimal("discount_percent").default("0"),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type LoyaltyTierConfig = typeof loyaltyTierConfig.$inferSelect;
+export type InsertLoyaltyTierConfig = typeof loyaltyTierConfig.$inferInsert;
+export const insertLoyaltyTierConfigSchema = createInsertSchema(loyaltyTierConfig).omit({
+  id: true, createdAt: true, updatedAt: true,
+});
+
+// -- Loyalty Tier Upgrade Log --
+export const loyaltyTierLog = pgTable("loyalty_tier_log", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  tenantId: varchar("tenant_id", { length: 36 }).notNull(),
+  customerId: integer("customer_id").notNull(),
+  previousTier: varchar("previous_tier", { length: 20 }).notNull(),
+  newTier: varchar("new_tier", { length: 20 }).notNull(),
+  reason: text("reason"),
+  totalSpend: integer("total_spend").default(0),
+  totalVisits: integer("total_visits").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export type LoyaltyTierLog = typeof loyaltyTierLog.$inferSelect;

@@ -1,6 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
-import { db } from "../db";
+import { db, pool } from "../db";
 import { eq, sql } from "drizzle-orm";
 import { requireAuth, requireRole } from "../auth";
 import { customers, type InsertCustomer } from "@shared/schema";
@@ -144,4 +144,85 @@ app.get("/api/customers/:id/loyalty-history", requireAuth, async (req: any, res:
   }
 });
 
+
+  // ============ LOYALTY TIER CONFIG ============
+
+  app.get("/api/loyalty-tier-config", requireAuth, async (req, res) => {
+    const tenantId = req.headers["x-tenant-id"] as string;
+    if (!tenantId) return res.status(400).json({ error: "Missing tenant" });
+    const rows = await pool.query(
+      "SELECT * FROM loyalty_tier_config WHERE tenant_id = $1 ORDER BY min_spend ASC",
+      [tenantId]
+    );
+    res.json(rows.rows);
+  });
+
+  app.post("/api/loyalty-tier-config", requireAuth, async (req, res) => {
+    const tenantId = req.headers["x-tenant-id"] as string;
+    if (!tenantId) return res.status(400).json({ error: "Missing tenant" });
+    const { tiers } = req.body;
+    if (!Array.isArray(tiers)) return res.status(400).json({ error: "tiers array required" });
+    await pool.query("DELETE FROM loyalty_tier_config WHERE tenant_id = $1", [tenantId]);
+    for (const t of tiers) {
+      await pool.query(
+        "INSERT INTO loyalty_tier_config (tenant_id, tier_name, min_spend, max_spend, min_visits, points_multiplier, discount_percent) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        [tenantId, t.tierName, t.minSpend || 0, t.maxSpend || null, t.minVisits || 0, t.pointsMultiplier || 1, t.discountPercent || 0]
+      );
+    }
+    res.json({ success: true, count: tiers.length });
+  });
+
+  app.post("/api/loyalty-tier-upgrade", requireAuth, async (req, res) => {
+    const tenantId = req.headers["x-tenant-id"] as string;
+    if (!tenantId) return res.status(400).json({ error: "Missing tenant" });
+    const configRes = await pool.query(
+      "SELECT * FROM loyalty_tier_config WHERE tenant_id = $1 AND is_active = true ORDER BY min_spend DESC",
+      [tenantId]
+    );
+    const tierCfg = configRes.rows;
+    if (tierCfg.length === 0) return res.json({ upgraded: 0, message: "No tier config found" });
+    const custRes = await pool.query(
+      "SELECT c.id, c.name, c.loyalty_tier, c.loyalty_points, COALESCE(SUM(o.total), 0)::int as total_spend, COUNT(o.id)::int as total_visits FROM customers c LEFT JOIN orders o ON o.customer_id = c.id::text AND o.tenant_id = c.tenant_id WHERE c.tenant_id = $1 GROUP BY c.id",
+      [tenantId]
+    );
+    let upgraded = 0;
+    for (const cust of custRes.rows) {
+      let newTier = "bronze";
+      for (const tier of tierCfg) {
+        if (cust.total_spend >= tier.min_spend && cust.total_visits >= (tier.min_visits || 0)) {
+          newTier = tier.tier_name;
+          break;
+        }
+      }
+      if (newTier !== cust.loyalty_tier) {
+        await pool.query("UPDATE customers SET loyalty_tier = $1 WHERE id = $2 AND tenant_id = $3", [newTier, cust.id, tenantId]);
+        await pool.query(
+          "INSERT INTO loyalty_tier_log (tenant_id, customer_id, previous_tier, new_tier, reason, total_spend, total_visits) VALUES ($1, $2, $3, $4, $5, $6, $7)",
+          [tenantId, cust.id, cust.loyalty_tier || "bronze", newTier, "Auto-upgrade", cust.total_spend, cust.total_visits]
+        );
+        upgraded++;
+      }
+    }
+    res.json({ upgraded, total: custRes.rows.length });
+  });
+
+  app.get("/api/loyalty-tier-log", requireAuth, async (req, res) => {
+    const tenantId = req.headers["x-tenant-id"] as string;
+    if (!tenantId) return res.status(400).json({ error: "Missing tenant" });
+    const rows = await pool.query(
+      "SELECT l.*, c.name as customer_name FROM loyalty_tier_log l LEFT JOIN customers c ON c.id = l.customer_id AND c.tenant_id = l.tenant_id WHERE l.tenant_id = $1 ORDER BY l.created_at DESC LIMIT 100",
+      [tenantId]
+    );
+    res.json(rows.rows);
+  });
+
+  app.get("/api/loyalty-tier-stats", requireAuth, async (req, res) => {
+    const tenantId = req.headers["x-tenant-id"] as string;
+    if (!tenantId) return res.status(400).json({ error: "Missing tenant" });
+    const rows = await pool.query(
+      "SELECT loyalty_tier, COUNT(*)::int as count FROM customers WHERE tenant_id = $1 GROUP BY loyalty_tier ORDER BY count DESC",
+      [tenantId]
+    );
+    res.json(rows.rows);
+  });
 }

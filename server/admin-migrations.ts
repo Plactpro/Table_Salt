@@ -4144,4 +4144,32 @@ export async function runRemindersMigration(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_tenant_idx ON campaigns(tenant_id)`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS campaigns_status_idx ON campaigns(status)`);
 
+  // Loyalty Tier Configuration tables
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS loyalty_tier_config (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(36) NOT NULL,
+    tier_name VARCHAR(20) NOT NULL,
+    min_spend INTEGER NOT NULL DEFAULT 0,
+    max_spend INTEGER,
+    min_visits INTEGER DEFAULT 0,
+    points_multiplier DECIMAL DEFAULT 1.0,
+    discount_percent DECIMAL DEFAULT 0,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+  )`);
+  await db.execute(sql`CREATE TABLE IF NOT EXISTS loyalty_tier_log (
+    id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+    tenant_id VARCHAR(36) NOT NULL,
+    customer_id INTEGER NOT NULL,
+    previous_tier VARCHAR(20) NOT NULL,
+    new_tier VARCHAR(20) NOT NULL,
+    reason TEXT,
+    total_spend INTEGER DEFAULT 0,
+    total_visits INTEGER DEFAULT 0,
+    created_at TIMESTAMP DEFAULT NOW()
+  )`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS loyalty_tier_config_tenant_idx ON loyalty_tier_config(tenant_id)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS loyalty_tier_log_tenant_idx ON loyalty_tier_log(tenant_id)`);
+
 }
