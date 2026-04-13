@@ -1089,7 +1089,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       const link = await createPaymentLink({
         amountRupees: serverAmount,
-        currency: tenant.currency || "INR",
+        currency: tenant.currency || "AED",
         description: `Payment for Bill ${bill.billNumber}`,
         billId: bill.id,
         tenantKeyId: tenant.razorpayKeyId,

@@ -44,7 +44,7 @@ interface Props {
 }
 
 export default function ModifierSelectionDialog({
-  open, onOpenChange, menuItem, onConfirm, currency = "AED",
+  open, onOpenChange, menuItem, onConfirm, currency = user?.tenant?.currency ?? "AED",
 }: Props) {
   const [selections, setSelections] = useState<Record<string, string[]>>({});
   const [modifierGroups, setModifierGroups] = useState<ModifierGroup[]>([]);

@@ -341,7 +341,7 @@ export function registerKioskRoutes(app: Express): void {
 
       const stripeClient = await getPaymentStripeClient();
       const origin = `${req.protocol}://${req.get("host")}`;
-      const currency = (tenant?.currency || "usd").toLowerCase();
+      const currency = (tenant?.currency || "aed").toLowerCase();
 
       const lineItems = serverItems.map(item => ({
         price_data: { currency, product_data: { name: item.name }, unit_amount: Math.round(item.price * 100) },
@@ -438,7 +438,7 @@ export function registerKioskRoutes(app: Express): void {
 
       const link = await createPaymentLink({
         amountRupees: serverTotal,
-        currency: tenant?.currency || "INR",
+        currency: tenant?.currency || "AED",
         description: `Kiosk Order — ${device.name}`,
         billId: order.id,
         tenantKeyId: keyId,

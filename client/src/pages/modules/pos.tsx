@@ -2410,7 +2410,7 @@ export default function POSPage() {
                     <button key={amt} data-testid={`button-tender-${amt}`}
                       onClick={() => setTenderedAmount(String(Math.ceil(total / amt) * amt))}
                       className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors">
-                      AED {amt}
+                      {currency} {amt}
                     </button>
                   ))}
                   <button data-testid="button-tender-exact" onClick={() => setTenderedAmount(parseFloat(total.toFixed(2)).toFixed(2))}

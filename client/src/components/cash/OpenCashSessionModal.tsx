@@ -16,74 +16,17 @@ interface Denomination {
   label: string;
 }
 
-const DENOMINATIONS_BY_CURRENCY: Record<string, { notes: Denomination[]; coins: Denomination[] }> = {
-  INR: {
-    notes: [
-      { value: 2000, label: "₹2000" },
-      { value: 500, label: "₹500" },
-      { value: 200, label: "₹200" },
-      { value: 100, label: "₹100" },
-      { value: 50, label: "₹50" },
-      { value: 20, label: "₹20" },
-      { value: 10, label: "₹10" },
-    ],
-    coins: [
-      { value: 10, label: "₹10" },
-      { value: 5, label: "₹5" },
-      { value: 2, label: "₹2" },
-      { value: 1, label: "₹1" },
-    ],
-  },
-  USD: {
-    notes: [
-      { value: 100, label: "$100" },
-      { value: 50, label: "$50" },
-      { value: 20, label: "$20" },
-      { value: 10, label: "$10" },
-      { value: 5, label: "$5" },
-      { value: 1, label: "$1" },
-    ],
-    coins: [
-      { value: 0.25, label: "25¢" },
-      { value: 0.10, label: "10¢" },
-      { value: 0.05, label: "5¢" },
-      { value: 0.01, label: "1¢" },
-    ],
-  },
-  AED: {
-    notes: [
-      { value: 1000, label: "AED 1000" },
-      { value: 500, label: "AED 500" },
-      { value: 200, label: "AED 200" },
-      { value: 100, label: "AED 100" },
-      { value: 50, label: "AED 50" },
-      { value: 20, label: "AED 20" },
-      { value: 10, label: "AED 10" },
-      { value: 5, label: "AED 5" },
-    ],
-    coins: [
-      { value: 1, label: "AED 1" },
-      { value: 0.50, label: "50 fils" },
-      { value: 0.25, label: "25 fils" },
-    ],
-  },
-  GBP: {
-    notes: [
-      { value: 50, label: "£50" },
-      { value: 20, label: "£20" },
-      { value: 10, label: "£10" },
-      { value: 5, label: "£5" },
-    ],
-    coins: [
-      { value: 2, label: "£2" },
-      { value: 1, label: "£1" },
-      { value: 0.50, label: "50p" },
-      { value: 0.20, label: "20p" },
-      { value: 0.10, label: "10p" },
-      { value: 0.05, label: "5p" },
-    ],
-  },
-};
+const DENOMINATION_MAP: Record<string, number[]> = {
+    AED: [1000, 500, 200, 100, 50, 20, 10, 5, 1],
+    INR: [2000, 500, 200, 100, 50, 20, 10, 5, 2, 1],
+    USD: [100, 50, 20, 10, 5, 1],
+    GBP: [50, 20, 10, 5, 2, 1],
+    EUR: [500, 200, 100, 50, 20, 10, 5, 2, 1],
+    SAR: [500, 200, 100, 50, 20, 10, 5, 1],
+    QAR: [500, 200, 100, 50, 20, 10, 5, 1],
+  };
+  const tenantCurrency = user?.tenant?.currency ?? "AED";
+  const denominations = (DENOMINATION_MAP[tenantCurrency] ?? DENOMINATION_MAP["AED"]).map(v => ({ value: v, label: `${tenantCurrency} ${v}` }));
 
 function getDefaultDenominations(currencyCode: string) {
   if (DENOMINATIONS_BY_CURRENCY[currencyCode]) return DENOMINATIONS_BY_CURRENCY[currencyCode];
