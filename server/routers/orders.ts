@@ -8,6 +8,7 @@ import { getNextKotSequence } from "./print-jobs";
 import { requireAuth, requireRole } from "../auth";
 import { can, needsSupervisorApproval } from "../permissions";
 import { auditLogFromReq } from "../audit";
+import { checkAndUpgradeLoyaltyTier } from "../services/loyalty-tier";
 import { emitToTenant } from "../realtime";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { returnResourcesFromTable } from "../services/resource-service";
@@ -1126,6 +1127,10 @@ export function registerOrdersRoutes(app: Express): void {
       ).catch(() => {});
     }
 
+        // Auto-upgrade loyalty tier on payment
+        if (req.body.status === "paid" && existing.status !== "paid" && order?.customerId) {
+          checkAndUpgradeLoyaltyTier(pool, user.tenantId, Number(order.customerId)).catch(() => {});
+        }
     res.json(enriched);
     } catch (err: any) {
       res.status(500).json({ message: err.message });

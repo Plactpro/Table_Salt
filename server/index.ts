@@ -615,6 +615,8 @@ function startWebhookMonitor() {
 
   try {
     const { startWastageSummaryScheduler } = await import("./services/wastage-summary-scheduler");
+    const { startDailyReportScheduler } = await import("./services/daily-report-scheduler");
+    startDailyReportScheduler();
     startWastageSummaryScheduler();
   } catch (e) {
     console.error("Wastage summary scheduler init error:", e);

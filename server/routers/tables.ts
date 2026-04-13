@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { returnResourcesFromTable } from "../services/resource-service";
+import { sendSms } from "../services/sms-gateway";
 
 export function registerTablesRoutes(app: Express): void {
   app.get("/api/table-zones", requireAuth, async (req, res) => {
@@ -291,6 +292,7 @@ export function registerTablesRoutes(app: Express): void {
     if (!entry) return res.status(404).json({ message: "Entry not found" });
     await storage.updateWaitlistEntry(req.params.id, user.tenantId, { notificationSent: true });
     console.log(`[Notification] Channel: ${channel || "sms"}, Guest: ${entry.customerName}, Phone: ${entry.customerPhone}, Message: ${message || "Your table is ready"}`);
+        if (entry.customerPhone) sendSms(entry.customerPhone, message || "Your table is ready", user.tenantId).catch(() => {});
     res.json({ sent: true, channel: channel || "sms", to: entry.customerPhone, message: message || "Your table is ready" });
   });
 

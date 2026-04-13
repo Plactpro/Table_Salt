@@ -4172,4 +4172,18 @@ export async function runRemindersMigration(): Promise<void> {
   await pool.query(`CREATE INDEX IF NOT EXISTS loyalty_tier_config_tenant_idx ON loyalty_tier_config(tenant_id)`);
   await pool.query(`CREATE INDEX IF NOT EXISTS loyalty_tier_log_tenant_idx ON loyalty_tier_log(tenant_id)`);
 
+
+    // SMS log table
+    await pool.query(`CREATE TABLE IF NOT EXISTS sms_log (
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid(),
+      tenant_id VARCHAR(36) NOT NULL,
+      phone VARCHAR(20) NOT NULL,
+      message TEXT,
+      provider VARCHAR(20),
+      sent BOOLEAN DEFAULT false,
+      message_id TEXT,
+      error TEXT,
+      created_at TIMESTAMP DEFAULT NOW()
+    )`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS sms_log_tenant_idx ON sms_log(tenant_id)`);
 }
