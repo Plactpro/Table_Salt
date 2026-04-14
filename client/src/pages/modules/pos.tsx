@@ -2158,70 +2158,7 @@ export default function POSPage() {
         </div>
 
         <div className="sticky bottom-0 border-t p-4 space-y-3 shrink-0 bg-background">
-          {applicableOffers.length > 0 && (
-            <div className="space-y-1.5" data-testid="offers-section">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
-                <Tag className="h-3 w-3" /> {tp("availableOffers")}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {applicableOffers.map((offer) => {
-                  const isSelected = activeTab?.selectedOfferId === offer.id;
-                  return (
-                    <Button key={offer.id} variant={isSelected ? "default" : "outline"} size="sm" className="text-xs h-7"
-                      onClick={() => updateActiveTab({ selectedOfferId: isSelected ? null : offer.id })}
-                      data-testid={`button-offer-${offer.id}`}>
-                      {isSelected && <CheckCircle2 className="h-3 w-3 mr-1" />}
-                      {(offer.type === "percentage" || offer.type === "happy_hour") ? <Percent className="h-3 w-3 mr-0.5" /> : <Tag className="h-3 w-3 mr-0.5" />}
-                      {offer.name}
-                      {(offer.type === "percentage" || offer.type === "happy_hour") ? ` (${offer.value}%)` : offer.type === "fixed_amount" ? ` (${fmt(offer.value)})` : ""}
-                    </Button>
-                  );
-                })}
-              </div>
-              {selectedOffer && offerDiscount > 0 && (
-                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} className="flex items-center justify-between bg-green-50 dark:bg-green-950/30 rounded-lg px-2.5 py-1.5 text-xs">
-                  <span className="text-green-700 dark:text-green-300 font-medium">{selectedOffer.name}: -{fmt(offerDiscount)}</span>
-                  <Button variant="ghost" size="sm" className="h-5 w-5 p-0 text-green-600" onClick={() => updateActiveTab({ selectedOfferId: null })} data-testid="button-remove-offer"><X className="h-3 w-3" /></Button>
-                </motion.div>
-              )}
-            </div>
-          )}
-
           <div className="space-y-2">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1"><Percent className="h-3 w-3" /> Discount</p>
-              <div className="flex gap-1 flex-wrap">
-                {(["5", "10", "15", "20"] as const).map(pct => {
-                  const isActive = discountPreset === pct;
-                  return (
-                    <Button key={pct} data-testid={`button-discount-${pct}`} variant={isActive ? "default" : "outline"} size="sm" className="text-xs h-7 px-2.5"
-                      onClick={() => {
-                        const newPreset = isActive ? "none" : pct;
-                        setDiscountPreset(newPreset);
-                        updateActiveTab({ discount: newPreset === "none" ? "" : (subtotal * Number(pct) / 100).toFixed(2) });
-                      }}>
-                      {pct}%
-                    </Button>
-                  );
-                })}
-                <Button data-testid="button-discount-custom" variant={discountPreset === "custom" ? "default" : "outline"} size="sm" className="text-xs h-7 px-2.5"
-                  onClick={() => setDiscountPreset(discountPreset === "custom" ? "none" : "custom")}>
-                  Custom
-                </Button>
-                {discountPreset !== "none" && (
-                  <button className="text-xs text-muted-foreground hover:text-destructive ml-auto" data-testid="button-clear-discount"
-                    onClick={() => { setDiscountPreset("none"); updateActiveTab({ discount: "" }); }}>
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              {discountPreset === "custom" && (
-                <Input data-testid="input-discount" type="number" placeholder={tp("applyDiscount")} value={discount} onChange={(e) => updateActiveTab({ discount: e.target.value })} min="0" step="0.01" className="mt-1.5 text-sm" />
-              )}
-              {discountPreset !== "none" && discountPreset !== "custom" && manualDiscount > 0 && (
-                <p className="text-xs text-green-600 dark:text-green-400 mt-1">−{fmt(manualDiscount)} off</p>
-              )}
-            </div>
             <Textarea data-testid="input-order-notes" placeholder={tp("orderNotesPlaceholder")} value={orderNotes} onChange={(e) => updateActiveTab({ orderNotes: e.target.value })} rows={2} className="resize-none text-sm" />
           </div>
 
