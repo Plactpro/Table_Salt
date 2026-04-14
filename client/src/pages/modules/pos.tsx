@@ -1521,7 +1521,7 @@ export default function POSPage() {
   }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder, showBillModal, showKbdHelp, showMobileCart, cart.length]);
 
   return (
-    <PageErrorBoundary label="POS"><><PageTitle title={tc("pos")} /><div className="flex h-full gap-0 relative overflow-hidden" data-testid="pos-page">
+    <PageErrorBoundary label="POS"><><PageTitle title={tc("pos")} /><div className="flex h-full gap-0 relative overflow-x-hidden" data-testid="pos-page">
       {showKbdHelp && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none" aria-live="polite">
           <div className="bg-popover border border-border rounded-xl shadow-xl p-4 w-72 pointer-events-auto" data-testid="kbd-shortcut-overlay">
@@ -1550,7 +1550,7 @@ export default function POSPage() {
         </div>
       )}
 
-      <div className="flex-1 flex flex-col overflow-hidden border-r">
+      <div className="flex-1 min-w-0 flex flex-col overflow-hidden border-r">
         <div className="p-4 border-b space-y-3">
           <div className="flex gap-2 items-center">
             <div className="relative flex-1">
@@ -1870,7 +1870,7 @@ export default function POSPage() {
         </SheetContent>
       </Sheet>
 
-      <div className="hidden md:flex w-[400px] shrink-0 flex-col bg-card overflow-hidden h-full">
+      <div className="hidden md:flex w-[400px] flex-shrink-0 flex-col bg-card overflow-x-hidden h-full pr-2">
         <div className="border-b">
           <div className="flex items-center gap-0 px-2 pt-2 overflow-x-auto" data-testid="pos-tabs-bar">
             {tabs.map((tab, idx) => (
@@ -1908,7 +1908,7 @@ export default function POSPage() {
                 <Badge variant="secondary" data-testid="badge-cart-count">{cart.reduce((s, c) => s + c.quantity, 0)}</Badge>
               </motion.div>
             )}
-            <div className="ml-auto flex items-center gap-1">
+            <div className="ml-auto flex items-center gap-1 overflow-x-auto scrollbar-none flex-nowrap">
               <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("/tickets")} data-testid="button-pos-history" title="Ticket History">
                 <Clock className="h-3 w-3 mr-1" /> History
               </Button>
@@ -2157,7 +2157,7 @@ export default function POSPage() {
           )}
         </div>
 
-        <div className="border-t p-4 space-y-3 shrink-0">
+        <div className="sticky bottom-0 border-t p-4 space-y-3 shrink-0 bg-background">
           {applicableOffers.length > 0 && (
             <div className="space-y-1.5" data-testid="offers-section">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
