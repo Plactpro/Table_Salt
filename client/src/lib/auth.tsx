@@ -108,7 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return {
           id: data.id,
           name: data.name,
-          plan: (data.plan || "basic") as SubscriptionTier,
+          plan: ((data.plan || "basic").toLowerCase()) as SubscriptionTier,
           businessType: (data.businessType || "casual_dining") as BusinessType,
           currency: data.currency || "USD",
           timezone: data.timezone || "UTC",
