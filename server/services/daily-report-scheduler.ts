@@ -20,7 +20,7 @@ async function sendDailyOwnerReport(): Promise<void> {
     const dateStr = yesterday.toISOString().slice(0, 10);
 
     const { rows: tenants } = await pool.query(
-      "SELECT id, name, owner_email FROM tenants WHERE active = true"
+      "SELECT t.id, t.name, u.email as owner_email FROM tenants t LEFT JOIN users u ON u.tenant_id = t.id AND u.role = 'owner' AND u.email IS NOT NULL AND u.email <> '' WHERE t.active = true"
     );
 
     const transport = await getSmtpTransport();
