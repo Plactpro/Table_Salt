@@ -18,7 +18,7 @@ import { BusinessType, tierPricing, businessConfig } from "@/lib/subscription";
 import { formatCurrency } from "@shared/currency";
 import { TrialBanner } from "@/components/layout/TrialBanner";
 import { GettingStartedChecklist } from "@/components/onboarding/GettingStartedChecklist";
-import { PageLoader } from "@/components/PageLoader";
+import PageLoader from "@/components/PageLoader";
 
 const stagger = {
   hidden: { opacity: 0 },
