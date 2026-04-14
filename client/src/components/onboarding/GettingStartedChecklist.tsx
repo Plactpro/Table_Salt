@@ -5,7 +5,7 @@ import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, Circle, ArrowRight, Rocket, PartyPopper } from "lucide-react";
+import { CheckCircle2, Circle, ArrowRight, Rocket, PartyPopper, ChevronDown, ChevronUp, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 
@@ -85,15 +85,25 @@ export function GettingStartedChecklist() {
 
   const dismissKey = `checklist_dismissed_${user?.tenantId}`;
   const remindKey = `checklist_remind_later_${user?.tenantId}`;
+  const collapsedKey = `setup_wizard_collapsed_${user?.tenantId}`;
 
+  const { items, completedCount, allDone } = useChecklistData();
+  const progress = Math.round((completedCount / items.length) * 100);
+
+  // Dismissed state — permanent hide via X button
   const [dismissed, setDismissed] = useState(() => {
     try {
-      return localStorage.getItem(dismissKey) === "true";
+      // Support both legacy per-tenant key and the spec key
+      return (
+        localStorage.getItem(dismissKey) === "true" ||
+        localStorage.getItem("setup_wizard_dismissed") === "true"
+      );
     } catch {
       return false;
     }
   });
 
+  // Remind-later state — temporary 24 h hide
   const [remindDismissed, setRemindDismissed] = useState(() => {
     try {
       const stored = localStorage.getItem(remindKey);
@@ -105,9 +115,20 @@ export function GettingStartedChecklist() {
     }
   });
 
-  const [autoCompleting, setAutoCompleting] = useState(false);
+  // Collapsed/minimised state — restored from localStorage, auto-collapses at >= 80%
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      if (localStorage.getItem(collapsedKey) === "true") return true;
+      if (localStorage.getItem("setup_wizard_collapsed") === "true") return true;
+      // Auto-collapse on first load when completion >= 80%
+      const currentProgress = Math.round((items.filter((i) => i.completed).length / items.length) * 100);
+      return currentProgress >= 80;
+    } catch {
+      return false;
+    }
+  });
 
-  const { items, completedCount, allDone } = useChecklistData();
+  const [autoCompleting, setAutoCompleting] = useState(false);
 
   const completeMutation = useMutation({
     mutationFn: async () => {
@@ -129,6 +150,7 @@ export function GettingStartedChecklist() {
   if (!user || !tenant) return null;
   if (user.role !== "owner") return null;
 
+  // Permanently dismissed — render nothing
   if (dismissed || remindDismissed) return null;
 
   if (!tenant.onboardingCompleted) return null;
@@ -138,8 +160,6 @@ export function GettingStartedChecklist() {
     completeMutation.mutate();
     return null;
   }
-
-  const progress = Math.round((completedCount / items.length) * 100);
 
   const handleMarkComplete = () => {
     completeMutation.mutate();
@@ -151,6 +171,23 @@ export function GettingStartedChecklist() {
       localStorage.setItem(remindKey, String(expiry));
     } catch {}
     setRemindDismissed(true);
+  };
+
+  const handleToggleCollapse = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    try {
+      localStorage.setItem(collapsedKey, String(next));
+      localStorage.setItem("setup_wizard_collapsed", String(next));
+    } catch {}
+  };
+
+  const handleDismiss = () => {
+    try {
+      localStorage.setItem(dismissKey, "true");
+      localStorage.setItem("setup_wizard_dismissed", "true");
+    } catch {}
+    setDismissed(true);
   };
 
   return (
@@ -167,10 +204,32 @@ export function GettingStartedChecklist() {
               <div className="p-1.5 rounded-lg bg-primary/10">
                 <Rocket className="h-5 w-5 text-primary" />
               </div>
-              <div>
+              <div className="flex-1">
                 <CardTitle className="text-base font-heading">Get Your Restaurant Ready</CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">Complete these steps to go live</p>
               </div>
+              {/* Minimize / collapse toggle */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={handleToggleCollapse}
+                aria-label={collapsed ? "Expand setup wizard" : "Collapse setup wizard"}
+                data-testid="button-toggle-collapse"
+              >
+                {collapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </Button>
+              {/* Permanent dismiss */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={handleDismiss}
+                aria-label="Dismiss setup wizard permanently"
+                data-testid="button-dismiss-wizard"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
             <div className="mt-3">
               <div className="flex items-center justify-between mb-1.5">
@@ -189,58 +248,73 @@ export function GettingStartedChecklist() {
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-2 pt-0">
-            {items.map((item) => (
-              <div
-                key={item.n}
-                data-testid={`item-checklist-${item.n}`}
-                className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
-                  item.completed ? "bg-green-50 dark:bg-green-950/20" : "hover:bg-muted/50"
-                }`}
+
+          {/* Collapsible body */}
+          <AnimatePresence initial={false}>
+            {!collapsed && (
+              <motion.div
+                key="checklist-body"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: "easeInOut" }}
+                style={{ overflow: "hidden" }}
               >
-                <div data-testid={`icon-check-${item.n}`} className="shrink-0">
-                  {item.completed ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-500" />
-                  ) : (
-                    <Circle className="h-5 w-5 text-muted-foreground" />
-                  )}
-                </div>
-                <span className={`flex-1 text-sm ${item.completed ? "text-muted-foreground line-through" : ""}`}>
-                  {item.label}
-                </span>
-                {!item.completed && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 text-xs text-primary hover:text-primary gap-1 shrink-0"
-                    onClick={() => navigate(item.actionLink)}
-                    data-testid={`link-action-${item.n}`}
-                  >
-                    {item.actionLabel}
-                    <ArrowRight className="h-3 w-3" />
-                  </Button>
-                )}
-              </div>
-            ))}
-            <div className="flex gap-2 pt-2">
-              <Button
-                className="flex-1 gap-2"
-                onClick={handleMarkComplete}
-                disabled={completeMutation.isPending}
-                data-testid="button-mark-complete"
-              >
-                <PartyPopper className="h-4 w-4" />
-                Mark as Complete
-              </Button>
-              <Button
-                variant="outline"
-                onClick={handleRemindLater}
-                data-testid="button-remind-later"
-              >
-                Remind me later
-              </Button>
-            </div>
-          </CardContent>
+                <CardContent className="space-y-2 pt-0">
+                  {items.map((item) => (
+                    <div
+                      key={item.n}
+                      data-testid={`item-checklist-${item.n}`}
+                      className={`flex items-center gap-3 p-2.5 rounded-lg transition-colors ${
+                        item.completed ? "bg-green-50 dark:bg-green-950/20" : "hover:bg-muted/50"
+                      }`}
+                    >
+                      <div data-testid={`icon-check-${item.n}`} className="shrink-0">
+                        {item.completed ? (
+                          <CheckCircle2 className="h-5 w-5 text-green-500" />
+                        ) : (
+                          <Circle className="h-5 w-5 text-muted-foreground" />
+                        )}
+                      </div>
+                      <span className={`flex-1 text-sm ${item.completed ? "text-muted-foreground line-through" : ""}`}>
+                        {item.label}
+                      </span>
+                      {!item.completed && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-xs text-primary hover:text-primary gap-1 shrink-0"
+                          onClick={() => navigate(item.actionLink)}
+                          data-testid={`link-action-${item.n}`}
+                        >
+                          {item.actionLabel}
+                          <ArrowRight className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      className="flex-1 gap-2"
+                      onClick={handleMarkComplete}
+                      disabled={completeMutation.isPending}
+                      data-testid="button-mark-complete"
+                    >
+                      <PartyPopper className="h-4 w-4" />
+                      Mark as Complete
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={handleRemindLater}
+                      data-testid="button-remind-later"
+                    >
+                      Remind me later
+                    </Button>
+                  </div>
+                </CardContent>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </Card>
       </motion.div>
     </AnimatePresence>
