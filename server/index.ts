@@ -520,6 +520,7 @@ function startWebhookMonitor() {
     console.error("Special resources seed error:", e);
   }
 
+        if (process.env.STRIPE_SECRET_KEY) {
   // Initialize Stripe schema (stripe-replit-sync manages the stripe.* tables)
   try {
     const { runMigrations } = await import("stripe-replit-sync");
@@ -548,6 +549,9 @@ function startWebhookMonitor() {
   } catch (e: any) {
     console.warn("[Stripe] Managed webhook setup skipped:", e.message);
   }
+                } else {
+        console.warn("[Stripe] STRIPE_SECRET_KEY not set — skipping Stripe sync and webhook setup");
+    }
 
   // Price ID discovery runs independently — checkout still works even if webhook setup failed
   await discoverPriceIds();
