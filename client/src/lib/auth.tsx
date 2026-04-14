@@ -64,6 +64,7 @@ interface AuthContextType {
   user: AuthUser | null;
   tenant: TenantInfo | null;
   isLoading: boolean;
+  isTenantLoading: boolean;
   login: (username: string, password: string, totpCode?: string) => Promise<AuthUser | { requires2FA: true; userId: string }>;
   register: (data: { restaurantName: string; name: string; username: string; password: string; email?: string; phone?: string; tosAccepted?: boolean }) => Promise<AuthUser>;
   logout: () => Promise<void>;
@@ -73,6 +74,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   tenant: null,
   isLoading: true,
+  isTenantLoading: true,
   login: async () => { throw new Error("Not initialized"); },
   register: async () => { throw new Error("Not initialized"); },
   logout: async () => {},
@@ -96,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: Infinity,
   });
 
-  const { data: tenantData } = useQuery<TenantInfo | null>({
+  const { data: tenantData, isLoading: isTenantLoading } = useQuery<TenantInfo | null>({
     queryKey: ["/api/tenant", user?.tenantId],
     queryFn: async () => {
       try {
@@ -210,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const tenant = tenantData ?? null;
 
   return (
-    <AuthContext.Provider value={{ user: user ?? null, tenant, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user: user ?? null, tenant, isLoading, isTenantLoading: !!user && isTenantLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -219,7 +221,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 export const useAuth = () => useContext(AuthContext);
 
 export function useSubscription() {
-  const { tenant } = useAuth();
+  const { tenant, isTenantLoading } = useAuth();
   const tier: SubscriptionTier = tenant?.plan ?? "basic";
   const businessType: BusinessType = tenant?.businessType ?? "casual_dining";
 
@@ -230,6 +232,10 @@ export function useSubscription() {
     tier,
     businessType,
     tenant,
+    // isLoading is true while tenant data is still being fetched after login.
+    // GuardedRoute MUST check this before gating features — reading plan as
+    // "basic" while loading would incorrectly block Enterprise tenants.
+    isLoading: isTenantLoading,
     hasFeatureAccess: checkFeatureAccess,
     badges,
   };
