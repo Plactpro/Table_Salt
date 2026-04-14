@@ -118,6 +118,10 @@ function isOverdue(req: TableRequest) {
   return diff > (SLA_MINUTES[req.priority] ?? 5) * 60000;
 }
 
+function isExpired(createdAt: string) {
+  return Date.now() - new Date(createdAt).getTime() > 2 * 60 * 60 * 1000;
+}
+
 function StatusStepper({ status }: { status: string }) {
   const steps = [
     { key: "pending", label: "Pending" },
@@ -367,10 +371,12 @@ function RequestCard({ req, onAcknowledge, onComplete, onAssign, isManager }: {
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
           {overdue && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
-              <AlertTriangle className="h-3 w-3" />Overdue
-            </span>
-          )}
+              isExpired(req.createdAt)
+                ? <span className="text-xs text-muted-foreground border border-border rounded px-2 py-0.5">Expired</span>
+                : <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
+                    <AlertTriangle className="h-3 w-3" />Overdue
+                  </span>
+            )}
           <span className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${statusConf.badge}`}>
             {statusConf.label}
           </span>
