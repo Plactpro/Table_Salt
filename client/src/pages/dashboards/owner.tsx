@@ -18,6 +18,7 @@ import { BusinessType, tierPricing, businessConfig } from "@/lib/subscription";
 import { formatCurrency } from "@shared/currency";
 import { TrialBanner } from "@/components/layout/TrialBanner";
 import { GettingStartedChecklist } from "@/components/onboarding/GettingStartedChecklist";
+import { PageLoader } from "@/components/PageLoader";
 
 const stagger = {
   hidden: { opacity: 0 },
@@ -161,14 +162,19 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any, fmt: (v
 
 export default function OwnerDashboard() {
   const { i18n } = useTranslation();
-  const { user } = useAuth();
-  const { tier, businessType, hasFeatureAccess } = useSubscription();
+  const { user, isLoading: authLoading } = useAuth();
+  const { tier, businessType, hasFeatureAccess, isLoading: subLoading } = useSubscription();
 
   const { data: stats, isLoading } = useQuery<any>({
     queryKey: ["/api/dashboard"],
   });
 
   const { data: salesReport } = useBackgroundReport<any>(["/api/reports/sales"], "/api/reports/sales");
+
+  // Guard: wait for auth and subscription data before rendering
+  if (authLoading || subLoading || !user) {
+    return <PageLoader />;
+  }
 
   if (isLoading) {
     return (
@@ -188,14 +194,17 @@ export default function OwnerDashboard() {
   const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 17 ? "Good afternoon" : "Good evening";
   const dateStr = now.toLocaleDateString(i18n.language, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
-  const BusinessIcon = businessTypeIcons[businessType] || UtensilsCrossed;
-  const config = businessConfig[businessType];
-  const tierInfo = tierPricing[tier];
-  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
-  const tenantCurrencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const resolvedBusinessType: BusinessType = businessType ?? "casual_dining";
+  const resolvedTier = tier ?? "basic";
+
+  const BusinessIcon = businessTypeIcons[resolvedBusinessType] ?? UtensilsCrossed;
+  const config = businessConfig[resolvedBusinessType];
+  const tierInfo = tierPricing[resolvedTier];
+  const tenantCurrency = (user?.tenant?.currency?.toUpperCase() ?? "AED") as string;
+  const tenantCurrencyPosition = (user?.tenant?.currencyPosition ?? "before") as "before" | "after";
   const tenantCurrencyDecimals = user?.tenant?.currencyDecimals ?? 2;
   const fmt = (val: string | number | null) => formatCurrency(val ?? 0, tenantCurrency, { position: tenantCurrencyPosition, decimals: tenantCurrencyDecimals });
-  const kpis = getBusinessSpecificKPIs(businessType, stats, fmt);
+  const kpis = getBusinessSpecificKPIs(resolvedBusinessType, stats, fmt);
   const canAccessAnalytics = hasFeatureAccess("advanced_analytics");
   const canAccessReports = hasFeatureAccess("reports");
 
@@ -244,7 +253,7 @@ export default function OwnerDashboard() {
                   data-testid="badge-subscription-tier"
                   className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white border-0 hover:from-amber-600 hover:to-orange-600"
                 >
-                  {tierInfo?.label || tier}
+                  {tierInfo?.label || resolvedTier}
                 </Badge>
               </div>
             </div>
@@ -380,7 +389,7 @@ export default function OwnerDashboard() {
                 <div>
                   <h3 className="font-heading font-semibold">Unlock Advanced Analytics</h3>
                   <p className="text-sm text-muted-foreground">
-                    Upgrade to Premium for deeper insights, trend analysis, and {config?.label.toLowerCase()} specific reports.
+                    Upgrade to Premium for deeper insights, trend analysis, and {config?.label?.toLowerCase()} specific reports.
                   </p>
                 </div>
               </div>
