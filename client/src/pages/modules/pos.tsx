@@ -1892,50 +1892,38 @@ export default function POSPage() {
                 <Plus className="h-3.5 w-3.5" />
               </button>
             )}
+                          <div className="ml-auto flex items-center gap-1 shrink-0 pl-2">
+                <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("/tickets")} data-testid="button-pos-history" title="Ticket History">
+                  <Clock className="h-3 w-3 mr-1" /> History
+                </Button>
+                <DeliveryQueueButton onClick={() => setShowDeliveryQueue(true)} />
+                <Button variant="outline" size="sm" className="text-xs h-7 px-2 relative" onClick={() => setShowRecall(true)} data-testid="button-recall">
+                  <RotateCcw className="h-3 w-3 mr-1" /> Recall
+                  {heldTabs.length > 0 && (
+                    <Badge className="absolute -top-1.5 -right-1.5 h-4 w-4 p-0 flex items-center justify-center text-[10px]">{heldTabs.length}</Badge>
+                  )}
+                </Button>
+                {posSessionId ? (
+                  <button
+                    onClick={() => setShowCloseShift(true)}
+                    className="flex items-center gap-1.5 h-7 px-2 rounded-md border text-xs bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary transition-colors"
+                    data-testid="button-close-shift"
+                  >
+                    <Clock className="h-3 w-3" />
+                    <span className="font-medium">{posSession?.shiftName ?? "Shift"}</span>
+                    {sessionElapsed && <span className="text-primary/70">· {sessionElapsed}</span>}
+                  </button>
+                ) : (
+                  <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowStartShift(true)} data-testid="button-start-shift">
+                    <Clock className="h-3 w-3 mr-1" /> Start Shift
+                  </Button>
+                )}
+              </div>
           </div>
         </div>
 
         {/* ── Sidebar top: header + order-detail partition ── */}
         <div className="p-4 border-b space-y-3">
-          {/* Row 1: title + action buttons */}
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-primary/10">
-              <ShoppingCart className="h-5 w-5 text-primary" />
-            </div>
-            <h2 className="font-heading font-semibold text-lg">Current Order</h2>
-            {cart.length > 0 && (
-              <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} key={cart.reduce((s, c) => s + c.quantity, 0)}>
-                <Badge variant="secondary" data-testid="badge-cart-count">{cart.reduce((s, c) => s + c.quantity, 0)}</Badge>
-              </motion.div>
-            )}
-            <div className="ml-auto flex items-center gap-1 overflow-x-auto scrollbar-none flex-nowrap">
-              <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => navigate("/tickets")} data-testid="button-pos-history" title="Ticket History">
-                <Clock className="h-3 w-3 mr-1" /> History
-              </Button>
-              <DeliveryQueueButton onClick={() => setShowDeliveryQueue(true)} />
-              <Button variant="outline" size="sm" className="text-xs h-7 px-2 relative" onClick={() => setShowRecall(true)} data-testid="button-recall">
-                <RotateCcw className="h-3 w-3 mr-1" /> Recall
-                {heldTabs.length > 0 && (
-                  <Badge className="absolute -top-1.5 -right-1.5 h-4 w-4 p-0 flex items-center justify-center text-[10px]">{heldTabs.length}</Badge>
-                )}
-              </Button>
-              {posSessionId ? (
-                <button
-                  onClick={() => setShowCloseShift(true)}
-                  className="flex items-center gap-1.5 h-7 px-2 rounded-md border text-xs bg-primary/5 hover:bg-primary/10 border-primary/20 text-primary transition-colors"
-                  data-testid="button-close-shift"
-                >
-                  <Clock className="h-3 w-3" />
-                  <span className="font-medium">{posSession?.shiftName ?? "Shift"}</span>
-                  {sessionElapsed && <span className="text-primary/70">· {sessionElapsed}</span>}
-                </button>
-              ) : (
-                <Button variant="outline" size="sm" className="text-xs h-7 px-2" onClick={() => setShowStartShift(true)} data-testid="button-start-shift">
-                  <Clock className="h-3 w-3 mr-1" /> Start Shift
-                </Button>
-              )}
-            </div>
-          </div>
 
           {/* Row 2: last-placed notification */}
           {lastPlacedOrder && (
