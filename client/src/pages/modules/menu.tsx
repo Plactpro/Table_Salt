@@ -923,7 +923,7 @@ export default function MenuPage() {
                         <CardContent className="p-4 space-y-3">
                           <div className="flex items-start justify-between">
                             <div className="flex-1 min-w-0">
-                              <h3 className="font-medium text-sm leading-tight truncate" data-testid={`text-item-name-${item.id}`}>
+                              <h3 className="font-medium text-sm line-clamp-2 leading-tight" title={item.name} data-testid={`text-item-name-${item.id}`}>
                                 {item.name}
                               </h3>
                               {item.description && (
@@ -1037,7 +1037,7 @@ export default function MenuPage() {
                     <CardContent className="p-5 space-y-3">
                       <div className="flex items-start justify-between">
                         <div className="flex-1 min-w-0">
-                          <h3 className="font-semibold text-base truncate" data-testid={`text-combo-name-${combo.id}`}>{combo.name}</h3>
+                          <h3 className="font-semibold text-base line-clamp-2 leading-tight" title={item.name} data-testid={`text-combo-name-${combo.id}`}>{combo.name}</h3>
                           {combo.description && (
                             <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{combo.description}</p>
                           )}
