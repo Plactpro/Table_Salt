@@ -205,7 +205,7 @@ export default function CashDashboardPage() {
   useRealtimeEvent("cash_session:payment", handlePaymentEvent);
   useRealtimeEvent("cash_session:closed", handleSessionClosed_ws);
 
-  if (isLoading) {
+  if (!user || isLoading) {
     return (
       <div className="flex items-center justify-center h-64" data-testid="page-cash-dashboard">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
