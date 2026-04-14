@@ -558,7 +558,8 @@ function TablesPageContent() {
       } catch {}
     }, 500);
     return () => clearTimeout(timer);
-  // eslint-disable-next-line react-hooks/exhaustive-deps     }, [JSON.stringify(seatResourceRequirements), outletId, JSON.stringify(outletResources)]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [JSON.stringify(seatResourceRequirements), outletId, JSON.stringify(outletResources)]);
 
   const activeWaitlist = useMemo(() => waitlist.filter(w => w.status === "waiting"), [waitlist]);
 
