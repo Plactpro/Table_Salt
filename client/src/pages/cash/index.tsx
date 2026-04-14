@@ -17,6 +17,7 @@ import { apiRequest } from "@/lib/queryClient";
 import OpenCashSessionModal from "@/components/cash/OpenCashSessionModal";
 import CashPayoutModal from "@/components/cash/CashPayoutModal";
 import CloseCashSessionModal from "@/components/cash/CloseCashSessionModal";
+import { PageLoader } from "@/components/PageLoader";
 
 const EVENT_TYPE_COLORS: Record<string, { label: string; color: string; className: string }> = {
   OPENING: { label: "Opening", color: "blue", className: "bg-blue-100 text-blue-800" },
@@ -132,7 +133,7 @@ function ManualOpenDrawerModal({
 }
 
 export default function CashDashboardPage() {
-  const { user } = useAuth();
+  const { user, isLoading: authLoading } = useAuth();
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
@@ -205,13 +206,8 @@ export default function CashDashboardPage() {
   useRealtimeEvent("cash_session:payment", handlePaymentEvent);
   useRealtimeEvent("cash_session:closed", handleSessionClosed_ws);
 
-  if (!user || isLoading) {
-    return (
-              <div className="flex items-center justify-center h-screen">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <span className="ml-2">Loading cash drawer...</span>
-      </div>
-    );
+  if (authLoading || !user || isLoading) {
+        return <PageLoader />;
   }
 
   const runningBalance = Number(activeSession?.runningBalance ?? activeSession?.openingFloat ?? 0);
@@ -251,14 +247,14 @@ export default function CashDashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
-                <span>💰 Cash Drawer — {activeSession.shiftName || "Active Session"}</span>
+                <span>💰 Cash Drawer — {activeSession?.shiftName || "Active Session"}</span>
               </CardTitle>
               <div className="text-sm text-muted-foreground space-y-0.5">
-                {activeSession.openedAt && (
-                  <p>Opened: {formatTime12h(activeSession.openedAt)}</p>
+                {activeSession?.openedAt && (
+                  <p>Opened: {formatTime12h(activeSession?.openedAt)}</p>
                 )}
-                {activeSession.cashierName && <p>Cashier: {activeSession.cashierName}</p>}
-                {activeSession.sessionNumber && <p>Session: {activeSession.sessionNumber}</p>}
+                {activeSession?.cashierName && <p>Cashier: {activeSession?.cashierName}</p>}
+                {activeSession?.sessionNumber && <p>Session: {activeSession?.sessionNumber}</p>}
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -341,7 +337,7 @@ export default function CashDashboardPage() {
           {showEvents && (
             <Card>
               <CardHeader>
-                <CardTitle className="text-base">Drawer Events — {activeSession.sessionNumber || "Current Session"}</CardTitle>
+                <CardTitle className="text-base">Drawer Events — {activeSession?.sessionNumber || "Current Session"}</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -413,7 +409,7 @@ export default function CashDashboardPage() {
             open={showPayoutModal}
             onClose={() => setShowPayoutModal(false)}
             sessionId={activeSession.id}
-            sessionNumber={activeSession.sessionNumber}
+            sessionNumber={activeSession?.sessionNumber ?? ""}
             runningBalance={runningBalance}
             onPayoutRecorded={handlePayoutRecorded}
           />
@@ -422,8 +418,8 @@ export default function CashDashboardPage() {
             open={showCloseModal}
             onClose={() => setShowCloseModal(false)}
             sessionId={activeSession.id}
-            sessionNumber={activeSession.sessionNumber}
-            cashierName={activeSession.cashierName || user?.name || user?.username}
+            sessionNumber={activeSession?.sessionNumber ?? ""}
+            cashierName={activeSession?.cashierName ?? user?.name ?? user?.username ?? ""}
             expectedCash={expectedCash}
             onSessionClosed={handleSessionClosed}
           />
