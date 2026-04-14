@@ -139,13 +139,6 @@ export default function MenuPricingPage() {
   const [tab, setTab] = useState("dish");
   const [selectedMenuItemId, setSelectedMenuItemId] = useState<string>("");
   const [selectedOutletId, setSelectedOutletId] = useState<string>("");
-
-  // MP-02: Auto-select first outlet on load
-  useEffect(() => {
-    if (outlets.length > 0 && !selectedOutletId) {
-      setSelectedOutletId(outlets[0].id);
-    }
-  }, [outlets, selectedOutletId]);
   const [ruleSheetOpen, setRuleSheetOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<PriceRule | null>(null);
   const [copyDialog, setCopyDialog] = useState(false);
@@ -160,6 +153,13 @@ export default function MenuPricingPage() {
     queryFn: async () => (await apiRequest("GET", "/api/pricing/outlets")).json(),
     staleTime: 60_000,
   });
+
+    // MP-02: Auto-select first outlet on load
+  useEffect(() => {
+    if (outlets.length > 0 && !selectedOutletId) {
+      setSelectedOutletId(outlets[0].id);
+    }
+  }, [outlets, selectedOutletId]);
   const { data: menuItems = [] } = useQuery<PaginatedResponse<MenuItem>, Error, MenuItem[]>({
     queryKey: ["/api/menu-items"],
     staleTime: 60_000,
