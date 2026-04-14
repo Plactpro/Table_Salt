@@ -533,7 +533,7 @@ function TablesPageContent() {
   useEffect(() => {
     const activeReqs = seatResourceRequirements.filter(r => r.quantity > 0);
     if (!outletId || activeReqs.length === 0) {
-      setLiveAvailabilityCheck([]);
+      setLiveAvailabilityCheck(prev => prev.length === 0 ? prev : []);
       return;
     }
     const timer = setTimeout(async () => {
@@ -558,7 +558,7 @@ function TablesPageContent() {
       } catch {}
     }, 500);
     return () => clearTimeout(timer);
-  }, [seatResourceRequirements, outletId, outletResources]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps     }, [JSON.stringify(seatResourceRequirements), outletId, JSON.stringify(outletResources)]);
 
   const activeWaitlist = useMemo(() => waitlist.filter(w => w.status === "waiting"), [waitlist]);
 
@@ -1717,7 +1717,7 @@ function TablesPageContent() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showSeatDialog} onOpenChange={open => { setShowSeatDialog(open); if (!open) { setSeatResourceRequirements([]); setLiveAvailabilityCheck([]); } }}>
+      <Dialog open={showSeatDialog} onOpenChange={open => { setShowSeatDialog(open); if (!open) { setSeatResourceRequirements([]); setLiveAvailabilityCheck(prev => prev.length === 0 ? prev : []); } }}>
         <DialogContent>
           <DialogHeader><DialogTitle>Seat Party at Table {selectedTable?.number}</DialogTitle></DialogHeader>
           <div className="space-y-4">
