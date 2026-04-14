@@ -188,7 +188,7 @@ export function registerOrdersRoutes(app: Express): void {
         return { ...order, items, queueType: pendingStatuses.includes(order.status as OrderStatus) ? "pending" : "active" };
       }));
       res.json(result);
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+          } catch (err: any) { console.error("[delivery-queue]", err); return res.json([]); }
   });
 
   app.patch("/api/orders/:id/accept-delivery", requireAuth, async (req, res) => {

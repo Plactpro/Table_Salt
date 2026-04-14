@@ -4187,3 +4187,21 @@ export async function runRemindersMigration(): Promise<void> {
     )`);
     await pool.query(`CREATE INDEX IF NOT EXISTS sms_log_tenant_idx ON sms_log(tenant_id)`);
 }
+
+
+export async function runDeliveryQueueEnumMigration(): Promise<void> {
+  // Add missing order_type enum values for delivery queue
+  const enumValues = [
+    { type: 'order_type', value: 'phone_delivery' },
+    { type: 'order_type', value: 'online_delivery' },
+    { type: 'order_type', value: 'third_party' },
+    { type: 'order_status', value: 'sent_to_kitchen' },
+  ];
+  for (const { type, value } of enumValues) {
+    try {
+      await pool.query(`ALTER TYPE ${type} ADD VALUE IF NOT EXISTS '${value}'`);
+    } catch (_) {
+      // Enum value may already exist — safe to ignore
+    }
+  }
+}
