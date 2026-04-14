@@ -44,6 +44,8 @@ function getVehicleIcon(type: string) {
 }
 
 function formatDuration(ms: number): string {
+      const h = ms / 3600000;
+    if (h > 48) return `${Math.round(h / 24)} days`;
   const totalSeconds = Math.floor(ms / 1000);
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
