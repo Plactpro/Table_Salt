@@ -159,7 +159,7 @@ export default function CashDashboardPage() {
     retry: false,
   });
 
-  const { data: events = [], refetch: refetchEvents } = useQuery<DrawerEvent[]>({
+  const { data: events, refetch: refetchEvents } = useQuery<DrawerEvent[]>({
     queryKey: ["/api/cash-sessions", activeSession?.id, "events"],
     queryFn: async () => {
       if (!activeSession?.id) return [];
@@ -440,4 +440,3 @@ export default function CashDashboardPage() {
     </div>
   );
 }
-
