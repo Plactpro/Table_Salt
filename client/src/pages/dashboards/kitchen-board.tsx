@@ -22,6 +22,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { useTimer, formatMMSS, getTimingStatus } from "@/hooks/useTimer";
 import { ALLERGENS, hasAllergens } from "@shared/allergens";
+import { PageLoader } from "@/components/PageLoader";
 
 // DEL-06: Standardize order ID display to last-6-chars uppercase across all KDS views
 function shortOrderId(id: string): string {
@@ -509,7 +510,7 @@ function CookingControlTicket({
     : ticket.orderType === "takeaway"
     ? "Takeaway"
     : shortOrderId(ticket.id);
-  const items = ticket.items.filter(i => mapItemStatus(i) !== "served" && !i.is_voided);
+  const items = (ticket.items ?? []).filter(i => mapItemStatus(i) !== "served" && !i.is_voided);
   const readyCount = items.filter(i => mapItemStatus(i) === "ready").length;
 
   const byCourse = items.reduce<Record<string, KdsItem[]>>((acc, item) => {
@@ -849,8 +850,8 @@ function ChefStatsPanel({
     refetchInterval: 30000,
   });
 
-  const activeItems: KdsItem[] = kdsTickets.flatMap(t =>
-    t.items.filter(i => {
+  const activeItems: KdsItem[] = (kdsTickets ?? []).flatMap(t =>
+    (t.items ?? []).filter(i => {
       const cs = mapItemStatus(i);
       return cs === "started" || cs === "almost_ready";
     })
@@ -916,7 +917,7 @@ function ChefStatsPanel({
 }
 
 export default function KitchenBoardPage() {
-  const { user } = useAuth();
+    const { user, isLoading: authLoading } = useAuth();
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -1072,6 +1073,9 @@ export default function KitchenBoardPage() {
     }
   }
 
+
+    // Auth loading guard
+  if (authLoading || !user) return <PageLoader />;
   const allCounters = board ? Object.values(board.byCounter) : [];
   const unassignedCount = board?.unassigned?.length ?? 0;
   const totalLive = board?.totalLive ?? 0;
@@ -1270,7 +1274,7 @@ export default function KitchenBoardPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {board!.unassigned.map(a => (
+                  {(board?.unassigned ?? []).map(a => (
                     <TicketCard key={a.id} assignment={a} chefs={liveChefs} onAction={handleAction} />
                   ))}
                 </div>
