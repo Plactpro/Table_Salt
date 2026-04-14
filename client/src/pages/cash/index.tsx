@@ -356,12 +356,12 @@ export default function CashDashboardPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {events.length === 0 ? (
+                      {(events ?? []).length === 0 ? (
                         <tr>
                           <td colSpan={6} className="py-6 text-center text-muted-foreground">No events yet</td>
                         </tr>
                       ) : (
-                        events.map((event) => {
+                        (events ?? []).map((event) => {
                           const typeInfo = EVENT_TYPE_COLORS[event.eventType] || { label: event.eventType, className: "bg-gray-100 text-gray-700" };
                           const isPositive = event.amount >= 0;
                           return (
