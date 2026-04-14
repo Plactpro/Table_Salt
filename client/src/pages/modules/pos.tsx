@@ -7,6 +7,7 @@ import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { getAllowedOrderTypes } from "@/lib/subscription";
 import SupervisorApprovalDialog from "@/components/supervisor-approval-dialog";
 import { formatCurrency as sharedFormatCurrency } from "@shared/currency";
 import { syncManager, type SyncStatus, type OfflineOrder } from "@/lib/sync-manager";
@@ -2410,7 +2411,7 @@ export default function POSPage() {
                     <button key={amt} data-testid={`button-tender-${amt}`}
                       onClick={() => setTenderedAmount(String(Math.ceil(total / amt) * amt))}
                       className="text-xs px-2.5 py-1.5 rounded border hover:bg-muted transition-colors">
-                      {currency} {amt}
+                      {tenantCurrency} {amt}
                     </button>
                   ))}
                   <button data-testid="button-tender-exact" onClick={() => setTenderedAmount(parseFloat(total.toFixed(2)).toFixed(2))}
