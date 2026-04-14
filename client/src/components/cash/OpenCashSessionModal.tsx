@@ -27,7 +27,14 @@ const DENOMINATION_MAP: Record<string, number[]> = {
   };
   
 function getDefaultDenominations(currencyCode: string) {
-  if (DENOMINATION_MAP[currencyCode]) return DENOMINATION_MAP[currencyCode];
+  if (DENOMINATION_MAP[currencyCode]) {
+    const vals = DENOMINATION_MAP[currencyCode];
+    const sym = currencyMap[currencyCode as keyof typeof currencyMap]?.symbol || currencyCode;
+    return {
+      notes: vals.filter(v => v >= 5).map(v => ({ value: v, label: `${sym}${v}` })),
+      coins: vals.filter(v => v < 5).map(v => ({ value: v, label: `${sym}${v}` })),
+    };
+  }
   const symbol = currencyMap[currencyCode as keyof typeof currencyMap]?.symbol || currencyCode;
   return {
     notes: [
