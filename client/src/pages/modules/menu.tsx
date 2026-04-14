@@ -1080,9 +1080,9 @@ export default function MenuPage() {
                         </span>
                         {/* M2: Resolve outlet IDs to names */}
                         {combo.outlets && (combo.outlets as string[]).length > 0 && (
-                          <span className="flex items-center gap-1 truncate">
+                          <span className="flex items-center gap-1 line-clamp-2">
                             <Store className="h-3 w-3 shrink-0" />
-                            <span className="truncate">
+                            <span className="line-clamp-2">
                               {(combo.outlets as string[]).map((id: string) =>
                                 outletsList.find((o) => o.id === id)?.name ?? id
                               ).join(", ")}
