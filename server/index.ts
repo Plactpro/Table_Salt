@@ -447,6 +447,17 @@ function startWebhookMonitor() {
                 } catch (err) {
                     console.error('[Migration] PERF-FIX: index creation error:', err);
                 }
+
+        // DELIVERY-FIX: Add missing enum values for delivery order types and statuses
+    try {
+        await pool.query(`ALTER TYPE order_type ADD VALUE IF NOT EXISTS 'phone_delivery'`);
+        await pool.query(`ALTER TYPE order_type ADD VALUE IF NOT EXISTS 'online_delivery'`);
+        await pool.query(`ALTER TYPE order_type ADD VALUE IF NOT EXISTS 'third_party'`);
+        await pool.query(`ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'sent_to_kitchen'`);
+        console.log('[Migration] DELIVERY-FIX: enum values added');
+    } catch (err) {
+        console.error('[Migration] DELIVERY-FIX: enum migration error:', err);
+    }
     // Clear any in-memory lockout for superadmin so it can log in after a fresh deploy
     clearLoginFailures('superadmin');
 
