@@ -433,6 +433,20 @@ function startWebhookMonitor() {
       }
     }
 
+
+        // PERF-FIX: Add session and performance indexes
+        try {
+                    await pool.query(`
+                                CREATE INDEX IF NOT EXISTS idx_session_expire ON session(expire);
+                                            CREATE INDEX IF NOT EXISTS idx_session_sid ON session(sid);
+                                                        CREATE INDEX IF NOT EXISTS idx_menu_items_tenant ON menu_items(tenant_id);
+                                                                    CREATE INDEX IF NOT EXISTS idx_menu_categories_tenant ON menu_categories(tenant_id);
+                                                                                CREATE INDEX IF NOT EXISTS idx_offers_tenant ON offers(tenant_id);
+                                                                                        `);
+                    console.log('[Migration] PERF-FIX: session and performance indexes created');
+                } catch (err) {
+                    console.error('[Migration] PERF-FIX: index creation error:', err);
+                }
     // Clear any in-memory lockout for superadmin so it can log in after a fresh deploy
     clearLoginFailures('superadmin');
 
