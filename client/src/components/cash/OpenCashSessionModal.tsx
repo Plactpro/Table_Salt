@@ -27,7 +27,7 @@ const DENOMINATION_MAP: Record<string, number[]> = {
   };
   
 function getDefaultDenominations(currencyCode: string) {
-  if (DENOMINATIONS_BY_CURRENCY[currencyCode]) return DENOMINATIONS_BY_CURRENCY[currencyCode];
+  if (DENOMINATION_MAP[currencyCode]) return DENOMINATION_MAP[currencyCode];
   const symbol = currencyMap[currencyCode as keyof typeof currencyMap]?.symbol || currencyCode;
   return {
     notes: [
