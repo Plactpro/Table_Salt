@@ -22,7 +22,7 @@ import {
 import { format, formatDistanceToNow } from "date-fns";
 import { useTimer, formatMMSS, getTimingStatus } from "@/hooks/useTimer";
 import { ALLERGENS, hasAllergens } from "@shared/allergens";
-import { PageLoader } from "@/components/PageLoader";
+import PageLoader from "@/components/PageLoader";
 
 // DEL-06: Standardize order ID display to last-6-chars uppercase across all KDS views
 function shortOrderId(id: string): string {

@@ -17,7 +17,7 @@ import { apiRequest } from "@/lib/queryClient";
 import OpenCashSessionModal from "@/components/cash/OpenCashSessionModal";
 import CashPayoutModal from "@/components/cash/CashPayoutModal";
 import CloseCashSessionModal from "@/components/cash/CloseCashSessionModal";
-import { PageLoader } from "@/components/PageLoader";
+import PageLoader from "@/components/PageLoader";
 
 const EVENT_TYPE_COLORS: Record<string, { label: string; color: string; className: string }> = {
   OPENING: { label: "Opening", color: "blue", className: "bg-blue-100 text-blue-800" },
