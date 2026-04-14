@@ -522,7 +522,7 @@ function startWebhookMonitor() {
   try {
     const { getStripeSync } = await import("./stripeClient");
     const stripeSync = await getStripeSync();
-    const webhookBaseUrl = process.env.APP_URL || `https://${process.env.REPLIT_DOMAINS?.split(",")[0]}`;
+    const webhookBaseUrl = process.env.APP_URL || "https://www.inifinit.com";
     await stripeSync.findOrCreateManagedWebhook(`${webhookBaseUrl}/api/stripe/webhook`);
     log("Stripe managed webhook configured at /api/stripe/webhook", "stripe");
 
