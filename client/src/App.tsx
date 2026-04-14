@@ -211,7 +211,7 @@ function AccessDenied({ reason }: { reason: "role" | "subscription" }) {
 
 function GuardedRoute({ path, component: Component }: { path: string; component: React.ComponentType }) {
   const { user } = useAuth();
-  const { hasFeatureAccess, businessType } = useSubscription();
+  const { hasFeatureAccess, businessType, isLoading: isSubLoading } = useSubscription();
   const config = routeAccessMap[path];
 
   if (!config) return <Component />;
@@ -228,6 +228,14 @@ function GuardedRoute({ path, component: Component }: { path: string; component:
     }
     if (btConfig?.excludedFeatureKeys && config.featureKey && btConfig.excludedFeatureKeys.includes(config.featureKey)) {
       return <AccessDenied reason="business_type" />;
+    }
+
+    if (isSubLoading) {
+      return (
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="animate-spin w-8 h-8 border-4 border-primary border-t-transparent rounded-full" />
+        </div>
+      );
     }
 
     if (config.featureKey && !hasFeatureAccess(config.featureKey)) {
