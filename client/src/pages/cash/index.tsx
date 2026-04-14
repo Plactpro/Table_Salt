@@ -207,8 +207,9 @@ export default function CashDashboardPage() {
 
   if (!user || isLoading) {
     return (
-      <div className="flex items-center justify-center h-64" data-testid="page-cash-dashboard">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <div className="flex items-center justify-center h-screen">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <span className="ml-2">Loading cash drawer...</span>
       </div>
     );
   }
