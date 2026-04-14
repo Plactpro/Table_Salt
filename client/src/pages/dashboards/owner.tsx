@@ -71,63 +71,37 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any, fmt: (v
   const typeSpecificKPIs: Record<BusinessType, Array<{ title: string; value: string | number; subtitle?: string; icon: any; iconColor: string; iconBg: string; testId: string }>> = {
     qsr: [
       {
-        title: "Avg Cycle Time",
-        value: "4.2 min",
-        subtitle: "Target: 5 min",
+        title: "Avg Order Value",
+        value: fmt(avgOrderValue),
         icon: Clock,
         iconColor: "text-amber-600",
         iconBg: "bg-amber-100",
-        testId: "stat-cycle-time",
+        testId: "stat-avg-order",
       },
-      {
-        title: "Drive-Thru Orders",
-        value: Math.round((stats?.totalOrders || 0) * 0.45),
-        subtitle: "45% of total",
-        icon: Zap,
-        iconColor: "text-orange-600",
-        iconBg: "bg-orange-100",
-        testId: "stat-drive-thru",
-      },
+      // TODO: wire to real data — drive-thru order count not yet tracked separately
     ],
     fine_dining: [
       {
-        title: "Avg Check Size",
-        value: fmt(Number(avgOrderValue) * 2.8),
-        subtitle: "Per guest",
+        title: "Avg Order Value",
+        value: fmt(avgOrderValue),
+        subtitle: "Per order",
         icon: Wine,
         iconColor: "text-amber-600",
         iconBg: "bg-amber-100",
         testId: "stat-avg-check",
       },
-      {
-        title: "Table Turnover",
-        value: "1.8x",
-        subtitle: "Per evening service",
-        icon: Utensils,
-        iconColor: "text-orange-600",
-        iconBg: "bg-orange-100",
-        testId: "stat-table-turnover",
-      },
+      // TODO: wire to real data — table turnover not yet tracked
     ],
     cloud_kitchen: [
       {
-        title: "Delivery Rate",
-        value: "94%",
-        subtitle: "On-time delivery",
+        title: "Avg Order Value",
+        value: fmt(avgOrderValue),
         icon: Truck,
         iconColor: "text-amber-600",
         iconBg: "bg-amber-100",
-        testId: "stat-delivery-rate",
+        testId: "stat-avg-order",
       },
-      {
-        title: "Active Brands",
-        value: 3,
-        subtitle: "Across platforms",
-        icon: Cloud,
-        iconColor: "text-orange-600",
-        iconBg: "bg-orange-100",
-        testId: "stat-active-brands",
-      },
+      // TODO: wire to real data — delivery rate and active brand count not yet tracked
     ],
     cafe: [
       {
@@ -138,15 +112,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any, fmt: (v
         iconBg: "bg-amber-100",
         testId: "stat-avg-order",
       },
-      {
-        title: "Loyalty Members",
-        value: 128,
-        subtitle: "+12 this week",
-        icon: Users,
-        iconColor: "text-orange-600",
-        iconBg: "bg-orange-100",
-        testId: "stat-loyalty",
-      },
+      // TODO: wire to real data — loyalty member count not yet available from API
     ],
     food_truck: [
       {
@@ -157,15 +123,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any, fmt: (v
         iconBg: "bg-amber-100",
         testId: "stat-avg-order",
       },
-      {
-        title: "Locations Today",
-        value: 2,
-        subtitle: "Downtown, Midtown",
-        icon: Truck,
-        iconColor: "text-orange-600",
-        iconBg: "bg-orange-100",
-        testId: "stat-locations",
-      },
+      // TODO: wire to real data — active locations not yet tracked per-day
     ],
     enterprise: [
       {
@@ -176,15 +134,7 @@ function getBusinessSpecificKPIs(businessType: BusinessType, stats: any, fmt: (v
         iconBg: "bg-amber-100",
         testId: "stat-avg-order",
       },
-      {
-        title: "Active Outlets",
-        value: 5,
-        subtitle: "Across 3 cities",
-        icon: Building2,
-        iconColor: "text-orange-600",
-        iconBg: "bg-orange-100",
-        testId: "stat-outlets",
-      },
+      // TODO: wire to real data — active outlet count not yet available from API
     ],
     casual_dining: [
       {
@@ -414,28 +364,7 @@ export default function OwnerDashboard() {
               type="line"
               testId="chart-orders-trend"
             />
-            <Card data-testid="card-business-insights">
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-primary" />
-                  {config?.label} Insights
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-teal-50 dark:bg-teal-950/30">
-                  <span className="text-sm font-medium">Revenue Growth</span>
-                  <Badge className="bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300">+12.5%</Badge>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30">
-                  <span className="text-sm font-medium">Customer Satisfaction</span>
-                  <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300">4.8/5.0</Badge>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-orange-50 dark:bg-orange-950/30">
-                  <span className="text-sm font-medium">Peak Hours</span>
-                  <Badge className="bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300">12-2 PM</Badge>
-                </div>
-              </CardContent>
-            </Card>
+            {/* TODO: wire to real data — Enterprise Insights (revenue growth, customer satisfaction, peak hours) not yet computed from API */}
           </div>
         </motion.div>
       )}
