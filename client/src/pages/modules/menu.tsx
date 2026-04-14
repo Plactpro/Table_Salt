@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -281,7 +281,7 @@ export default function MenuPage() {
   const [allergenFlags, setAllergenFlags] = useState<Record<string, boolean>>({});
   const [allergenMayContain, setAllergenMayContain] = useState<Record<string, boolean>>({});
   // Reset allergen state when editing item changes
-  React.useEffect(() => {
+  useEffect(() => {
     setAllergenFlags((editingItem?.allergenFlags as Record<string, boolean>) ?? {});
     setAllergenMayContain((editingItem?.allergenMayContain as Record<string, boolean>) ?? {});
   }, [editingItem?.id]);
