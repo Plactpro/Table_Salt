@@ -70,6 +70,20 @@ export interface FormatCurrencyOptions {
   decimals?: number;
 }
 
+/**
+ * Ensure there is exactly one space between the currency symbol/code and the
+ * numeric amount.  Handles both LTR and RTL formatted strings as well as
+ * Intl.NumberFormat outputs that may or may not include a space.
+ */
+function ensureSymbolSpace(formatted: string): string {
+  // Replace zero-width or missing space between a currency symbol/code and
+  // the first digit (or minus/period before a digit).
+  return formatted
+    .replace(/^([A-Z]{2,4}|\p{Sc}+)(\d)/u, '$1 $2')
+    .replace(/^([A-Z]{2,4}|\p{Sc}+)(-)(\d)/u, '$1 $2$3')
+    .replace(/(\d)([A-Z]{2,4}|\p{Sc}+)$/u, '$1 $2');
+}
+
 export function formatCurrency(
   amount: number | string,
   currencyCode?: string,
@@ -97,18 +111,19 @@ export function formatCurrency(
     const formatted = num.toFixed(decimalPlaces);
     return opts.position === "after"
       ? `${formatted} ${info.symbol}`
-      : `${info.symbol}${formatted}`;
+      : `${info.symbol} ${formatted}`;
   }
 
   try {
-    return new Intl.NumberFormat(resolvedLocale, {
+    const raw = new Intl.NumberFormat(resolvedLocale, {
       style: "currency",
       currency: code,
       minimumFractionDigits: decimalPlaces,
       maximumFractionDigits: decimalPlaces,
     }).format(num);
+    return ensureSymbolSpace(raw);
   } catch {
-    return `${info.symbol}${num.toFixed(decimalPlaces)}`;
+    return `${info.symbol} ${num.toFixed(decimalPlaces)}`;
   }
 }
 
@@ -155,8 +170,8 @@ export function applyRounding(amount: number, rounding: DenominationConfig['roun
   switch (rounding) {
     case 'ROUND_0.05': return Math.round(amount / 0.05) * 0.05;
     case 'ROUND_0.25': return Math.round(amount / 0.25) * 0.25;
-    case 'ROUND_1':    return Math.round(amount);
-    default:           return amount;
+    case 'ROUND_1': return Math.round(amount);
+    default: return amount;
   }
 }
 
@@ -179,7 +194,7 @@ export function denominationBreakdown(amount: number, config: DenominationConfig
           denomination: denom,
           count,
           value: count * denom,
-          label: denom >= 1 ? `${symbol}${denom}` : `${Math.round(denom * config.subunitValue)} ${config.subunit}`,
+          label: denom >= 1 ? `${symbol} ${denom}` : `${Math.round(denom * config.subunitValue)} ${config.subunit}`,
         });
         remaining = Math.round((remaining - count * denom) * 100) / 100;
       }
