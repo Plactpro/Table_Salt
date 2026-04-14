@@ -25,9 +25,7 @@ const DENOMINATION_MAP: Record<string, number[]> = {
     SAR: [500, 200, 100, 50, 20, 10, 5, 1],
     QAR: [500, 200, 100, 50, 20, 10, 5, 1],
   };
-  const tenantCurrency = user?.tenant?.currency ?? "AED";
-  const denominations = (DENOMINATION_MAP[tenantCurrency] ?? DENOMINATION_MAP["AED"]).map(v => ({ value: v, label: `${tenantCurrency} ${v}` }));
-
+  
 function getDefaultDenominations(currencyCode: string) {
   if (DENOMINATIONS_BY_CURRENCY[currencyCode]) return DENOMINATIONS_BY_CURRENCY[currencyCode];
   const symbol = currencyMap[currencyCode as keyof typeof currencyMap]?.symbol || currencyCode;
@@ -57,6 +55,8 @@ interface Props {
 export default function OpenCashSessionModal({ open, onClose, onSessionOpened, existingSession }: Props) {
   const { t, i18n } = useTranslation("pos");
   const { user } = useAuth();
+    const tenantCurrency = user?.tenant?.currency ?? "AED";
+  const denominations = (DENOMINATION_MAP[tenantCurrency] ?? DENOMINATION_MAP["AED"]).map(v => ({ value: v, label: `${tenantCurrency} ${v}` }));
   const { toast } = useToast();
 
   const currencyCode = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
