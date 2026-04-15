@@ -25,7 +25,7 @@ export async function deductRecipeInventoryForOrder(
     return { deducted: 0, skipped: 0, alreadyDone: true };
   }
 
-  const orderItems = await storage.getOrderItemsByOrder(orderId);
+  const orderItems = await storage.getOrderItemsByOrder(orderId, tenantId);
 
   type WriteEntry = {
     inventoryItemId: string;

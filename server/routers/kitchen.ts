@@ -61,7 +61,7 @@ export function registerKitchenRoutes(app: Express): void {
       });
       const tickets = [];
       for (const o of activeOrders) {
-        const items = await storage.getOrderItemsByOrder(o.id);
+        const items = await storage.getOrderItemsByOrder(o.id, user.tenantId);
         const nonVoidedItems = items.filter((i) => !i.is_voided);
           const filteredItems = stationFilter ? nonVoidedItems.filter((i) => i.station === stationFilter) : nonVoidedItems;
         if (filteredItems.length === 0 && stationFilter) continue;
@@ -89,14 +89,14 @@ export function registerKitchenRoutes(app: Express): void {
       if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
       const updated = await storage.updateOrderItem(req.params.id, updates, user.tenantId);
       let newOrderStatus: string | null = null;
-      if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) { await storage.updateOrder(item.orderId, { status: "in_progress" }); newOrderStatus = "in_progress"; }
-      if (status === "recalled" && order.status === "ready") { await storage.updateOrder(item.orderId, { status: "in_progress" }); newOrderStatus = "in_progress"; }
+      if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) { await storage.updateOrder(item.orderId, user.tenantId, { status: "in_progress" }); newOrderStatus = "in_progress"; }
+      if (status === "recalled" && order.status === "ready") { await storage.updateOrder(item.orderId, user.tenantId, { status: "in_progress" }); newOrderStatus = "in_progress"; }
       if (status === "ready" || status === "served") {
-        const freshItems = await storage.getOrderItemsByOrder(item.orderId);
+        const freshItems = await storage.getOrderItemsByOrder(item.orderId, user.tenantId);
         const allServed = freshItems.every(i => i.status === "served");
         const allReadyOrServed = freshItems.every(i => i.status === "ready" || i.status === "served");
-        if (allServed) { await storage.updateOrder(item.orderId, { status: "served" }); newOrderStatus = "served"; }
-        else if (allReadyOrServed) { await storage.updateOrder(item.orderId, { status: "ready" }); newOrderStatus = "ready"; }
+        if (allServed) { await storage.updateOrder(item.orderId, user.tenantId, { status: "served" }); newOrderStatus = "served"; }
+        else if (allReadyOrServed) { await storage.updateOrder(item.orderId, user.tenantId, { status: "ready" }); newOrderStatus = "ready"; }
       }
       emitToTenant(user.tenantId, "order:item_updated", { itemId: req.params.id, orderId: item.orderId, status: updated.status, orderStatus: newOrderStatus || order.status });
       if (newOrderStatus && newOrderStatus !== order.status) {
@@ -125,7 +125,7 @@ export function registerKitchenRoutes(app: Express): void {
       const validTransitions: Record<string, string[]> = { pending: ["cooking"], cooking: ["ready"], ready: ["recalled", "served"], recalled: ["cooking"] };
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(403).json({ message: "Forbidden" });
-      const items = await storage.getOrderItemsByOrder(req.params.id);
+      const items = await storage.getOrderItemsByOrder(req.params.id, user.tenantId);
       const nonVoided = items.filter((i) => !i.is_voided);
         const filtered = station ? nonVoided.filter((i) => i.station === station) : nonVoided;
       for (const item of filtered) {
@@ -138,13 +138,13 @@ export function registerKitchenRoutes(app: Express): void {
         if (status === "recalled") { updates.readyAt = null; updates.status = "cooking"; }
         await storage.updateOrderItem(item.id, updates, user.tenantId);
       }
-      const freshItems = await storage.getOrderItemsByOrder(req.params.id);
+      const freshItems = await storage.getOrderItemsByOrder(req.params.id, user.tenantId);
       const allServed = freshItems.every(i => i.status === "served");
       const allReadyOrServed = freshItems.every(i => i.status === "ready" || i.status === "served");
       let bulkOrderStatus = order.status;
-      if (allServed) { await storage.updateOrder(req.params.id, { status: "served" }); bulkOrderStatus = "served"; }
-      else if (allReadyOrServed) { await storage.updateOrder(req.params.id, { status: "ready" }); bulkOrderStatus = "ready"; }
-      if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) { await storage.updateOrder(req.params.id, { status: "in_progress" }); bulkOrderStatus = "in_progress"; }
+      if (allServed) { await storage.updateOrder(req.params.id, user.tenantId, { status: "served" }); bulkOrderStatus = "served"; }
+      else if (allReadyOrServed) { await storage.updateOrder(req.params.id, user.tenantId, { status: "ready" }); bulkOrderStatus = "ready"; }
+      if (status === "cooking" && (order.status === "new" || order.status === "sent_to_kitchen")) { await storage.updateOrder(req.params.id, user.tenantId, { status: "in_progress" }); bulkOrderStatus = "in_progress"; }
       emitToTenant(user.tenantId, "order:item_updated", { orderId: req.params.id, status, orderStatus: bulkOrderStatus });
       if (bulkOrderStatus !== order.status) {
         if (bulkOrderStatus === "served") { emitToTenant(user.tenantId, "order:completed", { orderId: req.params.id, status: bulkOrderStatus, tableId: order.tableId }); }
@@ -160,7 +160,7 @@ export function registerKitchenRoutes(app: Express): void {
       const { station } = req.query;
       const order = await storage.getOrder(req.params.orderId, user.tenantId);
       if (!order) return res.status(403).json({ message: "Forbidden" });
-      const items = await storage.getOrderItemsByOrder(req.params.orderId);
+      const items = await storage.getOrderItemsByOrder(req.params.orderId, user.tenantId);
       const nonVoided = items.filter((i) => !i.is_voided);
         const filtered = station ? nonVoided.filter((i) => i.station === station) : nonVoided;
       const result: any[] = [];
@@ -224,7 +224,7 @@ export function registerKitchenRoutes(app: Express): void {
       const { station, force = false } = req.body;
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(403).json({ message: "Forbidden" });
-      const items = await storage.getOrderItemsByOrder(req.params.id);
+      const items = await storage.getOrderItemsByOrder(req.params.id, user.tenantId);
       const filtered = station ? items.filter(i => i.station === station && (i.status === "pending" || !i.status)) : items.filter(i => i.status === "pending" || !i.status);
       const activeShift = await storage.getActiveShift(user.tenantId, order.outletId || undefined);
       const chefName = (user as any).name || (user as any).username || "Chef";
@@ -319,7 +319,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       if (order.status === "new" || order.status === "sent_to_kitchen") {
-        await storage.updateOrder(order.id, { status: "in_progress" });
+        await storage.updateOrder(order.id, user.tenantId, { status: "in_progress" });
       }
 
       if (filtered.length > 0) {
@@ -599,7 +599,7 @@ export function registerKitchenRoutes(app: Express): void {
       const assignMap = new Map(liveAssignments.map(a => [a.orderId ?? "", a]));
       const tickets = [];
       for (const o of activeOrders) {
-        const items = await storage.getOrderItemsByOrder(o.id);
+        const items = await storage.getOrderItemsByOrder(o.id, tenant.id);
         const asgn = assignMap.get(o.id);
         tickets.push({
           ...o,
@@ -738,7 +738,7 @@ export function registerKitchenRoutes(app: Express): void {
       });
 
       // Recalculate timing for remaining course-1 queued items
-      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const allItems = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       const remainingCourse1 = allItems
         .filter(i =>
           i.id !== item.id &&
@@ -755,7 +755,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       if (order.status === "new" || order.status === "sent_to_kitchen") {
-        await storage.updateOrder(order.id, { status: "in_progress" });
+        await storage.updateOrder(order.id, user.tenantId, { status: "in_progress" });
       }
 
       emitToTenant(user.tenantId, "kds:item_started", { itemId: item.id, orderId: order.id, startedBy: chefName });
@@ -808,20 +808,20 @@ export function registerKitchenRoutes(app: Express): void {
       const updated = await storage.getOrderItem(item.id, user.tenantId);
 
       // Check order status
-      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const allItems = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       const allReadyOrServed = allItems.every(i => ["ready", "served"].includes(i.cookingStatus || "queued"));
       const allServed = allItems.every(i => i.cookingStatus === "served");
 
       if (allServed) {
-        await storage.updateOrder(order.id, { status: "served" });
+        await storage.updateOrder(order.id, user.tenantId, { status: "served" });
         emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "served" });
       } else if (allReadyOrServed) {
-        await storage.updateOrder(order.id, { status: "ready" });
+        await storage.updateOrder(order.id, user.tenantId, { status: "ready" });
         emitToTenant(user.tenantId, "order:ready", { orderId: order.id });
         alertEngine.trigger('ALERT-04', { tenantId: user.tenantId, outletId: order.outletId ?? undefined, referenceId: order.id, referenceNumber: (order as any).orderNumber ?? undefined, message: `Order #${(order as any).orderNumber || order.id.slice(-6)} ready — collect from pass` }).catch(() => {});
       } else {
         // Some items ready, some still cooking — keep order in_progress
-        await storage.updateOrder(order.id, { status: "in_progress" });
+        await storage.updateOrder(order.id, user.tenantId, { status: "in_progress" });
       }
 
       emitToTenant(user.tenantId, "kds:item_ready", { itemId: item.id, orderId: order.id });
@@ -871,7 +871,7 @@ export function registerKitchenRoutes(app: Express): void {
         }
       }
 
-      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const allItems = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       const now = new Date();
       const chefName = (user as any).name || (user as any).username || "Chef";
 
@@ -891,7 +891,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       if (order.status === "new" || order.status === "sent_to_kitchen") {
-        await storage.updateOrder(order.id, { status: "in_progress" });
+        await storage.updateOrder(order.id, user.tenantId, { status: "in_progress" });
       }
 
       emitToTenant(user.tenantId, "kds:order_rushed", { orderId: order.id, rushedBy: chefName });
@@ -929,7 +929,7 @@ export function registerKitchenRoutes(app: Express): void {
         }
       }
 
-      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const allItems = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       const now = new Date();
       const chefName = (user as any).name || (user as any).username || "Chef";
 
@@ -948,7 +948,7 @@ export function registerKitchenRoutes(app: Express): void {
       }
 
       if (order.status === "new" || order.status === "sent_to_kitchen") {
-        await storage.updateOrder(order.id, { status: "in_progress" });
+        await storage.updateOrder(order.id, user.tenantId, { status: "in_progress" });
       }
 
       emitToTenant(user.tenantId, "kds:order_rushed", { orderId: order.id, rushedBy: chefName });
@@ -967,7 +967,7 @@ export function registerKitchenRoutes(app: Express): void {
       const { targetReadyTime } = req.body;
       const targetReady = targetReadyTime ? new Date(targetReadyTime) : undefined;
 
-      const items = await storage.getOrderItemsByOrder(order.id);
+      const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       // Only calculate timing for course-1 items; course 2+ are deferred until fired
       const course1Items = items.filter(i => (i.courseNumber ?? 1) === 1);
       const laterCourseItems = items.filter(i => (i.courseNumber ?? 1) > 1);
@@ -1007,7 +1007,7 @@ export function registerKitchenRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(403).json({ message: "Forbidden" });
 
-      const items = await storage.getOrderItemsByOrder(order.id);
+      const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       const kitSettings = await storage.getKitchenSettings(user.tenantId);
       const alertOverdueMinutes = kitSettings?.alertOverdueMinutes ?? 3;
       const now = new Date();
@@ -1103,7 +1103,7 @@ export function registerKitchenRoutes(app: Express): void {
       if (!Array.isArray(courses)) return res.status(400).json({ message: "courses array required" });
 
       // Verify all itemIds belong to this order (security: prevent cross-order mutation)
-      const orderItems = await storage.getOrderItemsByOrder(order.id);
+      const orderItems = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       const validItemIds = new Set(orderItems.map(i => i.id));
       for (const c of courses) {
         for (const itemId of c.itemIds) {
@@ -1153,7 +1153,7 @@ export function registerKitchenRoutes(app: Express): void {
       });
 
       // Recalculate timing for items in this course
-      const allItems = await storage.getOrderItemsByOrder(order.id);
+      const allItems = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       const courseItems = allItems
         .filter(i => (i.courseNumber ?? 1) === courseNumber)
         .map(i => ({ id: i.id, name: i.name, prepMinutes: i.itemPrepMinutes ?? 0, courseNumber: i.courseNumber ?? 1 }));
@@ -1181,7 +1181,7 @@ export function registerKitchenRoutes(app: Express): void {
 
       const result = [];
       for (const order of activeOrders) {
-        const items = await storage.getOrderItemsByOrder(order.id);
+        const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
         const itemsWithTiming = items.map(item => {
           let minutesRemaining: number | null = null;
           if (item.cookingStatus === "started" && item.estimatedReadyAt) {

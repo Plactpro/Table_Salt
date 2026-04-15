@@ -72,7 +72,7 @@ export async function finalizeBillCompletion(opts: {
   });
 
   // 3. Complete the order
-  await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: paymentMethod.toLowerCase() });
+  await storage.updateOrder(bill.orderId, bill.tenantId, { status: "completed", paymentMethod: paymentMethod.toLowerCase() });
 
   // 4. Free the table and return any special resources
   if (bill.tableId) {
@@ -137,7 +137,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const tenant = tenantRow[0] ?? null;
       const allPayments = await storage.getBillPayments(bill.id);
       const order = bill.orderId ? await storage.getOrder(bill.orderId, bill.tenantId) : null;
-      const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
+      const items = order ? await storage.getOrderItemsByOrder(order.id, user.tenantId) : [];
       res.json({
         id: bill.id,
         billNumber: bill.billNumber,
@@ -189,7 +189,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const payments = await storage.getBillPayments(bill.id);
       const order = bill.orderId ? await storage.getOrder(bill.orderId, user.tenantId) : undefined;
-      const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
+      const items = order ? await storage.getOrderItemsByOrder(order.id, user.tenantId) : [];
       res.json({ ...bill, payments, order, items, amountInWords: numWords(Number(bill.totalAmount)) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -202,7 +202,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const payments = await storage.getBillPayments(bill.id);
       const order = bill.orderId ? await storage.getOrder(bill.orderId, user.tenantId) : undefined;
-      const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
+      const items = order ? await storage.getOrderItemsByOrder(order.id, user.tenantId) : [];
       res.json({ ...bill, payments, order, items, amountInWords: numWords(Number(bill.totalAmount)) });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -577,7 +577,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       });
 
       if (newStatus === "paid") {
-        await storage.updateOrder(bill.orderId, { status: "completed", paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
+        await storage.updateOrder(bill.orderId, user.tenantId, { status: "completed", paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
         if (bill.tableId) {
           try { await storage.updateTable(bill.tableId, user.tenantId, { status: "free" }); } catch (_) {}
           returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
@@ -745,7 +745,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         voidedBy: user.id,
       });
 
-      await storage.updateOrder(bill.orderId, { status: "voided" });
+      await storage.updateOrder(bill.orderId, user.tenantId, { status: "voided" });
       if (bill.tableId) {
         try { await storage.updateTable(bill.tableId, user.tenantId, { status: "free" }); } catch (_) {}
         returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
@@ -1220,7 +1220,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       const payments = await storage.getBillPayments(bill.id);
       const order = bill.orderId ? await storage.getOrder(bill.orderId, user.tenantId) : undefined;
-      const items = order ? await storage.getOrderItemsByOrder(order.id) : [];
+      const items = order ? await storage.getOrderItemsByOrder(order.id, user.tenantId) : [];
       const tenant = await storage.getTenant(user.tenantId);
       const restaurantName = tenant?.name || "Restaurant";
       const currency = tenant?.currency || "USD";

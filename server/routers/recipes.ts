@@ -130,7 +130,7 @@ export function registerRecipesRoutes(app: Express): void {
       const menuItemSales = new Map<string, number>();
       const menuItemRevenue = new Map<string, number>();
       for (const order of paidOrders) {
-        const items = await storage.getOrderItemsByOrder(order.id);
+        const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
         for (const oi of items) {
           menuItemSales.set(oi.menuItemId, (menuItemSales.get(oi.menuItemId) || 0) + Number(oi.quantity));
           menuItemRevenue.set(oi.menuItemId, (menuItemRevenue.get(oi.menuItemId) || 0) + Number(oi.price) * Number(oi.quantity));

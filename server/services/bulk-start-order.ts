@@ -142,7 +142,7 @@ export async function bulkStartOrderItems(
   }
 
   if (order.status === "new" || order.status === "sent_to_kitchen") {
-    await storage.updateOrder(order.id, { status: "in_progress" });
+    await storage.updateOrder(order.id, tenantId, { status: "in_progress" });
   }
 
   return { deducted: stockWrites.length, alreadyDeducted, itemsStarted: pending.length };

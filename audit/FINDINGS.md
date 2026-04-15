@@ -76,9 +76,9 @@
 | F-070 | High | IDOR | `server/routers/menu.ts` | 28-29 | Menu category PATCH: `getCategory(id)` and `updateCategory(id)` have no tenant_id — cross-tenant category modification | Fixed (2026-04-15, Batch 1) |
 | F-071 | High | IDOR | `server/routers/menu.ts` | 35-36 | Menu category DELETE: `deleteCategory(id)` has no tenant_id — cross-tenant category deletion | Fixed (2026-04-15, Batch 1) |
 | F-072 | High | IDOR | `server/routers/kitchen.ts` | 530 | KOT events by orderId: `getKotEventsByOrder(orderId)` has no tenant_id check — cross-tenant KOT data exposure | Open |
-| F-073 | High | IDOR | `server/storage.ts` | 1164-1170 | `updateOrder()` WHERE clause has no tenant_id — defense-in-depth gap for all callers | Open |
+| F-073 | High | IDOR | `server/storage.ts` | 1164-1170 | `updateOrder()` WHERE clause has no tenant_id — defense-in-depth gap for all callers | Fixed (2026-04-15, Batch 3) |
 | F-074 | High | IDOR | `server/storage.ts` | 2695-2698 | `getBill()` WHERE clause has no tenant_id; public receipt endpoint at `restaurant-billing.ts:130` exposes bill data without auth | Open |
-| F-075 | High | IDOR | `server/storage.ts` | 1172-1174 | `getOrderItemsByOrder()` has no tenant_id — defense-in-depth gap | Open |
+| F-075 | High | IDOR | `server/storage.ts` | 1172-1174 | `getOrderItemsByOrder()` has no tenant_id — defense-in-depth gap | Fixed (2026-04-15, Batch 3) |
 | F-076 | High | IDOR | `server/storage.ts` | 1895-1897 | `getStockMovementsByOrder()` has no tenant_id — defense-in-depth gap | Open |
 | F-077 | Medium | IDOR | `server/storage.ts` | 977-990 | `getCategory()`, `updateCategory()`, `deleteCategory()` have no tenant_id | Fixed (2026-04-15, Batch 1) |
 | F-078 | Medium | IDOR | `server/storage.ts` | 932-935 | `getUser()` has no tenant_id — timing side-channel in auth.ts and permissions.ts (all callers do post-fetch check) | Open |
