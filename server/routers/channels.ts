@@ -4,6 +4,7 @@ import { snapshotPrepTime } from "../lib/snapshot-prep-time";
 import { requireRole } from "../middleware";
 import { getAdapter } from "../aggregator-adapters";
 import { pool } from "../db";
+import { verifyAggregatorHmac } from "../lib/webhook-hmac";
 
 export function registerChannelsRoutes(app: Express): void {
   app.get("/api/order-channels", requireRole("owner", "manager", "waiter", "kitchen", "accountant", "outlet_manager", "hq_admin", "franchise_owner"), async (req, res) => {
@@ -203,7 +204,8 @@ export function registerChannelsRoutes(app: Express): void {
       if (!adapter) return res.status(400).json({ message: `No adapter for platform: ${platform}` });
       // Public endpoint: resolve tenant from channel slug
       const { rows: chRows } = await pool.query(
-        `SELECT oc.id, cc.tenant_id as config_tenant_id,
+        `SELECT oc.id, oc.webhook_secret,
+                cc.tenant_id as config_tenant_id,
                 cc.outlet_id as config_outlet_id
          FROM order_channels oc
          JOIN channel_configs cc ON cc.channel_id = oc.id
@@ -212,6 +214,17 @@ export function registerChannelsRoutes(app: Express): void {
       );
       const ch = (chRows[0] as any);
       if (!ch) return res.status(400).json({ message: `Channel ${platform} not configured` });
+
+      // F-189 fix: Validate HMAC signature against per-channel webhook_secret
+      const channelSecret: string | null = ch.webhook_secret;
+      if (!channelSecret) {
+        return res.status(403).json({ message: "Webhook secret not configured for this channel — rejecting request" });
+      }
+      const bodyForHmac = JSON.stringify(payload);
+      if (!verifyAggregatorHmac(bodyForHmac, sig, channelSecret)) {
+        return res.status(401).json({ message: "Invalid webhook signature" });
+      }
+
       const resolvedTenantId = ch.config_tenant_id;
       // PR-011: Update last_webhook_at timestamp on webhook receipt
       await pool.query(

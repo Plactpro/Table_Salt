@@ -193,7 +193,9 @@
 | F-186 | Low | Bug | `server/services/sms-gateway.ts` | 50 | SQL INSERT uses `(,,,,,,)` without `$1-$7` param markers — query always fails, silently swallowed | Open |
 | F-187 | High | Cost/Abuse | `server/routers/tables.ts` | 295 | No rate limit on SMS sends per tenant/phone/time-window — unlimited Twilio/MSG91 charges possible | Open |
 | F-188 | Low | Performance | `server/services/push-sender.ts` | 116-133 | `sendPushToTenant()` fires all push notifications in parallel with no concurrency limit | Open |
-| F-189 | Critical | Auth | `server/routers/channels.ts` | 179-254 | Aggregator webhook reads HMAC signature headers but NEVER validates them — unauthenticated order injection | Open |
+| F-189 | Critical | Auth | `server/routers/channels.ts` | 179-254 | Aggregator webhook reads HMAC signature headers but NEVER validates them — unauthenticated order injection | Fixed (2026-04-15) |
+| F-189-FU | Medium | Webhook | `server/routers/channels.ts` | 216 | Aggregator webhook HMAC computed over re-stringified JSON body, not raw bytes — may break if aggregator signs raw pre-parse body. Requires verification against each aggregator's documentation (Zomato, Swiggy, Talabat, UberEats). | Open |
+| F-189-FU2 | Medium | Webhook | `server/razorpay.ts` | 113 | Razorpay HMAC verification uses `===` instead of `crypto.timingSafeEqual` — vulnerable to timing attacks. Discovered during F-189 fix. | Open |
 | F-190 | High | Multi-Tenancy | `server/routers/channels.ts` | 210-213 | Aggregator webhook `LIMIT 1` on platform slug — misroutes orders when multiple tenants use same aggregator | Open |
 | | | | | | **--- Phase 7: Background Jobs & Infrastructure ---** | |
 | F-191 | Critical | Reliability | (all schedulers) | — | No distributed job coordination — every background job runs independently on every server instance; duplicate emails, DB inserts, and WS events in multi-instance deployment | Open |
