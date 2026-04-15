@@ -444,7 +444,7 @@ export function registerAuthRoutes(app: Express): void {
       const user = req.user as any;
       const { code } = req.body;
       if (!code) return res.status(400).json({ message: "Verification code is required" });
-      const freshUser = await storage.getUser(user.id);
+      const freshUser = await storage.getUser(user.id, user.tenantId);
       if (!freshUser || !freshUser.totpSecret) return res.status(400).json({ message: "2FA setup not started" });
       const totp = new TOTP({ secret: freshUser.totpSecret, algorithm: "SHA1", digits: 6, period: 30 });
       const valid = totp.validate({ token: code, window: 1 }) !== null;
@@ -463,7 +463,7 @@ export function registerAuthRoutes(app: Express): void {
       const user = req.user as any;
       const { password: currentPassword } = req.body;
       if (!currentPassword) return res.status(400).json({ message: "Current password is required" });
-      const freshUser = await storage.getUser(user.id);
+      const freshUser = await storage.getUser(user.id, user.tenantId);
       if (!freshUser) return res.status(404).json({ message: "User not found" });
       const valid = await comparePasswords(currentPassword, freshUser.password);
       if (!valid) return res.status(401).json({ message: "Invalid password" });
@@ -481,7 +481,7 @@ export function registerAuthRoutes(app: Express): void {
       const user = req.user as any;
       const { currentPassword, newPassword } = req.body;
       if (!currentPassword || !newPassword) return res.status(400).json({ message: "Current and new passwords are required" });
-      const freshUser = await storage.getUser(user.id);
+      const freshUser = await storage.getUser(user.id, user.tenantId);
       if (!freshUser) return res.status(404).json({ message: "User not found" });
       const valid = await comparePasswords(currentPassword, freshUser.password);
       if (!valid) return res.status(401).json({ message: "Current password is incorrect" });
@@ -555,7 +555,7 @@ export function registerAuthRoutes(app: Express): void {
       );
       if (rows.length === 0) return res.status(400).json({ message: "Invalid or expired reset token" });
       const tokenRow = rows[0];
-      const freshUser = await storage.getUser(tokenRow.user_id);
+      const freshUser = await storage.getUserUnchecked(tokenRow.user_id);
       if (!freshUser) return res.status(404).json({ message: "User not found" });
       const tenant = await storage.getTenant(freshUser.tenantId);
       const mc = (tenant?.moduleConfig || {}) as Record<string, any>;
@@ -626,7 +626,7 @@ export function registerAuthRoutes(app: Express): void {
 
   app.get("/api/auth/2fa/status", requireAuth, async (req, res) => {
     const user = req.user as any;
-    const freshUser = await storage.getUser(user.id);
+    const freshUser = await storage.getUser(user.id, user.tenantId);
     res.json({ enabled: !!(freshUser?.totpEnabled) });
   });
 
@@ -746,7 +746,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(403).json({ message: "Only managers and owners can set PINs" });
       }
 
-      const targetUser = await storage.getUser(userId);
+      const targetUser = await storage.getUser(userId, user.tenantId);
       if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -785,7 +785,7 @@ export function registerAuthRoutes(app: Express): void {
         return res.status(400).json({ message: "Manager credentials (managerUsername, managerPassword) are required for PIN changes" });
       }
       // Verify user's current PIN
-      const user = await storage.getUser(currentUser.id);
+      const user = await storage.getUser(currentUser.id, currentUser.tenantId);
       if (!user) return res.status(404).json({ message: "User not found" });
       if (!user.pinHash) {
         return res.status(400).json({ message: "No PIN is set. Ask a manager to set your PIN first." });
@@ -838,7 +838,7 @@ export function registerAuthRoutes(app: Express): void {
       if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(currentUser.role)) {
         return res.status(403).json({ message: "Only managers and owners can reset PINs" });
       }
-      const targetUser = await storage.getUser(req.params.userId);
+      const targetUser = await storage.getUser(req.params.userId, user.tenantId);
       if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -860,7 +860,7 @@ export function registerAuthRoutes(app: Express): void {
       if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(currentUser.role)) {
         return res.status(403).json({ message: "Only managers and owners can set PINs" });
       }
-      const targetUser = await storage.getUser(req.params.staffId);
+      const targetUser = await storage.getUser(req.params.staffId, user.tenantId);
       if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -892,7 +892,7 @@ export function registerAuthRoutes(app: Express): void {
       if (!["owner", "manager", "franchise_owner", "hq_admin"].includes(currentUser.role)) {
         return res.status(403).json({ message: "Only managers and owners can reset PINs" });
       }
-      const targetUser = await storage.getUser(req.params.staffId);
+      const targetUser = await storage.getUser(req.params.staffId, user.tenantId);
       if (!targetUser || targetUser.tenantId !== currentUser.tenantId) {
         return res.status(404).json({ message: "User not found" });
       }

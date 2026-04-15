@@ -119,7 +119,7 @@ export function registerComplianceRoutes(app: Express): void {
   app.post("/api/gdpr/export", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const fullUser = await storage.getUser(user.id);
+      const fullUser = await storage.getUser(user.id, user.tenantId);
       if (!fullUser) return res.status(404).json({ message: "User not found" });
 
       const token = randomBytes(32).toString("hex");
@@ -145,7 +145,7 @@ export function registerComplianceRoutes(app: Express): void {
       }
       gdprExportTokens.delete(token);
 
-      const fullUser = await storage.getUser(entry.userId);
+      const fullUser = await storage.getUser(entry.userId, entry.tenantId);
       if (!fullUser) return res.status(404).json({ message: "User not found" });
 
       const userOrders = await storage.getOrdersByTenant(entry.tenantId);
@@ -272,7 +272,7 @@ export function registerComplianceRoutes(app: Express): void {
       const user = req.user as any;
       const { password: confirmPassword } = req.body;
       if (!confirmPassword) return res.status(400).json({ message: "Password confirmation required" });
-      const freshUser = await storage.getUser(user.id);
+      const freshUser = await storage.getUser(user.id, user.tenantId);
       if (!freshUser) return res.status(404).json({ message: "User not found" });
       const valid = await comparePasswords(confirmPassword, freshUser.password);
       if (!valid) return res.status(401).json({ message: "Invalid password" });
@@ -290,7 +290,7 @@ export function registerComplianceRoutes(app: Express): void {
       const allCustomers = await storage.getCustomersByTenant(user.tenantId);
       for (const cust of allCustomers) {
         if (cust.email === freshUser.email || cust.phone === freshUser.phone) {
-          await storage.updateCustomer(cust.id, { name: "[deleted]", email: null, phone: null, anonymized: true });
+          await storage.updateCustomer(cust.id, user.tenantId, { name: "[deleted]", email: null, phone: null, anonymized: true });
           auditLogFromReq(req, { action: "customer_anonymized", entityType: "customer", entityId: cust.id, entityName: "[deleted]" });
         }
       }

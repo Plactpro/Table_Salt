@@ -201,7 +201,8 @@ export interface IStorage {
   regenerateWallScreenToken(tenantId: string): Promise<string>;
   getAllTenants(): Promise<Tenant[]>;
 
-  getUser(id: string): Promise<User | undefined>;
+  getUser(id: string, tenantId: string): Promise<User | undefined>;
+  getUserUnchecked(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(data: InsertUser): Promise<User>;
   updateUser(id: string, data: Partial<InsertUser>): Promise<User | undefined>;
@@ -270,7 +271,7 @@ export interface IStorage {
 
   getCustomersByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Customer[]>;
   createCustomer(data: InsertCustomer): Promise<Customer>;
-  updateCustomer(id: string, data: Partial<InsertCustomer>): Promise<Customer | undefined>;
+  updateCustomer(id: string, tenantId: string, data: Partial<InsertCustomer>): Promise<Customer | undefined>;
 
   getStaffSchedulesByTenant(tenantId: string): Promise<StaffSchedule[]>;
   createStaffSchedule(data: InsertStaffSchedule): Promise<StaffSchedule>;
@@ -917,7 +918,15 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(tenants);
   }
 
-  async getUser(id: string) {
+  async getUser(id: string, tenantId: string) {
+    assertTenantId(tenantId, "getUser");
+    const [u] = await db.select().from(users).where(and(eq(users.id, id), eq(users.tenantId, tenantId)));
+    return u ? decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User : undefined;
+  }
+  /** Unscoped user lookup — use ONLY for passport deserializeUser,
+   *  WebSocket session auth, and password reset token flows where
+   *  tenantId is not yet known. All other callers MUST use getUser(id, tenantId). */
+  async getUserUnchecked(id: string) {
     const [u] = await db.select().from(users).where(eq(users.id, id));
     return u ? decryptPiiFields(u as Record<string, unknown>, USER_PII_FIELDS) as User : undefined;
   }
@@ -1286,9 +1295,10 @@ export class DatabaseStorage implements IStorage {
     const [c] = await db.insert(customers).values(encData).returning();
     return decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer;
   }
-  async updateCustomer(id: string, data: Partial<InsertCustomer>) {
+  async updateCustomer(id: string, tenantId: string, data: Partial<InsertCustomer>) {
+    assertTenantId(tenantId, "updateCustomer");
     const encData = encryptPiiFields(data as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Partial<InsertCustomer>;
-    const [c] = await db.update(customers).set(encData).where(eq(customers.id, id)).returning();
+    const [c] = await db.update(customers).set(encData).where(and(eq(customers.id, id), eq(customers.tenantId, tenantId))).returning();
     return c ? decryptPiiFields(c as Record<string, unknown>, CUSTOMER_PII_FIELDS) as Customer : undefined;
   }
 
