@@ -6,6 +6,7 @@ vite.config.ts.*
 *.tar.gz
 cookies.txt
 *.cookies.txt.auth/
+.auth/
 playwright-report/
 test-results/
 .env
