@@ -209,7 +209,8 @@ export interface IStorage {
   getUsersByTenant(tenantId: string): Promise<User[]>;
 
   getOutletsByTenant(tenantId: string): Promise<Outlet[]>;
-  getOutlet(id: string): Promise<Outlet | undefined>;
+  getOutlet(id: string, tenantId: string): Promise<Outlet | undefined>;
+  getOutletUnchecked(id: string): Promise<Outlet | undefined>;
   createOutlet(data: InsertOutlet): Promise<Outlet>;
   updateOutlet(id: string, tenantId: string, data: Partial<InsertOutlet>): Promise<Outlet | undefined>;
   deleteOutlet(id: string, tenantId: string): Promise<void>;
@@ -952,7 +953,15 @@ export class DatabaseStorage implements IStorage {
   async getOutletsByTenant(tenantId: string) {
     return db.select().from(outlets).where(eq(outlets.tenantId, tenantId)).limit(500);
   }
-  async getOutlet(id: string) {
+  async getOutlet(id: string, tenantId: string) {
+    assertTenantId(tenantId, "getOutlet");
+    const [o] = await db.select().from(outlets).where(and(eq(outlets.id, id), eq(outlets.tenantId, tenantId)));
+    return o;
+  }
+  /** Unscoped outlet lookup — use ONLY for public guest routes, kiosk
+   *  device setup, and QR token flows where tenantId is derived FROM
+   *  the outlet. All authenticated callers MUST use getOutlet(id, tenantId). */
+  async getOutletUnchecked(id: string) {
     const [o] = await db.select().from(outlets).where(eq(outlets.id, id));
     return o;
   }

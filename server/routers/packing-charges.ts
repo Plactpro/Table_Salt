@@ -145,7 +145,7 @@ export function registerPackingChargeRoutes(app: Express): void {
         return res.status(400).json({ message: "orderType must be takeaway or delivery" });
       }
       // Resolve tenant from outlet server-side — never trust caller-supplied tenantId
-      const outlet = await storage.getOutlet(outletId);
+      const outlet = await storage.getOutletUnchecked(outletId);
       if (!outlet) {
         return res.status(404).json({ message: "Outlet not found" });
       }

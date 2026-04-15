@@ -317,7 +317,7 @@ export function registerKitchenAssignmentRoutes(app: Express): void {
   app.get("/api/outlets/:id/assignment-settings", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const outlet = await storage.getOutlet(req.params.id);
+      const outlet = await storage.getOutlet(req.params.id, user.tenantId);
       if (!outlet || outlet.tenantId !== user.tenantId) return res.status(404).json({ message: "Outlet not found" });
       const { rows } = await pool.query(`SELECT assignment_settings FROM outlets WHERE id = $1`, [req.params.id]);
       const settings = rows[0]?.assignment_settings ?? DEFAULT_ASSIGNMENT_SETTINGS;
@@ -330,7 +330,7 @@ export function registerKitchenAssignmentRoutes(app: Express): void {
   app.put("/api/outlets/:id/assignment-settings", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const outlet = await storage.getOutlet(req.params.id);
+      const outlet = await storage.getOutlet(req.params.id, user.tenantId);
       if (!outlet || outlet.tenantId !== user.tenantId) return res.status(404).json({ message: "Outlet not found" });
       await pool.query(`UPDATE outlets SET assignment_settings = $1 WHERE id = $2`, [JSON.stringify(req.body), req.params.id]);
       res.json({ ...DEFAULT_ASSIGNMENT_SETTINGS, ...req.body });

@@ -433,7 +433,7 @@ export function registerTableRequestRoutes(app: Express): void {
 
       let outletName: string | null = null;
       if (qrToken.outletId) {
-        const outlet = await storage.getOutlet(qrToken.outletId);
+        const outlet = await storage.getOutletUnchecked(qrToken.outletId);
         outletName = outlet?.name ?? null;
       }
 
@@ -748,7 +748,7 @@ export function registerTableRequestRoutes(app: Express): void {
   app.get("/api/outlets/:id/qr-settings", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const outlet = await storage.getOutlet(req.params.id);
+      const outlet = await storage.getOutlet(req.params.id, user.tenantId);
       if (!outlet || outlet.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Outlet not found" });
       }
@@ -765,7 +765,7 @@ export function registerTableRequestRoutes(app: Express): void {
   app.put("/api/outlets/:id/qr-settings", requireRole("owner", "franchise_owner", "hq_admin", "manager", "outlet_manager"), async (req, res) => {
     try {
       const user = req.user as any;
-      const outlet = await storage.getOutlet(req.params.id);
+      const outlet = await storage.getOutlet(req.params.id, user.tenantId);
       if (!outlet || outlet.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Outlet not found" });
       }
