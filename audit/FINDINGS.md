@@ -143,7 +143,7 @@
 | F-133 | Medium | Auth | `server/routers/restaurant-billing.ts` | 1367-1392 | PATCH /api/tip-settings: no requireAuth middleware, no role check — any session user can modify tip settings | Open |
 | F-134 | Medium | Auth | `server/routers/restaurant-billing.ts` | 1352-1363 | GET /api/tip-settings: no requireAuth middleware — bypasses idle timeout | Open |
 | F-135 | Medium | Auth | `server/routers/tip-management.ts` | 124-137 | GET /api/tips/config/:outletId: completely unauthenticated — exposes outlet tip configuration | Open |
-| F-136 | High | Auth | `server/routers/kitchen.ts` | 576-615 | GET /api/kds/wall-tickets accepts ?tenantId= query param — full active order stream without any auth for any known tenant | Open |
+| F-136 | High | Auth | `server/routers/kitchen.ts` | 576-615 | GET /api/kds/wall-tickets accepts ?tenantId= query param — full active order stream without any auth for any known tenant | Fixed (2026-04-15) |
 | F-137 | Low | Auth | `server/routers/packing-charges.ts` | 126-155 | POST /api/packing/calculate: no auth — pure calculation, low risk | Open |
 | F-141 | Medium | Secrets | `server/routers/service-coordination.ts` | 734,750,766 | Webhook tokens default to hardcoded values ("zomato-webhook-token" etc.) when env vars unset | Open |
 | F-143 | Medium | CSRF | `server/security.ts` | 198-211 | POST /api/auth/pin-login not in CSRF exemption list — may break PIN login for users without pre-existing CSRF cookie | Open |

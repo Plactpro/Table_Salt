@@ -575,16 +575,21 @@ export function registerKitchenRoutes(app: Express): void {
 
   app.get("/api/kds/wall-tickets", async (req, res) => {
     try {
-      const { token, tenantId } = req.query;
+      // F-136 fix: removed ?tenantId= path — it required no auth and exposed the
+      // full active order stream (items, prices, table numbers, chef names) to any
+      // party with a tenant UUID. Only wall screen token and authenticated sessions
+      // are now accepted.
+      const { token } = req.query;
       let tenant;
       if (token && typeof token === "string") {
         tenant = await storage.getTenantByWallScreenToken(token);
         if (!tenant) return res.status(403).json({ message: "Invalid wall screen token" });
-      } else if (tenantId && typeof tenantId === "string") {
-        tenant = await storage.getTenant(tenantId);
+      } else if (req.isAuthenticated?.() && (req.user as any)?.tenantId) {
+        // Authenticated session — use tenant from session (e.g., kitchen staff browser)
+        tenant = await storage.getTenant((req.user as any).tenantId);
         if (!tenant) return res.status(404).json({ message: "Tenant not found" });
       } else {
-        return res.status(400).json({ message: "token or tenantId required" });
+        return res.status(401).json({ message: "Authentication required: provide a wall screen token or log in" });
       }
       const allOrders = await storage.getOrdersByTenant(tenant.id);
       const allTables = await storage.getTablesByTenant(tenant.id);
