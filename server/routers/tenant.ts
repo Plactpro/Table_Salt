@@ -3,6 +3,7 @@ import { storage } from "../storage";
 import { requireAuth, requireRole, requireFreshSession } from "../auth";
 import { requirePermission } from "../permissions";
 import { auditLogFromReq } from "../audit";
+import { filterOwnerEditable } from "../lib/tenant-fields";
 
 /** Strip server-only secrets from tenant objects before sending to client */
 function sanitizeTenant(tenant: Record<string, any> | null | undefined) {
@@ -27,23 +28,9 @@ export function registerTenantRoutes(app: Express): void {
   app.patch("/api/tenant", requireRole("owner"), async (req, res) => {
     const user = req.user as any;
     const before = await storage.getTenant(user.tenantId);
-    const {
-      name, address, timezone, timeFormat, taxRate, taxType,
-      compoundTax, serviceCharge, gstin, cgstRate, sgstRate, invoicePrefix,
-      currency, currencyPosition, currencyDecimals,
-      businessType, plan, razorpayEnabled, razorpayKeyId, razorpayKeySecret,
-    } = req.body;
-    const updateData: Record<string, any> = {};
-    const fieldMap: Record<string, any> = {
-      name, address, timezone, timeFormat, taxRate, taxType,
-      compoundTax, serviceCharge, gstin, cgstRate, sgstRate, invoicePrefix,
-      currency, currencyPosition, currencyDecimals,
-      businessType, plan, razorpayEnabled, razorpayKeyId,
-      ...(razorpayKeySecret ? { razorpayKeySecret } : {}),
-    };
-    for (const [k, v] of Object.entries(fieldMap)) {
-      if (v !== undefined) updateData[k] = v;
-    }
+    // F-023 fix: filter request body through allowlist — system-managed
+    // fields (plan, subscriptionStatus, stripe*, trialEndsAt) are blocked.
+    const updateData = filterOwnerEditable(req.body);
     const tenant = await storage.updateTenant(user.tenantId, updateData as any);
     auditLogFromReq(req, { action: "tenant_settings_updated", entityType: "tenant", entityId: user.tenantId, before: before ? { name: before.name, currency: before.currency, taxRate: before.taxRate } : null, after: req.body });
     res.json(sanitizeTenant(tenant));
