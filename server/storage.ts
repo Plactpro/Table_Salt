@@ -220,7 +220,6 @@ export interface IStorage {
 
   getMenuItemsByTenant(tenantId: string): Promise<MenuItem[]>;
   getMenuItemsByTenantAndOutlet(tenantId: string, outletId?: string): Promise<MenuItem[]>;
-  getMenuItemsByCategory(categoryId: string): Promise<MenuItem[]>;
   getMenuItem(id: string, tenantId: string): Promise<MenuItem | undefined>;
   createMenuItem(data: InsertMenuItem): Promise<MenuItem>;
   updateMenuItem(id: string, tenantId: string, data: Partial<InsertMenuItem>): Promise<MenuItem | undefined>;
@@ -236,7 +235,6 @@ export interface IStorage {
   createTable(data: InsertTable): Promise<Table>;
   updateTable(id: string, tenantId: string, data: Partial<InsertTable>): Promise<Table | undefined>;
   updateTableByTenant(id: string, tenantId: string, data: Partial<InsertTable>): Promise<Table | undefined>;
-  deleteTable(id: string): Promise<void>;
   deleteTableByTenant(id: string, tenantId: string): Promise<void>;
 
   getWaitlistByTenant(tenantId: string): Promise<WaitlistEntry[]>;
@@ -246,7 +244,6 @@ export interface IStorage {
 
   getReservationsByTenant(tenantId: string, opts?: { limit?: number; offset?: number }): Promise<Reservation[]>;
   createReservation(data: InsertReservation): Promise<Reservation>;
-  updateReservation(id: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
   updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>): Promise<Reservation | undefined>;
   deleteReservationByTenant(id: string, tenantId: string, deletedBy?: string): Promise<void>;
 
@@ -254,7 +251,6 @@ export interface IStorage {
   getOrder(id: string, tenantId: string): Promise<Order | undefined>;
   getOrderById(id: string): Promise<Order | undefined>;
   getOrderByClientId(tenantId: string, clientOrderId: string): Promise<Order | undefined>;
-  getOrderByStripeSessionId(sessionId: string): Promise<Order | undefined>;
   createOrder(data: InsertOrder): Promise<Order>;
   updateOrder(id: string, data: Partial<InsertOrder>, expectedVersion?: number): Promise<Order | undefined>;
   getOrderItemsByOrder(orderId: string): Promise<OrderItem[]>;
@@ -677,7 +673,6 @@ export interface IStorage {
     holdUntilMinutes?: number | null;
     courseNumber?: number | null;
   }): Promise<OrderItem>;
-  getOrderCourses(orderId: string): Promise<OrderCourse[]>;
   createOrderCourse(data: InsertOrderCourse): Promise<OrderCourse>;
   updateOrderCourse(orderId: string, courseNumber: number, data: {
     status?: string;
@@ -690,9 +685,7 @@ export interface IStorage {
 
   // Task #110: Time Tracking
   createItemTimeLog(data: InsertItemTimeLog): Promise<ItemTimeLog>;
-  getItemTimeLog(orderItemId: string): Promise<ItemTimeLog | undefined>;
   getItemTimeLogsByTenant(tenantId: string, opts?: { date?: string; outletId?: string; limit?: number }): Promise<ItemTimeLog[]>;
-  getOrderTimeSummary(orderId: string): Promise<OrderTimeSummary | undefined>;
   upsertOrderTimeSummary(data: InsertOrderTimeSummary): Promise<OrderTimeSummary>;
   upsertDailyTimePerformance(data: InsertDailyTimePerformance): Promise<DailyTimePerformance>;
   getDailyTimePerformance(tenantId: string, outletId?: string, dateRange?: number): Promise<DailyTimePerformance[]>;
@@ -728,9 +721,7 @@ export interface IStorage {
   }): Promise<ItemVoidRequest | undefined>;
   getPendingVoidRequests(tenantId: string): Promise<ItemVoidRequest[]>;
   createVoidedItem(data: InsertVoidedItem): Promise<VoidedItem>;
-  getVoidedItemsByOrder(orderId: string): Promise<VoidedItem[]>;
   createRefireRequest(data: InsertItemRefireRequest): Promise<ItemRefireRequest>;
-  getRefireRequestsByOrder(orderId: string): Promise<ItemRefireRequest[]>;
   updateRefireRequest(id: string, tenantId: string, data: {
     status?: string;
     newOrderItemId?: string | null;
@@ -757,14 +748,12 @@ export interface IStorage {
   createCashPayout(data: InsertCashPayout): Promise<CashPayout>;
   getCashPayouts(sessionId: string): Promise<CashPayout[]>;
   createCashHandover(data: InsertCashHandover): Promise<CashHandover>;
-  getCashHandovers(sessionId: string): Promise<CashHandover[]>;
   getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined>;
   updateOutletCurrencySettings(outletId: string, data: Record<string, any>): Promise<Record<string, any>>;
 
   // Tip management
   getOutletTipSettings(outletId: string, tenantId: string): Promise<OutletTipSettings | null>;
   upsertOutletTipSettings(data: Record<string, any>): Promise<OutletTipSettings>;
-  getBillTip(billId: string): Promise<BillTip | null>;
   getTipReport(tenantId: string, outletId: string | undefined, date: string): Promise<Record<string, any>>;
   getMyTips(tenantId: string, staffId: string): Promise<Record<string, any>>;
   getTipDistributions(tenantId: string, filters: { staffId?: string; date?: string; isPaid?: boolean }): Promise<TipDistribution[]>;
@@ -781,7 +770,6 @@ export interface IStorage {
   createPackingExemption(data: InsertPackingChargeExemption): Promise<PackingChargeExemption>;
   deletePackingExemption(id: string, tenantId: string): Promise<void>;
   createBillPackingCharge(data: InsertBillPackingCharge): Promise<BillPackingCharge>;
-  getBillPackingCharge(billId: string): Promise<BillPackingCharge | null>;
 
   // In-App Support Tickets
   createInAppSupportTicket(data: InsertInAppSupportTicket): Promise<InAppSupportTicket>;
@@ -834,7 +822,6 @@ export interface IStorage {
   getValetTickets(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetTicket[]>;
   updateValetTicket(id: string, tenantId: string, data: Partial<InsertValetTicket>): Promise<ValetTicket | undefined>;
   appendValetTicketEvent(ticketId: string, tenantId: string, event: { eventType: string; performedBy?: string; performedByName?: string; notes?: string }): Promise<void>;
-  getValetTicketByBill(billId: string): Promise<ValetTicket | undefined>;
   createRetrievalRequest(data: InsertValetRetrievalRequest): Promise<ValetRetrievalRequest>;
   getRetrievalRequests(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetRetrievalRequest[]>;
   updateRetrievalRequest(id: string, tenantId: string, data: Partial<InsertValetRetrievalRequest>): Promise<ValetRetrievalRequest | undefined>;
@@ -1002,9 +989,6 @@ export class DatabaseStorage implements IStorage {
     const overrideMap = new Map(overrides.map(o => [o.menuItemId, o.price]));
     return baseItems.map(item => overrideMap.has(item.id) ? { ...item, price: overrideMap.get(item.id)! } : item);
   }
-  async getMenuItemsByCategory(categoryId: string) {
-    return db.select().from(menuItems).where(and(eq(menuItems.categoryId, categoryId), eq(menuItems.isDeleted, false)));
-  }
   async getMenuItem(id: string, tenantId: string) {
     const [i] = await db.select().from(menuItems).where(
       and(eq(menuItems.id, id), eq(menuItems.tenantId, tenantId), eq(menuItems.isDeleted, false))
@@ -1059,9 +1043,6 @@ export class DatabaseStorage implements IStorage {
     const [t] = await db.update(tables).set(data).where(and(eq(tables.id, id), eq(tables.tenantId, tenantId))).returning();
     return t;
   }
-  async deleteTable(id: string) {
-    await db.delete(tables).where(eq(tables.id, id));
-  }
   async deleteTableByTenant(id: string, tenantId: string) {
     await db.delete(tables).where(and(eq(tables.id, id), eq(tables.tenantId, tenantId)));
   }
@@ -1094,11 +1075,6 @@ export class DatabaseStorage implements IStorage {
     const encData = encryptPiiFields(data as Record<string, unknown>, RESERVATION_PII_FIELDS) as InsertReservation;
     const [r] = await db.insert(reservations).values(encData).returning();
     return decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation;
-  }
-  async updateReservation(id: string, data: Partial<InsertReservation>) {
-    const encData = encryptPiiFields(data as Record<string, unknown>, RESERVATION_PII_FIELDS) as Partial<InsertReservation>;
-    const [r] = await db.update(reservations).set(encData).where(eq(reservations.id, id)).returning();
-    return r ? decryptPiiFields(r as Record<string, unknown>, RESERVATION_PII_FIELDS) as Reservation : undefined;
   }
   async updateReservationByTenant(id: string, tenantId: string, data: Partial<InsertReservation>) {
     const encData = encryptPiiFields(data as Record<string, unknown>, RESERVATION_PII_FIELDS) as Partial<InsertReservation>;
@@ -1143,19 +1119,6 @@ export class DatabaseStorage implements IStorage {
     const [o] = await db.select().from(orders)
       .where(and(eq(orders.tenantId, tenantId), eq(orders.channelOrderId, clientOrderId)));
     return o;
-  }
-  async getOrderByStripeSessionId(sessionId: string) {
-    const { pool } = await import("./db");
-    const result = await pool.query(
-      `SELECT * FROM orders WHERE stripe_payment_session_id = $1 LIMIT 1`,
-      [sessionId]
-    );
-    if (!result.rows[0]) return undefined;
-    const row = result.rows[0];
-    return {
-      ...row,
-      stripePaymentSessionId: row.stripe_payment_session_id,
-    } as Order;
   }
   async createOrder(data: InsertOrder) {
     const [o] = await db.insert(orders).values(data).returning();
@@ -3266,10 +3229,6 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async getOrderCourses(orderId: string): Promise<OrderCourse[]> {
-    return db.select().from(orderCourses).where(eq(orderCourses.orderId, orderId));
-  }
-
   async createOrderCourse(data: InsertOrderCourse): Promise<OrderCourse> {
     const [course] = await db.insert(orderCourses).values(data).returning();
     return course;
@@ -3344,21 +3303,11 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async getItemTimeLog(orderItemId: string): Promise<ItemTimeLog | undefined> {
-    const [row] = await db.select().from(itemTimeLogs).where(eq(itemTimeLogs.orderItemId, orderItemId));
-    return row;
-  }
-
   async getItemTimeLogsByTenant(tenantId: string, opts: { date?: string; outletId?: string; limit?: number } = {}): Promise<ItemTimeLog[]> {
     const conditions = [eq(itemTimeLogs.tenantId, tenantId)];
     if (opts.date) conditions.push(eq(itemTimeLogs.shiftDate, opts.date));
     if (opts.outletId) conditions.push(eq(itemTimeLogs.outletId, opts.outletId));
     return db.select().from(itemTimeLogs).where(and(...conditions)).limit(opts.limit || 1000).orderBy(desc(itemTimeLogs.createdAt));
-  }
-
-  async getOrderTimeSummary(orderId: string): Promise<OrderTimeSummary | undefined> {
-    const [row] = await db.select().from(orderTimeSummary).where(eq(orderTimeSummary.orderId, orderId));
-    return row;
   }
 
   async upsertOrderTimeSummary(data: InsertOrderTimeSummary): Promise<OrderTimeSummary> {
@@ -3608,17 +3557,9 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async getVoidedItemsByOrder(orderId: string): Promise<VoidedItem[]> {
-    return db.select().from(voidedItems).where(eq(voidedItems.orderId, orderId));
-  }
-
   async createRefireRequest(data: InsertItemRefireRequest): Promise<ItemRefireRequest> {
     const [row] = await db.insert(itemRefireRequests).values(data).returning();
     return row;
-  }
-
-  async getRefireRequestsByOrder(orderId: string): Promise<ItemRefireRequest[]> {
-    return db.select().from(itemRefireRequests).where(eq(itemRefireRequests.orderId, orderId)).orderBy(desc(itemRefireRequests.createdAt));
   }
 
   async updateRefireRequest(id: string, tenantId: string, data: {
@@ -3873,14 +3814,6 @@ export class DatabaseStorage implements IStorage {
     return mapRowToCamelCase<CashHandover>(rows[0]);
   }
 
-  async getCashHandovers(sessionId: string): Promise<CashHandover[]> {
-    const { rows } = await pool.query(
-      `SELECT * FROM cash_handovers WHERE session_id = $1 ORDER BY created_at DESC`,
-      [sessionId]
-    );
-    return mapRowsToCamelCase<CashHandover>(rows);
-  }
-
   async getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined> {
     const { rows } = await pool.query(
       `SELECT id, currency_code, currency_symbol, currency_name, currency_position, decimal_places, denomination_config, cash_rounding
@@ -3978,14 +3911,6 @@ export class DatabaseStorage implements IStorage {
       data.updatedBy || null,
     ]);
     return mapRowToCamelCase(rows[0]);
-  }
-
-  async getBillTip(billId: string): Promise<BillTip | null> {
-    const { rows } = await pool.query(
-      `SELECT * FROM bill_tips WHERE bill_id = $1 LIMIT 1`,
-      [billId]
-    );
-    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
   }
 
   async getTipReport(tenantId: string, outletId: string | undefined, date: string): Promise<Record<string, any>> {
@@ -4184,11 +4109,6 @@ export class DatabaseStorage implements IStorage {
   async createBillPackingCharge(data: InsertBillPackingCharge): Promise<BillPackingCharge> {
     const [row] = await db.insert(billPackingCharges).values(data).returning();
     return row;
-  }
-
-  async getBillPackingCharge(billId: string): Promise<BillPackingCharge | null> {
-    const [row] = await db.select().from(billPackingCharges).where(eq(billPackingCharges.billId, billId));
-    return row || null;
   }
 
   async createInAppSupportTicket(data: InsertInAppSupportTicket): Promise<InAppSupportTicket> {
@@ -4743,11 +4663,6 @@ export class DatabaseStorage implements IStorage {
       [tenantId, ticketId, event.eventType, event.performedBy ?? null, event.performedByName ?? null, event.notes ?? null]
     );
   }
-  async getValetTicketByBill(billId: string): Promise<ValetTicket | undefined> {
-    const { rows } = await pool.query(`SELECT * FROM valet_tickets WHERE bill_id=$1 AND is_deleted=false LIMIT 1`, [billId]);
-    return rows[0] ? this._mapValetTicket(rows[0]) : undefined;
-  }
-
   async createRetrievalRequest(data: InsertValetRetrievalRequest): Promise<ValetRetrievalRequest> {
     const { rows } = await pool.query(
       `INSERT INTO valet_retrieval_requests (tenant_id, outlet_id, ticket_id, source, requested_by, requested_by_name, assigned_valet_id, assigned_valet_name, status, notes, completed_at, priority, queue_position, estimated_ready_at, request_source)
