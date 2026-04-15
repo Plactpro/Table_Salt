@@ -73,14 +73,14 @@
 | F-067 | Critical | IDOR | `server/routers/orders.ts` | 1295-1305 | Merge-tables: all queries use `WHERE id = $1` with no tenant_id — cross-tenant order item migration and order cancellation | Open |
 | F-068 | Critical | IDOR | `server/routers/orders.ts` | 1331-1335 | Split-bill: `WHERE orderId = $1` with no tenant_id — cross-tenant order item data exposure | Open |
 | F-069 | Critical | IDOR | `server/routers/customers.ts` | 150-227 | Loyalty tier config: uses `req.headers["x-tenant-id"]` instead of `user.tenantId` — full cross-tenant loyalty data read/write/delete | Open |
-| F-070 | High | IDOR | `server/routers/menu.ts` | 28-29 | Menu category PATCH: `getCategory(id)` and `updateCategory(id)` have no tenant_id — cross-tenant category modification | Open |
-| F-071 | High | IDOR | `server/routers/menu.ts` | 35-36 | Menu category DELETE: `deleteCategory(id)` has no tenant_id — cross-tenant category deletion | Open |
+| F-070 | High | IDOR | `server/routers/menu.ts` | 28-29 | Menu category PATCH: `getCategory(id)` and `updateCategory(id)` have no tenant_id — cross-tenant category modification | Fixed (2026-04-15, Batch 1) |
+| F-071 | High | IDOR | `server/routers/menu.ts` | 35-36 | Menu category DELETE: `deleteCategory(id)` has no tenant_id — cross-tenant category deletion | Fixed (2026-04-15, Batch 1) |
 | F-072 | High | IDOR | `server/routers/kitchen.ts` | 530 | KOT events by orderId: `getKotEventsByOrder(orderId)` has no tenant_id check — cross-tenant KOT data exposure | Open |
 | F-073 | High | IDOR | `server/storage.ts` | 1164-1170 | `updateOrder()` WHERE clause has no tenant_id — defense-in-depth gap for all callers | Open |
 | F-074 | High | IDOR | `server/storage.ts` | 2695-2698 | `getBill()` WHERE clause has no tenant_id; public receipt endpoint at `restaurant-billing.ts:130` exposes bill data without auth | Open |
 | F-075 | High | IDOR | `server/storage.ts` | 1172-1174 | `getOrderItemsByOrder()` has no tenant_id — defense-in-depth gap | Open |
 | F-076 | High | IDOR | `server/storage.ts` | 1895-1897 | `getStockMovementsByOrder()` has no tenant_id — defense-in-depth gap | Open |
-| F-077 | Medium | IDOR | `server/storage.ts` | 977-990 | `getCategory()`, `updateCategory()`, `deleteCategory()` have no tenant_id | Open |
+| F-077 | Medium | IDOR | `server/storage.ts` | 977-990 | `getCategory()`, `updateCategory()`, `deleteCategory()` have no tenant_id | Fixed (2026-04-15, Batch 1) |
 | F-078 | Medium | IDOR | `server/storage.ts` | 932-935 | `getUser()` has no tenant_id — timing side-channel in auth.ts and permissions.ts (all callers do post-fetch check) | Open |
 | F-079 | Medium | IDOR | `server/storage.ts` | 958-961 | `getOutlet()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
 | F-080 | Medium | IDOR | `server/storage.ts` | 3724-3727 | `getCashSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
