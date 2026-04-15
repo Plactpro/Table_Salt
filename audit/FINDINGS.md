@@ -17,7 +17,8 @@
 | F-013 | Medium | Auth | `server/services/prep-notifications.ts` / `routers/prep-notifications.ts` | — | Prep notification read endpoints (`GET /api/prep-notifications`, `GET /api/prep-notifications/unread-count`, `PATCH .../read`) require NO authentication | Open |
 | F-014 | Medium | Auth | `server/routers/cash-machine.ts` | — | `POST /api/cash-sessions/calculate-change` requires no authentication | Open |
 | F-015 | Medium | Auth | `server/routers/tip-management.ts` | — | `GET /api/tips/config/:outletId` requires no authentication — exposes tenant tip configuration | Open |
-| F-016 | Medium | WebSocket | `server/realtime.ts` | 196-199 | WebSocket accepts `?tenantId=<id>` query param with no session auth — only verifies tenant exists, grants full event stream access | Open |
+| F-016 | Medium | WebSocket | `server/realtime.ts` | 196-199 | WebSocket accepts `?tenantId=<id>` query param with no session auth — only verifies tenant exists, grants full event stream access | Fixed (2026-04-15) |
+| F-016-FU | High | Frontend | `client/src/pages/dashboards/kds-wall.tsx` + `kitchen.tsx` | 834-844, 1639 | KDS wall screen frontend passes `?tenantId=` in WebSocket connection and HTTP requests. Once server-side bypasses are removed (F-016, F-136), the frontend will fail until updated to rely on session cookie or `?token=` for tenant resolution. Blocks KDS wall screen UI until fixed. | Open |
 | F-017 | Low | Auth | `server/auth.ts` | 15-41 | Account lockout state stored in-memory Map — resets on server restart; not shared across instances | Open |
 | F-018 | Info | Crypto | `server/auth.ts` | 49-53 | Password hashing uses scrypt (not bcrypt) despite bcrypt being a dependency — bcrypt may be unused dead code | Open |
 | F-019 | Info | WebSocket | `server/realtime.ts` | 114-132 | `emitToTenantManagers()` is defined but never called from any router — dead code | Open |
