@@ -568,8 +568,9 @@ export interface IStorage {
 
   generateBillNumber(tenantId: string): Promise<string>;
   createBill(data: InsertBill): Promise<Bill>;
-  getBill(id: string): Promise<Bill | undefined>;
-  getBillByOrder(orderId: string): Promise<Bill | undefined>;
+  getBill(id: string, tenantId: string): Promise<Bill | undefined>;
+  getBillUnchecked(id: string): Promise<Bill | undefined>;
+  getBillByOrder(orderId: string, tenantId: string): Promise<Bill | undefined>;
   getBillsByOrder(orderId: string): Promise<Bill[]>;
   getBillsByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string }): Promise<Bill[]>;
   updateBill(id: string, tenantId: string, data: Partial<InsertBill>): Promise<Bill | undefined>;
@@ -578,7 +579,7 @@ export interface IStorage {
   getBillPaymentsByTenant(tenantId: string, opts?: { limit?: number }): Promise<BillPayment[]>;
   createPosSession(data: InsertPosSession): Promise<PosSession>;
   getActivePosSession(tenantId: string, waiterId: string): Promise<PosSession | undefined>;
-  getPosSession(id: string): Promise<PosSession | undefined>;
+  getPosSession(id: string, tenantId: string): Promise<PosSession | undefined>;
   closePosSession(id: string, tenantId: string, data: { closingCashCount?: number; closedBy: string; notes?: string }): Promise<PosSession | undefined>;
   updatePosSession(id: string, tenantId: string, data: Partial<InsertPosSession>): Promise<PosSession | undefined>;
   getPosSessionReport(sessionId: string): Promise<{ session: PosSession; billCount: number; totalRevenue: number; revenueByMethod: Record<string, number>; cashSales: number; expectedCash: number }>;
@@ -2656,12 +2657,21 @@ export class DatabaseStorage implements IStorage {
     }
     throw lastError ?? new Error("Failed to generate a unique bill number after retries");
   }
-  async getBill(id: string): Promise<Bill | undefined> {
+  async getBill(id: string, tenantId: string): Promise<Bill | undefined> {
+    assertTenantId(tenantId, "getBill");
+    const [b] = await db.select().from(bills).where(and(eq(bills.id, id), eq(bills.tenantId, tenantId)));
+    return b;
+  }
+  /** Unscoped bill lookup — use ONLY for public receipt endpoint and
+   *  Razorpay webhook where no tenantId is available at query time.
+   *  All other callers MUST use getBill(id, tenantId). */
+  async getBillUnchecked(id: string): Promise<Bill | undefined> {
     const [b] = await db.select().from(bills).where(eq(bills.id, id));
     return b;
   }
-  async getBillByOrder(orderId: string): Promise<Bill | undefined> {
-    const [b] = await db.select().from(bills).where(eq(bills.orderId, orderId)).orderBy(desc(bills.createdAt));
+  async getBillByOrder(orderId: string, tenantId: string): Promise<Bill | undefined> {
+    assertTenantId(tenantId, "getBillByOrder");
+    const [b] = await db.select().from(bills).where(and(eq(bills.orderId, orderId), eq(bills.tenantId, tenantId))).orderBy(desc(bills.createdAt));
     return b;
   }
   async getBillsByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string }): Promise<Bill[]> {
@@ -2703,8 +2713,9 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(posSessions.openedAt));
     return s;
   }
-  async getPosSession(id: string): Promise<PosSession | undefined> {
-    const [s] = await db.select().from(posSessions).where(eq(posSessions.id, id));
+  async getPosSession(id: string, tenantId: string): Promise<PosSession | undefined> {
+    assertTenantId(tenantId, "getPosSession");
+    const [s] = await db.select().from(posSessions).where(and(eq(posSessions.id, id), eq(posSessions.tenantId, tenantId)));
     return s;
   }
   async closePosSession(id: string, tenantId: string, data: { closingCashCount?: number; closedBy: string; notes?: string }): Promise<PosSession | undefined> {

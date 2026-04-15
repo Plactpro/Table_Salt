@@ -77,7 +77,7 @@
 | F-071 | High | IDOR | `server/routers/menu.ts` | 35-36 | Menu category DELETE: `deleteCategory(id)` has no tenant_id — cross-tenant category deletion | Fixed (2026-04-15, Batch 1) |
 | F-072 | High | IDOR | `server/routers/kitchen.ts` | 530 | KOT events by orderId: `getKotEventsByOrder(orderId)` has no tenant_id check — cross-tenant KOT data exposure | Open |
 | F-073 | High | IDOR | `server/storage.ts` | 1164-1170 | `updateOrder()` WHERE clause has no tenant_id — defense-in-depth gap for all callers | Fixed (2026-04-15, Batch 3) |
-| F-074 | High | IDOR | `server/storage.ts` | 2695-2698 | `getBill()` WHERE clause has no tenant_id; public receipt endpoint at `restaurant-billing.ts:130` exposes bill data without auth | Open |
+| F-074 | High | IDOR | `server/storage.ts` | 2695-2698 | `getBill()` WHERE clause has no tenant_id; public receipt endpoint at `restaurant-billing.ts:130` exposes bill data without auth | Fixed (2026-04-15, Batch 4) — getBill now requires tenantId; public receipt uses getBillUnchecked |
 | F-075 | High | IDOR | `server/storage.ts` | 1172-1174 | `getOrderItemsByOrder()` has no tenant_id — defense-in-depth gap | Fixed (2026-04-15, Batch 3) |
 | F-076 | High | IDOR | `server/storage.ts` | 1895-1897 | `getStockMovementsByOrder()` has no tenant_id — defense-in-depth gap | Open |
 | F-077 | Medium | IDOR | `server/storage.ts` | 977-990 | `getCategory()`, `updateCategory()`, `deleteCategory()` have no tenant_id | Fixed (2026-04-15, Batch 1) |
@@ -85,7 +85,7 @@
 | F-079 | Medium | IDOR | `server/storage.ts` | 958-961 | `getOutlet()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
 | F-080 | Medium | IDOR | `server/storage.ts` | 3724-3727 | `getCashSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
 | F-081 | Medium | IDOR | `server/storage.ts` | 4692-4695 | `getValetTicket()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
-| F-082 | Medium | IDOR | `server/storage.ts` | 2742-2744 | `getPosSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
+| F-082 | Medium | IDOR | `server/storage.ts` | 2742-2744 | `getPosSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Fixed (2026-04-15, Batch 4) |
 | F-083 | Medium | IDOR | `server/storage.ts` | 3884-3888 | `getOutletCurrencySettings()` and `updateOutletCurrencySettings()` have no tenant_id — cross-tenant read/write of outlet currency config | Fixed (2026-04-15, Batch 2) |
 | F-084 | Medium | IDOR | `server/storage.ts` | 2495-2497,2507,2519,2523 | Guest session/cart functions have no tenant_id — UUIDs provide obscurity | Open |
 | F-085 | Medium | IDOR | `server/storage.ts` | 2651-2653 | `getKotEventsByOrder()` has no tenant_id — exposed via kitchen.ts KOT events endpoint | Open |

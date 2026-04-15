@@ -120,9 +120,8 @@ export async function applyParkingChargeToBill(
   const existing = await storage.getBillParkingCharge(billId, tenantId);
   if (existing) return null;
 
-  const bill = await storage.getBill(billId);
+  const bill = await storage.getBill(billId, tenantId);
   if (!bill) return null;
-  if (bill.tenantId !== tenantId) return null;
 
   const outletId = bill.outletId ?? ticket.outletId;
   const result = await calculateParkingCharge(ticketId, outletId, tenantId);
