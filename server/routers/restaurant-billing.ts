@@ -13,6 +13,7 @@ import { recordAndDistributeTip } from "../services/tip-service";
 import { calculatePackingCharge } from "../services/packing-charge-service";
 import { applyParkingChargeToBill } from "../services/parking-charge-service";
 import { returnResourcesFromTable } from "../services/resource-service";
+import { recalculateBillTotals } from "../lib/bill-recalc";
 import { sendEmail } from "../services/email-service";
 import { auditLog as auditLogImport } from "../audit";
 import { emailBase } from "../templates/email-base";
@@ -210,13 +211,25 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   app.post("/api/restaurant-bills", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const { orderId, tableId, customerId, subtotal, discountAmount, discountReason,
-        serviceCharge, taxAmount, taxBreakdown, tips, totalAmount, covers, posSessionId } = req.body;
-      if (!orderId || totalAmount == null) return res.status(400).json({ message: "orderId and totalAmount are required" });
+      const { orderId, tableId, customerId, discountReason,
+        tips, covers, posSessionId } = req.body;
+      if (!orderId) return res.status(400).json({ message: "orderId is required" });
       const referencedOrder = await storage.getOrder(orderId, user.tenantId);
       if (!referencedOrder) return res.status(404).json({ message: "Order not found" });
       const existing = await storage.getBillByOrder(orderId);
       if (existing) return res.json({ ...existing, alreadyExists: true });
+
+      // F-121 fix: Fetch order items and recompute all monetary values server-side.
+      // Client-submitted subtotal, tax, discount, serviceCharge, and totalAmount are IGNORED.
+      const orderItems = await storage.getOrderItemsByOrder(orderId);
+      if (orderItems.length === 0) {
+        return res.status(400).json({ message: "Cannot create bill for order with no items" });
+      }
+      for (const oi of orderItems) {
+        if (Number(oi.quantity) <= 0) {
+          return res.status(400).json({ message: `Invalid quantity for item "${oi.name}"` });
+        }
+      }
 
       // Packing charge: only applies to takeaway/delivery, never dine_in
       const orderType = referencedOrder.orderType;
@@ -271,27 +284,37 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       // (already enforced by the orderType gate above)
 
       const tenant = await storage.getTenant(user.tenantId);
-      const isGST = tenant?.currency === "INR" && tenant?.taxType === "gst";
-      let invoiceNumber: string | null = null;
-      let cgstAmount: string | null = null;
-      let sgstAmount: string | null = null;
-      let resolvedTaxBreakdown = taxBreakdown || null;
       const { customerGstin } = req.body;
 
-      if (isGST) {
-        const cgstRate = Number(tenant?.cgstRate ?? 9);
-        const sgstRate = Number(tenant?.sgstRate ?? 9);
-        const tax = Number(taxAmount ?? 0);
-        const totalGstRate = cgstRate + sgstRate || 18;
-        const cgst = Math.round((tax * cgstRate / totalGstRate) * 100) / 100;
-        const sgst = Math.round((tax * sgstRate / totalGstRate) * 100) / 100;
-        cgstAmount = String(cgst);
-        sgstAmount = String(sgst);
-        resolvedTaxBreakdown = {
-          [`CGST (${cgstRate}%)`]: cgst.toFixed(2),
-          [`SGST (${sgstRate}%)`]: sgst.toFixed(2),
-        };
+      // F-121 fix: Server-side recalculation of all monetary values from order items.
+      // Client-submitted subtotal/tax/discount/serviceCharge/totalAmount are IGNORED.
+      // Uses the order's stored discount (server-calculated at order creation time).
+      const orderDiscount = Number(referencedOrder.discount || referencedOrder.discountAmount || 0);
+      const recalc = recalculateBillTotals(
+        orderItems,
+        orderDiscount,
+        {
+          taxRate: tenant?.taxRate || "0",
+          taxType: tenant?.taxType || null,
+          compoundTax: tenant?.compoundTax ?? false,
+          serviceCharge: tenant?.serviceCharge || "0",
+          currency: tenant?.currency || null,
+          cgstRate: tenant?.cgstRate,
+          sgstRate: tenant?.sgstRate,
+        },
+        packingChargeAmount,
+        packingChargeTaxAmount,
+        req.body.totalAmount != null ? Number(req.body.totalAmount) : undefined,
+      );
 
+      // Log tampering signal if client-submitted total diverges from server calculation
+      if (recalc.discrepancy !== null && recalc.discrepancy > 0.02) {
+        console.warn(`[BILL_TAMPERING] orderId=${orderId} tenant=${user.tenantId} clientTotal=${req.body.totalAmount} serverTotal=${recalc.totalWithPacking} discrepancy=${recalc.discrepancy}`);
+      }
+
+      // GST invoice number (only for Indian GST tenants)
+      let invoiceNumber: string | null = null;
+      if (recalc.isGST) {
         const prefix = tenant?.invoicePrefix || "INV";
         const fy = getFiscalYear(new Date());
         const [updated] = await db.update(tenantsTable)
@@ -302,15 +325,6 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         invoiceNumber = `${prefix}/${fy}/${String(counter).padStart(5, "0")}`;
       }
 
-      // Grand total includes server-calculated packing charge + packing tax
-      // If frontend already included it, packingChargeAmount comes from req.body
-      // and totalAmount from req.body should already include it.
-      // If server calculated it, we add it to the client-provided totalAmount.
-      const frontendAlreadyIncludedPacking = Number(req.body.packingCharge ?? 0) > 0;
-      const effectiveTotalAmount = frontendAlreadyIncludedPacking
-        ? Number(totalAmount)
-        : Number(totalAmount) + packingChargeAmount + packingChargeTaxAmount;
-
       let bill = await storage.createBill({
         tenantId: user.tenantId,
         outletId: user.outletId || null,
@@ -320,21 +334,21 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         customerId: customerId || null,
         waiterId: user.id,
         waiterName: user.name || user.username,
-        subtotal: String(subtotal ?? 0),
-        discountAmount: String(discountAmount ?? 0),
+        subtotal: recalc.subtotal.toFixed(2),
+        discountAmount: recalc.discount.toFixed(2),
         discountReason: discountReason || null,
-        serviceCharge: String(serviceCharge ?? 0),
-        taxAmount: String(taxAmount ?? 0),
-        taxBreakdown: resolvedTaxBreakdown,
+        serviceCharge: recalc.serviceCharge.toFixed(2),
+        taxAmount: recalc.tax.toFixed(2),
+        taxBreakdown: recalc.taxBreakdown,
         tips: String(tips ?? 0),
-        totalAmount: String(effectiveTotalAmount),
+        totalAmount: recalc.totalWithPacking.toFixed(2),
         paymentStatus: "pending",
         posSessionId: posSessionId || null,
         covers: covers || 1,
         invoiceNumber,
-        customerGstin: (isGST && customerGstin) ? customerGstin : null,
-        cgstAmount,
-        sgstAmount,
+        customerGstin: (recalc.isGST && customerGstin) ? customerGstin : null,
+        cgstAmount: recalc.cgstAmount !== null ? recalc.cgstAmount.toFixed(2) : null,
+        sgstAmount: recalc.sgstAmount !== null ? recalc.sgstAmount.toFixed(2) : null,
         packingCharge: packingChargeAmount > 0 ? packingChargeAmount.toFixed(2) : "0",
         packingChargeLabel: packingChargeLabelStr,
         packingChargeTax: packingChargeTaxAmount > 0 ? packingChargeTaxAmount.toFixed(2) : "0",
