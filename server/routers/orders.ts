@@ -13,6 +13,7 @@ import { emitToTenant } from "../realtime";
 import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { returnResourcesFromTable } from "../services/resource-service";
 import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
+import { filterOrderItemEditable } from "../lib/order-item-fields";
 import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
@@ -1165,7 +1166,13 @@ export function registerOrdersRoutes(app: Express): void {
     const user = req.user as any;
     const existingItem = await storage.getOrderItem(req.params.id, user.tenantId);
     if (!existingItem) return res.status(404).json({ message: "Item not found" });
-    const item = await storage.updateOrderItem(req.params.id, req.body, user.tenantId);
+    // F-121-FU fix: filter through allowlist — blocks price, quantity, status,
+    // and all other fields managed by dedicated endpoints (KDS, void, chef assignment).
+    const updateData = filterOrderItemEditable(req.body);
+    if (Object.keys(updateData).length === 0) {
+      return res.status(400).json({ message: "No editable fields provided" });
+    }
+    const item = await storage.updateOrderItem(req.params.id, updateData, user.tenantId);
     if (!item) return res.status(404).json({ message: "Item not found" });
     res.json(item);
   });
