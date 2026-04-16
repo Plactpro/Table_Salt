@@ -1521,7 +1521,7 @@ export default function POSPage() {
   }, [addTab, modifierItem, noteDialogItem, showSplitDialog, showRecall, lastPlacedOrder, activeTab, navigate, handlePlaceOrder, showBillModal, showKbdHelp, showMobileCart, cart.length]);
 
   return (
-    <PageErrorBoundary label="POS"><><PageTitle title={tc("pos")} /><div className="flex h-full gap-0 relative overflow-x-hidden" data-testid="pos-page">
+    <PageErrorBoundary label="POS"><><PageTitle title={tc("pos")} /><div className="flex h-[100dvh] gap-0 relative overflow-hidden" data-testid="pos-page">
       {showKbdHelp && (
         <div className="fixed inset-0 z-50 flex items-end justify-end p-4 pointer-events-none" aria-live="polite">
           <div className="bg-popover border border-border rounded-xl shadow-xl p-4 w-72 pointer-events-auto" data-testid="kbd-shortcut-overlay">
