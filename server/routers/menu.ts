@@ -25,16 +25,20 @@ export function registerMenuRoutes(app: Express): void {
   });
 
   app.patch("/api/menu-categories/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
-    const before = await storage.getCategory(req.params.id);
-    const cat = await storage.updateCategory(req.params.id, req.body);
-    auditLogFromReq(req, { action: "category_updated", entityType: "menu_category", entityId: req.params.id, entityName: cat.name, before: before ? { name: before.name } : undefined, after: { name: cat.name } });
+    const user = req.user as any;
+    const before = await storage.getCategory(req.params.id, user.tenantId);
+    if (!before) return res.status(404).json({ message: "Category not found" });
+    const cat = await storage.updateCategory(req.params.id, user.tenantId, req.body);
+    auditLogFromReq(req, { action: "category_updated", entityType: "menu_category", entityId: req.params.id, entityName: cat?.name, before: { name: before.name }, after: { name: cat?.name } });
     res.json(cat);
   });
 
   app.delete("/api/menu-categories/:id", requireRole("owner", "manager"), requirePermission("manage_menu"), async (req, res) => {
-    const before = await storage.getCategory(req.params.id);
-    await storage.deleteCategory(req.params.id);
-    auditLogFromReq(req, { action: "category_deleted", entityType: "menu_category", entityId: req.params.id, entityName: before?.name || "unknown" });
+    const user = req.user as any;
+    const before = await storage.getCategory(req.params.id, user.tenantId);
+    if (!before) return res.status(404).json({ message: "Category not found" });
+    await storage.deleteCategory(req.params.id, user.tenantId);
+    auditLogFromReq(req, { action: "category_deleted", entityType: "menu_category", entityId: req.params.id, entityName: before.name });
     res.json({ message: "Deleted" });
   });
 

@@ -1,6 +1,7 @@
 import { eq, and, desc, sql, gte, lte, lt, count, sum, inArray } from "drizzle-orm";
 import { db, pool } from "./db";
 import { encryptField, decryptField, isEncrypted } from "./encryption";
+import { assertTenantId } from "./lib/tenant-assertion";
 
 function encryptPiiFields<T extends Record<string, unknown>>(data: T, fields: string[]): T {
   const result = { ...data };
@@ -213,10 +214,10 @@ export interface IStorage {
   deleteOutlet(id: string, tenantId: string): Promise<void>;
 
   getCategoriesByTenant(tenantId: string): Promise<MenuCategory[]>;
-  getCategory(id: string): Promise<MenuCategory | undefined>;
+  getCategory(id: string, tenantId: string): Promise<MenuCategory | undefined>;
   createCategory(data: InsertMenuCategory): Promise<MenuCategory>;
-  updateCategory(id: string, data: Partial<InsertMenuCategory>): Promise<MenuCategory | undefined>;
-  deleteCategory(id: string): Promise<void>;
+  updateCategory(id: string, tenantId: string, data: Partial<InsertMenuCategory>): Promise<MenuCategory | undefined>;
+  deleteCategory(id: string, tenantId: string): Promise<void>;
 
   getMenuItemsByTenant(tenantId: string): Promise<MenuItem[]>;
   getMenuItemsByTenantAndOutlet(tenantId: string, outletId?: string): Promise<MenuItem[]>;
@@ -961,20 +962,23 @@ export class DatabaseStorage implements IStorage {
   async getCategoriesByTenant(tenantId: string) {
     return db.select().from(menuCategories).where(eq(menuCategories.tenantId, tenantId)).orderBy(menuCategories.sortOrder).limit(500);
   }
-  async getCategory(id: string) {
-    const [c] = await db.select().from(menuCategories).where(eq(menuCategories.id, id));
+  async getCategory(id: string, tenantId: string) {
+    assertTenantId(tenantId, "getCategory");
+    const [c] = await db.select().from(menuCategories).where(and(eq(menuCategories.id, id), eq(menuCategories.tenantId, tenantId)));
     return c;
   }
   async createCategory(data: InsertMenuCategory) {
     const [c] = await db.insert(menuCategories).values(data).returning();
     return c;
   }
-  async updateCategory(id: string, data: Partial<InsertMenuCategory>) {
-    const [c] = await db.update(menuCategories).set(data).where(eq(menuCategories.id, id)).returning();
+  async updateCategory(id: string, tenantId: string, data: Partial<InsertMenuCategory>) {
+    assertTenantId(tenantId, "updateCategory");
+    const [c] = await db.update(menuCategories).set(data).where(and(eq(menuCategories.id, id), eq(menuCategories.tenantId, tenantId))).returning();
     return c;
   }
-  async deleteCategory(id: string) {
-    await db.delete(menuCategories).where(eq(menuCategories.id, id));
+  async deleteCategory(id: string, tenantId: string) {
+    assertTenantId(tenantId, "deleteCategory");
+    await db.delete(menuCategories).where(and(eq(menuCategories.id, id), eq(menuCategories.tenantId, tenantId)));
   }
 
   async getMenuItemsByTenant(tenantId: string) {
