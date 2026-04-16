@@ -142,7 +142,12 @@ export async function seedDatabase() {
     minimumGuarantee: "8000",
   });
 
-  const pw = await hashPassword("demo123");
+  const seedPassword = process.env.DEFAULT_STAFF_PASSWORD;
+  if (!seedPassword) {
+    console.warn("[Seed] DEFAULT_STAFF_PASSWORD not set — skipping seed data");
+    return;
+  }
+  const pw = await hashPassword(seedPassword);
 
   const owner = await storage.createUser({
     tenantId: tenant.id, username: "owner", password: pw, name: "Alex Sterling", email: "alex@grandkitchen.com", role: "owner", hourlyRate: "50.00", overtimeRate: "75.00",

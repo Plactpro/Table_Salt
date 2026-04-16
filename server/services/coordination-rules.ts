@@ -1,6 +1,7 @@
 import { pool } from "../db";
 import { emitToTenant } from "../realtime";
 import { alertEngine } from "./alert-engine";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 
 // firedAlerts deduplicates alerts within a session.
 // Keys expire after 2 hours so long-lived orders can re-alert if still stuck.
@@ -356,15 +357,13 @@ let checkerInterval: ReturnType<typeof setInterval> | null = null;
 export function startCoordinationRulesChecker(): void {
   if (checkerInterval) return;
 
-  checkerInterval = setInterval(async () => {
-    try {
+  checkerInterval = setInterval(() => {
+    withJobLock(JOB_LOCK.COORDINATION_RULES, async () => {
       const tenantIds = await getActiveTenantIds();
       for (const tenantId of tenantIds) {
         await runRulesForTenant(tenantId);
       }
-    } catch (err: any) {
-      console.error("[CoordRules] Checker error:", err.message);
-    }
+    }).catch(err => console.error("[CoordRules] Checker error:", err));
   }, 60 * 1000);
 
   console.log("[CoordRules] Coordination rules checker started (60s interval)");

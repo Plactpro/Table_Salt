@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import { pool } from "../db";
 import { generateAndSaveReport } from "./stock-capacity";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 
 let schedulerTask: cron.ScheduledTask | null = null;
 
@@ -45,9 +46,11 @@ async function runNightlyReports(): Promise<void> {
 export function startStockReportScheduler(): void {
   if (schedulerTask) return;
 
-  schedulerTask = cron.schedule("0 23 * * *", async () => {
-    console.log("[StockScheduler] Nightly cron triggered at 23:00");
-    await runNightlyReports();
+  schedulerTask = cron.schedule("0 23 * * *", () => {
+    withJobLock(JOB_LOCK.STOCK_REPORT, async () => {
+      console.log("[StockScheduler] Nightly cron triggered at 23:00");
+      await runNightlyReports();
+    }).catch(err => console.error("[StockScheduler] Lock/run error:", err));
   });
 
   console.log("[StockScheduler] Nightly stock capacity scheduler started (node-cron: 0 23 * * *)");

@@ -11,9 +11,15 @@ import { setupWebSocket } from "./realtime";
 import { pool } from "./db";
 import { routeContext } from "./lib/query-logger";
 import { clearLoginFailures } from './auth';
+import { withJobLock, JOB_LOCK } from "./lib/job-lock";
 
 if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
     console.error("[FATAL] SESSION_SECRET env var is not set. Refusing to start in production.");
+    process.exit(1);
+}
+
+if (process.env.NODE_ENV === "production" && !process.env.DEFAULT_STAFF_PASSWORD) {
+    console.error("[FATAL] DEFAULT_STAFF_PASSWORD env var is not set. Refusing to start in production.");
     process.exit(1);
 }
 
@@ -363,9 +369,15 @@ function startWebhookMonitor() {
     }
   }
 
-  setInterval(runWebhookCheck, CHECK_INTERVAL_MS);
+  setInterval(() => {
+    withJobLock(JOB_LOCK.WEBHOOK_MONITOR, runWebhookCheck).catch(err =>
+      console.error("[WebhookMonitor] Lock/run error:", err));
+  }, CHECK_INTERVAL_MS);
   // Also run once after a 2-minute startup delay to let migrations complete
-  setTimeout(runWebhookCheck, 2 * 60 * 1000);
+  setTimeout(() => {
+    withJobLock(JOB_LOCK.WEBHOOK_MONITOR, runWebhookCheck).catch(err =>
+      console.error("[WebhookMonitor] Lock/run error:", err));
+  }, 2 * 60 * 1000);
 
   import("./services/reservation-reminders").then(({ sendReservationReminders }) => {
     setInterval(() => { sendReservationReminders().catch((e: any) => console.error("[Reminders] Error:", e.message)); }, 15 * 60 * 1000);

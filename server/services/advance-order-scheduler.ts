@@ -2,6 +2,7 @@ import { db } from "../db";
 import { orders } from "@shared/schema";
 import { eq, and, lte, sql } from "drizzle-orm";
 import { emitToTenant } from "../realtime";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 
 let schedulerInterval: NodeJS.Timeout | null = null;
 
@@ -59,7 +60,10 @@ async function releaseAdvanceOrders() {
 
 export function startAdvanceOrderScheduler() {
   if (schedulerInterval) return;
-  schedulerInterval = setInterval(releaseAdvanceOrders, 5 * 60 * 1000);
+  schedulerInterval = setInterval(() => {
+    withJobLock(JOB_LOCK.ADVANCE_ORDER, releaseAdvanceOrders).catch(err =>
+      console.error("[AdvanceOrderScheduler] Lock/run error:", err));
+  }, 5 * 60 * 1000);
   console.log("[AdvanceOrderScheduler] Started — checking every 5 minutes");
 }
 

@@ -1,16 +1,17 @@
 import cron from "node-cron";
 import { pool } from "../db";
 import { triggerWastageDailySummary } from "../routers/wastage";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 
 let schedulerTask: cron.ScheduledTask | null = null;
 
 export function startWastageSummaryScheduler(): void {
   if (schedulerTask) return;
 
-  schedulerTask = cron.schedule("0 0 * * *", async () => {
-    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-    console.log(`[WastageScheduler] Running midnight daily summary aggregation for ${yesterday}`);
-    try {
+  schedulerTask = cron.schedule("0 0 * * *", () => {
+    withJobLock(JOB_LOCK.WASTAGE_SUMMARY, async () => {
+      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      console.log(`[WastageScheduler] Running midnight daily summary aggregation for ${yesterday}`);
       const { rows: tenants } = await pool.query(`SELECT id FROM tenants WHERE active = true`);
       for (const tenant of tenants) {
         const { rows: outlets } = await pool.query(
@@ -22,9 +23,7 @@ export function startWastageSummaryScheduler(): void {
         }
       }
       console.log(`[WastageScheduler] Done — aggregated ${tenants.length} tenant(s) for ${yesterday}`);
-    } catch (err: any) {
-      console.error("[WastageScheduler] Error during midnight aggregation:", err.message);
-    }
+    }).catch(err => console.error("[WastageScheduler] Lock/run error:", err));
   });
 
   console.log("[WastageScheduler] Midnight wastage summary scheduler started (0 0 * * *)");
