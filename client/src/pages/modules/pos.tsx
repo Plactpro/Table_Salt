@@ -1870,7 +1870,7 @@ export default function POSPage() {
         </SheetContent>
       </Sheet>
 
-      <div className="hidden md:flex w-[400px] flex-shrink-0 flex-col bg-card overflow-x-hidden h-full pr-2">
+      <div className="hidden md:flex w-[400px] flex-shrink-0 flex-col bg-card overflow-hidden h-full pr-2">
         <div className="border-b">
           <div className="flex items-center gap-0 px-2 pt-2 overflow-x-auto" data-testid="pos-tabs-bar">
             {tabs.map((tab, idx) => (
@@ -2145,7 +2145,7 @@ export default function POSPage() {
           )}
         </div>
 
-        <div className="sticky bottom-0 border-t p-4 space-y-3 shrink-0 bg-background">
+        <div className="border-t p-4 space-y-3 shrink-0 bg-background overflow-y-auto max-h-[45vh]">
           {applicableOffers.length > 0 && (
             <div className="space-y-1.5" data-testid="offers-section">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
