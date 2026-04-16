@@ -60,7 +60,7 @@ async function sendDailyOwnerReport(): Promise<void> {
         subject: "Daily Report - " + tenant.name + " - " + dateStr,
         html,
       });
-      console.log("[DailyReport] Sent to", tenant.owner_email, "for", tenant.name);
+      console.log("[DailyReport] Sent daily report for tenant", tenant.id);
     }
   } catch (err) {
     console.error("[DailyReport] Error:", err);

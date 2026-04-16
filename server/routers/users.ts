@@ -46,7 +46,10 @@ export function registerUsersRoutes(app: Express): void {
       if (existingUser) {
         return res.status(409).json({ message: "Username already taken. Please choose a different username." });
       }
-      const plainPassword = req.body.password || "demo123";
+      if (!req.body.password) {
+        return res.status(400).json({ message: "Password is required when creating a new staff member" });
+      }
+      const plainPassword = req.body.password;
       const hashedPw = await hashPassword(plainPassword);
       const tenant = await storage.getTenant(user.tenantId);
       const newUser = await storage.createUser({

@@ -405,7 +405,11 @@ export default function StaffPage() {
       updateMutation.mutate({ id: editingUser.id, data });
     } else {
       data.username = username;
-      data.password = password || "demo123";
+      if (!password) {
+        toast({ title: "Password is required for new staff members", variant: "destructive" });
+        return;
+      }
+      data.password = password;
       createMutation.mutate(data);
     }
   };

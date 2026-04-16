@@ -1636,16 +1636,8 @@ export async function seedDatabase() {
   });
 
   console.log("Demo data seeded successfully!");
-  console.log("Login credentials (all passwords: demo123):");
-  console.log("  Owner: username=owner");
-  console.log("  Manager: username=manager");
-  console.log("  Waiter: username=waiter");
-  console.log("  Kitchen: username=kitchen");
-  console.log("  Accountant: username=accountant");
-  console.log("\nKiosk URLs:");
-  console.log("  Main Branch: /kiosk?token=kiosk-demo-token-main-001");
-  console.log("  Marina Walk: /kiosk?token=kiosk-demo-token-marina-001");
-  console.log("  Airport T3: /kiosk?token=kiosk-demo-token-airport-001");
+  console.log("Seed users created: owner, manager, waiter, kitchen, accountant (passwords redacted)");
+  console.log("Kiosk tokens created for 3 outlets (tokens redacted)");
 
   await seedServiceCoordination(tenant.id, outlet.id, waiter.id, manager.id, kitchen.id);
   await seedFoodModifications(tenant.id);
