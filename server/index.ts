@@ -80,7 +80,7 @@ app.post(
         const payment = event.payload?.payment?.entity;
         if (pl?.reference_id && payment?.id) {
           const { storage } = await import("./storage");
-          const bill = await storage.getBill(pl.reference_id);
+          const bill = await storage.getBillUnchecked(pl.reference_id);
           // Idempotency: skip if already processed
           if (bill && bill.paymentStatus !== "paid") {
             // Derive method from Razorpay payload — never trust external input

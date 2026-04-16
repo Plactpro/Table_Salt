@@ -110,7 +110,7 @@ export async function finalizeBillCompletion(opts: {
         try {
           await applyParkingChargeToBill(bill.id, valetRows[0].id, bill.tenantId);
           // Re-read bill to get updated totalAmount including parking
-          const updatedBill = await storage.getBill(bill.id);
+          const updatedBill = await storage.getBill(bill.id, bill.tenantId);
           if (updatedBill) bill = updatedBill;
         } catch (e) {
           console.error("[billing] Parking charge auto-apply failed:", e);
@@ -127,7 +127,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   // O8: Public receipt endpoint — no auth required so customers can view via QR code
   app.get("/api/public/receipt/:id", async (req, res) => {
     try {
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBillUnchecked(req.params.id);
       if (!bill) return res.status(404).json({ message: "Receipt not found" });
       // Fetch tenant name for display
       const tenantRow = await db.select({ name: tenantsTable.name, currency: tenantsTable.currency })
@@ -184,7 +184,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   app.get("/api/restaurant-bills/:id", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const payments = await storage.getBillPayments(bill.id);
@@ -197,7 +197,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   app.get("/api/restaurant-bills/by-order/:orderId", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const bill = await storage.getBillByOrder(req.params.orderId);
+      const bill = await storage.getBillByOrder(req.params.orderId, user.tenantId);
       if (!bill) return res.status(404).json({ message: "No bill for this order" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const payments = await storage.getBillPayments(bill.id);
@@ -215,7 +215,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       if (!orderId || totalAmount == null) return res.status(400).json({ message: "orderId and totalAmount are required" });
       const referencedOrder = await storage.getOrder(orderId, user.tenantId);
       if (!referencedOrder) return res.status(404).json({ message: "Order not found" });
-      const existing = await storage.getBillByOrder(orderId);
+      const existing = await storage.getBillByOrder(orderId, user.tenantId);
       if (existing) return res.json({ ...existing, alreadyExists: true });
 
       // Packing charge: only applies to takeaway/delivery, never dine_in
@@ -378,7 +378,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
     let idemResponseStored = false;
     try {
       const user = req.user as any;
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (bill.paymentStatus === "voided") return res.status(400).json({ message: "Bill is voided" });
@@ -702,7 +702,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   app.put("/api/restaurant-bills/:id/void", requireRole("owner", "manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (bill.paymentStatus === "voided") return res.status(400).json({ message: "Bill is already voided" });
@@ -803,7 +803,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   app.post("/api/restaurant-bills/:id/refund", requireRole("owner", "manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (!["paid", "partially_refunded"].includes(bill.paymentStatus || "")) {
@@ -995,7 +995,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       }
       let session;
       if (sessionId) {
-        session = await storage.getPosSession(sessionId);
+        session = await storage.getPosSession(sessionId, user.tenantId);
         if (!session || session.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       } else {
         session = await storage.getActivePosSession(user.tenantId, user.id);
@@ -1027,7 +1027,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         const report = await storage.getPosSessionReport(active.id);
         return res.json(report);
       }
-      const session = await storage.getPosSession(sessionId);
+      const session = await storage.getPosSession(sessionId, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const report = await storage.getPosSessionReport(sessionId);
       res.json(report);
@@ -1060,7 +1060,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         }
         reqIdemClaimed = true;
       }
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (bill.paymentStatus === "paid") return res.status(400).json({ message: "Bill already paid" });
@@ -1136,7 +1136,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   app.post("/api/restaurant-bills/:id/payments/manual-pending", requireRole("owner", "manager", "cashier", "waiter", "supervisor", "outlet_manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (bill.paymentStatus === "paid") return res.status(400).json({ message: "Bill already paid" });
@@ -1166,7 +1166,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
   app.get("/api/restaurant-bills/:id/payment-status", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
@@ -1183,7 +1183,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         const rzpMethod = link.payments?.[0]?.method?.toLowerCase();
         const method = rzpMethod === "card" ? "CARD" : rzpMethod === "upi" ? "UPI" : "RAZORPAY";
         // Idempotency guard: re-fetch bill to check if webhook already finalised it
-        const freshBill = await storage.getBill(bill.id);
+        const freshBill = await storage.getBill(bill.id, user.tenantId);
         if (freshBill?.paymentStatus === "paid") {
           return res.json({ status: "paid", paymentId });
         }
@@ -1214,7 +1214,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         return res.status(400).json({ message: "Valid customer email is required" });
       }
 
-      const bill = await storage.getBill(req.params.id);
+      const bill = await storage.getBill(req.params.id, user.tenantId);
       if (!bill) return res.status(404).json({ message: "Bill not found" });
       if (bill.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
