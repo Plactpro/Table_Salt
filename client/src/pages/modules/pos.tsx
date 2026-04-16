@@ -2113,7 +2113,7 @@ export default function POSPage() {
                           <Button data-testid={`button-remove-${item.menuItemId}`} variant="ghost" size="icon" className="h-9 w-9 text-destructive flex items-center justify-center rounded" onClick={() => removeFromCart(item.cartKey)} aria-label={`Remove ${item.name} from cart`}>
                             <Trash2 className="h-3 w-3" aria-hidden="true" />
                           </Button>
-                          {isAddonKot && sentKeys.has(item.cartKey) && (
+                          {isAddonKotMode && activeTab?.sentCartKeys.includes(item.cartKey) && (
                             <Button
                               variant="ghost"
                               size="icon"
