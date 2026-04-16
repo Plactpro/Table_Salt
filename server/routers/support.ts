@@ -76,9 +76,9 @@ export function registerSupportRoutes(app: Express): void {
   app.get("/api/support/tickets/:id", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getInAppSupportTicket(req.params.id) as any;
-      if (!ticket || ticket.tenant_id !== user.tenantId) return res.status(404).json({ message: "Ticket not found" });
-      const replies = await storage.getInAppSupportTicketReplies(req.params.id);
+      const ticket = await storage.getInAppSupportTicketByTenant(req.params.id, user.tenantId) as any;
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      const replies = await storage.getInAppSupportTicketRepliesByTenant(req.params.id, user.tenantId);
       res.json({ ...ticket, replies });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -91,8 +91,8 @@ export function registerSupportRoutes(app: Express): void {
       const parsed = replySchema.safeParse(req.body);
       if (!parsed.success) return res.status(400).json({ message: "Validation failed" });
 
-      const ticket = await storage.getInAppSupportTicket(req.params.id) as any;
-      if (!ticket || ticket.tenant_id !== user.tenantId) return res.status(404).json({ message: "Ticket not found" });
+      const ticket = await storage.getInAppSupportTicketByTenant(req.params.id, user.tenantId) as any;
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
 
       const reply = await storage.createInAppSupportTicketReply({
         ticketId: req.params.id,
@@ -104,11 +104,11 @@ export function registerSupportRoutes(app: Express): void {
       });
 
       const currentCount = ticket.reply_count ?? 0;
-      await storage.updateInAppSupportTicket(req.params.id, {
+      await storage.updateInAppSupportTicketByTenant(req.params.id, {
         status: "awaiting_support",
         lastRepliedAt: new Date(),
         replyCount: currentCount + 1,
-      });
+      }, user.tenantId);
 
       res.status(201).json(reply);
     } catch (err: any) {
@@ -119,12 +119,12 @@ export function registerSupportRoutes(app: Express): void {
   app.patch("/api/support/tickets/:id/close", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getInAppSupportTicket(req.params.id) as any;
-      if (!ticket || ticket.tenant_id !== user.tenantId) return res.status(404).json({ message: "Ticket not found" });
-      const updated = await storage.updateInAppSupportTicket(req.params.id, {
+      const ticket = await storage.getInAppSupportTicketByTenant(req.params.id, user.tenantId) as any;
+      if (!ticket) return res.status(404).json({ message: "Ticket not found" });
+      const updated = await storage.updateInAppSupportTicketByTenant(req.params.id, {
         status: "closed",
         resolvedAt: new Date(),
-      });
+      }, user.tenantId);
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
