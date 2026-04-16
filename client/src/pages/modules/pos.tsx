@@ -2176,33 +2176,6 @@ export default function POSPage() {
           )}
 
           <div className="space-y-2">
-            <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1"><Percent className="h-3 w-3" /> Discount</p>
-              <div className="flex gap-1 flex-wrap">
-                {(["5", "10", "15", "20"] as const).map(pct => {
-                  const isActive = discountPreset === pct;
-                  return (
-                    <Button key={pct} data-testid={`button-discount-${pct}`} variant={isActive ? "default" : "outline"} size="sm" className="text-xs h-7 px-2.5"
-                      onClick={() => {
-                        const newPreset = isActive ? "none" : pct;
-                        setDiscountPreset(newPreset);
-                        updateActiveTab({ discount: newPreset === "none" ? "" : (subtotal * Number(pct) / 100).toFixed(2) });
-                      }}>
-                      {pct}%
-                    </Button>
-                  );
-                })}
-                {discountPreset !== "none" && (
-                  <button className="text-xs text-muted-foreground hover:text-destructive ml-auto" data-testid="button-clear-discount"
-                    onClick={() => { setDiscountPreset("none"); updateActiveTab({ discount: "" }); }}>
-                    <X className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-              {discountPreset !== "none" && manualDiscount > 0 && (
-                <p className="text-xs text-green-600 dark:text-green-400 mt-1">−{fmt(manualDiscount)} off</p>
-              )}
-            </div>
             <Textarea data-testid="input-order-notes" placeholder={tp("orderNotesPlaceholder")} value={orderNotes} onChange={(e) => updateActiveTab({ orderNotes: e.target.value })} rows={2} className="resize-none text-sm" />
           </div>
 
