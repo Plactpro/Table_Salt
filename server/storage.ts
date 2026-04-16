@@ -777,10 +777,13 @@ export interface IStorage {
   // In-App Support Tickets
   createInAppSupportTicket(data: InsertInAppSupportTicket): Promise<InAppSupportTicket>;
   getInAppSupportTicket(id: string): Promise<InAppSupportTicket | null>;
+  getInAppSupportTicketByTenant(id: string, tenantId: string): Promise<InAppSupportTicket | null>;
   getInAppSupportTickets(tenantId: string): Promise<InAppSupportTicket[]>;
   updateInAppSupportTicket(id: string, data: Partial<InAppSupportTicket>): Promise<InAppSupportTicket | null>;
+  updateInAppSupportTicketByTenant(id: string, data: Partial<InAppSupportTicket>, tenantId: string): Promise<InAppSupportTicket | null>;
   createInAppSupportTicketReply(data: InsertInAppSupportTicketReply): Promise<InAppSupportTicketReply>;
   getInAppSupportTicketReplies(ticketId: string): Promise<InAppSupportTicketReply[]>;
+  getInAppSupportTicketRepliesByTenant(ticketId: string, tenantId: string): Promise<InAppSupportTicketReply[]>;
   getAllInAppSupportTickets(filters: { status?: string; priority?: string; category?: string; tenantId?: string; assignedTo?: string; dateFrom?: string }): Promise<any[]>;
   getInAppSupportStats(): Promise<{ open: number; in_progress: number; replied: number; resolved: number; closed: number; awaiting_support: number; avgResponseTime: number | null; byCategory: Record<string, number> }>;
 
@@ -4202,6 +4205,38 @@ export class DatabaseStorage implements IStorage {
     const { rows } = await pool.query(`
       SELECT * FROM in_app_support_ticket_replies WHERE ticket_id = $1 ORDER BY created_at ASC
     `, [ticketId]);
+    return rows;
+  }
+
+  async getInAppSupportTicketByTenant(id: string, tenantId: string): Promise<InAppSupportTicket | null> {
+    assertTenantId(tenantId, "getInAppSupportTicketByTenant");
+    const { rows } = await pool.query(`SELECT * FROM in_app_support_tickets WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
+  }
+
+  async updateInAppSupportTicketByTenant(id: string, data: Partial<InAppSupportTicket>, tenantId: string): Promise<InAppSupportTicket | null> {
+    assertTenantId(tenantId, "updateInAppSupportTicketByTenant");
+    const setClauses: string[] = ["updated_at = NOW()"];
+    const values: any[] = [];
+    let i = 1;
+    if (data.status !== undefined) { setClauses.push(`status = $${i++}`); values.push(data.status); }
+    if (data.priority !== undefined) { setClauses.push(`priority = $${i++}`); values.push(data.priority); }
+    if (data.assignedTo !== undefined) { setClauses.push(`assigned_to = $${i++}`); values.push(data.assignedTo); }
+    if (data.resolvedAt !== undefined) { setClauses.push(`resolved_at = $${i++}`); values.push(data.resolvedAt); }
+    if (data.lastRepliedAt !== undefined) { setClauses.push(`last_replied_at = $${i++}`); values.push(data.lastRepliedAt); }
+    if (data.replyCount !== undefined) { setClauses.push(`reply_count = $${i++}`); values.push(data.replyCount); }
+    values.push(tenantId);
+    const tenantIdx = i++;
+    values.push(id);
+    const { rows } = await pool.query(`UPDATE in_app_support_tickets SET ${setClauses.join(", ")} WHERE id = $${i} AND tenant_id = $${tenantIdx} RETURNING *`, values);
+    return rows[0] ? mapRowToCamelCase(rows[0]) : null;
+  }
+
+  async getInAppSupportTicketRepliesByTenant(ticketId: string, tenantId: string): Promise<InAppSupportTicketReply[]> {
+    assertTenantId(tenantId, "getInAppSupportTicketRepliesByTenant");
+    const { rows } = await pool.query(`
+      SELECT * FROM in_app_support_ticket_replies WHERE ticket_id = $1 AND tenant_id = $2 ORDER BY created_at ASC
+    `, [ticketId, tenantId]);
     return rows;
   }
 
