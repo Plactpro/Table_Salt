@@ -740,14 +740,14 @@ export interface IStorage {
 
   // Task #118: Cash Machine
   createCashSession(data: InsertCashSession): Promise<CashSession>;
-  getCashSession(id: string): Promise<CashSession | undefined>;
+  getCashSession(id: string, tenantId: string): Promise<CashSession | undefined>;
   getActiveCashSession(tenantId: string, cashierId: string): Promise<CashSession | undefined>;
-  updateCashSession(id: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined>;
+  updateCashSession(id: string, tenantId: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined>;
   getCashSessions(tenantId: string, opts?: { status?: string; date?: string; cashierId?: string }): Promise<CashSession[]>;
   createCashDrawerEvent(data: InsertCashDrawerEvent): Promise<CashDrawerEvent>;
-  getCashDrawerEvents(sessionId: string): Promise<CashDrawerEvent[]>;
+  getCashDrawerEvents(sessionId: string, tenantId: string): Promise<CashDrawerEvent[]>;
   createCashPayout(data: InsertCashPayout): Promise<CashPayout>;
-  getCashPayouts(sessionId: string): Promise<CashPayout[]>;
+  getCashPayouts(sessionId: string, tenantId: string): Promise<CashPayout[]>;
   createCashHandover(data: InsertCashHandover): Promise<CashHandover>;
   getOutletCurrencySettings(outletId: string, tenantId: string): Promise<Record<string, any> | undefined>;
   updateOutletCurrencySettings(outletId: string, tenantId: string, data: Record<string, any>): Promise<Record<string, any>>;
@@ -3674,8 +3674,9 @@ export class DatabaseStorage implements IStorage {
   }
 
 
-  async getCashSession(id: string): Promise<CashSession | undefined> {
-    const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1`, [id]);
+  async getCashSession(id: string, tenantId: string): Promise<CashSession | undefined> {
+    assertTenantId(tenantId, "getCashSession");
+    const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
     return mapCashSessionRow(rows[0]) as CashSession | undefined;
   }
 
@@ -3687,7 +3688,8 @@ export class DatabaseStorage implements IStorage {
     return rows[0] ? mapRowToCamelCase<CashSession>(rows[0]) : null;
   }
 
-  async updateCashSession(id: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined> {
+  async updateCashSession(id: string, tenantId: string, data: Partial<InsertCashSession>): Promise<CashSession | undefined> {
+    assertTenantId(tenantId, "updateCashSession");
     const fields: string[] = [];
     const values: any[] = [];
     let i = 1;
@@ -3719,13 +3721,13 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (fields.length === 0) {
-      const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1`, [id]);
+      const { rows } = await pool.query(`SELECT * FROM cash_sessions WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
       return mapCashSessionRow(rows[0]) as CashSession;
     }
 
-    values.push(id);
+    values.push(id, tenantId);
     const { rows } = await pool.query(
-      `UPDATE cash_sessions SET ${fields.join(', ')} WHERE id = $${i} RETURNING *`,
+      `UPDATE cash_sessions SET ${fields.join(', ')} WHERE id = $${i} AND tenant_id = $${i + 1} RETURNING *`,
       values
     );
     return mapCashSessionRow(rows[0]) as CashSession | undefined;
@@ -3776,10 +3778,11 @@ export class DatabaseStorage implements IStorage {
     return mapRowToCamelCase<CashDrawerEvent>(rows[0]);
   }
 
-  async getCashDrawerEvents(sessionId: string): Promise<CashDrawerEvent[]> {
+  async getCashDrawerEvents(sessionId: string, tenantId: string): Promise<CashDrawerEvent[]> {
+    assertTenantId(tenantId, "getCashDrawerEvents");
     const { rows } = await pool.query(
-      `SELECT * FROM cash_drawer_events WHERE session_id = $1 ORDER BY created_at DESC`,
-      [sessionId]
+      `SELECT * FROM cash_drawer_events WHERE session_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+      [sessionId, tenantId]
     );
     return mapRowsToCamelCase<CashDrawerEvent>(rows);
   }
@@ -3800,10 +3803,11 @@ export class DatabaseStorage implements IStorage {
     return mapRowToCamelCase<CashPayout>(rows[0]);
   }
 
-  async getCashPayouts(sessionId: string): Promise<CashPayout[]> {
+  async getCashPayouts(sessionId: string, tenantId: string): Promise<CashPayout[]> {
+    assertTenantId(tenantId, "getCashPayouts");
     const { rows } = await pool.query(
-      `SELECT * FROM cash_payouts WHERE session_id = $1 ORDER BY created_at DESC`,
-      [sessionId]
+      `SELECT * FROM cash_payouts WHERE session_id = $1 AND tenant_id = $2 ORDER BY created_at DESC`,
+      [sessionId, tenantId]
     );
     return mapRowsToCamelCase<CashPayout>(rows);
   }

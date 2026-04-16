@@ -83,7 +83,7 @@
 | F-077 | Medium | IDOR | `server/storage.ts` | 977-990 | `getCategory()`, `updateCategory()`, `deleteCategory()` have no tenant_id | Fixed (2026-04-15, Batch 1) |
 | F-078 | Medium | IDOR | `server/storage.ts` | 932-935 | `getUser()` has no tenant_id — timing side-channel in auth.ts and permissions.ts (all callers do post-fetch check) | Open |
 | F-079 | Medium | IDOR | `server/storage.ts` | 958-961 | `getOutlet()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
-| F-080 | Medium | IDOR | `server/storage.ts` | 3724-3727 | `getCashSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
+| F-080 | Medium | IDOR | `server/storage.ts` | 3724-3727 | `getCashSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Fixed (2026-04-15, Batch 5) |
 | F-081 | Medium | IDOR | `server/storage.ts` | 4692-4695 | `getValetTicket()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
 | F-082 | Medium | IDOR | `server/storage.ts` | 2742-2744 | `getPosSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Fixed (2026-04-15, Batch 4) |
 | F-083 | Medium | IDOR | `server/storage.ts` | 3884-3888 | `getOutletCurrencySettings()` and `updateOutletCurrencySettings()` have no tenant_id — cross-tenant read/write of outlet currency config | Fixed (2026-04-15, Batch 2) |

@@ -147,7 +147,7 @@ export function registerCashMachineRoutes(app: Express): void {
         return res.status(400).json({ message: "sessionId and amount are required" });
       }
 
-      const session = await storage.getCashSession(sessionId);
+      const session = await storage.getCashSession(sessionId, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
@@ -161,7 +161,7 @@ export function registerCashMachineRoutes(app: Express): void {
         [Number(amount), sessionId]
       );
 
-      const updatedSession = await storage.getCashSession(sessionId);
+      const updatedSession = await storage.getCashSession(sessionId, user.tenantId);
       const runningBalance = computeRunningBalance(updatedSession!);
 
       await storage.createCashDrawerEvent({
@@ -205,7 +205,7 @@ export function registerCashMachineRoutes(app: Express): void {
   app.get("/api/cash-sessions/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
@@ -220,11 +220,11 @@ export function registerCashMachineRoutes(app: Express): void {
   app.get("/api/cash-sessions/:id/events", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
-      const events = await storage.getCashDrawerEvents(req.params.id);
+      const events = await storage.getCashDrawerEvents(req.params.id, user.tenantId);
       res.json(events);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -235,11 +235,11 @@ export function registerCashMachineRoutes(app: Express): void {
   app.get("/api/cash-sessions/:id/payouts", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
-      const payouts = await storage.getCashPayouts(req.params.id);
+      const payouts = await storage.getCashPayouts(req.params.id, user.tenantId);
       res.json(payouts);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -250,7 +250,7 @@ export function registerCashMachineRoutes(app: Express): void {
   app.post("/api/cash-sessions/:id/close", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
@@ -275,7 +275,7 @@ export function registerCashMachineRoutes(app: Express): void {
         });
       }
 
-      const updated = await storage.updateCashSession(req.params.id, {
+      const updated = await storage.updateCashSession(req.params.id, user.tenantId, {
         status: "closed",
         physicalClosingCash: String(physicalCashAmount),
         closingBreakdown: closingBreakdown || null,
@@ -316,11 +316,11 @@ export function registerCashMachineRoutes(app: Express): void {
   app.post("/api/cash-sessions/:id/approve", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
-      const updated = await storage.updateCashSession(req.params.id, {
+      const updated = await storage.updateCashSession(req.params.id, user.tenantId, {
         approvedBy: user.id,
         approvedAt: new Date(),
       });
@@ -334,7 +334,7 @@ export function registerCashMachineRoutes(app: Express): void {
   app.post("/api/cash-sessions/:id/manual-open", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
@@ -363,7 +363,7 @@ export function registerCashMachineRoutes(app: Express): void {
   app.post("/api/cash-sessions/:id/float-adjust", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
@@ -387,7 +387,7 @@ export function registerCashMachineRoutes(app: Express): void {
         );
       }
 
-      const updatedSession = await storage.getCashSession(req.params.id);
+      const updatedSession = await storage.getCashSession(req.params.id, user.tenantId);
       const runningBalance = computeRunningBalance(updatedSession!);
 
       const event = await storage.createCashDrawerEvent({
@@ -413,7 +413,7 @@ export function registerCashMachineRoutes(app: Express): void {
   app.post("/api/cash-sessions/:id/payouts", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
@@ -440,7 +440,7 @@ export function registerCashMachineRoutes(app: Express): void {
         [Number(amount), req.params.id]
       );
 
-      const updatedSession = await storage.getCashSession(req.params.id);
+      const updatedSession = await storage.getCashSession(req.params.id, user.tenantId);
       const newBalance = computeRunningBalance(updatedSession!);
 
       const payout = await storage.createCashPayout({
@@ -479,7 +479,7 @@ export function registerCashMachineRoutes(app: Express): void {
   app.post("/api/cash-sessions/:id/handover", requireAuth, requireRole("owner", "manager"), async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const session = await storage.getCashSession(req.params.id);
+      const session = await storage.getCashSession(req.params.id, user.tenantId);
       if (!session || session.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "Session not found" });
       }
