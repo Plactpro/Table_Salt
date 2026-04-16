@@ -391,7 +391,7 @@ export function registerPricingRoutes(app: Express): void {
       const { items, outletId, orderType, orderTime } = req.body;
       if (!Array.isArray(items) || !outletId) return res.status(400).json({ message: "items and outletId are required" });
 
-      const outlet = await storage.getOutlet(outletId);
+      const outlet = await storage.getOutletUnchecked(outletId);
       if (!outlet) return res.status(404).json({ message: "Outlet not found" });
       const tenantId = outlet.tenantId;
 
@@ -800,7 +800,7 @@ export function registerPricingRoutes(app: Express): void {
       const user = req.user as any;
       const { outletId } = req.query;
       const outlets = outletId
-        ? [await storage.getOutlet(outletId as string)].filter(Boolean)
+        ? [await storage.getOutlet(outletId as string, user.tenantId)].filter(Boolean)
         : await storage.getOutletsByTenant(user.tenantId);
 
       const rows: any[] = [];
@@ -843,7 +843,7 @@ export function registerPricingRoutes(app: Express): void {
       if (menuItemId) targetItems = menuItems.filter(m => m.id === menuItemId);
       else if (categoryId) targetItems = menuItems.filter(m => m.categoryId === categoryId);
 
-      const outlets = outletId ? [await storage.getOutlet(outletId)] : await storage.getOutletsByTenant(user.tenantId);
+      const outlets = outletId ? [await storage.getOutlet(outletId as string, user.tenantId)] : await storage.getOutletsByTenant(user.tenantId);
       const validOutlets = outlets.filter(Boolean) as any[];
 
       let adjustedCount = 0;

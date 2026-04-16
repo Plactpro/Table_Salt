@@ -39,7 +39,7 @@ export function registerKioskRoutes(app: Express): void {
       const { name, outletId, active, settings } = req.body;
       if (!name) return res.status(400).json({ message: "Device name is required" });
       if (outletId) {
-        const outlet = await storage.getOutlet(outletId);
+        const outlet = await storage.getOutletUnchecked(outletId);
         if (!outlet || outlet.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid outlet" });
       }
       const crypto = await import("crypto");
@@ -58,7 +58,7 @@ export function registerKioskRoutes(app: Express): void {
       if (active !== undefined) updates.active = active;
       if (settings !== undefined) updates.settings = settings;
       if (outletId !== undefined) {
-        const outlet = await storage.getOutlet(outletId);
+        const outlet = await storage.getOutletUnchecked(outletId);
         if (!outlet || outlet.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid outlet" });
         updates.outletId = outletId;
       }

@@ -21,7 +21,7 @@ export function registerGuestRoutes(app: Express): void {
   app.get("/api/guest/menu/:outletId/categories", async (req, res) => {
     try {
       const { outletId } = req.params;
-      const outlet = await storage.getOutlet(outletId);
+      const outlet = await storage.getOutletUnchecked(outletId);
       if (!outlet) return res.status(404).json({ message: "Outlet not found" });
       const tenant = await storage.getTenant(outlet.tenantId);
       if (!tenant) return res.status(404).json({ message: "Restaurant not found" });
@@ -41,7 +41,7 @@ export function registerGuestRoutes(app: Express): void {
   app.get("/api/guest/menu/:outletId/categories/:categoryId/items", async (req, res) => {
     try {
       const { outletId, categoryId } = req.params;
-      const outlet = await storage.getOutlet(outletId);
+      const outlet = await storage.getOutletUnchecked(outletId);
       if (!outlet) return res.status(404).json({ message: "Outlet not found" });
       const tenant = await storage.getTenant(outlet.tenantId);
       if (!tenant) return res.status(404).json({ message: "Restaurant not found" });
@@ -60,7 +60,7 @@ export function registerGuestRoutes(app: Express): void {
   app.get("/api/guest/menu/:outletId", async (req, res) => {
     try {
       const { outletId } = req.params;
-      const outlet = await storage.getOutlet(outletId);
+      const outlet = await storage.getOutletUnchecked(outletId);
       if (!outlet) return res.status(404).json({ message: "Outlet not found" });
       const tenant = await storage.getTenant(outlet.tenantId);
       if (!tenant) return res.status(404).json({ message: "Restaurant not found" });
@@ -99,7 +99,7 @@ export function registerGuestRoutes(app: Express): void {
       const table = await storage.getTableByQrToken(outletId, tableToken);
       if (!table) return res.status(404).json({ message: "Table not found" });
 
-      const outlet = await storage.getOutlet(outletId);
+      const outlet = await storage.getOutletUnchecked(outletId);
       if (!outlet) return res.status(404).json({ message: "Outlet not found" });
 
       const tenant = await storage.getTenant(outlet.tenantId);

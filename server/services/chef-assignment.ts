@@ -29,11 +29,11 @@ export const DEFAULT_ASSIGNMENT_SETTINGS: AssignmentSettings = {
   requireReassignReason: true,
 };
 
-async function getOutletSettings(outletId: string): Promise<AssignmentSettings> {
+async function getOutletSettings(outletId: string, tenantId: string): Promise<AssignmentSettings> {
   try {
     const { rows } = await pool.query(
-      `SELECT assignment_settings FROM outlets WHERE id = $1 LIMIT 1`,
-      [outletId]
+      `SELECT assignment_settings FROM outlets WHERE id = $1 AND tenant_id = $2 LIMIT 1`,
+      [outletId, tenantId]
     );
     if (rows[0]?.assignment_settings) {
       return { ...DEFAULT_ASSIGNMENT_SETTINGS, ...rows[0].assignment_settings };
@@ -76,7 +76,7 @@ export async function autoAssignTicket(
     counterName?: string;
   }
 ): Promise<{ id: string; status: string; chefId?: string | null; chefName?: string | null }> {
-  const settings = outletId ? await getOutletSettings(outletId) : DEFAULT_ASSIGNMENT_SETTINGS;
+  const settings = outletId ? await getOutletSettings(outletId, tenantId) : DEFAULT_ASSIGNMENT_SETTINGS;
   const today = new Date().toISOString().slice(0, 10);
 
   let resolvedCounterId = counterId;
@@ -537,7 +537,7 @@ export async function requestHelp(
 
 export async function rebalanceAssignments(tenantId: string, outletId: string): Promise<{ moved: number }> {
   const today = new Date().toISOString().slice(0, 10);
-  const settings = await getOutletSettings(outletId);
+  const settings = await getOutletSettings(outletId, tenantId);
   const liveAssignments = await storage.getLiveAssignments(tenantId, outletId);
   const availability = await storage.getChefAvailability(tenantId, outletId, today);
 
@@ -580,7 +580,7 @@ export function startEscalationChecker(): void {
       );
       for (const row of outlets) {
         if (!row.outlet_id || !row.tenant_id) continue;
-        const settings = await getOutletSettings(row.outlet_id);
+        const settings = await getOutletSettings(row.outlet_id, row.tenant_id);
         const { rows: overdue } = await pool.query(
           `SELECT id, menu_item_name, counter_name FROM ticket_assignments WHERE tenant_id = $1 AND outlet_id = $2 AND status = 'unassigned' AND created_at < NOW() - INTERVAL '${settings.unassignedTimeoutMin} minutes'`,
           [row.tenant_id, row.outlet_id]
