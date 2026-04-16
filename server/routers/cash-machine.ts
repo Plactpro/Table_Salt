@@ -520,7 +520,7 @@ export function registerCashMachineRoutes(app: Express): void {
   app.get("/api/outlets/:id/currency-settings", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as any;
-      const settings = await storage.getOutletCurrencySettings(req.params.id);
+      const settings = await storage.getOutletCurrencySettings(req.params.id, user.tenantId);
       if (!settings) return res.status(404).json({ message: "Outlet not found" });
       res.json(settings);
     } catch (err: any) {
@@ -535,13 +535,14 @@ export function registerCashMachineRoutes(app: Express): void {
 
       const jurisdiction = currencyCode ? getJurisdictionByCurrency(currencyCode) : null;
 
+      // Batch 2 fix: add tenant_id to raw outlet query
       const outletResult = await pool.query(
-        `SELECT outlet_tax_rate FROM outlets WHERE id = $1`,
-        [req.params.id]
+        `SELECT outlet_tax_rate FROM outlets WHERE id = $1 AND tenant_id = $2`,
+        [req.params.id, user.tenantId]
       );
       const currentTaxRate = outletResult.rows[0]?.outlet_tax_rate;
 
-      const updated = await storage.updateOutletCurrencySettings(req.params.id, {
+      const updated = await storage.updateOutletCurrencySettings(req.params.id, user.tenantId, {
         currencyCode,
         currencySymbol,
         currencyName,
@@ -552,12 +553,13 @@ export function registerCashMachineRoutes(app: Express): void {
       });
 
       if (currencyCode && jurisdiction) {
+        // Batch 2 fix: add tenant_id to jurisdiction update
         await pool.query(
           `UPDATE outlets SET
             jurisdiction_code = $1,
             outlet_tax_rate = CASE WHEN outlet_tax_rate IS NULL THEN $2 ELSE outlet_tax_rate END
-          WHERE id = $3`,
-          [currencyCode, jurisdiction.defaultTaxRate, req.params.id]
+          WHERE id = $3 AND tenant_id = $4`,
+          [currencyCode, jurisdiction.defaultTaxRate, req.params.id, user.tenantId]
         );
       }
 

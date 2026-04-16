@@ -749,8 +749,8 @@ export interface IStorage {
   createCashPayout(data: InsertCashPayout): Promise<CashPayout>;
   getCashPayouts(sessionId: string): Promise<CashPayout[]>;
   createCashHandover(data: InsertCashHandover): Promise<CashHandover>;
-  getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined>;
-  updateOutletCurrencySettings(outletId: string, data: Record<string, any>): Promise<Record<string, any>>;
+  getOutletCurrencySettings(outletId: string, tenantId: string): Promise<Record<string, any> | undefined>;
+  updateOutletCurrencySettings(outletId: string, tenantId: string, data: Record<string, any>): Promise<Record<string, any>>;
 
   // Tip management
   getOutletTipSettings(outletId: string, tenantId: string): Promise<OutletTipSettings | null>;
@@ -3818,16 +3818,18 @@ export class DatabaseStorage implements IStorage {
     return mapRowToCamelCase<CashHandover>(rows[0]);
   }
 
-  async getOutletCurrencySettings(outletId: string): Promise<Record<string, any> | undefined> {
+  async getOutletCurrencySettings(outletId: string, tenantId: string): Promise<Record<string, any> | undefined> {
+    assertTenantId(tenantId, "getOutletCurrencySettings");
     const { rows } = await pool.query(
       `SELECT id, currency_code, currency_symbol, currency_name, currency_position, decimal_places, denomination_config, cash_rounding
-       FROM outlets WHERE id = $1`,
-      [outletId]
+       FROM outlets WHERE id = $1 AND tenant_id = $2`,
+      [outletId, tenantId]
     );
     return mapRowToCamelCase(rows[0]);
   }
 
-  async updateOutletCurrencySettings(outletId: string, data: Record<string, any>): Promise<Record<string, any>> {
+  async updateOutletCurrencySettings(outletId: string, tenantId: string, data: Record<string, any>): Promise<Record<string, any>> {
+    assertTenantId(tenantId, "updateOutletCurrencySettings");
     const fields: string[] = [];
     const values: any[] = [];
     let i = 1;
@@ -3855,13 +3857,13 @@ export class DatabaseStorage implements IStorage {
     }
 
     if (fields.length === 0) {
-      const { rows } = await pool.query(`SELECT * FROM outlets WHERE id = $1`, [outletId]);
+      const { rows } = await pool.query(`SELECT * FROM outlets WHERE id = $1 AND tenant_id = $2`, [outletId, tenantId]);
       return mapRowToCamelCase(rows[0]);
     }
 
-    values.push(outletId);
+    values.push(outletId, tenantId);
     const { rows } = await pool.query(
-      `UPDATE outlets SET ${fields.join(', ')} WHERE id = $${i} RETURNING id, currency_code, currency_symbol, currency_name, currency_position, decimal_places, denomination_config, cash_rounding`,
+      `UPDATE outlets SET ${fields.join(', ')} WHERE id = $${i} AND tenant_id = $${i + 1} RETURNING id, currency_code, currency_symbol, currency_name, currency_position, decimal_places, denomination_config, cash_rounding`,
       values
     );
     return mapRowToCamelCase(rows[0]);
