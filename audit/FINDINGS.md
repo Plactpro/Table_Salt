@@ -25,7 +25,8 @@
 | F-021 | Info | Config | `.env.example` | 73-74 | `OPENAI_API_KEY`, Cloudinary, Google OAuth/Maps env vars documented but no corresponding code exists | Open |
 | | | | | | **--- Phase 2: Data Flow Tracing ---** | |
 | F-022 | Critical | Atomicity | `server/routers/auth.ts` | 58-119 | Registration creates tenant+outlet+user across 4 tables with NO transaction — partial failure leaves orphan tenants | Open |
-| F-023 | Critical | AuthZ | `server/routers/tenant.ts` | 35,47 | Owner can self-set `plan` field via `PATCH /api/tenant`, bypassing Stripe billing entirely | Open |
+| F-023 | Critical | AuthZ | `server/routers/tenant.ts` | 35,47 | Owner can self-set `plan` field via `PATCH /api/tenant`, bypassing Stripe billing entirely | Fixed (2026-04-15) |
+| F-023-FU | Medium | Auth | `server/lib/tenant-fields.ts` | 14 | OWNER_EDITABLE_FIELDS allowlist must be reviewed every time a new column is added to the tenants table — there is no automated check enforcing this. Consider adding a unit test that fails if the tenants schema gains a column not explicitly mentioned in either OWNER_EDITABLE_FIELDS or a documented BLOCKED_FIELDS list. | Open |
 | F-024 | High | Auth | `server/routers/auth.ts` | 76 | No password policy enforced at registration — `validatePasswordPolicy` imported but never called | Open |
 | F-025 | High | AuthZ | `server/routers/billing.ts` | 16-65 | Onboarding PATCH endpoints use `requireAuth` only — any staff member can modify tenant settings | Open |
 | F-026 | High | Auth | `server/routers/users.ts` | 49,66 | Default staff password "demo123"; plaintext password sent via email | Open |
