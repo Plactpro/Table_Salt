@@ -2145,9 +2145,9 @@ export default function POSPage() {
           )}
         </div>
 
-        <div className="border-t p-4 space-y-3 shrink-0 bg-background">
+        <div className="border-t p-4 space-y-3 shrink-0 bg-background overflow-hidden">
           {applicableOffers.length > 0 && (
-            <div className="space-y-1.5" data-testid="offers-section">
+            <div className="space-y-1.5 max-h-[120px] overflow-y-auto" data-testid="offers-section">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                 <Tag className="h-3 w-3" /> {tp("availableOffers")}
               </p>
