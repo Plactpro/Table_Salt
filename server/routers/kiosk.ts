@@ -171,7 +171,7 @@ export function registerKioskRoutes(app: Express): void {
       if (clientOrderId) {
         const existing = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
         if (existing) {
-          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          const existingItems = await storage.getOrderItemsByOrder(existing.id, device.tenantId!);
           return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems }, tokenNumber: existing.orderNumber || existing.id.slice(0, 6).toUpperCase() });
         }
       }
@@ -238,7 +238,7 @@ export function registerKioskRoutes(app: Express): void {
         if (clientOrderId && dbErr.code === "23505" && dbErr.constraint?.includes("channel_order_id")) {
           const dup = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
           if (dup) {
-            const dupItems = await storage.getOrderItemsByOrder(dup.id);
+            const dupItems = await storage.getOrderItemsByOrder(dup.id, device.tenantId!);
             return res.status(409).json({ message: "Duplicate order", order: { ...dup, items: dupItems }, tokenNumber: dup.orderNumber || dup.id.slice(0, 6).toUpperCase() });
           }
         }
@@ -256,7 +256,7 @@ export function registerKioskRoutes(app: Express): void {
         });
       }
 
-      const orderItems = await storage.getOrderItemsByOrder(order.id);
+      const orderItems = await storage.getOrderItemsByOrder(order.id, device.tenantId!);
       const tokenNumber = order.orderNumber || order.id.slice(0, 6).toUpperCase();
 
       if (isDigitalPayment) {
@@ -287,7 +287,7 @@ export function registerKioskRoutes(app: Express): void {
       if (clientOrderId) {
         const existing = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
         if (existing) {
-          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          const existingItems = await storage.getOrderItemsByOrder(existing.id, device.tenantId!);
           return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems } });
         }
       }
@@ -380,7 +380,7 @@ export function registerKioskRoutes(app: Express): void {
       if (clientOrderId) {
         const existing = await storage.getOrderByClientId(device.tenantId!, clientOrderId);
         if (existing) {
-          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          const existingItems = await storage.getOrderItemsByOrder(existing.id, device.tenantId!);
           return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems } });
         }
       }
@@ -473,7 +473,7 @@ export function registerKioskRoutes(app: Express): void {
       const link = await getPaymentLink(linkId as string, keyId, keySecret);
 
       if (link.status === "paid") {
-        await storage.updateOrder(req.params.orderId, { status: "completed", paymentMethod: "razorpay" });
+        await storage.updateOrder(req.params.orderId, device.tenantId!, { status: "completed", paymentMethod: "razorpay" });
         try {
           await deductRecipeInventoryForOrder(req.params.orderId, device.tenantId!, "kiosk");
         } catch (deductErr) {

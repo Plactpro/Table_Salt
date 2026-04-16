@@ -250,11 +250,10 @@ export interface IStorage {
 
   getOrdersByTenant(tenantId: string, opts?: { limit?: number; offset?: number; status?: string; orderType?: string; dateFrom?: string; dateTo?: string }): Promise<Order[]>;
   getOrder(id: string, tenantId: string): Promise<Order | undefined>;
-  getOrderById(id: string): Promise<Order | undefined>;
   getOrderByClientId(tenantId: string, clientOrderId: string): Promise<Order | undefined>;
   createOrder(data: InsertOrder): Promise<Order>;
-  updateOrder(id: string, data: Partial<InsertOrder>, expectedVersion?: number): Promise<Order | undefined>;
-  getOrderItemsByOrder(orderId: string): Promise<OrderItem[]>;
+  updateOrder(id: string, tenantId: string, data: Partial<InsertOrder>, expectedVersion?: number): Promise<Order | undefined>;
+  getOrderItemsByOrder(orderId: string, tenantId: string): Promise<OrderItem[]>;
   getOrderItemsByTenant(tenantId: string): Promise<any[]>;
   createOrderItem(data: InsertOrderItem): Promise<OrderItem>;
   updateOrderItem(id: string, data: Record<string, any>, tenantId: string): Promise<OrderItem | undefined>;
@@ -1115,10 +1114,6 @@ export class DatabaseStorage implements IStorage {
     );
     return o;
   }
-  async getOrderById(id: string) {
-    const [o] = await db.select().from(orders).where(eq(orders.id, id));
-    return o;
-  }
   async getOrderByClientId(tenantId: string, clientOrderId: string) {
     const [o] = await db.select().from(orders)
       .where(and(eq(orders.tenantId, tenantId), eq(orders.channelOrderId, clientOrderId)));
@@ -1128,16 +1123,18 @@ export class DatabaseStorage implements IStorage {
     const [o] = await db.insert(orders).values(data).returning();
     return o;
   }
-  async updateOrder(id: string, data: Partial<InsertOrder>, expectedVersion?: number) {
+  async updateOrder(id: string, tenantId: string, data: Partial<InsertOrder>, expectedVersion?: number) {
+    assertTenantId(tenantId, "updateOrder");
     const { version: _, ...rest }: { version?: number | null; [k: string]: unknown } = data;
     const whereClause = expectedVersion !== undefined
-      ? and(eq(orders.id, id), eq(orders.version, expectedVersion))
-      : eq(orders.id, id);
+      ? and(eq(orders.id, id), eq(orders.tenantId, tenantId), eq(orders.version, expectedVersion))
+      : and(eq(orders.id, id), eq(orders.tenantId, tenantId));
     const [o] = await db.update(orders).set({ ...rest, version: sql`COALESCE(${orders.version}, 0) + 1` }).where(whereClause).returning();
     return o;
   }
-  async getOrderItemsByOrder(orderId: string) {
-    return db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  async getOrderItemsByOrder(orderId: string, tenantId: string) {
+    assertTenantId(tenantId, "getOrderItemsByOrder");
+    return db.select().from(orderItems).where(and(eq(orderItems.orderId, orderId), eq(orderItems.tenantId, tenantId)));
   }
   async getOrderItemsByTenant(tenantId: string) {
     return db.select({

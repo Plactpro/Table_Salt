@@ -28,7 +28,7 @@ export function registerCoordinationRoutes(app: Express): void {
       );
 
       const ordersWithItems = await Promise.all(orderRows.map(async (order: any) => {
-        const items = await storage.getOrderItemsByOrder(order.id);
+        const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
         return {
           id: order.id,
           orderNumber: order.id.slice(-6).toUpperCase(),
@@ -189,7 +189,7 @@ export function registerCoordinationRoutes(app: Express): void {
       const order = await storage.getOrder(req.params.id, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
 
-      await storage.updateOrder(order.id, { status });
+      await storage.updateOrder(order.id, user.tenantId, { status });
       emitToTenant(user.tenantId, "coordination:order_updated", { orderId: order.id, status });
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status });
 
@@ -263,10 +263,10 @@ export function registerCoordinationRoutes(app: Express): void {
       });
 
       if (status === "served") {
-        const allItems = await storage.getOrderItemsByOrder(req.params.orderId);
+        const allItems = await storage.getOrderItemsByOrder(req.params.orderId, user.tenantId);
         const allServed = allItems.every((item: any) => item.status === "served");
         if (allServed) {
-          await storage.updateOrder(req.params.orderId, { status: "served" });
+          await storage.updateOrder(req.params.orderId, user.tenantId, { status: "served" });
           emitToTenant(user.tenantId, "order:updated", { orderId: req.params.orderId, status: "served" });
         }
       }
@@ -294,7 +294,7 @@ export function registerCoordinationRoutes(app: Express): void {
       const activeOrders: any[] = [];
 
       for (const order of orderRows) {
-        const items = await storage.getOrderItemsByOrder(order.id);
+        const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
         const orderData = {
           id: order.id,
           orderNumber: order.id.slice(-6).toUpperCase(),

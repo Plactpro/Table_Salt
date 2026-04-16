@@ -122,7 +122,7 @@ export function registerGuestRoutes(app: Express): void {
       const tableOrders = existingOrders.filter(o => o.tableId === table.id && o.status !== "paid" && o.status !== "cancelled" && o.status !== "voided");
       const runningBill: any[] = [];
       for (const order of tableOrders) {
-        const oi = await storage.getOrderItemsByOrder(order.id);
+        const oi = await storage.getOrderItemsByOrder(order.id, tenant.id);
         runningBill.push({ orderId: order.id, status: order.status, subtotal: order.subtotal, tax: order.tax, total: order.total, items: oi });
       }
 
@@ -248,7 +248,7 @@ export function registerGuestRoutes(app: Express): void {
       await storage.clearGuestCart(sessionId);
       await storage.updateTableSession(sessionId, { orderId: order.id });
 
-      const orderItemsFull = await storage.getOrderItemsByOrder(order.id);
+      const orderItemsFull = await storage.getOrderItemsByOrder(order.id, tenant.id);
       res.json({ order, items: orderItemsFull });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -285,7 +285,7 @@ export function registerGuestRoutes(app: Express): void {
       let billTotal = 0, billTax = 0, billSubtotal = 0;
 
       for (const order of tableOrders) {
-        const oi = await storage.getOrderItemsByOrder(order.id);
+        const oi = await storage.getOrderItemsByOrder(order.id, tenant.id);
         for (const item of oi) billItems.push({ ...item, orderId: order.id, orderStatus: order.status });
         billSubtotal += Number(order.subtotal || 0);
         billTax += Number(order.tax || 0);
@@ -412,7 +412,7 @@ export function registerGuestRoutes(app: Express): void {
         const tableOrders = allOrders.filter(o => o.tableId === table.id && (o.status === "pending_payment" || o.status === "new" || o.status === "completed"));
         for (const o of tableOrders) {
           if (o.status !== "paid") {
-            await storage.updateOrder(o.id, { status: "paid", paymentMethod: "razorpay" });
+            await storage.updateOrder(o.id, tenant.id, { status: "paid", paymentMethod: "razorpay" });
           }
         }
         return res.json({ status: "paid" });
@@ -457,7 +457,7 @@ export function registerGuestRoutes(app: Express): void {
       );
 
       for (const o of tableOrders) {
-        await storage.updateOrder(o.id, { status: "paid", paymentMethod: "cash" });
+        await storage.updateOrder(o.id, tenant.id, { status: "paid", paymentMethod: "cash" });
       }
 
       // Fire-and-forget tip recording

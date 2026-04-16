@@ -39,7 +39,7 @@ function fireKdsArrival(tenantId: string, orderId: string, userId: string, userN
       const kitSettings = await storage.getKitchenSettings(tenantId);
       const mode = kitSettings?.cookingControlMode ?? "selective";
       const autoHoldBar = kitSettings?.autoHoldBarItems ?? true;
-      const orderItemsList = await storage.getOrderItemsByOrder(orderId);
+      const orderItemsList = await storage.getOrderItemsByOrder(orderId, tenantId);
 
       if (mode === "auto_start") {
         const freshOrder = await storage.getOrder(orderId, tenantId);
@@ -163,7 +163,7 @@ export function registerOrdersRoutes(app: Express): void {
         : and(eq(ordersTable.tenantId, user.tenantId), eq(ordersTable.status, onHoldStatus), eq(ordersTable.waiterId, user.id));
       const heldOrders = await db.select().from(ordersTable).where(conditions);
       const result = await Promise.all(heldOrders.map(async (order) => {
-        const items = await storage.getOrderItemsByOrder(order.id);
+        const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
         return { ...order, items };
       }));
       res.json(result);
@@ -184,7 +184,7 @@ export function registerOrdersRoutes(app: Express): void {
         )
       ).orderBy(ordersTable.createdAt);
       const result = await Promise.all(rows.map(async (order) => {
-        const items = await storage.getOrderItemsByOrder(order.id);
+        const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
         return { ...order, items, queueType: pendingStatuses.includes(order.status as OrderStatus) ? "pending" : "active" };
       }));
       res.json(result);
@@ -251,7 +251,7 @@ export function registerOrdersRoutes(app: Express): void {
       if (Number(req.body.version) !== Number(order.version)) {
         return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was modified by someone else. Please refresh." });
       }
-      await storage.updateOrder(order.id, { status: "served" });
+      await storage.updateOrder(order.id, user.tenantId, { status: "served" });
       emitToTenant(user.tenantId, "order:delivery_dispatched", { orderId: order.id });
       emitToTenant(user.tenantId, "order:updated", { orderId: order.id, status: "served", orderType: "delivery" });
       auditLogFromReq(req, { action: "delivery_order_dispatched", entityType: "order", entityId: order.id, before: { status: order.status }, after: { status: "served" } });
@@ -313,7 +313,7 @@ export function registerOrdersRoutes(app: Express): void {
     const user = req.user as Express.User & { tenantId: string };
     const order = await storage.getOrder(req.params.id, user.tenantId);
     if (!order) return res.status(404).json({ message: "Order not found" });
-    const items = await storage.getOrderItemsByOrder(order.id);
+    const items = await storage.getOrderItemsByOrder(order.id, user.tenantId);
     res.json({ ...order, items });
   });
 
@@ -358,7 +358,7 @@ export function registerOrdersRoutes(app: Express): void {
             if (idemOrder[0]) {
               const dupOrder = await storage.getOrder(idemOrder[0].id, user.tenantId);
               if (dupOrder) {
-                const dupItems = await storage.getOrderItemsByOrder(dupOrder.id);
+                const dupItems = await storage.getOrderItemsByOrder(dupOrder.id, user.tenantId);
                 return res.status(200).json({ ...dupOrder, items: dupItems });
               }
             }
@@ -372,7 +372,7 @@ export function registerOrdersRoutes(app: Express): void {
       if (clientOrderId) {
         const existing = await storage.getOrderByClientId(user.tenantId, clientOrderId);
         if (existing) {
-          const existingItems = await storage.getOrderItemsByOrder(existing.id);
+          const existingItems = await storage.getOrderItemsByOrder(existing.id, user.tenantId);
           return res.status(409).json({ message: "Duplicate order", order: { ...existing, items: existingItems } });
         }
         orderData.channelOrderId = clientOrderId;
@@ -594,7 +594,7 @@ export function registerOrdersRoutes(app: Express): void {
         if (hasClientOrderId && dbErr.code === "23505" && dbErr.constraint?.includes("channel_order_id")) {
           const dup = await storage.getOrderByClientId(user.tenantId, clientOrderId);
           if (dup) {
-            const dupItems = await storage.getOrderItemsByOrder(dup.id);
+            const dupItems = await storage.getOrderItemsByOrder(dup.id, user.tenantId);
             return res.status(409).json({ message: "Duplicate order", order: { ...dup, items: dupItems } });
           }
         }
@@ -688,7 +688,7 @@ export function registerOrdersRoutes(app: Express): void {
         await storage.updateTable(orderData.tableId, user.tenantId, { status: "occupied" });
         emitToTenant(user.tenantId, "table:updated", { tableId: orderData.tableId, status: "occupied" });
       }
-      const orderItems = await storage.getOrderItemsByOrder(order.id);
+      const orderItems = await storage.getOrderItemsByOrder(order.id, user.tenantId);
       auditLogFromReq(req, { action: "order_created", entityType: "order", entityId: order.id, entityName: `Order #${order.orderNumber || order.id.slice(0, 8)}`, after: { orderType: order.orderType, status: order.status, total: order.total, itemCount: orderItems.length, engineDiscounts: activeDiscounts.length } });
 
       alertEngine.trigger('ALERT-01', { tenantId: user.tenantId, outletId: order.outletId ?? undefined, referenceId: order.id, referenceNumber: order.orderNumber ?? undefined, message: `New order #${order.orderNumber || order.id.slice(-6)} — ${orderItems.length} items` }).catch(() => {});
@@ -889,7 +889,7 @@ export function registerOrdersRoutes(app: Express): void {
     let reversalEntries: ReversalEntry[] = [];
 
     if (req.body.status === "paid" && existing.status !== "paid") {
-      const oItems = await storage.getOrderItemsByOrder(req.params.id);
+      const oItems = await storage.getOrderItemsByOrder(req.params.id, user.tenantId);
       type DepletionTarget = { menuItemId: string; name: string; quantity: number };
       const depletionTargets: DepletionTarget[] = [];
       for (const oi of oItems) {
@@ -991,7 +991,7 @@ export function registerOrdersRoutes(app: Express): void {
         return updated;
       });
     } else {
-      order = await storage.updateOrder(req.params.id, updateData, clientVersion);
+      order = await storage.updateOrder(req.params.id, user.tenantId, updateData, clientVersion);
     }
 
     // If version check failed (no rows updated), return 409
@@ -1000,7 +1000,7 @@ export function registerOrdersRoutes(app: Express): void {
     }
 
     if (req.body.status === "sent_to_kitchen" && existing.status !== "sent_to_kitchen") {
-      const allItems = await storage.getOrderItemsByOrder(req.params.id);
+      const allItems = await storage.getOrderItemsByOrder(req.params.id, user.tenantId);
       if (allItems.length > 0) {
         const sentAt = new Date().toISOString();
         const tables = existing.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
@@ -1157,7 +1157,7 @@ export function registerOrdersRoutes(app: Express): void {
     if (!order) {
       return res.status(404).json({ message: "Order not found" });
     }
-    const items = await storage.getOrderItemsByOrder(req.params.orderId);
+    const items = await storage.getOrderItemsByOrder(req.params.orderId, user.tenantId);
     res.json(items);
   });
 
@@ -1208,7 +1208,7 @@ export function registerOrdersRoutes(app: Express): void {
           channel: "pos",
         },
       });
-      await storage.updateOrder(order.id, { status: "pending_payment" });
+      await storage.updateOrder(order.id, user.tenantId, { status: "pending_payment" });
       await pool.query(
         `UPDATE orders SET stripe_payment_session_id = $1 WHERE id = $2`,
         [session.id, order.id]

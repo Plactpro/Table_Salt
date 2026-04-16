@@ -258,9 +258,10 @@ export function registerBillingRoutes(app: Express): void {
           if (session.metadata?.orderPayment === "true") {
             const orderId = session.metadata?.orderId;
             if (orderId) {
-              const orderToUpdate = await storage.getOrderById(orderId);
+              const webhookTenantId = session.metadata?.tenantId ?? "";
+              const orderToUpdate = await storage.getOrder(orderId, webhookTenantId);
               if (orderToUpdate && orderToUpdate.status !== "paid") {
-                await storage.updateOrder(orderId, { status: "paid", paymentMethod: "card" });
+                await storage.updateOrder(orderId, orderToUpdate.tenantId, { status: "paid", paymentMethod: "card" });
                 if (orderToUpdate.tableId) {
                   try { await storage.updateTable(orderToUpdate.tableId, orderToUpdate.tenantId, { status: "free" }); } catch (_) {}
                   returnResourcesFromTable(orderToUpdate.tableId, orderToUpdate.tenantId, false).catch(() => {});
@@ -284,7 +285,7 @@ export function registerBillingRoutes(app: Express): void {
                   o.status !== "paid"
                 );
                 for (const order of unpaidTableOrders) {
-                  await storage.updateOrder(order.id, { status: "paid", paymentMethod: "card" });
+                  await storage.updateOrder(order.id, guestSession.tenantId, { status: "paid", paymentMethod: "card" });
                 }
                 try { await storage.updateTable(guestSession.tableId, guestSession.tenantId, { status: "free" }); } catch (_) {}
                 returnResourcesFromTable(guestSession.tableId, guestSession.tenantId, false).catch(() => {});
