@@ -138,7 +138,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const tenant = tenantRow[0] ?? null;
       const allPayments = await storage.getBillPayments(bill.id);
       const order = bill.orderId ? await storage.getOrder(bill.orderId, bill.tenantId) : null;
-      const items = order ? await storage.getOrderItemsByOrder(order.id, user.tenantId) : [];
+      const items = order ? await storage.getOrderItemsByOrder(order.id, bill.tenantId) : [];
       res.json({
         id: bill.id,
         billNumber: bill.billNumber,
