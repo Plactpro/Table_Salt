@@ -1118,7 +1118,7 @@ export default function POSPage() {
       orderNotes: order.notes || "",
       selectedOfferId: null,
       dismissedRuleIds: [],
-      sentCartKeys: [],
+      sentCartKeys: reconstructedCart.map(c => c.cartKey),
       heldOrderId: order.id,
       heldOrderVersion: order.version,
     };
@@ -1186,6 +1186,7 @@ export default function POSPage() {
         outletId: userOutletId,
       orderType: tab.orderType,
       tableId: tabIsDineIn ? tab.selectedTable || null : null,
+      covers: tabIsDineIn ? (tab.covers ?? 1) : undefined,
       subtotal: tabSubtotal.toFixed(2),
       tax: tabTax.toFixed(2),
       discount: (isAddonKot ? 0 : tabManualDiscount).toFixed(2),
@@ -1262,7 +1263,7 @@ export default function POSPage() {
         const msg = isAddonKot ? tp("addonKotSent") : isDineIn ? tp("orderSentToKitchen") : tp("orderPlacedSuccess");
         toast({ title: msg });
         announceToScreenReader(msg);
-        if (isDineIn && data?.id) {
+        if (data?.id && !data?.queued) {
           dispatchKotForOrder(data.id, user?.tenant?.name || "Kitchen");
         }
       }
@@ -1389,9 +1390,11 @@ export default function POSPage() {
     mutationFn: async (groups: CartItem[][]) => {
       const nonEmpty = groups.filter(g => g.length > 0);
       const parentOrderId: string | undefined = activeTab?.heldOrderId || undefined;
+      const originalSentKeys = new Set(activeTab?.sentCartKeys ?? []);
       const results: { id: string }[] = [];
       for (const group of nonEmpty) {
-        const tabForGroup: OrderTab = { ...(activeTab!), id: makeid(), cart: group, sentCartKeys: [] };
+        const alreadySentInGroup = group.filter(c => originalSentKeys.has(c.cartKey)).map(c => c.cartKey);
+        const tabForGroup: OrderTab = { ...(activeTab!), id: makeid(), cart: group, sentCartKeys: alreadySentInGroup };
         const orderData = buildOrderData(undefined, tabForGroup);
         const payload = parentOrderId ? { ...orderData, parentOrderId } : orderData;
         const res = await apiRequest("POST", "/api/orders", payload);
@@ -2734,19 +2737,22 @@ export default function POSPage() {
                   updateActiveTab({ selectedTable: pendingTableId });
                   // PR-009: If this tab has a server order, PATCH it to update tableId
                   // so the TABLE_CHANGED audit event is logged server-side.
-                  if (activeTab?.heldOrderId && activeTab.heldOrderVersion != null) {
-                    const orderId = activeTab.heldOrderId;
-                    const version = activeTab.heldOrderVersion;
-                    apiRequest("PATCH", `/api/orders/${orderId}`, {
-                      tableId: pendingTableId,
-                      version,
+                  if (activeTab?.heldOrderId) {
+                    apiRequest("PATCH", `/api/orders/${activeTab.heldOrderId}/transfer-table`, {
+                      newTableId: pendingTableId,
                     }).then(async (res) => {
-                      try {
-                        const updated = await res.json();
-                        if (updated?.version != null) {
-                          updateActiveTab({ heldOrderVersion: updated.version });
+                      if (!res.ok) {
+                        toast({ title: "Table update failed", description: "Could not update the order's table on the server. Please try again.", variant: "destructive" });
+                        return;
+                      }
+                      apiRequest("GET", `/api/orders/${activeTab!.heldOrderId}`).then(async (r) => {
+                        if (r.ok) {
+                          const refreshed = await r.json();
+                          if (refreshed?.version != null) {
+                            updateActiveTab({ heldOrderVersion: refreshed.version });
+                          }
                         }
-                      } catch {}
+                      }).catch(() => {});
                     }).catch(() => {
                       toast({ title: "Table update failed", description: "Could not update the order's table on the server. Please try again.", variant: "destructive" });
                     });

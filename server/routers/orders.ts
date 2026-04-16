@@ -697,7 +697,7 @@ export function registerOrdersRoutes(app: Express): void {
         alertEngine.trigger('ALERT-02', { tenantId: user.tenantId, outletId: order.outletId ?? undefined, referenceId: order.id, referenceNumber: order.orderNumber ?? undefined, message: `VIP/Rush order #${order.orderNumber || order.id.slice(-6)}` }).catch(() => {});
       }
 
-      if ((order.status === "sent_to_kitchen" || order.status === "in_progress") && orderItems.length > 0) {
+      if ((order.status === "sent_to_kitchen" || order.status === "in_progress" || (order.status === "new" && order.channel === "pos")) && orderItems.length > 0) {
         const sentAt = new Date().toISOString();
         const tables = orderData.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
         const tableNum = orderData.tableId ? tables.find(t => t.id === orderData.tableId)?.number : undefined;
@@ -1278,7 +1278,7 @@ export function registerOrdersRoutes(app: Express): void {
       await storage.updateOrder(orderId, user.tenantId, { tableId: newTableId });
 
       // Free old table, occupy new table
-      if (oldTableId) await storage.updateTable(oldTableId, user.tenantId, { status: "available" });
+      if (oldTableId) await storage.updateTable(oldTableId, user.tenantId, { status: "free" });
       await storage.updateTable(newTableId, user.tenantId, { status: "occupied" });
 
       emitToTenant(user.tenantId, "order:table_transferred", { orderId, oldTableId, newTableId });
@@ -1313,7 +1313,7 @@ export function registerOrdersRoutes(app: Express): void {
       await storage.updateOrder(sourceOrderId, user.tenantId, { status: "cancelled" as OrderStatus, notes: "Merged into order #" + targetOrderId });
 
       // Free source table
-      if (sourceOrder.tableId) await storage.updateTable(sourceOrder.tableId, user.tenantId, { status: "available" });
+      if (sourceOrder.tableId) await storage.updateTable(sourceOrder.tableId, user.tenantId, { status: "free" });
 
       emitToTenant(user.tenantId, "order:tables_merged", { sourceOrderId, targetOrderId });
       auditLogFromReq(req, { action: "table_merge", entityType: "order", entityId: targetOrderId, before: { sourceOrderId }, after: { merged: true } });
