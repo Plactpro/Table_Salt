@@ -831,18 +831,14 @@ function buildWsUrl(qp: URLSearchParams): string {
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
   const base = `${proto}//${window.location.host}/ws`;
   const token = qp.get("token");
-  const tenantId = qp.get("tenantId");
   if (token) return `${base}?token=${encodeURIComponent(token)}`;
-  if (tenantId) return `${base}?tenantId=${encodeURIComponent(tenantId)}`;
-  return "";
+  return base;
 }
 
 function buildApiUrl(qp: URLSearchParams): string {
   const token = qp.get("token");
-  const tenantId = qp.get("tenantId");
   if (token) return `/api/kds/wall-tickets?token=${encodeURIComponent(token)}`;
-  if (tenantId) return `/api/kds/wall-tickets?tenantId=${encodeURIComponent(tenantId)}`;
-  return "";
+  return "/api/kds/wall-tickets";
 }
 
 const REFRESH_EVENTS = new Set([
@@ -1014,7 +1010,7 @@ export default function KdsWallScreen() {
   const [location] = useLocation();
   const qsRaw = location.includes("?") ? location.split("?")[1] : window.location.search.slice(1);
   const qp = new URLSearchParams(qsRaw);
-  const hasAccess = !!(qp.get("token") || qp.get("tenantId"));
+  const hasAccess = true;
   const apiUrl = buildApiUrl(qp);
   const wsUrl = buildWsUrl(qp);
   const showCounters = qp.get("counters") === "1";
@@ -1071,8 +1067,7 @@ export default function KdsWallScreen() {
   const fetchSettings = useCallback(async () => {
     try {
       const token = qp.get("token");
-      const tenantId = qp.get("tenantId");
-      const params = token ? `?token=${encodeURIComponent(token)}` : tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : "";
+      const params = token ? `?token=${encodeURIComponent(token)}` : "";
       const res = await fetch(`/api/kitchen-settings${params}`);
       if (res.ok) {
         const data = await res.json();
@@ -1205,7 +1200,7 @@ export default function KdsWallScreen() {
   if (!hasAccess) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center text-white text-2xl" data-testid="kds-wall-screen">
-        {tk("missingTenantId")}
+        {tk("unauthorized")}
       </div>
     );
   }

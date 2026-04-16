@@ -1636,7 +1636,7 @@ export default function KitchenDashboard() {
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => window.open(wallScreenUrl || `/kds/wall?tenantId=${tenant.id}`, "_blank")}
+                onClick={() => window.open(wallScreenUrl || "/kds/wall", "_blank")}
                 className="h-8 gap-1 border-blue-200 text-blue-600 hover:bg-blue-50"
                 data-testid="button-wall-screen"
               >
