@@ -18,6 +18,11 @@ if (process.env.NODE_ENV === "production" && !process.env.SESSION_SECRET) {
     process.exit(1);
 }
 
+if (process.env.NODE_ENV === "production" && !process.env.DEFAULT_STAFF_PASSWORD) {
+    console.error("[FATAL] DEFAULT_STAFF_PASSWORD env var is not set. Refusing to start in production.");
+    process.exit(1);
+}
+
 process.on('unhandledRejection', (reason, promise) => {
   console.error('[FATAL] Unhandled Rejection at:', promise, 'reason:', reason);
 });
