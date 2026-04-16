@@ -1,6 +1,7 @@
 import net from "net";
 import { pool } from "../db";
 import { emitToTenant } from "../realtime";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 import {
   buildKOT, buildBill, buildLabel, buildTestPage,
   buildKOTHtml, buildBillHtml,
@@ -791,7 +792,7 @@ export function startPrinterMonitor(tenantId: string, outletId: string): void {
   const key = `${tenantId}:${outletId}`;
   if (!pingIntervals.has(key)) {
     const interval = setInterval(() => {
-      pingAllPrinters(tenantId, outletId).catch(err => {
+      withJobLock(JOB_LOCK.PRINTER_MONITOR, async () => { await pingAllPrinters(tenantId, outletId); }).catch(err => {
         console.error(`[PrinterService] Ping monitor error for ${key}:`, err);
       });
     }, 2 * 60 * 1000);
@@ -800,7 +801,7 @@ export function startPrinterMonitor(tenantId: string, outletId: string): void {
 
   if (!retryIntervals.has(key)) {
     const interval = setInterval(() => {
-      retryFailedJobs(outletId, tenantId).catch(err => {
+      withJobLock(JOB_LOCK.PRINTER_MONITOR, async () => { await retryFailedJobs(outletId, tenantId); }).catch(err => {
         console.error(`[PrinterService] Retry worker error for ${key}:`, err);
       });
     }, 30 * 1000);

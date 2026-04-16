@@ -1,5 +1,6 @@
 import { db, pool } from "./db";
 import { sql } from "drizzle-orm";
+import { withJobLock, JOB_LOCK } from "./lib/job-lock";
 
 const SOFT_DELETE_TABLES = [
   "menu_items", "users", "customers", "suppliers", "inventory_items",
@@ -291,16 +292,14 @@ export function startRetentionScheduler() {
   if (cleanupInterval) return;
 
   // Run regular cleanup + recycle-bin purge on startup (after 30s delay)
-  setTimeout(async () => {
-    try {
+  setTimeout(() => {
+    withJobLock(JOB_LOCK.RETENTION_CLEANUP, async () => {
       const result = await runRetentionCleanup();
       if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0 || result.healthLogsDeleted > 0) {
         console.log(`[retention-cleanup] Startup run: deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers, ${result.healthLogsDeleted} health log entries`);
       }
       await purgeExpiredRecycleBinItems();
-    } catch (err) {
-      console.error("[retention-cleanup] Startup run error:", err);
-    }
+    }).catch(err => console.error("[retention-cleanup] Startup run error:", err));
   }, 30000);
 
   // Check nightly retention immediately on process start (in case we missed the 02:00 window)
@@ -308,17 +307,15 @@ export function startRetentionScheduler() {
 
   // PR-010: Check every 30 minutes if it's time for nightly retention (02:00–02:59 UTC)
   cleanupInterval = setInterval(() => {
-    // Run regular cleanup
-    runRetentionCleanup().then(result => {
+    withJobLock(JOB_LOCK.RETENTION_CLEANUP, async () => {
+      // Run regular cleanup
+      const result = await runRetentionCleanup();
       if (result.auditRowsDeleted > 0 || result.alertsDeleted > 0 || result.customersDeleted > 0 || result.healthLogsDeleted > 0) {
         console.log(`[retention-cleanup] Deleted ${result.auditRowsDeleted} audit rows, ${result.alertsDeleted} old alerts, ${result.customersDeleted} anonymized customers, ${result.healthLogsDeleted} health log entries`);
       }
-      return purgeExpiredRecycleBinItems();
-    }).catch(err => {
-      console.error("[retention-cleanup] Scheduler error:", err);
-    });
-
-    // Check if nightly job should run
-    checkAndRunNightlyRetention();
+      await purgeExpiredRecycleBinItems();
+      // Check if nightly job should run
+      checkAndRunNightlyRetention();
+    }).catch(err => console.error("[retention-cleanup] Scheduler error:", err));
   }, 30 * 60 * 1000);
 }

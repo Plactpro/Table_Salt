@@ -1,4 +1,5 @@
 import { pool } from "../db";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 
 async function getSmtpTransport() {
   const host = process.env.SMTP_HOST;
@@ -284,6 +285,9 @@ export function startShiftDigestScheduler(): void {
   };
 
   const intervalMs = 60 * 1000;
-  setInterval(check, intervalMs);
+  setInterval(() => {
+    withJobLock(JOB_LOCK.SHIFT_DIGEST, check).catch(err =>
+      console.error("[ShiftDigest] Lock/run error:", err));
+  }, intervalMs);
   console.log(`[ShiftDigest] Scheduler started — will fire daily at ${shiftEndHour}:00 per outlet timezone`);
 }

@@ -1,5 +1,6 @@
 import { pool } from "../db";
 import cron from "node-cron";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 
 let dailyReportTask: cron.ScheduledTask | null = null;
 
@@ -70,7 +71,10 @@ async function sendDailyOwnerReport(): Promise<void> {
 export function startDailyReportScheduler() {
   if (dailyReportTask) return;
   // Run at 8:00 AM every day
-  dailyReportTask = cron.schedule("0 8 * * *", () => { sendDailyOwnerReport(); });
+  dailyReportTask = cron.schedule("0 8 * * *", () => {
+    withJobLock(JOB_LOCK.DAILY_REPORT, sendDailyOwnerReport).catch(err =>
+      console.error("[DailyReport] Lock/run error:", err));
+  });
   console.log("[DailyReport] Scheduler started - runs daily at 8:00 AM");
 }
 

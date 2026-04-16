@@ -2,6 +2,7 @@ import { storage } from "../storage";
 import { emitToTenant } from "../realtime";
 import { pool } from "../db";
 import { createNotification } from "./prep-notifications";
+import { withJobLock, JOB_LOCK } from "../lib/job-lock";
 
 export interface AssignmentSettings {
   mode: "full_auto" | "hybrid" | "self_assign" | "manual";
@@ -573,8 +574,8 @@ let escalationTimer: ReturnType<typeof setInterval> | null = null;
 
 export function startEscalationChecker(): void {
   if (escalationTimer) return;
-  escalationTimer = setInterval(async () => {
-    try {
+  escalationTimer = setInterval(() => {
+    withJobLock(JOB_LOCK.CHEF_ESCALATION, async () => {
       const { rows: outlets } = await pool.query(
         `SELECT DISTINCT outlet_id, tenant_id FROM ticket_assignments WHERE status = 'unassigned' AND created_at < NOW() - INTERVAL '3 minutes'`
       );
@@ -594,8 +595,6 @@ export function startEscalationChecker(): void {
           });
         }
       }
-    } catch (err) {
-      console.error("[escalation-checker]", err);
-    }
+    }).catch(err => console.error("[escalation-checker]", err));
   }, 60_000);
 }
