@@ -2145,7 +2145,7 @@ export default function POSPage() {
           )}
         </div>
 
-        <div className="border-t p-4 space-y-3 shrink-0 bg-background overflow-y-auto max-h-[45vh]">
+        <div className="border-t p-4 space-y-3 shrink-0 bg-background">
           {applicableOffers.length > 0 && (
             <div className="space-y-1.5" data-testid="offers-section">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
