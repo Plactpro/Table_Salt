@@ -2,8 +2,8 @@
 
 | ID | Severity | Category | File | Line(s) | Description | Status |
 |----|----------|----------|------|---------|-------------|--------|
-| F-001 | Critical | Secrets | `.replit` | 54 | `ENCRYPTION_KEY` (64-char hex) hardcoded in `[userenv.shared]` and committed to repo | Open |
-| F-002 | High | Secrets | `.replit` | 55-56 | VAPID public + private keys hardcoded in `[userenv.shared]` and committed to repo | Open |
+| F-001 | Critical | Secrets | `.replit` | 54 | `ENCRYPTION_KEY` (64-char hex) hardcoded in `[userenv.shared]` and committed to repo | Mitigated (rotated 2026-04-15) |
+| F-002 | High | Secrets | `.replit` | 55-56 | VAPID public + private keys hardcoded in `[userenv.shared]` and committed to repo | Mitigated (rotated 2026-04-15) |
 | F-003 | High | Secrets | `.auth/owner.json` | 1-25 | Signed session cookie (`connect.sid`) + CSRF token for owner role committed to repo | Open |
 | F-004 | High | Secrets | `.auth/manager.json` | 1-22 | Signed session cookie (`connect.sid`) + CSRF token for manager role committed to repo | Open |
 | F-005 | High | Secrets | `.auth/kitchen.json` | 1-22 | Signed session cookie (`connect.sid`) + CSRF token for kitchen role committed to repo | Open |
@@ -138,7 +138,7 @@
 | F-129 | Low | Money | `shared/schema.ts` | (multiple) | Inconsistent precision across tables: orders/bills use decimal(10,2), cashSessions/purchaseOrders use decimal(12,2) — aggregation could overflow smaller precision | Open |
 | F-130 | Info | Money | (all monetary computation) | — | All monetary arithmetic uses JavaScript IEEE 754 doubles — standard `Math.round(x*100)/100` pattern applied but at inconsistent granularities across modules | Open |
 | | | | | | **--- Phase 5: Authorization Enforcement ---** | |
-| F-131 | Critical | Auth | `server/index.ts` | 212-223 | Circuit breaker reset registered WITHOUT auth — overrides the authenticated version in admin-routes.ts:2332 (Express matches first route) | Open |
+| F-131 | Critical | Auth | `server/index.ts` | 212-223 | Circuit breaker reset registered WITHOUT auth — overrides the authenticated version in admin-routes.ts:2332 (Express matches first route) | Fixed (2026-04-15) |
 | F-132 | High | Auth | `server/routers/prep-notifications.ts` | 16-133 | 8 prep-notification/assignment endpoints lack requireAuth middleware — bypass idle timeout enforcement | Open |
 | F-133 | Medium | Auth | `server/routers/restaurant-billing.ts` | 1367-1392 | PATCH /api/tip-settings: no requireAuth middleware, no role check — any session user can modify tip settings | Open |
 | F-134 | Medium | Auth | `server/routers/restaurant-billing.ts` | 1352-1363 | GET /api/tip-settings: no requireAuth middleware — bypasses idle timeout | Open |
@@ -225,8 +225,8 @@
 | F-215 | Medium | Data Integrity | `client/src/pages/modules/pos.tsx` | 1084,1127 | Fire-and-forget PATCH on order recall (`.catch(() => {})`) — server/client state diverges if request fails silently | Open |
 | F-216 | Low | Accessibility | `client/src/pages/modules/pos.tsx` + KDS pages | — | No `aria-live` regions for real-time order/KDS updates — screen readers won't announce incoming orders or status changes | Open |
 | | | | | | **--- Phase 9: Infrastructure & Deployment ---** | |
-| F-217 | Critical | Secrets | `.replit` + git history | commits e523dfa, 280047f | ENCRYPTION_KEY and VAPID_PRIVATE_KEY in git history since initial commits — recoverable even if removed from HEAD; key must be considered fully compromised | Open |
-| F-218 | High | Secrets | `.auth/*.json` + git history | commit 12fc00b | Session cookies for owner/manager/kitchen committed in git history; expires ~2026-04-20; valid if SESSION_SECRET unchanged | Open |
+| F-217 | Critical | Secrets | `.replit` + git history | commits e523dfa, 280047f | ENCRYPTION_KEY and VAPID_PRIVATE_KEY in git history since initial commits — recoverable even if removed from HEAD; key must be considered fully compromised | Mitigated (rotated 2026-04-15) |
+| F-218 | High | Secrets | `.auth/*.json` + git history | commit 12fc00b | Session cookies for owner/manager/kitchen committed in git history; expires ~2026-04-20; valid if SESSION_SECRET unchanged | Mitigated (rotated 2026-04-15) |
 | F-219 | High | Deploy | `Dockerfile` + `.dockerignore` | — | `.dockerignore` does not exclude `.env`, `.auth/`, or `.replit` — secrets could be copied into Docker build context/image layers | Open |
 | F-220 | High | Process | (absent) | — | No CI/CD pipeline, no automated tests on deploy, no SAST/DAST scanning, no dependency vulnerability audit (`npm audit`) — all code goes to production without automated quality gates | Open |
 | F-221 | High | Logging | `server/lib/query-logger.ts` | 51-53 | Slow query logger dumps query params (first 200 chars) to console — can contain PII (names, emails, phone numbers in WHERE clauses) | Open |

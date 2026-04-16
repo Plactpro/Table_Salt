@@ -208,20 +208,6 @@ app.get("/api/health", async (_req: Request, res: Response) => {
 });
 
 // Rate anomaly detection — non-blocking sampler for authenticated GET requests
-// CB-FIX-3: Admin circuit breaker reset endpoint
-app.post('/api/admin/circuit-breakers/reset', async (_req: Request, res: Response) => {
-  try {
-    const { circuitBreakerRegistry } = await import('./lib/circuit-breaker');
-    for (const [name, breaker] of circuitBreakerRegistry.getAll()) {
-      breaker.forceReset();
-    }
-    res.json({ success: true, message: 'All circuit breakers reset to CLOSED' });
-  } catch (err: any) {
-    console.error('[CB-Reset]', err.message);
-    res.status(500).json({ error: 'Failed to reset circuit breakers' });
-  }
-});
-
 app.use((req, _res, next) => {
   const u = (req as any).user;
   if (u && req.method === "GET" && req.path.startsWith("/api")) {
