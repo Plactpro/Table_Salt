@@ -18,7 +18,7 @@ export async function calculateParkingCharge(
   outletId: string,
   tenantId: string
 ): Promise<ParkingChargeResult> {
-  const ticket = await storage.getValetTicket(ticketId);
+  const ticket = await storage.getValetTicket(ticketId, tenantId);
   if (!ticket) throw new Error("Valet ticket not found");
 
   const exitTime = ticket.exitTime ?? new Date();
@@ -61,7 +61,7 @@ export async function calculateParkingCharge(
     const hoursCharged = chargeableMinutes / 60;
     grossCharge = Math.ceil(hoursCharged) * rateAmount;
   } else if (rateType === "SLAB") {
-    const slabs = await storage.getParkingRateSlabs(rate.id);
+    const slabs = await storage.getParkingRateSlabs(rate.id, tenantId);
     slabs.sort((a, b) => a.fromMinutes - b.fromMinutes);
     for (const slab of slabs) {
       if (chargeableMinutes >= slab.fromMinutes) {
@@ -112,7 +112,7 @@ export async function applyParkingChargeToBill(
   ticketId: string,
   tenantId: string
 ): Promise<ParkingChargeResult | null> {
-  const ticket = await storage.getValetTicket(ticketId);
+  const ticket = await storage.getValetTicket(ticketId, tenantId);
   if (!ticket) return null;
   if (ticket.tenantId !== tenantId) return null;
   if (ticket.chargeAddedToBill) return null;

@@ -814,14 +814,14 @@ export interface IStorage {
   createParkingRate(data: InsertParkingRate): Promise<ParkingRate>;
   updateParkingRate(id: string, tenantId: string, data: Partial<Pick<InsertParkingRate, "vehicleType" | "rateType" | "rateAmount" | "dailyMaxCharge" | "taxRate">>): Promise<ParkingRate | undefined>;
   deleteParkingRate(id: string, tenantId: string): Promise<void>;
-  getParkingRateSlabs(rateId: string): Promise<ParkingRateSlab[]>;
+  getParkingRateSlabs(rateId: string, tenantId: string): Promise<ParkingRateSlab[]>;
   createParkingRateSlab(data: InsertParkingRateSlab): Promise<ParkingRateSlab>;
-  deleteRateSlabsByRate(rateId: string): Promise<void>;
+  deleteRateSlabsByRate(rateId: string, tenantId: string): Promise<void>;
   getValetStaff(outletId: string, tenantId: string): Promise<ValetStaff[]>;
   createValetStaff(data: InsertValetStaff): Promise<ValetStaff>;
   updateValetStaff(id: string, tenantId: string, data: Partial<InsertValetStaff>): Promise<ValetStaff | undefined>;
   createValetTicket(data: InsertValetTicket): Promise<ValetTicket>;
-  getValetTicket(id: string): Promise<ValetTicket | undefined>;
+  getValetTicket(id: string, tenantId: string): Promise<ValetTicket | undefined>;
   getValetTickets(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetTicket[]>;
   updateValetTicket(id: string, tenantId: string, data: Partial<InsertValetTicket>): Promise<ValetTicket | undefined>;
   appendValetTicketEvent(ticketId: string, tenantId: string, event: { eventType: string; performedBy?: string; performedByName?: string; notes?: string }): Promise<void>;
@@ -4599,8 +4599,16 @@ export class DatabaseStorage implements IStorage {
     await pool.query(`UPDATE parking_rates SET is_active = false WHERE id=$1 AND tenant_id=$2`, [id, tenantId]);
   }
 
-  async getParkingRateSlabs(rateId: string): Promise<ParkingRateSlab[]> {
-    const { rows } = await pool.query(`SELECT * FROM parking_rate_slabs WHERE rate_id = $1 ORDER BY from_minutes`, [rateId]);
+  async getParkingRateSlabs(rateId: string, tenantId: string): Promise<ParkingRateSlab[]> {
+    assertTenantId(tenantId, "getParkingRateSlabs");
+    // parking_rate_slabs has no tenant_id column — verify via parent parking_rates
+    const { rows } = await pool.query(
+      `SELECT prs.* FROM parking_rate_slabs prs
+       JOIN parking_rates pr ON pr.id = prs.rate_id
+       WHERE prs.rate_id = $1 AND pr.tenant_id = $2
+       ORDER BY prs.from_minutes`,
+      [rateId, tenantId]
+    );
     return rows.map((r: any) => this._mapParkingRateSlab(r));
   }
   async createParkingRateSlab(data: InsertParkingRateSlab): Promise<ParkingRateSlab> {
@@ -4610,8 +4618,14 @@ export class DatabaseStorage implements IStorage {
     );
     return this._mapParkingRateSlab(rows[0]);
   }
-  async deleteRateSlabsByRate(rateId: string): Promise<void> {
-    await pool.query(`DELETE FROM parking_rate_slabs WHERE rate_id=$1`, [rateId]);
+  async deleteRateSlabsByRate(rateId: string, tenantId: string): Promise<void> {
+    assertTenantId(tenantId, "deleteRateSlabsByRate");
+    // parking_rate_slabs has no tenant_id — verify via parent parking_rates
+    await pool.query(
+      `DELETE FROM parking_rate_slabs WHERE rate_id = $1
+       AND EXISTS (SELECT 1 FROM parking_rates WHERE id = $1 AND tenant_id = $2)`,
+      [rateId, tenantId]
+    );
   }
 
   async getValetStaff(outletId: string, tenantId: string): Promise<ValetStaff[]> {
@@ -4646,8 +4660,9 @@ export class DatabaseStorage implements IStorage {
     );
     return this._mapValetTicket(rows[0]);
   }
-  async getValetTicket(id: string): Promise<ValetTicket | undefined> {
-    const { rows } = await pool.query(`SELECT * FROM valet_tickets WHERE id=$1 LIMIT 1`, [id]);
+  async getValetTicket(id: string, tenantId: string): Promise<ValetTicket | undefined> {
+    assertTenantId(tenantId, "getValetTicket");
+    const { rows } = await pool.query(`SELECT * FROM valet_tickets WHERE id=$1 AND tenant_id=$2 LIMIT 1`, [id, tenantId]);
     return rows[0] ? this._mapValetTicket(rows[0]) : undefined;
   }
   async getValetTickets(outletId: string, tenantId: string, opts?: { status?: string | string[] }): Promise<ValetTicket[]> {

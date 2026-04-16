@@ -84,7 +84,7 @@
 | F-078 | Medium | IDOR | `server/storage.ts` | 932-935 | `getUser()` has no tenant_id — timing side-channel in auth.ts and permissions.ts (all callers do post-fetch check) | Fixed (2026-04-15, Batch 6) — getUser now requires tenantId; getUserUnchecked for passport/WS/reset |
 | F-079 | Medium | IDOR | `server/storage.ts` | 958-961 | `getOutlet()` has no tenant_id — timing side-channel (callers do post-fetch check) | Fixed (2026-04-15, Batch 7) — getOutlet now requires tenantId; getOutletUnchecked for guest/kiosk/public |
 | F-080 | Medium | IDOR | `server/storage.ts` | 3724-3727 | `getCashSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Fixed (2026-04-15, Batch 5) |
-| F-081 | Medium | IDOR | `server/storage.ts` | 4692-4695 | `getValetTicket()` has no tenant_id — timing side-channel (callers do post-fetch check) | Open |
+| F-081 | Medium | IDOR | `server/storage.ts` | 4692-4695 | `getValetTicket()` has no tenant_id — timing side-channel (callers do post-fetch check) | Fixed (2026-04-15, Batch 8) |
 | F-082 | Medium | IDOR | `server/storage.ts` | 2742-2744 | `getPosSession()` has no tenant_id — timing side-channel (callers do post-fetch check) | Fixed (2026-04-15, Batch 4) |
 | F-083 | Medium | IDOR | `server/storage.ts` | 3884-3888 | `getOutletCurrencySettings()` and `updateOutletCurrencySettings()` have no tenant_id — cross-tenant read/write of outlet currency config | Fixed (2026-04-15, Batch 2) |
 | F-084 | Medium | IDOR | `server/storage.ts` | 2495-2497,2507,2519,2523 | Guest session/cart functions have no tenant_id — UUIDs provide obscurity | Open |

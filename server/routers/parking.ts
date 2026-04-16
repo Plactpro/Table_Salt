@@ -122,7 +122,7 @@ export function registerParkingRoutes(app: Express): void {
       const rates = await storage.getParkingRates(req.params.outletId, user.tenantId);
       const withSlabs = await Promise.all(rates.map(async rate => ({
         ...rate,
-        slabs: await storage.getParkingRateSlabs(rate.id),
+        slabs: await storage.getParkingRateSlabs(rate.id, user.tenantId),
       })));
       res.json(withSlabs);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
@@ -155,7 +155,7 @@ export function registerParkingRoutes(app: Express): void {
       const rate = await storage.updateParkingRate(req.params.rateId, user.tenantId, rateData);
       if (!rate) return res.status(404).json({ message: "Rate not found" });
       if (Array.isArray(slabs)) {
-        await storage.deleteRateSlabsByRate(rate.id);
+        await storage.deleteRateSlabsByRate(rate.id, user.tenantId);
         const createdSlabs = [];
         for (const slab of slabs) {
           const s = await storage.createParkingRateSlab({ ...slab, rateId: rate.id });
@@ -163,7 +163,7 @@ export function registerParkingRoutes(app: Express): void {
         }
         return res.json({ ...rate, slabs: createdSlabs });
       }
-      const existingSlabs = await storage.getParkingRateSlabs(rate.id);
+      const existingSlabs = await storage.getParkingRateSlabs(rate.id, user.tenantId);
       res.json({ ...rate, slabs: existingSlabs });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -335,7 +335,7 @@ export function registerParkingRoutes(app: Express): void {
   app.patch("/api/parking/tickets/:id/status", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
 
@@ -458,7 +458,7 @@ export function registerParkingRoutes(app: Express): void {
       if (!outletId) return res.status(400).json({ message: "outletId is required" });
 
       if (req.body.ticketId) {
-        const ticketCheck = await storage.getValetTicket(req.body.ticketId);
+        const ticketCheck = await storage.getValetTicket(req.body.ticketId, user.tenantId);
         if (!ticketCheck || ticketCheck.tenantId !== user.tenantId) {
           return res.status(400).json({ message: "Ticket not found or does not belong to this tenant" });
         }
@@ -469,7 +469,7 @@ export function registerParkingRoutes(app: Express): void {
 
       // Determine priority and auto-assign queue_position
       const requestedPriority = req.body.priority || "NORMAL";
-      const ticketForPriority = req.body.ticketId ? await storage.getValetTicket(req.body.ticketId) : null;
+      const ticketForPriority = req.body.ticketId ? await storage.getValetTicket(req.body.ticketId, user.tenantId) : null;
       const isVipRequest = requestedPriority === "VIP" || ticketForPriority?.isVip === true;
       const finalPriority = isVipRequest ? "VIP" : requestedPriority;
       // VIP requests always queue at position 1 (front of the line).
@@ -498,7 +498,7 @@ export function registerParkingRoutes(app: Express): void {
 
       emitToTenant(user.tenantId, "parking:retrieval_requested", { request });
 
-      const ticket = await storage.getValetTicket(request.ticketId);
+      const ticket = await storage.getValetTicket(request.ticketId, user.tenantId);
       if (ticket) {
         await storage.updateValetTicket(ticket.id, user.tenantId, { status: "requested" });
         await storage.appendValetTicketEvent(ticket.id, user.tenantId, {
@@ -683,7 +683,7 @@ export function registerParkingRoutes(app: Express): void {
   app.patch("/api/parking/tickets/:id/condition", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const { conditionReport, isExitCheck } = req.body;
@@ -1144,7 +1144,7 @@ export function registerParkingRoutes(app: Express): void {
   app.get("/api/parking/charge-preview/:ticketId", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.ticketId);
+      const ticket = await storage.getValetTicket(req.params.ticketId, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const result = await calculateParkingCharge(ticket.id, ticket.outletId, user.tenantId);
@@ -1179,7 +1179,7 @@ export function registerParkingRoutes(app: Express): void {
   app.post("/api/parking/apply-charge/:ticketId", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.ticketId);
+      const ticket = await storage.getValetTicket(req.params.ticketId, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (!ticket.billId) return res.status(400).json({ message: "Ticket is not linked to a bill" });
@@ -1444,7 +1444,7 @@ export function registerParkingRoutes(app: Express): void {
   app.patch("/api/parking/tickets/:id/key-location", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const { keyLocation, keyType } = req.body;
@@ -1608,7 +1608,7 @@ export function registerParkingRoutes(app: Express): void {
   // PATCH /api/parking/tickets/:id/overnight-checkout
   app.patch("/api/parking/tickets/:id/overnight-checkout", requireAuth, async (req, res) => {    try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const { keyLocation, keyType } = req.body;
@@ -1627,7 +1627,7 @@ export function registerParkingRoutes(app: Express): void {
   app.patch("/api/parking/tickets/:id/vip", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const { isVip, vipNotes } = req.body;
@@ -1639,7 +1639,7 @@ export function registerParkingRoutes(app: Express): void {
   app.patch("/api/parking/tickets/:id/overnight", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const { isOvernight } = req.body;
@@ -1651,7 +1651,7 @@ export function registerParkingRoutes(app: Express): void {
   app.patch("/api/parking/tickets/:id/tip", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       const { tipAmount, staffAssignmentId } = req.body;
@@ -1685,7 +1685,7 @@ export function registerParkingRoutes(app: Express): void {
           );
         }
       }
-      const updated = await storage.getValetTicket(req.params.id);
+      const updated = await storage.getValetTicket(req.params.id, user.tenantId);
       res.json(updated);
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
@@ -1757,7 +1757,7 @@ export function registerParkingRoutes(app: Express): void {
   app.patch("/api/parking/tickets/:id/overnight-checkout", requireAuth, async (req, res) => {
     try {
       const user = req.user as any;
-      const ticket = await storage.getValetTicket(req.params.id);
+      const ticket = await storage.getValetTicket(req.params.id, user.tenantId);
       if (!ticket) return res.status(404).json({ message: "Ticket not found" });
       if (ticket.tenantId !== user.tenantId) return res.status(403).json({ message: "Forbidden" });
       if (ticket.status === "completed") return res.status(400).json({ message: "Ticket already completed" });
