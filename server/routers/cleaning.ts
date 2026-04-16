@@ -123,7 +123,7 @@ export function registerCleaningRoutes(app: Express): void {
       const template = await storage.getCleaningTemplate(templateId);
       if (!template || template.tenantId !== user.tenantId) return res.status(404).json({ message: "Template not found" });
       if (assignedTo) {
-        const assignee = await storage.getUser(assignedTo);
+        const assignee = await storage.getUser(assignedTo, user.tenantId);
         if (!assignee || assignee.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid assignee" });
       }
       const schedule = await storage.createCleaningSchedule({ tenantId: user.tenantId, templateId, date: new Date(date), assignedTo: assignedTo || null, status: "pending" });
@@ -142,7 +142,7 @@ export function registerCleaningRoutes(app: Express): void {
         if (allowed[key]) updates[key] = req.body[key];
       }
       if (updates.assignedTo) {
-        const assignee = await storage.getUser(updates.assignedTo);
+        const assignee = await storage.getUser(updates.assignedTo, user.tenantId);
         if (!assignee || assignee.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid assignee" });
       }
       const updated = await storage.updateCleaningSchedule(req.params.id, user.tenantId, updates);
@@ -255,7 +255,7 @@ export function registerCleaningRoutes(app: Express): void {
       const template = await storage.getAuditTemplate(templateId);
       if (!template || template.tenantId !== user.tenantId) return res.status(404).json({ message: "Template not found" });
       if (assignedTo) {
-        const assignee = await storage.getUser(assignedTo);
+        const assignee = await storage.getUser(assignedTo, user.tenantId);
         if (!assignee || assignee.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid assignee" });
       }
       const items = await storage.getAuditTemplateItems(templateId);
@@ -329,7 +329,7 @@ export function registerCleaningRoutes(app: Express): void {
       if (!title || !severity) return res.status(400).json({ message: "title and severity required" });
       if (!["critical", "high", "medium", "low"].includes(severity)) return res.status(400).json({ message: "Invalid severity" });
       if (assignedTo) {
-        const assignee = await storage.getUser(assignedTo);
+        const assignee = await storage.getUser(assignedTo, user.tenantId);
         if (!assignee || assignee.tenantId !== user.tenantId) return res.status(400).json({ message: "Invalid assignee" });
       }
       const issue = await storage.createAuditIssue({ tenantId: user.tenantId, title, description: description || null, severity, scheduleId: scheduleId || null, itemId: itemId || null, assignedTo: assignedTo || null, dueDate: dueDate ? new Date(dueDate) : null, status: "open" });

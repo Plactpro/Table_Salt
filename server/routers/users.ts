@@ -83,7 +83,7 @@ export function registerUsersRoutes(app: Express): void {
   app.patch("/api/users/:id", requireRole("owner", "manager"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
-      const target = await storage.getUser(req.params.id);
+      const target = await storage.getUser(req.params.id, user.tenantId);
       if (!target || target.tenantId !== user.tenantId) {
         return res.status(404).json({ message: "User not found" });
       }

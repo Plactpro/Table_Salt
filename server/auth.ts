@@ -189,7 +189,7 @@ export function setupAuth(app: Express) {
 
   passport.deserializeUser(async (id: string, done) => {
     try {
-      const user = await storage.getUser(id);
+      const user = await storage.getUserUnchecked(id);
       if (user) {
         // PR-009: Attach tenant subscription grace status to the user object at deserialization.
         // Grace eligibility = subscription expired within 24h AND (open orders OR active shift exists).

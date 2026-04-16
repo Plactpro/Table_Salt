@@ -98,7 +98,7 @@ async function getTenantFromRequest(req: IncomingMessage): Promise<{ tenantId: s
     const userId = sess?.passport?.user;
     if (!userId) return null;
 
-    const user = await storage.getUser(userId);
+    const user = await storage.getUserUnchecked(userId);
     if (!user?.tenantId) return null;
     return { tenantId: user.tenantId, role: user.role };
   } catch {

@@ -321,7 +321,7 @@ export function registerPermissionsRoutes(app: Express): void {
   app.patch("/api/users/:id/role", requireRole("owner"), requirePermission("manage_users"), requireFreshSession, async (req, res) => {
     try {
       const user = req.user as any;
-      const targetUser = await storage.getUser(req.params.id);
+      const targetUser = await storage.getUser(req.params.id, user.tenantId);
       if (!targetUser || targetUser.tenantId !== user.tenantId) return res.status(404).json({ message: "User not found" });
       const oldRole = targetUser.role;
       const updated = await storage.updateUser(req.params.id, { role: req.body.role });
