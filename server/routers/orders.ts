@@ -14,7 +14,7 @@ import { getSecuritySettings, verifySupervisorOverride } from "./_shared";
 import { returnResourcesFromTable } from "../services/resource-service";
 import { isStripeConfigured, getUncachableStripeClient } from "../stripe";
 import { filterOrderItemEditable } from "../lib/order-item-fields";
-import { orders as ordersTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
+import { orders as ordersTable, orderItems as orderItemsTable, inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, type OrderStatus } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { deductRecipeInventoryForOrder } from "../lib/deduct-recipe-inventory";
 import { autoAssignTicket } from "../services/chef-assignment";
@@ -1264,18 +1264,18 @@ export function registerOrdersRoutes(app: Express): void {
   app.patch("/api/orders/:id/transfer-table", requireAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const orderId = parseInt(req.params.id);
+      const orderId = req.params.id;
       const { newTableId } = req.body;
       if (!newTableId) return res.status(400).json({ message: "newTableId required" });
 
-      // Get current order
-      const [order] = await db.select().from(require("../../shared/schema").orders).where(eq(require("../../shared/schema").orders.id, orderId));
+      // Get current order (tenant-scoped)
+      const order = await storage.getOrder(orderId, user.tenantId);
       if (!order) return res.status(404).json({ message: "Order not found" });
 
       const oldTableId = order.tableId;
 
-      // Update order table
-      await db.update(require("../../shared/schema").orders).set({ tableId: newTableId }).where(eq(require("../../shared/schema").orders.id, orderId));
+      // Update order table (tenant-scoped)
+      await storage.updateOrder(orderId, user.tenantId, { tableId: newTableId });
 
       // Free old table, occupy new table
       if (oldTableId) await storage.updateTable(oldTableId, user.tenantId, { status: "available" });
@@ -1298,21 +1298,22 @@ export function registerOrdersRoutes(app: Express): void {
       const { sourceOrderId, targetOrderId } = req.body;
       if (!sourceOrderId || !targetOrderId) return res.status(400).json({ message: "sourceOrderId and targetOrderId required" });
 
-      // Move all items from source to target
-      await db.update(require("../../shared/schema").orderItems)
+      // Verify both orders belong to this tenant
+      const sourceOrder = await storage.getOrder(sourceOrderId, user.tenantId);
+      if (!sourceOrder) return res.status(404).json({ message: "Source order not found" });
+      const targetOrder = await storage.getOrder(targetOrderId, user.tenantId);
+      if (!targetOrder) return res.status(404).json({ message: "Target order not found" });
+
+      // Move all items from source to target (tenant-scoped)
+      await db.update(orderItemsTable)
         .set({ orderId: targetOrderId })
-        .where(eq(require("../../shared/schema").orderItems.orderId, sourceOrderId));
+        .where(and(eq(orderItemsTable.orderId, sourceOrderId), eq(orderItemsTable.tenantId, user.tenantId)));
 
-      // Get source order to free its table
-      const [sourceOrder] = await db.select().from(require("../../shared/schema").orders).where(eq(require("../../shared/schema").orders.id, sourceOrderId));
-
-      // Mark source order as merged/cancelled
-      await db.update(require("../../shared/schema").orders)
-        .set({ status: "cancelled", notes: "Merged into order #" + targetOrderId })
-        .where(eq(require("../../shared/schema").orders.id, sourceOrderId));
+      // Mark source order as merged/cancelled (tenant-scoped)
+      await storage.updateOrder(sourceOrderId, user.tenantId, { status: "cancelled" as OrderStatus, notes: "Merged into order #" + targetOrderId });
 
       // Free source table
-      if (sourceOrder?.tableId) await storage.updateTable(sourceOrder.tableId, user.tenantId, { status: "available" });
+      if (sourceOrder.tableId) await storage.updateTable(sourceOrder.tableId, user.tenantId, { status: "available" });
 
       emitToTenant(user.tenantId, "order:tables_merged", { sourceOrderId, targetOrderId });
       auditLogFromReq(req, { action: "table_merge", entityType: "order", entityId: targetOrderId, before: { sourceOrderId }, after: { merged: true } });
@@ -1328,18 +1329,20 @@ export function registerOrdersRoutes(app: Express): void {
   app.post("/api/orders/:id/split-bill", requireAuth, async (req, res) => {
     try {
       const user = (req as any).user;
-      const orderId = parseInt(req.params.id);
+      const orderId = req.params.id;
       const { splits } = req.body; // Array of { guestName: string, itemIds: number[] }
       if (!splits || !Array.isArray(splits)) return res.status(400).json({ message: "splits array required" });
 
+      // Verify order belongs to this tenant
+      const order = await storage.getOrder(orderId, user.tenantId);
+      if (!order) return res.status(404).json({ message: "Order not found" });
+
+      // Get all items for this order (tenant-scoped), then filter per split
+      const allItems = await storage.getOrderItemsByOrder(orderId, user.tenantId);
+
       const results = [];
       for (const split of splits) {
-        // Get items for this split
-        const items = await db.select().from(require("../../shared/schema").orderItems)
-          .where(and(
-            eq(require("../../shared/schema").orderItems.orderId, orderId),
-            inArray(require("../../shared/schema").orderItems.id, split.itemIds)
-          ));
+        const items = allItems.filter((i: any) => split.itemIds.includes(i.id));
 
         const splitTotal = items.reduce((sum: number, item: any) => {
           const lineTotal = parseFloat(item.price) * item.quantity;
