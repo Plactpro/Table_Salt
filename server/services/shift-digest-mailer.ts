@@ -181,10 +181,7 @@ async function sendDigestForTenant(tenantId: string, outletId: string | null, ou
   const from = process.env.SMTP_FROM || "noreply@tablesalt.app";
 
   if (!transport) {
-    console.log(`[ShiftDigest] SMTP not configured — logging digest to console`);
-    console.log(`[ShiftDigest] Subject: ${subject}`);
-    console.log(`[ShiftDigest] Recipients: ${emails.join(", ") || "(none)"}`);
-    console.log(`[ShiftDigest]\n${text}`);
+    console.log(`[ShiftDigest] SMTP not configured — skipping delivery (${emails.length} recipients)`);
     return;
   }
 
@@ -202,9 +199,9 @@ async function sendDigestForTenant(tenantId: string, outletId: string | null, ou
         text,
         html,
       });
-      console.log(`[ShiftDigest] Sent to ${email}`);
+      console.log(`[ShiftDigest] Sent digest for tenant ${tenantId}`);
     } catch (err: any) {
-      console.error(`[ShiftDigest] Failed to send to ${email}: ${err.message}`);
+      console.error(`[ShiftDigest] Failed to send digest for tenant ${tenantId}: ${err.message}`);
     }
   }
 }

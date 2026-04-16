@@ -291,7 +291,7 @@ export function registerTablesRoutes(app: Express): void {
     const entry = (await storage.getWaitlistByTenant(user.tenantId)).find(w => w.id === req.params.id);
     if (!entry) return res.status(404).json({ message: "Entry not found" });
     await storage.updateWaitlistEntry(req.params.id, user.tenantId, { notificationSent: true });
-    console.log(`[Notification] Channel: ${channel || "sms"}, Guest: ${entry.customerName}, Phone: ${entry.customerPhone}, Message: ${message || "Your table is ready"}`);
+    console.log(`[Notification] Channel: ${channel || "sms"}, WaitlistId: ${req.params.id}`);
         if (entry.customerPhone) sendSms(entry.customerPhone, message || "Your table is ready", user.tenantId).catch(() => {});
     res.json({ sent: true, channel: channel || "sms", to: entry.customerPhone, message: message || "Your table is ready" });
   });

@@ -737,7 +737,7 @@ export function registerServiceCoordinationRoutes(app: Express): void {
         return res.status(401).json({ error: "Unauthorized" });
       }
       const payload = req.body;
-      console.log("[Webhook/Zomato] Received payload:", JSON.stringify(payload).slice(0, 500));
+      console.log("[Webhook/Zomato] Received payload (keys:", Object.keys(payload).join(", ") + ")");
       res.json({ received: true, orderId: null, message: "Zomato webhook stub — payload logged" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -753,7 +753,7 @@ export function registerServiceCoordinationRoutes(app: Express): void {
         return res.status(401).json({ error: "Unauthorized" });
       }
       const payload = req.body;
-      console.log("[Webhook/Swiggy] Received payload:", JSON.stringify(payload).slice(0, 500));
+      console.log("[Webhook/Swiggy] Received payload (keys:", Object.keys(payload).join(", ") + ")");
       res.json({ received: true, orderId: null, message: "Swiggy webhook stub — payload logged" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -769,7 +769,7 @@ export function registerServiceCoordinationRoutes(app: Express): void {
         return res.status(401).json({ error: "Unauthorized" });
       }
       const payload = req.body;
-      console.log("[Webhook/UberEats] Received payload:", JSON.stringify(payload).slice(0, 500));
+      console.log("[Webhook/UberEats] Received payload (keys:", Object.keys(payload).join(", ") + ")");
       res.json({ received: true, orderId: null, message: "UberEats webhook stub — payload logged" });
     } catch (err: any) {
       res.status(500).json({ message: err.message });

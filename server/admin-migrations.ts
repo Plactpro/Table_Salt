@@ -3017,7 +3017,12 @@ export async function runTask108Migrations(): Promise<void> {
   );
   if (tenantRow.rows.length > 0) {
     const tenantId = tenantRow.rows[0].id;
-    const pw = await hashPassword("demo123");
+    const defaultPw = process.env.DEFAULT_STAFF_PASSWORD;
+    if (!defaultPw) {
+      console.warn("[Migration] Skipping delivery agent seed — DEFAULT_STAFF_PASSWORD not set");
+      return;
+    }
+    const pw = await hashPassword(defaultPw);
     for (const agent of deliveryAgents) {
       const exists = await pool.query(
         `SELECT 1 FROM users WHERE username = $1`,
