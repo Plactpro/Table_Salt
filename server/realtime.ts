@@ -180,9 +180,12 @@ export function setupWebSocket(httpServer: HttpServer) {
       const qs = req.url.includes("?") ? req.url.slice(req.url.indexOf("?") + 1) : "";
       const qp = new URLSearchParams(qs);
       const wallToken = qp.get("token");
-      const rawId = qp.get("tenantId");
       const qrToken = qp.get("qrToken");
 
+      // F-016 fix: removed ?tenantId= path — it required no auth and granted
+      // full event stream access to any party with a tenant UUID.
+      // Only authenticated paths remain: session cookie, ?token= (wall screen),
+      // and ?qrToken= (guest QR).
       if (wallToken) {
         const tenant = await storage.getTenantByWallScreenToken(wallToken).catch(() => null);
         if (tenant) resolvedTenantId = tenant.id;
@@ -192,11 +195,6 @@ export function setupWebSocket(httpServer: HttpServer) {
           resolvedTenantId = tableToken.tenantId;
           guestTableId = tableToken.tableId;
           isGuest = true;
-        }
-      } else if (rawId) {
-        const tenant = await storage.getTenant(rawId).catch(() => null);
-        if (tenant) {
-          resolvedTenantId = rawId;
         }
       }
     }
