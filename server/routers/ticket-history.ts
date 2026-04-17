@@ -21,7 +21,7 @@ function getUser(req: Request): AuthUser {
   return req.user as AuthUser;
 }
 
-const VOID_REQUEST_ROLES = ["waiter", "cashier", "manager", "outlet_manager", "supervisor", "owner", "super_admin", "hq_admin"];
+const VOID_REQUEST_ROLES = ["waiter", "cashier", "kitchen", "manager", "outlet_manager", "supervisor", "owner", "super_admin", "hq_admin"];
 const VOID_APPROVE_ROLES = ["manager", "outlet_manager", "supervisor", "owner", "super_admin", "hq_admin"];
 const REFIRE_ROLES = ["waiter", "manager", "outlet_manager", "supervisor", "owner", "super_admin", "hq_admin"];
 const KOT_REPRINT_ROLES = ["kitchen", "waiter", "manager", "outlet_manager", "supervisor", "owner", "super_admin", "hq_admin"];
@@ -769,9 +769,10 @@ export function registerTicketHistoryRoutes(app: Express) {
       alertEngine.trigger('ALERT-09', { tenantId: user.tenantId, outletId: order.outlet_id ?? undefined, referenceId: voidRequest.id, referenceNumber: order.order_number ?? undefined, message: `Void request: ${item.name} — ${user.name}` }).catch(() => {});
 
       return res.status(201).json(voidRequest);
-    } catch (err) {
-      console.error("[ticket-history] void-request error:", err);
-      return res.status(500).json({ message: "Internal server error" });
+    } catch (err: any) {
+      console.error("[ticket-history] void-request error:", err?.message, err?.stack);
+      const detail = err?.message?.includes("does not exist") ? " Table may not be migrated." : "";
+      return res.status(500).json({ message: `Void request failed.${detail}` });
     }
   });
 

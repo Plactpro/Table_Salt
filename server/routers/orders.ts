@@ -605,6 +605,22 @@ export function registerOrdersRoutes(app: Express): void {
         }
         throw dbErr;
       }
+
+      // FIX 3: Generate order number atomically — ORD-YYYYMMDD-NNN
+      try {
+        const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const prefix = tenant?.invoicePrefix || "ORD";
+        const { rows: seqRows } = await pool.query(
+          `SELECT COUNT(*)::int + 1 AS seq FROM orders WHERE tenant_id = $1 AND DATE(created_at) = CURRENT_DATE AND order_number IS NOT NULL`,
+          [user.tenantId]
+        );
+        const seq = String(seqRows[0]?.seq || 1).padStart(3, "0");
+        const orderNumber = `${prefix}-${dateStr}-${seq}`;
+        await pool.query(`UPDATE orders SET order_number = $1 WHERE id = $2`, [orderNumber, order.id]);
+        order = { ...order, orderNumber };
+      } catch (numErr) {
+        console.error("[orders] order_number generation failed (non-fatal):", numErr);
+      }
       if (items && items.length > 0) {
         for (const item of items) {
           const isComboItem = item.isCombo === true || item.menuItemId?.startsWith("combo-") || false;
@@ -773,7 +789,32 @@ export function registerOrdersRoutes(app: Express): void {
       if (order.status === "sent_to_kitchen" || order.status === "in_progress") {
         fireKdsArrival(user.tenantId, order.id, user.id, user.name || user.username || "System");
       }
-      const orderResponse = { ...order, items: orderItems };
+      // FIX 2: Auto-create bill for takeaway/delivery when paymentMethod is provided
+      let autoBill = null;
+      if (orderData.paymentMethod && order.status === "new") {
+        try {
+          const existingBill = await storage.getBillByOrder(order.id, user.tenantId);
+          if (!existingBill) {
+            autoBill = await storage.createBill({
+              tenantId: user.tenantId,
+              orderId: order.id,
+              tableId: order.tableId || null,
+              customerId: order.customerId || null,
+              subtotal: order.subtotal,
+              discountAmount: order.discount || "0",
+              serviceCharge: order.serviceCharge || "0",
+              taxAmount: order.tax || "0",
+              totalAmount: order.total,
+              paymentStatus: "pending",
+              posSessionId: orderData.posSessionId || null,
+            });
+          }
+        } catch (billErr) {
+          console.error("[orders] auto-bill creation failed (non-fatal):", billErr);
+        }
+      }
+
+      const orderResponse = { ...order, items: orderItems, bill: autoBill };
       // PR-001: Store response_body so idempotency replays return deterministic data
       if (idempotencyKey) {
         pool.query(
