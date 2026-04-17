@@ -8,7 +8,7 @@
     "dev": "NODE_ENV=development tsx server/index.ts",
             "build": "NODE_ENV=production NODE_OPTIONS=--max-old-space-size=4096 tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
-    "check": "tsc",
+    "check": "tsc -p tsconfig.server.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "db:push": "drizzle-kit push",
     "test": "vitest run"
   },
