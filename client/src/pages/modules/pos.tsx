@@ -335,8 +335,9 @@ export default function POSPage() {
   const { user } = useAuth();
   const outletTimezone = useOutletTimezone();
   const { toast } = useToast();
-  const [selectedVoidItem, setSelectedVoidItem] = useState<any>(null);
+  const [voidModalData, setVoidModalData] = useState<{ orderId: string; orderNumber?: string; items: any[] } | null>(null);
   const [showVoidModal, setShowVoidModal] = useState(false);
+  const [voidLoading, setVoidLoading] = useState(false);
   const { dispatchKotForOrder } = useKotAutoDispatch();
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
@@ -2121,9 +2122,35 @@ export default function POSPage() {
                               variant="ghost"
                               size="icon"
                               className="h-9 w-9 text-orange-600 hover:text-orange-700 flex items-center justify-center rounded"
-                              onClick={() => {
-                                setSelectedVoidItem(item);
-                                setShowVoidModal(true);
+                              disabled={voidLoading}
+                              onClick={async () => {
+                                if (!activeTab?.heldOrderId) {
+                                  toast({ title: "Cannot void", description: "Order has not been saved to server yet.", variant: "destructive" });
+                                  return;
+                                }
+                                setVoidLoading(true);
+                                try {
+                                  const res = await apiRequest("GET", `/api/orders/${activeTab.heldOrderId}`);
+                                  if (!res.ok) throw new Error("Failed to fetch order");
+                                  const orderData = await res.json();
+                                  const serverItems = (orderData.items || []).map((si: any) => ({
+                                    id: si.id,
+                                    name: si.name,
+                                    quantity: si.quantity,
+                                    price: si.price,
+                                    is_voided: si.isVoided ?? si.is_voided ?? false,
+                                  }));
+                                  setVoidModalData({
+                                    orderId: activeTab.heldOrderId,
+                                    orderNumber: orderData.orderNumber || activeTab.heldOrderId.slice(-6).toUpperCase(),
+                                    items: serverItems,
+                                  });
+                                  setShowVoidModal(true);
+                                } catch (err: any) {
+                                  toast({ title: "Failed to load order items", description: err.message, variant: "destructive" });
+                                } finally {
+                                  setVoidLoading(false);
+                                }
                               }}
                               data-testid={`button-void-item-${item.menuItemId}`}
                               title="Void sent item"
@@ -2835,14 +2862,19 @@ export default function POSPage() {
         </AlertDialogContent>
       </AlertDialog>
       {/* POS-09: Void item modal for sent kitchen items */}
-      {showVoidModal && selectedVoidItem && (
+      {showVoidModal && voidModalData && (
         <VoidRequestModal
           open={showVoidModal}
-          onOpenChange={setShowVoidModal}
-          orderItem={selectedVoidItem}
+          onClose={() => { setShowVoidModal(false); setVoidModalData(null); }}
+          orderId={voidModalData.orderId}
+          orderNumber={voidModalData.orderNumber}
+          items={voidModalData.items}
           onSuccess={() => {
             setShowVoidModal(false);
-            setSelectedVoidItem(null);
+            setVoidModalData(null);
+            if (activeTab?.heldOrderId) {
+              queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
+            }
           }}
         />
       )}
