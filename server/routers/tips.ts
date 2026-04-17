@@ -457,11 +457,14 @@ export function registerTipsRoutes(app: Express) {
   });
 
   app.post("/api/tips/distributions/pay", requireAuth, async (req: Request, res: Response) => {
+    const client = await pool.connect();
     try {
       const user = getUser(req);
-      if (!MANAGER_ROLES.includes(user.role)) return res.status(403).json({ message: "Forbidden" });
+      if (!MANAGER_ROLES.includes(user.role)) { client.release(); return res.status(403).json({ message: "Forbidden" }); }
 
       const { waiterId, dateFrom, dateTo } = req.body;
+
+      await client.query("BEGIN");
 
       let where = "tenant_id = $1 AND is_paid = false";
       const params: any[] = [user.tenantId];
@@ -481,15 +484,20 @@ export function registerTipsRoutes(app: Express) {
         params.push(new Date(dateTo + "T23:59:59"));
       }
 
-      const result = await pool.query(
-        `UPDATE tip_distributions SET is_paid = true, paid_at = now() WHERE ${where} RETURNING id`,
+      // Lock matching rows to prevent concurrent payout
+      const result = await client.query(
+        `UPDATE tip_distributions SET is_paid = true, paid_at = now() WHERE ${where} AND is_paid = false RETURNING id`,
         params
       );
 
+      await client.query("COMMIT");
       res.json({ success: true, updated: result.rowCount });
     } catch (err) {
+      await client.query("ROLLBACK").catch(() => {});
       console.error("[Tips] POST distributions pay error:", err);
       res.status(500).json({ message: "Internal server error" });
+    } finally {
+      client.release();
     }
   });
 }

@@ -723,6 +723,13 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const { reason } = req.body;
       if (!reason) return res.status(400).json({ message: "Void reason is required" });
 
+      // C-3 fix: reject void if payments have been recorded against this bill
+      const existingPayments = await storage.getBillPayments(bill.id);
+      const totalPaid = existingPayments.filter(p => !p.isRefund).reduce((s, p) => s + Number(p.amount), 0);
+      if (totalPaid > 0) {
+        return res.status(400).json({ message: "Bill has recorded payments — issue a refund before voiding" });
+      }
+
       const existingMovements = await storage.getStockMovementsByOrder(bill.orderId);
       const consumptionMovements = existingMovements.filter(m => m.type === "RECIPE_CONSUMPTION");
       for (const mv of consumptionMovements) {
