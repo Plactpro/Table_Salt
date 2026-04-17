@@ -881,6 +881,10 @@ export default function POSPage() {
     const handleModifierConfirm = (modifiers: SelectedModifier[], totalAdjustment: number) => {
     if (!pendingMenuItem) return;
     const baseP = parseFloat(String(pendingMenuItem.price));
+    if (baseP + totalAdjustment <= 0) {
+      toast({ title: "Invalid modifier", description: "Modifier adjustments cannot reduce price to zero or below.", variant: "destructive" });
+      return;
+    }
     const cartMods: any[] = modifiers.map(m => ({ type: "modifier-group" as const, label: m.optionName, priceAdjust: m.priceAdjustment, groupId: m.groupId, groupName: m.groupName, optionId: m.optionId, optionName: m.optionName }));
     setCart(prev => {
       const cartKey = Math.random().toString(36).substr(2, 9);

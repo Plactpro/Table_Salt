@@ -101,17 +101,21 @@ const MODIFIER_SIZE_MULTIPLIERS: Record<string, number> = {
 
 function computeEffectivePrice(
   canonicalPrice: number,
-  modifiers: Array<{ groupId?: string; type?: string; label?: string }>,
+  modifiers: Array<{ groupId?: string; type?: string; label?: string; priceAdjust?: number }>,
 ): number {
   let sizeMultiplier = 0;
+  let fixedAdjustment = 0;
   for (const mod of modifiers) {
     const groupKey = mod.groupId ?? mod.type;
     if (groupKey === "size" && mod.label !== undefined) {
       sizeMultiplier = MODIFIER_SIZE_MULTIPLIERS[mod.label] ?? 0;
+    } else if (groupKey === "modifier-group" && typeof mod.priceAdjust === "number") {
+      fixedAdjustment += mod.priceAdjust;
     }
-    // spice and extra modifiers have no price impact
   }
-  return Math.max(0, canonicalPrice * (1 + sizeMultiplier));
+  const result = canonicalPrice * (1 + sizeMultiplier) + fixedAdjustment;
+  // C-6 fix: cap modifier-adjusted price between 0 and 3x base price
+  return Math.max(0, Math.min(result, canonicalPrice * 3));
 }
 
 export function registerOrdersRoutes(app: Express): void {

@@ -386,10 +386,23 @@ export function registerPricingRoutes(app: Express): void {
   });
 
   // ─── Public guest pricing resolution (for QR ordering without auth) ────────
+  // C-4 fix: rate limit guest pricing — 30 req/min per IP
+  const guestPricingLimiter = new Map<string, { count: number; windowStart: number }>();
   app.post("/api/guest/pricing/resolve/batch", async (req, res) => {
     try {
+      const clientIp = (req.headers["x-forwarded-for"] as string || req.ip || "unknown").split(",")[0].trim();
+      const rlNow = Date.now();
+      const entry = guestPricingLimiter.get(clientIp);
+      if (entry && rlNow - entry.windowStart < 60_000) {
+        entry.count++;
+        if (entry.count > 30) return res.status(429).json({ message: "Too many requests" });
+      } else {
+        guestPricingLimiter.set(clientIp, { count: 1, windowStart: rlNow });
+      }
+
       const { items, outletId, orderType, orderTime } = req.body;
       if (!Array.isArray(items) || !outletId) return res.status(400).json({ message: "items and outletId are required" });
+      if (items.length > 50) return res.status(400).json({ message: "Maximum 50 items per batch" });
 
       const outlet = await storage.getOutletUnchecked(outletId);
       if (!outlet) return res.status(404).json({ message: "Outlet not found" });
@@ -468,12 +481,10 @@ export function registerPricingRoutes(app: Express): void {
           }
         }
 
+        // C-4 fix: strip internal rule metadata from guest response
         results.push({
           menuItemId,
-          basePrice: Number(menuItem.price),
           resolvedPrice: Math.round(resolvedPrice * 100) / 100,
-          appliedRule,
-          ruleReason,
           hasRule: appliedRule !== null,
         });
       }
@@ -483,6 +494,16 @@ export function registerPricingRoutes(app: Express): void {
       res.status(500).json({ message: err.message });
     }
   });
+
+  // C-4 fix: clean up stale rate limiter entries every 5 minutes
+  setInterval(() => {
+    const cleanupNow = Date.now();
+    const staleIps: string[] = [];
+    guestPricingLimiter.forEach((entry, ip) => {
+      if (cleanupNow - entry.windowStart > 120_000) staleIps.push(ip);
+    });
+    staleIps.forEach(ip => guestPricingLimiter.delete(ip));
+  }, 5 * 60_000);
 
   // ─── Price Resolution Batch (authed, for POS) ─────────────────────────────
   app.post("/api/pricing/resolve/batch", requireAuth, async (req, res) => {
