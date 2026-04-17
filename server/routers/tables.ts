@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { storage } from "../storage";
+import { pool } from "../db";
 import { requireAuth, requireRole } from "../auth";
 import { emitToTenant } from "../realtime";
 import { returnResourcesFromTable } from "../services/resource-service";
@@ -79,6 +80,16 @@ export function registerTablesRoutes(app: Express): void {
 
   app.patch("/api/tables/:id/clear", requireAuth, async (req, res) => {
     const user = req.user as any;
+
+    // H-6 fix: reject clear if table has unsettled orders
+    const { rows: unsettled } = await pool.query(
+      `SELECT COUNT(*)::int AS cnt FROM orders WHERE table_id = $1 AND tenant_id = $2 AND status NOT IN ('paid', 'completed', 'cancelled', 'voided')`,
+      [req.params.id, user.tenantId]
+    );
+    if (unsettled[0]?.cnt > 0) {
+      return res.status(400).json({ message: "Table has unsettled orders. Settle or cancel all orders before clearing.", unsettledCount: unsettled[0].cnt });
+    }
+
     const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
       status: "cleaning",
       partyName: null,
@@ -102,12 +113,16 @@ export function registerTablesRoutes(app: Express): void {
     const user = req.user as any;
     const { targetTableId } = req.body;
     if (!targetTableId) return res.status(400).json({ message: "Target table ID required" });
+    if (req.params.id === targetTableId) return res.status(400).json({ message: "Cannot merge a table with itself" });
     const source = await storage.getTable(req.params.id, user.tenantId);
     const target = await storage.getTable(targetTableId, user.tenantId);
     if (!source) return res.status(404).json({ message: "Source table not found" });
     if (!target) return res.status(404).json({ message: "Target table not found" });
     if (source.mergedWith) return res.status(400).json({ message: "Source table already merged" });
     if (target.mergedWith) return res.status(400).json({ message: "Target table already merged" });
+    // H-7 fix: validate table states before merge
+    if (source.status !== "occupied") return res.status(400).json({ message: `Source table must be occupied to merge (current: ${source.status})` });
+    if (target.status !== "free" && target.status !== "occupied") return res.status(400).json({ message: `Target table must be free or occupied to merge (current: ${target.status})` });
     const tbl = await storage.updateTableByTenant(req.params.id, user.tenantId, {
       mergedWith: targetTableId,
     });

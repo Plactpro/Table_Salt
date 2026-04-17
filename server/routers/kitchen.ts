@@ -6,7 +6,7 @@ import { requireAuth, requireRole, comparePasswords } from "../auth";
 import { verifySupervisorOverride } from "./_shared";
 import { emitToTenant } from "../realtime";
 import { alertEngine } from "../services/alert-engine";
-import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts, orderItems as orderItemsTable } from "@shared/schema";
+import { inventoryItems as inventoryItemsTable, stockMovements as stockMovementsTable, securityAlerts, orderItems as orderItemsTable, orders as ordersTable } from "@shared/schema";
 import { convertUnits } from "@shared/units";
 import { getNextKotSequence } from "./print-jobs";
 import { triggerWastageDailySummary } from "./wastage";
@@ -229,13 +229,12 @@ export function registerKitchenRoutes(app: Express): void {
       const activeShift = await storage.getActiveShift(user.tenantId, order.outletId || undefined);
       const chefName = (user as any).name || (user as any).username || "Chef";
 
-      const existingMovements = await storage.getStockMovementsByOrder(order.id);
-      const alreadyDeducted = existingMovements.some((m) => m.type === "RECIPE_CONSUMPTION");
-      const shouldDeduct = order.channel !== "kiosk" && !alreadyDeducted;
+      // C-5 fix: check existing movements inside transaction below to avoid TOCTOU race
+      const shouldDeductChannel = order.channel !== "kiosk";
 
       const stockWrites: Array<{ inventoryItemId: string; qty: number; menuItemId: string; recipeId: string; menuItemName: string }> = [];
 
-      if (shouldDeduct) {
+      if (shouldDeductChannel) {
         const insufficientItems: string[] = [];
 
         for (const oi of filtered) {
@@ -267,9 +266,16 @@ export function registerKitchenRoutes(app: Express): void {
         }
       }
 
-      if (shouldDeduct && stockWrites.length > 0) {
-        const lowStockItems: Array<{ id: string; name: string; after: number; reorder: number; stockMovementId: string }> = [];
-        await db.transaction(async (tx) => {
+      // C-5 fix: inventory deduction + order status change in a single transaction
+      // with idempotency check inside the transaction to prevent TOCTOU race
+      const lowStockItems: Array<{ id: string; name: string; after: number; reorder: number; stockMovementId: string }> = [];
+      await db.transaction(async (tx) => {
+        // Idempotency check inside transaction — prevents concurrent double-deduction
+        const existingMovements = await storage.getStockMovementsByOrder(order.id);
+        const alreadyDeducted = existingMovements.some((m) => m.type === "RECIPE_CONSUMPTION");
+        const shouldDeduct = shouldDeductChannel && !alreadyDeducted;
+
+        if (shouldDeduct && stockWrites.length > 0) {
           for (const w of stockWrites) {
             const before = await tx.select().from(inventoryItemsTable).where(eq(inventoryItemsTable.id, w.inventoryItemId));
             const invRow = before[0];
@@ -300,26 +306,30 @@ export function registerKitchenRoutes(app: Express): void {
               lowStockItems.push({ id: w.inventoryItemId, name: invRow?.name || w.menuItemName, after: stockAfter, reorder: reorderLevel, stockMovementId: movement?.id });
             }
           }
-        });
-        for (const item of lowStockItems) {
-          await db.insert(securityAlerts).values({
-            tenantId: user.tenantId,
-            type: "LOW_STOCK",
-            severity: "warning",
-            title: `Low Stock: ${item.name}`,
-            description: `Stock dropped to ${item.after} (reorder level: ${item.reorder}) after order #${(order as any).orderNumber || order.id.slice(0, 6).toUpperCase()}`,
-            metadata: { itemId: item.id, currentStock: item.after, reorderLevel: item.reorder, orderId: order.id, stockMovementId: item.stockMovementId },
-          });
-          emitToTenant(user.tenantId, "low_stock_alert", { itemId: item.id, itemName: item.name, currentStock: item.after, reorderLevel: item.reorder, stockMovementId: item.stockMovementId });
         }
-      }
 
-      for (const oi of filtered) {
-        await storage.updateOrderItem(oi.id, { status: "cooking", startedAt: new Date() }, user.tenantId);
-      }
-
-      if (order.status === "new" || order.status === "sent_to_kitchen") {
-        await storage.updateOrder(order.id, user.tenantId, { status: "in_progress" });
+        // Order item + order status updates inside the same transaction
+        for (const oi of filtered) {
+          await tx.update(orderItemsTable)
+            .set({ status: "cooking", startedAt: new Date() })
+            .where(eq(orderItemsTable.id, oi.id));
+        }
+        if (order.status === "new" || order.status === "sent_to_kitchen") {
+          await tx.update(ordersTable)
+            .set({ status: "in_progress" })
+            .where(and(eq(ordersTable.id, order.id), eq(ordersTable.tenantId, user.tenantId)));
+        }
+      });
+      for (const item of lowStockItems) {
+        await db.insert(securityAlerts).values({
+          tenantId: user.tenantId,
+          type: "LOW_STOCK",
+          severity: "warning",
+          title: `Low Stock: ${item.name}`,
+          description: `Stock dropped to ${item.after} (reorder level: ${item.reorder}) after order #${(order as any).orderNumber || order.id.slice(0, 6).toUpperCase()}`,
+          metadata: { itemId: item.id, currentStock: item.after, reorderLevel: item.reorder, orderId: order.id, stockMovementId: item.stockMovementId },
+        });
+        emitToTenant(user.tenantId, "low_stock_alert", { itemId: item.id, itemName: item.name, currentStock: item.after, reorderLevel: item.reorder, stockMovementId: item.stockMovementId });
       }
 
       if (filtered.length > 0) {
@@ -404,7 +414,7 @@ export function registerKitchenRoutes(app: Express): void {
         timestamp: new Date(),
       }).catch(() => {});
 
-      res.json({ success: true, deducted: shouldDeduct ? stockWrites.length : 0 });
+      res.json({ success: true, deducted: shouldDeductChannel ? stockWrites.length : 0 });
     } catch (err: any) { res.status(500).json({ message: err.message }); }
   });
 
