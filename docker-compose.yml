@@ -10,7 +10,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: 5000
-      DATABASE_URL: postgresql://postgres:postgres@db:5432/tablesalt
+      DATABASE_URL: postgresql://db:5432/tablesalt?sslmode=disable
+      PGUSER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
       SESSION_SECRET: ${SESSION_SECRET}
       APP_URL: ${APP_URL:-http://localhost:5000}
       # Stripe
@@ -43,14 +45,14 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: tablesalt
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    expose:
+      - "5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d tablesalt"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d tablesalt"]
       interval: 10s
       timeout: 5s
       retries: 5
