@@ -697,7 +697,15 @@ export function registerOrdersRoutes(app: Express): void {
         alertEngine.trigger('ALERT-02', { tenantId: user.tenantId, outletId: order.outletId ?? undefined, referenceId: order.id, referenceNumber: order.orderNumber ?? undefined, message: `VIP/Rush order #${order.orderNumber || order.id.slice(-6)}` }).catch(() => {});
       }
 
+      console.log("[KOT-DEBUG]", {
+        status: order.status,
+        channel: order.channel,
+        orderItemsLength: orderItems.length,
+        condition: (order.status === "sent_to_kitchen" || order.status === "in_progress" ||
+          (order.status === "new" && order.channel === "pos")),
+      });
       if ((order.status === "sent_to_kitchen" || order.status === "in_progress" || (order.status === "new" && order.channel === "pos")) && orderItems.length > 0) {
+        try {
         const sentAt = new Date().toISOString();
         const tables = orderData.tableId ? await storage.getTablesByTenant(user.tenantId) : [];
         const tableNum = orderData.tableId ? tables.find(t => t.id === orderData.tableId)?.number : undefined;
@@ -720,6 +728,7 @@ export function registerOrdersRoutes(app: Express): void {
               items: orderItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
             },
           });
+          console.log("[KOT-CREATED] print job created for order", order.id);
         } else {
           for (const stationName of stations) {
             const stationItems = orderItems.filter(i => i.station === stationName);
@@ -740,7 +749,11 @@ export function registerOrdersRoutes(app: Express): void {
                 items: stationItems.map(i => ({ name: i.name, quantity: i.quantity, notes: i.notes, course: i.course })),
               },
             });
+            console.log("[KOT-CREATED] print job created for order", order.id, "station", stationName);
           }
+        }
+        } catch (kotErr: any) {
+          console.error("[KOT-ERROR] Failed to create print job:", kotErr.message, kotErr.stack);
         }
       }
 
