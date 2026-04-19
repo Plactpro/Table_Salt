@@ -29,6 +29,7 @@ EXPOSE 5000
 
 ENV NODE_ENV=production
 ENV PORT=5000
+ENV TZ=UTC
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD wget -qO- http://localhost:5000/api/health || exit 1
