@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   formatInTenantTz,
+  localDateToKey,
   tenantDateKey,
   tenantNow,
   wallClockToUtc,
@@ -64,6 +65,24 @@ describe("F-225: formatInTenantTz", () => {
   });
 });
 
+describe("F-225: formatInTenantTz time-only / date-only variants", () => {
+  const INSTANT = "2026-05-01T15:30:00.000Z"; // 19:30 Dubai
+
+  it("returns time-only output when opts sets only timeStyle", () => {
+    const out = formatInTenantTz(INSTANT, "Asia/Dubai", { timeStyle: "short" });
+    expect(out).toMatch(/7:30/);
+    expect(out).not.toContain("May");
+    expect(out).not.toContain("2026");
+  });
+
+  it("returns date-only output when opts sets only dateStyle", () => {
+    const out = formatInTenantTz(INSTANT, "Asia/Dubai", { dateStyle: "medium" });
+    expect(out).toContain("May");
+    expect(out).toContain("2026");
+    expect(out).not.toMatch(/7:30|19:30/);
+  });
+});
+
 describe("F-225: tenantDateKey", () => {
   // Late-evening UTC on 2026-04-19 — already next day in IST/GST.
   const LATE_UTC = "2026-04-19T20:30:00.000Z";
@@ -78,6 +97,16 @@ describe("F-225: tenantDateKey", () => {
 
   it("returns next-day date in Asia/Dubai (+4) for late-UTC instant", () => {
     expect(tenantDateKey(LATE_UTC, "Asia/Dubai")).toBe("2026-04-20");
+  });
+});
+
+describe("F-225: localDateToKey", () => {
+  it("formats 2026-04-19 from (2026, 3, 19) with 0-indexed month", () => {
+    expect(localDateToKey(2026, 3, 19)).toBe("2026-04-19");
+  });
+
+  it("zero-pads single-digit month and day", () => {
+    expect(localDateToKey(2026, 0, 5)).toBe("2026-01-05");
   });
 });
 

@@ -42,10 +42,19 @@ export function formatInTenantTz(
   opts?: { dateStyle?: FormatStyle; timeStyle?: FormatStyle },
 ): string {
   const tz = resolveTenantTz(tenant);
-  const dateStyle = opts?.dateStyle ?? "medium";
-  const timeStyle = opts?.timeStyle ?? "short";
-  const pattern = `${DATE_PATTERNS[dateStyle]}, ${TIME_PATTERNS[timeStyle]}`;
-  return formatInTimeZone(instant, tz, pattern);
+  let dateStyle: FormatStyle | undefined;
+  let timeStyle: FormatStyle | undefined;
+  if (opts === undefined || (opts.dateStyle === undefined && opts.timeStyle === undefined)) {
+    dateStyle = "medium";
+    timeStyle = "short";
+  } else {
+    dateStyle = opts.dateStyle;
+    timeStyle = opts.timeStyle;
+  }
+  const parts: string[] = [];
+  if (dateStyle) parts.push(DATE_PATTERNS[dateStyle]);
+  if (timeStyle) parts.push(TIME_PATTERNS[timeStyle]);
+  return formatInTimeZone(instant, tz, parts.join(", "));
 }
 
 export function wallClockToUtc(
@@ -62,4 +71,10 @@ export function tenantDateKey(
 ): string {
   const tz = resolveTenantTz(tenant);
   return formatInTimeZone(instant, tz, "yyyy-MM-dd");
+}
+
+export function localDateToKey(year: number, month: number, day: number): string {
+  const m = String(month + 1).padStart(2, "0");
+  const d = String(day).padStart(2, "0");
+  return `${year}-${m}-${d}`;
 }
