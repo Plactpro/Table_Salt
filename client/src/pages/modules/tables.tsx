@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth";
+import { wallClockToUtc, formatInTenantTz, tenantDateKey, localDateToKey } from "@shared/lib/tenant-tz";
 import { PageTitle, announceToScreenReader } from "@/lib/accessibility";
 import { useRealtimeEvent } from "@/hooks/use-realtime";
 import { motion, AnimatePresence } from "framer-motion";
@@ -403,7 +404,7 @@ function QrCodeCanvas({ token }: { token: string }) {
 
 function TablesPageContent() {
   const { i18n } = useTranslation();
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState("floor");
@@ -789,8 +790,8 @@ function TablesPageContent() {
   }, [calendarWeekStart]);
 
   const getReservationsForDay = (date: Date) => {
-    const dateStr = date.toISOString().split("T")[0];
-    return reservations.filter(r => r.dateTime?.startsWith(dateStr));
+    const dateStr = localDateToKey(date.getFullYear(), date.getMonth(), date.getDate());
+    return reservations.filter(r => r.dateTime && tenantDateKey(r.dateTime, tenant) === dateStr);
   };
 
   if (tablesLoading || outletsLoading) {
@@ -1241,7 +1242,7 @@ function TablesPageContent() {
                           </div>
                           <div className="flex items-center gap-1 text-[10px] opacity-80">
                             <Clock className="w-2.5 h-2.5" />
-                            {new Date(r.dateTime).toLocaleTimeString(i18n.language, { hour: "numeric", minute: "2-digit" })}
+                            {formatInTenantTz(r.dateTime, tenant, { timeStyle: "short" })}
                             <span className="mx-0.5">·</span>
                             <Users className="w-2.5 h-2.5" />{r.guests}
                           </div>
@@ -2047,7 +2048,7 @@ function TablesPageContent() {
                 customerPhone: resFormData.customerPhone || undefined,
                 customerEmail: resFormData.customerEmail || undefined,
                 guests: parseInt(resFormData.guests),
-                dateTime: resFormData.dateTime ? new Date(resFormData.dateTime).toISOString() : resFormData.dateTime,
+                dateTime: resFormData.dateTime ? wallClockToUtc(resFormData.dateTime, tenant).toISOString() : resFormData.dateTime,
                 tableId: resFormData.tableId || undefined,
                 notes: resFormData.notes || undefined,
                 resource_requirements: reqResources.length > 0 ? reqResources.map(r => ({ resourceId: r.resourceId, resourceName: r.resourceName, quantity: r.quantity })) : undefined,
@@ -2072,7 +2073,7 @@ function TablesPageContent() {
                 </DialogHeader>
                 <div className="space-y-3 text-sm">
                   <div className="grid grid-cols-2 gap-3">
-                    <div><span className="text-muted-foreground">Date & Time:</span><div className="font-medium">{new Date(selectedReservation.dateTime).toLocaleString()}</div></div>
+                    <div><span className="text-muted-foreground">Date & Time:</span><div className="font-medium">{formatInTenantTz(selectedReservation.dateTime, tenant)}</div></div>
                     <div><span className="text-muted-foreground">Guests:</span><div className="font-medium">{selectedReservation.guests}</div></div>
                     {selectedReservation.customerPhone && <div><span className="text-muted-foreground">Phone:</span><div className="font-medium">{selectedReservation.customerPhone}</div></div>}
                     {selectedReservation.tableId && <div><span className="text-muted-foreground">Table:</span><div className="font-medium">T{tables.find(t => t.id === selectedReservation.tableId)?.number || "?"}</div></div>}
