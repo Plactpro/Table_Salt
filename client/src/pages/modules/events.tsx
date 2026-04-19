@@ -5,6 +5,7 @@ import { PageTitle } from "@/lib/accessibility";
 import { useAuth } from "@/lib/auth";
 import { useToast } from "@/hooks/use-toast";
 import type { Event as CalEvent, Offer, Outlet } from "@shared/schema";
+import { wallClockToUtc } from "@shared/lib/tenant-tz";
 import { motion } from "framer-motion";
 import {
   Calendar as CalendarIcon, Plus, Search, ChevronLeft, ChevronRight,
@@ -405,7 +406,7 @@ function NotificationBanners({ events }: { events: CalEvent[] }) {
 
 export default function EventsPage() {
   const { t } = useTranslation("modules");
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -573,8 +574,8 @@ export default function EventsPage() {
       description: form.description || null,
       type: form.type,
       impact: form.impact,
-      startDate: form.startDate,
-      endDate: form.endDate,
+      startDate: form.startDate ? wallClockToUtc(form.startDate, tenant).toISOString() : form.startDate,
+      endDate: form.endDate ? wallClockToUtc(form.endDate, tenant).toISOString() : form.endDate,
       allDay: form.allDay,
       color: form.color,
       outlets: form.outlets.length > 0 ? form.outlets : null,
