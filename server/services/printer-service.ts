@@ -456,8 +456,9 @@ export async function routeAndPrint(params: {
       notes: r.notes as string | null,
     }));
 
-    const { rows: tenantRows } = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tenantId]);
+    const { rows: tenantRows } = await pool.query(`SELECT name, timezone FROM tenants WHERE id = $1`, [tenantId]);
     const tenantName = tenantRows[0]?.name;
+    const tenantTimezone = tenantRows[0]?.timezone;
 
     // Fetch refund payments so they appear on reprinted bills
     const { rows: refundPaymentRows } = await pool.query(
@@ -483,7 +484,7 @@ export async function routeAndPrint(params: {
       results.htmlFallback = htmlFallback;
     } else {
       try {
-        escposData = buildBill(bill, order, items, undefined, tenantName, billRefundPayments.length > 0 ? billRefundPayments : undefined);
+        escposData = buildBill(bill, order, items, undefined, tenantName, billRefundPayments.length > 0 ? billRefundPayments : undefined, tenantTimezone);
       } catch (_) {
         htmlFallback = browserHandler.generateBillHtml(bill, order, items, undefined, tenantName, billRefundPayments.length > 0 ? billRefundPayments : undefined);
         results.htmlFallback = htmlFallback;
@@ -549,8 +550,9 @@ export async function routeAndPrint(params: {
         : `No refund payments found for bill ${referenceId}`);
     }
 
-    const { rows: tenantRows } = await pool.query(`SELECT name FROM tenants WHERE id = $1`, [tenantId]);
+    const { rows: tenantRows } = await pool.query(`SELECT name, timezone FROM tenants WHERE id = $1`, [tenantId]);
     const tenantName = tenantRows[0]?.name;
+    const tenantTimezone = tenantRows[0]?.timezone;
 
     const refunds: RefundPaymentData[] = paymentRows.map((r: Record<string, unknown>) => ({
       id: r.id as string,
@@ -566,6 +568,7 @@ export async function routeAndPrint(params: {
       totalBillAmount: billRow.total_amount,
       refunds,
       tenantName,
+      tenantTimezone,
     };
 
     const cashierPrinter = printers.find(p => p.printerType === "CASHIER" && p.isDefault) ?? printers.find(p => p.printerType === "CASHIER");

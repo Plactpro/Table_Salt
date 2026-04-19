@@ -1,4 +1,7 @@
 import net from "net";
+import { formatInTenantTz } from "@shared/lib/tenant-tz";
+import { formatInTimeZone } from "date-fns-tz";
+import { enIN } from "date-fns/locale";
 
 const ESC = 0x1b;
 const GS = 0x1d;
@@ -289,6 +292,7 @@ export function buildBill(
   template?: PrintTemplate,
   tenantName?: string,
   payments?: RefundPaymentData[],
+  tenantTimezone?: string,
 ): Buffer {
   const b = new EscPosBuilder();
   const cpl = 42;
@@ -308,7 +312,9 @@ export function buildBill(
   if (order.tableNumber) b.text(`Table: ${order.tableNumber}`).newLine();
   if (bill.waiterName) b.text(`Served by: ${bill.waiterName}`).newLine();
   if (bill.covers) b.text(`Covers: ${bill.covers}`).newLine();
-  const now = new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
+  const now = tenantTimezone
+    ? formatInTenantTz(new Date(), tenantTimezone, { dateStyle: "medium", timeStyle: "short" })
+    : new Date().toLocaleString("en-US", { dateStyle: "medium", timeStyle: "short" });
   b.text(now).newLine();
   b.left().separator("-", cpl);
 
@@ -433,9 +439,12 @@ export function buildBillHtml(
   template?: PrintTemplate,
   tenantName?: string,
   payments?: RefundPaymentData[],
+  tenantTimezone?: string,
 ): string {
   const billRef = bill.invoiceNumber || bill.billNumber || "N/A";
-  const now = new Date().toLocaleString();
+  const now = tenantTimezone
+    ? formatInTenantTz(new Date(), tenantTimezone)
+    : new Date().toLocaleString();
 
   const headerHtml = (template?.headerLines && template.headerLines.length > 0)
     ? template.headerLines.map(l => `<div>${escHtml(l)}</div>`).join("")
@@ -526,7 +535,11 @@ ${(() => {
 <div class="sep"></div>
 <table>${refunds.map(r => {
   const cleanReason = (r.refundReason || "").split(" | items:")[0];
-  const refundDate = r.createdAt ? new Date(r.createdAt as string).toLocaleString() : "";
+  const refundDate = r.createdAt
+    ? (tenantTimezone
+        ? formatInTenantTz(new Date(r.createdAt as string), tenantTimezone)
+        : new Date(r.createdAt as string).toLocaleString())
+    : "";
   return `<tr><td>Refund Amount</td><td class="right">-${formatMoney(Math.abs(Number(r.amount)))}</td></tr>
 ${cleanReason ? `<tr><td colspan="2">Reason: ${escHtml(cleanReason)}</td></tr>` : ""}
 ${refundDate ? `<tr><td colspan="2" style="font-size:10px;">${escHtml(refundDate)}</td></tr>` : ""}`;
@@ -616,6 +629,7 @@ export interface RefundReceiptData {
   totalBillAmount: string | number;
   refunds: RefundPaymentData[];
   tenantName?: string;
+  tenantTimezone?: string;
   refundedAt?: Date | string | null;
 }
 
@@ -635,7 +649,9 @@ export function buildRefundReceipt(data: RefundReceiptData, template?: PrintTemp
   b.left();
   b.text(`Bill Ref: ${data.billRef}`).newLine();
   if (data.tableNumber) b.text(`Table: ${data.tableNumber}`).newLine();
-  const printTime = new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const printTime = data.tenantTimezone
+    ? formatInTimeZone(new Date(), data.tenantTimezone, "dd MMM yyyy, hh:mm aa", { locale: enIN })
+    : new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
   b.text(`Date: ${printTime}`).newLine();
   b.separator("-", cpl);
   b.text(padRight("Original Total:", colW) + padLeft(formatMoney(data.totalBillAmount), 12)).newLine();
@@ -652,7 +668,9 @@ export function buildRefundReceipt(data: RefundReceiptData, template?: PrintTemp
       b.text(`  Reason: ${cleanReason}`).newLine();
     }
     if (r.createdAt) {
-      const rd = new Date(r.createdAt as string).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+      const rd = data.tenantTimezone
+        ? formatInTimeZone(new Date(r.createdAt as string), data.tenantTimezone, "dd MMM yyyy, hh:mm aa", { locale: enIN })
+        : new Date(r.createdAt as string).toLocaleString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
       b.text(`  Date: ${rd}`).newLine();
     }
   }
@@ -674,7 +692,9 @@ export function buildRefundReceipt(data: RefundReceiptData, template?: PrintTemp
 
 export function buildRefundReceiptHtml(data: RefundReceiptData, template?: PrintTemplate): string {
   const billRef = data.billRef;
-  const printTime = new Date().toLocaleString();
+  const printTime = data.tenantTimezone
+    ? formatInTenantTz(new Date(), data.tenantTimezone)
+    : new Date().toLocaleString();
   const headerHtml = (template?.headerLines && template.headerLines.length > 0)
     ? template.headerLines.map(l => `<div>${escHtml(l)}</div>`).join("")
     : `<div class="title">${escHtml(data.tenantName || "Restaurant")}</div>`;
@@ -687,7 +707,11 @@ export function buildRefundReceiptHtml(data: RefundReceiptData, template?: Print
     const refundAmt = Math.abs(Number(r.amount));
     cumulativeRefund += refundAmt;
     const cleanReason = (r.refundReason || "").split(" | items:")[0];
-    const refundDate = r.createdAt ? new Date(r.createdAt as string).toLocaleString() : "";
+    const refundDate = r.createdAt
+      ? (data.tenantTimezone
+          ? formatInTenantTz(new Date(r.createdAt as string), data.tenantTimezone)
+          : new Date(r.createdAt as string).toLocaleString())
+      : "";
     return `<tr><td><strong>Refund</strong></td><td class="right">-${formatMoney(refundAmt)}</td></tr>
 ${r.paymentMethod ? `<tr><td style="padding-left:8px;">Method</td><td class="right">${escHtml(r.paymentMethod.toUpperCase())}</td></tr>` : ""}
 ${cleanReason ? `<tr><td colspan="2" style="padding-left:8px;">Reason: ${escHtml(cleanReason)}</td></tr>` : ""}
