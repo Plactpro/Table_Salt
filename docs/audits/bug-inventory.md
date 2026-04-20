@@ -11,10 +11,10 @@
 | Total bugs tracked | 28 |
 | Fixed and deployed | 17 |
 | Resolved as invalid | 1 |
-| Open (not yet fixed) | 10 |
+| Open (not yet fixed) | 11 |
 | Open — BLOCKING | 1 |
 | Open — MEDIUM severity | 5 |
-| Open — LOW severity | 4 |
+| Open — LOW severity | 5 |
 
 ## OPEN — BLOCKING
 
@@ -40,6 +40,7 @@
 | L2 | Recalled order loses veg/category info | pos.tsx recallServerOrder | isVeg = null, categoryId = null on recalled server orders. Offer applicability by category will not work. |
 | L3 | BOGO/combo/free-item offers not supported in POS client | pos.tsx offers | buy_one_get_one, combo_deal, free_item types exist in enum but are NOT in SUPPORTED_OFFER_TYPES on client. Staff cannot apply these from POS. |
 | L4 | Duplicate delivery endpoints | orders.ts | /accept and /accept-delivery, /reject and /reject-delivery — identical logic, older versions without -delivery suffix appear leftover. |
+| L5 | Events calendar schema refactor (F-225 Day 3 part 2) | events table schema, client/src/pages/modules/events.tsx | DEFERRED. events table uses plain `timestamp` columns for start_date/end_date with a `setHours(23, 59, 0, 0)` form default at events.tsx:528 as an "end of day" hack. F-225 Commit 2 resolved EV-01 symptom; this entry tracks the underlying schema shape (separate `start_date DATE` / `end_date DATE` columns, optional `start_time` / `end_time TIME`, gated by existing `all_day` boolean). Not breaking anything in production. Recon complete 2026-04-20. Plan before executing: migration affects 8+ consumers (server/routers/events.ts, server/storage.ts, client offers.tsx, staff.tsx, procurement.tsx, plus events.tsx calendar rendering). |
 
 ## RESOLVED — INVALID
 
