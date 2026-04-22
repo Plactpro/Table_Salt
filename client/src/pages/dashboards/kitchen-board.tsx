@@ -955,6 +955,7 @@ export default function KitchenBoardPage() {
 
   useRealtimeEvent("order:new", invalidateKds);
   useRealtimeEvent("order:updated", invalidateKds);
+  useRealtimeEvent("order:completed", invalidateKds);
   useRealtimeEvent("order:item_updated", invalidateKds);
   useRealtimeEvent("kds:item_started", invalidateKds);
   useRealtimeEvent("kds:item_ready", invalidateKds);

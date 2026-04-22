@@ -1168,8 +1168,12 @@ export default function KitchenDashboard() {
   useRealtimeEvent("order:updated", useCallback((payload: unknown) => {
     const p = payload as { orderId?: string; status?: string } | null;
     if (!p?.orderId) return;
+    const KDS_ACTIVE_STATUSES = new Set(["new", "sent_to_kitchen", "in_progress", "ready"]);
     queryClient.setQueryData(["/api/kds/tickets", selectedStation], (old: KDSTicket[] | undefined) => {
       if (!old) return old;
+      if (p.status && !KDS_ACTIVE_STATUSES.has(p.status)) {
+        return old.filter(t => t.id !== p.orderId);
+      }
       return old.map(t => t.id === p.orderId ? { ...t, status: p.status ?? t.status } : t);
     });
   }, [queryClient, selectedStation]));
