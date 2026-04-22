@@ -8,13 +8,13 @@
 
 | Category | Count |
 |----------|-------|
-| Total bugs tracked | 33 |
-| Fixed and deployed | 20 |
+| Total bugs tracked | 36 |
+| Fixed and deployed | 21 |
 | Resolved as invalid | 1 |
-| Open (not yet fixed) | 13 |
+| Open (not yet fixed) | 15 |
 | Open — BLOCKING | 0 |
 | Open — MEDIUM severity | 6 |
-| Open — LOW severity | 7 |
+| Open — LOW severity | 9 |
 
 ## OPEN — BLOCKING
 
@@ -24,12 +24,12 @@ None currently. B1 (KDS stale ticket pollution) was split into five defects on 2
 
 | # | Bug | Location | Description |
 |---|-----|----------|-------------|
-| M1 | Two tabs can target same table | pos.tsx tab management | Nothing prevents Tab 1 and Tab 2 from selecting the same table before either order is sent. Both tabs will create orders on the same table. |
 | M2 | UPI payment not implemented | pos.tsx payment modal | Shows placeholder text "Show UPI QR" only. No QR generation, no payment tracking. |
 | M4 | Addon KOT creates new order, not appended | orders.ts POST /api/orders | Addon items create a new order with parentOrderId. Billing at /pos/bill/:orderId must aggregate the parentOrderId chain or bill will be incomplete. Needs verification that BillPreviewModal does this. |
 | M5 | No delivery address field in POS | pos.tsx delivery flow | deliveryOrders table has customerAddress, but POS UI does not capture it. Manual delivery orders have no address. |
 | B1c | Auto "ready → served" transition policy | KDS server-side, policy decision | After how long should a KDS ticket stuck in "ready" auto-transition to "served"? Recommendation: 6 hours. Decision needed from owner before implementation. Part of original B1 split on 2026-04-22. |
 | M3b | Force-close audit log | server/routers/pos.ts shift close endpoint | When a manager chooses "Force Close" past the M3 guard, server should log a `SHIFT_FORCE_CLOSED` audit event with open item counts at time of close. Deferred until owner verifies the M3 guard is working as expected in testing. |
+| M1b | Server-side table-claim race — advisory lock / unique constraint | server/routers/orders.ts POST /api/orders | Follow-up to M1 (shipped 2026-04-22). Client-side prevention is in place, but `POST /api/orders` still has no pre-insert occupancy check, no advisory lock on `(tenant_id, table_id)`, and no partial unique index where `status IN ('new', 'in_progress', 'ready')`. Two POSTs from different devices or different sessions can still double-book one table. Recon already complete (see M1-recon.md Q5). Dedicated follow-up branch required — do not mix with other fixes. |
 
 ## OPEN — LOW
 
@@ -42,6 +42,8 @@ None currently. B1 (KDS stale ticket pollution) was split into five defects on 2
 | L5 | Events calendar schema refactor (F-225 Day 3 part 2) | events table schema, client/src/pages/modules/events.tsx | DEFERRED. events table uses plain `timestamp` columns for start_date/end_date with a `setHours(23, 59, 0, 0)` form default at events.tsx:528 as an "end of day" hack. F-225 Commit 2 resolved EV-01 symptom; this entry tracks the underlying schema shape (separate `start_date DATE` / `end_date DATE` columns, optional `start_time` / `end_time TIME`, gated by existing `all_day` boolean). Not breaking anything in production. Recon complete 2026-04-20. Plan before executing: migration affects 8+ consumers (server/routers/events.ts, server/storage.ts, client offers.tsx, staff.tsx, procurement.tsx, plus events.tsx calendar rendering). |
 | B1d | Cross-outlet KDS scoping | KDS query layer | Tickets are currently tenant-scoped only. When a tenant has multiple outlets, KDS may display tickets across all outlets instead of the active outlet. Deferred until multi-outlet customers exist. Part of original B1 split on 2026-04-22. |
 | B1e | kitchen.tsx does not subscribe to `order:stale_archived` | client/src/pages/dashboards/kitchen.tsx | When the B1b nightly scheduler fires and archives a stale order, the kitchen.tsx view does not receive a live WebSocket update. Next query invalidation cycle picks it up. Cosmetic. Part of original B1 split on 2026-04-22. |
+| L6 | Pre-existing TypeScript errors (329 across 52 files) | server/**, shared/** | `npm run check` reports 329 errors, all in server and shared code; zero in client. Discovered during M1 type-check on 2026-04-22. Does not affect runtime — Railway build uses `npm run build` (esbuild) which skips strict type-checking; production is healthy. Likely accumulated type debt unmasked by the A-04 tsconfig split. Needs dedicated `triage/ts-errors` branch. Do not mix with feature work. Estimated 1–2 full days of focused cleanup. |
+| L7 | .gitignore does not exclude recon/handoff notes and local scratch files | .gitignore, repo root | Local-only files (`*-recon.md`, `*session-handoff*.md`, `*-plan.md`, `.claude/`, `.env.migration`, `scripts/seed-*.ts`) accumulate at the repo root and get swept into `git add -A`. Has caused near-misses during each shipping cycle (B1, M3, M1). Fix: add targeted patterns to `.gitignore`. Low risk, 10-minute chore. |
 
 ## RESOLVED — INVALID
 
@@ -56,6 +58,7 @@ None currently. B1 (KDS stale ticket pollution) was split into five defects on 2
 | B1a | KDS stale ticket pollution — client invalidation | Added `order:completed` subscription on kitchen-board.tsx; added KDS_ACTIVE_STATUSES filter to `order:updated` handler on kitchen.tsx so tickets are removed from the local store when status exits {new, sent_to_kitchen, in_progress, ready}. Covers defects D and E of the original B1 split. | 4e67108 |
 | B1b | Stale-order archive cron | New service `server/services/stale-order-archive-scheduler.ts` runs at 04:00 UTC via node-cron. Iterates active tenants and archives orders in active KDS statuses older than 24h. Uses JOB_LOCK 191011. Matches existing scheduler pattern (daily-report, stock-report, wastage-summary). Covers defect C of the original B1 split. | 05931a9 |
 | M3 | POS shift close — no open order check | CloseShiftDialog now blocks with an amber warning when active orders, unsent tabs, held tabs, or occupied tables exist. User can Cancel or Force Close. Added 4 count props, 3 derived values, loading/guard/cash render branches. Six i18n keys added (English real text; es/fr/ar prefixed `[EN]` per no-machine-translate rule). | 7771254 |
+| M1 | Two local tabs claiming same table | pos.tsx: added `claimedByOtherTab` guard folded into `canSelect`, checking both open `tabs[]` and `heldTabs[]`. Added visual state (dashed slate border) and subtitle text in the table picker tile. Registered missing `useRealtimeEvent("table:updated", ...)` handler to invalidate `/api/tables` on remote updates. Four locale files received `claimedByOtherTab` key (en real text; es/fr/ar `[EN]` prefixed). Server-side hardening tracked as M1b. | b9db234 |
 
 ## FIXED — Resolved April 16–17, deployed to production
 
@@ -86,7 +89,7 @@ None currently. B1 (KDS stale ticket pollution) was split into five defects on 2
 - **L#** = LOW (open)
 - **F#** = FIXED (resolved, deployed)
 - **INV-#** = INVALID (closed without code change)
-- **Sub-identifiers** (e.g., B1a, B1b, B1c, M3b) are used when a single tracked bug is split into multiple fixable parts after deeper recon. Shipped sub-items keep their sub-identifier in the FIXED table (not renumbered as F#) so the relationship to the parent bug stays visible.
+- **Sub-identifiers** (e.g., B1a, B1b, B1c, M1b, M3b) are used when a single tracked bug is split into multiple fixable parts after deeper recon. Shipped sub-items keep their sub-identifier in the FIXED table (not renumbered as F#) so the relationship to the parent bug stays visible.
 - Identifiers are stable once assigned. Do not renumber when adding new bugs — append.
 
 ## Adding a new bug
