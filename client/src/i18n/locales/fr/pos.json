@@ -29,6 +29,7 @@
   "customerName": "Nom du Client",
   "specialInstructions": "Instructions Spéciales",
   "addNote": "Ajouter une Note",
+  "claimedByOtherTab": "[EN] Picked on another tab",
   "clearCart": "Vider le Panier",
   "itemAdded": "Article ajouté au panier",
   "itemRemoved": "Article retiré du panier",

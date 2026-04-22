@@ -647,6 +647,9 @@ export default function POSPage() {
   useRealtimeEvent("order:item_updated", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/orders"] });
   }, [queryClient]));
+  useRealtimeEvent("table:updated", useCallback(() => {
+    queryClient.invalidateQueries({ queryKey: ["/api/tables"] });
+  }, [queryClient]));
   useRealtimeEvent("menu:updated", useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["/api/menu-items"] });
     queryClient.invalidateQueries({ queryKey: ["/api/menu-categories"] });
@@ -2321,7 +2324,11 @@ export default function POSPage() {
                     const isFree = t.status === "free";
                     const isOccupied = t.status === "occupied";
                     const isReserved = t.status === "reserved";
-                    const canSelect = isFree || isSelected;
+                    // M1: prevent another open or held local tab from claiming the same table
+                    const claimedByOtherTab =
+                      tabs.some(x => x.id !== activeTabId && x.selectedTable === t.id) ||
+                      heldTabs.some(h => h.tab.selectedTable === t.id);
+                    const canSelect = (isFree || isSelected) && !claimedByOtherTab;
                     return (
                       <button
                         key={t.id}
@@ -2340,13 +2347,14 @@ export default function POSPage() {
                         }}
                         className={`relative flex flex-col items-center justify-center h-16 rounded-lg border-2 transition-all text-sm font-semibold
                           ${isSelected ? "border-primary bg-primary text-primary-foreground shadow-lg" :
+                            claimedByOtherTab ? "border-dashed border-slate-300 bg-slate-50 dark:bg-slate-900/30 text-slate-500 dark:text-slate-400 cursor-not-allowed opacity-70" :
                             isFree ? "border-green-400 bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 hover:border-green-500 hover:scale-[1.03] cursor-pointer" :
                             isOccupied ? "border-amber-400 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400 cursor-not-allowed opacity-70" :
                             isReserved ? "border-red-300 bg-red-50 dark:bg-red-950/30 text-red-400 cursor-not-allowed opacity-70" :
                             "border-muted-foreground/30 bg-muted/30 text-muted-foreground cursor-not-allowed opacity-60"}`}
                       >
                         <span className="text-base leading-none">{t.number}</span>
-                        <span className="text-[10px] mt-1 font-normal opacity-75">{isFree ? `${t.capacity}p` : isOccupied ? tp("occupied") : isReserved ? tp("reserved") : t.status}</span>
+                        <span className="text-[10px] mt-1 font-normal opacity-75">{claimedByOtherTab ? tp("claimedByOtherTab") : isFree ? `${t.capacity}p` : isOccupied ? tp("occupied") : isReserved ? tp("reserved") : t.status}</span>
                         {isSelected && <CheckCircle2 className="absolute top-1 right-1 h-3.5 w-3.5" />}
                       </button>
                     );

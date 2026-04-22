@@ -29,6 +29,7 @@
   "customerName": "Nombre del Cliente",
   "specialInstructions": "Instrucciones Especiales",
   "addNote": "Agregar Nota",
+  "claimedByOtherTab": "[EN] Picked on another tab",
   "clearCart": "Vaciar Carrito",
   "itemAdded": "Artículo agregado al carrito",
   "itemRemoved": "Artículo eliminado del carrito",

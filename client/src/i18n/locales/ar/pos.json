@@ -29,6 +29,7 @@
   "customerName": "اسم العميل",
   "specialInstructions": "تعليمات خاصة",
   "addNote": "إضافة ملاحظة",
+  "claimedByOtherTab": "[EN] Picked on another tab",
   "clearCart": "تفريغ السلة",
   "itemAdded": "تمت إضافة العنصر إلى السلة",
   "itemRemoved": "تمت إزالة العنصر من السلة",

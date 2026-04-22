@@ -29,6 +29,7 @@
   "customerName": "Customer Name",
   "specialInstructions": "Special Instructions",
   "addNote": "Add Note",
+  "claimedByOtherTab": "Picked on another tab",
   "clearCart": "Clear Cart",
   "itemAdded": "Item added to cart",
   "itemRemoved": "Item removed from cart",
