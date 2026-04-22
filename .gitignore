@@ -16,3 +16,20 @@ test-results/
 *_database_backup*
 *.dump
 *.pg_dump
+
+# Local-only scratch files (recon reports, session handoffs, planning notes)
+# These accumulate at the repo root during day-to-day work but are not part of the project.
+*-recon.md
+*-plan.md
+session-handoff-*.md
+audit/pos-reaudit-findings.md
+
+# Local AI tooling state
+.claude/
+
+# Migration scratch env (never committed)
+.env.migration
+
+# Local one-off seed scripts (keep named seed scripts committed manually)
+scripts/seed-cashier-*.ts
+
