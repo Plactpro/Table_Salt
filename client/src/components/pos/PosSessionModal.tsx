@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
@@ -23,6 +23,10 @@ interface CloseShiftDialogProps {
   onClose: () => void;
   sessionId: string;
   onClosed: () => void;
+  activeOrdersCount: number | undefined;
+  unsentTabsCount: number;
+  heldTabsCount: number;
+  occupiedTablesCount: number;
 }
 
 export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps) {
@@ -94,14 +98,21 @@ export function StartShiftModal({ open, onSessionStarted }: PosSessionModalProps
 
 interface SupervisorCredentials { username: string; password: string; otpApprovalToken?: string; }
 
-export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseShiftDialogProps) {
+export function CloseShiftDialog({
+  open, onClose, sessionId, onClosed,
+  activeOrdersCount, unsentTabsCount, heldTabsCount, occupiedTablesCount,
+}: CloseShiftDialogProps) {
   const { t, i18n } = useTranslation("pos");
+  const { t: tc } = useTranslation("common");
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [cashCount, setCashCount] = useState("");
   const [showSupervisor, setShowSupervisor] = useState(false);
+  const [forceConfirmed, setForceConfirmed] = useState(false);
   const [reportData, setReportData] = useState<{ session: { openingFloat?: number; shiftName?: string | null }; revenueByMethod?: Record<string, number>; billCount?: number; totalRevenue?: number } | null>(null);
+
+  useEffect(() => { if (!open) setForceConfirmed(false); }, [open]);
 
   const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
   const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
@@ -139,6 +150,10 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
   const expectedCash = report ? (Number(report.session?.openingFloat ?? 0) + (report.revenueByMethod?.CASH ?? 0)) : 0;
   const actualCash = parseFloat(cashCount) || 0;
   const variance = cashCount ? actualCash - expectedCash : null;
+
+  const countsReady = activeOrdersCount !== undefined;
+  const openItemCount = (activeOrdersCount ?? 0) + unsentTabsCount + heldTabsCount + occupiedTablesCount;
+  const showGuard = countsReady && openItemCount > 0 && !forceConfirmed;
 
   const handlePrintReport = () => {
     const source = report || reportData;
@@ -192,7 +207,36 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
               <LogOut className="h-5 w-5 text-primary" /> {t("closeShift")}
             </DialogTitle>
           </DialogHeader>
-          {report && (
+          {(!report || !countsReady) && (
+            <div className="flex items-center justify-center h-32 text-muted-foreground">
+              {t("loadingSessionData")}
+            </div>
+          )}
+          {report && countsReady && showGuard && (
+            <div className="space-y-4" data-testid="shift-close-guard">
+              <div className="flex items-start gap-3 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="space-y-2 flex-1">
+                  <p className="font-medium text-sm">{t("closeShiftGuardTitle")}</p>
+                  <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
+                    {(activeOrdersCount ?? 0) > 0 && <li>{t("closeShiftGuardActiveOrders", { count: activeOrdersCount })}</li>}
+                    {unsentTabsCount > 0 && <li>{t("closeShiftGuardUnsentTabs", { count: unsentTabsCount })}</li>}
+                    {heldTabsCount > 0 && <li>{t("closeShiftGuardHeldTabs", { count: heldTabsCount })}</li>}
+                    {occupiedTablesCount > 0 && <li>{t("closeShiftGuardOccupiedTables", { count: occupiedTablesCount })}</li>}
+                  </ul>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" className="flex-1" onClick={onClose} data-testid="button-cancel-shift-close">
+                  {tc("cancel")}
+                </Button>
+                <Button variant="destructive" size="sm" className="flex-1" onClick={() => setForceConfirmed(true)} data-testid="button-force-close-shift">
+                  {t("forceCloseAnyway")}
+                </Button>
+              </div>
+            </div>
+          )}
+          {report && countsReady && !showGuard && (
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-muted/50 rounded-lg p-3 text-center border">
@@ -262,11 +306,6 @@ export function CloseShiftDialog({ open, onClose, sessionId, onClosed }: CloseSh
                   {closeMutation.isPending ? t("closing") : t("closeShift")}
                 </Button>
               </div>
-            </div>
-          )}
-          {!report && (
-            <div className="flex items-center justify-center h-32 text-muted-foreground">
-              {t("loadingSessionData")}
             </div>
           )}
         </DialogContent>

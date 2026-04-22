@@ -698,6 +698,23 @@ export default function POSPage() {
   }, [isOffline, menuRefreshing, refetchMenuItems, queryClient, toast]);
 
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
+  const { data: shiftCloseSummary } = useQuery<{ activeCount?: number }>({
+    queryKey: ["/api/orders", "shift-close-summary"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/orders?limit=1");
+      return res.json();
+    },
+    enabled: showCloseShift,
+    staleTime: 0,
+  });
+  const unsentTabsCount = useMemo(
+    () => tabs.filter(tab => tab.cart.some(c => !tab.sentCartKeys.includes(c.cartKey))).length,
+    [tabs]
+  );
+  const occupiedTablesCount = useMemo(
+    () => tables.filter(t => t.status === "occupied").length,
+    [tables]
+  );
   const { data: offers = [] } = useCachedQuery<Offer[]>(["/api/offers"], "/api/offers");
   const { data: comboOffers = [] } = useQuery<ComboOffer[]>({ queryKey: ["/api/combo-offers"] });
 
@@ -2733,7 +2750,11 @@ export default function POSPage() {
       }} />
       {posSessionId && (
         <CloseShiftDialog open={showCloseShift} onClose={() => setShowCloseShift(false)} sessionId={posSessionId}
-          onClosed={() => { setPosSessionId(null); setPosSession(null); setShowCloseShift(false); queryClient.invalidateQueries({ queryKey: ["/api/pos/session"] }); }} />
+          onClosed={() => { setPosSessionId(null); setPosSession(null); setShowCloseShift(false); queryClient.invalidateQueries({ queryKey: ["/api/pos/session"] }); }}
+          activeOrdersCount={shiftCloseSummary?.activeCount}
+          unsentTabsCount={unsentTabsCount}
+          heldTabsCount={heldTabs.length}
+          occupiedTablesCount={occupiedTablesCount} />
       )}
 
       <Dialog open={!!closeTabConfirm} onOpenChange={() => setCloseTabConfirm(null)}>
