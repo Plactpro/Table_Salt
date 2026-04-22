@@ -650,6 +650,13 @@ function startWebhookMonitor() {
   }
 
   try {
+    const { startStaleOrderArchiveScheduler } = await import("./services/stale-order-archive-scheduler");
+    startStaleOrderArchiveScheduler();
+  } catch (e) {
+    console.error("Stale order archive scheduler init error:", e);
+  }
+
+  try {
     const { startUnclockdInChecker } = await import("./services/alert-engine");
     startUnclockdInChecker();
   } catch (e) {
