@@ -33,3 +33,6 @@ audit/pos-reaudit-findings.md
 # Local one-off seed scripts (keep named seed scripts committed manually)
 scripts/seed-cashier-*.ts
 
+
+# Local scratch folder for session handoffs, unsaved drafts
+local-scratch/
