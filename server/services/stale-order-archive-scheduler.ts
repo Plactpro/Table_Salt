@@ -13,7 +13,7 @@ async function archiveStaleOrdersForTenant(tenantId: string): Promise<number> {
     `UPDATE orders
      SET status = 'cancelled', notes = COALESCE(NULLIF(notes, ''), '') || CASE WHEN notes IS NULL OR notes = '' THEN '' ELSE ' | ' END || 'Auto-archived: stale order'
      WHERE tenant_id = $1
-       AND status = ANY($2::text[])
+       AND status::text = ANY($2::text[])
        AND created_at < $3
      RETURNING id`,
     [tenantId, staleStatuses, cutoff]
