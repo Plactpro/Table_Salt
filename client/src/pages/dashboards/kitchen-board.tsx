@@ -950,8 +950,9 @@ export default function KitchenBoardPage() {
   });
 
   const invalidateKds = useCallback(() => {
-    if (view === "cooking") qc.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
-  }, [view, qc]);
+    qc.invalidateQueries({ queryKey: ["/api/kds/tickets"] });
+    qc.invalidateQueries({ queryKey: ["/api/assignments/board"] });
+  }, [qc]);
 
   useRealtimeEvent("order:new", invalidateKds);
   useRealtimeEvent("order:updated", invalidateKds);
