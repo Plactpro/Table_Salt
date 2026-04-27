@@ -27,6 +27,9 @@ audit/pos-reaudit-findings.md
 # Local AI tooling state
 .claude/
 
+# Replit-specific config — project deployed to Railway, this is no longer used
+.replit
+
 # Migration scratch env (never committed)
 .env.migration
 
