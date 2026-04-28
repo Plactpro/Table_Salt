@@ -716,6 +716,7 @@ export default function BillPreviewModal({
       toast({ title: "No amount to pay", description: "Please add items to the order before proceeding to payment.", variant: "destructive" });
       return;
     }
+    userInitiatedPaymentRef.current = true;
     createBillMutation.mutate();
   };
 
