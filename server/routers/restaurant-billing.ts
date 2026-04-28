@@ -221,7 +221,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
 
       // F-121 fix: Fetch order items and recompute all monetary values server-side.
       // Client-submitted subtotal, tax, discount, serviceCharge, and totalAmount are IGNORED.
-      const orderItems = await storage.getOrderItemsByOrder(orderId);
+      const orderItems = await storage.getOrderItemsByOrder(orderId, user.tenantId);
       if (orderItems.length === 0) {
         return res.status(400).json({ message: "Cannot create bill for order with no items" });
       }

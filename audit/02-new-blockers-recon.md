@@ -312,3 +312,158 @@ These were noticed in passing while tracing the four scoped items. One-liners on
 2. Blocker 2 — is the intended UX "cash entered in the inline modal settles the bill" or "the cashier always confirms in BillPreviewModal"? The fix differs.
 3. Blocker 3 — was the test order placed with `Order Type = Delivery` or `Order Type = Advance (Scheduled)`? And is `tenant.moduleConfig.deliveryEnabled` true on the test tenant?
 4. X-02 — would the user prefer the surgical `restaurant-billing.ts:224` add-arg fix, or also a defensive sweep through F-121's other introductions for the same pattern?
+
+---
+
+## Addendum 2026-04-28: restaurant-billing.ts full storage audit
+
+Read-only enumeration of every `storage.<fn>(...)` call in `server/routers/restaurant-billing.ts` (1452 lines, 81 calls), cross-referenced against `server/storage.ts` signatures. The goal: find every call that omits a `tenantId` argument that the storage layer requires.
+
+### Storage functions referenced (signatures from `server/storage.ts`)
+
+| Function | storage.ts line | Signature | tenantId required by signature | `assertTenantId` (TENANT_GUARD) |
+|----------|------|-----------|--------------------------------|------------------------------|
+| `getTenant` | 891 | `(id)` | n/a — `id` IS the tenantId | no |
+| `updateTable` | 1063 | `(id, tenantId, data)` | YES | no |
+| `getOrder` | 1133 | `(id, tenantId)` | YES | no |
+| `updateOrder` | 1148 | `(id, tenantId, data, expectedVersion?)` | YES | YES (1149) |
+| `getOrderItemsByOrder` | 1157 | `(orderId, tenantId)` | YES | YES (1158) |
+| `getInventoryItem` | 1271 | `(id, tenantId)` | YES | no |
+| `updateInventoryItem` | 1281 | `(id, data, tenantId)` | YES | no |
+| `createStockMovement` | 1292 | `(data: InsertStockMovement)` | n/a — `data.tenantId` on insert | no |
+| `getCustomerByTenant` | 1405 | `(id, tenantId)` | YES | no |
+| `updateCustomerByTenant` | 1409 | `(id, tenantId, data)` | YES | no |
+| `getStockMovementsByOrder` | 1882 | `(orderId)` | NO | no |
+| `createBill` | 2655 | `(data: InsertBill)` | n/a — `data.tenantId` on insert | no |
+| `getBill` | 2682 | `(id, tenantId)` | YES | YES (2683) |
+| `getBillUnchecked` | 2690 | `(id)` | NO — intentional, public/webhook only | no |
+| `getBillByOrder` | 2694 | `(orderId, tenantId)` | YES | YES (2695) |
+| `getBillsByTenant` | 2699 | `(tenantId, opts?)` | YES | no |
+| `updateBill` | 2711 | `(id, tenantId, data)` | YES | no |
+| `createBillPayment` | 2716 | `(data: InsertBillPayment)` | n/a — `data.tenantId` on insert | no |
+| `getBillPayments` | 2720 | `(billId)` | NO | no |
+| `createPosSession` | 2728 | `(data: InsertPosSession)` | n/a — `data.tenantId` on insert | no |
+| `getActivePosSession` | 2732 | `(tenantId, waiterId)` | YES | no |
+| `getPosSession` | 2738 | `(id, tenantId)` | YES | YES (2739) |
+| `closePosSession` | 2743 | `(id, tenantId, data)` | YES | no |
+| `updatePosSession` | 2753 | `(id, tenantId, data)` | YES | no |
+| `getPosSessionReport` | 2757 | `(sessionId)` | NO | no |
+
+Functions marked **YES** for "tenantId required" + **YES** for `assertTenantId` are the ones that throw a 500 at runtime when tenantId is missing — the X-02 failure mode. The other "YES" rows fail silently (SQL `eq(col, undefined)` returns no rows) which is bad in a different way but does not surface as a 500.
+
+### Per-call summary table
+
+Route / context column abbreviations:
+- `req.user.tenantId` ← route uses `requireAuth` middleware
+- `bill.tenantId` ← derived from a bill record fetched earlier in the same handler
+- `helper` ← inside `finalizeBillCompletion()` helper, `bill.tenantId` from the typed argument
+- `public` ← `/api/public/receipt/:id` — no auth, must derive tenantId from the bill record
+
+| # | Line | Storage call (one-line) | Sig requires tenantId? | tenantId passed? | Verdict | Severity |
+|---|------|-------------------------|------------------------|------------------|---------|----------|
+| 1 | 62 | `updateBill(bill.id, bill.tenantId, …)` | YES | YES (helper) | OK | Info |
+| 2 | 65 | `createBillPayment({ tenantId: bill.tenantId, … })` | n/a (data) | YES (in data) | OK | Info |
+| 3 | 76 | `updateOrder(bill.orderId, bill.tenantId, …)` | YES | YES (helper) | OK | Info |
+| 4 | 80 | `updateTable(bill.tableId, bill.tenantId, …)` | YES | YES (helper) | OK | Info |
+| 5 | 87 | `getCustomerByTenant(bill.customerId, bill.tenantId)` | YES | YES (helper) | OK | Info |
+| 6 | 99 | `updateCustomerByTenant(bill.customerId, bill.tenantId, …)` | YES | YES (helper) | OK | Info |
+| 7 | 114 | `getBill(bill.id, bill.tenantId)` | YES | YES (helper) | OK | Info |
+| 8 | 131 | `getBillUnchecked(req.params.id)` | NO (public-only) | n/a | OK (intentional, public route) | Info |
+| 9 | 139 | `getBillPayments(bill.id)` | NO | n/a | OK (sig has none); see Open Q 2 | Info |
+| 10 | 140 | `getOrder(bill.orderId, bill.tenantId)` | YES | YES (bill.tenantId) | OK | Info |
+| 11 | 141 | `getOrderItemsByOrder(order.id, bill.tenantId)` | YES | YES (bill.tenantId) | OK | Info |
+| 12 | 180 | `getBillsByTenant(user.tenantId, …)` | YES | YES (req.user.tenantId) | OK | Info |
+| 13 | 188 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 14 | 191 | `getBillPayments(bill.id)` | NO | n/a | OK; see Open Q 2 | Info |
+| 15 | 192 | `getOrder(bill.orderId, user.tenantId)` | YES | YES | OK | Info |
+| 16 | 193 | `getOrderItemsByOrder(order.id, user.tenantId)` | YES | YES | OK | Info |
+| 17 | 201 | `getBillByOrder(req.params.orderId, user.tenantId)` | YES | YES | OK | Info |
+| 18 | 204 | `getBillPayments(bill.id)` | NO | n/a | OK; see Open Q 2 | Info |
+| 19 | 205 | `getOrder(bill.orderId, user.tenantId)` | YES | YES | OK | Info |
+| 20 | 206 | `getOrderItemsByOrder(order.id, user.tenantId)` | YES | YES | OK | Info |
+| 21 | 217 | `getOrder(orderId, user.tenantId)` | YES | YES | OK | Info |
+| 22 | 219 | `getBillByOrder(orderId, user.tenantId)` | YES | YES | OK | Info |
+| 23 | **224** | **`getOrderItemsByOrder(orderId)`** | **YES** | **NO** | **BUG (X-02)** | **HIGH** |
+| 24 | 286 | `getTenant(user.tenantId)` | n/a (id is tenantId) | YES | OK | Info |
+| 25 | 328 | `createBill({ tenantId: user.tenantId, … })` | n/a (data) | YES (in data) | OK | Info |
+| 26 | 395 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 27 | 461 | `getTenant(user.tenantId)` | n/a | YES | OK | Info |
+| 28 | 521 | `getCustomerByTenant(loyaltyCustomerId, user.tenantId)` | YES | YES | OK | Info |
+| 29 | 534 | `createBillPayment({ tenantId: user.tenantId, … })` | n/a (data) | YES (in data) | OK | Info |
+| 30 | 581 | `getBillPayments(bill.id)` | NO | n/a | OK; see Open Q 2 | Info |
+| 31 | 586 | `updateBill(bill.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 32 | 594 | `updateOrder(bill.orderId, user.tenantId, …)` | YES | YES | OK | Info |
+| 33 | 596 | `updateTable(bill.tableId, user.tenantId, …)` | YES | YES | OK | Info |
+| 34 | 602 | `getCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId)` | YES | YES | OK | Info |
+| 35 | 618 | `updateCustomerByTenant(effectiveLoyaltyCustomerId, user.tenantId, …)` | YES | YES | OK | Info |
+| 36 | 719 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 37 | 727 | `getBillPayments(bill.id)` | NO | n/a | OK; see Open Q 2 | Info |
+| 38 | 733 | `getStockMovementsByOrder(bill.orderId)` | NO | n/a | OK (sig has none); see Open Q 2 | Info |
+| 39 | 736 | `getInventoryItem(mv.itemId, user.tenantId)` | YES | YES | OK | Info |
+| 40 | 741 | `updateInventoryItem(mv.itemId, {…}, user.tenantId)` | YES | YES (3rd arg) | OK | Info |
+| 41 | 744 | `createStockMovement({ tenantId: user.tenantId, … })` | n/a (data) | YES (in data) | OK | Info |
+| 42 | 762 | `updateBill(bill.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 43 | 769 | `updateOrder(bill.orderId, user.tenantId, …)` | YES | YES | OK | Info |
+| 44 | 771 | `updateTable(bill.tableId, user.tenantId, …)` | YES | YES | OK | Info |
+| 45 | 776 | `getCustomerByTenant(bill.customerId, user.tenantId)` | YES | YES | OK | Info |
+| 46 | 780 | `updateCustomerByTenant(bill.customerId, user.tenantId, …)` | YES | YES | OK | Info |
+| 47 | 790 | `getBillPayments(bill.id)` | NO | n/a | OK; see Open Q 2 | Info |
+| 48 | 827 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 49 | 837 | `getBillPayments(bill.id)` | NO | n/a | OK; see Open Q 2 | Info |
+| 50 | 873 | `getTenant(user.tenantId)` | n/a | YES | OK | Info |
+| 51 | 901 | `createBillPayment({ tenantId: user.tenantId, … })` | n/a (data) | YES (in data) | OK | Info |
+| 52 | 921 | `updateBill(bill.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 53 | 927 | `getCustomerByTenant(customerId, user.tenantId)` | YES | YES | OK | Info |
+| 54 | 937 | `updateCustomerByTenant(customerId, user.tenantId, …)` | YES | YES | OK | Info |
+| 55 | 981 | `getActivePosSession(user.tenantId, user.id)` | YES | YES | OK | Info |
+| 56 | 989 | `getActivePosSession(user.tenantId, user.id)` | YES | YES | OK | Info |
+| 57 | 995 | `createPosSession({ tenantId: user.tenantId, … })` | n/a (data) | YES (in data) | OK | Info |
+| 58 | 1019 | `getPosSession(sessionId, user.tenantId)` | YES | YES | OK | Info |
+| 59 | 1022 | `getActivePosSession(user.tenantId, user.id)` | YES | YES | OK | Info |
+| 60 | 1026 | `getPosSessionReport(session.id)` | NO | n/a | OK (sig has none); see Open Q 4 | Info |
+| 61 | 1027 | `updatePosSession(session.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 62 | 1032 | `closePosSession(session.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 63 | 1046 | `getActivePosSession(user.tenantId, user.id)` | YES | YES | OK | Info |
+| 64 | 1048 | `getPosSessionReport(active.id)` | NO | n/a | OK (sig has none); see Open Q 4 | Info |
+| 65 | 1051 | `getPosSession(sessionId, user.tenantId)` | YES | YES | OK | Info |
+| 66 | 1053 | `getPosSessionReport(sessionId)` | NO | n/a | OK (sig has none); see Open Q 4 | Info |
+| 67 | 1084 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 68 | 1089 | `getTenant(user.tenantId)` | n/a | YES | OK | Info |
+| 69 | 1096 | `updateBill(bill.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 70 | 1120 | `updateBill(bill.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 71 | 1160 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 72 | 1170 | `createBillPayment({ tenantId: user.tenantId, … })` | n/a (data) | YES (in data) | OK | Info |
+| 73 | 1179 | `updateBill(bill.id, user.tenantId, …)` | YES | YES | OK | Info |
+| 74 | 1190 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 75 | 1198 | `getTenant(user.tenantId)` | n/a | YES | OK | Info |
+| 76 | 1207 | `getBill(bill.id, user.tenantId)` | YES | YES | OK | Info |
+| 77 | 1238 | `getBill(req.params.id, user.tenantId)` | YES | YES | OK | Info |
+| 78 | 1242 | `getBillPayments(bill.id)` | NO | n/a | OK; see Open Q 2 | Info |
+| 79 | 1243 | `getOrder(bill.orderId, user.tenantId)` | YES | YES | OK | Info |
+| 80 | 1244 | `getOrderItemsByOrder(order.id, user.tenantId)` | YES | YES | OK | Info |
+| 81 | 1245 | `getTenant(user.tenantId)` | n/a | YES | OK | Info |
+
+**Headline result: exactly one TENANT_GUARD violation in `restaurant-billing.ts` — line 224. Every other call passes a tenantId where the signature requires one.**
+
+### Per-bug detail
+
+#### BUG #1 — line 224 (already known as X-02)
+
+- **File:line** — `server/routers/restaurant-billing.ts:224`
+- **Current code** — `const orderItems = await storage.getOrderItemsByOrder(orderId);`
+- **Proposed fix** — `const orderItems = await storage.getOrderItemsByOrder(orderId, user.tenantId);`
+- **Source of tenantId for the fix** — `req.user.tenantId`. Route is `app.post("/api/restaurant-bills", requireAuth, …)` declared at `restaurant-billing.ts:211`; `const user = req.user as any;` is already in scope at line 213 and used by the rest of the handler (lines 217, 219, 270, 286, 312, 322, 329, 335…). No new variable extraction needed.
+- **Confidence** — HIGH. The storage signature at `storage.ts:1157` is `getOrderItemsByOrder(orderId: string, tenantId: string)` and the next line (`assertTenantId(tenantId, "getOrderItemsByOrder")`) throws when tenantId is undefined. Calling with a single argument is a TS error that would have been caught at compile time if strict mode were applied to this call site — the implication is that this site type-erases through `as any` somewhere, or the call was added without a fresh build. The two sibling calls in the same handler (lines 193 and 206) pass `user.tenantId` correctly.
+- **Affects which user actions** — `POST /api/restaurant-bills`, the bill-creation endpoint. Every flow that finalises an order into a bill hits this path:
+  - **Dine-in:** "Generate Bill" / "Print Preview" on the dine-in POS bill page (`/pos/bill/<orderId>`).
+  - **Takeaway:** the takeaway checkout flow, after the cashier confirms order items.
+  - **Delivery:** delivery dashboard's "Bill" action when finalising a delivery order for payment.
+  - All three throw `Error: tenantId is required for getOrderItemsByOrder` → the catch at line 384 returns HTTP 500 with that message → client surfaces "something went wrong" / red toast and the bill row never gets created. Order remains in `pending`/`active` and the table stays seated.
+
+### Open questions
+
+1. The task brief stated "the recon flagged a SECOND likely violation at line 247 (`getOrderById(order.id)`)". I verified the current file: line 247 is `packingChargeAmount = frontendPackingCharge;` (inside the takeaway/delivery packing-charge branch), and a grep for `getOrderById` across `server/routers/restaurant-billing.ts` returns zero matches. There is no `getOrderById` call anywhere in this file. Possibilities: (a) the recon's line number was stale relative to the current file, (b) it was hallucinated, or (c) the recon meant a different file. **No bug found at line 247.** This conflicts with the brief — flagging for the user to reconcile.
+2. Eight calls to `storage.getBillPayments(billId)` (lines 139, 191, 204, 581, 727, 790, 837, 1242) and one call to `storage.getStockMovementsByOrder(orderId)` (line 733) take only an entity ID — no tenantId in the signature. These are NOT TENANT_GUARD violations (no tenantId argument exists to be missing), but they are **cross-tenant data-exposure risks**: if a UUID from another tenant is ever substituted into the URL or fetched via a parent record that wasn't tenant-checked first, the storage layer will not refuse. In every restaurant-billing.ts case the parent (`bill`/`order`) was fetched under the right tenantId immediately before, so the calls are safe in this file *today*. Worth a separate pass on those storage signatures (consider: should they accept and enforce tenantId?).
+3. Functions that take tenantId in their signature but lack `assertTenantId`: `updateBill`, `updateTable`, `getCustomerByTenant`, `updateCustomerByTenant`, `getInventoryItem`, `updateInventoryItem`, `getOrder`, `closePosSession`, `updatePosSession`, `getActivePosSession`, `getBillsByTenant`. A future regression that passes `undefined` here would silently match no rows (returning `undefined` / `[]`) rather than throwing 500 — a quieter but worse-for-debugging failure mode. Considered out of scope for this audit; flagged for a hardening sweep.
+4. `storage.getPosSessionReport(sessionId)` (lines 1026, 1048, 1053) does not validate tenant ownership at the storage layer. The handlers above each call do a prior `getPosSession(sessionId, user.tenantId)` (lines 1019, 1051) or `getActivePosSession(user.tenantId, user.id)` (line 1046) check first, so the report is never returned for a session belonging to a different tenant *as long as those checks remain in place*. A future refactor that drops the `getPosSession` precheck would expose another tenant's session report. Worth tightening `getPosSessionReport` to take and enforce tenantId; out of scope here.
+5. The recon's "side note" suggested grepping for `\bstorage\.\w+ByOrder\(\s*\w+\s*\)` to catch siblings of the X-02 pattern. Done implicitly by the table above: only `getOrderItemsByOrder(orderId)` at line 224 matches the single-arg `…ByOrder(...)` pattern. `getStockMovementsByOrder(bill.orderId)` at line 733 *is* single-arg but the function signature is also single-arg, so it's not a regression.
