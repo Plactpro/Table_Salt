@@ -870,3 +870,112 @@ const handleProceedToPayment = () => {
 **HIGH for the user-visible "nothing happens" root cause and the proposed one-line fix.** The trace is fully verifiable against the current source: every step has a file:line citation, the bug is explained by a missing ref-setter in the click handler, and the fix is symmetric with code already present elsewhere in the same file (line 450). Git blame confirms the regression was introduced in commit `b1b4d87` (POS-05) on 2026-04-11. The fix is one line, behind no feature flag, with no schema or API impact.
 
 **LOW for any theory that the 409 PATCH /api/orders is causally connected to the silent Pay button.** Static analysis cannot find a path from the bill page to `PATCH /api/orders/:id`. Either the diagnosis is misattributed (most likely given the absent code path) or the 409s come from concurrent activity in another tab. **Recommendation:** ship the one-line fix to clear the user-visible symptom, then have the tester re-run the scenario with DevTools recording. If 409s still appear after the fix, capture the *Initiator* column and we can trace from there. Don't block the silent-failure fix on the 409 investigation — they appear to be independent.
+
+---
+
+## Addendum 2026-04-28: BL-3 root cause — delivery dashboard 500
+
+### Summary
+
+`GET /api/delivery-orders/unified` returns 500 because its raw-SQL `WHERE` clause filters `o.order_type IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')` (`server/routers/delivery.ts:33`), but the `order_type` Postgres enum (`shared/schema.ts:59-63`) only declares **three** values: `dine_in`, `takeaway`, `delivery`. The three extra literals fail enum-cast validation, Postgres raises `invalid input value for enum order_type: "phone_delivery"`, and the handler's catch returns 500. The dashboard at `client/src/pages/modules/delivery.tsx:248-253` falls back to `deliveries = []` and renders all-zero counters and "No orders" in every column. **Confidence HIGH.**
+
+### Endpoint
+
+- **HTTP method + path:** `GET /api/delivery-orders/unified`
+- **Route registration / handler:** `server/routers/delivery.ts:14` — `app.get("/api/delivery-orders/unified", requireAuth, async (req, res) => { … })`. Handler body runs lines 14-79 in the same arrow function.
+- **Introduced by:** commit `f6e16ea` (2026-04-10), `fix(delivery): fix order_type filter, cancel button, channel visibility, order ID display [POS-04]` — the commit that added the unified endpoint with this exact `IN` clause. Verified via `git show f6e16ea -- server/routers/delivery.ts`.
+
+### Handler code
+
+The breaking SQL block (verbatim, `server/routers/delivery.ts:27-39`):
+
+```ts
+const { rows: mainDeliveryOrders } = await pool.query(
+  `SELECT o.id, o.tenant_id, o.order_number, o.customer_name, o.customer_phone,
+          o.notes, o.status, o.order_type, o.created_at, o.total, o.outlet_id,
+          o.channel_order_id
+   FROM orders o
+   WHERE o.tenant_id = $1
+     AND o.order_type IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')
+     AND o.status NOT IN ('paid', 'completed', 'voided')
+                 AND (o.channel_order_id IS NULL OR NOT EXISTS (SELECT 1 FROM order_channels oc WHERE oc.name = o.order_type AND oc.tenant_id = o.tenant_id AND oc.active = false))
+   ORDER BY o.created_at DESC
+   LIMIT $2 OFFSET $3`,
+  [user.tenantId, limit, offset]
+);
+```
+
+The catch wrapper is at line 78 — `catch (err: any) { res.status(500).json({ message: err.message }); }`. Postgres returns the exception message in `err.message`, the network panel sees a 500, and the tester sees "Failed to load resource: status of 500".
+
+### Dashboard component
+
+- **File:** `client/src/pages/modules/delivery.tsx`
+- **Query hook:** `delivery.tsx:248-252` — `useQuery<{ data: DeliveryOrder[]; total: number }>({ queryKey: ["/api/delivery-orders/unified"], enabled: deliveryEnabled, refetchInterval: 30000 })`
+- **Expected response shape:** `{ data: DeliveryOrder[]; total: number }`. The handler intends to return `{ data: combined, total: totalCount, limit, offset, hasMore }` (delivery.ts:77) — compatible. **The shape is fine; the issue is the handler never gets there.**
+- **Empty-state fall-through:** `delivery.tsx:253` — `const deliveries = deliveriesRes?.data ?? [];`. When the query throws (500 → TanStack Query treats as error), `deliveriesRes` is `undefined`, `deliveries` becomes `[]`, every Kanban column renders empty, every counter renders 0. **This is exactly what the tester sees.**
+- The query is also auto-refetched every 30 seconds (`refetchInterval: 30000`), so the tester also sees a steady stream of 500s in the network panel — matching the BL-2-verification observation of repeated `delivery-orders/unified:1` 500s.
+
+### Root cause
+
+**Two-line root cause, in plain English:**
+
+1. The Postgres enum `order_type` is declared at `shared/schema.ts:59-63` with exactly three values:
+   ```ts
+   export const orderTypeEnum = pgEnum("order_type", [
+     "dine_in",
+     "takeaway",
+     "delivery",
+   ]);
+   ```
+2. The unified-delivery handler filters with four values, three of which are not in the enum:
+   ```sql
+   AND o.order_type IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')
+   ```
+
+   Postgres tries to cast each literal to the `order_type` enum type. Casting `'phone_delivery'`, `'online_delivery'`, or `'third_party'` to `order_type` raises:
+   ```
+   invalid input value for enum order_type: "phone_delivery"
+   ```
+
+   The exception propagates out of `pool.query`, hits the catch at line 78, and the handler returns HTTP 500.
+
+**Aggravating factor — runtime migration that was meant to extend the enum but is unreliable:**
+
+- `server/index.ts:450-458` runs `ALTER TYPE order_type ADD VALUE IF NOT EXISTS 'phone_delivery'` (and the other two) at app startup, wrapped in `try { … } catch (err) { console.error('[Migration] DELIVERY-FIX: enum migration error:', err); }`. The catch swallows errors silently.
+- `server/admin-migrations.ts:4197-4212` defines `runDeliveryQueueEnumMigration()` with the same intent, but a grep for the function name across `server/` returns only its declaration — **it is never called**.
+- There is no committed `.sql` migration in `migrations/` that extends the enum (verified via `grep` over `migrations/`).
+- Net: in any environment where the startup migration fails or is skipped (fresh DB without the right startup ordering, transaction interaction, partial-failure of an earlier ALTER, or an environment where the catch swallowed a real error), the enum stays at three values and the unified handler 500s. The Drizzle source-of-truth (`shared/schema.ts:59-63`) is also stale relative to the runtime intent.
+
+**Suspicious-but-not-blocking sub-clause in the same query (`delivery.ts:35`):**
+
+```sql
+AND (o.channel_order_id IS NULL OR NOT EXISTS (
+  SELECT 1 FROM order_channels oc
+   WHERE oc.name = o.order_type AND oc.tenant_id = o.tenant_id AND oc.active = false))
+```
+
+`order_channels.name` is `text` (free-form labels like "Phone", "Talabat", "Website" — see `shared/schema.ts:1614-1631`). `o.order_type` is the enum. Postgres auto-casts the enum to text for this comparison, so it does not raise — but the predicate is **semantically nonsense** (channel labels won't equal enum slugs). Even if it ran, it would essentially never match, making the entire `NOT EXISTS` always true, which makes the whole `(channel_order_id IS NULL OR NOT EXISTS …)` clause always true — i.e. the disabled-channel filter never actually filters anything. Out of scope for the BL-3 fix; flagged below as Open Question 2.
+
+### Proposed fix
+
+**Two-character SQL change at `server/routers/delivery.ts:33`:**
+
+- **File:** `server/routers/delivery.ts`
+- **Current:** `AND o.order_type IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')`
+- **Proposed:** `AND o.order_type::text IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')`
+- **One-paragraph description:** cast the column to `text` *before* the `IN` comparison so Postgres compares string-against-string and never tries to cast the literals to the enum type. With the cast, rows whose `order_type::text` is literally `'phone_delivery'`, `'online_delivery'`, or `'third_party'` will match if those values are actually present in the column (e.g. on environments where the runtime ALTER succeeded), and will harmlessly not match where the enum was never extended — but in **neither case does the query 500**. The dashboard recovers immediately. This fix is independent of whether `runDeliveryQueueEnumMigration` ever ran or whether `shared/schema.ts:59-63` gets updated; both of those are now follow-ups, not blockers.
+- **Estimated risk:** **LOW.** The cast-to-text is a standard PG idiom; behavior is unchanged for rows whose `order_type` is one of the existing enum values, and the new behavior for non-enum values is "no row matches" rather than "query throws". No write paths or other handlers touched. The same line is the only place `order_type IN (…)` appears in the unified endpoint.
+- **Estimated diff size:** **+0 lines / −0 lines / 1 line modified** (single in-place edit, `o.order_type` → `o.order_type::text`).
+- **Source of any new identifiers:** none. `::text` is standard PostgreSQL syntax already used elsewhere in the codebase (e.g. `425ae89` "fix(B1b): cast order_status enum to text for archive scheduler WHERE clause" — same pattern, same fix).
+
+### Open questions
+
+1. **Did the runtime migration at `server/index.ts:450-458` ever succeed in production?** I cannot verify without DB access. If it did, the enum has six values today and `phone_delivery`/`online_delivery`/`third_party` rows are real; the dashboard *intent* is preserved by the cast-to-text fix. If it did not, those literals will simply never match — same behavior the bug exhibited (3-value enum filtering for `'delivery'` only). Either way the cast fix prevents the 500. **A separate ticket should run a one-off SQL `SELECT enum_range(NULL::order_type)` via TablePlus to confirm production state.** This is exactly the read-only `audit/` SQL pattern from CLAUDE.md.
+2. **The `oc.name = o.order_type` subquery is semantically wrong** (channel labels vs enum values). It does not 500, but it makes the disabled-channel filter a no-op. Out of scope for the BL-3 unblock; should be tracked as a separate fix to either (a) compare `oc.slug = o.order_type::text` (if order_channels.slug aligns with enum values), or (b) compare against `o.channel` (text column on orders) instead of `o.order_type`. Reading the column at `shared/schema.ts:483` (`channel: text("channel")`) suggests (b) is the original intent.
+3. **`shared/schema.ts:59-63` is stale relative to runtime migration intent.** Even if the cast-to-text fix lands, future Drizzle-driven schema syncs (`drizzle-kit push`) could try to drop the runtime-added enum values. Should be reconciled by adding `phone_delivery`/`online_delivery`/`third_party` to the `pgEnum` declaration AND committing a real `.sql` migration to `migrations/` that ALTERs the enum. Out of scope for the BL-3 unblock.
+4. **`runDeliveryQueueEnumMigration` in `server/admin-migrations.ts:4197` is dead code** — defined but never called. If it was meant to be the migration's permanent home (and the inline block at `server/index.ts:450-458` was meant to be deleted once the function was wired), that wiring never happened. Either delete the dead function or wire it into startup and delete the inline block. Cosmetic; not blocking.
+5. **The earlier "Adjacent observations" note in this same file flagged `service-coordination.ts:662-664` for `orderType: "advance"` falling through to `dine_in` because the schema enum has only three values.** That observation was correct as a static read of `shared/schema.ts`, but missed that `server/index.ts:450-458` extends the enum at runtime. Both observations point at the same root issue — the enum isn't stable across schema definition / runtime migration / runner ALTERs. Tracking together with Open Question 3.
+
+### Confidence
+
+**HIGH.** The handler code, the schema enum declaration, the runtime migration, and the dashboard contract are all read directly from the current source — no inference or hypothesis. The chain from "tester clicks dashboard" → "useQuery fires `/api/delivery-orders/unified`" → "raw SQL `IN` includes literals not in the enum" → "Postgres raises invalid-input error" → "handler catch returns 500" → "useQuery falls back, dashboard shows zeros" is end-to-end verifiable in the current tree. The proposed fix (`::text` cast) is a known idiom already used in the codebase for the same class of bug (commit `425ae89` did the same fix on the `order_status` enum in the B1b archive scheduler). The risk surface is one line in one file; no other handler, route, or storage function changes; no schema or migration change; no client change. Recommend proceeding to a fix branch (`fix/BL-3-delivery-dashboard-500`) once the team confirms the production enum state from Open Question 1 — though even without that confirmation, the cast-to-text fix is safe to ship.
