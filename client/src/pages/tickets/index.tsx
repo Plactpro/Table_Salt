@@ -50,7 +50,7 @@ function StatusBadge({ ticket }: { ticket: TicketRow }) {
     sent_to_kitchen: { label: "🟡 Active", className: "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 border-0" },
     closed: { label: "🔒 Closed", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300 border-0" },
   };
-  const s = statusMap[ticket.status.toLowerCase()] || { label: ticket.status, className: "bg-muted text-muted-foreground border-0" };
+  const s = statusMap[(ticket.status ?? "").toLowerCase()] || { label: ticket.status ?? "Unknown", className: "bg-muted text-muted-foreground border-0" };
   return (
     <div className="flex items-center gap-1 flex-wrap" data-testid={`badge-status-${ticket.id}`}>
       <Badge className={s.className}>{s.label}</Badge>
