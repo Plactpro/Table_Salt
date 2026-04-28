@@ -19,7 +19,7 @@ test-results/
 
 # Local-only scratch files (recon reports, session handoffs, planning notes)
 # These accumulate at the repo root during day-to-day work but are not part of the project.
-*-recon.md
+/*-recon.md
 /*-plan.md
 session-handoff-*.md
 audit/pos-reaudit-findings.md
