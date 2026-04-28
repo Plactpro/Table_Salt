@@ -467,3 +467,406 @@ Route / context column abbreviations:
 3. Functions that take tenantId in their signature but lack `assertTenantId`: `updateBill`, `updateTable`, `getCustomerByTenant`, `updateCustomerByTenant`, `getInventoryItem`, `updateInventoryItem`, `getOrder`, `closePosSession`, `updatePosSession`, `getActivePosSession`, `getBillsByTenant`. A future regression that passes `undefined` here would silently match no rows (returning `undefined` / `[]`) rather than throwing 500 — a quieter but worse-for-debugging failure mode. Considered out of scope for this audit; flagged for a hardening sweep.
 4. `storage.getPosSessionReport(sessionId)` (lines 1026, 1048, 1053) does not validate tenant ownership at the storage layer. The handlers above each call do a prior `getPosSession(sessionId, user.tenantId)` (lines 1019, 1051) or `getActivePosSession(user.tenantId, user.id)` (line 1046) check first, so the report is never returned for a session belonging to a different tenant *as long as those checks remain in place*. A future refactor that drops the `getPosSession` precheck would expose another tenant's session report. Worth tightening `getPosSessionReport` to take and enforce tenantId; out of scope here.
 5. The recon's "side note" suggested grepping for `\bstorage\.\w+ByOrder\(\s*\w+\s*\)` to catch siblings of the X-02 pattern. Done implicitly by the table above: only `getOrderItemsByOrder(orderId)` at line 224 matches the single-arg `…ByOrder(...)` pattern. `getStockMovementsByOrder(bill.orderId)` at line 733 *is* single-arg but the function signature is also single-arg, so it's not a regression.
+
+---
+
+## Addendum 2026-04-28: BL-2 fix recon
+
+### Summary
+
+BL-2: takeaway/delivery orders paid with cash leave the auto-created bill in `paymentStatus = "pending"` because the order-creation handler creates the bill but never records a payment or flips the status. Confidence **HIGH** that the root cause is in `server/routers/orders.ts:792-815`: the block calls `storage.createBill({ … paymentStatus: "pending" … })` and stops — there is no follow-up `createBillPayment` / `updateBill` to mark it paid. Fix is server-side: when `orderData.paymentMethod === "cash"` and the auto-bill is created, immediately record a `bill_payments` row and update the bill's `paymentStatus` to `"paid"` (with `paidAt`); client adds `tenderedAmount` to the request body for forward-compat with cash-drawer audit.
+
+### Server-side change
+
+- **File:** `server/routers/orders.ts`
+- **Block to modify:** lines 792-815 (auto-bill creation block, comment "FIX 2: Auto-create bill for takeaway/delivery when paymentMethod is provided")
+
+#### Existing code (verbatim, lines 792-815)
+
+```ts
+      // FIX 2: Auto-create bill for takeaway/delivery when paymentMethod is provided
+      let autoBill = null;
+      if (orderData.paymentMethod && order.status === "new") {
+        try {
+          const existingBill = await storage.getBillByOrder(order.id, user.tenantId);
+          if (!existingBill) {
+            autoBill = await storage.createBill({
+              tenantId: user.tenantId,
+              orderId: order.id,
+              tableId: order.tableId || null,
+              customerId: order.customerId || null,
+              subtotal: order.subtotal,
+              discountAmount: order.discount || "0",
+              serviceCharge: order.serviceCharge || "0",
+              taxAmount: order.tax || "0",
+              totalAmount: order.total,
+              paymentStatus: "pending",
+              posSessionId: orderData.posSessionId || null,
+            });
+          }
+        } catch (billErr) {
+          console.error("[orders] auto-bill creation failed (non-fatal):", billErr);
+        }
+      }
+```
+
+#### Proposed code (with auto-payment for cash)
+
+```ts
+      // FIX 2: Auto-create bill for takeaway/delivery when paymentMethod is provided
+      let autoBill = null;
+      if (orderData.paymentMethod && order.status === "new") {
+        try {
+          const existingBill = await storage.getBillByOrder(order.id, user.tenantId);
+          if (!existingBill) {
+            autoBill = await storage.createBill({
+              tenantId: user.tenantId,
+              orderId: order.id,
+              tableId: order.tableId || null,
+              customerId: order.customerId || null,
+              subtotal: order.subtotal,
+              discountAmount: order.discount || "0",
+              serviceCharge: order.serviceCharge || "0",
+              taxAmount: order.tax || "0",
+              totalAmount: order.total,
+              paymentStatus: "pending",
+              posSessionId: orderData.posSessionId || null,
+            });
+
+            // BL-2 fix: cash takeaway/delivery is paid at order time — record the payment
+            // and flip the bill to "paid". Card flows are settled by Stripe webhook;
+            // UPI is a placeholder. Both remain "pending" here.
+            if (autoBill && (orderData.paymentMethod as string).toLowerCase() === "cash") {
+              await storage.createBillPayment({
+                tenantId: user.tenantId,
+                billId: autoBill.id,
+                paymentMethod: "CASH",
+                amount: order.total,
+                collectedBy: user.id,
+                isRefund: false,
+              });
+              autoBill = (await storage.updateBill(autoBill.id, user.tenantId, {
+                paymentStatus: "paid",
+                paidAt: new Date(),
+              })) ?? autoBill;
+
+              // Fire-and-forget: cash session totals + drawer event.
+              // Mirrors restaurant-billing.ts:546-578 for the manual payment path.
+              const cashAmount = Number(order.total);
+              const tendered = orderData.tenderedAmount != null ? Number(orderData.tenderedAmount) : null;
+              setImmediate(async () => {
+                try {
+                  const { rows: sessRows } = await pool.query(
+                    `SELECT id FROM cash_sessions WHERE cashier_id = $1 AND status = 'open' AND tenant_id = $2 LIMIT 1`,
+                    [user.id, user.tenantId]
+                  );
+                  if (sessRows[0]) {
+                    const sessionId = sessRows[0].id;
+                    await pool.query(
+                      `UPDATE cash_sessions
+                       SET total_cash_sales = total_cash_sales + $1,
+                           total_transactions = total_transactions + 1,
+                           expected_closing_cash = opening_float + total_cash_sales + $1 - total_cash_refunds - total_cash_payouts
+                       WHERE id = $2`,
+                      [cashAmount, sessionId]
+                    );
+                    await logCashDrawerEvent({
+                      tenantId: user.tenantId,
+                      cashierId: user.id,
+                      cashierName: user.name || user.username,
+                      eventType: "SALE",
+                      billId: autoBill.id,
+                      orderId: order.id,
+                      amount: cashAmount,
+                      sessionId,
+                    });
+                  }
+                } catch (e) {
+                  console.error("[orders] auto-payment cash session update failed:", e);
+                }
+                void tendered; // reserved for future logCashDrawerEvent extension (cash_drawer_events.tendered_amount column exists at shared/schema.ts:4371)
+              });
+            }
+          }
+        } catch (billErr) {
+          console.error("[orders] auto-bill creation failed (non-fatal):", billErr);
+        }
+      }
+```
+
+#### Justification: Approach B (inline) over Approach A (extract service)
+
+Approach B is the right call here. The existing endpoint at `server/routers/restaurant-billing.ts:387` is ~330 lines because it has to handle idempotency replay, multi-payment splits, tip distribution, loyalty redemption, tax-rate sanity checks, field-integrity validation, and order completion (mark order `completed`, free table, emit `order:completed`). **None** of that applies to the auto-payment path: it is always a single CASH tender, the amount equals `order.total` (server-computed), the order must stay in `new` status because the kitchen still has to cook it, and idempotency is already provided by the parent `POST /api/orders` handler at orders.ts:818-824. Extracting a shared service means untangling those endpoint-specific concerns from the genuinely shared "create-payment-and-mark-paid" core — a refactor that touches both files and risks regressing the manual-payment endpoint that was just hardened in PR-001/PR-004. Inlining the 30-line subset here keeps the BL-2 fix surgical and reversible. If a third caller emerges (e.g., UPI auto-settle), revisit and extract.
+
+#### Source of identifiers in scope at the insertion point
+
+| Identifier | In scope at line 810? | Source |
+|------------|------------------------|--------|
+| `user.tenantId` | YES | `const user = req.user as Express.User & {…}` (declared earlier in `POST /api/orders` handler — used throughout the block, e.g. line 796, 799, 822, 834) |
+| `user.id` | YES | same |
+| `user.name` / `user.username` | YES | same |
+| `autoBill.id` | YES | created on line 798-810 |
+| `order.total` | YES | `order` is the just-created order (returned by `storage.createOrder` earlier in the handler — used at line 803, 807) |
+| `order.id` | YES | same |
+| `orderData.paymentMethod` | YES | from `req.body`, gated by line 794 |
+| `orderData.tenderedAmount` | YES (after client patch lands) | from `req.body`; backwards-compat: `null`/`undefined` if client is older |
+| `pool` | YES | imported at orders.ts:5 |
+
+#### Imports to add
+
+Only one:
+
+```ts
+import { logCashDrawerEvent } from "./cash-drawer-log";
+```
+
+…goes alongside the existing router imports (orders.ts:7-24). `storage`, `pool`, `setImmediate` (Node global) are already in scope.
+
+### Client-side change
+
+- **File:** `client/src/pages/modules/pos.tsx`
+- **Block to modify:** `buildOrderData` callback, lines 1158-1241 — specifically the trailing conditional block that attaches `paymentMethod` for non-dine-in (line 1236).
+
+#### Existing code (verbatim, lines 1234-1241)
+
+```ts
+    };
+    if (tab.heldOrderId) orderData.parentOrderId = tab.heldOrderId;
+    if (!tabIsDineIn) orderData.paymentMethod = paymentMethod;
+    if (!tabIsDineIn) { orderData.customerName = tab.customerName?.trim() || null; orderData.customerPhone = tab.customerPhone?.trim() || null; }
+    if (supervisorOverride) orderData.supervisorOverride = supervisorOverride;
+    if (!isAddonKot && tab.dismissedRuleIds.length > 0) orderData.dismissedRuleIds = tab.dismissedRuleIds;
+    return orderData;
+  }, [activeTab, paymentMethod, tenantServiceChargePct, tenantCompoundTax, taxRate]);
+```
+
+#### Proposed code
+
+```ts
+    };
+    if (tab.heldOrderId) orderData.parentOrderId = tab.heldOrderId;
+    if (!tabIsDineIn) orderData.paymentMethod = paymentMethod;
+    if (!tabIsDineIn && paymentMethod === "cash" && tenderedAmount) {
+      orderData.tenderedAmount = parseFloat(Number(tenderedAmount).toFixed(2)).toFixed(2);
+    }
+    if (!tabIsDineIn) { orderData.customerName = tab.customerName?.trim() || null; orderData.customerPhone = tab.customerPhone?.trim() || null; }
+    if (supervisorOverride) orderData.supervisorOverride = supervisorOverride;
+    if (!isAddonKot && tab.dismissedRuleIds.length > 0) orderData.dismissedRuleIds = tab.dismissedRuleIds;
+    return orderData;
+  }, [activeTab, paymentMethod, tenderedAmount, tenantServiceChargePct, tenantCompoundTax, taxRate]);
+```
+
+Two edits:
+1. Insert a 3-line guarded assignment after line 1236 that adds `tenderedAmount` (as a 2-decimal string, matching the server's monetary string convention used by `subtotal`, `tax`, `total` in the same `orderData` object) only when both the order is not dine-in AND the payment method is cash AND the user has typed a value.
+2. Add `tenderedAmount` to the `useCallback` dependency array on line 1241 so the closure picks up state changes.
+
+#### Conditions under which `tenderedAmount` is sent
+
+| Condition | Sent? |
+|-----------|-------|
+| `tab.orderType === "dine_in"` | NO — guarded by `!tabIsDineIn`. Dine-in pays at end-of-meal via the standard bill flow. |
+| `paymentMethod === "card"` | NO — Stripe webhook owns the paid transition. |
+| `paymentMethod === "upi"` | NO — placeholder, not implemented. |
+| `paymentMethod === "cash"` AND `tenderedAmount === ""` | NO — user hasn't entered an amount; the modal's confirm button is also disabled (line 2466), so this branch shouldn't fire in practice. |
+| `paymentMethod === "cash"` AND `!tabIsDineIn` AND `tenderedAmount` truthy | YES |
+
+The state is already populated by the cash modal at pos.tsx:566 (`useState("")`), set by the input at pos.tsx:2420 and quick-tender buttons at 2423-2433, and validated `>= total` by the disabled-state on the confirm button at pos.tsx:2466. `confirmPaymentAndPlace` (line 1386) closes the modal and triggers `placeOrderMutation`, which calls `buildOrderData` — so `tenderedAmount` is reliably non-empty by the time `buildOrderData` reads it.
+
+### Validation
+
+- **Does the server need to validate the new `tenderedAmount` field?** **Soft validation only.** The bill-paid transition does NOT depend on `tenderedAmount` (the payment amount stored in `bill_payments` is `order.total`, server-computed). `tenderedAmount` is informational — it documents what the customer handed over so the cash drawer audit trail (`cash_drawer_events.tendered_amount`, schema.ts:4371) can be populated later. A reasonable middle ground: in the orders.ts auto-payment block, parse with `Number()` and only persist if the result is finite and `>= Number(order.total) - 0.01`. Hard-rejecting with 4xx would be wrong because the bill-paid transition still works correctly without it — keep the order-creation path resilient.
+
+- **Client sends `tenderedAmount` but server doesn't expect it (deploy lag — old server, new client):** Safe. The current orders.ts handler reads `orderData.paymentMethod` (line 794) and `orderData.posSessionId` (line 809) by name; any extra field on the JSON body is ignored by the handler and never persisted (Drizzle's `storage.createBill` and `storage.createOrder` only consume known columns). No 400, no schema rejection — the field just falls on the floor. Forward-compat is implicit.
+
+- **Server expects `tenderedAmount` but client doesn't send it (deploy lag — new server, old client):** Safe. The proposed server code reads `orderData.tenderedAmount != null` and falls back to `null`. The bill-paid transition runs identically whether `tenderedAmount` is present or absent — only the cash-drawer event's `tendered_amount` column would be NULL (which it already is today, since `logCashDrawerEvent` doesn't accept the field yet). No throw, no 500.
+
+- **Idempotency interaction:** the parent endpoint stores `response_body` only after auto-bill (and now auto-payment) completes (orders.ts:825 sets `idemResponseStored = true` AFTER `res.json`). On replay, the same order/bill/payment trio is returned without re-running the side effects. No double-charging.
+
+### Open questions
+
+1. **Recon mismatch — service file:** Last night's recon (audit/02-new-blockers-recon.md, Blocker 2) and this task brief both refer to `restaurantBillingService.createBillForOrder(...)`, but **no such file or function exists** anywhere under `server/`. The auto-bill code is inline at `orders.ts:798-810` calling `storage.createBill` directly. The recon was written against an imagined module structure. Flagging because the same misunderstanding could cause a fix-author to look in the wrong place.
+2. **Order-status semantics for paid takeaway:** the current flow leaves the order in `status = "new"` after auto-payment — kitchen still has to cook it. The dine-in payment endpoint at `restaurant-billing.ts:594` flips order `status` to `"completed"` on full payment. Should takeaway/delivery cash-paid orders also auto-transition through some intermediate state (e.g., `paid` flag, `payment_status` on `orders` table at schema.ts:453), or is the current "new + bill paid" combo the intended state? Going with "leave order alone, only flip bill" in the proposed fix since the kitchen still owns the lifecycle. **Open for confirmation.**
+3. **`order.total` is a decimal string, not a number:** at `orders.ts:807` the bill is created with `totalAmount: order.total` (string from Drizzle decimal). The proposed `createBillPayment({ amount: order.total, … })` passes the same string, which `bill_payments.amount` accepts (also `decimal`). Confirmed by inspection of schema.ts:2905 (`bills.totalAmount`) and the existing `createBillPayment` calls in restaurant-billing.ts:537, 904 which pass `String(p.amount)`. No conversion needed.
+4. **Cash drawer event when no open session:** `logCashDrawerEvent` at cash-drawer-log.ts:35 silently returns if no open `cash_sessions` row exists for `(tenantId, cashierId)`. Means: if a cashier hasn't opened their till but takes a cash takeaway order (operationally suspect but possible), the bill flips to "paid" but no cash drawer event is recorded. Mirrors the manual-payment endpoint's behavior at restaurant-billing.ts:553-573. Documenting, not fixing.
+5. **`logCashDrawerEvent` does not accept `tenderedAmount`:** the helper signature (cash-drawer-log.ts:11-21) takes `amount` but not `tenderedAmount` / `changeGiven`, even though the columns exist on `cash_drawer_events` (schema.ts:4371-4372). Extending the helper to accept and persist these is a separate, pre-existing gap (already noted in the recon's "Adjacent observations" for `pos.tsx:2389-2471`). The proposed BL-2 fix carries `tenderedAmount` from client to server but does not yet write it — `void tendered;` line is a deliberate pin so a follow-up PR can flip it on without re-shipping the client.
+6. **Bill auto-print:** the manual-payment endpoint fires `routeAndPrint({ jobType: "receipt", … })` at restaurant-billing.ts:625-634 on full payment. Should the auto-payment path also auto-print the receipt for takeaway/delivery cash orders? Not included in the proposed fix to keep the diff minimal; flagging as a UX question.
+
+### Confidence
+
+**HIGH** — the bug is mechanical and the fix is mechanical. (a) The bug location is verified: `orders.ts:808` literally writes `paymentStatus: "pending"` and there is no subsequent payment-recording code in the same try-block (lines 794-815). (b) The fix mirrors the well-tested manual path at `restaurant-billing.ts:534-591` — same `createBillPayment` shape, same `updateBill` arguments, same setImmediate cash-session update. (c) Every identifier the new code references is already in lexical scope at the insertion point (verified above). (d) Backwards/forwards-compat is symmetric: extra body fields are ignored by old servers, missing body fields fall back to `null` on new servers. (e) Idempotency is unchanged because the auto-payment lives inside the same `try` block whose response is captured by the parent handler's existing idempotency machinery. The only residual risk is the order-status semantic question (Open Q 2) — a product decision, not a code-correctness issue. Recommend proceeding to a fix branch once Open Q 2 is resolved.
+
+---
+
+## Addendum 2026-04-28 (revised): BL-2 root cause — version conflict on Proceed to Payment
+
+### Summary
+
+The user-visible symptom "nothing happens when I click Proceed to Payment" is caused by a missing ref-setter in `BillPreviewModal.tsx:handleProceedToPayment` (line 709) — a regression introduced by commit `b1b4d87` ("POS-05 remove auto-advance from bill preview") on 2026-04-11. The mutation runs and succeeds, but `onSuccess` does not advance to the payment step because it gates on `userInitiatedPaymentRef.current`, which `handleProceedToPayment` never sets. The reported "PATCH /api/orders/:id 409" requests **do not originate from the bill page** under static tracing — the bill page (`bill-view.tsx`) and `BillPreviewModal.tsx` make no `PATCH /api/orders/:id` calls of any kind, so the 409s must be coming from a different component or session. **Confidence HIGH for the silent-failure root cause; LOW for any 409-PATCH theory absent additional evidence.**
+
+### Bill page location
+
+- **Route registration:** `client/src/App.tsx:571` — `<Route path="/pos/bill/:orderId">{() => <GuardedRoute path="/pos" component={BillViewPage} />}</Route>`
+- **Lazy import:** `client/src/App.tsx:59` — `const BillViewPage = lazy(() => import("@/pages/pos/bill-view"));`
+- **Page component:** `client/src/pages/pos/bill-view.tsx:11-100` — thin wrapper that fetches the order via `GET /api/orders/:orderId` (line 21) and renders `<BillPreviewModal open={true} fullPage={true} … />` (line 81-97).
+- **Modal component:** `client/src/components/pos/BillPreviewModal.tsx:115-2398` — the actual UI for preview / payment / receipt steps.
+- **"Proceed to Payment" button:** `client/src/components/pos/BillPreviewModal.tsx:1541-1543` — `<Button onClick={handleProceedToPayment} disabled={createBillMutation.isPending || !grandTotal || grandTotal <= 0} … data-testid="button-proceed-payment">`.
+- **Click handler:** `BillPreviewModal.tsx:709-720` — `handleProceedToPayment`. Calls `createBillMutation.mutate()` only.
+
+### Client-side mutation
+
+- **Mutation declaration:** `BillPreviewModal.tsx:528-558` — `createBillMutation`.
+- **HTTP call:** `POST /api/restaurant-bills` (line 530). **NOT** `PATCH /api/orders/:id`.
+- **Body shape (lines 530-544):** `{ orderId, tableId, customerId, subtotal, discountAmount, serviceCharge, taxAmount, taxBreakdown, tips: "0", totalAmount, parkingCharge, posSessionId, customerGstin }`. No `version` field, no order PATCH.
+- **Source of `orderId` at click time:** prop drilled from `bill-view.tsx:93` where `orderId={order.id}` is derived from `useParams<{ orderId: string }>()` (`bill-view.tsx:12`) — read-only, never mutated by the bill page.
+- **Source of `version` at click time:** **N/A** — the bill page and modal never read or transmit `order.version`. A grep for `version` in `BillPreviewModal.tsx` returns zero matches; in `bill-view.tsx`, only the typed `Order` field is referenced indirectly via `order.subtotal/.tax/.total`, never `.version`.
+- **Websocket subscription that touches the order:** `BillPreviewModal.tsx:199-204` — `useRealtimeEvent("bill:updated", …)` invalidates `["/api/orders"]` query (causing a *re-fetch*, GET) but never PATCHes. No other order-related realtime subscriptions in the modal.
+- **Auto-fire of `createBillMutation`:** `BillPreviewModal.tsx:448-453` — when `fullPage && !existingBillData && !createdBill`, the effect sets `userInitiatedPaymentRef.current = true` (line 450) and calls `createBillMutation.mutate()` (line 451). This is the **only** place that sets the ref to true.
+
+### Server-side PATCH handler
+
+- **Handler:** `server/routers/orders.ts:845-1166` — `app.patch("/api/orders/:id", requireAuth, …)`.
+- **Version-check logic (verbatim, lines 877-882, 992-996):**
+  ```ts
+  // Optimistic locking: version is REQUIRED for all order updates.
+  // Clients must always send the current version they loaded; server rejects stale updates with 409.
+  if (req.body.version === undefined || req.body.version === null) {
+    return res.status(400).json({ code: "VERSION_REQUIRED", message: "Order version is required for updates. Reload the order and try again." });
+  }
+  const clientVersion = Number(req.body.version);
+  …
+  // Strip version from updateData before passing to Drizzle — version is managed by the server.
+  const { version: _versionField, ...updateDataNoVersion }: Record<string, unknown> = updateData;
+  // Build atomic WHERE clause: always include version (now always required)
+  const orderWhereClause = and(eq(ordersTable.id, req.params.id), eq(ordersTable.version, clientVersion));
+  const updateDataWithVersion = { ...updateDataNoVersion, version: sql`COALESCE(${ordersTable.version}, 0) + 1` };
+  ```
+- **409 throw point (lines 1045-1048):**
+  ```ts
+  // If version check failed (no rows updated), return 409
+  if (!order) {
+    return res.status(409).json({ code: "VERSION_CONFLICT", message: "Order was updated by someone else — refresh and try again." });
+  }
+  ```
+  `order` is `undefined` when the atomic UPDATE matched zero rows because `clientVersion !== currentVersion`. There is no "X-Y" diagnostic in the response — just the generic message.
+- **Allowed status transitions:** the handler accepts any value in `req.body.status`. Branches that have additional behavior:
+  - `"sent_to_kitchen"` (lines 857-875, 1050-1099) — KOT printing, KDS arrival
+  - `"paid"` (lines 909-927, 939-976, 1102-1105) — service-charge top-up for dine-in, recipe inventory deduction, free table
+  - `"voided"` / `"cancelled"` (lines 977-990, 1106-1112, 1124-1130) — recipe reversal, free table, audit
+  - any terminal status (lines 1115-1122) — emit `order:completed`; otherwise emit `order:updated`
+- **Sibling 409 throwers** (delivery sub-routes that ALSO 409 on stale version):
+  - `PATCH /api/orders/:id/accept-delivery` (line 199-225) — 409 at line 207
+  - `PATCH /api/orders/:id/reject-delivery` (line 227-247) — 409 at line 235
+  - `PATCH /api/orders/:id/dispatch-delivery` (line 249-265) — 409 at line 257
+  - `PATCH /api/orders/:id/accept` (line 267-293) — 409 at line 275
+  - `PATCH /api/orders/:id/reject` (line 295-?) — 409 at line 303
+  - `POST /api/orders` (line 377-381) — 409 on duplicate `clientOrderId` (different shape: `{ message: "Duplicate order", order: {...} }`)
+  None of these are wired up from the bill page, but a tester with another tab open (e.g. `/orders` or the delivery dashboard) could trigger them concurrently.
+
+### Root cause
+
+**The actual user-visible bug ("nothing happens") is in `BillPreviewModal.tsx`, not in the version-conflict path.**
+
+Step-by-step trace, with file:line evidence:
+
+1. Tester places a takeaway order from POS — `placeOrderMutation` at `pos.tsx:1243` fires `POST /api/orders` with `paymentMethod: "cash"`.
+2. Server creates the order at version 1, then auto-creates a bill with `paymentStatus: "pending"` (`orders.ts:794-815`, the FIX 2 block from commit `f0a5aac`). No PATCH happens.
+3. Tester navigates to `/pos/bill/<orderId>` (or pos.tsx opens the in-page modal at `pos.tsx:1317`).
+4. `BillPreviewModal` mounts. The "existing bill" query at `BillPreviewModal.tsx:397-406` returns the auto-created bill (`existingBillData` non-null).
+5. The effect at `BillPreviewModal.tsx:436-446` sets `createdBill = existingBillData`. Step stays at `"preview"` (line 443-444 explicitly comments: *"O6: Do NOT auto-advance to 'payment' for unpaid/partially_paid bills"*).
+6. The auto-fire effect at `BillPreviewModal.tsx:448-453` does **not** run because `createdBill` is now truthy (line 449 condition `!createdBill` fails).
+7. Tester clicks "Proceed to Payment" → `handleProceedToPayment` (`BillPreviewModal.tsx:709-720`) runs.
+8. `handleProceedToPayment` calls `createBillMutation.mutate()` (line 719). It does **NOT** set `userInitiatedPaymentRef.current = true`.
+9. The mutation calls `POST /api/restaurant-bills`. Server returns the existing bill with `alreadyExists: true, paymentStatus: "pending"` (per `restaurant-billing.ts:219-220`).
+10. `onSuccess` (`BillPreviewModal.tsx:547-556`) runs:
+    ```ts
+    if (bill.alreadyExists && bill.paymentStatus === "paid") {
+      setStep("receipt");                       // FALSE: paymentStatus is "pending"
+    } else if (userInitiatedPaymentRef.current) {
+      setStep("payment");                       // FALSE: ref is false (handler never set it)
+    }
+    ```
+11. Neither branch fires. `step` remains `"preview"`. The component re-renders with the same UI it already had. **From the tester's POV: nothing happens.**
+
+The regression is from commit **`b1b4d87`** (`fix(pos): remove auto-advance from bill preview, require manual confirmation [POS-05]`, 2026-04-11). That commit:
+- Added `userInitiatedPaymentRef = useRef(false)` at line 135.
+- Set the ref in the auto-fire effect at line 450 (the *automatic* path).
+- Changed `onSuccess` from unconditional `setStep("payment")` to gated `else if (userInitiatedPaymentRef.current) { setStep("payment"); }`.
+- **Forgot to set the ref in `handleProceedToPayment`** (the *user-initiated* path the commit message names).
+
+The commit's intent ("require manual confirmation") is preserved by the fix — the manual-confirmation IS the click on "Proceed to Payment", and that click should set the ref to true.
+
+**The 409 PATCH /api/orders observations do not match the bill page code paths.** Tracing every `apiRequest` and `fetch` call in `bill-view.tsx` and `BillPreviewModal.tsx`, the only PATCH calls are:
+- `BillPreviewModal.tsx:821, 824, 827` — `PATCH /api/print-jobs/:id/status`
+- `BillPreviewModal.tsx:985` — `PATCH /api/customers/:id`
+
+There is no `PATCH /api/orders/:id` anywhere in the bill page or its modal. The reported 409s must originate from a different component active in the same browser session. See "Race condition candidates" below.
+
+### Race condition candidates
+
+Ranked by likelihood given the static evidence.
+
+1. **Stale-version PATCH from another open tab/page (orders.tsx, orders-hub.tsx, or DeliveryQueuePanel).** *(Most likely source of the 409s — but they are NOT what's silencing the Proceed button.)*
+   - `client/src/pages/modules/orders.tsx:178` and `:212` — `updateStatusMutation` and `changeTableMutation`, both PATCH `/api/orders/:id` with `version` (when present in component state).
+   - `client/src/pages/modules/orders-hub.tsx:231` — PATCH `/api/orders/:id` with `{ status }` and **no version field**, which would 400 (VERSION_REQUIRED), not 409 — so this can't be the source.
+   - `client/src/components/pos/DeliveryQueuePanel.tsx:171, 190, 208` — PATCH delivery sub-routes; only fires if the panel is open.
+   - The version becomes stale because: (a) `orders.tsx` query at `["/api/orders", selectedOrderId]` is invalidated only on its own mutations (line 191-193); a websocket `order:updated` from `orders.ts:1118-1120` triggers `/api/orders` invalidation in `pos.tsx:644` but not necessarily in `orders.tsx` (which has no `useRealtimeEvent` hook — verified via grep: zero matches). If the user has both tabs and clicks Mark Ready to Pay on `/orders` after the bill was auto-created at order placement, **`orders.version` may already have been bumped** by the FIX 3 `order_number` raw SQL update (`orders.ts:619` — though this UPDATE does NOT touch `version`, so this sub-theory is wrong) or by the auto-bill creation which doesn't touch version either. So 1+1 doesn't equal 2 here on direct read.
+   - Confidence: MEDIUM. The 409 source is *somewhere* — orders.tsx with stale state is the most plausible candidate.
+
+2. **TanStack Query auto-retry inflating one 409 into three.**
+   - **Ruled out.** `client/src/lib/queryClient.ts:218-220` sets `mutations: { retry: false }`, and queries retry only for network errors not 4xx (line 209-214). So a single PATCH cannot become three 409s via Query's retry.
+
+3. **`syncManager` retrying a queued POST /api/orders that returns 409.**
+   - `client/src/lib/sync-manager.ts:382` — `if (res.ok || res.status === 409)` treats 409 as success. So a queued offline order that gets a 409 (duplicate `clientOrderId`) is marked `completed` after one attempt, not retried.
+   - **Ruled out as a multiplier**, but could be the source of *one* 409 if the takeaway order was placed offline and synced — though that 409 would be on POST /api/orders, not PATCH.
+
+4. **Held-tab PATCH from `pos.tsx` running while the user is on the bill page.**
+   - `pos.tsx:1043, 1052, 1109, 1152` PATCH `/api/orders/:id` with `version`. These all fire from `holdOrderMutation` or `recallServerOrder` and require user interaction in the POS view. Since wouter unmounts `pos.tsx` when navigating to `/pos/bill/:id` (verified via the lazy-route boundary at `App.tsx:571`), these mutations cannot be *initiated* from the bill page. An *in-flight* mutation initiated from POS *just before* navigation could 409 if version was stale, but the timing window is narrow.
+   - Confidence: LOW.
+
+5. **An external process (a second user, a kitchen-board action, a webhook) bumping version between page-load fetch and Pay click.**
+   - Possible but unverifiable from static analysis. Would explain a single 409, not three.
+
+6. **Dev-tools network panel showing an unrelated PATCH that happens to coincide.**
+   - The user may have conflated 409s from a background tab/page with the silent Pay button. The "PATCH /api/orders" URL is correct *somewhere* in the app, just not on the bill page.
+
+### Proposed fix
+
+**Single-line addition to `client/src/components/pos/BillPreviewModal.tsx`:**
+
+- **File:** `client/src/components/pos/BillPreviewModal.tsx`
+- **Location:** inside `handleProceedToPayment`, between the validation guards (lines 711-718) and `createBillMutation.mutate()` (line 719) — i.e. add at line 719 before the mutate call:
+
+```ts
+const handleProceedToPayment = () => {
+  if (!orderId) {
+    toast({ title: tp("orderNotPlacedYet"), description: tp("placeOrderFirst"), variant: "destructive" });
+    return;
+  }
+  if (!grandTotal || grandTotal <= 0) {
+    toast({ title: "No amount to pay", description: "Please add items to the order before proceeding to payment.", variant: "destructive" });
+    return;
+  }
+  userInitiatedPaymentRef.current = true;   // ← ADD THIS LINE
+  createBillMutation.mutate();
+};
+```
+
+- **Plain English:** the click handler must mark the upcoming `createBillMutation.mutate()` as "user-initiated" so that `onSuccess` (line 552) advances the modal to the `"payment"` step. Without this, when the bill already exists (the typical path now that auto-bill is enabled), `onSuccess` falls through both branches and the step remains `"preview"` — the rendered UI doesn't change and the click appears to do nothing.
+
+- **Estimated risk:** **LOW.** The fix is symmetric with the existing auto-fire effect at line 450 which already does the same thing. The ref is reset to `false` in `onSuccess` (line 555) so there is no risk of leaking state across sessions. Only behavior change: the user-initiated path now advances to the payment step exactly like it did before commit `b1b4d87` for the alreadyExists case. The post-`b1b4d87` *intent* — "no auto-advance from preview without explicit user action" — is preserved because the ref is only set inside an explicit click handler (and inside the `fullPage` auto-fire effect, which represents the navigate-to-/pos/bill action that *is* user-initiated by definition).
+
+- **Estimated diff size:** **+1 line, −0 lines.**
+
+### Open questions
+
+1. **The reported 409 PATCH /api/orders does not match any code path on the bill page.** Static tracing confirms `bill-view.tsx` and `BillPreviewModal.tsx` make zero PATCH calls to `/api/orders/:id`. Either the user misread the DevTools method (e.g., POST → PATCH), the URL (e.g., `/api/restaurant-bills` → `/api/orders`), or the 409s come from a different tab/component active in the same session. **Need:** the actual DevTools network panel screenshot or HAR export, or the *Initiator* column for the failing requests, to pin the source. *Stop-and-fix-anyway:* the user-visible "nothing happens" symptom is fully explained by the `userInitiatedPaymentRef` bug; that fix can be shipped without resolving the 409 mystery.
+2. **Why three?** TanStack Query mutations have `retry: false` (queryClient.ts:219); syncManager treats 409 as success; nothing in the traced code retries a 409. Three consecutive 409s most likely means three click events on the same stale-version button (e.g., `Mark Ready to Pay` in `orders.tsx:590` clicked thrice while the version in component state is stale). Need confirmation from the tester whether they clicked anything else three times.
+3. **Should `handleProceedToPayment` also force-refetch `existingBillData` before submitting?** Today it doesn't, so if the bill on the server has been updated by a concurrent process (refunded, voided), the client may submit against stale local state. Out of scope for this fix; flagging as a hardening idea.
+4. **Should the auto-fire effect at `BillPreviewModal.tsx:448-453` also skip when `existingBillData` is truthy?** The condition does check `!existingBillData`, but `existingBillData` is initially `undefined` (loading state), then becomes `null` (404 → no bill) or the bill object. Net effect: the effect runs when `existingBillStatus === "success" && existingBillData == null`. That's correct, but worth confirming the query's `retry: false` (line 405) means a transient network blip won't leave us in `success + null` for a bill that does exist. (In practice the surface area of this is small.)
+5. **Was POS-05's "remove auto-advance from bill preview" itself the right design?** The commit was reactive to a UX issue ("staff must always see the bill preview first"). The fix preserves that — clicking Proceed to Payment is the explicit user action that advances. But if product wants the preview-confirm-pay flow to be one tap on the existing bill, the alternative is to revert POS-05 entirely. Out of scope for this recon.
+
+### Confidence
+
+**HIGH for the user-visible "nothing happens" root cause and the proposed one-line fix.** The trace is fully verifiable against the current source: every step has a file:line citation, the bug is explained by a missing ref-setter in the click handler, and the fix is symmetric with code already present elsewhere in the same file (line 450). Git blame confirms the regression was introduced in commit `b1b4d87` (POS-05) on 2026-04-11. The fix is one line, behind no feature flag, with no schema or API impact.
+
+**LOW for any theory that the 409 PATCH /api/orders is causally connected to the silent Pay button.** Static analysis cannot find a path from the bill page to `PATCH /api/orders/:id`. Either the diagnosis is misattributed (most likely given the absent code path) or the 409s come from concurrent activity in another tab. **Recommendation:** ship the one-line fix to clear the user-visible symptom, then have the tester re-run the scenario with DevTools recording. If 409s still appear after the fix, capture the *Initiator* column and we can trace from there. Don't block the silent-failure fix on the 409 investigation — they appear to be independent.
