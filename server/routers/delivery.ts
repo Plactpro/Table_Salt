@@ -75,7 +75,10 @@ export function registerDeliveryRoutes(app: Express): void {
       const totalCount = Number(delTotal) + uniqueMainOrders.length;
 
       res.json({ data: combined, total: totalCount, limit, offset, hasMore: offset + combined.length < totalCount });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+    } catch (err: any) {
+      console.error("[delivery/unified]", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   app.get("/api/delivery-orders", requireAuth, async (req, res) => {
@@ -88,7 +91,10 @@ export function registerDeliveryRoutes(app: Express): void {
         db.select({ total: sql<number>`count(*)::int` }).from(deliveryOrdersTable).where(eq(deliveryOrdersTable.tenantId, user.tenantId)),
       ]);
       res.json({ data, total: Number(total), limit, offset, hasMore: offset + data.length < Number(total) });
-    } catch (err: any) { res.status(500).json({ message: err.message }); }
+    } catch (err: any) {
+      console.error("[delivery/list]", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   app.get("/api/delivery-orders/:id", requireAuth, async (req, res) => {
@@ -106,7 +112,8 @@ export function registerDeliveryRoutes(app: Express): void {
             auditLogFromReq(req, { action: "delivery_order_created", entityType: "delivery_order", entityId: delivery.id, entityName: delivery.customerName || "Delivery Order" });
       res.json(delivery);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error("[delivery/create]", err);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
@@ -170,7 +177,8 @@ export function registerDeliveryRoutes(app: Express): void {
       const log = await storage.createPerformanceLog({ ...req.body, tenantId: user.tenantId });
       res.json(log);
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error("[delivery/performance-logs]", err);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
@@ -206,7 +214,8 @@ export function registerDeliveryRoutes(app: Express): void {
       await sendContactSalesEmail({ name, email, restaurantName, phone, message });
       res.json({ success: true, message: "Your inquiry has been sent. We'll get back to you soon!" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error("[delivery/contact-sales]", err);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 
@@ -222,7 +231,8 @@ export function registerDeliveryRoutes(app: Express): void {
       await sendSupportEmail({ name, email, subject, message, priority });
       res.json({ success: true, message: "Your support request has been submitted. We'll respond shortly!" });
     } catch (err: any) {
-      res.status(500).json({ message: err.message });
+      console.error("[delivery/contact-support]", err);
+      res.status(500).json({ message: "Internal server error" });
     }
   });
 }

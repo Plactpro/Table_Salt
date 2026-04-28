@@ -979,3 +979,258 @@ AND (o.channel_order_id IS NULL OR NOT EXISTS (
 ### Confidence
 
 **HIGH.** The handler code, the schema enum declaration, the runtime migration, and the dashboard contract are all read directly from the current source — no inference or hypothesis. The chain from "tester clicks dashboard" → "useQuery fires `/api/delivery-orders/unified`" → "raw SQL `IN` includes literals not in the enum" → "Postgres raises invalid-input error" → "handler catch returns 500" → "useQuery falls back, dashboard shows zeros" is end-to-end verifiable in the current tree. The proposed fix (`::text` cast) is a known idiom already used in the codebase for the same class of bug (commit `425ae89` did the same fix on the `order_status` enum in the B1b archive scheduler). The risk surface is one line in one file; no other handler, route, or storage function changes; no schema or migration change; no client change. Recommend proceeding to a fix branch (`fix/BL-3-delivery-dashboard-500`) once the team confirms the production enum state from Open Question 1 — though even without that confirmation, the cast-to-text fix is safe to ship.
+
+---
+
+## Addendum 2026-04-28: BL-1 Static Recon (Round 2)
+
+**Goal of this round.** Round 1 listed "three plausible candidates" with Medium confidence. Production has since shipped a fresh deploy and the page is still broken; no `/api/errors/client` payload was captured. This round goes deeper: every render-throw candidate enumerated against the actual server response shape, every field-name mismatch reconciled, recent commits surfaced, and a single highest-confidence minimal fix proposed (not applied).
+
+### Findings
+
+Ranked by likelihood that this is the production crash. Each finding has a verifiable file:line citation and the minimum runtime data that would confirm or rule it out.
+
+#### 1) [HYPOTHESIS — HIGH confidence] `ticket.status.toLowerCase()` throws when `status` is null
+
+- **Location:** `client/src/pages/tickets/index.tsx:53`
+  ```ts
+  const s = statusMap[ticket.status.toLowerCase()] || { label: ticket.status, … };
+  ```
+- **Why it can throw:** `TicketRow.status` is typed as a non-nullable `string` (line 29), but the server query at `server/routers/ticket-history.ts:298` selects `o.status` directly from the `orders` table. The `orders.status` column is declared in `shared/schema.ts:465` as
+  ```ts
+  status: orderStatusEnum("status").default("new"),
+  ```
+  — note the absence of `.notNull()`. The Postgres column is nullable. Drizzle's `.default()` only adds a `DEFAULT` clause; rows inserted by raw SQL or pre-default migrations can have `status = NULL`. When such a row is serialised, `ticket.status` arrives as `null`, and `null.toLowerCase()` throws `TypeError: Cannot read properties of null (reading 'toLowerCase')`. React unwinds, the global error boundary at `client/src/components/GlobalErrorBoundary.tsx:69` catches, the page shows "Something went wrong."
+- **JS error type:** `TypeError`.
+- **Why this is the top candidate:**
+  - StatusBadge is rendered for **every row** (`client/src/pages/tickets/index.tsx:414`). The page crashes on the first row with `status = null`, regardless of which user opens it.
+  - `orderStatusEnum` (`shared/schema.ts:42-56`) has 13 values; line 53's `statusMap` only maps 8 (`paid`, `void`, `voided`, `active`, `in_progress`, `new`, `sent_to_kitchen`, `closed`). The `||` fallback at line 53 handles unknown enum values fine — `{ label: ticket.status, … }` renders the raw string. The only crash path is `null` (or `undefined`).
+  - It only takes one orphan row to break the page for everyone whose date filter or tenant covers it. That matches the production symptom (broken for all roles, no captured client error — the boundary suppresses console output unless explicitly forwarded).
+- **Runtime data needed to confirm:**
+  - One read-only SQL probe (per CLAUDE.md "audit/ SQL" pattern), e.g. `SELECT id, status, created_at FROM orders WHERE tenant_id = $1 AND status IS NULL LIMIT 5;`. A single matching row confirms the hypothesis.
+  - Or: capture the `useQuery` response payload at `client/src/pages/tickets/index.tsx:105-107` in DevTools Network and inspect the `orders[*].status` field. Any `null` confirms it.
+
+#### 2) [HYPOTHESIS — MEDIUM confidence] `format(new Date(ticket.createdAt), …)` throws on invalid date
+
+- **Location:** `client/src/pages/tickets/index.tsx:407`
+  ```ts
+  {ticket.createdAt ? format(new Date(ticket.createdAt), "h:mm a") : "—"}
+  ```
+- **Why it can throw:** the truthy guard catches `null`, `undefined`, and empty string, but not invalid date strings. `new Date("not a date")` returns `Invalid Date`; `date-fns/format` then throws `RangeError: Invalid time value`. The server returns `o.created_at AS "createdAt"` (`server/routers/ticket-history.ts:301`) — `created_at` is declared `timestamp("created_at").defaultNow()` (`shared/schema.ts:493`) and is also nullable (no `.notNull()`). Most production rows will have a valid timestamp, but a manually inserted or partially migrated row could have a malformed value.
+- **JS error type:** `RangeError`.
+- **Why this is lower-ranked than (1):**
+  - `created_at` failures are vanishingly rare in practice — `defaultNow()` covers nearly every insert path, and Postgres rejects non-timestamp casts at write time.
+  - The truthy guard already shields `null` and empty string, the two realistic cases.
+  - StatusBadge (Finding 1) renders before this cell in some rendering interleavings; if both were present in the same row, Finding 1 would surface first.
+- **Runtime data needed to confirm:** the captured response payload — any `createdAt` that isn't a valid ISO 8601 string (e.g. `"0000-00-00"`, empty object, raw integer) would confirm.
+
+#### 3) [HYPOTHESIS — LOW confidence] `ticket.id.slice(-6)` if `id` is missing
+
+- **Location:** `client/src/pages/tickets/index.tsx:397`
+  ```tsx
+  #{ticket.orderNumber || ticket.id.slice(-6).toUpperCase()}
+  ```
+- **Why it can throw:** the `||` falls through to `ticket.id.slice(...)` whenever `orderNumber` is falsy. If `id` is also nullish, `null.slice` throws. `orders.id` is declared `varchar("id", { length: 36 }).primaryKey().default(sql\`gen_random_uuid()\`)` (`shared/schema.ts:429-431`) — primary key, never null in practice. Almost certainly not the bug, listed only for completeness.
+- **Runtime data needed to confirm:** any `orders[*].id === null || undefined` in the response.
+
+#### 4) [HYPOTHESIS — LOW confidence — RULED OUT as the *page-load* crash] Server 500 on `status=void`/`refire`/`high_value`/`void_requests`
+
+- **Locations:**
+  - Filter dropdown options at `client/src/pages/tickets/index.tsx:308`, `:310`, `:311`; chip filters at `:169-170`.
+  - Server-side fall-through at `server/routers/ticket-history.ts:256-259`:
+    ```ts
+    } else if (status) {
+      conditions.push(`o.status = $${paramIdx++}`);
+      params.push(status);
+    }
+    ```
+- **What goes wrong:** the dropdown emits `status="void"` (line 308 — note: enum value is `voided`, not `void`) and `status="refire"` (line 310) and `status="high_value"` (line 170). None of those literals are members of `orderStatusEnum`. The handler binds the literal directly into `o.status = $N` against a Postgres enum column → `invalid_text_representation` → 500. Same class of bug as BL-3.
+- **Why this is *not* the page-load crash:** the page loads with `status=all` by default (`client/src/pages/tickets/index.tsx:75-76`, falling through to "no status filter") — no enum cast happens on the initial query. The 500 only fires once a user selects one of the broken filter values. The reported symptom is "page does not load" — i.e. the initial render crashes, not a subsequent filter click. So this finding is a real bug worth a separate ticket but not the BL-1 root cause.
+- **Severity if fixed independently:** Medium. It's a soft-failure mode (empty list + toast, not a render crash), masked by the global query error handler.
+
+#### 5) [VERIFIED] Field-name mismatches — soft, do not crash
+
+The list query at `server/routers/ticket-history.ts:293-320` returns:
+
+```
+{ id, orderNumber, channel, status, paymentMethod, totalAmount,
+  createdAt, waiterId, outletId, tableNumber, staffName, itemCount,
+  hasVoidedItems, hasRefire, paymentStatus, billId }
+```
+
+Wrapped in `{ orders, total, hasMore }` (`server/routers/ticket-history.ts:335`). See full reconciliation table below. None of these crash the render — they cause missing-data UI artifacts ("—" placeholders, missing waiter labels) — but they are real product bugs.
+
+### Field-name reconciliation
+
+Server response key (`ticket-history.ts:293-320`) → Client `TicketRow` field (`tickets/index.tsx:22-33`).
+
+| Server key       | SQL source                         | Client expects   | Status        | Effect on UI                                      |
+|------------------|------------------------------------|------------------|---------------|---------------------------------------------------|
+| `id`             | `o.id`                             | `id`             | match         | works                                             |
+| `orderNumber`    | `o.order_number`                   | `orderNumber`    | match         | works (line 397)                                  |
+| `channel`        | `o.order_type AS channel`          | `orderType`      | **MISMATCH**  | "Table / Type" col renders "—" (line 402-404)     |
+| `status`         | `o.status` (no alias)              | `status`         | match (name)  | crash candidate per Finding 1                     |
+| `paymentMethod`  | `o.payment_method`                 | (not declared)   | unused        | server sends, client ignores                       |
+| `totalAmount`    | `o.total`                          | `totalAmount`    | match         | works (line 411)                                  |
+| `createdAt`      | `o.created_at`                     | `createdAt`      | match (name)  | crash candidate per Finding 2                     |
+| `waiterId`       | `o.waiter_id`                      | (not declared)   | unused        | sent, ignored                                      |
+| `outletId`       | `o.outlet_id`                      | (not declared)   | unused        | sent, ignored                                      |
+| `tableNumber`    | `t.number`                         | `tableNumber`    | match         | works (line 400-401)                              |
+| `staffName`      | `u.name AS staffName`              | `waiterName`     | **MISMATCH**  | not displayed in this view (drawer renders waiter) |
+| `itemCount`      | subquery COUNT                     | `itemCount`      | match         | works (line 409)                                  |
+| `hasVoidedItems` | EXISTS subquery                    | (not declared)   | unused        | sent, ignored                                      |
+| `hasRefire`      | EXISTS subquery                    | `hasRefire`      | match         | works (line 57)                                   |
+| `paymentStatus`  | `b.payment_status`                 | (not declared)   | unused        | sent, ignored                                      |
+| `billId`         | `b.id`                             | (not declared)   | unused        | sent, ignored                                      |
+
+Response envelope: server `{ orders, total, hasMore }` (line 335) vs client `{ orders, total, page, pageSize }` interface (`tickets/index.tsx:35-40`). Client only reads `orders` and `total`; `page`/`pageSize` are stale typing. Soft.
+
+### Recent commits affecting these files
+
+`client/src/pages/tickets/index.tsx` (most recent first):
+- `3d943ad` fix(void): align void rejection reason field name between client and server
+- `f43864d` fix: QA Round-2 bug fixes (6 bugs, Task #154)
+- `7c35c3a` feat(tickets): Phase 1 Order Ticket History UI — all issues resolved (the original landing of this page)
+
+`server/routers/ticket-history.ts` (most recent 10):
+- `f0a5aac` fix: void request persistence, auto-create bill on takeaway settlement, order number generation
+- `03b65f2` fix(kitchen): include void reason in void_request event payload (O4)
+- `b1431b7` fix(tickets): align modification data structure between ticket detail server and client
+- `ceb7f49` fix(void): add per-order void-requests endpoint
+- `b80aaaa` fix(void): add pending-count endpoint for void request badge
+- `80df464` Fix dashboard 404, ticket totals zero, and ticket drawer crash (Task #160) — touched `ticket-history.ts` (2 lines), `TicketDetailDrawer.tsx` (2 lines), `App.tsx` (1 line). Did **not** touch `tickets/index.tsx`. Whatever this commit fixed in the drawer crash, it did not address the list-page render crash.
+- `f43864d` fix: QA Round-2 bug fixes (6 bugs, Task #154)
+- `505efc0` fix(ticket-history): Translate date filter strings to proper SQL date ranges
+- `97fd2b1` Task #114: Audible Alert System
+- `0e7ba31` fix: Task #112 — APPROVED_WITH_COMMENTS feedback (round 6)
+
+`shared/schema.ts` — no recent commit altered the `orderStatusEnum` declaration or the `orders.status` column's nullability. The `.default("new")` without `.notNull()` has been there since the table was introduced.
+
+**Note.** The most recent commit named "ticket drawer crash" (`80df464`) is a different surface from BL-1: it fixed the *detail drawer* crash (Task #160), not the *list page* render. The list page has not received a defensive null-status fix in any commit on `main`.
+
+### Proposed minimal fix (DO NOT APPLY)
+
+Single-line, single-file change at `client/src/pages/tickets/index.tsx:53`:
+
+```diff
+- const s = statusMap[ticket.status.toLowerCase()] || { label: ticket.status, className: "bg-muted text-muted-foreground border-0" };
++ const s = statusMap[(ticket.status ?? "").toLowerCase()] || { label: ticket.status ?? "Unknown", className: "bg-muted text-muted-foreground border-0" };
+```
+
+- **Why this fix:** addresses Finding 1 — the only render-throw candidate that does not require server-side data corruption to manifest, and the only one whose backstop (the Drizzle column nullability) is verifiable in static source. Null status renders as "Unknown" with the muted style, page stays alive, every other row renders normally.
+- **Why a single line:** scope discipline (CLAUDE.md hard rule 2c — one fix per branch). Findings 2-5 are real but not load-blocking; track separately.
+- **Why not also fix Finding 2 (`createdAt`):** the truthy guard already covers the realistic null case. Hardening it would add a try/catch around `format()`, which is more risk than the bug it prevents until we have evidence of malformed timestamps.
+- **Why not also fix the schema (`.notNull()` on `orders.status`):** that's a migration, much larger scope, and requires a backfill plan for any existing null rows. Defensive client coercion unblocks the page today; schema fix follows as a separate ticket.
+- **Risk:** Low. The page already renders unknown enum values via the `||` fallback at the same line — coercion of `null` into `""` falls into the same fallback path. No other render site references `ticket.status` on this page.
+- **Diff size:** 1 line modified, 0 added, 0 deleted.
+- **New identifiers:** none. `??` is already used elsewhere in this file (e.g. line 87, line 409).
+
+### Open questions / data needed
+
+1. **Is `orders.status` actually NULL for any row in production?** Read-only SQL: `SELECT COUNT(*) FROM orders WHERE tenant_id = $TENANT AND status IS NULL;` for any affected tenant. If zero across all tenants, the proposed fix still hardens the contract but is no longer load-bearing — the real bug is elsewhere and this round's HIGH-confidence pick is wrong.
+2. **Has anyone captured the `/api/errors/client` payload yet?** The user said "no payload was logged." Worth checking whether `client/src/main.tsx` actually wires the `GlobalErrorBoundary` to POST to `/api/errors/client` — if the boundary swallows without forwarding, that explains the silence and is itself a bug. Out of scope for this recon but worth a sibling ticket.
+3. **Is the `channel` ↔ `orderType` mismatch (Finding 5, row 3) what the user perceives as "Type column always shows —"?** If so, fixing the SQL alias from `o.order_type AS channel` → `o.order_type AS "orderType"` at `server/routers/ticket-history.ts:297` is a one-character-class change worth bundling once BL-1 is unblocked.
+4. **Schema reconciliation: should `orders.status` get `.notNull()`?** Every code path I've read assumes it. The Drizzle declaration is the only place that allows null. A future migration ticket should add `.notNull()` and a backfill (`UPDATE orders SET status = 'new' WHERE status IS NULL;`).
+5. **The dropdown emits status values not in the enum (`void`, `refire`, `high_value`, `void_requests`).** Finding 4 documents this as a soft 500 path. Track as a separate ticket — server should either translate `void`→`voided`, treat `refire`/`high_value` as synthetic filters (similar to how `voided`/`active`/`paid` are handled at `server/routers/ticket-history.ts:250-256`), or 400 on unknown status values rather than constructing a query that the enum rejects.
+
+### Confidence
+
+**HIGH on the *finding*; MEDIUM on the *root cause* until the SQL probe in Open Question 1 returns.** Static analysis can prove that the column is nullable, that the client assumes non-null, and that the resulting throw is exactly the symptom — but it cannot prove that production has any null rows today. The fix is safe to ship even if Finding 1 is wrong, because it only changes behavior when `ticket.status` is `null`/`undefined`, which the type system already says cannot happen. If a single null row exists anywhere, this fix unblocks the page; if none exists, the fix is a no-op and the next round's deep recon expands to Findings 2-5.
+
+---
+
+## Addendum 2026-04-28 PM: BL-3 Logging Recon
+
+**Premise correction up front.** The task brief says "use the existing Pino logger." There is no Pino logger in this codebase. `package.json` contains no `pino` (or `winston`) dependency, and zero files import a `logger` object — `grep -r "logger\.error" server/routers/` returns no matches; `grep -r "from .*logger" server/` returns only `time-logger` (a KDS event recorder) and `query-logger` (a slow-query interceptor that itself uses `console.warn`). The actual repo convention is `console.error("[tag] context:", err)`, used uniformly across every router that logs at all. Railway captures `console.*` to its log stream the same way it would capture Pino — so the gap is not a logger choice, it's that delivery.ts simply doesn't call any logger in its catch blocks.
+
+This recon scopes the change to *match the existing convention*, not to introduce Pino.
+
+### Current state
+
+- **File:line of the `/unified` catch block:** `server/routers/delivery.ts:78`
+- **Exact code today:**
+  ```ts
+  } catch (err: any) { res.status(500).json({ message: err.message }); }
+  ```
+- **What gets logged today:** nothing. No `console.error`, no `logger.error`, no structured log call. The 500 surfaces in Railway access logs only as `path=/api/delivery-orders/unified status=500 durationMs=…` because the access-log middleware records that envelope independent of the handler. The error message and stack are returned to the client in the response body and then dropped on the floor — which also incidentally leaks `err.message` (e.g. raw Postgres error text) to the API consumer, a separate hardening issue worth tracking.
+- **What gets returned:** `{ message: <pg error string or generic Error.message> }` with HTTP 500.
+
+### Existing logger usage
+
+There is no Pino/Winston logger in this codebase. Routes that log do so via `console.error`. Three representative patterns:
+
+1. **`server/routers/prep-notifications.ts:23-26`** — full `err` object passed (Node prints stack and any enumerable properties, including pg's `code`/`detail`/`hint`):
+   ```ts
+   } catch (err) {
+     console.error("[PrepNotif] unread-count error:", err);
+     return res.status(500).json({ error: "Internal error" });
+   }
+   ```
+
+2. **`server/routers/attendance.ts:24-27`** — same shape, slightly different tag:
+   ```ts
+   } catch (err) {
+     console.error("[Attendance Error]", err);
+     res.status(500).json({ message: "Internal server error" });
+   }
+   ```
+
+3. **`server/routers/modifiers.ts:55-58`** — *anti-pattern*: only logs `err.message`, drops the stack and pg error fields. Do not mirror this one:
+   ```ts
+   } catch (err: any) {
+     console.error('[modifiers] GET groups:', err.message);
+     res.status(500).json({ message: err.message });
+   }
+   ```
+
+The pattern to mirror is (1) — full `err` object, prefixed tag for grep-ability, generic response body. (2) is also fine; (3) is the gap we're closing, not a target.
+
+### Proposed minimal change (DO NOT APPLY)
+
+- **File:line:** `server/routers/delivery.ts:78` (and, see *Scope decision*, lines 91, 108-110, 172-174, 208-210, 224-226).
+- **Before/after diff for `/unified` only:**
+
+  ```diff
+  -    } catch (err: any) { res.status(500).json({ message: err.message }); }
+  +    } catch (err: any) {
+  +      console.error("[delivery/unified]", err);
+  +      res.status(500).json({ message: "Internal server error" });
+  +    }
+  ```
+
+  Three behavioral changes packed into one diff:
+  - **Adds the log call.** Mirrors `prep-notifications.ts:23-26` exactly.
+  - **Drops `err.message` from the response body.** Returning raw pg error text to the client is the leak that has been masking the bug — once we log server-side, the response should be generic. This also matches every other handler that logs.
+  - **Same status code, same shape (`{ message }`), different content.** The client already treats 500 as opaque; nothing on the client reads `data.message` for branching.
+
+- **Confidence:** **HIGH** that this surfaces the actual error in Railway logs. `console.error` writes to stderr, which Railway captures verbatim and puts in the same log stream as the access logger. Node's default error formatter prints `err.stack` plus any enumerable own-properties of `err` — for `pg` errors that includes `code` (e.g. `22P02` for `invalid_text_representation`), `routine`, `hint`, `position`, and the offending SQL fragment. That is enough to root-cause any handler-internal throw without further instrumentation.
+
+### Scope decision
+
+**Recommend: all six catch blocks in `delivery.ts` in one diff.** Justification: every catch in this file has the same gap, the same one-line fix, and the same risk surface; six 1-line additions is +6 lines / 6 modifications, well within "tiny diff." Catching only `/unified` would leave the same blind spot on five sibling endpoints — including `POST /api/delivery-orders` (line 108-110) and `POST /api/contact/sales` (line 208-210), both of which take user input and are realistic 500 candidates.
+
+Catch blocks in `server/routers/delivery.ts`:
+
+| Line  | Endpoint                          | Current log? |
+|-------|-----------------------------------|--------------|
+| 78    | `GET /api/delivery-orders/unified` | none         |
+| 91    | `GET /api/delivery-orders`         | none         |
+| 108-110 | `POST /api/delivery-orders`      | none         |
+| 172-174 | `POST /api/performance-logs`     | none         |
+| 208-210 | `POST /api/contact/sales`        | none         |
+| 224-226 | `POST /api/contact/support`      | none         |
+
+(Note: the brief mentions a `PATCH /api/orders/:id/accept-delivery` handler — that endpoint lives in `server/routers/orders.ts`, not `delivery.ts`. Out of scope for this recon; flag separately if needed.)
+
+If even six lines feels too broad for tomorrow morning, fall back to **/unified only** — it's the actively-broken endpoint and gives us the BL-3 diagnostic we need today.
+
+### Risks
+
+- **Response body change.** Today's response includes `err.message` (often raw pg error text). Switching to `"Internal server error"` is strictly safer (no info leak) but is technically a breaking change for any client that surfaces `data.message` to the user. Searching the client for consumers of this endpoint (`/api/delivery-orders/unified`): they read `data.data` and `data.total` from the success path; the error path goes through TanStack Query's default error handler which uses HTTP status, not body text. Low risk.
+- **Log volume.** Six catches across delivery routes; if `/unified` is broken in production, every dashboard load logs one error. Acceptable — that's the point. If volume becomes a concern, sample later.
+- **PII / secrets in logs.** The `pg` library does **not** include bound parameters in its error objects (only the SQL fragment, position, and error code). The handlers do not currently embed user input into thrown errors. So the err object should not carry customer name/phone/address. **However:** the `req.body` of `POST /api/contact/sales` and `POST /api/contact/support` contains email/phone, and `POST /api/delivery-orders` contains customer address. The proposed diff logs `err`, not `req.body`, so it does not capture this PII. Do not extend the log to include `req.body` without a redactor. No redaction strategy needed *for the proposed diff as written*; needed only if scope grows.
+- **Stack truncation.** Railway's log line limit is ~64 KB; pg errors with full SQL fragments fit comfortably. No truncation concern.
+
+### Confidence
+
+**HIGH.** All claims are read directly from current source. The pattern to mirror is verified at three sites. The premise correction (no Pino) is verified by `grep` returning zero matches across `server/`. The proposed diff is mechanical — same shape used by the routes that already log correctly. The single non-mechanical decision (drop `err.message` from response) is defended by the same pattern in `prep-notifications.ts` and `attendance.ts`, which both return generic error strings.
