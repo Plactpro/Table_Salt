@@ -41,6 +41,8 @@ import LoginPage from "@/pages/login";
 import RegisterPage from "@/pages/register";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
+import PrivacyPolicyPage from "@/pages/legal/PrivacyPolicy";
+import TermsOfServicePage from "@/pages/legal/TermsOfService";
 import PosPage from "@/pages/modules/pos";
 import AccountPage from "@/pages/account";
 import KioskPage from "@/pages/kiosk";
@@ -712,6 +714,14 @@ function Router() {
         <Route component={NotFound} />
       </Switch>
     );
+  }
+
+  if (location === "/legal/privacy") {
+    return <PrivacyPolicyPage />;
+  }
+
+  if (location === "/legal/terms") {
+    return <TermsOfServicePage />;
   }
 
   return (
