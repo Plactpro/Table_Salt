@@ -1504,3 +1504,185 @@ Proceed with **Option Y from the recon — two PRs:**
 PR A first because it's data-only. PR B second once PR A is verified working. The two PRs are independent — either can be merged without the other, though both are needed for full fix.
 
 Recon for PR A scope (encryption logic, exact migration shape) is the next step.
+
+---
+
+## Addendum 2026-04-29 AM: PR A Recon (Backfill Migration Scope)
+
+**Scope:** what the migration author needs to know before writing the backfill. Read-only — no migration code is proposed here. Severity headline: **the migration cannot be pure SQL.** It must run in Node and call `encryptField()` per row.
+
+### Encryption mechanism
+
+[VERIFIED] **Node-side, AES-256-GCM, key derived from `ENCRYPTION_KEY` env var.**
+
+- Helper module: `server/encryption.ts` (full file, 60 lines).
+- Cipher: `aes-256-gcm`, IV 16 bytes (random per call), auth tag 16 bytes (`encryption.ts:3–5`).
+- Key derivation: `scryptSync(process.env.ENCRYPTION_KEY, "table-salt-encryption-v1", 32)` (`encryption.ts:10–17`). Key cached in module-scope `derivedKey`.
+- Public functions: `encryptField(plaintext)` (`encryption.ts:20–29`), `decryptField(ciphertext)` (`encryption.ts:31–55`), `isEncrypted(value)` (`encryption.ts:57–59`).
+- Storage format: a **single text column** containing `enc:<iv-hex>:<authTag-hex>:<ciphertext-hex>` (`encryption.ts:28`). Disambiguator is the literal `enc:` prefix; `isEncrypted` simply tests `startsWith("enc:")`.
+- The `storage.createDeliveryOrder` path encrypts via `encryptPiiFields(data, DELIVERY_PII_FIELDS)` at `storage.ts:1374`, which iterates each PII field name and calls `encryptField` on string values that are not already encrypted (`storage.ts:6–14`). Idempotent: passing already-encrypted text is a no-op (the `isEncrypted` guard).
+
+**Implication for the migration:** Postgres has no AES-GCM primitive in a stock install (and `pgcrypto`'s `pgp_sym_encrypt` uses a different format and key derivation). Replicating the existing ciphertext format from SQL is not feasible without re-implementing scrypt + GCM in PL/pgSQL — and even then, future rotations of the encryption code would diverge. **The backfill must run in Node, importing `encryptField` from `server/encryption.ts`.**
+
+### Storage shape
+
+`shared/schema.ts:827–859`. Both delivery PII columns are single `text` columns; **no separate `_iv`, `_tag`, or `_encrypted` columns** — IV and auth tag are packed into the same string per the format above.
+
+```ts
+// shared/schema.ts:840
+customerAddress: text("customer_address").notNull(),
+// shared/schema.ts:841
+customerPhone: text("customer_phone"),
+```
+
+`customerAddress` is `NOT NULL` — the migration must insert *something* even when no address exists in the source row. `customerPhone` is nullable.
+
+No migration file needed to install pgcrypto/pgp helpers — there are none. The encryption boundary is exclusively in Node application code.
+
+### DELIVERY_PII_FIELDS contract
+
+`server/storage.ts:32`:
+
+```ts
+const DELIVERY_PII_FIELDS = ["customerPhone", "customerAddress"];
+```
+
+Two fields covered: `customerPhone`, `customerAddress`. **Encryption is transparent** when a caller goes through the storage helpers (`storage.createDeliveryOrder` at `storage.ts:1373–1376`, `updateDeliveryOrderByTenant` at `storage.ts:1378–1382`, `getDeliveryOrderByTenant` at `storage.ts:1369–1372`, `getDeliveryOrdersByTenant` at `storage.ts:1367`). The caller passes plaintext; the helper applies `encryptPiiFields` on write and `decryptPiiFields` on read.
+
+If the migration script bypasses the storage layer and uses `db.insert(deliveryOrders).values(...)` or `pool.query("INSERT ...")` directly, **the script must call `encryptField()` itself for both PII columns** — there is no DB-side trigger or default that would do it.
+
+Two non-PII fields that look like PII but are *not* in `DELIVERY_PII_FIELDS` and therefore are stored in plaintext: `driverPhone` (col `driver_phone`) and `driverName` (col `driver_name`). Out of scope for this PR but flagged for the backlog.
+
+### Address parsing
+
+**Where the regex expects to read from:** `server/routers/delivery.ts:44` does `notes.match(/Address:\s*([^|]+)/)` over `orders.notes` text, with the fallback at `delivery.ts:52`: `addressMatch ? addressMatch[1].trim() : (o.notes || 'No address')`.
+
+**Where `Address:` is supposed to be written into `orders.notes`:** [VERIFIED] **nowhere in the POS path.** The POS-Delivery flow constructs `orders.notes` at `client/src/pages/modules/pos.tsx:1219–1228` and writes only:
+
+```ts
+// pos.tsx:1219–1228 (verbatim)
+const parts: string[] = [];
+if (!tabIsDineIn) {
+  if (tab.customerName?.trim()) parts.push(`Customer: ${tab.customerName.trim()}`);
+  if (tab.customerPhone?.trim()) parts.push(`Phone: ${tab.customerPhone.trim()}`);
+}
+if (tabIsDineIn && (tab.covers ?? 1) > 1) parts.push(`Covers: ${tab.covers}`);
+if (tab.orderNotes?.trim()) parts.push(tab.orderNotes.trim());
+if (offlinePaymentPendingRef.current) parts.push("payment_pending_offline: true");
+return parts.length > 0 ? parts.join(" | ") : null;
+```
+
+There is no `Address:` segment, and the POS UI in `pos.tsx` has no field that captures a delivery address (only `customerName` and `customerPhone` are collected). `grep` for `Address:` across the entire client returns only translation keys, no construction site.
+
+**The `delivery.ts:44` regex was written speculatively or for a different code path that never landed.** It will never match a POS-sourced order. All 18 POS-Delivery orphans will therefore hit the fallback branch at `delivery.ts:52`, and the dashboard currently renders `o.notes || 'No address'` (the entire pipe-delimited notes string, e.g. `"Customer: David Park | Phone: +1-555-0201"`) in the address column.
+
+**Recommended migration fallback (preserves dashboard parity):** insert the same fallback expression into `customer_address`, encrypted: `o.notes || 'No address'`. This means existing dashboard cards keep displaying the same string they show today. Once PR B (auto-create on POST) lands the long-term shape will improve, but for the backfill, parity > correctness.
+
+**Edge cases observed:**
+- `pos.tsx:1228` returns `null` when no parts assembled (dine-in with no extras). For delivery orders the customer-name guard always pushes at least `Customer: ...` if entered, but for a delivery order placed *without* a customer name the API would have rejected it at `orders.ts:398–402` — so `notes` is never `NULL` for a successfully-placed POS-Delivery order, only sometimes for non-delivery types. Safe to assume `o.notes` is non-null for the 18 orphans, but the fallback `|| 'No address'` covers the corner.
+- Other delivery sources do populate proper addresses: `service-coordination.ts:701` (`customerAddress: deliveryAddress`) and `aggregator-adapters.ts:54, 71, 94, 111, 134, 151, 183, 207` for Zomato/Swiggy/Uber/etc. via `channels.ts:142, 170, 260, 300`. Those flows go through `storage.createDeliveryOrder` already and are not orphans.
+- No order in the codebase writes a literal `Address:` prefix. The regex is dead code today.
+
+### Migration mechanism recommendation
+
+**Node one-shot script.** Mirror `scripts/encrypt-existing-pii.ts` (76 lines). Concretely:
+
+- Path: `scripts/backfill-delivery-orders-from-pos.ts` (proposed name; mirrors plural-`scripts/` convention used by all other one-shots; `script/` singular has only `script/build.ts` and is unrelated).
+- Imports to mirror `encrypt-existing-pii.ts:1–4`:
+  ```ts
+  import { db } from "../server/db";
+  import { orders, deliveryOrders } from "../shared/schema";
+  import { encryptField } from "../server/encryption";
+  ```
+- Invocation pattern: `npx tsx scripts/backfill-delivery-orders-from-pos.ts` (analogous to `scripts/encrypt-existing-pii.ts`). Requires `ENCRYPTION_KEY` and `DATABASE_URL` in env.
+- Run mode: standalone one-shot, **not** wired into `runAdminMigrations` (`server/admin-migrations.ts`). Rationale: `runAdminMigrations` runs on every deploy and is for schema/idempotent platform setup. A one-time data backfill belongs alongside `encrypt-existing-pii.ts`. The probe's `NOT EXISTS` clause makes re-runs safe, but unnecessary work on every deploy is wasteful and adds boot-time risk.
+- Pattern fidelity reference: `scripts/encrypt-existing-pii.ts:45–56` (the `deliveryCount` block) shows exactly how to read delivery rows, encrypt PII fields on the Node side, and write back. The new script does the inverse half (insert new rows from a join) but uses the same `db` + `encryptField` plumbing.
+
+The script should either (a) call `storage.createDeliveryOrder` per row — gets transparent encryption for free — or (b) compute the encrypted values locally and `db.insert(deliveryOrders).values([...]).onConflictDoNothing()`. Option (b) is faster and the bulk size (≤42 even for full backfill) makes the difference negligible; option (a) reads more cleanly and inherits any future encryption changes automatically. Migration author's call.
+
+### Required column inventory
+
+`shared/schema.ts:827–859`. NOT NULL columns the migration must populate are bolded.
+
+| `delivery_orders` column | NOT NULL? | Source from `orders` | Encrypted? |
+|---|---|---|---|
+| **id** | yes (PK) | omit — DB default `gen_random_uuid()` (`schema.ts:830–832`) | no |
+| **tenant_id** | yes (`schema.ts:833–835`) | `orders.tenant_id` (FK match) | no |
+| order_id | nullable (`schema.ts:836`) | `orders.id` — populate to link backwards (used by `service-coordination.ts:610` and the `linkedOrderIds` dedupe at `delivery.ts:71–72`) | no |
+| customer_id | nullable (`schema.ts:837–839`) | `orders.customer_id` if non-null, else null | no |
+| **customer_address** | yes (`schema.ts:840`) | `orders.notes \|\| 'No address'` (regex on `Address:` is dead — see Address parsing) | **YES** — `encryptField()` |
+| customer_phone | nullable (`schema.ts:841`) | `orders.customer_phone` (plaintext text col, `schema.ts:498`); skip encrypt if null | **YES** if non-null |
+| delivery_partner | nullable (`schema.ts:842`) | null (POS orders have no aggregator partner) | no |
+| driver_name | nullable (`schema.ts:843`) | null | no |
+| driver_phone | nullable (`schema.ts:844`) | null | no |
+| status | has default `'pending'` (`schema.ts:845`) | mapped — see status mapping below | no |
+| estimated_time | nullable (`schema.ts:846`) | null (no source field) | no |
+| actual_time | nullable (`schema.ts:847`) | null | no |
+| delivery_fee | has default `'0'` (`schema.ts:848–850`) | omit (use default) | no |
+| tracking_notes | nullable (`schema.ts:851`) | for dashboard parity, set `\`customerName:${orders.customer_name}\`` if `customer_name` non-null, else null. Mirrors `service-coordination.ts:705` exactly. | no (plaintext — not in `DELIVERY_PII_FIELDS`; flagged for backlog) |
+| created_at | has default `now()` (`schema.ts:852`) | **`orders.created_at`** — pass explicitly so the historical timestamp is preserved (otherwise the dashboard would re-sort backfilled orders to the present moment) | no |
+| delivered_at | nullable (`schema.ts:853`) | null | no |
+
+**Status mapping.** The runtime synthetic-shape mapping at `delivery.ts:56` covers four order statuses; the rest pass through. The `delivery_status` enum (`shared/schema.ts:784–792`) is `["pending","assigned","picked_up","in_transit","delivered","cancelled","returned"]`. The `order_status` enum (`shared/schema.ts:42–56`) is `["new","on_hold","confirmed","sent_to_kitchen","in_progress","ready","served","ready_to_pay","paid","completed","cancelled","voided","pending_payment"]`.
+
+Operational orphans the backfill targets (per the probe):
+
+| `orders.status` | Count | Maps to `delivery_status` | Source |
+|---|---|---|---|
+| `new` | 14 | `pending` | runtime mapping at `delivery.ts:56` |
+| `served` | 2 | **not mapped** — `served` is not in `delivery_status` | runtime would pass through and a direct INSERT would fail the enum check |
+| `ready_to_pay` | 2 | **not mapped** — `ready_to_pay` is not in `delivery_status` | same |
+
+Recommended migration mapping (covers the four runtime cases plus the two gaps):
+
+```
+new            → pending
+sent_to_kitchen → pending
+in_progress    → assigned
+ready          → picked_up
+served         → picked_up   (semantically: order is out of kitchen and effectively gone; see open question)
+ready_to_pay   → pending     (payment-terminal state; no physical-delivery analog)
+cancelled      → cancelled
+voided         → cancelled   (only relevant if PR A scope is widened to dead orders; not for the 18-row scope)
+```
+
+The two non-runtime mappings (`served`, `ready_to_pay`) are judgement calls — see Open questions.
+
+### Safety / idempotency
+
+**Where clause to use, justified:**
+
+```sql
+SELECT o.id, o.tenant_id, o.customer_id, o.customer_name, o.customer_phone, o.notes, o.status, o.created_at
+FROM orders o
+WHERE o.tenant_id = $1                                                  -- tenant scope; loop over the 2 tenants explicitly OR omit if running platform-wide
+  AND o.order_type::text IN ('delivery','phone_delivery','online_delivery','third_party')
+  AND o.status::text IN ('new','served','ready_to_pay')                 -- operational scope (18 rows); widen to include cancelled/voided only if Option 2 is chosen
+  AND NOT EXISTS (SELECT 1 FROM delivery_orders d WHERE d.order_id = o.id)
+```
+
+Justification:
+
+- `order_type` filter mirrors `delivery.ts:33`. Same string set — keeps the backfill aligned with the unified-endpoint definition of "delivery-shaped".
+- `status` filter mirrors the dashboard's operational set (`new`, `served`, `ready_to_pay`); excludes `cancelled`/`voided` per the probe's "operational vs dead" decision (recon line 1453–1463).
+- `NOT EXISTS` predicate makes the script idempotent: re-running after a partial failure picks up only un-backfilled orphans. `delivery_orders.order_id` is the FK column (`schema.ts:836`, `varchar("order_id").references(() => orders.id)`); confirmed via grep — the only references are `delivery_orders.order_id` → `orders.id`. There is no `UNIQUE` constraint on `order_id`, so a buggy re-run without the `NOT EXISTS` clause would silently double-insert. The clause is load-bearing for safety, not just optimisation.
+- Tenant scoping in the loop (rather than in the SQL) lets the script log per-tenant counts (mirrors `encrypt-existing-pii.ts` style).
+
+**Constraint inventory checked:**
+- `delivery_orders.id` PK with default `gen_random_uuid()` — no collision risk.
+- `delivery_orders.tenant_id` FK to `tenants.id` (`schema.ts:835`) — both target tenants verified to exist (recon line 1469–1474).
+- `delivery_orders.order_id` FK to `orders.id` (`schema.ts:836`); no `onDelete` clause means default RESTRICT — irrelevant for INSERT.
+- `delivery_orders.customer_id` FK to `customers.id` (`schema.ts:837–839`); pass null when source `orders.customer_id` is null to avoid FK violations on stale references.
+- No partial unique indexes on `delivery_orders` (`schema.ts:855–858` declares only two non-unique tenant/created and tenant/status indexes).
+
+No migration-author trap detected.
+
+### Open questions that block writing the migration
+
+These are the two remaining judgement calls. The migration author should confirm before merging PR A.
+
+1. **Status mapping for `served` and `ready_to_pay`.** No precedent in the runtime mapping. Suggested defaults in the table above (`served → picked_up`, `ready_to_pay → pending`), but the operations team owns the semantic. If the dashboard column expectations differ (e.g. a manager wants `served` to render as "ready for handoff" not "picked up"), the mapping should change accordingly. Closeable by a one-liner Slack to whoever owns the delivery dashboard UX.
+2. **Whether to populate `tracking_notes` with `customerName:<name>` for dashboard parity.** The runtime synthetic shape exposes `customerName` via the unified endpoint at `delivery.ts:50`, but `delivery_orders` has no `customerName` column — the phone-orders flow stuffs it into `tracking_notes` instead (`service-coordination.ts:705`). Doing the same in the backfill keeps the dashboard from suddenly losing the customer name on backfilled rows. **Strongly recommended.** Marked open only because it's a behavioural decision that should be explicit in the PR description, not because the answer is unclear.
+3. **Tracking-notes plaintext PII (out-of-scope flag).** `tracking_notes` is plaintext (not in `DELIVERY_PII_FIELDS`), but it will contain `customerName`. This is not new — `service-coordination.ts:705` does the same — but the backfill broadens the data footprint. Recommend a separate finding/PR to either (a) add `trackingNotes` to `DELIVERY_PII_FIELDS` or (b) move customer name to a proper column. Not blocking PR A.
+
+No further runtime probes needed. PR A is unblocked once the status mapping is confirmed.
