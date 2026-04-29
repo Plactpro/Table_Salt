@@ -291,7 +291,7 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
         ) : (
           <div className="flex flex-col h-full">
             {/* Header */}
-            <SheetHeader className="px-6 py-4 border-b bg-background sticky top-0 z-10">
+            <SheetHeader className="px-6 pr-12 py-4 border-b bg-background sticky top-0 z-10">
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <SheetTitle className="text-xl font-bold" data-testid="text-order-number">
