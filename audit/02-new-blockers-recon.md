@@ -1234,3 +1234,108 @@ If even six lines feels too broad for tomorrow morning, fall back to **/unified 
 ### Confidence
 
 **HIGH.** All claims are read directly from current source. The pattern to mirror is verified at three sites. The premise correction (no Pino) is verified by `grep` returning zero matches across `server/`. The proposed diff is mechanical — same shape used by the routes that already log correctly. The single non-mechanical decision (drop `err.message` from response) is defended by the same pattern in `prep-notifications.ts` and `attendance.ts`, which both return generic error strings.
+
+---
+
+## Addendum 2026-04-28 EOD: Day Summary and Tomorrow's Handoff
+
+**Date of work:** 2026-04-28
+**Production deploys today:** 6 (X-02, BL-2, BL-3 round 1, BL-3 logging, BL-3 round 2, BL-1)
+
+### What shipped to production
+
+| Order | PR | Commit | Description |
+|-------|----|----|-------------|
+| 1 | #5 | 3e54dd2 | X-02: pass tenantId to getOrderItemsByOrder for dine-in bills |
+| 2 | #6 | d720247 | BL-2: set userInitiatedPaymentRef in handleProceedToPayment |
+| 3 | #7 | f0531bb | BL-3 (round 1, incomplete): cast order_type to text in IN clause |
+| 4 | #8 | 3bc6817 | BL-3 logging: add console.error to all 6 catch blocks in delivery.ts |
+| 5 | #9 | f4a93cb | BL-3 (round 2, complete): cast order_type to text in NOT EXISTS subquery |
+| 6 | #10 | 5ca3899 | BL-1: null-coalesce ticket.status to prevent toLowerCase crash |
+
+Final main HEAD after EOD: `ee223f4` (merge of PR #10).
+
+### Tester verification status (as of EOD 2026-04-28)
+
+- **X-02:** PASSED earlier today
+- **BL-2:** PASSED earlier today
+- **BL-3 round 1:** FAILED — testers reported same 500 in DevTools after PR #7
+- **BL-3 round 2 + logging:** Verified by founder personally (23 delivery orders rendering, no 500). Tester re-verification message sent at EOD for next-day verification.
+- **BL-1:** Verified by founder personally (Ticket History page renders cleanly with 11+ rows visible). Tester re-verification not yet requested as of EOD.
+
+### Diagnostic lessons captured today
+
+**1. BL-3 took three attempts.** The first cast fix (PR #7) addressed only the IN clause and missed the NOT EXISTS comparison in the same query. We could not diagnose the remaining bug because production logs only captured request metadata (path, status, durationMs) — not the actual error message. We had to ship error logging (PR #8) before we could see what the real bug was. The captured error `[delivery/unified] error: operator does not exist: text = order_type` then made the second fix (PR #9) a one-line change with HIGH confidence rather than a guess.
+
+**Lesson:** when a fix is shipped from a hypothesis without runtime data, treat the next failure as evidence the hypothesis was incomplete, not just wrong. Add observability before iterating.
+
+**2. AI summaries are not verification.** Today saw three instances of AI-generated summaries that were confidently wrong: BL-2's first recon (wrong scope), BL-3's first Railway log summary (right gap identification but missed the real diagnostic data), and an attempted Perplexity browser check of the BL-1 fix (could not actually log into the tenant, returned a hallucinated answer). Direct verification with screenshots from the founder's actual browser was the only reliable signal.
+
+**Lesson:** for production verification, screenshots > summaries. For diagnostic data, raw logs > AI interpretations of logs.
+
+**3. The "one-line fix" temptation is a trap.** Today, three separate "one-line fixes" were proposed with HIGH confidence. Two were correct (BL-2 round 2, BL-1). One was wrong (BL-3 round 1). The recon discipline of "verify the recon yourself before sending Claude Code anything" is what caught the BL-3 round 1 mistake before we wasted more time on a third guess.
+
+**Lesson:** confidence is not certainty. Recon-first is non-negotiable, even when the fix looks obvious.
+
+### Open from 2026-04-28, deferred
+
+1. **Tester verification of BL-1.** Not yet requested. Add to morning tester message on 2026-04-29.
+2. **Tester re-verification of BL-3.** Message already sent. Expect results when testers start their next shift.
+3. **F-225 tenant-tz-helper branch decision.** Still untouched. 6 commits of real implementation work (date-fns-tz, helper module with tests, escpos-builder/printer-service updates, calendar wiring, Dockerfile TZ=UTC). Ship/finish/abandon decision pending.
+4. **BL-1 schema follow-up.** `orders.status` should get `.notNull()` and a backfill (`UPDATE orders SET status = 'new' WHERE status IS NULL;`). Tracked as separate ticket — today's fix is defensive client coercion only.
+5. **Schema reconciliation for `order_type` enum runtime migration.** `server/index.ts:450-458` has a swallow-catch attempt; `server/admin-migrations.ts:4197` has a duplicate. Today's BL-3 fixes are symptom-only at the SQL level. Real .sql migration in `migrations/` is the correct fix. Tracked as backlog.
+6. **Findings 2-5 from BL-1 Round 2 recon.** All real but non-load-blocking. If next-day BL-1 verification reveals the page is still broken, these are the next candidates: createdAt format on invalid date (MEDIUM), ticket.id.slice on null (LOW), filter dropdown emitting non-enum values (causes 500 on filter click — same class as BL-3, MEDIUM), server field-name mismatches (cosmetic).
+
+### Process gaps observed today
+
+1. **Pre-merge "Files changed" review was skipped on 6 of 6 PRs today.** Diffs were all small and nothing got past us, but the habit needs to be in place before a non-trivial diff arrives.
+2. **`tatus` file was created accidentally** by a stray `git status >` redirect at some point during the day. Caught and deleted before any commit. No harm.
+
+---
+
+## Addendum 2026-04-29 AM: 404 Bug Discovered During BL-3 Tester Verification
+
+**Reported by:** Manual testers (Nandhini, Madhesh) during morning tester verification of BL-3 fix.
+
+### Tester report summary
+
+- **Test 1 (Dashboard loads with existing orders):** PASSED — counters show real numbers, orders render in Preparing/Ready/Out for Delivery columns, `/api/delivery-orders/unified` returns 200.
+- **Test 2 (New POS Delivery order appears in dashboard):** PASSED with caveat — the new POS Delivery order DID appear in the Preparing column, but clicking "Assign Agent" on it triggered an error.
+- **Test 3 (Phone delivery flow regression check):** PASSED.
+
+### The 404 finding
+
+When tester (logged in as Manager — Jordan Rivera) clicked "Assign Agent" on a POS-sourced delivery order:
+
+- Modal opened correctly with 4 delivery agents listed (Rahul Kumar available, Suresh Singh busy, Amit Sharma available, Priya Patel offline)
+- Tester selected an agent and clicked "Assign Agent"
+- Red toast appeared: **"Error / 404: Delivery order not found"**
+- DevTools Network tab showed three `PATCH /api/delivery-orders/order-87541db0-0d51-47eb-9174-a7daff…` requests, all returning **404 (Not Found)**
+
+### Working hypothesis (not yet verified)
+
+This 404 is a *consequence* of yesterday's BL-3 fix, not a regression of it.
+
+The BL-3 fix made the unified endpoint surface orders from both the `delivery_orders` table AND the `orders` table (where `order_type IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')`). For orders sourced via the POS-Delivery flow, the row exists in `orders` but not in `delivery_orders`. The unified endpoint synthesises a `DeliveryOrder`-like shape with an `id` of `order-<orders.id>` (see `server/routers/delivery.ts:46`).
+
+When the client fires `PATCH /api/delivery-orders/<id>` for assign-agent, the PATCH handler looks up `delivery_orders` by that synthetic ID. The row doesn't exist, so the server returns 404.
+
+**Consequence:** dashboard surfaces POS-Delivery orders correctly (yesterday's fix), but operations on those orders (Assign Agent, Mark Ready, Dispatch, etc.) all return 404. Phone-delivery orders that have a real `delivery_orders` row work fine.
+
+### Recon required before fix
+
+Before proposing a fix, the following needs verification:
+
+1. Confirm the synthetic ID prefix logic at `server/routers/delivery.ts:46` is what's producing `order-…` IDs.
+2. Read the PATCH handler at `app.patch("/api/delivery-orders/:id", …)` to confirm it does not strip the `order-` prefix or fall through to `orders` table lookup.
+3. Enumerate all other endpoints under `/api/delivery-orders/:id/…` that would have the same 404 problem (delete, accept, reject, dispatch, etc.).
+4. Determine the count of POS-Delivery orders currently in production that would need backfill if Option 2 below is chosen.
+
+### Possible fix options (not yet decided)
+
+1. **Cosmetic:** disable Assign Agent button for synthetic IDs on the client. Hides the problem; doesn't solve it.
+2. **Server: auto-create delivery_orders row on POS-Delivery order creation.** Fixes root cause going forward. Doesn't help existing orders without backfill.
+3. **Server: PATCH handler strips `order-` prefix and operates on `orders` table directly.** Most complex; needs to be applied to every endpoint under `/api/delivery-orders/:id/…`.
+4. **Backfill + Option 2 together.** Cleanest end state, requires a data migration.
+
+Decision: defer until recon completes. Recon scheduled for 2026-04-29 morning.
