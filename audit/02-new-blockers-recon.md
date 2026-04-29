@@ -1431,3 +1431,76 @@ Three real client-facing failure paths today: the assign-agent PATCH (Q5 below) 
 2. **Three-PATCH observation.** Whether the tester's three identical 404s reflect React Query auto-retry, three discrete clicks, or a debounce gap in the modal. Resolvable by checking React Query default `retry` setting in `client/src/lib/queryClient.ts` — out of scope for this recon round.
 3. **Transaction scoping.** Does `POST /api/orders` already run its inserts inside a single DB transaction, or are `orders` and `order_items` independent? If independent, the auto-create-on-POST leg should be added with the same semantics as existing inserts (and the failure mode documented), not retrofitted into a transaction. Worth confirming before the fix branch is opened.
 
+## Addendum 2026-04-29 AM: 404 SQL Probe Results
+
+**Probes run:** 2026-04-29 AM, Railway Postgres production database, query console (Database → Data → Query).
+
+### Orphan inventory
+
+POS-Delivery `orders` rows (`order_type::text IN ('delivery', 'phone_delivery', 'online_delivery', 'third_party')`) lacking a matching `delivery_orders` companion row, broken down by tenant and status:
+
+| Tenant | Tenant Name | Status | Count |
+|---|---|---|---|
+| 6a8281c4-8e66-4214-84ad-2d0e3231cc76 | Updated Tenant Name Test | cancelled | 23 |
+| 6a8281c4-8e66-4214-84ad-2d0e3231cc76 | Updated Tenant Name Test | new | 13 |
+| 6a8281c4-8e66-4214-84ad-2d0e3231cc76 | Updated Tenant Name Test | served | 2 |
+| 6a8281c4-8e66-4214-84ad-2d0e3231cc76 | Updated Tenant Name Test | ready_to_pay | 2 |
+| 6a8281c4-8e66-4214-84ad-2d0e3231cc76 | Updated Tenant Name Test | voided | 1 |
+| 74f513e3-9db5-4a9b-b427-6a4c2a6eb082 | Table Salt Platform | new | 1 |
+
+**Total: 42 orphans across 2 tenants.**
+
+### Operational vs dead-status breakdown
+
+The unified dashboard endpoint filters out `paid`, `completed`, `voided`. The dashboard typically also hides `cancelled`. Operational orphans (visible on dashboard, clickable, and currently triggering 404s):
+
+- new: 14 (13 + 1 cross-tenant)
+- served: 2
+- ready_to_pay: 2
+
+**Operational orphan total: 18 across 2 tenants.**
+
+The remaining 24 orphans (23 cancelled + 1 voided) are dead orders. They exist in `orders` but don't surface in the dashboard. They do NOT need backfill operationally — only for tidiness. The backfill SQL should target operational statuses only, not these.
+
+### Tenant identity verification
+
+`74f513e3-9db5-4a9b-b427-6a4c2a6eb082` was initially unfamiliar. SQL lookup confirmed:
+
+- **Name:** "Table Salt Platform"
+- **Status:** legitimate platform-level tenant in the `tenants` table
+- **Likely role:** system/super-admin tenant created during initial setup
+- **Anomaly noted:** has 1 POS-Delivery order in `new` status. Platform tenants don't usually have customer orders. Likely a test/seed order, not a security concern.
+
+The other tenant `6a8281c4-...` ("Updated Tenant Name Test") is the primary test tenant the team has been working with throughout April 2026.
+
+Both tenants are real and operational. The backfill plan is unaffected.
+
+### Backfill scope decision (deferred)
+
+Two paths under consideration:
+
+1. **Operational-only backfill.** Target only `new`, `served`, `ready_to_pay` statuses. Backfills 18 rows. Leaves cancelled/voided orphans alone — they're invisible to operations and don't break the dashboard.
+2. **Full backfill.** Target all delivery-shaped orders without companions. Backfills 42 rows. Cleaner data state, including dead orders.
+
+Recommendation deferred to fix branch. Option 1 is the minimum viable fix; Option 2 is the principled fix. The encryption-parity work is the same in both — only the WHERE clause differs.
+
+### Railway query console quirk
+
+The Railway Postgres "Database → Data → Query" console silently swallows result rows when a query is wrapped in `BEGIN; … ROLLBACK;`, even for pure SELECTs. The query reports "Query ran successfully" but the result table shows "0 rows" — regardless of the actual row count from the underlying query.
+
+**Workaround:** for SELECT-only probes, omit the transaction wrapper. SELECT is read-only by definition; the wrapper adds nothing.
+
+**For future write operations** (e.g. backfill migrations), do NOT use this console. Connect via `psql` or DBeaver using the `DATABASE_URL` from Railway Variables, where transactional control is reliable.
+
+This is a Railway UI bug, not a database bug. Three probes (Q1, Q2, Q3) returned 0 rows misleadingly before this was diagnosed; rerunning the same SQL without the wrapper returned the actual data. Documenting this for tomorrow's session and future SQL work.
+
+### Decision
+
+Proceed with **Option Y from the recon — two PRs:**
+
+- **PR A:** SQL backfill migration (no code change). Targets the 18 operational orphans across both tenants. Encrypts `customerPhone`/`customerAddress` to match `delivery_orders` PII contract.
+- **PR B:** auto-create `delivery_orders` row inside `POST /api/orders` whenever `orderType` is delivery-shaped. Code change, prevents recurrence.
+
+PR A first because it's data-only. PR B second once PR A is verified working. The two PRs are independent — either can be merged without the other, though both are needed for full fix.
+
+Recon for PR A scope (encryption logic, exact migration shape) is the next step.
