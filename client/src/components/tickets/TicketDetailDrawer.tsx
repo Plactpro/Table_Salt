@@ -200,6 +200,8 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
   const { data: timeline, isLoading: timelineLoading } = useQuery<TimelineEvent[]>({
     queryKey: [`/api/tickets/${orderId}/timeline`],
     enabled: !!orderId && open && showTimeline,
+    select: (raw: unknown) =>
+      Array.isArray(raw) ? (raw as TimelineEvent[]) : ((raw as { events?: TimelineEvent[] })?.events ?? []),
   });
 
   const { data: voidRequests } = useQuery<VoidRequest[]>({
