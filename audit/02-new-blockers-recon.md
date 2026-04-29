@@ -1686,3 +1686,150 @@ These are the two remaining judgement calls. The migration author should confirm
 3. **Tracking-notes plaintext PII (out-of-scope flag).** `tracking_notes` is plaintext (not in `DELIVERY_PII_FIELDS`), but it will contain `customerName`. This is not new — `service-coordination.ts:705` does the same — but the backfill broadens the data footprint. Recommend a separate finding/PR to either (a) add `trackingNotes` to `DELIVERY_PII_FIELDS` or (b) move customer name to a proper column. Not blocking PR A.
 
 No further runtime probes needed. PR A is unblocked once the status mapping is confirmed.
+
+---
+
+## Addendum 2026-04-29 PM: BL-1 Round 2 - post-fix verification failure (timeline envelope)
+
+**Premise.** Round 1's fix (PR #10) shipped to production. Today's tester verification on `www.inifinit.com/tickets` shows the page now renders the table, but the Global Error Boundary replaces page content with "Something went wrong" once the user interacts. Console: `TypeError: (n || []).slice is not a function`. Stack top frame: `index-CwXMzz0e.js:1:12069`; subsequent frames in `table-qr-CCArcIKA.js` (a Vite shared-chunk between the `tickets` page and the `qr` build entry per `vite.config.ts:46` — not a separate code path). Round 1's diagnosis and fix were correct; this addendum identifies a second, pre-existing crash that Round 1 didn't touch and that surfaces only now that the page renders far enough to be clicked.
+
+> **Naming note.** The user's task brief referenced `client/src/pages/ticket-history.tsx`; that file does not exist. The actual page source is `client/src/pages/tickets/index.tsx`, exported as `TicketHistoryPage` and lazily imported at `client/src/App.tsx:99`, mounted at `/tickets` (`App.tsx:619`). All findings below cite the real path.
+
+### 1) Round 1 fix — what shipped (PR #10 / commit `5ca3899`)
+
+- File: `client/src/pages/tickets/index.tsx`
+- Line: **53 only** (single-line change). Diff:
+  ```
+  - statusMap[ticket.status.toLowerCase()] || { label: ticket.status, ... }
+  + statusMap[(ticket.status ?? "").toLowerCase()] || { label: ticket.status ?? "Unknown", ... }
+  ```
+- Verified via `git show 5ca3899` — no other files in the diff.
+- This is exactly the proposed fix from the prior addendum at `02-new-blockers-recon.md:1113-1118`. It addressed Finding 1 (`ticket.status.toLowerCase()` on a null status). The fix is correct for Round 1's symptom: `StatusBadge` now renders unknown/null statuses as "Unknown" and the page no longer crashes during the table render.
+
+### 2) Today's tester finding
+
+- **URL:** `www.inifinit.com/tickets`.
+- **Symptom:** page initially renders the ticket list table; on tester interaction, error card "Something went wrong" replaces page content.
+- **Browser console error:** `TypeError: (n || []).slice is not a function`.
+- **Stack trace top frame:** `index-CwXMzz0e.js:1:12069`.
+- **Subsequent frames:** `at ms, yu, ku, Tm, km, Wm, pb, sc, Km, hp, tl` in `table-qr-CCArcIKA.js`. The `table-qr-...` chunk is a Vite-generated common chunk between the `/tickets` page and the QR build entry declared at `vite.config.ts:43-47` (`main` and `qr` rollup inputs share Table UI primitives); the minified frames are React Fiber internals, not a separate failure surface.
+
+### 3) Single source of `(n || []).slice` in the codebase
+
+`grep -nE "\|\| \[\]\)\.slice" client/src` across the entire client source returns exactly two hits:
+
+- `client/src/pages/modules/audits.tsx:537` — `Array.from(e.target.files || []).slice(0, 3)` — file upload handler, runs only on file-input change. Unrelated to `/tickets`.
+- `client/src/components/tickets/TicketDetailDrawer.tsx:274` — `const displayedTimeline = showFullTimeline ? (timeline || []) : (timeline || []).slice(0, 10);` — **only candidate that exists in the `/tickets` render tree.**
+
+The literal `|| []` and `.slice` survive minification because both are short and `[]` is a literal. The variable name `timeline` minifies to `n`, producing exactly the production error string. No other `.slice` call in the `/tickets` render path matches this pattern (`grep` for all `.slice(` in `client/src/components/tickets/` returns only line 274 and a `ticket.id.slice(-6)` string slice at line 296).
+
+### 4) Server/client shape mismatch on `/api/tickets/:orderId/timeline`
+
+**Server handler** at `server/routers/ticket-history.ts:343-406`. The success path (line 401) returns:
+
+```ts
+return res.json({ events });
+```
+
+— an object envelope, not a bare array. Every other exit on this handler also returns an object: `404 {message}` (line 356), `403 {message}` (line 359), `500 {message}` (line 404). No code path returns a bare array.
+
+`git log -L 401,401:server/routers/ticket-history.ts` shows the `{events}` envelope was introduced by commit `0e7ba31` (Task #112 round 6) when the file was created. **Pre-existing shape — not introduced by any recent BL-1 / BL-2 / BL-3 work.**
+
+**Client query** at `client/src/components/tickets/TicketDetailDrawer.tsx:200-203`:
+
+```ts
+const { data: timeline, isLoading: timelineLoading } = useQuery<TimelineEvent[]>({
+  queryKey: [`/api/tickets/${orderId}/timeline`],
+  enabled: !!orderId && open && showTimeline,
+});
+```
+
+Type parameter `TimelineEvent[]` declares `timeline` as a bare array. No `select` transform is supplied, so the default queryFn at `client/src/lib/queryClient.ts:115-175` (specifically line 160: `return responseBody`) hands the parsed JSON straight through. Runtime value of `timeline` is therefore `{events: TimelineEvent[]}` — truthy, **not** an array.
+
+**Failure point** at `client/src/components/tickets/TicketDetailDrawer.tsx:274`:
+
+```ts
+const displayedTimeline = showFullTimeline ? (timeline || []) : (timeline || []).slice(0, 10);
+```
+
+`(timeline || [])` short-circuits to `timeline` because the envelope object is truthy. `.slice` does not exist on a plain object → `TypeError: (n || []).slice is not a function`. Two further uses of the same `(timeline || [])` idiom in this file at lines 539 and 545 (both `.filter`, used inside the Print History section) would crash with `filter is not a function` if line 274 were skipped, but line 274 evaluates first at the top of the component body before the `if (!open) return null` early return at line 276.
+
+### 5) When the crash fires
+
+The drawer is rendered unconditionally at `client/src/pages/tickets/index.tsx:466-471` (`<TicketDetailDrawer open={!!selectedOrderId} ... />`), so the component body always runs and **line 274 always evaluates**.
+
+- **Drawer closed (`selectedOrderId === null`):** `enabled` is false, `timeline` is `undefined`, `(undefined || []).slice(0,10)` returns `[]`. No crash.
+- **Drawer open:** `enabled` is true, query resolves with the envelope, `timeline` becomes truthy non-array, line 274 throws.
+
+Two trigger paths:
+
+1. **URL has `?order=xyz`** (`pages/tickets/index.tsx:70`, `:80`). `selectedOrderId` initialises non-null, drawer opens on first render, query fires, crash happens before any user interaction.
+2. **Tester clicks a ticket row** at `pages/tickets/index.tsx:394` or `:422`. `setSelectedOrderId(ticket.id)` opens the drawer, query fires, crash. Given the tester URL was `www.inifinit.com/tickets` (no query string in the report), this is the most likely path.
+
+### 6) Why Round 1 passed verification
+
+Round 1's verification confirmed that the page no longer crashes during the table render — which it doesn't. The verification did not include opening any individual ticket. The drawer's `(timeline || []).slice(0, 10)` only evaluates against non-array data once `enabled` becomes true, which only happens when the drawer is opened. Round 1's fix is a true positive; today's failure is a separate, pre-existing crash exposed by Round 1's success — the page now renders far enough that the tester can click a row and trigger the second bug.
+
+### 7) Cross-reference with PR #7 (`f0531bb`) and PR #9 (`f4a93cb`) — BL-3
+
+`git show --stat` on both commits confirms each touched **only** `server/routers/delivery.ts` (1 line each). Neither touched `server/routers/ticket-history.ts`. The `/api/tickets/:orderId/timeline` endpoint and its `{events}` envelope are independent of BL-3. The shape mismatch has existed since commit `0e7ba31` (per `git log -L`), which predates the BL-3 work by many weeks. BL-3's SQL casts have no path to alter the ticket-history endpoint's response shape.
+
+### 8) Hypothesis confidence
+
+**HIGH.** Every link in the chain is verified by source code, not inferred:
+
+- Server returns `{events}` — `server/routers/ticket-history.ts:401`.
+- Client expects array — `TicketDetailDrawer.tsx:200-203` declares `useQuery<TimelineEvent[]>` with no transform.
+- Default queryFn passes raw JSON through — `client/src/lib/queryClient.ts:160`.
+- Crash site uses `(timeline || []).slice` which fails on truthy non-array — `TicketDetailDrawer.tsx:274`.
+- Minified error string `(n || []).slice is not a function` matches that line uniquely in the codebase (`grep` results in section 3).
+- Drawer renders unconditionally and line 274 evaluates on every render — `pages/tickets/index.tsx:466-471` and `TicketDetailDrawer.tsx:274` (top of body, before early return at line 276).
+
+The only thing static analysis cannot prove is that the tester actually clicked a row vs. arrived with `?order=` in the URL — but both paths route to the same crash, so the distinction does not change the diagnosis or the fix.
+
+### 9) Proposed minimal fix (DO NOT APPLY)
+
+Add a `select` transform to the timeline `useQuery` to flatten the envelope at the query boundary. File: `client/src/components/tickets/TicketDetailDrawer.tsx`, lines 200-203.
+
+```diff
+  const { data: timeline, isLoading: timelineLoading } = useQuery<TimelineEvent[]>({
+    queryKey: [`/api/tickets/${orderId}/timeline`],
+    enabled: !!orderId && open && showTimeline,
++   select: (raw: unknown) =>
++     Array.isArray(raw) ? (raw as TimelineEvent[]) : ((raw as { events?: TimelineEvent[] })?.events ?? []),
+  });
+```
+
+- **Why this fix.** Tolerates both shapes (current `{events}` envelope; future bare-array if the server is ever changed). Guarantees `timeline` is an array at every consumer site (lines 274, 495, 517, 539, 545), so all four `(timeline || []).method` and `timeline.length` references stop being landmines.
+- **Why this idiom.** The same `select` transform pattern is already used in this file at `TicketDetailDrawer.tsx:149-197` for the ticket-detail query (mapping `{order, items, bill}` → `TicketDetail`). Same place, same shape of intervention.
+- **Diff size.** 2 lines added inside one existing object literal, 0 deleted.
+- **Files changed.** **1** — `client/src/components/tickets/TicketDetailDrawer.tsx`.
+- **Risk.** Low. The transform is a pure function; it does not change network behaviour or cache keys. If the server response is already an array (future server fix), the `Array.isArray` branch returns it unchanged. If it is the envelope, the `events ?? []` branch returns the inner array. If it is neither (e.g. a 5xx that bypassed `throwIfResNotOk`), the `?? []` falls back to an empty array.
+
+### 10) Alternative considered and rejected — server-side change
+
+Drop the envelope on the server (`return res.json(events)` at `ticket-history.ts:401`). Smaller diff (one line) but rejected because:
+
+- Server-side shape changes have a wider blast radius. Any other consumer (e.g. an internal tool, a test fixture, a future mobile client) that reads `body.events` would silently break.
+- The client-side `select` transform is strictly more tolerant — it accepts either shape. A server change would force every consumer to update simultaneously.
+- The endpoint's prior commit `0e7ba31` (Task #112 round 6) explicitly chose the envelope; reversing that without understanding the original motivation risks reintroducing whatever it was guarding against.
+
+### 11) Verification probes
+
+No SQL probe required — this is a static contract mismatch fully verifiable from source.
+
+1. **DevTools Network capture** on `GET /api/tickets/{orderId}/timeline` from any production session. Confirm response body is `{events: [...]}`. One screenshot or copy-paste of the response body, no schema query needed.
+2. **Pre-fix reproduction**: visit `/tickets?order=<known-order-id>` while logged in. Without the fix, page should crash with the exact error string. With the fix applied, drawer should open and the timeline section should render (or display "No timeline events available." for orders with no events).
+3. **Post-deploy smoke test**: tester opens `/tickets`, clicks any row from the list. Drawer opens, timeline section either lists events or shows the empty-state message, console clean, no Error Boundary card. Same flow that reproduced the crash today.
+
+### 12) Files that would need to change
+
+**1 file:** `client/src/components/tickets/TicketDetailDrawer.tsx` (lines 200-203, 2 lines added).
+
+No server change. No schema change. No migration. No test fixture change (no existing tests in this path per `grep -r "TicketDetailDrawer" client/`). Single-file, single-PR fix.
+
+### Open questions / data needed
+
+1. **Did the tester arrive with `?order=` in the URL or click a row?** Either path triggers the same crash, so the diagnosis is unchanged either way — but knowing which would clarify the user-visible reproduction steps for the post-deploy smoke test.
+2. **Are there other `{wrapper}` envelopes the client treats as bare arrays?** `grep` for `useQuery<.*\[\]>` against the matching server handler shapes is worth running as a separate audit pass — this addendum addresses the timeline call only.
+3. **Should `voidRequests` at `TicketDetailDrawer.tsx:205-208` be checked?** Server handler at `ticket-history.ts:436-451` returns `result.rows` directly (line 446) — bare array, no envelope. Safe. Cross-checked; not affected.
