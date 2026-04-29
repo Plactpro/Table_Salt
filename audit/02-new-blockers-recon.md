@@ -1951,3 +1951,38 @@ This is a **separate, follow-up ticket — NOT part of any pending PR**. The Rou
 1. **Is there any non-source-tree consumer of `GET /api/tickets/:orderId/timeline`?** Mobile app, partner integration, internal tool, test harness, BI export. Grep across `client/src` confirms no file under that tree consumes `events[].icon`. Outside the repo cannot be verified from here. Worth a one-line check with whoever owns external integrations before Option 1 is considered.
 2. **Was the icon column ever working in any prior commit?** A `git log -p -- client/src/components/tickets/TicketDetailDrawer.tsx` filtered for changes to `EVENT_ICONS` would show whether the keys ever matched the server values, or whether the mismatch has existed since the timeline feature was first introduced. If always-broken, the design intent for icons may have drifted before implementation; surface that to whoever owns the timeline UX.
 3. **Should the unused client-only keys (`closed`, `viewed`, `receipt_reprinted`, `kot_reprinted`, `bill_reprinted`) be removed or kept as forward-looking placeholders?** Removing them keeps the dictionary tight; keeping them documents intended future events. No strong preference; flag for the PR author to decide.
+
+## PR #14 follow-ups (2026-04-29 PM)
+
+PR #14 (`fix/ticket-drawer-close-button`, commit `c274d7d`) added `z-20` to the auto-rendered `SheetPrimitive.Close` in `client/src/components/ui/sheet.tsx:68` and `pr-12` to the SheetHeader in `client/src/components/tickets/TicketDetailDrawer.tsx:294`. The z-index bump is a global change to the Sheet primitive — it now affects every Sheet consumer in the app, not only the ticket-detail drawer. Two follow-up items below.
+
+### Ticket 1 — Sheet consumers visual sweep
+
+- **Severity:** cosmetic / low
+- **Trigger:** PR #14's `z-20` bump on `client/src/components/ui/sheet.tsx:68` makes the auto-rendered X close button visible on every Sheet in the app. The button sits at `absolute right-4 top-4` (16 px from the right and top edges of `SheetContent`) and is `h-4 w-4` — it occupies a 16×16 px box between 16 px and 32 px from the right edge.
+- **Risk:** any Sheet whose header content (titles, badges, action buttons, filters) extends to the right edge of its header will now overlap the visible X. The TicketDetailDrawer is already paired in PR #14 (`pr-12` on the SheetHeader); the other 12 consumers are unaudited.
+- **Action:** walk each Sheet consumer, check header right-edge padding against any content that lands in the 16–32 px right-edge zone, and add `pr-12` (or equivalent right-side padding) where collisions occur. Consumers that already leave generous right padding need no change. One commit per file or one bundled commit, at the author's discretion.
+- **How to find consumers:** grep `@/components/ui/sheet` across `client/src` (13 hits as of this addendum). Files identified during PR #14 recon:
+  - `client/src/pages/menu/menu-pricing.tsx`
+  - `client/src/pages/modules/parking.tsx`
+  - `client/src/pages/modules/pos.tsx`
+  - `client/src/pages/procurement/suppliers.tsx`
+  - `client/src/pages/procurement/quotations.tsx`
+  - `client/src/components/admin/admin-layout.tsx`
+  - `client/src/components/coordination/order-detail-panel.tsx`
+  - `client/src/components/notifications/prep-notification-drawer.tsx`
+  - `client/src/components/modifications/ModificationDrawer.tsx`
+  - `client/src/components/coordination/service-message-panel.tsx`
+  - `client/src/components/pos/DeliveryQueuePanel.tsx`
+  - `client/src/components/tickets/TicketDetailDrawer.tsx` (already addressed in PR #14)
+  - `client/src/components/ui/sidebar.tsx` (mobile sidebar — mostly nav, low collision risk)
+
+### Ticket 2 — Click-outside-to-close disabled globally
+
+- **Severity:** open product question (no code fix yet)
+- **Location:** `client/src/components/ui/sheet.tsx:64`
+- **Current behavior:** the SheetContent passes `onInteractOutside={(e) => e.preventDefault()}` to the underlying Radix Dialog. This disables backdrop-click-to-close for **every Sheet in the app** — across all 13 consumers. The only ways to dismiss a Sheet are the ESC key and the X close button (now visible after PR #14).
+- **Question:** is this intentional or accidental?
+  - **Intentional reading:** prevents accidental data loss in in-progress edit drawers (POS order detail, modification drawer, supplier forms, etc.) where a stray click would discard unsaved input.
+  - **Accidental reading:** the line looks like a copy-paste from a shadcn/ui template, possibly applied without a consumer-by-consumer assessment. Some Sheets (e.g. the read-only TicketDetailDrawer, the prep-notification-drawer) have no in-progress state worth protecting and would benefit from backdrop-click dismissal as a third close path.
+- **Action:** product/design call, not a code fix yet. If the intent is mixed (some Sheets want backdrop-close, others don't), the right solution is to lift `onInteractOutside` out of the primitive and let each consumer opt in or out via prop, rather than enforcing one policy globally.
