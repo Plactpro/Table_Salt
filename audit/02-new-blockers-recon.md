@@ -1339,3 +1339,95 @@ Before proposing a fix, the following needs verification:
 4. **Backfill + Option 2 together.** Cleanest end state, requires a data migration.
 
 Decision: defer until recon completes. Recon scheduled for 2026-04-29 morning.
+
+---
+
+## Addendum 2026-04-29 AM: 404 Recon (Round 1)
+
+**Status:** [VERIFIED] hypothesis confirmed end-to-end. The 404 originates from `service-coordination.ts:601`, not from `delivery.ts` as initially supposed (both paths return the identical message string "Delivery order not found", so the tester's screenshot was ambiguous).
+
+### Confirmed facts
+
+**Q1 — Synthetic ID prefix logic.** [VERIFIED]
+`server/routers/delivery.ts:46` constructs `id: 'order-' + o.id` inside the `mainOrdersMapped` map function (lines 42–68). This is the *only* site in the server that produces `order-…` IDs:
+
+```
+46:          id: 'order-' + o.id,
+```
+
+`grep -rn "'order-' +" server/` returns this single hit. The synthetic-ID rows are then concatenated into the response payload at `delivery.ts:74` (`const combined = [...deliveryData, ...uniqueMainOrders]`) and shipped to the client.
+
+**Q2 — PATCH handler behaviour.** [VERIFIED]
+The tester's failing call was **`PATCH /api/delivery-orders/:id/assign-agent`**, defined at `server/routers/service-coordination.ts:595–620`, *not* the bare `PATCH /api/delivery-orders/:id` in `delivery.ts:120`. Both share the same 404 message, but only the assign-agent variant is invoked from the dashboard's "Assign Agent" modal (see `client/src/pages/modules/delivery.tsx:283`).
+
+The assign-agent handler:
+- **Does NOT strip any prefix.** `req.params.id` is passed through verbatim (`service-coordination.ts:600`, `:603`, `:611`).
+- Calls `storage.getDeliveryOrderByTenant(req.params.id, user.tenantId)` at `service-coordination.ts:600`.
+- Returns 404 at `service-coordination.ts:601`: `if (!delivery) return res.status(404).json({ message: "Delivery order not found" });` — this is the exact toast text the tester reported.
+
+`storage.getDeliveryOrderByTenant` (`server/storage.ts:1369–1372`) issues:
+```
+db.select().from(deliveryOrders).where(and(eq(deliveryOrders.id, id), eq(deliveryOrders.tenantId, tenantId)))
+```
+With `id = "order-87541db0…"`, no row exists in `delivery_orders` (the actual `orders.id` UUID is `87541db0…`, with no `order-` prefix). The query returns `[]`, the storage method returns `undefined`, and the handler returns 404. **Hypothesis fully confirmed.**
+
+**Q3 — Endpoint enumeration.** See table below.
+
+**Q4 — Production state of POS-Delivery orders.** [VERIFIED]
+`POST /api/orders` (`server/routers/orders.ts:325`) does **not** create a `delivery_orders` companion row. Confirmed by:
+- `grep -in "delivery_orders\|deliveryOrder\|createDeliveryOrder" server/routers/orders.ts` → **zero hits.**
+- The handler inserts only into `orders` and `order_items` (and idempotency-keys, audit, etc.).
+
+By contrast, `POST /api/phone-orders` (`server/routers/service-coordination.ts:633`) **does** create one, conditionally, at `service-coordination.ts:696–707`:
+```
+if (orderType === "delivery" && deliveryAddress) {
+  await storage.createDeliveryOrder({ tenantId, orderId, customerAddress, customerPhone, status: "pending", ... });
+}
+```
+
+**Implication:** every POS-Delivery order ever placed (i.e. orders with `order_type IN ('delivery','online_delivery','third_party')` originating from the POS UI, not from the phone-orders flow) is missing a `delivery_orders` companion row. They are surfaced to the unified dashboard via the synthetic-ID branch only. Every operation that requires a `delivery_orders` lookup will 404 for those orders. Phone-delivery orders created via `/api/phone-orders` are unaffected because they have a real row.
+
+**Q5 — Recommendation.** See section below.
+
+### Endpoint enumeration
+
+All routes are under `/api/delivery-orders`. Affected = "would 404 (or silently no-op) on a synthetic `order-…` ID."
+
+| Method | Path                                  | File:line                       | Affected by 404? | Client trigger (component:line)                                  |
+|--------|---------------------------------------|---------------------------------|------------------|------------------------------------------------------------------|
+| GET    | `/api/delivery-orders/unified`        | delivery.ts:14                  | No (producer of synthetic IDs) | client/src/pages/modules/delivery.tsx:249 (queryKey)               |
+| GET    | `/api/delivery-orders`                | delivery.ts:84                  | No (list, no `:id`) — but never returns synthetic IDs, so the per-agent dashboard never sees them | client/src/pages/dashboards/delivery-agent.tsx:86 (queryKey)       |
+| GET    | `/api/delivery-orders/:id`            | delivery.ts:100                 | **Yes** (storage.getDeliveryOrderByTenant returns undefined → 404 at line 103) | none currently — endpoint is unused by the client                  |
+| POST   | `/api/delivery-orders`                | delivery.ts:107                 | No (create, no `:id`) | none — POS uses POST `/api/orders`; phone flow uses `service-coordination.ts:697` directly |
+| PATCH  | `/api/delivery-orders/:id`            | delivery.ts:120                 | **Yes** (404 at lines 130 and 137; both via the same storage methods) | client/src/pages/modules/delivery.tsx:268 — fired from delivery.tsx:349, :570, :625, :639, :968, :1011 (status transitions: Mark Ready, Out for Delivery, Delivered, etc.) |
+| PATCH  | `/api/delivery-orders/:id`            | (same as above)                 | (same)           | client/src/pages/dashboards/delivery-agent.tsx:96 — but that page reads from `/api/delivery-orders` (non-unified), so it never receives synthetic IDs and is unaffected in practice |
+| DELETE | `/api/delivery-orders/:id`            | delivery.ts:143                 | **Latent bug:** `storage.deleteDeliveryOrderByTenant` (storage.ts:1383–1385) silently no-ops with no `RETURNING`/rowcount check, so a synthetic-ID delete returns 200 OK while deleting nothing. Not currently triggered by the client. | none currently — endpoint is unused by the client                  |
+| PATCH  | `/api/delivery-orders/:id/assign-agent` | service-coordination.ts:595   | **Yes** (404 at line 601) — **THIS is the route that produced the tester's 404** | client/src/pages/modules/delivery.tsx:283 — fired from delivery.tsx:845 (Assign Agent modal confirm button) |
+
+Three real client-facing failure paths today: the assign-agent PATCH (Q5 below) and the bare PATCH for status transitions (Mark Ready / Out for Delivery / Delivered). Two latent server-side issues for endpoints the client doesn't currently call: `GET /:id` (would 404) and `DELETE /:id` (would silently no-op — separate latent bug worth flagging but out of scope for this fix).
+
+### Recommendation
+
+**Pick Option 4: backfill `delivery_orders` rows for existing POS-Delivery `orders`, AND auto-create a `delivery_orders` row inside `POST /api/orders` whenever `orderType` is delivery-shaped going forward.**
+
+**Justification.** Option 1 (client-side hide) leaves the underlying inability to assign agents in place — managers literally cannot dispatch any POS-sourced delivery order, which negates the value of yesterday's BL-3 unified-view fix. Option 3 (strip-prefix and operate on `orders`) is superficially attractive because it requires no DB writes, but it doesn't actually work: the assign-agent handler writes `driverName` and `driverPhone` into `delivery_orders` columns (`service-coordination.ts:603–607`), and those columns don't exist on `orders`. To make Option 3 work the schema would have to be extended (or driver fields stored in `orders.notes` or a side table), which is more invasive than a `delivery_orders` insert. Option 2 alone fixes the forward path but leaves every existing in-flight POS-Delivery order broken; given those orders are by definition not yet `paid/completed/voided` (the unified endpoint filters those out at `delivery.ts:34`), they will keep appearing in the dashboard and keep failing to dispatch until backfilled. Option 4 is Option 2 plus a one-shot `INSERT INTO delivery_orders SELECT FROM orders WHERE …` migration that closes the existing-order gap in a single deploy. The two halves can also ship as separate PRs (migration first, then auto-create) to limit per-change risk.
+
+**Estimated diff size.**
+- `server/routers/orders.ts`: ~10–15 lines added inside the POST handler, after order-item creation (around line 700–900 territory; exact insertion point TBD by the fix author), wrapped in an `if (orderType is delivery-shaped)` guard mirroring `service-coordination.ts:696`.
+- One new migration file (e.g. `migrations/####_backfill_delivery_orders.sql`): ~5–10 lines doing `INSERT INTO delivery_orders (id, tenant_id, order_id, customer_phone, customer_address, status, created_at) SELECT … FROM orders o WHERE o.order_type IN (...) AND o.status NOT IN ('paid','completed','voided') AND NOT EXISTS (SELECT 1 FROM delivery_orders d WHERE d.order_id = o.id)`.
+- Files touched: **2.** Optional unit/integration test bringing it to 3.
+
+**Risk: MEDIUM.** Backfill writes to production data; mitigated by the standard `BEGIN; … ROLLBACK;` dry-run protocol and by the `NOT EXISTS` clause being idempotent. Auto-create-on-POST adds a new write inside the order-creation transaction — must be inside the same transaction (or compensating-rollback path) so a `delivery_orders` insert failure doesn't leave a half-created order. PII handling: `delivery_orders` encrypts `customerPhone`/`customerAddress` via `DELIVERY_PII_FIELDS` (`storage.ts:1374`); the backfill must apply the same encryption when copying from `orders`, which is plaintext in `orders.customer_phone`. This is the highest-risk leg of the work.
+
+**What it does NOT fix (defer to backlog).**
+- The silent-no-op `DELETE /api/delivery-orders/:id` bug at `storage.ts:1383–1385` — separate finding, low priority while the endpoint is unused.
+- Tester's observation of "three PATCH requests" — likely React Query retry behaviour on 4xx (or three rapid clicks). Not blocking; worth verifying in a follow-up but doesn't change the fix.
+- The unified endpoint's `order_channels` cross-join filter at `delivery.ts:35` — unrelated to this 404.
+- The `compliance.ts:315` anonymisation path which hits `updateDeliveryOrderByTenant` — only relevant for orders that have a `delivery_orders` row, so the backfill broadens its reach (intended), but no code change needed.
+
+### Open questions / data needed
+
+1. **SQL probe (recommended before merging the backfill leg).** Count POS-Delivery `orders` in production that lack a matching `delivery_orders` row, broken down by status. A read-only `audit/probe-####.sql` wrapped in `BEGIN; SET default_transaction_read_only = on; … ROLLBACK;` would size the backfill and confirm the hypothesis at runtime. Decision deferred to user.
+2. **Three-PATCH observation.** Whether the tester's three identical 404s reflect React Query auto-retry, three discrete clicks, or a debounce gap in the modal. Resolvable by checking React Query default `retry` setting in `client/src/lib/queryClient.ts` — out of scope for this recon round.
+3. **Transaction scoping.** Does `POST /api/orders` already run its inserts inside a single DB transaction, or are `orders` and `order_items` independent? If independent, the auto-create-on-POST leg should be added with the same semantics as existing inserts (and the failure mode documented), not retrofitted into a transaction. Worth confirming before the fix branch is opened.
+
