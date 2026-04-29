@@ -107,7 +107,7 @@ const EVENT_ICONS: Record<string, string> = {
 };
 
 function getEventIcon(action: string) {
-  const key = action.toLowerCase().replace(/[^a-z_]/g, "_");
+  const key = (action ?? "").toLowerCase().replace(/[^a-z_]/g, "_");
   return EVENT_ICONS[key] || "📌";
 }
 
@@ -539,13 +539,13 @@ export default function TicketDetailDrawer({ open, onClose, orderId, onRefresh }
                 {showPrintHistory && (
                   <div className="mt-3 text-sm text-muted-foreground">
                     {(timeline || [])
-                      .filter(e => ["receipt_reprinted", "kot_reprinted", "bill_reprinted", "reprinted"].includes(e.action.toLowerCase()))
+                      .filter(e => ["receipt_reprinted", "kot_reprinted", "bill_reprinted", "reprinted"].includes((e.action ?? "").toLowerCase()))
                       .length === 0 ? (
                       <p>No reprints recorded.</p>
                     ) : (
                       <div className="space-y-1">
                         {(timeline || [])
-                          .filter(e => ["receipt_reprinted", "kot_reprinted", "bill_reprinted", "reprinted"].includes(e.action.toLowerCase()))
+                          .filter(e => ["receipt_reprinted", "kot_reprinted", "bill_reprinted", "reprinted"].includes((e.action ?? "").toLowerCase()))
                           .map((e, i) => (
                             <p key={i}>{e.action.replace(/_/g, " ")}: {e.createdAt ? format(new Date(e.createdAt), "h:mm a") : ""}</p>
                           ))}
