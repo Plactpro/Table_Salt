@@ -1833,3 +1833,121 @@ No server change. No schema change. No migration. No test fixture change (no exi
 1. **Did the tester arrive with `?order=` in the URL or click a row?** Either path triggers the same crash, so the diagnosis is unchanged either way — but knowing which would clarify the user-visible reproduction steps for the post-deploy smoke test.
 2. **Are there other `{wrapper}` envelopes the client treats as bare arrays?** `grep` for `useQuery<.*\[\]>` against the matching server handler shapes is worth running as a separate audit pass — this addendum addresses the timeline call only.
 3. **Should `voidRequests` at `TicketDetailDrawer.tsx:205-208` be checked?** Server handler at `ticket-history.ts:436-451` returns `result.rows` directly (line 446) — bare array, no envelope. Safe. Cross-checked; not affected.
+
+---
+
+## Addendum 2026-04-29 PM-3: BL-1 Round 3 finding — timeline icon/action protocol mismatch (separate ticket)
+
+**Premise.** Round 3 (commit `34b33d6` on `fix/BL-1-round-3-getEventIcon-guard`, ship in progress) lands a 3-line defensive guard at `client/src/components/tickets/TicketDetailDrawer.tsx:110, :542, :548` that null-coalesces `event.action` to `""` before `.toLowerCase()`, stopping the production crash reported on `www.inifinit.com/tickets`. The crash is fixed. The same recon pass (see prior addendum "BL-1 Round 2 - post-fix verification failure") surfaced a deeper protocol mismatch between the timeline server handler and the timeline client interface that the Round 3 guard does **not** resolve. This addendum documents that protocol bug as a separate, lower-priority follow-up so it does not get lost once the crash fix ships.
+
+### The two layers of the mismatch
+
+#### Layer A — field name
+
+The server handler at `server/routers/ticket-history.ts:343-406` declares the event type at line 361:
+
+```ts
+const events: Array<{ timestamp: string; icon: string; description: string; performedBy?: string; performedByRole?: string }> = [];
+```
+
+— field is **`icon`**, not `action`. All eleven `events.push(...)` call sites (lines 363, 364, 368, 369, 370, 375, 376, 377, 382, 387, 396) use `icon: "..."`. None use `action: ...`.
+
+The client interface at `client/src/components/tickets/TicketDetailDrawer.tsx:59-66` declares:
+
+```ts
+export interface TimelineEvent {
+  id?: string;
+  action: string;
+  description?: string;
+  performerName?: string;
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
+}
+```
+
+— field is **`action`** and is required. **Result at runtime: every `event.action` value is `undefined`.** That is exactly what the Round 3 fix guards against — the guard does not align the field names; it only stops the crash.
+
+#### Layer B — value namespace
+
+Even if Layer A were resolved (e.g. server renamed `icon` → `action` everywhere), the **values** the server emits do not match the keys in the client `EVENT_ICONS` lookup at `TicketDetailDrawer.tsx:90-107`.
+
+Server emits these eleven distinct icon strings (`server/routers/ticket-history.ts`):
+- `"order_created"` (line 363)
+- `"kitchen_sent"` (line 364)
+- `"cooking_started"` (line 368)
+- `"item_ready"` (line 369)
+- `"item_served"` (line 370)
+- `"void_requested"` (line 375)
+- `"void_approved"` (line 376)
+- `"void_rejected"` (line 377)
+- `"refire_requested"` (line 382)
+- `"bill_paid"` (line 387)
+- `"reprinted"` (line 396)
+
+Client `EVENT_ICONS` keys (`TicketDetailDrawer.tsx:91-106`):
+- `created`, `kot_sent`, `cooking`, `ready`, `served`, `paid`, `closed`
+- `void_requested`, `void_approved`, `void_rejected`
+- `refire`, `viewed`
+- `reprinted`, `receipt_reprinted`, `kot_reprinted`, `bill_reprinted`
+
+Intersection (server values that match a client key directly): **`void_requested`, `void_approved`, `void_rejected`, `reprinted`** — four out of eleven.
+
+Mismatches (server emits, client has no matching key):
+- `order_created` vs client `created`
+- `kitchen_sent` vs client `kot_sent`
+- `cooking_started` vs client `cooking`
+- `item_ready` vs client `ready`
+- `item_served` vs client `served`
+- `refire_requested` vs client `refire`
+- `bill_paid` vs client `paid`
+
+Client-only keys never emitted by the server: `closed`, `viewed`, `receipt_reprinted`, `kot_reprinted`, `bill_reprinted`.
+
+**Result:** even with Layer A fixed, seven of the eleven event types (`order_created`, `kitchen_sent`, `cooking_started`, `item_ready`, `item_served`, `refire_requested`, `bill_paid`) would still fall through `EVENT_ICONS[key]` to `undefined`, then to the `|| "📌"` fallback at `TicketDetailDrawer.tsx:111`. Only the four void/reprint events would render their intended icon.
+
+### User-visible impact
+
+Today (after Round 3 ships): the timeline section in the ticket-detail drawer renders one row per server event, each labelled with the literal `📌` fallback icon. Description text is correct (`event.description` is populated by the server). Timestamp is correct. The icon column was clearly intended to convey event type at a glance — different glyphs per category — and currently conveys nothing.
+
+This is a **render bug, not a crash**. Users can read the timeline. The icon column is just visually flat across all rows.
+
+### Why it has not been reported
+
+- Before PR #12 (the timeline-envelope `select` fix), `(timeline || []).slice` crashed before the timeline section ever rendered. The icon column was never visible.
+- Between PR #12 shipping (~4:15 PM 2026-04-29) and Round 3 shipping, the `.toLowerCase()` crash at `getEventIcon` fired on every drawer open. The icon column was still never visible.
+- Once Round 3 ships, users will see the timeline render correctly with `📌` on every row. They have no reference for what the icons should look like — there is no spec page, no screenshot of the intended design, no tester acceptance criteria currently calling out per-event-type icons. They will not flag it as broken.
+- Therefore: this can sit indefinitely until someone audits it.
+
+### Resolution options for a future PR
+
+Three options. Recommendation: **Option 2.**
+
+**Option 1 — server-side alignment.** Rename `icon:` → `action:` in all eleven `events.push(...)` calls (`server/routers/ticket-history.ts:361, 363-396`) AND change the emitted values to match the client `EVENT_ICONS` keys (e.g. `"order_created"` → `"created"`, `"kitchen_sent"` → `"kot_sent"`, etc.). Roughly 12 lines changed in one file.
+- Risk: any other consumer of `GET /api/tickets/:orderId/timeline` that reads `body.events[].icon` or expects the existing values would break. Grep across `client/src` for `/api/tickets/.*timeline` returns hits only at `TicketDetailDrawer.tsx:201` (queryKey) and `TicketDetailDrawer.tsx:237` (invalidate); no other consumer file. So in practice the risk is limited to *future* consumers and any external/mobile/test code I cannot see from this repo. If those don't exist, Option 1 is also safe.
+
+**Option 2 — client-side alignment (recommended).** Two sub-changes in one PR, both in `client/src/components/tickets/TicketDetailDrawer.tsx`:
+1. Rename `action: string` → `icon: string` in the `TimelineEvent` interface (line 62) and update consumers at lines 110 (param), 503 (`event.action` → `event.icon`), 505 (fallback chain), 542, 548 (filter predicates), 550 (display).
+2. Replace the `EVENT_ICONS` keys at lines 91-106 with the values the server actually emits: `order_created`, `kitchen_sent`, `cooking_started`, `item_ready`, `item_served`, `void_requested`, `void_approved`, `void_rejected`, `refire_requested`, `bill_paid`, `reprinted`. Choose appropriate emoji per event. Remove unused keys (`closed`, `viewed`, `receipt_reprinted`, `kot_reprinted`, `bill_reprinted`) unless future server emission is planned.
+
+Diff size: ~8 modified lines for the rename, ~10 modified lines for the keys. One file. Server unchanged — zero blast radius for other consumers. Easier to verify: `npm run check` plus a smoke test where each event type's icon is sanity-checked.
+
+Why Option 2 over Option 1: client is the single consumer (verified by grep above); a client-only change has strictly smaller blast radius than a server change. The Round 3 defensive guard (`?? ""`) can stay in place even after Option 2 ships — it becomes a belt-and-braces safety net rather than the primary fix.
+
+**Option 3 — transitional dual-emission.** Server emits both `icon` and `action` fields, both old and new value strings, deprecating one over time. Heavy-handed for an internal API with one consumer; not recommended.
+
+### Verification before the future PR ships
+
+1. **DevTools Network capture** on `GET /api/tickets/:orderId/timeline` against a real ticket in production or staging. Confirm the response body shape is `{events: [{timestamp, icon, description, performedBy, performedByRole}, ...]}` matching the static analysis above. Note any drift if the server emits additional or different fields than the source code suggests.
+2. **Confirm the exact set of icon string values the server actually emits** by reading the JSON body, not just source code. The list above is from static reading of `server/routers/ticket-history.ts:343-406` on `main` at commit `5765a8d`; if any newer commit has added `events.push(...)` calls, the list grows.
+3. **Cross-check** the live values against the prospective new `EVENT_ICONS` keys in the Option 2 diff. Document any extra/missing values; pick an emoji for each.
+4. **Decide on the canonical naming scheme.** Server's `order_created` is a verb-noun pair; client's `created` is just the verb. Server's pattern is more descriptive and future-proof if more entity types appear (e.g. distinguishing `bill_paid` from a hypothetical `partial_paid`). The Option 2 recommendation aligns the client to the server's existing pattern. If the team prefers the client's terser pattern, Option 1 (server change) becomes the right path instead.
+
+### Status flag
+
+This is a **separate, follow-up ticket — NOT part of any pending PR**. The Round 3 fix shipping right now (commit `34b33d6`) stops the crash via three null-coalesce guards. Those guards are sufficient to unblock the tester and remain as a safety net even after the protocol-mismatch fix lands. This addendum captures the deeper bug for a future audit cycle.
+
+### Open questions
+
+1. **Is there any non-source-tree consumer of `GET /api/tickets/:orderId/timeline`?** Mobile app, partner integration, internal tool, test harness, BI export. Grep across `client/src` confirms no file under that tree consumes `events[].icon`. Outside the repo cannot be verified from here. Worth a one-line check with whoever owns external integrations before Option 1 is considered.
+2. **Was the icon column ever working in any prior commit?** A `git log -p -- client/src/components/tickets/TicketDetailDrawer.tsx` filtered for changes to `EVENT_ICONS` would show whether the keys ever matched the server values, or whether the mismatch has existed since the timeline feature was first introduced. If always-broken, the design intent for icons may have drifted before implementation; surface that to whoever owns the timeline UX.
+3. **Should the unused client-only keys (`closed`, `viewed`, `receipt_reprinted`, `kot_reprinted`, `bill_reprinted`) be removed or kept as forward-looking placeholders?** Removing them keeps the dictionary tight; keeping them documents intended future events. No strong preference; flag for the PR author to decide.
