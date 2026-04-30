@@ -51,6 +51,7 @@ Earlier shipped (April 16–22, abridged):
 
 - **Run `scripts/backfill-delivery-orders-from-pos.ts` against production** for the 18 operational orphan POS-Delivery orders across two tenants — script committed in PR #11 (`fb8a4ff`) but not yet executed; testers cannot click "Assign Agent" on existing POS-Delivery orders until this runs. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" + "PR A Recon".
 - **PR B — auto-create `delivery_orders` row inside `POST /api/orders` for delivery-shaped order types.** Without this, every new POS-Delivery order created after the backfill becomes a fresh orphan and re-introduces the 404 on Assign Agent / Mark Ready / Dispatch. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" → "Decision: PR A first because data-only. PR B second once PR A is verified."
+- **Waitlist rotation gap.** `POST /api/admin/encryption/rotate-key` at `server/admin-routes.ts:1980-2110` does NOT include `waitlist_entries.customerPhone`, even though that column is encrypted on write at `server/storage.ts:1080,1085`. Must be fixed before running encryption key rotation, or every encrypted waitlist phone becomes unreadable after env var swap. See `audit/encryption-key-rotation-recon.md` QQ-7.
 
 ### ANNOYING — real bugs that affect users
 
@@ -64,6 +65,8 @@ Earlier shipped (April 16–22, abridged):
 - **M4 — Addon KOT creates new order, not appended.** Billing must aggregate parentOrderId chain; verification pending. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
 - **M5 — No delivery address field in POS UI.** `deliveryOrders.customerAddress` exists but is never captured for POS-originated delivery orders. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
 - **L6 — 328 pre-existing TypeScript errors** in server/** and shared/**, no impact at runtime (esbuild build skips strict check). Needs dedicated `triage/ts-errors` branch. Source: `docs/audits/bug-inventory.md` OPEN-LOW.
+- **Plaintext PII at rest.** `delivery_orders.driver_phone`, `delivery_orders.driver_name`, `delivery_orders.tracking_notes` are stored plaintext at rest. Should be added to `DELIVERY_PII_FIELDS` in a follow-up PR. See `audit/encryption-key-rotation-recon.md` Risk 5.
+- **SESSION_SECRET rotation status conflict.** Three audit docs disagree on whether rotation happened. `audit/FINDINGS.md` F-217/F-218 say "Mitigated (rotated 2026-04-15)". `audit/launch-checklist.md` Severity 1 #1 lists it as still pending. `audit/OPEN-QUESTIONS.md` Q-006/Q-078 still open. Reconcile before Phase 5 of any rotation procedure. See `audit/encryption-key-rotation-recon.md` QQ-1.
 
 ### COSMETIC — visual or polish
 
