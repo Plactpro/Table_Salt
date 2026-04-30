@@ -22,7 +22,7 @@ export default function PrivacyPolicyPage() {
             launch.
           </p>
           <h2 className="text-xl font-semibold mt-8">Contact</h2>
-          <p>Table Salt is operated by TOTCI Technologies / Plactpro.</p>
+          <p>Table Salt is operated by PLACTPRO LLC.</p>
           <p>
             During the pre-launch period, contact{" "}
             <a href="mailto:support@inifinit.com" className="text-primary hover:underline" data-testid="link-privacy-contact">
