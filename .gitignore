@@ -13,6 +13,7 @@ test-results/
 
 # Database backup files
 *.sql
+!audit/*.sql
 *_database_backup*
 *.dump
 *.pg_dump
