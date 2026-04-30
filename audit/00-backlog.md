@@ -1,7 +1,7 @@
 # Table Salt — Current-state Backlog
 
 **Date:** 2026-04-30 PM
-**Branch:** main, HEAD `1a9e30c`
+**Branch:** main, HEAD `2433927`
 
 Compiled from `audit/02-new-blockers-recon.md`, `audit/FINDINGS.md`, `audit/OPEN-QUESTIONS.md`, `audit/00-orientation.md`, `docs/audits/bug-inventory.md`, and `git log --oneline -50`. `table-salt-bug-inventory-2026-04-18.md` does not exist; closest equivalent is `docs/audits/bug-inventory.md` (last updated 2026-04-22).
 
@@ -13,6 +13,7 @@ Items that have shipped to main this audit cycle, newest first.
 
 | Item | Commit | Description |
 |---|---|---|
+| Orphan `delivery_orders` cleanup | `2433927` | audit: orphan delivery_orders cleanup, 53 rows deleted across 2 test tenants |
 | Audit gitignore exception | `1a9e30c` | chore: allow audit/*.sql under existing *.sql rule, add orphan delivery recon |
 | PR #18 (PR B) | `49f8687` | feat(orders): auto-create delivery_orders row for POS-delivery orders (PR B) |
 | PR #17 (QQ-7) | `36ccfe0` | fix(security): add waitlist_entries to encryption key rotation endpoint (QQ-7) |
@@ -53,11 +54,20 @@ Earlier shipped (April 16–22, abridged):
 
 ### BLOCKING — prevents end-to-end testing or launch
 
-- **Orphan `delivery_orders` cleanup.** TablePlus recon (2026-04-30 PM) confirmed 53 orphan orders across 2 test tenants (`6a8281c4-8e66-4214-84ad-2d0e3231cc76` "Updated Tenant Name Test" and `74f513e3-9db5-4a9b-b427-6a4c2a6eb082` "Table Salt Platform"). With_bills=32, with_items=51, total_items=83. Recommendation locked: **delete-not-backfill** (test data, not real customer orders). Recon SQL committed at `audit/orphan-delivery-orders-recon.sql`. Cleanup script to be drafted 2026-05-01 morning before regression sweep starts. Supersedes prior "run backfill script" item.
+- **F-234 — Cross-user same-table claim creates duplicate orders (M1b).** Tester T-101 (Joint Test) FAIL: "The table appears free for both users, and when orders are placed simultaneously for the same table, the order is created for both the users with the same table number." Severity HIGH, data-corruption shape. M1 client-side guard (tabs[] + heldTabs[]) protects same-user only; M1b (server-side advisory lock or partial unique index on `(tenant_id, table_id) WHERE status IN ('new','in_progress','ready')`) was deferred from 2026-04-22 fix cycle and is now promoted from FOLLOW-UP to launch-blocking. See `audit/regression-2026-04-30-findings.md` F-234.
 - **Operator action before encryption rotation:** screenshot Railway's "last updated" timestamp on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY`. If any >= 2026-04-15, the corresponding rotation phase may be skippable. See `audit/qq-1-session-secret-status.md`. (Rotation deferred from 2026-04-30 to 2026-05-01; backup pre-task now resolved per Pro upgrade — see `audit/incident-2026-04-30-railway-pro-upgrade.md`.)
 
 ### ANNOYING — real bugs that affect users
 
+- **F-232 — Shift session state not visible in POS header.** Tester reports no "Start Shift" appears anywhere on owner/manager login. Owner manual + Perplexity verified header has Owner badge, status icons, notification bells, user avatar — but no shift name, elapsed timer, or "Open Shift" indicator. POS functions normally. Severity MEDIUM (UX gap). Investigation needed: read `client/src/pages/modules/pos.tsx` and POS header component; determine Scenario A (timer just missing) vs Scenario B (session state null = modal logic regression). See `audit/regression-2026-04-30-findings.md` F-232.
+- **F-233 — Billing flow blocked (severity TBD).** Tester T-070 BLOCKED with "Payment process is not working"; T-071/072/073/076 BLOCKED dependent; T-074/075 FAIL "No manual option is available to set the discount." No screenshots, no specifics. NOT YET reproduced by owner. If real (Cash path), launch-blocker; if Stripe-only (T-027 known: Stripe not configured), much lower. Tomorrow: owner reproduces — create dine-in order in `served`/`ready`, click Bill, try Cash payment, document exact failure. See `audit/regression-2026-04-30-findings.md` F-233.
+- **F-235 — POS-Delivery Assign Agent 404 (likely resolved).** Tester T-061 SKIPPED, "Assign Agent shows 404." Run before today's orphan cleanup (`2433927`); the 53 deleted orphans included POS-delivery orders that lacked `delivery_orders` rows, and PR #18 (`49f8687`) auto-creates those rows for new orders. Tomorrow's regression: retest with a NEW POS-delivery order created post-cleanup; if still 404s, escalate to launch-blocker. See `audit/regression-2026-04-30-findings.md` F-235.
+- **F-236 — POS Move-table client UI requires manual refresh.** Tester T-010. Server transfer-table works (PR #16/PR-009 fix); client doesn't auto-update. Source: `audit/regression-2026-04-30-findings.md`.
+- **F-237 — Held orders missing delete confirmation dialog.** Tester T-033. Source: `audit/regression-2026-04-30-findings.md`.
+- **F-238 — Tickets reprint fails: "Could not complete reprint action."** Tester T-051. Source: `audit/regression-2026-04-30-findings.md`.
+- **F-239 — Tickets status filters non-functional.** Tester T-053. Source: `audit/regression-2026-04-30-findings.md`.
+- **F-240 — Delivery / Online aggregator metadata not visible in detail panel.** Tester T-062. Source: `audit/regression-2026-04-30-findings.md`.
+- **F-241 — "Manager do not have shift" — investigate shift permission scoping.** Tester T-103. Source: `audit/regression-2026-04-30-findings.md`.
 - **BL-1 schema follow-up.** `orders.status` should get `.notNull()` and a backfill `UPDATE orders SET status = 'new' WHERE status IS NULL;`. PR #10 was defensive client coercion only. Source: EOD addendum line 1285.
 - **Timeline icon/action protocol mismatch.** Server `events.push({icon: ...})` vs client `TimelineEvent.action`; even when names align, value namespaces differ (`order_created` vs `created`, `kitchen_sent` vs `kot_sent`, etc.). Result: every event renders the `📌` fallback icon. Source: `audit/02-new-blockers-recon.md` "Addendum 2026-04-29 PM-3".
 - **BL-1 Round 2 recon findings 2–5.** `createdAt` format Invalid Date crash, `ticket.id.slice` on null id, filter dropdown emits non-enum values causing 500, server field-name mismatches (`channel`/`orderType`, `staffName`/`waiterName`). Source: EOD addendum line 1287.
@@ -97,7 +107,6 @@ The A-series tracks repo-hygiene / infrastructure items from earlier sessions.
 - **F-189-FU — Aggregator webhook HMAC over re-stringified JSON, not raw bytes.** May break if the aggregator signs the raw pre-parse body. Verification needed against Zomato/Swiggy/Talabat/UberEats docs. Source: `audit/FINDINGS.md` row F-189-FU.
 - **F-189-FU2 — Razorpay HMAC uses `===` instead of `crypto.timingSafeEqual`.** Vulnerable to timing attacks. Source: `audit/FINDINGS.md` row F-189-FU2.
 - **M3b — Force-close audit log.** When a manager clicks Force Close past the M3 guard, server should log a `SHIFT_FORCE_CLOSED` audit event with open-item counts. Deferred until owner verifies the M3 guard. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
-- **M1b — Server-side table-claim race.** No advisory lock or partial unique index on `(tenant_id, table_id) WHERE status IN ('new', 'in_progress', 'ready')`. Two concurrent POSTs can still double-book. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
 - **B1c — Auto "ready → served" transition policy.** After how long should a KDS ticket stuck in `ready` auto-transition to `served`? Recommendation: 6h. Owner decision pending. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
 - **B1d — Cross-outlet KDS scoping.** Tickets currently tenant-scoped only; multi-outlet tenants may see all-outlet ticket bleed. Deferred until multi-outlet customers exist. Source: `docs/audits/bug-inventory.md` OPEN-LOW.
 
@@ -117,8 +126,10 @@ The A-series tracks repo-hygiene / infrastructure items from earlier sessions.
 - PR #18 (PR B — auto-create `delivery_orders` row in `POST /api/orders` for POS-delivery, `49f8687`) — shipped + smoke-tested in production. Happy-path (test order INV-2026-0085) and validation-path (empty address blocked) both PASSED.
 - Audit gitignore exception (`1a9e30c`) — `!audit/*.sql` added under existing `*.sql` rule so recon SQL can be tracked; first tracked file is `audit/orphan-delivery-orders-recon.sql`.
 - Railway Pro plan upgrade (~midday UAE time) caused unexpected ~30-minute service-stop on both Postgres and Table_Salt. Recovered cleanly via "Deploy database" + redeploy; volume intact, no data loss. Backup capability now available; first manual snapshot taken 2026-04-30 07:00 UTC (149 MB). See `audit/incident-2026-04-30-railway-pro-upgrade.md`.
-- TablePlus recon against production for orphan `delivery_orders`: 53 orphans across 2 test tenants confirmed. Recommendation locked: delete-not-backfill. Cleanup script drafting 2026-05-01.
+- TablePlus recon against production for orphan `delivery_orders`: 53 orphans across 2 test tenants confirmed. Recommendation locked: delete-not-backfill.
+- Orphan `delivery_orders` cleanup script drafted, dry-run verified, executed in REAL mode. Deleted 53 orders + 83 order_items + 32 bills + 1 kot_event; 2 `stock_movements` rows had `order_id` set NULL via FK ON DELETE SET NULL. Pre-cleanup snapshot 2026-04-30 12:17 UTC. Cleanup committed as `2433927`. Production verified: orphan count = 0.
 - Encryption key rotation deferred from 2026-04-30 to 2026-05-01. Procedure in `audit/encryption-key-rotation-recon.md` unchanged; backup pre-task now resolved.
+- Tester regression sweep run for PRs #16/#17/#18 + coverage sweep on launch-critical flows. 80 of 116 tests run. PASS=54, FAIL=16, BLOCKED=7, SKIPPED=2, NOT RUN=1. Pass rate 67.5%. Triage produced 10 new finding IDs: F-232 through F-241. F-234 promoted to BLOCKING (cross-user same-table claim, M1b); other 9 tracked in ANNOYING. Full results: `audit/regression-2026-04-30-findings.md`.
 
 ---
 
@@ -126,8 +137,8 @@ The A-series tracks repo-hygiene / infrastructure items from earlier sessions.
 
 Top 3 to consider next (2026-05-01):
 
-1. **Encryption key rotation execution.** Run the procedure in `audit/encryption-key-rotation-recon.md` against production. Backup pre-task now resolved (manual snapshot 2026-04-30 07:00 UTC, 149 MB). Waitlist rotation gap now covered (PR #17). Operator pre-task: confirm Railway env-var "last updated" timestamps on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY` per `audit/qq-1-session-secret-status.md`. Highest-leverage Severity-1 fix remaining.
+1. **Encryption key rotation execution.** Run the procedure in `audit/encryption-key-rotation-recon.md` against production. Backup pre-task resolved (manual snapshot 2026-04-30 07:00 UTC plus pre-cleanup snapshot 2026-04-30 12:17 UTC). Waitlist rotation gap covered (PR #17). Operator pre-task: confirm Railway env-var "last updated" timestamps on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY` per `audit/qq-1-session-secret-status.md`. Highest-leverage Severity-1 fix remaining.
 
-2. **Orphan `delivery_orders` cleanup.** Draft a delete-not-backfill SQL script for the 53 orphans across 2 test tenants confirmed by TablePlus recon (`audit/orphan-delivery-orders-recon.sql`). Wrap as `BEGIN; ... ROLLBACK;` first for review, then run as `BEGIN; ... COMMIT;` once approved. Aim to land before regression sweep so test data doesn't pollute the verification.
+2. **F-233 billing reproduction + F-232 shift indicator investigation.** Owner manually reproduces the billing failure (open dine-in order, try Cash payment specifically, document exact failure). If real, promotes to launch-blocker. Then read `pos.tsx` header component to determine if F-232 is Scenario A (timer just missing UI) or Scenario B (session logic regression). See findings doc F-232/F-233.
 
-3. **Regression sweep / tester re-verification.** Re-test PRs #16, #17, #18 in dogfood, plus passive verification that PR #9 and PR #13 fixes still hold. PR #17's verification happens organically during the rotation in #1.
+3. **F-234 M1b implementation.** Server-side advisory lock or partial unique index on `(tenant_id, table_id) WHERE status IN ('new','in_progress','ready')` to prevent cross-user same-table claims. Confirmed launch-blocker by 2026-04-30 regression T-101. Branch `fix/M1b-cross-user-table-claim`.
