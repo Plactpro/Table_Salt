@@ -51,8 +51,6 @@ Earlier shipped (April 16–22, abridged):
 
 - **Run `scripts/backfill-delivery-orders-from-pos.ts` against production** for the 18 operational orphan POS-Delivery orders across two tenants — script committed in PR #11 (`fb8a4ff`) but not yet executed; testers cannot click "Assign Agent" on existing POS-Delivery orders until this runs. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" + "PR A Recon".
 - **PR B — auto-create `delivery_orders` row inside `POST /api/orders` for delivery-shaped order types.** Without this, every new POS-Delivery order created after the backfill becomes a fresh orphan and re-introduces the 404 on Assign Agent / Mark Ready / Dispatch. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" → "Decision: PR A first because data-only. PR B second once PR A is verified."
-- **Tester re-verification of BL-3 round 2** (PR #9, delivery dashboard 500 fix) — message sent at 2026-04-28 EOD, results pending. Source: EOD addendum line 1283.
-- **Tester verification of BL-1 Round 3** (PR #13, drawer crash on `event.action.toLowerCase`) — initial post-Round-2 verification done by founder; tester re-verification of the post-PR-#13 state still pending. Source: EOD addendum line 1282; Round 3 shipped 2026-04-29 PM.
 
 ### ANNOYING — real bugs that affect users
 
@@ -102,14 +100,19 @@ The A-series tracks repo-hygiene / infrastructure items from earlier sessions.
 
 ---
 
+## Recently completed (2026-04-30)
+
+- Tester verification of PR #9 (BL-3 Round 2 — `order_type` cast fix in NOT EXISTS subquery on /delivery hub) — PASS, confirmed by external testers.
+- Tester verification of PR #13 (BL-1 Round 3 — `getEventIcon` and PrintHistory filter callback guards on /tickets drawer) — PASS, confirmed by external testers.
+
+---
+
 ## Next
 
 Top 3 to consider next:
 
-1. **Tester re-verification of BL-3 round 2 (PR #9) and BL-1 Round 3 (PR #13).** Cheapest unblock — passive testing, zero production-data-write risk. Confirms the most recently shipped fixes are actually working in testers' hands before any new write-risk work is stacked on top. If either fails, follow-up work is needed before declaring those flows fixed and any of the production-write items below should pause.
+1. **M5 — POS UI delivery address field.** Adds a single-line text input to the POS delivery flow when orderType is delivery, mirroring the existing phone-order pattern at phone-order.tsx:461-474. Required prerequisite for PR B; without it, PR B would have to fall back to a "No address" placeholder, immortalizing the design defect. See audit/m5-recon.md for full implementation sketch.
 
-2. **M5 — POS UI delivery address field.** Adds a single-line text input to the POS delivery flow when orderType is delivery, mirroring the existing phone-order pattern at phone-order.tsx:461-474. Required prerequisite for PR B; without it, PR B would have to fall back to a "No address" placeholder, immortalizing the design defect. See audit/m5-recon.md for full implementation sketch.
+2. **PR B — auto-create delivery_orders row in POST /api/orders.** Closes the POS-Delivery 404-orphan gap. Becomes simpler once M5 ships (the QQ-1 (a)+(c) hybrid disappears because req.body.deliveryAddress will always be present). See audit/pr-b-recon.md for full recon.
 
-3. **PR B — auto-create delivery_orders row in POST /api/orders.** Closes the POS-Delivery 404-orphan gap. Becomes simpler once M5 ships (the QQ-1 (a)+(c) hybrid disappears because req.body.deliveryAddress will always be present). See audit/pr-b-recon.md for full recon.
-
-4. **Backfill script (scripts/backfill-delivery-orders-from-pos.ts) — production run.** Reconsider whether to run at all. The 18 existing orphans are test data from manual testers, not customer data. Cleaner to delete the test orders directly than to backfill them with junk addresses. Decision deferred until after M5 + PR B ship.
+3. **Backfill script (scripts/backfill-delivery-orders-from-pos.ts) — production run.** Reconsider whether to run at all. The 18 existing orphans are test data from manual testers, not customer data. Cleaner to delete the test orders directly than to backfill them with junk addresses. Decision deferred until after M5 + PR B ship.
