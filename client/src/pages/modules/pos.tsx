@@ -109,6 +109,7 @@ interface OrderTab {
   heldOrderVersion?: number;
   customerName?: string;
   customerPhone?: string;
+  deliveryAddress?: string;
   covers?: number;
 }
 
@@ -195,6 +196,7 @@ function newTab(): OrderTab {
     sentCartKeys: [],
     customerName: "",
     customerPhone: "",
+    deliveryAddress: "",
     covers: 1,
   };
 }
@@ -1235,6 +1237,7 @@ export default function POSPage() {
     if (tab.heldOrderId) orderData.parentOrderId = tab.heldOrderId;
     if (!tabIsDineIn) orderData.paymentMethod = paymentMethod;
     if (!tabIsDineIn) { orderData.customerName = tab.customerName?.trim() || null; orderData.customerPhone = tab.customerPhone?.trim() || null; }
+    if (tab.orderType === "delivery") orderData.deliveryAddress = tab.deliveryAddress?.trim() || null;
     if (supervisorOverride) orderData.supervisorOverride = supervisorOverride;
     if (!isAddonKot && tab.dismissedRuleIds.length > 0) orderData.dismissedRuleIds = tab.dismissedRuleIds;
     return orderData;
@@ -1370,6 +1373,10 @@ export default function POSPage() {
       }
       if (!activeTab?.customerPhone?.trim()) {
         toast({ title: "Customer phone required", description: "Please enter a customer phone number for this order.", variant: "destructive" });
+        return;
+      }
+      if (orderType === "delivery" && !activeTab?.deliveryAddress?.trim()) {
+        toast({ title: "Delivery address required", description: "Please enter a delivery address for this order.", variant: "destructive" });
         return;
       }
       if (isOffline) {
@@ -2037,6 +2044,14 @@ export default function POSPage() {
                   <div className="relative">
                     <Phone className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                     <Input data-testid="input-customer-phone" placeholder="Phone" type="tel" value={activeTab?.customerPhone ?? ""} onChange={e => updateActiveTab({ customerPhone: e.target.value })} className="pl-8 text-sm bg-background" />
+                  </div>
+                </motion.div>
+              )}
+              {orderType === "delivery" && (
+                <motion.div key="delivery-address" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }} transition={{ duration: 0.2 }} className="overflow-hidden">
+                  <div className="relative">
+                    <MapPin className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input data-testid="input-delivery-address" placeholder="Delivery address" value={activeTab?.deliveryAddress ?? ""} onChange={e => updateActiveTab({ deliveryAddress: e.target.value })} className="pl-8 text-sm bg-background" />
                   </div>
                 </motion.div>
               )}
