@@ -405,6 +405,15 @@ export function registerOrdersRoutes(app: Express): void {
       orderCustomerPhone = customerPhoneValue;
     }
 
+      let orderDeliveryAddress: string | null = null;
+      if (orderData.orderType === "delivery") {
+        const deliveryAddressValue = typeof req.body.deliveryAddress === "string" ? req.body.deliveryAddress.trim() : "";
+        if (!deliveryAddressValue) {
+          return res.status(400).json({ message: "Delivery address is required for delivery orders." });
+        }
+        orderDeliveryAddress = deliveryAddressValue;
+      }
+
       const secSettings = await getSecuritySettings(user.tenantId);
       const discountPct = Number(orderData.discount || 0);
       if (secSettings.requireSupervisorForLargeDiscount && discountPct > secSettings.largeDiscountThreshold && !can(user, "apply_large_discount")) {
@@ -788,6 +797,28 @@ export function registerOrdersRoutes(app: Express): void {
       // Task #108: Trigger KDS timing engine on order creation if it arrives directly in kitchen
       if (order.status === "sent_to_kitchen" || order.status === "in_progress") {
         fireKdsArrival(user.tenantId, order.id, user.id, user.name || user.username || "System");
+      }
+      // PR B: Auto-create delivery_orders coordination row for POS-delivery.
+      // Narrow to POS-delivery only; see audit/pr-b-recon.md for broadening discussion.
+      // Mirrors server/routers/service-coordination.ts:697-706 (phone-orders flow).
+      // Failure is non-fatal: order succeeds, dashboard falls back to synthetic shape until backfill.
+      if (orderData.orderType === "delivery" && orderDeliveryAddress) {
+        try {
+          await storage.createDeliveryOrder({
+            tenantId: user.tenantId,
+            orderId: order.id,
+            customerId: null,
+            customerAddress: orderDeliveryAddress,
+            customerPhone: orderCustomerPhone,
+            status: "pending",
+            estimatedTime: 45,
+            trackingNotes: orderCustomerName ? `customerName:${orderCustomerName}` : null,
+          });
+        } catch (delErr: any) {
+          console.error(
+            `[orders] delivery_orders auto-create failed (non-fatal): tenantId=${user.tenantId} orderId=${order.id} addrPresent=${!!req.body.deliveryAddress} error=${delErr?.message}`,
+          );
+        }
       }
       // FIX 2: Auto-create bill for takeaway/delivery when paymentMethod is provided
       let autoBill = null;
