@@ -79,12 +79,19 @@ Defer fix until investigation determines scope.
 | F-240 | T-062 | Delivery / Online | Aggregator metadata not visible in detail panel |
 | F-241 | T-103 | Sessions / Shift | "Manager do not have shift" — investigate shift permission scoping |
 
+### F-243 — POS new-tab button disappears at MAX_TABS=6 limit (should be disabled with tooltip)
+
+Tester T-036 reported "no new tab button appears in the POS after 6 tabs is opened" — this is current behavior (button is hidden when `tabs.length >= MAX_TABS`). Per CEO decision 2026-04-30, the correct UX is button-stays-visible-but-disabled with hover tooltip "Maximum 6 tabs reached. Close a tab to add a new one." Industry pattern for POS systems with staff variability.
+
+**Fix shape:** change render condition in `pos.tsx` (currently hides), keep button rendered with disabled state + title attribute or tooltip. Add i18n key in 4 languages (en, es, ar, fr). ~30-45 min PR.
+
+**Severity:** LOW (works, just bad UX when limit reached). Promoted from WAD after CEO decision.
+
 ## Working-as-designed (testers misinterpreted as bugs)
 
 | Test ID | Area | Note |
 |---|---|---|
 | T-012 | POS / Tabs | "Two tabs same table" still happens — KNOWN, M1 client guard same-user only, M1b (F-234) fixes cross-user |
-| T-036 | POS / Tabs | No new-tab button after 6 tabs — working-as-designed cap (UX could be clearer; not an actionable bug, no F-ID) |
 | T-087 | Settings / Users | Owner can't delete users — only superadmin can deactivate (intentional per current RBAC) |
 | T-102 | Concurrency / Orders | Cross-tester recall blocked — by design, only waiter or manager-role can recall |
 
