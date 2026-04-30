@@ -4,7 +4,7 @@ import { db } from "./db";
 import { eq, and, desc, sql, ne, gte, lte, inArray, max, ilike, or } from "drizzle-orm";
 import { z } from "zod";
 import {
-  tenants, users, outlets, orders, auditEvents, roleEnum, securityAlerts, customers, reservations, deliveryOrders,
+  tenants, users, outlets, orders, auditEvents, roleEnum, securityAlerts, customers, reservations, deliveryOrders, waitlistEntries,
 } from "@shared/schema";
 import { requireSuperAdmin, requireAuth, hashPassword, requireFreshSession } from "./auth";
 import { auditLog } from "./audit";
@@ -2075,6 +2075,22 @@ export function registerAdminRoutes(app: Express) {
             if (Object.keys(updates).length > 0) {
               await tx.update(deliveryOrders).set(updates).where(eq(deliveryOrders.id, d.id));
             }
+          }
+
+          // Note: rotation endpoint blocks have no per-block integration tests; coverage
+          // exists on rotation primitives only (tests/unit.test.ts:400-519).
+          // See audit/encryption-key-rotation-recon.md for context (QQ-7).
+          const tenantWaitlist = await tx.select({ id: waitlistEntries.id, customerPhone: waitlistEntries.customerPhone })
+            .from(waitlistEntries).where(eq(waitlistEntries.tenantId, tenant.id));
+
+          for (const w of tenantWaitlist) {
+            const phoneRes = rotateField(w.customerPhone, oldKey, newKey);
+            if (phoneRes.rotated && phoneRes.result != null) {
+              await tx.update(waitlistEntries)
+                .set({ customerPhone: phoneRes.result })
+                .where(eq(waitlistEntries.id, w.id));
+              tenantRotated++;
+            } else if (phoneRes.skipped) tenantSkipped++;
           }
 
           fieldsRotated += tenantRotated;
