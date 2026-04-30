@@ -52,6 +52,7 @@ Earlier shipped (April 16–22, abridged):
 - **Run `scripts/backfill-delivery-orders-from-pos.ts` against production** for the 18 operational orphan POS-Delivery orders across two tenants — script committed in PR #11 (`fb8a4ff`) but not yet executed; testers cannot click "Assign Agent" on existing POS-Delivery orders until this runs. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" + "PR A Recon".
 - **PR B — auto-create `delivery_orders` row inside `POST /api/orders` for delivery-shaped order types.** Without this, every new POS-Delivery order created after the backfill becomes a fresh orphan and re-introduces the 404 on Assign Agent / Mark Ready / Dispatch. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" → "Decision: PR A first because data-only. PR B second once PR A is verified."
 - **Waitlist rotation gap.** `POST /api/admin/encryption/rotate-key` at `server/admin-routes.ts:1980-2110` does NOT include `waitlist_entries.customerPhone`, even though that column is encrypted on write at `server/storage.ts:1080,1085`. Must be fixed before running encryption key rotation, or every encrypted waitlist phone becomes unreadable after env var swap. See `audit/encryption-key-rotation-recon.md` QQ-7.
+- **Operator action before encryption rotation:** screenshot Railway's "last updated" timestamp on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY`. If any >= 2026-04-15, the corresponding rotation phase may be skippable. See `audit/qq-1-session-secret-status.md`.
 
 ### ANNOYING — real bugs that affect users
 
