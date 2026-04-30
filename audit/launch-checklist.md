@@ -1,7 +1,7 @@
 # Table Salt — Launch Checklist
 
-**Date:** 2026-04-29 PM
-**Branch:** main, HEAD `8e9e9fa`
+**Date:** 2026-04-30 PM
+**Branch:** main, HEAD `1a9e30c`
 
 ## Goal of this doc
 
@@ -93,7 +93,7 @@ Single-page snapshot of where Table Salt stands against the eight categories tha
   - **F-225 — tenant-tz-helper branch.** 6 commits of real implementation; ship/finish/abandon decision pending. C1 timezone-off-by-one cluster (4 distinct tester bugs) likely resolves here (`docs/audits/2026-04-22-fix-plan.md` C1).
 - **NOT STARTED**
   - **No CI/CD.** Zero of: GH Actions, GitLab CI, Husky, ESLint config, Prettier config, automated tests on push, deploy automation, dependency scanning, secrets scanning (audit/09-infra-deploy.md §5). Top-5 finding in FINAL-REPORT.
-  - **No backup/DR.** No automated DB snapshot configuration, no documented RPO/RTO, no documented restore procedure (§9).
+  - **Backup/DR partially in place.** Manual snapshot capability now available via Railway Pro plan upgrade (2026-04-30); first snapshot taken 2026-04-30 07:00 UTC, 149 MB incremental. Still NOT configured: automated/scheduled snapshots, documented RPO/RTO, documented restore procedure (§9). See `audit/incident-2026-04-30-railway-pro-upgrade.md`.
   - **No distributed job coordination.** Single-instance assumption holds across rate limiter, lockout map, schedulers, WS pub/sub. Top-5 finding in FINAL-REPORT — Redis is commented out in `docker-compose.yml`.
   - `.dockerignore` does not exclude `.env`, `.auth/`, `.replit` — secrets can leak into builder layer (§1).
   - Patch-script-as-deploy-mechanism risk (4 patch scripts at repo root, `audit/09-infra-deploy.md §11`). Suggests an ad-hoc edit workflow that diverges from PR-based discipline.
@@ -104,11 +104,11 @@ Single-page snapshot of where Table Salt stands against the eight categories tha
 - **DONE**
   - 21 of 36 tracked bugs fixed and deployed; 0 BLOCKING currently (`docs/audits/bug-inventory.md` Summary).
   - F1–F17 (KOT, transfer-table, public receipt, sentCartKeys, split-order kitchen-resend, covers-in-DB, table-status-on-table-change, tenantId on createOrderItem, void modal, order_number generation, takeaway bill auto-create, void-request roles, schema migration, F15 currency data fix, /cash and /kitchen-board crash fixes).
-  - PR #9 (BL-3 round 2 — order_type cast in NOT EXISTS) and PR #13 (BL-1 Round 3 — `event.action` undefined guard) shipped 2026-04-29; tester re-verification pending.
+  - PR #9 (BL-3 round 2 — order_type cast in NOT EXISTS) and PR #13 (BL-1 Round 3 — `event.action` undefined guard) shipped 2026-04-29; tester-verified 2026-04-30.
+  - PR #16 (M5 — POS UI delivery address field, `66a1906`), PR #17 (QQ-7 — `waitlist_entries` rotation gap, `36ccfe0`), and PR #18 (PR B — auto-create `delivery_orders` row, `49f8687`) shipped 2026-04-30. PR #16 tester-verified; PR #18 smoke-tested in production (test order INV-2026-0085, both happy-path and validation-path PASS); PR #17 awaits verification at rotation time on 2026-05-01.
 - **IN PROGRESS**
-  - **POS-Delivery 404-orphan gap.** PR A backfill script committed (`fb8a4ff`) but not run; PR B (auto-create `delivery_orders` row) not started. `audit/pr-b-recon.md` + `audit/m5-recon.md` describe the dependency: M5 (POS UI address field) is the prerequisite that lets PR B drop the placeholder fallback.
+  - **Orphan `delivery_orders` cleanup.** TablePlus recon confirmed 53 orphans across 2 test tenants (recon SQL at `audit/orphan-delivery-orders-recon.sql`). Recommendation locked: delete-not-backfill. Cleanup script drafting 2026-05-01.
 - **NOT STARTED**
-  - **M5 — no POS UI delivery address field.** `deliveryOrders.customerAddress` exists but is never captured for POS-originated delivery (`docs/audits/bug-inventory.md`, `audit/m5-recon.md`).
   - **M4 — addon KOT creates new order, not appended.** Billing must aggregate `parentOrderId` chain; verification pending.
   - **C1 — timezone off-by-one** (4 tester bugs: reservations save next day, events same-day renders next day, shift created updates next day, POS bill print time). Likely resolved by shipping the F-225 branch.
   - **C4 — kitchen unit conversion** (tsp/tbsp render as kg; wastage entered in g treated as kg → AED 22,000 displayed for AED 2.20 of waste). Critical, single root-cause, ~30–80 line fix.
@@ -165,7 +165,7 @@ Prioritized by severity. Anything below would block a real first-paying-tenant l
 2. **Password policy not enforced at registration / staff creation** (audit/05-auth.md §5). Users can register with `"a"`; staff are seeded with `"demo123"`. Defeats every other auth control.
 3. **Webhook amount reconciliation missing** (F-103, F-105). Without amount-vs-bill verification, a bug or hostile mutation in the payment flow records the wrong total as paid.
 4. **Tenant-isolation audit not closed.** 24 storage functions flagged tenant-unsafe (FINAL-REPORT Top-5); C2/M6 still 500-ing in prod; QR public surface (A-14 / C8) unaudited; WebSocket subscribe-time channel-scope verification not done.
-5. **Backup / disaster recovery has not been demonstrated to exist.** No automated snapshots, no documented restore, no RPO/RTO. First DB-loss event = total business loss.
+5. **Backup / disaster recovery partially addressed (2026-04-30).** Manual snapshot capability now exists via Railway Pro plan; first manual snapshot 2026-04-30 07:00 UTC (149 MB). Still missing: automated/scheduled snapshots, documented restore procedure, formal RPO/RTO. First DB-loss event still has high blast radius until restore is rehearsed end-to-end. See `audit/incident-2026-04-30-railway-pro-upgrade.md`.
 
 ### Severity 2 — should-fix-before-launch
 
@@ -173,7 +173,7 @@ Prioritized by severity. Anything below would block a real first-paying-tenant l
 7. **Single-instance distributed-state assumption** (rate limiter, lockout map, schedulers, WS pub/sub). Will silently misbehave the moment Railway scales horizontally.
 8. **C1 timezone off-by-one** — reservations / events / shifts saving for the wrong day is directly customer-facing brand damage. F-225 branch likely already implements the fix.
 9. **C4 unit-conversion in kitchen** — wastage cost rendering 1000× actual could trigger owners reporting staff for theft. Single root-cause.
-10. **M5 → PR B → backfill chain** — POS-Delivery flow has a guaranteed 404 on Assign Agent / Mark Ready / Dispatch on every new order until shipped.
+10. **M5 → PR B → backfill chain — RESOLVED 2026-04-30.** PR #16 (M5, `66a1906`) and PR #18 (PR B, `49f8687`) shipped and smoke-tested. Orphan cleanup pivoted to delete-not-backfill (53 rows across 2 test tenants); cleanup script drafting 2026-05-01. POS-Delivery 404 gap closed for new orders.
 11. **Currency render layer leaks** (F-107..F-114 + C9). UAE tenant seeing `$` or `₹` is brand damage; cross-currency report aggregation gives owners meaningless numbers.
 
 ### Severity 3 — should-have-soon-after-launch
@@ -191,7 +191,7 @@ These three move the launch needle the most for the least work, in order:
 
 1. **Rotate ENCRYPTION_KEY, VAPID private key, and SESSION_SECRET; re-encrypt all PII; force a Railway redeploy to flush sessions.** Top-5 critical from `audit/FINAL-REPORT.md`. This is the single highest-leverage hour of work in the entire audit — it converts the encryption story from "theatre" to "real" without any code change. Pair it with a `.env`-only ingestion path so future Claude/contributors cannot recommit a key. Verify by re-reading `.replit` after rotation and `git grep` for the old key prefix.
 
-2. **Ship M5 → PR B → run/replace the backfill.** Closes the POS-Delivery 404-orphan gap permanently and unblocks tester verification of an entire flow. M5 is ~15-25 lines in `pos.tsx` (`audit/m5-recon.md`); PR B is simpler once M5 lands because `req.body.deliveryAddress` is always present (`audit/pr-b-recon.md`). The 18 existing orphans are test data — likely cleaner to delete than backfill, decision deferred until PR B verifies (`audit/00-backlog.md` Top-3 #4).
+2. **Orphan `delivery_orders` cleanup + regression sweep on today's shipped PRs.** The M5 → PR B → backfill chain shipped 2026-04-30: PR #16 (`66a1906`) + PR #18 (`49f8687`) close the recurring POS-Delivery 404 gap. Remaining: a small delete-not-backfill SQL against the 53 orphans across 2 test tenants (`audit/orphan-delivery-orders-recon.sql` is the source-of-truth recon), then a passive regression sweep that PRs #9, #13, #16, #17, #18 still hold under tester traffic. Keep cleanup ahead of regression so test data doesn't pollute the verification.
 
 3. **Stand up minimal CI** — GitHub Actions running `npm run check` (typecheck) + `npm run build` + the existing 33 Playwright tests on every PR. This single workflow file would have caught L6's 329 type errors as they accumulated and would have caught the F-223 → DATABASE_URL incident before Railway redeploy. Lowest-effort lever for production hygiene category. After this lands, every other Critical Gap is much cheaper to fix because regressions surface before they ship.
 

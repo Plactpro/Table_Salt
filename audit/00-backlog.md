@@ -1,7 +1,7 @@
 # Table Salt — Current-state Backlog
 
-**Date:** 2026-04-29 PM
-**Branch:** main, HEAD `8e9e9fa`
+**Date:** 2026-04-30 PM
+**Branch:** main, HEAD `1a9e30c`
 
 Compiled from `audit/02-new-blockers-recon.md`, `audit/FINDINGS.md`, `audit/OPEN-QUESTIONS.md`, `audit/00-orientation.md`, `docs/audits/bug-inventory.md`, and `git log --oneline -50`. `table-salt-bug-inventory-2026-04-18.md` does not exist; closest equivalent is `docs/audits/bug-inventory.md` (last updated 2026-04-22).
 
@@ -13,6 +13,10 @@ Items that have shipped to main this audit cycle, newest first.
 
 | Item | Commit | Description |
 |---|---|---|
+| Audit gitignore exception | `1a9e30c` | chore: allow audit/*.sql under existing *.sql rule, add orphan delivery recon |
+| PR #18 (PR B) | `49f8687` | feat(orders): auto-create delivery_orders row for POS-delivery orders (PR B) |
+| PR #17 (QQ-7) | `36ccfe0` | fix(security): add waitlist_entries to encryption key rotation endpoint (QQ-7) |
+| PR #16 (M5) | `66a1906` | feat(pos): add delivery address field for delivery orders |
 | PR #14 follow-ups doc | `8e9e9fa` | docs(audit): PR #14 follow-ups — sheet visual sweep, click-outside disabled |
 | PR #14 | `a58f26c` | fix: Sheet close button visible above sticky headers (z-20 + pr-12) |
 | PR #13 | `bdd82ac` | fix(BL-1) Round 3: guard `getEventIcon` and PrintHistory filter callbacks against undefined `action` |
@@ -49,10 +53,8 @@ Earlier shipped (April 16–22, abridged):
 
 ### BLOCKING — prevents end-to-end testing or launch
 
-- **Run `scripts/backfill-delivery-orders-from-pos.ts` against production** for the 18 operational orphan POS-Delivery orders across two tenants — script committed in PR #11 (`fb8a4ff`) but not yet executed; testers cannot click "Assign Agent" on existing POS-Delivery orders until this runs. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" + "PR A Recon".
-- **PR B — auto-create `delivery_orders` row inside `POST /api/orders` for delivery-shaped order types.** Without this, every new POS-Delivery order created after the backfill becomes a fresh orphan and re-introduces the 404 on Assign Agent / Mark Ready / Dispatch. Source: `audit/02-new-blockers-recon.md` "404 SQL Probe Results" → "Decision: PR A first because data-only. PR B second once PR A is verified."
-- **Waitlist rotation gap.** `POST /api/admin/encryption/rotate-key` at `server/admin-routes.ts:1980-2110` does NOT include `waitlist_entries.customerPhone`, even though that column is encrypted on write at `server/storage.ts:1080,1085`. Must be fixed before running encryption key rotation, or every encrypted waitlist phone becomes unreadable after env var swap. See `audit/encryption-key-rotation-recon.md` QQ-7.
-- **Operator action before encryption rotation:** screenshot Railway's "last updated" timestamp on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY`. If any >= 2026-04-15, the corresponding rotation phase may be skippable. See `audit/qq-1-session-secret-status.md`.
+- **Orphan `delivery_orders` cleanup.** TablePlus recon (2026-04-30 PM) confirmed 53 orphan orders across 2 test tenants (`6a8281c4-8e66-4214-84ad-2d0e3231cc76` "Updated Tenant Name Test" and `74f513e3-9db5-4a9b-b427-6a4c2a6eb082` "Table Salt Platform"). With_bills=32, with_items=51, total_items=83. Recommendation locked: **delete-not-backfill** (test data, not real customer orders). Recon SQL committed at `audit/orphan-delivery-orders-recon.sql`. Cleanup script to be drafted 2026-05-01 morning before regression sweep starts. Supersedes prior "run backfill script" item.
+- **Operator action before encryption rotation:** screenshot Railway's "last updated" timestamp on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY`. If any >= 2026-04-15, the corresponding rotation phase may be skippable. See `audit/qq-1-session-secret-status.md`. (Rotation deferred from 2026-04-30 to 2026-05-01; backup pre-task now resolved per Pro upgrade — see `audit/incident-2026-04-30-railway-pro-upgrade.md`.)
 
 ### ANNOYING — real bugs that affect users
 
@@ -64,8 +66,10 @@ Earlier shipped (April 16–22, abridged):
 - **F-225 tenant-tz-helper branch — ship/finish/abandon decision pending.** 6 commits of real implementation work (date-fns-tz, helper module with tests, escpos-builder/printer-service updates, calendar wiring, Dockerfile TZ=UTC). Source: EOD addendum line 1284.
 - **M2 — UPI payment not implemented.** Placeholder "Show UPI QR" in pos.tsx payment modal. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
 - **M4 — Addon KOT creates new order, not appended.** Billing must aggregate parentOrderId chain; verification pending. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
-- **M5 — No delivery address field in POS UI.** `deliveryOrders.customerAddress` exists but is never captured for POS-originated delivery orders. Source: `docs/audits/bug-inventory.md` OPEN-MEDIUM.
 - **L6 — 328 pre-existing TypeScript errors** in server/** and shared/**, no impact at runtime (esbuild build skips strict check). Needs dedicated `triage/ts-errors` branch. Source: `docs/audits/bug-inventory.md` OPEN-LOW.
+- **GitHub squash-merge auto-injects `Co-authored-by: TOTCI2026 <arunkumar.s@totci.ae>` trailer** despite locked workflow rule against it. Confirmed on PR #17 and PR #18 — two consecutive squash-merges, same trailer, so it's a GitHub repo-settings UI behavior, not user error. Investigate: disable in repo settings (Pull requests → Allow squash merging → trailer config) OR update the workflow rule to accept-and-document the trailer. Until resolved, every squash merge will keep injecting it.
+- **Triage 3 untracked pre-existing `audit/*.sql` files** surfaced when the gitignore exception (`1a9e30c`) re-included them: `audit/cashier-seed-preflight-2026-04-21.sql`, `audit/cashier-users-query-2026-04-21.sql`, `audit/f225-day4-audit.sql`. Pre-existing, not from today. Read each, decide commit-or-delete.
+- **Configure scheduled backups on Railway.** Pro plan upgrade (2026-04-30) enables manual snapshots; first taken 2026-04-30 07:00 UTC (149 MB incremental). Automated/scheduled snapshots still not configured. RPO/RTO not formalized, restore procedure not written. See `audit/incident-2026-04-30-railway-pro-upgrade.md`.
 - **Plaintext PII at rest.** `delivery_orders.driver_phone`, `delivery_orders.driver_name`, `delivery_orders.tracking_notes` are stored plaintext at rest. Should be added to `DELIVERY_PII_FIELDS` in a follow-up PR. See `audit/encryption-key-rotation-recon.md` Risk 5.
 - **SESSION_SECRET rotation status conflict.** Three audit docs disagree on whether rotation happened. `audit/FINDINGS.md` F-217/F-218 say "Mitigated (rotated 2026-04-15)". `audit/launch-checklist.md` Severity 1 #1 lists it as still pending. `audit/OPEN-QUESTIONS.md` Q-006/Q-078 still open. Reconcile before Phase 5 of any rotation procedure. See `audit/encryption-key-rotation-recon.md` QQ-1.
 
@@ -108,15 +112,22 @@ The A-series tracks repo-hygiene / infrastructure items from earlier sessions.
 
 - Tester verification of PR #9 (BL-3 Round 2 — `order_type` cast fix in NOT EXISTS subquery on /delivery hub) — PASS, confirmed by external testers.
 - Tester verification of PR #13 (BL-1 Round 3 — `getEventIcon` and PrintHistory filter callback guards on /tickets drawer) — PASS, confirmed by external testers.
+- PR #16 (M5 — POS UI delivery address field, `66a1906`) — shipped + tester-verified.
+- PR #17 (QQ-7 — `waitlist_entries` added to encryption key rotation endpoint, `36ccfe0`) — shipped, awaits verification at rotation time.
+- PR #18 (PR B — auto-create `delivery_orders` row in `POST /api/orders` for POS-delivery, `49f8687`) — shipped + smoke-tested in production. Happy-path (test order INV-2026-0085) and validation-path (empty address blocked) both PASSED.
+- Audit gitignore exception (`1a9e30c`) — `!audit/*.sql` added under existing `*.sql` rule so recon SQL can be tracked; first tracked file is `audit/orphan-delivery-orders-recon.sql`.
+- Railway Pro plan upgrade (~midday UAE time) caused unexpected ~30-minute service-stop on both Postgres and Table_Salt. Recovered cleanly via "Deploy database" + redeploy; volume intact, no data loss. Backup capability now available; first manual snapshot taken 2026-04-30 07:00 UTC (149 MB). See `audit/incident-2026-04-30-railway-pro-upgrade.md`.
+- TablePlus recon against production for orphan `delivery_orders`: 53 orphans across 2 test tenants confirmed. Recommendation locked: delete-not-backfill. Cleanup script drafting 2026-05-01.
+- Encryption key rotation deferred from 2026-04-30 to 2026-05-01. Procedure in `audit/encryption-key-rotation-recon.md` unchanged; backup pre-task now resolved.
 
 ---
 
 ## Next
 
-Top 3 to consider next:
+Top 3 to consider next (2026-05-01):
 
-1. **M5 — POS UI delivery address field.** Adds a single-line text input to the POS delivery flow when orderType is delivery, mirroring the existing phone-order pattern at phone-order.tsx:461-474. Required prerequisite for PR B; without it, PR B would have to fall back to a "No address" placeholder, immortalizing the design defect. See audit/m5-recon.md for full implementation sketch.
+1. **Encryption key rotation execution.** Run the procedure in `audit/encryption-key-rotation-recon.md` against production. Backup pre-task now resolved (manual snapshot 2026-04-30 07:00 UTC, 149 MB). Waitlist rotation gap now covered (PR #17). Operator pre-task: confirm Railway env-var "last updated" timestamps on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY` per `audit/qq-1-session-secret-status.md`. Highest-leverage Severity-1 fix remaining.
 
-2. **PR B — auto-create delivery_orders row in POST /api/orders.** Closes the POS-Delivery 404-orphan gap. Becomes simpler once M5 ships (the QQ-1 (a)+(c) hybrid disappears because req.body.deliveryAddress will always be present). See audit/pr-b-recon.md for full recon.
+2. **Orphan `delivery_orders` cleanup.** Draft a delete-not-backfill SQL script for the 53 orphans across 2 test tenants confirmed by TablePlus recon (`audit/orphan-delivery-orders-recon.sql`). Wrap as `BEGIN; ... ROLLBACK;` first for review, then run as `BEGIN; ... COMMIT;` once approved. Aim to land before regression sweep so test data doesn't pollute the verification.
 
-3. **Backfill script (scripts/backfill-delivery-orders-from-pos.ts) — production run.** Reconsider whether to run at all. The 18 existing orphans are test data from manual testers, not customer data. Cleaner to delete the test orders directly than to backfill them with junk addresses. Decision deferred until after M5 + PR B ship.
+3. **Regression sweep / tester re-verification.** Re-test PRs #16, #17, #18 in dogfood, plus passive verification that PR #9 and PR #13 fixes still hold. PR #17's verification happens organically during the rotation in #1.
