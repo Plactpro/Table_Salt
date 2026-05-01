@@ -6,6 +6,23 @@
 **Severity:** 1 (launch blocker per `audit/launch-checklist.md` §"Severity 1" #1)
 
 ---
+## Status (as of 2026-05-01)
+
+**DEFERRED to post-launch** per founder decision. Procedure below
+remains valid; revisit when real customer PII enters production or
+within 30 days of first paying customer, whichever first. See
+`audit/00-backlog.md` PL-1.
+
+Pre-flight verification completed 2026-05-01:
+- Phase 0.3 unit tests: 86/86 pass, including 14 rotation tests
+- Phase 0.4 QQ-7 (waitlist gap): fixed by PR #17 / commit 36ccfe0,
+  verified 2026-05-01
+- QQ-1 (SESSION_SECRET state): unresolved, deferred until pre-rotation
+  pre-flight is re-run post-launch
+
+Re-run all of Phase 0 again before any future rotation attempt.
+
+---
 
 ## Summary
 

@@ -161,7 +161,7 @@ Prioritized by severity. Anything below would block a real first-paying-tenant l
 
 ### Severity 1 — must-fix-before-launch
 
-1. **Compromised secrets in git history must be rotated.** ENCRYPTION_KEY (`.replit:54` since `e523dfa`), VAPID private key (`.replit:55-56` since `280047f`), and `.auth/*.json` session cookies (since `12fc00b`) are recoverable from git history forever. The ENCRYPTION_KEY guards all PII; until it is rotated, the entire encryption story is theatre. Top-5 finding in `audit/FINAL-REPORT.md`.
+1. **Compromised-secret rotation — DEFERRED to post-launch (2026-05-01).** ENCRYPTION_KEY (`.replit:54` since `e523dfa`), VAPID private key (`.replit:55-56` since `280047f`), and `.auth/*.json` session cookies (since `12fc00b`) remain in git history. Pre-launch risk assessed as theoretical (test data only) and rotation procedure not yet practiced by founder. Procedure preserved in `audit/encryption-key-rotation-recon.md`; tracked as PL-1 in `audit/00-backlog.md` "Post-launch hardening". Revisit when real customer PII enters production or within 30 days of first paying customer, whichever first.
 2. **Password policy not enforced at registration / staff creation** (audit/05-auth.md §5). Users can register with `"a"`; staff are seeded with `"demo123"`. Defeats every other auth control.
 3. **Webhook amount reconciliation missing** (F-103, F-105). Without amount-vs-bill verification, a bug or hostile mutation in the payment flow records the wrong total as paid.
 4. **Tenant-isolation audit not closed.** 24 storage functions flagged tenant-unsafe (FINAL-REPORT Top-5); C2/M6 still 500-ing in prod; QR public surface (A-14 / C8) unaudited; WebSocket subscribe-time channel-scope verification not done.
@@ -183,16 +183,27 @@ Prioritized by severity. Anything below would block a real first-paying-tenant l
 14. **C6 order-source parity cluster.** Largest functional cluster; not a launch-blocker but a credibility-blocker for any tenant that uses aggregators or kiosks.
 15. **B1d cross-outlet KDS scoping.** Becomes severity-1 the moment a multi-outlet tenant onboards.
 
+## Post-launch hardening
+
+Items deferred from pre-launch but tracked for post-launch action.
+
+- **ENCRYPTION_KEY / SESSION_SECRET / VAPID_PRIVATE_KEY rotation.**
+  Deferred from pre-launch per founder decision 2026-05-01. Procedure
+  documented in `audit/encryption-key-rotation-recon.md` remains valid.
+  Revisit when real customer PII enters production database, or
+  within 30 days of first paying customer onboarding — whichever is
+  sooner. Owner: founder, with optional senior-developer assist.
+
 ---
 
-## Recommended next 3 items
+## Recommended next 2 items
 
-These three move the launch needle the most for the least work, in order:
+ENCRYPTION_KEY rotation deferred to post-launch — see PL-1 in `audit/00-backlog.md` and the "Post-launch hardening" section above. Original priority preserved in PL-1; revisit when real PII enters production or within 30 days of first paying customer.
 
-1. **Rotate ENCRYPTION_KEY, VAPID private key, and SESSION_SECRET; re-encrypt all PII; force a Railway redeploy to flush sessions.** Top-5 critical from `audit/FINAL-REPORT.md`. This is the single highest-leverage hour of work in the entire audit — it converts the encryption story from "theatre" to "real" without any code change. Pair it with a `.env`-only ingestion path so future Claude/contributors cannot recommit a key. Verify by re-reading `.replit` after rotation and `git grep` for the old key prefix.
+The remaining items move the launch needle the most for the least work, in order:
 
-2. **Orphan `delivery_orders` cleanup + regression sweep on today's shipped PRs.** The M5 → PR B → backfill chain shipped 2026-04-30: PR #16 (`66a1906`) + PR #18 (`49f8687`) close the recurring POS-Delivery 404 gap. Remaining: a small delete-not-backfill SQL against the 53 orphans across 2 test tenants (`audit/orphan-delivery-orders-recon.sql` is the source-of-truth recon), then a passive regression sweep that PRs #9, #13, #16, #17, #18 still hold under tester traffic. Keep cleanup ahead of regression so test data doesn't pollute the verification.
+1. **Orphan `delivery_orders` cleanup + regression sweep on today's shipped PRs.** The M5 → PR B → backfill chain shipped 2026-04-30: PR #16 (`66a1906`) + PR #18 (`49f8687`) close the recurring POS-Delivery 404 gap. Remaining: a small delete-not-backfill SQL against the 53 orphans across 2 test tenants (`audit/orphan-delivery-orders-recon.sql` is the source-of-truth recon), then a passive regression sweep that PRs #9, #13, #16, #17, #18 still hold under tester traffic. Keep cleanup ahead of regression so test data doesn't pollute the verification.
 
-3. **Stand up minimal CI** — GitHub Actions running `npm run check` (typecheck) + `npm run build` + the existing 33 Playwright tests on every PR. This single workflow file would have caught L6's 329 type errors as they accumulated and would have caught the F-223 → DATABASE_URL incident before Railway redeploy. Lowest-effort lever for production hygiene category. After this lands, every other Critical Gap is much cheaper to fix because regressions surface before they ship.
+2. **Stand up minimal CI** — GitHub Actions running `npm run check` (typecheck) + `npm run build` + the existing 33 Playwright tests on every PR. This single workflow file would have caught L6's 329 type errors as they accumulated and would have caught the F-223 → DATABASE_URL incident before Railway redeploy. Lowest-effort lever for production hygiene category. After this lands, every other Critical Gap is much cheaper to fix because regressions surface before they ship.
 
-These are deliberately not "tester re-verification of PR #9 / #13" — that one is already #1 in `audit/00-backlog.md` and is best handled in passive-wait mode by the testers themselves. The three above are the work I would actively pick up first if no other signal arrives tomorrow.
+These are deliberately not "tester re-verification of PR #9 / #13" — that one is already #1 in `audit/00-backlog.md` and is best handled in passive-wait mode by the testers themselves. The two above are the work I would actively pick up first if no other signal arrives tomorrow.

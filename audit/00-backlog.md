@@ -137,10 +137,22 @@ The A-series tracks repo-hygiene / infrastructure items from earlier sessions.
 
 ## Next
 
-Top 3 to consider next (2026-05-01):
+ENCRYPTION_KEY rotation deferred to post-launch — see PL-1 in "POST-LAUNCH HARDENING" section below and `audit/launch-checklist.md` "Post-launch hardening" section. Original priority preserved in PL-1; revisit when real PII enters production or within 30 days of first paying customer.
 
-1. **Encryption key rotation execution.** Run the procedure in `audit/encryption-key-rotation-recon.md` against production. Backup pre-task resolved (manual snapshot 2026-04-30 07:00 UTC plus pre-cleanup snapshot 2026-04-30 12:17 UTC). Waitlist rotation gap covered (PR #17). Operator pre-task: confirm Railway env-var "last updated" timestamps on `ENCRYPTION_KEY`, `SESSION_SECRET`, `VAPID_PRIVATE_KEY` per `audit/qq-1-session-secret-status.md`. Highest-leverage Severity-1 fix remaining.
+Top 2 to consider next (2026-05-01):
 
-2. **F-233 billing reproduction + F-232 shift indicator investigation.** Owner manually reproduces the billing failure (open dine-in order, try Cash payment specifically, document exact failure). If real, promotes to launch-blocker. Then read `pos.tsx` header component to determine if F-232 is Scenario A (timer just missing UI) or Scenario B (session logic regression). See findings doc F-232/F-233.
+1. **F-233 billing reproduction + F-232 shift indicator investigation.** Owner manually reproduces the billing failure (open dine-in order, try Cash payment specifically, document exact failure). If real, promotes to launch-blocker. Then read `pos.tsx` header component to determine if F-232 is Scenario A (timer just missing UI) or Scenario B (session logic regression). See findings doc F-232/F-233.
 
-3. **F-234 M1b implementation.** Server-side advisory lock or partial unique index on `(tenant_id, table_id) WHERE status IN ('new','in_progress','ready')` to prevent cross-user same-table claims. Confirmed launch-blocker by 2026-04-30 regression T-101. Branch `fix/M1b-cross-user-table-claim`.
+2. **F-234 M1b implementation.** Server-side advisory lock or partial unique index on `(tenant_id, table_id) WHERE status IN ('new','in_progress','ready')` to prevent cross-user same-table claims. Confirmed launch-blocker by 2026-04-30 regression T-101. Branch `fix/M1b-cross-user-table-claim`.
+
+---
+
+## POST-LAUNCH HARDENING
+
+- **PL-1 — Encryption key rotation (ENCRYPTION_KEY, SESSION_SECRET,
+  VAPID_PRIVATE_KEY).** Deferred from pre-launch 2026-05-01. Recon
+  doc + procedure: `audit/encryption-key-rotation-recon.md`. Pre-launch
+  risk is theoretical (test data only); post-launch becomes real once
+  customer PII enters DB. Trigger: first paying customer onboarded OR
+  30 days post-launch, whichever first. Allow ~3 hours for procedure
+  including pre-flight, snapshot, rotation, verification.
