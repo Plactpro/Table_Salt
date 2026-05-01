@@ -1989,10 +1989,6 @@ export default function POSPage() {
               }} data-testid="button-reprint-bill">
                 <Printer className="h-3 w-3" /> Bill
               </Button>
-              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white gap-1" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">
-                Bill
-                <kbd className="text-[9px] opacity-75 bg-green-700 px-1 rounded">[B]</kbd>
-              </Button>
               <button className="text-green-600 hover:text-green-800 ml-1" onClick={() => setLastPlacedOrder(null)} data-testid="button-dismiss-bill"><X className="h-3 w-3" /></button>
             </div>
           )}
@@ -2309,6 +2305,12 @@ export default function POSPage() {
             <Button data-testid="button-hold-order" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={holdCurrentTab} disabled={cart.length === 0 && !activeTab?.heldOrderId} title={tp("holdOrder")}>
               <Pause className="h-3.5 w-3.5" /> {tp("hold")}
             </Button>
+            {activeTab?.heldOrderId && (
+              <Button data-testid="button-open-bill" size="sm" className="text-xs px-2.5 gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => { const orderId = activeTab?.heldOrderId; if (!orderId) return; navigate(`/pos/bill/${orderId}`); }} title={tp("openBill")}>
+                <Receipt className="h-3.5 w-3.5" /> {tp("openBill")}
+                <kbd className="text-[9px] opacity-75 bg-green-700 px-1 rounded ml-0.5">[B]</kbd>
+              </Button>
+            )}
             {cart.length >= 2 && (
               <Button data-testid="button-split-bill" variant="outline" size="sm" className="text-xs px-2.5 gap-1" onClick={() => { setSplitAssignment({}); setShowSplitDialog(true); }} title={tp("splitBillTitle")}>
                 <Scissors className="h-3.5 w-3.5" /> {tp("split")}
