@@ -141,7 +141,7 @@ ENCRYPTION_KEY rotation deferred to post-launch — see PL-1 in "POST-LAUNCH HAR
 
 Top 2 to consider next (2026-05-01):
 
-1. **F-233 billing reproduction + F-232 shift indicator investigation.** Owner manually reproduces the billing failure (open dine-in order, try Cash payment specifically, document exact failure). If real, promotes to launch-blocker. Then read `pos.tsx` header component to determine if F-232 is Scenario A (timer just missing UI) or Scenario B (session logic regression). See findings doc F-232/F-233.
+1. **F-233 fix attempt 1 deployed and rolled back. Investigation needed before next attempt.** Persistent Bill button fix shipped as commit `434240a` 2026-05-01, deployed to production, manual verification reported two failures (tab auto-switch after Send to Kitchen, fresh order tab navigation broken). Reverted as commit `741c6ea`, production back at pre-fix state. Failure mode unverified — Perplexity reports may be misinterpretation OR genuine bugs not surfaced in static analysis. Monday investigation: Claude Code static trace of tab-click handler + Send-to-Kitchen success effect to determine whether reported failures are real. See `audit/incident-2026-05-01-f233-fix-rollback.md`.
 
 2. **F-234 M1b implementation.** Server-side advisory lock or partial unique index on `(tenant_id, table_id) WHERE status IN ('new','in_progress','ready')` to prevent cross-user same-table claims. Confirmed launch-blocker by 2026-04-30 regression T-101. Branch `fix/M1b-cross-user-table-claim`.
 
