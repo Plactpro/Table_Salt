@@ -311,3 +311,84 @@ change, the parallel reproduction tests on production should answer
 open questions 1–4. If they cannot reproduce, the report is most
 plausibly a verifier misread of the new Bill button's navigation
 behavior.
+
+---
+
+## Diff verification
+
+Gap-closer pass on the reverted F-233 fix (commit `434240a`,
+`client/src/pages/modules/pos.tsx` only, +6 / -4) to confirm the
+three-path investigation did not miss any code that the diff itself
+introduced.
+
+Source of truth: `git show 434240a -- client/src/pages/modules/pos.tsx`.
+
+### Hunk 1 — `@@ -1989,10 +1989,6 @@` (removal)
+
+Four lines removed from the `lastPlacedOrder` banner — the transient
+green "Bill" button and its `[B]` kbd label:
+
+```
+-              <Button size="sm" className="h-6 text-xs px-2 bg-green-600 hover:bg-green-700 text-white gap-1" onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }} data-testid="button-open-bill">
+-                Bill
+-                <kbd className="text-[9px] opacity-75 bg-green-700 px-1 rounded">[B]</kbd>
+-              </Button>
+```
+
+The removed onClick handler is exactly:
+
+```
+onClick={() => { if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); } else { setShowBillModal(true); } }}
+```
+
+**MATCHES the documented removed handler.**
+
+### Hunk 2 — `@@ -2309,6 +2305,12 @@` (addition)
+
+Six lines added to the cart-action row, between Hold and Split — a
+persistent green Bill button gated on `activeTab?.heldOrderId`:
+
+```
++            {activeTab?.heldOrderId && (
++              <Button data-testid="button-open-bill" size="sm" className="text-xs px-2.5 gap-1 bg-green-600 hover:bg-green-700 text-white" onClick={() => { const orderId = activeTab?.heldOrderId; if (!orderId) return; navigate(`/pos/bill/${orderId}`); }} title={tp("openBill")}>
++                <Receipt className="h-3.5 w-3.5 mr-1" /> {tp("openBill")}
++                <kbd className="text-[9px] opacity-75 bg-green-700 px-1 rounded ml-0.5">[B]</kbd>
++              </Button>
++            )}
+```
+
+The added onClick handler is exactly:
+
+```
+onClick={() => { const orderId = activeTab?.heldOrderId; if (!orderId) return; navigate(`/pos/bill/${orderId}`); }}
+```
+
+**MATCHES the documented added handler.**
+
+### Forbidden-construct check
+
+For each construct that could explain Failure A or B, scanned the full
+diff text:
+
+| Construct                                        | Present in diff? |
+|--------------------------------------------------|------------------|
+| `setActiveTabId`                                 | **No**           |
+| `navigate('/')` or `navigate("/")`               | **No**           |
+| `setTabs`                                        | **No**           |
+| `useEffect` watching `tabs[]` or `activeTabId`   | **No**           |
+| onClick doing anything other than `navigate('/pos/bill/:id')` | **No** (the removed handler had a `setShowBillModal(true)` fallback for the no-tableId branch, which only opens a local modal — does not navigate anywhere) |
+
+Both hunks are JSX-only changes confined to two button elements. No
+hooks added, no effects added, no state setters introduced. The diff
+cannot reach `activeTabId`, `tabs[]`, or any route other than
+`/pos/bill/:id`.
+
+### Confirmed clean: **YES**
+
+### Confidence: **HIGH**
+
+The diff is 10 lines total across two hunks. Every line was inspected.
+Both onClick handlers match the documented expectations character for
+character. Nothing in the F-233 fix could produce Failure A
+(automatic tab switch) or Failure B (navigate to `/`). The
+three-path conclusion stands.
