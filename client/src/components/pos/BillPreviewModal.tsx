@@ -265,6 +265,8 @@ export default function BillPreviewModal({
   } | null>(null);
   const [parkingChargeLoading, setParkingChargeLoading] = useState(false);
   const [parkingChargeExpanded, setParkingChargeExpanded] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+  const [digitalReceiptUrl, setDigitalReceiptUrl] = useState<string | null>(null);
 
   const { data: outletsData = [] } = useQuery<any[]>({
     queryKey: ["/api/outlets"],
@@ -488,6 +490,25 @@ export default function BillPreviewModal({
     }, 3000);
     return () => clearInterval(interval);
   }, [rzpPolling, createdBill, rzpPaid, activeMethod]);
+
+  useEffect(() => {
+    if (!createdBill?.id) {
+      setQrDataUrl(null);
+      setDigitalReceiptUrl(null);
+      return;
+    }
+    let cancelled = false;
+    const url = `${window.location.origin}/receipt/${createdBill.id}`;
+    setDigitalReceiptUrl(url);
+    QRCode.toDataURL(url, { width: 80, margin: 1, color: { dark: "#000000", light: "#ffffff" } })
+      .then((dataUrl) => {
+        if (!cancelled) setQrDataUrl(dataUrl);
+      })
+      .catch((err) => {
+        console.error("[BillPreviewModal] QR pre-generation failed:", err);
+      });
+    return () => { cancelled = true; };
+  }, [createdBill?.id]);
 
   const handleInitiateRazorpay = async () => {
     if (!createdBill) return;
