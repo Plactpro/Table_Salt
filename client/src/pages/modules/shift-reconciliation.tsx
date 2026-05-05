@@ -14,6 +14,7 @@ import {
   Users, Package, AlertTriangle, TrendingDown, CheckCircle2,
 } from "lucide-react";
 import { formatCurrency } from "@shared/currency";
+import { useAuth } from "@/lib/auth";
 import type { Shift } from "@shared/schema";
 import { useTranslation } from "react-i18next";
 
@@ -142,6 +143,11 @@ function VarianceBadge({ variance, pct }: { variance: number; pct: number }) {
 
 export default function ShiftReconciliation() {
   const { t } = useTranslation("modules");
+  const { user } = useAuth();
+  const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const currencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmtCurrency = (v: number) => formatCurrency(v, currency, { position: currencyPosition, decimals: currencyDecimals });
   const [fromDate, setFromDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 7);
@@ -254,13 +260,13 @@ export default function ShiftReconciliation() {
         <Card data-testid="card-total-consumed-value">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Total Consumed</p>
-            <p className="text-xl font-bold mt-1">{formatCurrency(totals.consumed)}</p>
+            <p className="text-xl font-bold mt-1">{fmtCurrency(totals.consumed)}</p>
           </CardContent>
         </Card>
         <Card data-testid="card-total-wasted-value">
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Total Wastage</p>
-            <p className="text-xl font-bold mt-1 text-red-600">{formatCurrency(totals.wasted)}</p>
+            <p className="text-xl font-bold mt-1 text-red-600">{fmtCurrency(totals.wasted)}</p>
           </CardContent>
         </Card>
         <Card data-testid="card-total-movements">
@@ -279,7 +285,7 @@ export default function ShiftReconciliation() {
           <CardContent className="pt-4 pb-3">
             <p className="text-xs text-muted-foreground">Unaccounted Loss</p>
             <p className={`text-xl font-bold mt-1 ${totals.variance < -0.01 ? "text-red-600" : "text-green-600"}`}>
-              {formatCurrency(Math.abs(totals.variance))}
+              {fmtCurrency(Math.abs(totals.variance))}
             </p>
           </CardContent>
         </Card>
@@ -323,19 +329,19 @@ export default function ShiftReconciliation() {
                     <div className="flex items-center gap-4">
                       <div className="text-right hidden sm:block">
                         <p className="text-xs text-muted-foreground">Consumed</p>
-                        <p className="font-semibold text-sm">{formatCurrency(g.consumedValue)}</p>
+                        <p className="font-semibold text-sm">{fmtCurrency(g.consumedValue)}</p>
                       </div>
                       {g.wastedValue > 0 && (
                         <div className="text-right hidden sm:block">
                           <p className="text-xs text-muted-foreground">Wasted</p>
-                          <p className="font-semibold text-sm text-red-600">{formatCurrency(g.wastedValue)}</p>
+                          <p className="font-semibold text-sm text-red-600">{fmtCurrency(g.wastedValue)}</p>
                         </div>
                       )}
                       {Math.abs(totalVarianceValue) > 0.01 && (
                         <div className="text-right hidden sm:block">
                           <p className="text-xs text-muted-foreground">Variance</p>
                           <p className={`font-semibold text-sm ${totalVarianceValue < 0 ? "text-red-600" : "text-blue-600"}`}>
-                            {totalVarianceValue < 0 ? "-" : "+"}{formatCurrency(Math.abs(totalVarianceValue))}
+                            {totalVarianceValue < 0 ? "-" : "+"}{fmtCurrency(Math.abs(totalVarianceValue))}
                           </p>
                         </div>
                       )}
@@ -415,7 +421,7 @@ export default function ShiftReconciliation() {
                                         {isLoss ? fmt(r.variance) : isGain ? `+${fmt(r.variance)}` : "0.00"}
                                       </TableCell>
                                       <TableCell className={`text-right text-sm tabular-nums ${isLoss ? "text-red-600" : "text-muted-foreground"}`}>
-                                        {Math.abs(r.varianceValue) > 0.01 ? (isLoss ? `-${formatCurrency(Math.abs(r.varianceValue))}` : formatCurrency(r.varianceValue)) : "—"}
+                                        {Math.abs(r.varianceValue) > 0.01 ? (isLoss ? `-${fmtCurrency(Math.abs(r.varianceValue))}` : fmtCurrency(r.varianceValue)) : "—"}
                                       </TableCell>
                                       <TableCell>
                                         <VarianceBadge variance={r.variance} pct={Math.abs(r.variancePct)} />
@@ -479,7 +485,7 @@ export default function ShiftReconciliation() {
                                     <TableCell className="text-sm text-muted-foreground whitespace-nowrap">{m.chefName ?? "—"}</TableCell>
                                     <TableCell className="text-sm text-muted-foreground">{m.station ?? "—"}</TableCell>
                                     <TableCell className="text-right text-sm">
-                                      {m.ingredientCostPrice ? formatCurrency(Math.abs(Number(m.ingredientCostPrice) * qty)) : "—"}
+                                      {m.ingredientCostPrice ? fmtCurrency(Math.abs(Number(m.ingredientCostPrice) * qty)) : "—"}
                                     </TableCell>
                                   </TableRow>
                                 );

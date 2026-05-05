@@ -25,8 +25,8 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-
-const currencySymbol = "AED";
+import { useAuth } from "@/lib/auth";
+import { formatCurrency } from "@shared/currency";
 
 const CATEGORY_COLORS: Record<string, string> = {
   cooking_error: "#f97316",
@@ -91,6 +91,11 @@ function KpiCard({
 }
 
 function TargetGauge({ current, target, status }: { current: number; target: number; status: string }) {
+  const { user } = useAuth();
+  const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const currencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (v: number) => formatCurrency(v, currency, { position: currencyPosition, decimals: currencyDecimals });
   const pct = target > 0 ? Math.min(100, (current / target) * 100) : 0;
   const barColor = status === "exceeded" ? "bg-red-500" : status === "warning" ? "bg-amber-500" : "bg-green-500";
   const textColor = status === "exceeded" ? "text-red-600" : status === "warning" ? "text-amber-600" : "text-green-600";
@@ -109,8 +114,8 @@ function TargetGauge({ current, target, status }: { current: number; target: num
         />
       </div>
       <div className="flex justify-between text-xs text-muted-foreground">
-        <span>{currencySymbol}{current.toFixed(2)} used</span>
-        <span>Target: {currencySymbol}{target.toFixed(2)}</span>
+        <span>{fmt(current)} used</span>
+        <span>Target: {fmt(target)}</span>
       </div>
     </div>
   );
@@ -140,6 +145,11 @@ function SortHeader({ col, currentCol, dir, onClick, children }: {
 function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void }) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const currencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (v: number) => formatCurrency(v, currency, { position: currencyPosition, decimals: currencyDecimals });
   const [recoveryType, setRecoveryType] = useState("");
   const [recoveryValue, setRecoveryValue] = useState("");
   const [showVoidConfirm, setShowVoidConfirm] = useState(false);
@@ -193,11 +203,11 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Unit Cost</p>
-              <p>{currencySymbol}{Number(entry.unit_cost ?? 0).toFixed(2)}</p>
+              <p>{fmt(Number(entry.unit_cost ?? 0))}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Total Cost</p>
-              <p className="font-semibold text-destructive">{currencySymbol}{totalCost.toFixed(2)}</p>
+              <p className="font-semibold text-destructive">{fmt(totalCost)}</p>
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Preventable</p>
@@ -247,7 +257,7 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
             </div>
             {recoveryType && recoveryType !== "none" && (
               <div className="space-y-1.5">
-                <Label className="text-xs">Recovery Value ({currencySymbol})</Label>
+                <Label className="text-xs">Recovery Value ({currency})</Label>
                 <Input
                   type="number"
                   min="0"
@@ -265,7 +275,7 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
               <div className="flex items-center justify-between text-xs px-3 py-2 bg-green-50 dark:bg-green-950/20 rounded-lg border border-green-200">
                 <span className="text-green-700 dark:text-green-300">Net Loss after Recovery</span>
                 <span className="font-semibold text-green-800 dark:text-green-200" data-testid="net-loss-value">
-                  {currencySymbol}{netLoss.toFixed(2)}
+                  {fmt(netLoss)}
                 </span>
               </div>
             )}
@@ -328,6 +338,11 @@ function EntryDetailPanel({ entry, onClose }: { entry: any; onClose: () => void 
 export default function WastageDashboard() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const currency = (user?.tenant?.currency?.toUpperCase() || "USD") as string;
+  const currencyPosition = (user?.tenant?.currencyPosition || "before") as "before" | "after";
+  const currencyDecimals = user?.tenant?.currencyDecimals ?? 2;
+  const fmt = (v: number) => formatCurrency(v, currency, { position: currencyPosition, decimals: currencyDecimals });
 
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date();
@@ -563,7 +578,7 @@ export default function WastageDashboard() {
               </Select>
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Min Cost ({currencySymbol})</Label>
+              <Label className="text-xs">Min Cost ({currency})</Label>
               <Input
                 type="number"
                 className="h-8 w-24 text-sm"
@@ -597,7 +612,7 @@ export default function WastageDashboard() {
             <KpiCard
               testId="kpi-today-cost"
               title="Today's Waste Cost"
-              value={`${currencySymbol}${Number(today.totalCost ?? 0).toFixed(2)}`}
+              value={fmt(Number(today.totalCost ?? 0))}
               sub={`${today.entries ?? 0} entries`}
               icon={DollarSign}
               color="bg-red-500"
@@ -605,7 +620,7 @@ export default function WastageDashboard() {
             <KpiCard
               testId="kpi-week-vs-target"
               title="This Week"
-              value={`${currencySymbol}${Number(week.totalCost ?? 0).toFixed(2)}`}
+              value={fmt(Number(week.totalCost ?? 0))}
               sub={`${week.entries ?? 0} entries`}
               icon={TrendingDown}
               color="bg-amber-500"
@@ -622,7 +637,7 @@ export default function WastageDashboard() {
               testId="kpi-preventable"
               title="Preventable %"
               value={`${today.preventablePct ?? 0}%`}
-              sub={`${currencySymbol}${Number(today.preventableCost ?? 0).toFixed(2)} preventable`}
+              sub={`${fmt(Number(today.preventableCost ?? 0))} preventable`}
               icon={ShieldCheck}
               color="bg-blue-500"
             />
@@ -660,7 +675,7 @@ export default function WastageDashboard() {
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip
                         labelFormatter={(v) => CATEGORY_LABELS[v as string] ?? v}
-                        formatter={(v: any) => [`${currencySymbol}${Number(v).toFixed(2)}`, "Cost"]}
+                        formatter={(v: any) => [fmt(Number(v)), "Cost"]}
                         contentStyle={{ fontSize: 12 }}
                       />
                       <Bar dataKey="cost" radius={[4, 4, 0, 0]} fill="#f97316" />
@@ -684,7 +699,7 @@ export default function WastageDashboard() {
                       <XAxis dataKey="date" tick={{ fontSize: 11 }} />
                       <YAxis tick={{ fontSize: 11 }} />
                       <Tooltip
-                        formatter={(v: any) => [`${currencySymbol}${Number(v).toFixed(2)}`, "Cost"]}
+                        formatter={(v: any) => [fmt(Number(v)), "Cost"]}
                         contentStyle={{ fontSize: 12 }}
                       />
                       <Line
@@ -769,7 +784,7 @@ export default function WastageDashboard() {
                               {entry.quantity} {entry.unit}
                             </td>
                             <td className="px-4 py-3 text-right font-mono">
-                              {entry.total_cost ? `${currencySymbol}${Number(entry.total_cost).toFixed(2)}` : "—"}
+                              {entry.total_cost ? fmt(Number(entry.total_cost)) : "—"}
                             </td>
                             <td className="px-4 py-3 text-muted-foreground">{entry.chef_name ?? "—"}</td>
                             <td className="px-4 py-3 text-muted-foreground">{entry.counter_name ?? "—"}</td>
@@ -855,14 +870,14 @@ export default function WastageDashboard() {
                         >
                           <td className="px-4 py-3 font-medium">{chef.chefName ?? "Unknown"}</td>
                           <td className="px-4 py-3 text-right">{chef.entries}</td>
-                          <td className="px-4 py-3 text-right font-mono">{currencySymbol}{Number(chef.totalCost).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{fmt(Number(chef.totalCost))}</td>
                           <td className="px-4 py-3 text-right">
                             <Badge variant={chef.preventablePct > 60 ? "destructive" : "secondary"}>
                               {chef.preventablePct}%
                             </Badge>
                           </td>
                           <td className="px-4 py-3 text-right font-mono">
-                            {currencySymbol}{Number(chef.avgPerEntry).toFixed(2)}
+                            {fmt(Number(chef.avgPerEntry))}
                           </td>
                         </tr>
                       ))}
@@ -904,7 +919,7 @@ export default function WastageDashboard() {
                           <td className="px-4 py-3 text-muted-foreground">{item.unit ?? "—"}</td>
                           <td className="px-4 py-3 text-right">{item.entries}</td>
                           <td className="px-4 py-3 text-right">{Number(item.totalQty).toFixed(2)}</td>
-                          <td className="px-4 py-3 text-right font-mono">{currencySymbol}{Number(item.totalCost).toFixed(2)}</td>
+                          <td className="px-4 py-3 text-right font-mono">{fmt(Number(item.totalCost))}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -924,7 +939,7 @@ export default function WastageDashboard() {
                         <YAxis tick={{ fontSize: 11 }} />
                         <Tooltip
                           formatter={(v: any, name: string) => [
-                            `${currencySymbol}${Number(v).toFixed(2)}`,
+                            fmt(Number(v)),
                             name === "wastageCost" ? "Wastage" : "Revenue",
                           ]}
                           contentStyle={{ fontSize: 12 }}
@@ -954,8 +969,8 @@ export default function WastageDashboard() {
                         ) : revenueComparison.map((row: any, i: number) => (
                           <tr key={i} className="hover:bg-muted/30" data-testid={`rev-row-${i}`}>
                             <td className="px-4 py-3">{String(row.date).slice(0, 10)}</td>
-                            <td className="px-4 py-3 text-right font-mono">{currencySymbol}{Number(row.revenue).toFixed(2)}</td>
-                            <td className="px-4 py-3 text-right font-mono">{currencySymbol}{Number(row.wastageCost).toFixed(2)}</td>
+                            <td className="px-4 py-3 text-right font-mono">{fmt(Number(row.revenue))}</td>
+                            <td className="px-4 py-3 text-right font-mono">{fmt(Number(row.wastageCost))}</td>
                             <td className="px-4 py-3 text-right">
                               {row.ratio != null ? (
                                 <Badge variant={row.ratio > 5 ? "destructive" : "secondary"}>{row.ratio}%</Badge>
