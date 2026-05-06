@@ -22,10 +22,8 @@ import {
 import { useTheme, type ThemePreference } from "@/hooks/use-theme";
 import PrintQueuePanel from "@/components/pos/PrintQueuePanel";
 import {
-  SubscriptionTier,
   BusinessType,
   businessConfig,
-  tierPricing,
 } from "@/lib/subscription";
 import { timezones, getTimezoneByIana, formatTimeInZone, formatDateInZone } from "@/lib/timezones";
 import { currencyMap, formatCurrency as sharedFormatCurrency, type CurrencyCode } from "@shared/currency";
@@ -256,7 +254,6 @@ export default function SettingsPage() {
   const [compoundTax, setCompoundTax] = useState(false);
   const [serviceCharge, setServiceCharge] = useState("0");
   const [businessType, setBusinessType] = useState<BusinessType>("casual_dining");
-  const [plan, setPlan] = useState<SubscriptionTier>("basic");
   const [gstin, setGstin] = useState("");
   const [cgstRate, setCgstRate] = useState("9");
   const [sgstRate, setSgstRate] = useState("9");
@@ -308,7 +305,6 @@ export default function SettingsPage() {
       setCompoundTax((tenant as any).compoundTax ?? false);
       setServiceCharge((tenant as any).serviceCharge || "0");
       setBusinessType(((tenant as any).businessType as BusinessType) || "casual_dining");
-      setPlan((tenant.plan as SubscriptionTier) || "basic");
       setGstin((tenant as any).gstin || "");
       setCgstRate((tenant as any).cgstRate || "9");
       setSgstRate((tenant as any).sgstRate || "9");
@@ -478,15 +474,6 @@ export default function SettingsPage() {
     })
   );
 
-  const plansList: { value: SubscriptionTier; label: string; price: number; description: string }[] = Object.entries(tierPricing).map(
-    ([key, config]) => ({
-      value: key as SubscriptionTier,
-      label: config.label,
-      price: config.price,
-      description: config.description,
-    })
-  );
-
   const taxTypeLabels: Record<string, string> = {
     vat: t("taxVat"),
     gst: t("taxGst"),
@@ -567,31 +554,6 @@ export default function SettingsPage() {
                         {businessConfig[businessType].badges.map((badge) => (
                           <Badge key={badge} variant="secondary" className="bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200">{badge}</Badge>
                         ))}
-                      </div>
-                    )}
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{t("subscriptionPlan")}</Label>
-                    <Select value={plan} onValueChange={(val) => setPlan(val as SubscriptionTier)}>
-                      <SelectTrigger data-testid="select-plan"><SelectValue placeholder={t("selectPlan")} /></SelectTrigger>
-                      <SelectContent>
-                        {plansList.map((p) => (
-                          <SelectItem key={p.value} value={p.value} data-testid={`option-plan-${p.value}`}>
-                            <div className="flex items-center gap-2">
-                              <span>{p.label}</span>
-                              <span className="text-xs text-muted-foreground">${p.price}/mo</span>
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {plan && tierPricing[plan] && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <Badge variant="outline" className="border-amber-300 text-amber-700 dark:border-amber-600 dark:text-amber-300">
-                          <Crown className="h-3 w-3 mr-1" />
-                          {tierPricing[plan].label} — ${tierPricing[plan].price}/mo
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">{tierPricing[plan].description}</span>
                       </div>
                     )}
                   </div>
