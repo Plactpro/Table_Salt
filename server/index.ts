@@ -135,7 +135,7 @@ export function log(message: string, source = "express") {
 // Health check cache — 5-second TTL to prevent overloading the DB
 let healthCache: { data: Record<string, unknown>; statusCode: number; expiresAt: number } | null = null;
 
-// Health check — public, no auth, used by AWS ALB target group health checks and super admin dashboard
+// Health check — public, no auth, used by platform health probes and super admin dashboard
 app.get("/api/health", async (_req: Request, res: Response) => {
   const now = Date.now();
   if (healthCache && healthCache.expiresAt > now) {

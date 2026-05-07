@@ -88,6 +88,13 @@ export async function setupSecurity(app: Express) {
     })
   );
 
+  app.use((_req: Request, res: Response, next: NextFunction) => {
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(self), payment=()");
+    next();
+  });
+}
+
+export async function setupRateLimits(app: Express) {
   const isTest = process.env.NODE_ENV === "test";
 
   // Redis store for rate limiting — shared across all Node.js processes/instances.
@@ -171,11 +178,6 @@ export async function setupSecurity(app: Express) {
   });
 
   app.use("/api/upload", uploadLimiter);
-
-  app.use((_req: Request, res: Response, next: NextFunction) => {
-    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(self), payment=()");
-    next();
-  });
 }
 
 export function setupCsrf(app: Express) {

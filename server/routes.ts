@@ -6,7 +6,7 @@ import path from "path";
 import fs from "fs";
 import { setupAuth, requireAuth } from "./auth";
 import { registerAdminRoutes } from "./admin-routes";
-import { setupCsrf, setupIpAllowlistMiddleware } from "./security";
+import { setupCsrf, setupIpAllowlistMiddleware, setupRateLimits } from "./security";
 import { uploadFile } from "./services/file-storage";
 import { withCircuitBreaker } from "./lib/circuit-breaker";
 import allergyAckRouter from "./routes/kds-allergy-ack";
@@ -95,6 +95,7 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   setupAuth(app);
+  await setupRateLimits(app);
   setupCsrf(app);
   setupIpAllowlistMiddleware(app);
 
