@@ -649,7 +649,7 @@ export default function SettingsPage() {
                 <form onSubmit={handleTimezoneSubmit} className="space-y-4">
                   <div className="space-y-2">
                     <Label>{t("timezone")}</Label>
-                    <Select value={timezone} onValueChange={setTimezone}>
+                    <Select key={`select-timezone-${tenant?.id ?? "loading"}`} value={timezone} onValueChange={setTimezone}>
                       <SelectTrigger data-testid="select-timezone">
                         <SelectValue placeholder={t("selectTimezone")}>
                           {selectedTz ? `${selectedTz.flag} ${selectedTz.label} (${selectedTz.offset})` : timezone}
@@ -840,9 +840,9 @@ export default function SettingsPage() {
                 <form onSubmit={handleCurrencySubmit} className="space-y-4">
                   <div className="space-y-2">
                     <Label>{t("currency")}</Label>
-                    <Select value={currency} onValueChange={setCurrency}>
+                    <Select key={`select-currency-${tenant?.id ?? "loading"}`} value={currency} onValueChange={setCurrency}>
                       <SelectTrigger data-testid="select-currency">
-                        <SelectValue>
+                        <SelectValue placeholder="Select currency">
                           {currencyMap[currency as CurrencyCode]
                             ? `${currencyMap[currency as CurrencyCode].symbol} ${currencyMap[currency as CurrencyCode].name} (${currency})`
                             : currency}
