@@ -204,4 +204,4 @@ Top 2 to consider next (2026-05-01):
   risk is theoretical (test data only); post-launch becomes real once
   customer PII enters DB. Trigger: first paying customer onboarded OR
   30 days post-launch, whichever first. Allow ~3 hours for procedure
-  including pre-flight, snapshot, rotation, verification.
+  including pre-flight, snapshot, rotation, verification. 
