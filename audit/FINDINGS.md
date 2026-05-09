@@ -1,4 +1,5 @@
 # Audit Findings Register
+> Live tester-driven backlog: see audit/00-backlog.md.
 
 | ID | Severity | Category | File | Line(s) | Description | Status |
 |----|----------|----------|------|---------|-------------|--------|
@@ -131,9 +132,9 @@
 | F-120 | High | Money | `server/routers/restaurant-billing.ts` + `orders.ts` | 282 vs 557 | GST rate defaults inconsistent: orders use `cgstRate \|\| 0`, billing uses `cgstRate ?? 9` — produces different CGST/SGST splits for same tenant | Fixed (2026-04-15, side effect of F-121) |
 | F-121 | High | Money | `server/routers/restaurant-billing.ts` | 213-340 | Bill creation trusts ALL client-submitted monetary values (subtotal, tax, discount, serviceCharge, total) — no reconciliation against referenced order | Fixed (2026-04-15) |
 | F-121-FU | Medium | Auth | `server/routers/orders.ts` | 1164-1168 | `PATCH /api/order-items/:id` passes `req.body` directly to `updateOrderItem(Record<string, any>)` — no field allowlist; any field including `price` can be modified by any authenticated user. Order totals not recalculated after item edits. | Fixed (2026-04-15) |
-| F-122 | Medium | Money | `server/routers/restaurant-billing.ts` | 445-466 | Payment-time tax validation uses client-tampered bill.subtotal as basis — cannot catch a tampered bill | Open |
-| F-123 | Medium | Money | `server/routers/orders.ts` | 492,504 | Per-item prices not rounded after modifier application before subtotal accumulation — float drift across many items | Open |
-| F-124 | Medium | Money | `server/routers/orders.ts` | 546 | `manualDiscountAmount` accepted from client without server-side cap at subtotal — supervisor check only examines percentage field | Open |
+| F-122 | Medium | Money | `server/routers/restaurant-billing.ts` | 445-466 | Payment-time tax validation uses client-tampered bill.subtotal as basis — cannot catch a tampered bill | Open (reframed; see 00-backlog F-284 — actual bug is payment idempotency on paid bills, not subtotal validation) |
+| F-123 | Medium | Money | `server/routers/orders.ts` | 492,504 | Per-item prices not rounded after modifier application before subtotal accumulation — float drift across many items | Open (severity escalated; see 00-backlog F-285 — testers confirmed bug is broader: shift close ignores cash sales entirely, not just rounding drift) |
+| F-124 | Medium | Money | `server/routers/orders.ts` | 546 | `manualDiscountAmount` accepted from client without server-side cap at subtotal — supervisor check only examines percentage field | Open (blocked; see 00-backlog F-282 — discount UI does not exist in BillPreviewModal, cannot test the server-side cap) |
 | F-125 | Medium | Money | `shared/currency.ts` | 160-167 | Only 6 of 24 supported currencies have denomination/rounding configs — JPY (0 decimals) has no `ROUND_1` config | Open |
 | F-126 | Medium | Money | `shared/currency.ts` | 171-172 | `applyRounding` for ROUND_0.05/ROUND_0.25 produces float artifacts (e.g., 1.0500000000000003) — no re-rounding | Open |
 | F-127 | Medium | Money | `shared/currency.ts` | 138 | `convertCurrency()` result not rounded to target currency's decimal places — callers must round | Open |
