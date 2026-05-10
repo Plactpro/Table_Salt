@@ -73,7 +73,7 @@ export async function finalizeBillCompletion(opts: {
   });
 
   // 3. Complete the order
-  await storage.updateOrder(bill.orderId, bill.tenantId, { status: "completed", paymentMethod: paymentMethod.toLowerCase() });
+  await storage.updateOrder(bill.orderId, bill.tenantId, { status: "completed", paymentStatus: "paid", paidAt: new Date(), paymentMethod: paymentMethod.toLowerCase() });
 
   // 4. Free the table and return any special resources
   if (bill.tableId) {
@@ -591,7 +591,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       });
 
       if (newStatus === "paid") {
-        await storage.updateOrder(bill.orderId, user.tenantId, { status: "completed", paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
+        await storage.updateOrder(bill.orderId, user.tenantId, { status: "completed", paymentStatus: "paid", paidAt: new Date(), paymentMethod: payments[0]?.paymentMethod?.toLowerCase() || "cash" });
         if (bill.tableId) {
           try { await storage.updateTable(bill.tableId, user.tenantId, { status: "free" }); } catch (_) {}
           returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
@@ -766,7 +766,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
         voidedBy: user.id,
       });
 
-      await storage.updateOrder(bill.orderId, user.tenantId, { status: "voided" });
+      await storage.updateOrder(bill.orderId, user.tenantId, { status: "voided", paymentStatus: "voided" });
       if (bill.tableId) {
         try { await storage.updateTable(bill.tableId, user.tenantId, { status: "free" }); } catch (_) {}
         returnResourcesFromTable(bill.tableId, user.tenantId, false).catch(() => {});
@@ -919,6 +919,7 @@ export function registerRestaurantBillingRoutes(app: Express): void {
       const newTotalRefunded = totalRefunded + Number(amount);
       const newPaymentStatus = newTotalRefunded >= totalPaid - 0.01 ? "refunded" : "partially_refunded";
       await storage.updateBill(bill.id, user.tenantId, { paymentStatus: newPaymentStatus });
+      // orders.payment_status not updated here — refund state is canonical on bills only. See audit/f286-phase1-static-investigation-2026-05-11.md Q-286-Q3.
 
       // Loyalty adjustments
       const customerId = bill.customerId;
