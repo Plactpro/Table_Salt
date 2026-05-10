@@ -2773,7 +2773,7 @@ export class DatabaseStorage implements IStorage {
     let totalRevenue = 0;
     for (const p of payments) {
       if (!p.isRefund) {
-        const method = p.paymentMethod;
+        const method = (p.paymentMethod || "").toUpperCase();
         revenueByMethod[method] = (revenueByMethod[method] ?? 0) + Number(p.amount);
         totalRevenue += Number(p.amount);
       }
