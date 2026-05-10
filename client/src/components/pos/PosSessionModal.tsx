@@ -147,7 +147,7 @@ export function CloseShiftDialog({
 
   const isManagerOrOwner = user?.role === "owner" || user?.role === "manager";
 
-  const expectedCash = report ? (Number(report.session?.openingFloat ?? 0) + (report.revenueByMethod?.CASH ?? 0)) : 0;
+  const expectedCash = Number(report?.expectedCash ?? 0);
   const actualCash = parseFloat(cashCount) || 0;
   const variance = cashCount ? actualCash - expectedCash : null;
 
@@ -158,7 +158,7 @@ export function CloseShiftDialog({
   const handlePrintReport = () => {
     const source = report || reportData;
     if (!source) return;
-    const expCash = Number(source.session?.openingFloat ?? 0) + (source.revenueByMethod?.CASH ?? 0);
+    const expCash = Number(source?.expectedCash ?? 0);
     const actCash = parseFloat(cashCount) || 0;
     const varianceVal = cashCount ? actCash - expCash : null;
     const methodRows = Object.entries(source.revenueByMethod || {}).map(([m, amt]: [string, number]) =>
@@ -180,7 +180,7 @@ export function CloseShiftDialog({
       <h2 style="font-size:.9rem">${t("cashReconciliation")}</h2>
       <table>
         <tr><td>${t("openingFloat")}</td><td>${fmt(source.session?.openingFloat ?? 0)}</td></tr>
-        <tr><td>${t("cashSales")}</td><td>${fmt(source.revenueByMethod?.CASH ?? 0)}</td></tr>
+        <tr><td>${t("cashSales")}</td><td>${fmt(source?.cashSales ?? 0)}</td></tr>
         <tr><td><strong>${t("expectedCash")}</strong></td><td><strong>${fmt(expCash)}</strong></td></tr>
         ${cashCount ? `<tr><td>${t("countedCash")}</td><td>${fmt(actCash)}</td></tr>
         <tr><td><strong>${t("variance")}</strong></td><td class="${varianceVal! < 0 ? "var-neg" : "var-pos"}"><strong>${varianceVal! >= 0 ? "+" : ""}${fmt(varianceVal!)}</strong></td></tr>` : ""}
