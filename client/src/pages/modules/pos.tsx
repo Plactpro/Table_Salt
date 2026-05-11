@@ -107,6 +107,7 @@ interface OrderTab {
   sentCartKeys: string[];
   heldOrderId?: string;
   heldOrderVersion?: number;
+  isSplit?: boolean;
   customerName?: string;
   customerPhone?: string;
   deliveryAddress?: string;
@@ -1162,11 +1163,24 @@ export default function POSPage() {
     const clientOrderId = crypto.randomUUID ? crypto.randomUUID() : `pos-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     const sentKeys = new Set(tab.sentCartKeys);
     const tabIsDineIn = tab.orderType === "dine_in";
-    const isAddonKot = sentKeys.size > 0 && tabIsDineIn;
+    // F-283 Path B fix: split mode is structurally different from addon-KOT and must NOT trigger
+    // isAddonKot's discount/offer suppression downstream. Split children legitimately inherit a
+    // proportional share of the parent discount (Q-283-Q5 handled in splitOrderMutation), and they
+    // are independent orders, not addons. Excluding isSplit from isAddonKot keeps the addon-path
+    // money math (suppress parent discount on addons) untouched for non-split flows.
+    const isSplit = !!tab.isSplit;
+    const isAddonKot = sentKeys.size > 0 && tabIsDineIn && !isSplit;
 
-    const itemsToSend = isAddonKot
-      ? tab.cart.filter(c => !sentKeys.has(c.cartKey))
-      : tab.cart;
+    // Persistence set: in split mode, persist the FULL cart so each child gets full order_items
+    // rows (the F-283 root-cause fix — empty children caused "View Bill" HTTP 400). In pure
+    // addon-KOT mode, persist only new items to avoid duplicate DB rows for already-cooking items.
+    // The per-item isAddon flag at the orderItems.push sites further controls KOT firing on a
+    // per-item basis (amended Q-283-Q1 semantics — see commit body).
+    const itemsToSend = isSplit
+      ? tab.cart
+      : isAddonKot
+        ? tab.cart.filter(c => !sentKeys.has(c.cartKey))
+        : tab.cart;
 
     const orderItems: Record<string, unknown>[] = [];
     for (const c of itemsToSend) {
@@ -1177,7 +1191,7 @@ export default function POSPage() {
           quantity: c.quantity, price: c.price.toFixed(2),
           notes: c.comboItems.map((ci) => ci.name).join(", ") + (c.notes ? ` | ${c.notes}` : ""),
           isCombo: true, comboId: c.comboId || undefined,
-          isAddon: isAddonKot,
+          isAddon: sentKeys.has(c.cartKey),
         });
       } else {
         const foodMod = c.foodModification;
@@ -1193,7 +1207,7 @@ export default function POSPage() {
           quantity: c.quantity, price: c.price.toFixed(2),
           notes: c.notes || null,
           modifiers: modifiersData,
-          isAddon: isAddonKot,
+          isAddon: sentKeys.has(c.cartKey),
           metadata: hasActiveMod ? { foodModification: foodMod } : undefined,
         });
       }
@@ -1422,17 +1436,88 @@ export default function POSPage() {
     mutationFn: async (groups: CartItem[][]) => {
       const nonEmpty = groups.filter(g => g.length > 0);
       const parentOrderId: string | undefined = activeTab?.heldOrderId || undefined;
+      const parentVersion: number | undefined = activeTab?.heldOrderVersion;
       const originalSentKeys = new Set(activeTab?.sentCartKeys ?? []);
+
+      // F-283 guard: heldOrderId/heldOrderVersion must stay in sync upstream. If parent has been
+      // KOT'd (heldOrderId set) but version is missing, the Q-283-Q2 parent PATCH below will 400
+      // on missing-version and leave children orphaned. Fail fast before any child POST fires —
+      // hitting this in production signals a regression in the hold/recall flow upstream.
+      if (parentOrderId && parentVersion === undefined) {
+        throw new Error(
+          "F-283: heldOrderId is set but heldOrderVersion is undefined — cannot PATCH parent order safely. " +
+          "Aborting split to prevent version-conflict 400 and parent-state orphaning."
+        );
+      }
+
+      // Q-283-Q5: proportional discount apportionment by subtotal. Parent's manual discount must
+      // split across children weighted by each child's subtotal — without this, the
+      // ...(activeTab!) spread below would carry the parent's FULL discount to each child,
+      // multiplying it N times.
+      const parentDiscount = parseFloat(activeTab?.discount ?? "0") || 0;
+      const parentSubtotal = (activeTab?.cart ?? []).reduce(
+        (sum, c) => sum + c.price * c.quantity,
+        0
+      );
+
       const results: { id: string }[] = [];
       for (const group of nonEmpty) {
         const alreadySentInGroup = group.filter(c => originalSentKeys.has(c.cartKey)).map(c => c.cartKey);
-        const tabForGroup: OrderTab = { ...(activeTab!), id: makeid(), cart: group, sentCartKeys: alreadySentInGroup };
+        const splitSubtotal = group.reduce((sum, c) => sum + c.price * c.quantity, 0);
+        const proportionalDiscount =
+          parentSubtotal > 0 ? (parentDiscount * splitSubtotal) / parentSubtotal : 0;
+
+        // F-283 Path B: isSplit: true tells buildOrderData to (a) persist full cart, (b) skip
+        // isAddonKot's discount/offer suppression. Per-item isAddon stamping (B2 amendment of
+        // Q-283-Q1) handles KOT firing on a per-item basis inside buildOrderData.
+        // The discount override below replaces the parent's full discount spread via ...(activeTab!)
+        // with the proportional amount (Q-283-Q5).
+        const tabForGroup: OrderTab = {
+          ...(activeTab!),
+          id: makeid(),
+          cart: group,
+          sentCartKeys: alreadySentInGroup,
+          isSplit: true,
+          discount: proportionalDiscount > 0 ? proportionalDiscount.toFixed(2) : "",
+        };
         const orderData = buildOrderData(undefined, tabForGroup);
-        const payload = parentOrderId ? { ...orderData, parentOrderId } : orderData;
+
+        // Q-283-Q6: stamp isSplitBill on children's payload so the server marks them as split children.
+        // parentOrderId is already set inside buildOrderData (pos.tsx ~L1237) when tab.heldOrderId is
+        // populated; the explicit override here is defensive belt-and-braces for the local-cart-split
+        // case where heldOrderId is undefined and we still want the children labeled.
+        const payload = {
+          ...orderData,
+          isSplitBill: true,
+          ...(parentOrderId ? { parentOrderId } : {}),
+        };
         const res = await apiRequest("POST", "/api/orders", payload);
         if (!res.ok) throw new Error("Failed to place split order");
         results.push((await res.json()) as { id: string });
       }
+
+      // Q-283-Q2: mark parent order as split + cancelled, AFTER all children succeed. If any
+      // child POST failed above, the throw aborts before we reach here — parent stays in_progress
+      // so the user can retry without orphaning the parent.
+      // Note: F-289 territory — PATCH /api/orders/:id uses body-spread at server/routers/orders.ts:938.
+      // If F-289 ever hardens that endpoint with a field whitelist, both `isSplitBill` and `status`
+      // must be added to the whitelist or this disposition silently no-ops. Warn-not-throw on PATCH
+      // failure: children are valid orders even if parent disposition fails; user can void parent
+      // manually via the normal void flow.
+      if (parentOrderId && parentVersion !== undefined) {
+        const patchRes = await apiRequest("PATCH", `/api/orders/${parentOrderId}`, {
+          version: parentVersion,
+          status: "cancelled",
+          isSplitBill: true,
+        });
+        if (!patchRes.ok) {
+          console.warn(
+            `F-283 Q-283-Q2: parent order ${parentOrderId} PATCH failed (${patchRes.status}). ` +
+            `Children created but parent still in_progress. User must manually void parent.`
+          );
+        }
+      }
+
       return { orders: results, groups: nonEmpty };
     },
     onSuccess: ({ orders, groups }) => {
