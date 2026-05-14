@@ -96,6 +96,8 @@ These are in the single-outlet dine-in workflow and a restaurant owner would not
 
 **F-275 — Stale Bill Preview does not trigger a version conflict.** If Tab 2 modifies an order while Tab 1 holds a stale Bill Preview, Tab 1's payment proceeds with the old total — customer charged the wrong amount. WATCH — concurrent two-tab same-order editing is outside the target single-outlet workflow. Promote to MUST-FIX if multi-device same-order editing enters the workflow scope.
 
+**F-293 — npm run check is red on main.** Pre-existing TypeScript errors in server/admin-routes.ts, server/routers/permissions.ts, server/routers/pricing.ts, and several client files (App.tsx and others). Not a user-facing blocker, but it means no PR can be type-checked clean until fixed — every fix after this point loses its type-check safety net. Status: tracked, not yet scoped. Next action: dedicated investigation branch to triage and fix, separate from launch-blocker work.
+
 **F-299 — KDS does not update when a sent item is removed from the POS cart.** A removed item stays on the KDS as "to be prepared." Kitchen wastes ingredients on a cancelled item. Operationally annoying, not service-stopping.
 
 **F-301 — Voided orders stay in "Served" status after a successful void.** The void completes but the status does not transition. The order looks active and may be re-billed by mistake; shift reports may miscount. Operational confusion, not financial loss.
