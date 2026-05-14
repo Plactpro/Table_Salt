@@ -4,6 +4,7 @@ import { Loader2, History } from "lucide-react";
 import BillPreviewModal from "@/components/pos/BillPreviewModal";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth";
+import { apiRequest } from "@/lib/queryClient";
 import type { Order, OrderItem, Table } from "@shared/schema";
 
 type OrderWithItems = Order & { items?: OrderItem[] };
@@ -27,6 +28,15 @@ export default function BillViewPage() {
 
   const { data: tables = [] } = useQuery<Table[]>({ queryKey: ["/api/tables"] });
   const tableMap = Object.fromEntries(tables.map((t) => [t.id, t.number]));
+
+  const { data: activeSession } = useQuery<{ id: string; shiftName: string | null; openedAt: string } | null>({
+    queryKey: ["/api/pos/session"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", "/api/pos/session");
+      return res.json();
+    },
+    staleTime: 60_000,
+  });
 
   if (isLoading) {
     return (
@@ -91,7 +101,7 @@ export default function BillViewPage() {
         tableId={order.tableId ?? undefined}
         tableNumber={tableNumber}
         orderId={order.id}
-        posSessionId={undefined}
+        posSessionId={activeSession?.id ?? undefined}
         onPaymentComplete={() => navigate("/orders")}
         fullPage={true}
       />
