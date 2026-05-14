@@ -178,3 +178,87 @@ posSessionId={activeSession?.id ?? undefined}
 - **Does the pos.tsx-inline modal path actually persist `pos_session_id`?** [UNVERIFIED] Static reading suggests yes; the 100% NULL production data does not rule it out (could be that all production traffic flows through bill-view). Worth confirming with a targeted DB query after Phase 3 ships: create a bill via the `pos.tsx`-inline modal (place an order → see Bill Preview popup → complete payment), then check `pos_session_id` on that bill row.
 - **Are there other bill-creation surfaces not covered by this trace?** [UNVERIFIED] The grep found 4 files referencing `posSessionId`; only `pos.tsx` and `bill-view.tsx` host bill-creation. Razorpay-finalize (server-side path at `server/routers/restaurant-billing.ts:62/76`) and kiosk/Stripe (`server/routers/billing.ts:258-294`, noted in F-286 Q-286-Q6) may create bills via a different client surface or server-derived. These are out of scope for the F-294 client-drop trace but should be checked as part of Option C's design.
 - **Should server-side defense be filed regardless?** Yes — even after the client fix lands, a missing `pos_session_id` from any future bill-creation entry point would silently re-introduce F-294 with no visible symptom until shift-close verification fails. Recommend filing a follow-up to add a server-side check (warning log at minimum, or required field) once the client paths are stable.
+
+---
+
+## 9. Phase 2b — pos.tsx-inline path verification
+
+**Date:** 2026-05-14 (same session as Phase 2)
+**Question:** is the `pos.tsx`-inline BillPreviewModal (mounted at `pos.tsx:2832-2851`) also broken in practice, or is it healthy?
+**Answer:** **HEALTHY for the launch workflow (single-outlet dine-in).** The inline modal is structurally never reached on the dine-in path — every dine-in flow that could open it instead navigates to `bill-view.tsx`. For takeaway/delivery (out of launch scope), the inline path is structurally healthy in steady state with one minor race-condition caveat noted below. **Phase 3 fix is a one-file edit on `bill-view.tsx`.**
+
+### 9.1 The prop expression [VERIFIED]
+
+`pos.tsx:2846` passes `posSessionId={posSessionId || undefined}`. The right-hand `posSessionId` is the `useState` value declared at `pos.tsx:368`. Not a stale closure, not a different variable shadowing — same identifier, same scope as the setter calls at `:764`, `:768`, `:2855`, `:2861`.
+
+### 9.2 Order-type gating: the inline modal is not used for dine-in [VERIFIED]
+
+Three distinct paths lead to "open the inline BillPreviewModal" (i.e., set `showBillModal = true` while `lastPlacedOrder` is truthy). All three exclude dine-in:
+
+**(a) Auto-open after place-order success.** `pos.tsx:1297-1342`. After a successful place-order:
+- `:1319` — `setLastPlacedOrder(snapshot)` always fires.
+- `:1320-1332` — **dine-in branch** (`if (isDineIn)`) updates active-tab state and does NOT call `setShowBillModal`.
+- `:1333-1336` — **else branch** (takeaway/delivery) calls `setShowBillModal(true)`.
+
+Dine-in orders therefore never auto-open the inline modal.
+
+**(b) "Bill" button on the last-placed-order banner.** `pos.tsx:2077`:
+```
+onClick={() => {
+  if (lastPlacedOrder?.tableId) { navigate(`/pos/bill/${lastPlacedOrder.orderId}`); }
+  else { setShowBillModal(true); }
+}}
+```
+Dine-in orders have a `tableId` → navigation to `bill-view.tsx`. Only orders without a table (takeaway/delivery) open the inline modal.
+
+**(c) Keyboard shortcut `[B]`.** `pos.tsx:1619-1627`:
+```
+if (e.key === "b" && cart.length > 0) {
+  const billOrderId = activeTab?.heldOrderId || lastPlacedOrder?.orderId;
+  if (billOrderId) { navigate(`/pos/bill/${billOrderId}`); }
+  else { setShowBillModal(true); }
+}
+```
+If any order id is known (held order or just-placed order), navigation goes to `bill-view.tsx`. The else branch can technically set `showBillModal = true` for a fresh cart with no placed order — but the inline modal at `:2832` is guarded by `{lastPlacedOrder && (...)}`, so if there's no `lastPlacedOrder` it does not render anyway. Net effect: the `[B]` shortcut never opens the inline modal in a state where it can actually create a bill.
+
+**Conclusion of 9.2:** every dine-in "view bill / pay bill" flow on the POS page routes through `bill-view.tsx` (the §5 drop site). The inline modal exists for takeaway/delivery only.
+
+### 9.3 Mount timing — could the inline modal open before session hydration? [VERIFIED — narrow theoretical window, not a production bug]
+
+The inline modal opens for takeaway/delivery via `setShowBillModal(true)` at `:1334`. That call is inside the place-order success handler, which can only fire after `handlePlaceOrder` was successfully called by the user.
+
+`posSessionId` hydration sequence:
+1. Page mount: `useState<string | null>(null)` at `:368` — initial value null.
+2. `useQuery` at `:752-757` fires `GET /api/pos/session`.
+3. `useEffect` at `:761-772` reads `activeSessionData`:
+   - If `undefined` (query still loading) — effect returns early, state stays null.
+   - If a session object — sets `posSessionId` and `posSession` from the response.
+   - If `null` (no active session) — clears state AND sets `showStartShift = true`, opening the blocking modal.
+
+The `StartShiftModal` (`PosSessionModal.tsx:64-95`) uses Radix `<Dialog>` with `onOpenChange={() => {}}` and `onPointerDownOutside={e => e.preventDefault()}` — it cannot be dismissed by the user. It blocks interaction with the rest of the POS UI via the Dialog overlay. So in steady state, the user cannot place an order without first having an active session (either pre-existing and hydrated by the query, or just-opened via the modal callback at `:2855`).
+
+**The theoretical race:** during the very first paint after page mount but before the `/api/pos/session` query resolves, `activeSessionData === undefined`, the effect early-returns, and `showStartShift` is still its initial `false`. If the user could trigger `handlePlaceOrder` in that window (~tens of ms), the inline modal would open with `posSessionId = null`. In practice:
+- The user must navigate to POS, see menu items, add to cart, configure order type, and click Place Order — all of this takes longer than the query latency.
+- This race would also affect the cart cache key (`posCartKey` at `:369`) and other state — i.e., it's not a F-294-specific bug; it's a generic "page loaded before session known" race.
+
+Flag this as `[HYPOTHESIS — narrow, not in production observation set]`. Not worth fixing as part of Phase 3 for F-294; can be addressed as a separate hardening if testers ever reproduce it.
+
+### 9.4 Reset paths during the modal's lifetime [VERIFIED — none]
+
+While the inline modal is open, `posSessionId` state can change only via:
+- `:2861` — `onClosed` callback on `CloseShiftDialog`, which sets state to null. But `CloseShiftDialog` and `BillPreviewModal` cannot be open simultaneously: `CloseShiftDialog` requires `posSessionId` truthy (`:2859`) AND `showCloseShift` true; the inline `BillPreviewModal` requires `lastPlacedOrder` truthy AND `showBillModal` true. In principle both can be true at once at the React state level, but the UX has them as separate user actions. No path observed where shift-close fires during an open bill modal.
+- The `useEffect` at `:761-772` re-running. This fires only when `activeSessionData` reference changes — i.e., when `/api/pos/session` is re-fetched (60s `staleTime`). A background re-fetch would only mutate state if the server's response changed (e.g., the session was closed externally). This is a real but rare edge case.
+
+Neither is a meaningful F-294 contributor.
+
+### 9.5 Net conclusion
+
+**For launch (Workflow α — single-outlet dine-in):** the inline modal path is irrelevant — dine-in never uses it. **`bill-view.tsx:94` is the sole drop point that matters.** Phase 3 is a one-file fix.
+
+**For takeaway/delivery (out of launch scope):** the inline modal is structurally healthy in steady state. State is hydrated correctly before the modal can open in any realistic user flow. The theoretical race in 9.3 is a separate, generic concern and not F-294-specific.
+
+**Reconciling with the 100% NULL production data:** the 49-of-49 NULL rate is consistent with all 49 bills being dine-in (which go through `bill-view.tsx`). If any takeaway/delivery bills are in the sample and they also showed NULL, the inline path would warrant deeper investigation. This can be confirmed post-Phase 3 by:
+1. Re-running the F-294 diagnostic SQL after the `bill-view.tsx` fix ships.
+2. If a few takeaway/delivery bills appear and they are still NULL, file a follow-up to add the same `useQuery({queryKey: ["/api/pos/session"]})` guard inside `BillPreviewModal` as a defense-in-depth — or move to Option C (server-side derivation) flagged in §7.
+
+**Phase 3 recommendation unchanged from §7:** branch `fix/F-294-bill-view-session-prop`, edit `client/src/pages/pos/bill-view.tsx` only, ~5-7 lines.
