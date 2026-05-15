@@ -8,6 +8,12 @@ Compiled from `audit/02-new-blockers-recon.md`, `audit/FINDINGS.md`, `audit/OPEN
 
 ---
 
+## CLOSURE RIGOR RULE
+
+**CLOSURE RIGOR RULE (effective 2026-05-15):** Findings that originated from tester reports cannot be marked CLOSED on the basis of a self-test or a single tester sweep that did not reproduce. Closure requires independent re-verification by a tester other than the original reporter, against the original reproduction steps, on production. Self-test or thin-sweep closures of this kind have been overturned by cross-validation three times in the last week (F-256b 2026-05-14, F-256c 2026-05-14, F-268 2026-05-15) — each cost a re-open, a Phase 1 re-investigation, and tester re-time. The rule applies retroactively only as a flag: any finding currently marked CLOSED solely on a self-test should be treated as suspect until independently re-verified, but does not auto-reopen.
+
+---
+
 ## Done
 
 Items that have shipped to main this audit cycle, newest first.
