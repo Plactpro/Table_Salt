@@ -91,20 +91,39 @@ failures.**
 
 ---
 
-## The 4 known launch blockers
+## Known launch blockers
 
 These are the open bugs that sit directly on the 9 items and must be fixed
-before v1 can be called done.
+before v1 can be called done. The table below is the source of truth for the
+count.
 
 | Blocker | Affects | Description |
 |---------|---------|-------------|
-| F-013 | Item #5 | Add-on items create a separate bill instead of joining the original bill. Confirmed by tester run 2026-05-15 (TC-028). Largest remaining fix. |
-| F-301 | Item #8 | Voided order keeps "In Progress" status, does not free its table, and can still enter the payment flow. Confirmed 2026-05-15 (TC-058 / TC-059 / TC-060). Likely a single root cause in the void handler. |
+| F-013 | Item #5 | Add-on items create a separate bill instead of joining the original bill. Confirmed 2026-05-15 (TC-028). Largest remaining fix. |
+| F-268 | Items #6, #7 | SERVED orders have no Bill button; View Bill navigation diverges by order state. Re-opened 2026-05-14. Blocks billing and payment for served orders. |
+| F-276 | Item #9 | Payment can be completed after the shift has been closed, defeating cash-float reconciliation. |
+| F-284 | Item #7 | Payment endpoint accepts new payments on an already-paid bill (returns 200 OK; no overpayment persisted, but the path should not exist). |
+| F-297 | Items #3, #4 | Cart-only Hold creates a phantom KOT on Recall; Send-to-Kitchen then creates duplicate items in the KDS. |
+| F-300 | Items #6, #7 | Split-payment receipt collapses to "Paid via Cash" regardless of the actual method mix. Tax-invoice integrity exposure (UAE FTA / India GST). Split payment — one bill, multiple methods — is in v1 scope. |
+| F-301 | Item #8 | Voided order keeps "In Progress" status, does not free its table, and can still enter the payment flow. Confirmed 2026-05-15 (TC-058 / TC-059 / TC-060). |
+| F-303 | Item #4 | Menu items with no kitchen station are sent to the KDS but silently omitted from the printed KOT. Self-concealing. |
+| F-256c | Item #6 | Tenant-configured time zone reverts after page refresh; the configured time zone must persist. |
+| F-270 | Items #4, #6 | KDS and receipt timestamps display the wrong time zone. Shares a root cause with F-256c. |
 | TC-076 | Item #9 | A non-manager can close a shift with no supervisor approval. Confirmed 2026-05-15. |
 | TC-077 | Item #9 | A shift can be closed with open unpaid orders and no warning. Confirmed 2026-05-15. |
 
+11 independent fixes — F-256c and F-270 share a root cause and are resolved as
+one fix.
+
+**Verify-then-decide.** F-286 (order/bill payment-status desync) and F-234
+(cross-user same-table duplicate orders) are unclassified pending a targeted
+verification check — neither a confirmed blocker nor cleared.
+
 Findings raised against v2 modules remain in the registers but are not launch
 blockers and are not worked on for v1.
+
+Blocker list reconciled against all BLOCKING-tagged findings in
+audit/00-backlog.md on 2026-05-16.
 
 ---
 
