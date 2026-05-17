@@ -80,7 +80,7 @@ restaurant can do all 9 of these without failure.
 | 2 | Manager sets up the day | Manager can open the floor plan, set table availability, and confirm the menu including marking daily specials active/inactive. | — |
 | 3 | Waiter opens an order on a table | Waiter taps a table, starts a new order, adds items one by one, and submits. | — |
 | 4 | Kitchen receives it | The submitted order reaches the kitchen — printed KOT or kitchen screen — correctly and completely. | — |
-| 5 | Mid-meal additions work | Waiter adds items to an already-open table order; the kitchen receives only the new items; and all items land on the **same bill**. | **F-013** — currently broken (add-on items create a separate bill). Biggest remaining fix. |
+| 5 | Mid-meal additions work | Waiter adds items to an already-open table order; the kitchen receives only the new items; and all items land on the **same bill**. | **F-280** — currently broken (add-on items create a separate bill). Biggest remaining fix. |
 | 6 | Bill generates correctly | Waiter/cashier generates the bill for a table — all items, correct VAT/GST, correct total. | — |
 | 7 | Payment closes the loop | Cashier records cash or card payment; the bill closes; the table resets to available. | — |
 | 8 | Void works | A wrongly-rung item can be voided, with supervisor approval; the voided order updates status correctly, frees its table, and cannot be billed. | **F-301** — currently broken (voided order keeps status, holds table, can enter payment flow). |
@@ -99,7 +99,7 @@ count.
 
 | Blocker | Affects | Description |
 |---------|---------|-------------|
-| F-013 | Item #5 | Add-on items create a separate bill instead of joining the original bill. Confirmed 2026-05-15 (TC-028). Largest remaining fix. |
+| F-280 | Item #5 | Add-on items create a separate bill instead of joining the original bill. Confirmed 2026-05-15 (TC-028). Largest remaining fix. |
 | F-268 | Items #6, #7 | SERVED orders have no Bill button; View Bill navigation diverges by order state. Re-opened 2026-05-14. Blocks billing and payment for served orders. |
 | F-276 | Item #9 | Payment can be completed after the shift has been closed, defeating cash-float reconciliation. |
 | F-284 | Item #7 | Payment endpoint accepts new payments on an already-paid bill (returns 200 OK; no overpayment persisted, but the path should not exist). |
@@ -124,6 +124,8 @@ blockers and are not worked on for v1.
 
 Blocker list reconciled against all BLOCKING-tagged findings in
 audit/00-backlog.md on 2026-05-16.
+
+Correction 2026-05-17: this document originally labelled the add-on-bill blocker "F-013" (item #5 and the blocker table). That was a mislabel. FINDINGS.md F-013 is an unrelated auth finding (prep-notification endpoints requiring no authentication). The add-on-bill bug's correct register entry is F-280 in audit/00-backlog.md. Both references have been corrected to F-280.
 
 ---
 
